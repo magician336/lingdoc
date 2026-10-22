@@ -132,7 +132,7 @@ func (s *Service) SetMemberAssignment(ctx context.Context, a Actor, pid, user, k
 		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
 			return operationResult[Project]{}, err
 		}
-		if err := g5Audit(tx, a, pid, "member.assignment", user, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, a, pid, "member.assignment", user, input.Reason); err != nil {
 			return operationResult[Project]{}, err
 		}
 		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
@@ -211,7 +211,7 @@ func CaptureTenantSuspensionInTransaction(db *gorm.DB, tenantID uint64, userID s
 		if err := tx.ReplaceMembers(p.ID, next.Members); err != nil {
 			return err
 		}
-		if err := g5Audit(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
+		if err := recordProjectAuditEvent(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
 			return err
 		}
 	}
@@ -257,13 +257,13 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 				return operationResult[ProjectAPIKeyGrant]{}, err
 			}
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return operationResult[ProjectAPIKeyGrant]{}, ErrInvalidState
 		}
 		id := hashImpactValue(input.KeyID)
 		var old ProjectAPIKeyGrant
-		version, err := store.G5Get(pid, "api_key_grant", id, &old)
+		version, err := store.GetProjectRecord(pid, "api_key_grant", id, &old)
 		if err != nil && err != ErrNotFound {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
@@ -272,10 +272,10 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 		}
 		input.CreatedBy = a.UserID
 		input.UpdatedAt = time.Now().UTC()
-		if err := store.G5Put(pid, "api_key_grant", id, version, input); err != nil {
+		if err := store.PutProjectRecord(pid, "api_key_grant", id, version, input); err != nil {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
-		if err := g5Audit(tx, a, pid, "api_key.scope", id, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, a, pid, "api_key.scope", id, input.Reason); err != nil {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		return operationResult[ProjectAPIKeyGrant]{Value: input, Status: operationStatusOK}, nil
@@ -299,12 +299,12 @@ func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability
 	if !slices.Contains([]string{"read", "write", "research", "agent", "evidence-write"}, base) {
 		return ErrNotFound
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrNotFound
 	}
 	var grant ProjectAPIKeyGrant
-	if _, err := store.G5Get(pid, "api_key_grant", hashImpactValue(scope.KeyID), &grant); err != nil || !grant.Active || grant.KeyID != scope.KeyID || !slices.Contains(grant.Capabilities, base) {
+	if _, err := store.GetProjectRecord(pid, "api_key_grant", hashImpactValue(scope.KeyID), &grant); err != nil || !grant.Active || grant.KeyID != scope.KeyID || !slices.Contains(grant.Capabilities, base) {
 		return ErrNotFound
 	}
 	db, err := TransactionDatabase(tx)
@@ -346,7 +346,7 @@ func (s *Service) ListMyProjectInvitations(ctx context.Context, a Actor) ([]Memb
 		if err != nil {
 			return err
 		}
-		var rows []g5RecordRow
+		var rows []projectRecordRow
 		if err := db.Table("lingdoc_g5_records AS g").Select("g.*").Joins("JOIN lingdoc_projects p ON p.id=g.project_id").Where("p.tenant_id=? AND g.kind='invitation'", a.TenantID).Order("g.id").Find(&rows).Error; err != nil {
 			return err
 		}
@@ -431,7 +431,7 @@ func (s *Service) RejectOwnerTransfer(ctx context.Context, a Actor, pid, id, key
 			return operationResult[OwnerTransfer]{}, err
 		}
 		item.Status = "cancelled"
-		if err := g5Audit(tx, a, pid, "owner.transfer.reject", id, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, a, pid, "owner.transfer.reject", id, input.Reason); err != nil {
 			return operationResult[OwnerTransfer]{}, err
 		}
 		return operationResult[OwnerTransfer]{Value: item, Status: operationStatusOK}, nil

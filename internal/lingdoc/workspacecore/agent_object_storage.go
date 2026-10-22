@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-type G2StoredObject struct {
+type StoredObject struct {
 	ProjectID string
 	Kind      string
 	ID        string
@@ -21,16 +21,16 @@ type G2StoredObject struct {
 	Payload   json.RawMessage
 }
 
-// G2Transaction extends the existing atomic transaction with project-scoped,
+// ObjectStore extends the existing atomic transaction with project-scoped,
 // append-only domain versions. It does not supply authorization decisions.
-type G2Transaction interface {
-	G2Object(string, string, string) (G2StoredObject, error)
-	G2Objects(string, string) ([]G2StoredObject, error)
-	G2ObjectVersion(string, string, string, int64) (G2StoredObject, error)
-	InsertG2Object(G2StoredObject) error
-	AppendG2Object(G2StoredObject, G2StoredObject) error
+type ObjectStore interface {
+	Object(string, string, string) (StoredObject, error)
+	Objects(string, string) ([]StoredObject, error)
+	ObjectVersion(string, string, string, int64) (StoredObject, error)
+	InsertObject(StoredObject) error
+	AppendObject(StoredObject, StoredObject) error
 }
-type g2ObjectRow struct {
+type objectRow struct {
 	ProjectID   string `gorm:"column:project_id;primaryKey"`
 	Kind        string `gorm:"column:kind;primaryKey"`
 	ID          string `gorm:"column:id;primaryKey"`
@@ -38,9 +38,9 @@ type g2ObjectRow struct {
 	PayloadJSON string `gorm:"column:payload_json"`
 }
 
-func (g2ObjectRow) TableName() string { return "lingdoc_g2_objects" }
+func (objectRow) TableName() string { return "lingdoc_g2_objects" }
 
-type g2ObjectVersionRow struct {
+type objectVersionRow struct {
 	ProjectID   string `gorm:"column:project_id;primaryKey"`
 	Kind        string `gorm:"column:kind;primaryKey"`
 	ID          string `gorm:"column:id;primaryKey"`
@@ -48,29 +48,29 @@ type g2ObjectVersionRow struct {
 	PayloadJSON string `gorm:"column:payload_json"`
 }
 
-func (g2ObjectVersionRow) TableName() string { return "lingdoc_g2_object_versions" }
-func g2ObjectFromRow(row g2ObjectRow) (G2StoredObject, error) {
+func (objectVersionRow) TableName() string { return "lingdoc_g2_object_versions" }
+func objectFromRow(row objectRow) (StoredObject, error) {
 	if row.ID == "" || row.ProjectID == "" || row.Version < 1 || !json.Valid([]byte(row.PayloadJSON)) {
-		return G2StoredObject{}, ErrInvalidState
+		return StoredObject{}, ErrInvalidState
 	}
-	return G2StoredObject{ProjectID: row.ProjectID, Kind: row.Kind, ID: row.ID, Version: row.Version, Payload: json.RawMessage(row.PayloadJSON)}, nil
+	return StoredObject{ProjectID: row.ProjectID, Kind: row.Kind, ID: row.ID, Version: row.Version, Payload: json.RawMessage(row.PayloadJSON)}, nil
 }
-func (t gormTransaction) G2Object(projectID, kind, id string) (G2StoredObject, error) {
-	var row g2ObjectRow
+func (t gormTransaction) Object(projectID, kind, id string) (StoredObject, error) {
+	var row objectRow
 	err := t.db.Where("project_id = ? AND kind = ? AND id = ?", projectID, kind, id).First(&row).Error
 	if err != nil {
-		return G2StoredObject{}, storageError(err)
+		return StoredObject{}, storageError(err)
 	}
-	return g2ObjectFromRow(row)
+	return objectFromRow(row)
 }
-func (t gormTransaction) G2Objects(projectID, kind string) ([]G2StoredObject, error) {
-	var rows []g2ObjectRow
+func (t gormTransaction) Objects(projectID, kind string) ([]StoredObject, error) {
+	var rows []objectRow
 	if err := t.db.Where("project_id = ? AND kind = ?", projectID, kind).Order("id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	out := make([]G2StoredObject, 0, len(rows))
+	out := make([]StoredObject, 0, len(rows))
 	for _, row := range rows {
-		object, err := g2ObjectFromRow(row)
+		object, err := objectFromRow(row)
 		if err != nil {
 			return nil, err
 		}
@@ -78,67 +78,67 @@ func (t gormTransaction) G2Objects(projectID, kind string) ([]G2StoredObject, er
 	}
 	return out, nil
 }
-func (t gormTransaction) G2ObjectVersion(projectID, kind, id string, version int64) (G2StoredObject, error) {
-	var row g2ObjectVersionRow
+func (t gormTransaction) ObjectVersion(projectID, kind, id string, version int64) (StoredObject, error) {
+	var row objectVersionRow
 	if err := t.db.Where("project_id = ? AND kind = ? AND id = ? AND version = ?", projectID, kind, id, version).First(&row).Error; err != nil {
-		return G2StoredObject{}, storageError(err)
+		return StoredObject{}, storageError(err)
 	}
-	return g2ObjectFromRow(g2ObjectRow(row))
+	return objectFromRow(objectRow(row))
 }
-func (t gormTransaction) InsertG2Object(object G2StoredObject) error {
+func (t gormTransaction) InsertObject(object StoredObject) error {
 	if object.Version != 1 || object.ProjectID == "" || object.ID == "" || !json.Valid(object.Payload) {
 		return ErrInvalidRequest
 	}
-	row := g2ObjectRow{ProjectID: object.ProjectID, Kind: object.Kind, ID: object.ID, Version: object.Version, PayloadJSON: string(object.Payload)}
+	row := objectRow{ProjectID: object.ProjectID, Kind: object.Kind, ID: object.ID, Version: object.Version, PayloadJSON: string(object.Payload)}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
 	}
-	return t.db.Create(&g2ObjectVersionRow{ProjectID: object.ProjectID, Kind: object.Kind, ID: object.ID, Version: object.Version, PayloadJSON: string(object.Payload)}).Error
+	return t.db.Create(&objectVersionRow{ProjectID: object.ProjectID, Kind: object.Kind, ID: object.ID, Version: object.Version, PayloadJSON: string(object.Payload)}).Error
 }
-func (t gormTransaction) AppendG2Object(previous, next G2StoredObject) error {
+func (t gormTransaction) AppendObject(previous, next StoredObject) error {
 	if next.ProjectID != previous.ProjectID || next.ID != previous.ID || next.Kind != previous.Kind || next.Version != previous.Version+1 || !json.Valid(next.Payload) {
 		return ErrInvalidRequest
 	}
-	changed := t.db.Model(&g2ObjectRow{}).Where("project_id = ? AND kind = ? AND id = ? AND version = ?", previous.ProjectID, previous.Kind, previous.ID, previous.Version).Updates(map[string]any{"version": next.Version, "payload_json": string(next.Payload)})
+	changed := t.db.Model(&objectRow{}).Where("project_id = ? AND kind = ? AND id = ? AND version = ?", previous.ProjectID, previous.Kind, previous.ID, previous.Version).Updates(map[string]any{"version": next.Version, "payload_json": string(next.Payload)})
 	if err := affected(changed); err != nil {
 		return err
 	}
-	return t.db.Create(&g2ObjectVersionRow{ProjectID: next.ProjectID, Kind: next.Kind, ID: next.ID, Version: next.Version, PayloadJSON: string(next.Payload)}).Error
+	return t.db.Create(&objectVersionRow{ProjectID: next.ProjectID, Kind: next.Kind, ID: next.ID, Version: next.Version, PayloadJSON: string(next.Payload)}).Error
 }
-func g2Storage(tx Transaction) (G2Transaction, error) {
-	port, ok := tx.(G2Transaction)
+func agentObjectStore(tx Transaction) (ObjectStore, error) {
+	port, ok := tx.(ObjectStore)
 	if !ok {
-		return nil, ErrG2Unavailable
+		return nil, ErrDependencyUnavailable
 	}
 	return port, nil
 }
-func g2Load[T any](tx Transaction, projectID, kind, id string) (T, G2StoredObject, error) {
+func loadStoredObject[T any](tx Transaction, projectID, kind, id string) (T, StoredObject, error) {
 	var value T
-	port, err := g2Storage(tx)
+	port, err := agentObjectStore(tx)
 	if err != nil {
-		return value, G2StoredObject{}, err
+		return value, StoredObject{}, err
 	}
-	object, err := port.G2Object(projectID, kind, id)
+	object, err := port.Object(projectID, kind, id)
 	if err != nil {
 		return value, object, err
 	}
 	err = json.Unmarshal(object.Payload, &value)
 	return value, object, err
 }
-func g2Store(tx Transaction, previous G2StoredObject, projectID, kind, id string, version int64, value any) error {
+func storeStoredObject(tx Transaction, previous StoredObject, projectID, kind, id string, version int64, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	object := G2StoredObject{ProjectID: projectID, Kind: kind, ID: id, Version: version, Payload: raw}
-	port, err := g2Storage(tx)
+	object := StoredObject{ProjectID: projectID, Kind: kind, ID: id, Version: version, Payload: raw}
+	port, err := agentObjectStore(tx)
 	if err != nil {
 		return err
 	}
 	if previous.ID == "" {
-		return port.InsertG2Object(object)
+		return port.InsertObject(object)
 	}
-	return port.AppendG2Object(previous, object)
+	return port.AppendObject(previous, object)
 }
 
 // CurrentEvidenceObject lets the shared impact coordinator read current
@@ -166,7 +166,7 @@ func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (Impa
 		// No confirmation is inferred from parsing success or model consent.
 		return result, nil
 	case "SourceAnchor":
-		value, _, err := g2Load[SourceAnchor](t, projectID, G2AnchorKind, id)
+		value, _, err := loadStoredObject[SourceAnchor](t, projectID, SourceAnchorKind, id)
 		if err != nil {
 			return result, err
 		}
@@ -174,13 +174,13 @@ func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (Impa
 		result.State = value.Status
 		result.SourceIDs = []string{value.SourceID}
 		result.ContextRevision = value.Basis.ContextRevision
-		current, currentErr := t.G2AnchorCurrent(value)
+		current, currentErr := t.IsAnchorCurrent(value)
 		result.Confirmed = currentErr == nil && current
 		if !result.Confirmed {
 			result.State = "NEEDS_REVIEW"
 		}
 	case "ResearchClaim":
-		value, _, err := g2Load[ResearchClaim](t, projectID, G2ClaimKind, id)
+		value, _, err := loadStoredObject[ResearchClaim](t, projectID, ResearchClaimKind, id)
 		if err != nil {
 			return result, err
 		}
@@ -188,7 +188,7 @@ func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (Impa
 		result.State = value.Status
 		result.ContextRevision = value.Basis.ContextRevision
 	case "EvidenceCard":
-		value, _, err := g2Load[EvidenceCard](t, projectID, G2CardKind, id)
+		value, _, err := loadStoredObject[EvidenceCard](t, projectID, EvidenceCardKind, id)
 		if err != nil {
 			return result, err
 		}
@@ -196,7 +196,7 @@ func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (Impa
 		result.State = value.Status
 		result.SourceIDs = value.SourceIDs
 		result.ContextRevision = value.Basis.ContextRevision
-		result.Confirmed, err = t.g2CardConfirmationCurrent(value)
+		result.Confirmed, err = t.cardConfirmationCurrent(value)
 		if err != nil {
 			result.Confirmed = false
 			result.State = "NEEDS_REVIEW"
@@ -207,22 +207,22 @@ func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (Impa
 	return result, nil
 }
 
-var _ G2Transaction = gormTransaction{}
+var _ ObjectStore = gormTransaction{}
 
-type g2AssetTruth struct {
+type assetTruth struct {
 	Asset       evidence.ProjectAsset
 	Revision    evidence.ProjectAssetRevision
 	Fingerprint string
 	SourceIDs   []string
 }
-type g2AssetPolicyTransaction interface {
-	G2AssetTruth(Project, string) (g2AssetTruth, error)
-	AdvanceG2AssetPolicy(g2AssetTruth) error
-	G2AnchorCurrent(SourceAnchor) (bool, error)
+type assetPolicyTransaction interface {
+	AssetTruth(Project, string) (assetTruth, error)
+	AdvanceAssetPolicy(assetTruth) error
+	IsAnchorCurrent(SourceAnchor) (bool, error)
 }
 
-func (t gormTransaction) G2AssetTruth(p Project, id string) (g2AssetTruth, error) {
-	var out g2AssetTruth
+func (t gormTransaction) AssetTruth(p Project, id string) (assetTruth, error) {
+	var out assetTruth
 	if err := t.db.Where("project_id = ? AND id = ? AND deleted_at IS NULL", p.ID, id).First(&out.Asset).Error; err != nil {
 		return out, storageError(err)
 	}
@@ -249,7 +249,7 @@ func (t gormTransaction) G2AssetTruth(p Project, id string) (g2AssetTruth, error
 	}
 	return out, nil
 }
-func (t gormTransaction) AdvanceG2AssetPolicy(truth g2AssetTruth) error {
+func (t gormTransaction) AdvanceAssetPolicy(truth assetTruth) error {
 	now := time.Now().UTC()
 	changed := t.db.Model(&evidence.ProjectAsset{}).Where("id = ? AND project_id = ? AND asset_revision = ? AND deleted_at IS NULL", truth.Asset.ID, truth.Asset.ProjectID, truth.Asset.AssetRevision).Updates(map[string]any{"asset_revision": truth.Asset.AssetRevision + 1, "updated_at": now})
 	if err := affected(changed); err != nil {
@@ -262,22 +262,22 @@ func (t gormTransaction) AdvanceG2AssetPolicy(truth g2AssetTruth) error {
 	return t.db.Create(&evidence.ProjectAssetRevision{ID: uuid.NewString(), AssetID: truth.Asset.ID, RevisionNo: truth.Asset.AssetRevision + 1, KnowledgeID: truth.Asset.KnowledgeID, ContentHash: truth.Fingerprint, Status: evidence.RevisionActive, Metadata: truth.Revision.Metadata, CreatedAt: now}).Error
 }
 func ReadProjectAssetPolicy(tx Transaction, p Project, assetID string) (ProjectAssetPolicy, []string, string, error) {
-	port, ok := tx.(g2AssetPolicyTransaction)
+	port, ok := tx.(assetPolicyTransaction)
 	if !ok {
-		return ProjectAssetPolicy{}, nil, "", ErrG2Unavailable
+		return ProjectAssetPolicy{}, nil, "", ErrDependencyUnavailable
 	}
-	truth, err := port.G2AssetTruth(p, assetID)
+	truth, err := port.AssetTruth(p, assetID)
 	if err != nil {
 		return ProjectAssetPolicy{}, nil, "", err
 	}
-	value, _, err := g2Load[ProjectAssetPolicy](tx, p.ID, G2AssetPolicyKind, assetID)
+	value, _, err := loadStoredObject[ProjectAssetPolicy](tx, p.ID, AssetPolicyKind, assetID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return value, nil, "", err
 	}
 	if errors.Is(err, ErrNotFound) {
 		value = ProjectAssetPolicy{ID: assetID, ProjectID: p.ID, AssetID: assetID, Scope: "project", AllowedUserIDs: []string{}, CreatedBy: truth.Asset.CreatedBy}
-		store, _ := g2Storage(tx)
-		rows, e := store.G2Objects(p.ID, G2ImportKind)
+		store, _ := agentObjectStore(tx)
+		rows, e := store.Objects(p.ID, ImportCandidateKind)
 		if e != nil {
 			return value, nil, "", e
 		}
@@ -316,13 +316,13 @@ func ReadProjectAssetPolicy(tx Transaction, p Project, assetID string) (ProjectA
 	if value.SourceVersionHash == "" {
 		value.SourceVersionHash = truth.Fingerprint
 	}
-	provenance := g2Hash(truth.Revision.ContentHash + "|" + strconv.FormatInt(truth.Asset.AssetRevision, 10) + "|" + truth.Asset.KnowledgeID)
+	provenance := sha256Hex(truth.Revision.ContentHash + "|" + strconv.FormatInt(truth.Asset.AssetRevision, 10) + "|" + truth.Asset.KnowledgeID)
 	return value, truth.SourceIDs, provenance, nil
 }
 
-// G2AnchorCurrent re-reads local version and original parser content only.
+// IsAnchorCurrent re-reads local version and original parser content only.
 // Authorization stays with the caller's current SourcePolicy outside this tx.
-func (t gormTransaction) G2AnchorCurrent(anchor SourceAnchor) (bool, error) {
+func (t gormTransaction) IsAnchorCurrent(anchor SourceAnchor) (bool, error) {
 	var asset evidence.ProjectAsset
 	if err := t.db.Where("id = ? AND project_id = ? AND deleted_at IS NULL", anchor.AssetID, anchor.ProjectID).First(&asset).Error; err != nil {
 		return false, storageError(err)
@@ -330,7 +330,7 @@ func (t gormTransaction) G2AnchorCurrent(anchor SourceAnchor) (bool, error) {
 	if asset.AssetRevision != int64(anchor.AssetRevision) || asset.ProcessingState != "ready" || anchor.Status != "CURRENT" {
 		return false, nil
 	}
-	truth, err := t.G2AssetTruth(Project{ID: anchor.ProjectID}, asset.ID)
+	truth, err := t.AssetTruth(Project{ID: anchor.ProjectID}, asset.ID)
 	if err != nil {
 		return false, err
 	}
@@ -349,13 +349,13 @@ func (t gormTransaction) G2AnchorCurrent(anchor SourceAnchor) (bool, error) {
 	if anchor.SelectionStart < 0 || anchor.SelectionEnd > len(text) || anchor.SelectionEnd <= anchor.SelectionStart {
 		return false, nil
 	}
-	if g2Hash(string(text[anchor.SelectionStart:anchor.SelectionEnd])) != anchor.QuotedTextHash {
+	if sha256Hex(string(text[anchor.SelectionStart:anchor.SelectionEnd])) != anchor.QuotedTextHash {
 		return false, nil
 	}
 	return anchor.ExtractionType == "native_text" || anchor.HumanVerified, nil
 }
-func (t gormTransaction) g2CardConfirmationCurrent(card EvidenceCard) (bool, error) {
-	if !g2ConfirmationTupleCurrent(card) {
+func (t gormTransaction) cardConfirmationCurrent(card EvidenceCard) (bool, error) {
+	if !confirmationTupleCurrent(card) {
 		return false, nil
 	}
 	var projectRecord projectRow
@@ -369,7 +369,7 @@ func (t gormTransaction) g2CardConfirmationCurrent(card EvidenceCard) (bool, err
 	if p.Status != "active" {
 		return false, nil
 	}
-	claim, _, err := g2Load[ResearchClaim](t, p.ID, G2ClaimKind, card.ClaimRef.ID)
+	claim, _, err := loadStoredObject[ResearchClaim](t, p.ID, ResearchClaimKind, card.ClaimRef.ID)
 	if err != nil {
 		return false, err
 	}
@@ -378,14 +378,14 @@ func (t gormTransaction) g2CardConfirmationCurrent(card EvidenceCard) (bool, err
 	}
 	ids := []string{}
 	for _, ref := range card.AnchorRefs {
-		anchor, _, err := g2Load[SourceAnchor](t, p.ID, G2AnchorKind, ref.ID)
+		anchor, _, err := loadStoredObject[SourceAnchor](t, p.ID, SourceAnchorKind, ref.ID)
 		if err != nil {
 			return false, err
 		}
 		if anchor.Version != ref.Version {
 			return false, nil
 		}
-		current, err := t.G2AnchorCurrent(anchor)
+		current, err := t.IsAnchorCurrent(anchor)
 		if err != nil {
 			return false, err
 		}
@@ -394,7 +394,7 @@ func (t gormTransaction) g2CardConfirmationCurrent(card EvidenceCard) (bool, err
 		}
 		ids = append(ids, anchor.SourceID)
 	}
-	return reflect.DeepEqual(g2IDs(ids), g2IDs(card.SourceIDs)), nil
+	return reflect.DeepEqual(sortedUniqueIDs(ids), sortedUniqueIDs(card.SourceIDs)), nil
 }
 
 // ReadProjectAssetPolicyFromDB is a read projection for already-authorized
@@ -402,7 +402,7 @@ func (t gormTransaction) g2CardConfirmationCurrent(card EvidenceCard) (bool, err
 func ReadProjectAssetPolicyFromDB(ctx context.Context, db *gorm.DB, projectID, assetID string) (ProjectAssetPolicy, error) {
 	var out ProjectAssetPolicy
 	if db == nil {
-		return out, ErrG2Unavailable
+		return out, ErrDependencyUnavailable
 	}
 	err := db.WithContext(ctx).Transaction(func(dbtx *gorm.DB) error {
 		var err error

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestG1ActiveProjectRejectsOrdinarySpecSave(t *testing.T) {
+func TestActiveProjectRejectsOrdinarySpecSave(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-baseline.db"))
 	actor := Actor{TenantID: 81, UserID: "owner"}
 	seedTenantMember(t, svc, actor)
@@ -41,7 +41,7 @@ func TestG1ActiveProjectRejectsOrdinarySpecSave(t *testing.T) {
 	}
 }
 
-func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
+func TestDraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-provenance.db"))
 	actor := Actor{TenantID: 82, UserID: "owner"}
 	seedTenantMember(t, svc, actor)
@@ -50,7 +50,7 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 		t.Fatal(err)
 	}
 	projectID := asProject(t, created).ID
-	g1SeedActualTurn(t, svc, actor, projectID, "session-1", "turn-3", "样本")
+	seedActualTurn(t, svc, actor, projectID, "session-1", "turn-3", "样本")
 	provenance := &ProvenanceRecord{SourceType: "conversation", SourceID: "session-1", SourceVersion: "turn-3", Locator: "turns/3#text", Purpose: "project_spec", CreatedBy: actor.UserID, Accessible: true}
 	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-02", SaveSpecInput{
 		ExpectedSpecRevision: 0,
@@ -95,7 +95,7 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	}
 }
 
-func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
+func TestActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-diff.db"))
 	actor := Actor{TenantID: 83, UserID: "owner"}
 	seedTenantMember(t, svc, actor)
@@ -123,7 +123,7 @@ func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
 	}
 }
 
-func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
+func TestOwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-transfer.db"))
 	owner := Actor{TenantID: 84, UserID: "owner"}
 	target := Actor{TenantID: 84, UserID: "target"}
@@ -165,7 +165,7 @@ func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestG1TenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
+func TestTenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-recovery.db"))
 	owner := Actor{TenantID: 88, UserID: "owner"}
 	target := Actor{TenantID: 88, UserID: "target"}
@@ -190,18 +190,18 @@ func TestG1TenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
 	}
 }
 
-type g1TemplateReader struct{}
+type provenanceTemplateReader struct{}
 
-func (g1TemplateReader) Get(id, version string) (Template, error) {
+func (provenanceTemplateReader) Get(id, version string) (Template, error) {
 	if id == "template-alt" && (version == "" || version == "2") {
 		return Template{ID: "template-alt", Name: "替代演示模板", Version: "2", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}}, nil
 	}
 	return ContractDemoTemplate{}.Get(id, version)
 }
 
-func TestG1TemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.T) {
+func TestTemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-template-migration.db"))
-	svc.templates = g1TemplateReader{}
+	svc.templates = provenanceTemplateReader{}
 	actor := Actor{TenantID: 85, UserID: "owner"}
 	seedTenantMember(t, svc, actor)
 	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-05", CreateProjectInput{Name: "G1 template", TemplateID: "template-demo"})
@@ -229,7 +229,7 @@ func TestG1TemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.
 	}
 }
 
-func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
+func TestActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-activation-gate.db"))
 	owner := Actor{TenantID: 86, UserID: "owner"}
 	collaborator := Actor{TenantID: 86, UserID: "collaborator"}
@@ -272,7 +272,7 @@ func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
 	}
 }
 
-func TestG1DiscardRestoreBlocksWritesAndMarksRevokedProvenance(t *testing.T) {
+func TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-discard-restore.db"))
 	actor := Actor{TenantID: 87, UserID: "owner"}
 	seedTenantMember(t, svc, actor)

@@ -21,7 +21,7 @@ type agentChangeDraftEditProof struct {
 	Origins                                                   map[string]string
 }
 
-// Called by the existing g1PrepareOperation before its mutation transaction.
+// Called by the existing prepareProvenanceOperation before its mutation transaction.
 // Native descriptors are read in short snapshots; all external source checks
 // remain in existing G1 preparation, outside the eventual edit transaction.
 func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, projectID, target string, input ExtendedChangeSetInput) (context.Context, bool, error) {
@@ -31,7 +31,7 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 	}
 	var p Project
 	var old ChangeSet
-	var history g1ChangeProvenance
+	var history changeProvenance
 	var historyVersion int64
 	handled := false
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -48,11 +48,11 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 		if err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return nil
 		} // Existing non-G1 manual repository port.
-		historyVersion, err = store.G5Get(projectID, "g1_change_provenance", changeID, &history)
+		historyVersion, err = store.GetProjectRecord(projectID, "g1_change_provenance", changeID, &history)
 		if err != nil {
 			return err
 		}
@@ -72,15 +72,15 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 		return ctx, handled, err
 	}
 	// Recheck every old proposed source even if this edit removes its field.
-	prepared, err := s.g1PrepareChangeProvenance(ctx, actor, old, map[string]bool{})
+	prepared, err := s.prepareChangeProvenance(ctx, actor, old, map[string]bool{})
 	if err != nil {
 		return ctx, true, err
 	}
-	previous, ok := prepared.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
-	if !ok || g1ProjectHash(previous.Project) != g1ProjectHash(p) {
+	previous, ok := prepared.Value(provenanceProofKey{}).(*provenanceProof)
+	if !ok || provenanceProjectHash(previous.Project) != provenanceProjectHash(p) {
 		return ctx, true, ErrVersionConflict
 	}
-	requests := g1FieldRequests(p)
+	requests := provenanceFieldRequests(p)
 	fields := map[string]SpecProvenanceRef{}
 	origins := map[string]string{}
 	changedRequests := map[string]string{}
@@ -97,21 +97,21 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 		if hashImpactValue(field.NewValue) == ref.ValueHash {
 			fields[key] = ref
 			origins[key] = agentProposedOrigin(history.ProposedOrigins[key])
-			requests = append(requests, g1ProvenanceRequest{Key: key, Value: field.NewValue, Record: &record, Creator: record.CreatedBy})
+			requests = append(requests, provenanceRequest{Key: key, Value: field.NewValue, Record: &record, Creator: record.CreatedBy})
 			continue
 		}
 		// A manual edit keeps its exact AI turn association, but gets a new
 		// value-bound server pin and AI-assisted origin. No client metadata.
 		record.Accessible, record.NeedsReview = false, false
-		requests = append(requests, g1ProvenanceRequest{Key: key, Value: field.NewValue, Record: &record, Origin: "ai_assisted_human", Creator: actor.UserID, Fresh: true})
-		changedRequests[key] = g1RequestKey(&record, field.NewValue)
+		requests = append(requests, provenanceRequest{Key: key, Value: field.NewValue, Record: &record, Origin: "ai_assisted_human", Creator: actor.UserID, Fresh: true})
+		changedRequests[key] = provenanceRequestKey(&record, field.NewValue)
 		origins[key] = "ai_assisted_human"
 	}
-	prepared, proof, err := s.g1Prepare(prepared, actor, projectID, requests, false)
+	prepared, proof, err := s.prepareProvenance(prepared, actor, projectID, requests, false)
 	if err != nil {
 		return ctx, true, err
 	}
-	if g1ProjectHash(proof.Project) != g1ProjectHash(previous.Project) {
+	if provenanceProjectHash(proof.Project) != provenanceProjectHash(previous.Project) {
 		return ctx, true, ErrVersionConflict
 	}
 	for id, pin := range previous.Pins {
@@ -139,15 +139,15 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 // already stored FreshPins in this same transaction and repeats G1 currentness.
 func storeAgentChangeDraftEditFields(ctx context.Context, tx Transaction, p Project, old, next ChangeSet, input ExtendedChangeSetInput) error {
 	edit, prepared := ctx.Value(agentChangeDraftEditContextKey{}).(agentChangeDraftEditProof)
-	store, supports := tx.(g5Transaction)
+	store, supports := tx.(projectRecordTransaction)
 	if !supports {
 		if prepared {
 			return ErrInvalidState
 		}
 		return nil
 	}
-	var history g1ChangeProvenance
-	version, err := store.G5Get(p.ID, "g1_change_provenance", old.ID, &history)
+	var history changeProvenance
+	version, err := store.GetProjectRecord(p.ID, "g1_change_provenance", old.ID, &history)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func storeAgentChangeDraftEditFields(ctx context.Context, tx Transaction, p Proj
 	if edit.ProjectID != p.ID || edit.ChangeID != old.ID || edit.BodyHash != hashImpactValue(input) || edit.OldChangeHash != hashImpactValue(old) || edit.HistoryVersion != version || edit.HistoryHash != hashImpactValue(history) {
 		return ErrVersionConflict
 	}
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok {
 		return ErrSourceUnavailable
 	}
@@ -180,5 +180,5 @@ func storeAgentChangeDraftEditFields(ctx context.Context, tx Transaction, p Proj
 		return nil
 	}
 	history.ProposedFields, history.ProposedOrigins = edit.Fields, edit.Origins
-	return store.G5Put(p.ID, "g1_change_provenance", old.ID, version, history)
+	return store.PutProjectRecord(p.ID, "g1_change_provenance", old.ID, version, history)
 }

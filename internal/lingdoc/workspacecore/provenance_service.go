@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-// g1Prepare releases the short authorized snapshot before asking the existing
+// prepareProvenance releases the short authorized snapshot before asking the existing
 // source/gateway adapter. No external port is ever called from its final tx.
-func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, requests []g1ProvenanceRequest, forModel bool) (context.Context, *g1ProvenanceProof, error) {
-	if !g1IdentityMatches(ctx, actor) {
+func (s *Service) prepareProvenance(ctx context.Context, actor Actor, pid string, requests []provenanceRequest, forModel bool) (context.Context, *provenanceProof, error) {
+	if !provenanceIdentityMatches(ctx, actor) {
 		return ctx, nil, ErrNotFound
 	}
-	proof := &g1ProvenanceProof{ActorID: actor.UserID, TenantID: actor.TenantID, Identity: candidateIdentityHash(ctx), ForModel: forModel, Pins: map[string]g1ProvenancePin{}, States: map[string]bool{}, Requests: map[string]g1ProvenancePin{}, FreshPins: map[string]g1ProvenancePin{}, NativeBefore: map[string]string{}}
+	proof := &provenanceProof{ActorID: actor.UserID, TenantID: actor.TenantID, Identity: candidateIdentityHash(ctx), ForModel: forModel, Pins: map[string]provenancePin{}, States: map[string]bool{}, Requests: map[string]provenancePin{}, FreshPins: map[string]provenancePin{}, NativeBefore: map[string]string{}}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
@@ -22,20 +22,20 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 		}
 		proof.Project = p
 		if requests == nil {
-			requests = g1FieldRequests(p)
+			requests = provenanceFieldRequests(p)
 		}
 		for _, request := range requests {
 			if request.Record == nil && (request.Origin == "" || request.Origin == "human") {
 				continue
 			}
-			var pin g1ProvenancePin
+			var pin provenancePin
 			if request.Fresh {
-				pin, err = s.g1ResolvePin(ctx, tx, actor, p, request)
+				pin, err = s.resolveProvenancePin(ctx, tx, actor, p, request)
 			} else {
 				var found bool
-				pin, found, err = g1LoadPin(tx, pid, request.Value, request.Record)
+				pin, found, err = loadProvenancePin(tx, pid, request.Value, request.Record)
 				if err == nil && !found {
-					pin = g1UnknownPin(p, Actor{UserID: request.Creator}, request)
+					pin = unknownProvenancePin(p, Actor{UserID: request.Creator}, request)
 					if request.Record != nil {
 						pin.Record = *request.Record
 						pin.Record.CreatedBy = request.Creator
@@ -48,8 +48,8 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 				return err
 			}
 			proof.Pins[pin.ID] = pin
-			proof.Requests[g1RequestKey(request.Record, request.Value)] = pin
-			currentDigest, digestErr := g1NativeSourceDigest(tx, pid, pin.SourceIDs)
+			proof.Requests[provenanceRequestKey(request.Record, request.Value)] = pin
+			currentDigest, digestErr := nativeSourceDigest(tx, pid, pin.SourceIDs)
 			if digestErr != nil {
 				currentDigest = "unavailable"
 			}
@@ -66,12 +66,12 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 	for id, pin := range proof.Pins {
 		allowed := pin.Verified
 		for _, sourceID := range pin.SourceIDs {
-			if s.g2Runtime.Sources == nil {
+			if s.agentRuntime.Sources == nil {
 				allowed = false
 				break
 			}
-			source, err := s.g2Runtime.Sources.ReadG2Source(context.WithValue(ctx, g1SourceIOKey{}, true), actor, pid, sourceID)
-			if err != nil || source.SourceID != sourceID || source.Status != "available" || source.ProcessingState != "ready" || source.QuotedTextHash == "" || source.QuotedTextHash != g2Hash(source.QuotedText) || forModel && !source.ModelUseAllowed {
+			source, err := s.agentRuntime.Sources.ReadResearchSource(context.WithValue(ctx, provenanceSourceIOKey{}, true), actor, pid, sourceID)
+			if err != nil || source.SourceID != sourceID || source.Status != "available" || source.ProcessingState != "ready" || source.QuotedTextHash == "" || source.QuotedTextHash != sha256Hex(source.QuotedText) || forModel && !source.ModelUseAllowed {
 				allowed = false
 				break
 			}
@@ -86,7 +86,7 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 				break
 			}
 		}
-		if allowed && len(pin.SourceIDs) > 0 && s.checkSources(context.WithValue(ctx, g1SourceIOKey{}, true), actor, pid, pin.SourceIDs) != nil {
+		if allowed && len(pin.SourceIDs) > 0 && s.checkSources(context.WithValue(ctx, provenanceSourceIOKey{}, true), actor, pid, pin.SourceIDs) != nil {
 			allowed = false
 		}
 		proof.States[id] = allowed
@@ -96,21 +96,21 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 		if err != nil {
 			return err
 		}
-		if proof.Identity != candidateIdentityHash(ctx) || g1ProjectHash(current) != g1ProjectHash(proof.Project) {
+		if proof.Identity != candidateIdentityHash(ctx) || provenanceProjectHash(current) != provenanceProjectHash(proof.Project) {
 			return ErrVersionConflict
 		}
 		for id, pin := range proof.Pins {
 			if pin.Verified {
 				// A source/object mutation while real IO was in flight invalidates the
 				// complete snapshot; it cannot be silently committed as a verified pin.
-				currentDigest, err := g1NativeSourceDigest(tx, pid, pin.SourceIDs)
+				currentDigest, err := nativeSourceDigest(tx, pid, pin.SourceIDs)
 				if err != nil {
 					currentDigest = "unavailable"
 				}
 				if currentDigest != proof.NativeBefore[id] {
 					return ErrVersionConflict
 				}
-				if !s.g1PinCurrent(ctx, tx, actor, current, pin, forModel) {
+				if !s.provenancePinCurrent(ctx, tx, actor, current, pin, forModel) {
 					proof.States[id] = false
 				}
 			}
@@ -120,14 +120,14 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 	if err != nil {
 		return ctx, nil, err
 	}
-	proof.Snapshot = g1Snapshot(proof.Project, proof.Requests)
-	return context.WithValue(ctx, g1ProvenanceProofKey{}, proof), proof, nil
+	proof.Snapshot = provenanceSnapshot(proof.Project, proof.Requests)
+	return context.WithValue(ctx, provenanceProofKey{}, proof), proof, nil
 }
-func (s *Service) g1ProjectProjection(ctx context.Context, actor Actor, p Project) (Project, error) {
-	if !g1IdentityMatches(ctx, actor) {
+func (s *Service) projectProvenanceProjection(ctx context.Context, actor Actor, p Project) (Project, error) {
+	if !provenanceIdentityMatches(ctx, actor) {
 		return Project{}, ErrNotFound
 	}
-	if nested, _ := ctx.Value(g1SourceIOKey{}).(bool); nested {
+	if nested, _ := ctx.Value(provenanceSourceIOKey{}).(bool); nested {
 		p.Spec = map[string]string{}
 		p.SpecFields = map[string]SpecField{}
 		return p, nil
@@ -140,7 +140,7 @@ func (s *Service) g1ProjectProjection(ctx context.Context, actor Actor, p Projec
 		p.SpecFields = map[string]SpecField{}
 		return p, nil
 	}
-	requests := g1FieldRequests(p)
+	requests := provenanceFieldRequests(p)
 	needed := false
 	for _, request := range requests {
 		needed = needed || request.Record != nil || request.Origin != "" && request.Origin != "human"
@@ -148,23 +148,23 @@ func (s *Service) g1ProjectProjection(ctx context.Context, actor Actor, p Projec
 	if !needed {
 		return p, nil
 	}
-	_, proof, err := s.g1Prepare(ctx, actor, p.ID, requests, false)
+	_, proof, err := s.prepareProvenance(ctx, actor, p.ID, requests, false)
 	if err != nil {
 		return Project{}, err
 	}
-	return g1RedactProject(p, proof), nil
+	return redactProvenanceProject(p, proof), nil
 }
-func (s *Service) g1DraftProjection(ctx context.Context, actor Actor, pid string, candidates []DraftCandidate) ([]DraftCandidate, error) {
-	requests := []g1ProvenanceRequest{}
+func (s *Service) draftProvenanceProjection(ctx context.Context, actor Actor, pid string, candidates []DraftCandidate) ([]DraftCandidate, error) {
+	requests := []provenanceRequest{}
 	for _, candidate := range candidates {
 		if candidate.Provenance != nil {
-			requests = append(requests, g1ProvenanceRequest{Value: candidate.Content, Record: candidate.Provenance, Creator: candidate.CreatedBy})
+			requests = append(requests, provenanceRequest{Value: candidate.Content, Record: candidate.Provenance, Creator: candidate.CreatedBy})
 		}
 	}
 	if len(requests) == 0 {
 		return candidates, nil
 	}
-	_, proof, err := s.g1Prepare(ctx, actor, pid, requests, false)
+	_, proof, err := s.prepareProvenance(ctx, actor, pid, requests, false)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +173,13 @@ func (s *Service) g1DraftProjection(ctx context.Context, actor Actor, pid string
 		if candidate.Provenance == nil {
 			continue
 		}
-		pin := proof.Requests[g1RequestKey(candidate.Provenance, candidate.Content)]
+		pin := proof.Requests[provenanceRequestKey(candidate.Provenance, candidate.Content)]
 		record := pin.Record
 		record.Accessible = proof.States[pin.ID]
 		record.NeedsReview = !record.Accessible
 		candidate.Provenance = &record
 		if !record.Accessible {
-			g1RedactRecord(candidate.Provenance, pin.Verified)
+			redactProvenanceRecord(candidate.Provenance, pin.Verified)
 			candidate.Content = ""
 			candidate.Title = "来源待复核"
 		}
@@ -187,11 +187,11 @@ func (s *Service) g1DraftProjection(ctx context.Context, actor Actor, pid string
 	}
 	return result, nil
 }
-func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, target, pid string, body any) (context.Context, error) {
+func (s *Service) prepareProvenanceOperation(ctx context.Context, actor Actor, op, target, pid string, body any) (context.Context, error) {
 	if pid == "" {
 		return ctx, nil
 	}
-	if proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof); ok && proof.ActorID == actor.UserID && proof.TenantID == actor.TenantID && proof.Project.ID == pid && proof.Operation == op && proof.OperationBody == hashImpactValue(body) {
+	if proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof); ok && proof.ActorID == actor.UserID && proof.TenantID == actor.TenantID && proof.Project.ID == pid && proof.Operation == op && proof.OperationBody == hashImpactValue(body) {
 		return ctx, nil
 	}
 	if op == string(operationEditChangeDraft) {
@@ -204,13 +204,13 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 			return prepared, err
 		}
 	}
-	requests := []g1ProvenanceRequest{}
+	requests := []provenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
-		requests = g1FieldRequests(p)
+		requests = provenanceFieldRequests(p)
 		return nil
 	})
 	if err != nil {
@@ -239,7 +239,7 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 			return ctx, err
 		}
 		if change.Status != ChangeSetStatusDraft || op != "applyChangeSet" {
-			ctx, err = s.g1PrepareChangeProvenance(ctx, actor, change, map[string]bool{})
+			ctx, err = s.prepareChangeProvenance(ctx, actor, change, map[string]bool{})
 			if err != nil {
 				return ctx, err
 			}
@@ -248,11 +248,11 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 	switch input := body.(type) {
 	case SaveSpecInput:
 		for key, metadata := range input.FieldMetadata {
-			requests = append(requests, g1ProvenanceRequest{Key: key, Value: input.Fields[key], Record: metadata.Provenance, Origin: metadata.Origin, Creator: actor.UserID, Fresh: true})
+			requests = append(requests, provenanceRequest{Key: key, Value: input.Fields[key], Record: metadata.Provenance, Origin: metadata.Origin, Creator: actor.UserID, Fresh: true})
 		}
 	case DraftCandidateInput:
 		if input.Provenance != nil {
-			requests = append(requests, g1ProvenanceRequest{Value: input.Content, Record: input.Provenance, Creator: actor.UserID, Fresh: true})
+			requests = append(requests, provenanceRequest{Value: input.Content, Record: input.Provenance, Creator: actor.UserID, Fresh: true})
 		}
 	}
 	needed := op == "activateProject"
@@ -260,19 +260,19 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 		needed = needed || request.Record != nil || request.Origin != "" && request.Origin != "human"
 	}
 	if !needed {
-		if proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof); ok && proof.Frozen {
+		if proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof); ok && proof.Frozen {
 			proof.Operation = op
 			proof.OperationBody = hashImpactValue(body)
 		}
 		return ctx, nil
 	}
-	oldProof, _ := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
-	prepared, proof, err := s.g1Prepare(ctx, actor, pid, requests, false)
+	oldProof, _ := ctx.Value(provenanceProofKey{}).(*provenanceProof)
+	prepared, proof, err := s.prepareProvenance(ctx, actor, pid, requests, false)
 	if err == nil {
 		proof.Operation = op
 		proof.OperationBody = hashImpactValue(body)
 		if oldProof != nil && oldProof.Frozen {
-			if g1ProjectHash(oldProof.Project) != g1ProjectHash(proof.Project) {
+			if provenanceProjectHash(oldProof.Project) != provenanceProjectHash(proof.Project) {
 				return ctx, ErrVersionConflict
 			}
 			for id, pin := range oldProof.Pins {
@@ -284,11 +284,11 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 	}
 	return prepared, err
 }
-func (s *Service) g1ValidateOperation(ctx context.Context, tx Transaction, actor Actor, p Project, op string) error {
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+func (s *Service) validateProvenanceOperation(ctx context.Context, tx Transaction, actor Actor, p Project, op string) error {
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok {
 		if op == "activateProject" {
-			for _, request := range g1FieldRequests(p) {
+			for _, request := range provenanceFieldRequests(p) {
 				if request.Record != nil || request.Origin != "" && request.Origin != "human" {
 					return ErrSourceUnavailable
 				}
@@ -296,20 +296,20 @@ func (s *Service) g1ValidateOperation(ctx context.Context, tx Transaction, actor
 		}
 		return nil
 	}
-	if proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.Project.ID != p.ID || proof.Identity != candidateIdentityHash(ctx) || g1ProjectHash(p) != g1ProjectHash(proof.Project) {
+	if proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.Project.ID != p.ID || proof.Identity != candidateIdentityHash(ctx) || provenanceProjectHash(p) != provenanceProjectHash(proof.Project) {
 		return ErrVersionConflict
 	}
 	for id, pin := range proof.Pins {
-		if proof.States[id] && !s.g1PinCurrent(ctx, tx, actor, p, pin, false) {
+		if proof.States[id] && !s.provenancePinCurrent(ctx, tx, actor, p, pin, false) {
 			return ErrVersionConflict
 		}
 	}
 	if op == "activateProject" {
-		for _, request := range g1FieldRequests(p) {
+		for _, request := range provenanceFieldRequests(p) {
 			if request.Record == nil && (request.Origin == "" || request.Origin == "human") {
 				continue
 			}
-			pin := proof.Requests[g1RequestKey(request.Record, request.Value)]
+			pin := proof.Requests[provenanceRequestKey(request.Record, request.Value)]
 			if !proof.States[pin.ID] {
 				return ErrSourceUnavailable
 			}
@@ -317,15 +317,15 @@ func (s *Service) g1ValidateOperation(ctx context.Context, tx Transaction, actor
 	}
 	return nil
 }
-func (s *Service) g1StoreOperationPins(ctx context.Context, tx Transaction, pid string) error {
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+func (s *Service) storeOperationPins(ctx context.Context, tx Transaction, pid string) error {
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok || len(proof.FreshPins) == 0 {
 		return nil
 	}
 	if proof.Project.ID != pid {
 		return ErrSourceUnavailable
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
@@ -334,8 +334,8 @@ func (s *Service) g1StoreOperationPins(ctx context.Context, tx Transaction, pid 
 		// or unidentified source is saved only as an unresolved draft pin.
 		pin.Record.Accessible = proof.States[id]
 		pin.Record.NeedsReview = !proof.States[id]
-		var existing g1ProvenancePin
-		_, err := store.G5Get(pid, "g1_provenance", id, &existing)
+		var existing provenancePin
+		_, err := store.GetProjectRecord(pid, "g1_provenance", id, &existing)
 		if err == nil {
 			existing.Record.Accessible = false
 			existing.Record.NeedsReview = false
@@ -350,21 +350,21 @@ func (s *Service) g1StoreOperationPins(ctx context.Context, tx Transaction, pid 
 		if !errors.Is(err, ErrNotFound) {
 			return err
 		}
-		if err = store.G5Put(pid, "g1_provenance", id, 0, pin); err != nil {
+		if err = store.PutProjectRecord(pid, "g1_provenance", id, 0, pin); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func g1ServerProvenance(ctx context.Context, record *ProvenanceRecord, value, origin, status string) (*ProvenanceRecord, string, string) {
+func serverProvenance(ctx context.Context, record *ProvenanceRecord, value, origin, status string) (*ProvenanceRecord, string, string) {
 	if record == nil && (origin == "" || origin == "human") {
 		return nil, origin, status
 	}
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok {
 		return record, origin, status
 	}
-	pin, found := proof.Requests[g1RequestKey(record, value)]
+	pin, found := proof.Requests[provenanceRequestKey(record, value)]
 	if !found {
 		return record, origin, status
 	}
@@ -386,14 +386,14 @@ func g1ServerProvenance(ctx context.Context, record *ProvenanceRecord, value, or
 	}
 	return &server, origin, status
 }
-func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pid string, body json.RawMessage) (json.RawMessage, error) {
+func (s *Service) operationProvenanceProjection(ctx context.Context, actor Actor, op, pid string, body json.RawMessage) (json.RawMessage, error) {
 	if len(body) > 0 && body[0] == '[' {
 		var values []json.RawMessage
 		if err := json.Unmarshal(body, &values); err != nil {
 			return nil, err
 		}
 		for i, value := range values {
-			visible, err := s.g1OperationProjection(ctx, actor, op, pid, value)
+			visible, err := s.operationProvenanceProjection(ctx, actor, op, pid, value)
 			if err != nil {
 				return nil, err
 			}
@@ -410,7 +410,7 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		if err := json.Unmarshal(body, &proposal); err != nil {
 			return nil, err
 		}
-		visible, err := s.g1ActionProjection(ctx, actor, proposal)
+		visible, err := s.inheritedActionProjection(ctx, actor, proposal)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +421,7 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		if err := json.Unmarshal(body, &p); err != nil {
 			return nil, err
 		}
-		visible, err := s.g1ProjectProjection(ctx, actor, p)
+		visible, err := s.projectProvenanceProjection(ctx, actor, p)
 		if err != nil {
 			return nil, err
 		}
@@ -432,10 +432,10 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		if err := json.Unmarshal(body, &change); err != nil {
 			return nil, err
 		}
-		if visible, handled, err := s.g1CachedChangeProjection(ctx, actor, pid, body, change); handled || err != nil {
+		if visible, handled, err := s.cachedChangeProvenanceProjection(ctx, actor, pid, body, change); handled || err != nil {
 			return visible, err
 		}
-		visible, err := s.g1ChangeProjection(ctx, actor, change)
+		visible, err := s.changeProvenanceProjection(ctx, actor, change)
 		if err != nil {
 			return nil, err
 		}
@@ -446,14 +446,14 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		if err := json.Unmarshal(body, &candidate); err != nil {
 			return nil, err
 		}
-		visible, err := s.g1DraftProjection(ctx, actor, candidate.ProjectID, []DraftCandidate{candidate})
+		visible, err := s.draftProvenanceProjection(ctx, actor, candidate.ProjectID, []DraftCandidate{candidate})
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(visible[0])
 	}
 	for key, value := range shape {
-		visible, err := s.g1OperationProjection(ctx, actor, op, pid, value)
+		visible, err := s.operationProvenanceProjection(ctx, actor, op, pid, value)
 		if err != nil {
 			return nil, err
 		}
@@ -466,7 +466,7 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 }
 
 func (s *Service) PrepareProjectProvenance(ctx context.Context, actor Actor, pid string, forModel bool) (context.Context, ProjectProvenanceSnapshot, error) {
-	prepared, proof, err := s.g1Prepare(ctx, actor, pid, nil, forModel)
+	prepared, proof, err := s.prepareProvenance(ctx, actor, pid, nil, forModel)
 	if err != nil {
 		return ctx, ProjectProvenanceSnapshot{}, err
 	}
@@ -476,7 +476,7 @@ func (s *Service) PrepareProjectProvenance(ctx context.Context, actor Actor, pid
 		}
 	}
 	err = s.repository.Transaction(prepared, TransactionOptions{}, func(tx Transaction) error {
-		if _, ok := tx.(g5Transaction); !ok {
+		if _, ok := tx.(projectRecordTransaction); !ok {
 			return nil
 		}
 		current, e := s.authorizeProject(prepared, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
@@ -486,7 +486,7 @@ func (s *Service) PrepareProjectProvenance(ctx context.Context, actor Actor, pid
 		if e = s.ValidateProjectProvenanceInTransaction(prepared, tx, actor, current, proof.Snapshot, forModel); e != nil {
 			return e
 		}
-		persisted, e := g1PersistSnapshot(tx, current)
+		persisted, e := persistProvenanceSnapshot(tx, current)
 		if e != nil {
 			return e
 		}
@@ -505,15 +505,15 @@ func (s *Service) AssertProjectProvenance(ctx context.Context, actor Actor, pid 
 	return err
 }
 func (s *Service) ValidateProjectProvenanceInTransaction(ctx context.Context, tx Transaction, actor Actor, p Project, snapshot ProjectProvenanceSnapshot, forModel bool) error {
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
-	if !ok || proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || !g1IdentityMatches(ctx, actor) || proof.Identity != candidateIdentityHash(ctx) || proof.ForModel != forModel || proof.Project.ID != p.ID || g1ProjectHash(proof.Project) != g1ProjectHash(p) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) {
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
+	if !ok || proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || !provenanceIdentityMatches(ctx, actor) || proof.Identity != candidateIdentityHash(ctx) || proof.ForModel != forModel || proof.Project.ID != p.ID || provenanceProjectHash(proof.Project) != provenanceProjectHash(p) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) {
 		return ErrSourceUnavailable
 	}
 	current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationRead, ""))
 	if err != nil {
 		return err
 	}
-	if g1ProjectHash(current) != g1ProjectHash(p) {
+	if provenanceProjectHash(current) != provenanceProjectHash(p) {
 		return ErrVersionConflict
 	}
 	if err := ValidateFrozenProvenanceInput(p.Spec, snapshot); err != nil {
@@ -522,7 +522,7 @@ func (s *Service) ValidateProjectProvenanceInTransaction(ctx context.Context, tx
 	for _, ref := range snapshot.Fields {
 		if ref.PinID != "" {
 			pin, found := proof.Pins[ref.PinID]
-			if !found || !proof.States[ref.PinID] || !s.g1PinCurrent(ctx, tx, actor, p, pin, forModel) {
+			if !found || !proof.States[ref.PinID] || !s.provenancePinCurrent(ctx, tx, actor, p, pin, forModel) {
 				return ErrSourceUnavailable
 			}
 		}
@@ -547,7 +547,7 @@ func (s *Service) AssertFrozenProjectProvenance(ctx context.Context, actor Actor
 }
 func (s *Service) PrepareFrozenProjectProvenance(ctx context.Context, actor Actor, pid string, spec map[string]string, snapshot ProjectProvenanceSnapshot, forModel bool) (context.Context, error) {
 	if len(spec) == 0 && snapshot.Digest == "" {
-		prepared, proof, err := s.g1Prepare(ctx, actor, pid, []g1ProvenanceRequest{}, forModel)
+		prepared, proof, err := s.prepareProvenance(ctx, actor, pid, []provenanceRequest{}, forModel)
 		if err != nil {
 			return ctx, err
 		}
@@ -561,37 +561,37 @@ func (s *Service) PrepareFrozenProjectProvenance(ctx context.Context, actor Acto
 	if snapshot.ProjectID != pid || ValidateFrozenProvenanceInput(spec, snapshot) != nil {
 		return ctx, ErrSourceUnavailable
 	}
-	requests := []g1ProvenanceRequest{}
+	requests := []provenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, "")); err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrSourceUnavailable
 		}
 		var persisted ProjectProvenanceSnapshot
-		if _, err := store.G5Get(pid, "g1_snapshot", snapshot.Digest, &persisted); err != nil || hashImpactValue(persisted) != hashImpactValue(snapshot) {
+		if _, err := store.GetProjectRecord(pid, "g1_snapshot", snapshot.Digest, &persisted); err != nil || hashImpactValue(persisted) != hashImpactValue(snapshot) {
 			return ErrSourceUnavailable
 		}
 		for _, ref := range snapshot.Fields {
 			if ref.PinID == "" {
 				continue
 			}
-			var pin g1ProvenancePin
-			_, err := store.G5Get(pid, "g1_provenance", ref.PinID, &pin)
+			var pin provenancePin
+			_, err := store.GetProjectRecord(pid, "g1_provenance", ref.PinID, &pin)
 			if err != nil || pin.ID != ref.PinID || pin.ValueHash != ref.ValueHash || !pin.Verified {
 				return ErrSourceUnavailable
 			}
 			record := pin.Record
-			requests = append(requests, g1ProvenanceRequest{Key: ref.FieldKey, Value: spec[ref.FieldKey], Record: &record, Creator: record.CreatedBy})
+			requests = append(requests, provenanceRequest{Key: ref.FieldKey, Value: spec[ref.FieldKey], Record: &record, Creator: record.CreatedBy})
 		}
 		return nil
 	})
 	if err != nil {
 		return ctx, err
 	}
-	prepared, proof, err := s.g1Prepare(ctx, actor, pid, requests, forModel)
+	prepared, proof, err := s.prepareProvenance(ctx, actor, pid, requests, forModel)
 	if err != nil {
 		return ctx, err
 	}
@@ -605,19 +605,19 @@ func (s *Service) PrepareFrozenProjectProvenance(ctx context.Context, actor Acto
 	return prepared, nil
 }
 func (s *Service) ValidateFrozenProjectProvenanceInTransaction(ctx context.Context, tx Transaction, actor Actor, pid string, spec map[string]string, snapshot ProjectProvenanceSnapshot, forModel bool) error {
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
-	if !ok || !proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.ForModel != forModel || proof.Project.ID != pid || proof.Identity != candidateIdentityHash(ctx) || !g1IdentityMatches(ctx, actor) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) || (len(spec) > 0 || snapshot.Digest != "") && ValidateFrozenProvenanceInput(spec, snapshot) != nil {
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
+	if !ok || !proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.ForModel != forModel || proof.Project.ID != pid || proof.Identity != candidateIdentityHash(ctx) || !provenanceIdentityMatches(ctx, actor) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) || (len(spec) > 0 || snapshot.Digest != "") && ValidateFrozenProvenanceInput(spec, snapshot) != nil {
 		return ErrSourceUnavailable
 	}
 	current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 	if err != nil {
 		return err
 	}
-	if g1ProjectHash(current) != g1ProjectHash(proof.Project) {
+	if provenanceProjectHash(current) != provenanceProjectHash(proof.Project) {
 		return ErrVersionConflict
 	}
 	for id, pin := range proof.Pins {
-		if !proof.States[id] || !s.g1PinCurrent(ctx, tx, actor, current, pin, forModel) {
+		if !proof.States[id] || !s.provenancePinCurrent(ctx, tx, actor, current, pin, forModel) {
 			return ErrSourceUnavailable
 		}
 	}

@@ -264,7 +264,7 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err := t.persistTemplateCopyTransition(previous, next); err != nil {
 		return err
 	}
-	_, err = g1PersistSnapshot(t, next)
+	_, err = persistProvenanceSnapshot(t, next)
 	return err
 }
 
@@ -510,7 +510,7 @@ func encodeChangeSetFields(change ChangeSet) (string, error) {
 }
 
 func (t gormTransaction) InsertChangeSet(change ChangeSet) error {
-	if err := g1RecordChangeProvenance(t, change); err != nil {
+	if err := recordChangeProvenance(t, change); err != nil {
 		return err
 	}
 	fields, err := encodeChangeSetFields(change)

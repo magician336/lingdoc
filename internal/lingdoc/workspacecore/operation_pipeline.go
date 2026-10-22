@@ -185,7 +185,7 @@ func runOperationThroughPipeline[T any, I any, R any](
 			}, found)
 		},
 		PrepareCached: func(ctx context.Context, id operationcore.Identity[Actor], body any) (context.Context, bool, error) {
-			return s.g1PrepareCachedChangeOperation(ctx, actor, operation.Request, OperationIdentity{
+			return s.prepareCachedChangeOperation(ctx, actor, operation.Request, OperationIdentity{
 				Actor:     id.Actor,
 				Operation: id.Operation,
 				Target:    id.Target,
@@ -193,17 +193,17 @@ func runOperationThroughPipeline[T any, I any, R any](
 			}, body)
 		},
 		Prepare: func(ctx context.Context, id operationcore.Identity[Actor], body any) (context.Context, error) {
-			return s.g1PrepareOperation(ctx, actor, id.Operation, id.Target, projectID, body)
+			return s.prepareProvenanceOperation(ctx, actor, id.Operation, id.Target, projectID, body)
 		},
 		RequireInverseCaller: func(ctx context.Context, body any) error {
 			return requireInverseCaller(ctx, body)
 		},
 		Validate: func(ctx context.Context, tx Transaction, p Project) error {
-			return s.g1ValidateOperation(ctx, tx, actor, p, op)
+			return s.validateProvenanceOperation(ctx, tx, actor, p, op)
 		},
 		CheckProject: operation.CheckProject,
 		StorePins: func(ctx context.Context, tx Transaction, projectID string) error {
-			return s.g1StoreOperationPins(ctx, tx, projectID)
+			return s.storeOperationPins(ctx, tx, projectID)
 		},
 		Write: func(ctx context.Context, tx Transaction, p Project) (any, string, int, error) {
 			mutation, err := port(tx)
@@ -217,10 +217,10 @@ func runOperationThroughPipeline[T any, I any, R any](
 			return written.Value, string(written.Output), written.Status.HTTPStatus(), nil
 		},
 		StoreReverseSources: func(ctx context.Context, tx Transaction, value any) error {
-			return g1StoreReverseSources(ctx, tx, value)
+			return storeReverseSources(ctx, tx, value)
 		},
 		StoreProvenance: func(ctx context.Context, tx Transaction, id operationcore.Identity[Actor], result operationcore.Result, value any) error {
-			return g1StoreOperationProvenance(tx, OperationIdentity{
+			return storeOperationProvenance(tx, OperationIdentity{
 				Actor:     id.Actor,
 				Operation: id.Operation,
 				Target:    id.Target,
@@ -233,7 +233,7 @@ func runOperationThroughPipeline[T any, I any, R any](
 			}, value)
 		},
 		Project: func(ctx context.Context, operation, projectID string, body json.RawMessage) (json.RawMessage, error) {
-			return s.g1OperationProjection(ctx, actor, operation, projectID, body)
+			return s.operationProvenanceProjection(ctx, actor, operation, projectID, body)
 		},
 		RuntimeGate: func(ctx context.Context, tx Transaction, p Project, operation string) error {
 			if s.runtimeMode == "" {
@@ -272,7 +272,7 @@ func (s *Service) afterOperationWrite(ctx context.Context, tx Transaction, actor
 		return err
 	}
 	if requiresGenericCriticalAudit(operation) {
-		if err := g5Audit(tx, actor, projectID, "workspace."+operation, target, ""); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, projectID, "workspace."+operation, target, ""); err != nil {
 			return err
 		}
 	}

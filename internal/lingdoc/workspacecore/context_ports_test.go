@@ -12,7 +12,7 @@ import (
 
 // narrowPortMethods pins which methods each narrow port carries.
 //
-// The ports in seg3_context_ports.go are the contract that the transport
+// The ports in context_ports.go are the contract that the transport
 // layer consumes instead of the aggregate. A port is only allowed to be a
 // *narrowing* of the aggregate: every method it names must exist on the
 // aggregate with the very same signature, and the port must not quietly grow
@@ -221,7 +221,7 @@ var narrowPortMethods = map[string][]string{
 		"ValidationIssueDispositions",
 	},
 	"RuntimeCompositionApplication": {
-		"SetG2ActionExecutor",
+		"SetActionExecutor",
 		"SetImpactPreflightChecker",
 		"SetRuntimeRecoveryChecker",
 	},
@@ -368,7 +368,7 @@ func TestTheNarrowPortsDoNotHandTheTransportTheWholeAggregate(t *testing.T) {
 // The package also holds the store and transaction ports the aggregate
 // consumes; those are not narrowings of the aggregate, so they are not part
 // of this promise.
-var narrowPortFiles = []string{"seg3_context_ports.go", "seg3_migrated_ports.go"}
+var narrowPortFiles = []string{"context_ports.go", "migrated_context_ports.go"}
 
 // aggregateMethodSignatures reads the aggregate's method signatures from the
 // package source, so the comparison is against the code that actually

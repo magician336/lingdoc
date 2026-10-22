@@ -36,12 +36,12 @@ func (w *g2RewriteWorkspace) GetProject(context.Context, Actor, string) (Project
 	}
 	return Project{ID: "project", Status: "active", SpecRevision: 1}, nil
 }
-func (w *g2RewriteWorkspace) SelectGenerationEvidence(_ context.Context, _ core.Actor, _, _ string, refs []core.G2VersionRef, formal bool) (core.G2EvidenceSelection, error) {
+func (w *g2RewriteWorkspace) SelectGenerationEvidence(_ context.Context, _ core.Actor, _, _ string, refs []core.VersionRef, formal bool) (core.EvidenceSelection, error) {
 	w.formal = formal
 	if w.denied || len(refs) != 1 || refs[0].ID != "card" || refs[0].Version != 2 || refs[0].Kind != "EvidenceCard" {
-		return core.G2EvidenceSelection{}, core.ErrInvalidState
+		return core.EvidenceSelection{}, core.ErrInvalidState
 	}
-	return core.G2EvidenceSelection{Cards: []core.EvidenceCard{{ID: "card", Version: 2, SupportType: "refutes", Scope: func() string {
+	return core.EvidenceSelection{Cards: []core.EvidenceCard{{ID: "card", Version: 2, SupportType: "refutes", Scope: func() string {
 		if w.cardScope != "" {
 			return w.cardScope
 		}

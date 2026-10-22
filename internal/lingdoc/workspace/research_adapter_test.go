@@ -98,11 +98,11 @@ func TestG2ResearchAdapterUsesExistingRetrievalScopeAndRejectsDeniedAsset(t *tes
 	sources := &g2AdapterSources{assets: []evidence.Asset{{ID: "allowed-asset", AssetRevision: 3, ProcessingState: evidence.AssetStateReady}}}
 	adapter := NewG2ResearchAdapter(nil, projects, sources, nil, nil, nil)
 	actor := core.Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleOwner}
-	scope, err := adapter.CheckG2AssetScope(context.Background(), actor, "project", []string{"allowed-asset"})
-	if err != nil || !reflect.DeepEqual(scope, []core.G2AssetVersion{{AssetID: "allowed-asset", AssetRevision: 3}}) {
+	scope, err := adapter.CheckAssetScope(context.Background(), actor, "project", []string{"allowed-asset"})
+	if err != nil || !reflect.DeepEqual(scope, []core.ProjectAssetVersion{{AssetID: "allowed-asset", AssetRevision: 3}}) {
 		t.Fatalf("scope: %+v %v", scope, err)
 	}
-	if _, err = adapter.CheckG2AssetScope(context.Background(), actor, "project", []string{"allowed-asset", "revoked-asset"}); !errors.Is(err, core.ErrSourceUnavailable) {
+	if _, err = adapter.CheckAssetScope(context.Background(), actor, "project", []string{"allowed-asset", "revoked-asset"}); !errors.Is(err, core.ErrSourceUnavailable) {
 		t.Fatalf("partial denied scope accepted: %v", err)
 	}
 	if _, _, err = adapter.SearchResearch(context.Background(), actor, "project", core.ResearchTask{AssetIDs: []string{"allowed-asset"}}, "当前查询"); err != nil || sources.retrievalCalls != 1 || !reflect.DeepEqual(sources.input.AssetIDs, []string{"allowed-asset"}) || projects.capability != "research" {

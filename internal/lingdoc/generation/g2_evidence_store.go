@@ -59,7 +59,7 @@ func (s *Service) validateReplayInput(ctx context.Context, actor Actor, projectI
 func copyEvidenceBasis(input *Input, refs []EvidenceCardRef) {
 	input.Basis.EvidenceCardRefs = nil
 	for _, ref := range refs {
-		input.Basis.EvidenceCardRefs = append(input.Basis.EvidenceCardRefs, core.G2VersionRef{Kind: "EvidenceCard", ID: ref.ID, Version: ref.Version})
+		input.Basis.EvidenceCardRefs = append(input.Basis.EvidenceCardRefs, core.VersionRef{Kind: "EvidenceCard", ID: ref.ID, Version: ref.Version})
 	}
 	input.Workspace.Basis = input.Basis
 }

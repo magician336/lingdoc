@@ -14,7 +14,7 @@ import (
 func semanticDraft(t *testing.T, s *Service, a Actor, p Project, key string, deltas ...SemanticDelta) ChangeSet {
 	t.Helper()
 	raw, _, _, err := s.CreateChangeDraft(context.Background(), a, p.ID, key, ExtendedChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: "明确人工提交的合成语义变更", Fields: map[string]ChangeFieldInput{}, SemanticDeltas: deltas})
-	return g2Decode[ChangeSet](t, raw, err)
+	return decodeAgentJSON[ChangeSet](t, raw, err)
 }
 func semanticApply(t *testing.T, s *Service, a Actor, p Project, c ChangeSet, key string) ChangeSet {
 	t.Helper()
@@ -22,13 +22,13 @@ func semanticApply(t *testing.T, s *Service, a Actor, p Project, c ChangeSet, ke
 		t.Fatal(err)
 	}
 	raw, _, _, err := s.ApplyChangeSet(context.Background(), a, p.ID, c.ID, key+"-apply")
-	return g2Decode[ChangeSet](t, raw, err)
+	return decodeAgentJSON[ChangeSet](t, raw, err)
 }
 func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	claim := f.claim(t)
 	delta := SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, BeforeHash: "forged", ProposedClaim: &SaveResearchClaimInput{Text: "用户修改的合成主张", Scope: "新的明确范围", Status: "active", Confirmed: false}}
-	if _, _, _, err := f.svc.CreateChangeDraft(context.Background(), f.owner, f.project.ID, "claim-no-consent", ExtendedChangeSetInput{ExpectedContextRevision: f.project.CurrentContextRevision, Reason: "用户尚未确认", SemanticDeltas: []SemanticDelta{delta}}); !errors.Is(err, ErrG2ConsentRequired) {
+	if _, _, _, err := f.svc.CreateChangeDraft(context.Background(), f.owner, f.project.ID, "claim-no-consent", ExtendedChangeSetInput{ExpectedContextRevision: f.project.CurrentContextRevision, Reason: "用户尚未确认", SemanticDeltas: []SemanticDelta{delta}}); !errors.Is(err, ErrConsentRequired) {
 		t.Fatalf("implicit claim consent: %v", err)
 	}
 	delta.ProposedClaim.Confirmed = true
@@ -39,7 +39,7 @@ func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
 	var before ResearchClaim
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var e error
-		before, _, e = g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		before, _, e = loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		return e
 	}); err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
 		t.Fatal("localized claim edit rewrote all chapter spec bases")
 	}
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		now, _, e := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, claim.ID)
+		now, _, e := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
@@ -75,13 +75,13 @@ func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _, _, err := f.svc.ReverseChangeSet(context.Background(), f.owner, p.ID, c.ID, "claim-inverse-draft")
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	if inverse.Status != "draft" || inverse.SemanticDeltas[0].ExpectedVersion != 2 {
 		t.Fatal("inverse is not a current new proposal")
 	}
 	semanticApply(t, f.svc, f.owner, p, inverse, "claim-inverse")
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		now, _, e := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, claim.ID)
+		now, _, e := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, claim.ID)
 		if e == nil && (now.Version != 3 || now.Text != claim.Text) {
 			t.Fatal("inverse rewound pointer instead of append")
 		}
@@ -91,7 +91,7 @@ func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
 	}
 }
 func TestSemanticApplyRollsBackEverythingTogether(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	claim := f.claim(t)
 	c := semanticDraft(t, f.svc, f.owner, f.project, "atomic-semantic-draft", SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: "需要原子写入的主张", Scope: "合成范围", Status: "active", Confirmed: true}})
 	if _, _, _, err := f.svc.AssessChangeSet(context.Background(), f.owner, f.project.ID, c.ID, "atomic-semantic-assess"); err != nil {
@@ -116,7 +116,7 @@ func TestSemanticApplyRollsBackEverythingTogether(t *testing.T) {
 		t.Fatal("partial formal project")
 	}
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		now, _, e := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		now, _, e := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if e == nil && now.Version != claim.Version {
 			t.Fatal("partial formal claim")
 		}
@@ -133,10 +133,10 @@ func TestSemanticApplyRollsBackEverythingTogether(t *testing.T) {
 	}
 }
 func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		return g2Store(tx, G2StoredObject{}, f.project.ID, G2AssetPolicyKind, "asset-1", 1, ProjectAssetPolicy{ID: "asset-1", ProjectID: f.project.ID, AssetID: "asset-1", Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "原始人工用途", CreatedBy: f.owner.UserID})
+		return storeStoredObject(tx, StoredObject{}, f.project.ID, AssetPolicyKind, "asset-1", 1, ProjectAssetPolicy{ID: "asset-1", ProjectID: f.project.ID, AssetID: "asset-1", Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "原始人工用途", CreatedBy: f.owner.UserID})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _, _, err := f.svc.ReverseChangeSet(context.Background(), f.owner, p.ID, c.ID, "asset-scope-inverse")
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	semanticApply(t, f.svc, f.owner, p, inverse, "asset-inverse")
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		policy, _, _, e := ReadProjectAssetPolicy(tx, p, "asset-1")
@@ -179,7 +179,7 @@ func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 	}
 }
 func TestRouteUsesCurrentDependenciesAndRequiredGate(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	claim := f.claim(t)
 	c := semanticDraft(t, f.svc, f.owner, f.project, "route-draft", SemanticDelta{Kind: "RouteNode", TargetID: "analysis-route", ExpectedVersion: 0, ProposedRoute: &RouteNode{Name: "合成技术路线", Required: true, Status: "ready", Inputs: []ObjectVersionRef{{Kind: "ResearchClaim", ID: claim.ID, Version: "1"}}}})
 	semanticApply(t, f.svc, f.owner, f.project, c, "route-change")
@@ -198,12 +198,12 @@ func TestRouteUsesCurrentDependenciesAndRequiredGate(t *testing.T) {
 	}
 	// Changing the real referenced claim makes the required route invalid.
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		old, row, e := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, claim.ID)
+		old, row, e := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
 		old.Version++
-		return g2Store(tx, row, p.ID, G2ClaimKind, old.ID, old.Version, old)
+		return storeStoredObject(tx, row, p.ID, ResearchClaimKind, old.ID, old.Version, old)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestRecomputeRejectsOldUnknownAndStaleReceipt(t *testing.T) {
 		}
 		receipt := ImpactComputationReceipt{SourceBasisHash: sourceHash, ID: "actual-check", Version: 1, ProjectID: p.ID, Status: "blocked", ProjectVersion: p.ProjectVersion, ContextRevision: p.CurrentContextRevision, TemplateCopyVersion: p.TemplateCopyVersion, RulesetHash: p.TemplateCopy.RulesetHash, InputHash: "synthetic-evaluator-input", ComputationBasisHash: basis, CheckedAt: time.Now().UTC(), SourceIDs: []string{}, Evaluations: []template.Evaluation{{RuleID: "required-fields", TargetRef: p.ID, TargetVersion: "1", RulesetHash: p.TemplateCopy.RulesetHash, EvaluatorVersion: template.EvaluatorVersion, Status: template.EvaluationUnknown}}}
 		store := tx.(runtimeTransaction)
-		if err := store.G6Insert(a.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
+		if err := store.InsertRuntimeRecord(a.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
 			return err
 		}
 		ref := ObjectVersionRef{Kind: "ComputationReceipt", ID: receipt.ID, Version: "1"}
@@ -243,7 +243,7 @@ func TestRecomputeRejectsOldUnknownAndStaleReceipt(t *testing.T) {
 		}
 		receipt.Evaluations[0].Status = template.EvaluationIssue
 		receipt.Version = 2
-		if err := store.G6CAS(a.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
+		if err := store.CompareAndSwapRuntimeRecord(a.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
 			return err
 		}
 		ref.Version = "2"
@@ -325,7 +325,7 @@ func TestBindingDerivesImmutableCopyAndInverse(t *testing.T) {
 		t.Fatal("project override changed catalog source rules")
 	}
 	raw, _, _, err := s.ReverseChangeSet(context.Background(), a, p.ID, c.ID, "binding-inverse-draft")
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	semanticApply(t, s, a, current, inverse, "binding-inverse")
 	restored, err := s.GetProject(context.Background(), a, p.ID)
 	if err != nil {
@@ -336,15 +336,15 @@ func TestBindingDerivesImmutableCopyAndInverse(t *testing.T) {
 	}
 }
 func TestRetrieveRequiresApprovedRunScope(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	task := ImpactTask{ID: "retrieve-task", ProjectID: f.project.ID, TargetRevision: f.project.CurrentContextRevision, Action: "RETRIEVE_CANDIDATES", Target: ObjectVersionRef{Kind: "ProjectSpec", ID: f.project.ID, Version: "1"}}
-	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "impact-research-task", SaveResearchTaskInput{G2Expectation: f.expectation(0), Goal: "合成重检索", Scope: "impact:" + task.ID, Queries: []string{"定义", "限制"}, ProviderID: "synthetic-provider", AssetIDs: []string{"asset-1"}})
-	research := g2Decode[ResearchTask](t, raw, err)
-	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, research.ID, "impact-research-approve", G2ConfirmedInput{G2Expectation: f.expectation(research.Version), Confirmed: true, Reason: "真实用户确认合成范围"})
-	research = g2Decode[ResearchTask](t, raw, err)
-	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, research.ID, "impact-research-run", RunResearchTaskInput{G2Expectation: f.expectation(research.Version)})
-	run := g2Decode[ResearchRun](t, raw, err)
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "impact-research-task", SaveResearchTaskInput{VersionExpectation: f.expectation(0), Goal: "合成重检索", Scope: "impact:" + task.ID, Queries: []string{"定义", "限制"}, ProviderID: "synthetic-provider", AssetIDs: []string{"asset-1"}})
+	research := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, research.ID, "impact-research-approve", ConfirmationInput{VersionExpectation: f.expectation(research.Version), Confirmed: true, Reason: "真实用户确认合成范围"})
+	research = decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, research.ID, "impact-research-run", RunResearchTaskInput{VersionExpectation: f.expectation(research.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	ref := ObjectVersionRef{Kind: "ResearchRun", ID: run.ID, Version: strconv.FormatInt(run.Version, 10)}
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
 		if err := verifyImpactActionResult(tx, f.project, task, []ObjectVersionRef{task.Target}); !errors.Is(err, ErrInvalidState) {

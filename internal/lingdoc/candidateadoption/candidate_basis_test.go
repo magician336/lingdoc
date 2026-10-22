@@ -16,10 +16,10 @@ type candidateEvidenceTestPolicy struct {
 	txDenied bool
 	calls    int
 	txCalls  int
-	selected core.G2EvidenceSelection
+	selected core.EvidenceSelection
 }
 
-func (p *candidateEvidenceTestPolicy) PrepareCandidateEvidence(ctx context.Context, pid, ch, user string, refs []core.G2VersionRef, ids []string) (context.Context, core.G2EvidenceSelection, error) {
+func (p *candidateEvidenceTestPolicy) PrepareCandidateEvidence(ctx context.Context, pid, ch, user string, refs []core.VersionRef, ids []string) (context.Context, core.EvidenceSelection, error) {
 	if len(refs) == 0 {
 		return ctx, p.selected, nil
 	}
@@ -29,14 +29,14 @@ func (p *candidateEvidenceTestPolicy) PrepareCandidateEvidence(ctx context.Conte
 func (p *candidateEvidenceTestPolicy) Validate(context.Context, string, string, []string) error {
 	return nil
 }
-func (p *candidateEvidenceTestPolicy) ValidateCandidateEvidence(context.Context, string, string, string, []core.G2VersionRef, []string) (core.G2EvidenceSelection, error) {
+func (p *candidateEvidenceTestPolicy) ValidateCandidateEvidence(context.Context, string, string, string, []core.VersionRef, []string) (core.EvidenceSelection, error) {
 	p.calls++
 	if p.denied {
 		return p.selected, ErrSourceAccessDenied
 	}
 	return p.selected, nil
 }
-func (p *candidateEvidenceTestPolicy) ValidateCandidateEvidenceInTransaction(context.Context, *gorm.DB, string, string, string, []core.G2VersionRef, []string) (core.G2EvidenceSelection, error) {
+func (p *candidateEvidenceTestPolicy) ValidateCandidateEvidenceInTransaction(context.Context, *gorm.DB, string, string, string, []core.VersionRef, []string) (core.EvidenceSelection, error) {
 	p.txCalls++
 	if p.denied || p.txDenied {
 		return p.selected, ErrSourceAccessDenied
@@ -60,13 +60,13 @@ func newBoundCandidateFixture(t *testing.T, refs bool) (*SQLiteCandidateAdoption
 	require.NoError(t, store.DB().AutoMigrate(&projectTemplateCopyRow{}))
 	c := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "正文 [[source:source]]", SourceIDs: []string{"source"}, Validity: "fresh", Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1", ContextRevision: 4, TemplateCopyID: "copy", TemplateCopyVersion: 2, TemplateCopyContentHash: "content-hash", RulesetHash: "effective-rules-hash", AssetVersions: []AssetVersion{{AssetID: "asset", AssetRevision: 1}}}}
 	if refs {
-		c.Basis.EvidenceCardRefs = []core.G2VersionRef{{ID: "card", Version: 3, Kind: "EvidenceCard"}}
+		c.Basis.EvidenceCardRefs = []core.VersionRef{{ID: "card", Version: 3, Kind: "EvidenceCard"}}
 	}
 	seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, c, 1)
 	require.NoError(t, store.DB().Create(&projectAssetRow{ID: "asset", ProjectID: "project", AssetRevision: 1}).Error)
 	require.NoError(t, store.DB().Model(&projectRow{}).Where("id = ?", "project").Updates(map[string]any{"current_context_revision": 4, "template_copy_version": 2, "status": "active"}).Error)
 	require.NoError(t, store.DB().Create(&projectTemplateCopyRow{ID: "copy", ProjectID: "project", Version: 2, ContentHash: "content-hash", RulesetHash: "effective-rules-hash", Status: core.TemplateCopyBound, DefinitionJSON: "{}"}).Error)
-	policy := &candidateEvidenceTestPolicy{selected: core.G2EvidenceSelection{ContextRevision: 4, Cards: []core.EvidenceCard{{ID: "card", ProjectID: "project", Version: 3, Status: "CONFIRMED", SourceIDs: []string{"source"}, Confirmation: &core.EvidenceConfirmation{CardVersion: 3, ConfirmedBy: "reviewer"}}}, Sources: []core.AgentSourceRef{{SourceID: "source", AssetID: "asset", AssetRevision: 1, ModelUseAllowed: true}}}}
+	policy := &candidateEvidenceTestPolicy{selected: core.EvidenceSelection{ContextRevision: 4, Cards: []core.EvidenceCard{{ID: "card", ProjectID: "project", Version: 3, Status: "CONFIRMED", SourceIDs: []string{"source"}, Confirmation: &core.EvidenceConfirmation{CardVersion: 3, ConfirmedBy: "reviewer"}}}, Sources: []core.AgentSourceRef{{SourceID: "source", AssetID: "asset", AssetRevision: 1, ModelUseAllowed: true}}}}
 	return store, c, AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", ExpectedSpecRevision: 1, IdempotencyKey: "bound-adoption-key"}, policy
 }
 

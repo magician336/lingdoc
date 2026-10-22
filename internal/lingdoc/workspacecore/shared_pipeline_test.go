@@ -36,15 +36,15 @@ import (
 // is what makes the two the same code.
 func TestResearchDomainBehavesLikeTheSharedPipeline(t *testing.T) {
 	t.Run("idempotency key conflict", func(t *testing.T) {
-		f := newG2Fixture(t, false)
+		f := newAgentFixture(t, false)
 		input := CreateImportCandidateInput{
-			G2Expectation:   f.expectation(0),
-			SourceID:        "source-1",
-			Purpose:         "定义参考",
-			SaveMode:        "link_excerpt",
-			Scope:           "project",
-			ModelUseAllowed: true,
-			License:         "合成公开fixture",
+			VersionExpectation: f.expectation(0),
+			SourceID:           "source-1",
+			Purpose:            "定义参考",
+			SaveMode:           "link_excerpt",
+			Scope:              "project",
+			ModelUseAllowed:    true,
+			License:            "合成公开fixture",
 		}
 		if _, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-shared-key", input); err != nil {
 			t.Fatalf("first call: %v", err)
@@ -57,15 +57,15 @@ func TestResearchDomainBehavesLikeTheSharedPipeline(t *testing.T) {
 	})
 
 	t.Run("request body digest and replay order", func(t *testing.T) {
-		f := newG2Fixture(t, false)
+		f := newAgentFixture(t, false)
 		input := CreateImportCandidateInput{
-			G2Expectation:   f.expectation(0),
-			SourceID:        "source-1",
-			Purpose:         "定义参考",
-			SaveMode:        "link_excerpt",
-			Scope:           "project",
-			ModelUseAllowed: true,
-			License:         "合成公开fixture",
+			VersionExpectation: f.expectation(0),
+			SourceID:           "source-1",
+			Purpose:            "定义参考",
+			SaveMode:           "link_excerpt",
+			Scope:              "project",
+			ModelUseAllowed:    true,
+			License:            "合成公开fixture",
 		}
 		first, _, firstReplay, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-shared-digest", input)
 		if err != nil {
@@ -87,15 +87,15 @@ func TestResearchDomainBehavesLikeTheSharedPipeline(t *testing.T) {
 	})
 
 	t.Run("source recheck", func(t *testing.T) {
-		f := newG2Fixture(t, false)
+		f := newAgentFixture(t, false)
 		input := CreateImportCandidateInput{
-			G2Expectation:   f.expectation(0),
-			SourceID:        "source-1",
-			Purpose:         "定义参考",
-			SaveMode:        "link_excerpt",
-			Scope:           "project",
-			ModelUseAllowed: true,
-			License:         "合成公开fixture",
+			VersionExpectation: f.expectation(0),
+			SourceID:           "source-1",
+			Purpose:            "定义参考",
+			SaveMode:           "link_excerpt",
+			Scope:              "project",
+			ModelUseAllowed:    true,
+			License:            "合成公开fixture",
 		}
 		if _, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-shared-source", input); err != nil {
 			t.Fatalf("first call: %v", err)
@@ -110,14 +110,14 @@ func TestResearchDomainBehavesLikeTheSharedPipeline(t *testing.T) {
 	})
 
 	t.Run("human decision gate", func(t *testing.T) {
-		f := newG2Fixture(t, false)
-		machine := g2MachineContext(context.Background(), f.owner)
+		f := newAgentFixture(t, false)
+		machine := machinePrincipalContext(context.Background(), f.owner)
 		input := SaveResearchClaimInput{
-			G2Expectation: f.expectation(0),
-			Text:          "声称已经核实",
-			Scope:         "本章",
-			Reason:        "机器确认",
-			Confirmed:     true,
+			VersionExpectation: f.expectation(0),
+			Text:               "声称已经核实",
+			Scope:              "本章",
+			Reason:             "机器确认",
+			Confirmed:          true,
 		}
 		// The research domain declares the gate per call, so the same
 		// operation is refused for a machine identity and allowed for a person.
@@ -139,16 +139,16 @@ func TestResearchDomainBehavesLikeTheSharedPipeline(t *testing.T) {
 // name could not express that, so the caller declares it and the pipeline
 // applies the declaration.
 func TestTheResearchDomainDeclaresItsGatePerCall(t *testing.T) {
-	f := newG2Fixture(t, false)
-	machine := g2MachineContext(context.Background(), f.owner)
+	f := newAgentFixture(t, false)
+	machine := machinePrincipalContext(context.Background(), f.owner)
 
 	// An operation that needs the gate: a machine identity is refused.
 	claim := SaveResearchClaimInput{
-		G2Expectation: f.expectation(0),
-		Text:          "声称已经核实",
-		Scope:         "本章",
-		Reason:        "机器确认",
-		Confirmed:     true,
+		VersionExpectation: f.expectation(0),
+		Text:               "声称已经核实",
+		Scope:              "本章",
+		Reason:             "机器确认",
+		Confirmed:          true,
 	}
 	if _, _, _, err := f.svc.SaveResearchClaim(machine, f.owner, f.project.ID, "g2-gate-required", claim); !errors.Is(err, ErrHumanDecisionRequired) {
 		t.Fatalf("a gated operation for a machine = %v, want ErrHumanDecisionRequired", err)
@@ -158,12 +158,12 @@ func TestTheResearchDomainDeclaresItsGatePerCall(t *testing.T) {
 	// authorization's answer, not the gate's. The two errors are different
 	// shapes, so the difference is visible even though both refuse.
 	proposal := CreateActionProposalInput{
-		G2Expectation:  f.expectation(0),
-		Action:         "save_spec",
-		TargetID:       f.project.ID,
-		Input:          json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"候选条件"}}`),
-		SourceIDs:      []string{},
-		ExpectedEffect: "生成新条件版本",
+		VersionExpectation: f.expectation(0),
+		Action:             "save_spec",
+		TargetID:           f.project.ID,
+		Input:              json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"候选条件"}}`),
+		SourceIDs:          []string{},
+		ExpectedEffect:     "生成新条件版本",
 	}
 	_, _, _, err := f.svc.CreateActionProposal(machine, f.owner, f.project.ID, "g2-gate-not-required", proposal)
 	if errors.Is(err, ErrHumanDecisionRequired) {
@@ -171,12 +171,12 @@ func TestTheResearchDomainDeclaresItsGatePerCall(t *testing.T) {
 	}
 }
 
-// g2MachineContext makes the caller a machine identity.
+// machinePrincipalContext makes the caller a machine identity.
 //
 // The human decision gate is an identity check on the context's principal,
 // not on the actor's user id: a machine acts under an API principal, and that
 // is what the gate reads.
-func g2MachineContext(ctx context.Context, owner Actor) context.Context {
+func machinePrincipalContext(ctx context.Context, owner Actor) context.Context {
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, owner.TenantID)
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalAPITenant, ID: "machine-key"})
 	ctx = types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{
@@ -197,14 +197,14 @@ func g2MachineContext(ctx context.Context, owner Actor) context.Context {
 // The error is the gate's, not the authorization's: the request is otherwise
 // valid, so the only thing that can refuse it is the gate.
 func TestTheGateRefusesAMachineIdentityOnAnOtherwiseValidRequest(t *testing.T) {
-	f := newG2Fixture(t, false)
-	machine := g2MachineContext(context.Background(), f.owner)
+	f := newAgentFixture(t, false)
+	machine := machinePrincipalContext(context.Background(), f.owner)
 	input := SaveResearchClaimInput{
-		G2Expectation: f.expectation(0),
-		Text:          "声称已经核实",
-		Scope:         "本章",
-		Reason:        "机器确认",
-		Confirmed:     true,
+		VersionExpectation: f.expectation(0),
+		Text:               "声称已经核实",
+		Scope:              "本章",
+		Reason:             "机器确认",
+		Confirmed:          true,
 	}
 	err := func() error {
 		_, _, _, e := f.svc.SaveResearchClaim(machine, f.owner, f.project.ID, "g2-gate-refuses", input)

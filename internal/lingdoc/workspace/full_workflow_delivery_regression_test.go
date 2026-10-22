@@ -56,7 +56,7 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil)})
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)

@@ -12,7 +12,7 @@ import (
 
 // These tests use isolated SQLite databases created by firstPassMemberFixture.
 // They exercise persisted domain results; none represents a real human receipt.
-func g5AuthReviewProject(t *testing.T, s *Service, a Actor, pid string) Project {
+func authReviewProject(t *testing.T, s *Service, a Actor, pid string) Project {
 	t.Helper()
 	p, err := s.GetProject(context.Background(), a, pid)
 	if err != nil {
@@ -21,16 +21,16 @@ func g5AuthReviewProject(t *testing.T, s *Service, a Actor, pid string) Project 
 	return p
 }
 
-func g5AuthReviewAcceptMember(t *testing.T, s *Service, member Actor, pid string, invitation MemberInvitation) Project {
+func authReviewAcceptMember(t *testing.T, s *Service, member Actor, pid string, invitation MemberInvitation) Project {
 	t.Helper()
 	if _, _, _, err := s.AcceptProjectInvitation(context.Background(), member, pid, invitation.ID,
 		"auth-review-accept-member", AcceptMemberInput{ExpectedInvitationVersion: invitation.Version}); err != nil {
 		t.Fatal(err)
 	}
-	return g5AuthReviewProject(t, s, member, pid)
+	return authReviewProject(t, s, member, pid)
 }
 
-func g5AuthReviewCount(t *testing.T, s *Service, table, where string, args ...any) int64 {
+func authReviewCount(t *testing.T, s *Service, table, where string, args ...any) int64 {
 	t.Helper()
 	var count int64
 	if err := s.testDB().Table(table).Where(where, args...).Count(&count).Error; err != nil {
@@ -39,7 +39,7 @@ func g5AuthReviewCount(t *testing.T, s *Service, table, where string, args ...an
 	return count
 }
 
-func g5AuthReviewOwner(t *testing.T, p Project, expected string) {
+func authReviewOwner(t *testing.T, p Project, expected string) {
 	t.Helper()
 	var owners []string
 	for _, m := range p.Members {
@@ -52,14 +52,14 @@ func g5AuthReviewOwner(t *testing.T, p Project, expected string) {
 	}
 }
 
-func g5AuthReviewDropAuditTrigger(t *testing.T, s *Service) {
+func authReviewDropAuditTrigger(t *testing.T, s *Service) {
 	t.Helper()
 	if err := s.testDB().Exec("DROP TRIGGER IF EXISTS g5_review_block_audit").Error; err != nil {
 		t.Fatal(err)
 	}
 }
 
-func g5AuthReviewBlockAudit(t *testing.T, s *Service, action string) {
+func authReviewBlockAudit(t *testing.T, s *Service, action string) {
 	t.Helper()
 	if action != "owner.transfer.request" && action != "owner.transfer.accept" {
 		t.Fatalf("unsupported audit injection action: %q", action)
@@ -78,7 +78,7 @@ func g5AuthReviewBlockAudit(t *testing.T, s *Service, action string) {
 	})
 }
 
-func TestG5AuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery(t *testing.T) {
+func TestAuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery(t *testing.T) {
 	s, owner, member, p := firstPassMemberFixture(t)
 	ctx := context.Background()
 	const sentinel = "G5_REVIEW_PRIVATE_SPEC_8f16"
@@ -112,7 +112,7 @@ func TestG5AuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery(t *testing.
 
 	invitation, _ := firstPassInvite(t, s, owner, member, p)
 	assertList(member, false)
-	p = g5AuthReviewAcceptMember(t, s, member, p.ID, invitation)
+	p = authReviewAcceptMember(t, s, member, p.ID, invitation)
 	assertList(member, true)
 
 	if err := s.testDB().Exec("UPDATE tenant_members SET status='suspended' WHERE tenant_id=? AND user_id=?",
@@ -130,14 +130,14 @@ func TestG5AuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery(t *testing.
 	if _, err := s.GetProject(ctx, member, p.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("tenant restoration silently granted project read: %v", err)
 	}
-	p = g5AuthReviewProject(t, s, owner, p.ID)
+	p = authReviewProject(t, s, owner, p.ID)
 	if _, _, _, err := s.ChangeMemberState(ctx, owner, p.ID, member.UserID, "auth-review-explicit-restore",
 		MemberLifecycleInput{ExpectedProjectVersion: p.ProjectVersion, Action: "restore_tenant", Reason: "synthetic explicit recovery"}); err != nil {
 		t.Fatal(err)
 	}
 	assertList(member, true)
 
-	p = g5AuthReviewProject(t, s, owner, p.ID)
+	p = authReviewProject(t, s, owner, p.ID)
 	if _, _, _, err := s.ChangeMemberState(ctx, owner, p.ID, member.UserID, "auth-review-remove-member",
 		MemberLifecycleInput{ExpectedProjectVersion: p.ProjectVersion, Action: "remove", Reason: "synthetic revocation"}); err != nil {
 		t.Fatal(err)
@@ -146,12 +146,12 @@ func TestG5AuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery(t *testing.
 	assertList(owner, true)
 }
 
-func TestG5AuthReviewEmptyAuthorCannotWriteGlobalSpec(t *testing.T) {
+func TestAuthReviewEmptyAuthorCannotWriteGlobalSpec(t *testing.T) {
 	s, owner, member, p := firstPassMemberFixture(t)
 	ctx := context.Background()
 	invitation, _ := firstPassInvite(t, s, owner, member, p)
-	p = g5AuthReviewAcceptMember(t, s, member, p.ID, invitation)
-	before := g5AuthReviewProject(t, s, owner, p.ID)
+	p = authReviewAcceptMember(t, s, member, p.ID, invitation)
+	before := authReviewProject(t, s, owner, p.ID)
 
 	if err := s.Authorize(ctx, member, p.ID, "write"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("empty Author scope authorized global write: %v", err)
@@ -164,23 +164,23 @@ func TestG5AuthReviewEmptyAuthorCannotWriteGlobalSpec(t *testing.T) {
 		DraftCandidateInput{Kind: "research", Title: "unscoped", Content: "forbidden draft"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("empty Author scope created project-wide draft: %v", err)
 	}
-	after := g5AuthReviewProject(t, s, owner, p.ID)
+	after := authReviewProject(t, s, owner, p.ID)
 	if after.ProjectVersion != before.ProjectVersion || after.SpecRevision != before.SpecRevision ||
 		after.Spec["research_subject"] != before.Spec["research_subject"] {
 		t.Fatalf("denied writes changed persisted project: before=%+v after=%+v", before, after)
 	}
-	if n := g5AuthReviewCount(t, s, "lingdoc_operations", "user_id=? AND operation='saveSpec'", member.UserID); n != 0 {
+	if n := authReviewCount(t, s, "lingdoc_operations", "user_id=? AND operation='saveSpec'", member.UserID); n != 0 {
 		t.Fatalf("denied global write recorded a successful replay: %d", n)
 	}
 }
 
-func TestG5AuthReviewRecoveryChecksCurrentPredecessorAndRequester(t *testing.T) {
+func TestAuthReviewRecoveryChecksCurrentPredecessorAndRequester(t *testing.T) {
 	for _, change := range []string{"predecessor-restored", "requester-downgraded"} {
 		t.Run(change, func(t *testing.T) {
 			s, owner, member, p := firstPassMemberFixture(t)
 			ctx := context.Background()
 			invitation, _ := firstPassInvite(t, s, owner, member, p)
-			p = g5AuthReviewAcceptMember(t, s, member, p.ID, invitation)
+			p = authReviewAcceptMember(t, s, member, p.ID, invitation)
 			s.RequireActivationRead(true)
 			requester := Actor{TenantID: owner.TenantID, UserID: "recovery-requester", Role: types.TenantRoleOwner}
 			seedTenantMember(t, s, requester)
@@ -215,8 +215,8 @@ func TestG5AuthReviewRecoveryChecksCurrentPredecessorAndRequester(t *testing.T) 
 				"auth-review-stale-recovery-accept"); !errors.Is(err, wantError) {
 				t.Fatalf("stale recovery accepted: %v, want %v", err, wantError)
 			}
-			after := g5AuthReviewProject(t, s, member, p.ID)
-			g5AuthReviewOwner(t, after, owner.UserID)
+			after := authReviewProject(t, s, member, p.ID)
+			authReviewOwner(t, after, owner.UserID)
 			if after.ProjectVersion != p.ProjectVersion {
 				t.Fatalf("denied recovery advanced project: %d -> %d", p.ProjectVersion, after.ProjectVersion)
 			}
@@ -227,20 +227,20 @@ func TestG5AuthReviewRecoveryChecksCurrentPredecessorAndRequester(t *testing.T) 
 			if stored.Status != "pending" || stored.AcceptedAt != nil {
 				t.Fatalf("denied recovery modified pending transfer: %+v", stored)
 			}
-			if n := g5AuthReviewCount(t, s, "lingdoc_operations", "key=?", "auth-review-stale-recovery-accept"); n != 0 {
+			if n := authReviewCount(t, s, "lingdoc_operations", "key=?", "auth-review-stale-recovery-accept"); n != 0 {
 				t.Fatalf("denied recovery stored successful replay: %d", n)
 			}
 		})
 	}
 }
 
-func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T) {
+func TestAuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T) {
 	for _, action := range []string{"owner.transfer.request", "owner.transfer.accept"} {
 		t.Run(action, func(t *testing.T) {
 			s, owner, member, p := firstPassMemberFixture(t)
 			ctx := context.Background()
 			invitation, _ := firstPassInvite(t, s, owner, member, p)
-			p = g5AuthReviewAcceptMember(t, s, member, p.ID, invitation)
+			p = authReviewAcceptMember(t, s, member, p.ID, invitation)
 			s.RequireActivationRead(true)
 			input := OwnerTransferInput{ExpectedProjectVersion: p.ProjectVersion, ToUserID: member.UserID}
 			var transfer OwnerTransfer
@@ -252,7 +252,7 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 				}
 				transfer = rawOwnerTransfer(t, raw)
 			}
-			g5AuthReviewBlockAudit(t, s, action)
+			authReviewBlockAudit(t, s, action)
 			const retryKey = "auth-review-audit-failed-operation"
 			var err error
 			if action == "owner.transfer.request" {
@@ -263,8 +263,8 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 			if err == nil || !strings.Contains(err.Error(), "g5-review-audit-failure") {
 				t.Fatalf("critical audit failure did not abort transfer: %v", err)
 			}
-			after := g5AuthReviewProject(t, s, owner, p.ID)
-			g5AuthReviewOwner(t, after, owner.UserID)
+			after := authReviewProject(t, s, owner, p.ID)
+			authReviewOwner(t, after, owner.UserID)
 			if after.ProjectVersion != p.ProjectVersion {
 				t.Fatalf("audit failure advanced project: %d -> %d", p.ProjectVersion, after.ProjectVersion)
 			}
@@ -272,14 +272,14 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 			if !ok || m.Role != "collaborator" || len(m.FunctionRoles) != 1 || m.FunctionRoles[0] != "author" {
 				t.Fatalf("audit failure partially changed recipient roles: %+v", m)
 			}
-			if n := g5AuthReviewCount(t, s, "lingdoc_operations", "key=?", retryKey); n != 0 {
+			if n := authReviewCount(t, s, "lingdoc_operations", "key=?", retryKey); n != 0 {
 				t.Fatalf("audit failure stored a successful replay: %d", n)
 			}
 			if action == "owner.transfer.request" {
-				if n := g5AuthReviewCount(t, s, "lingdoc_owner_transfers", "project_id=?", p.ID); n != 0 {
+				if n := authReviewCount(t, s, "lingdoc_owner_transfers", "project_id=?", p.ID); n != 0 {
 					t.Fatalf("failed request persisted pending transfer: %d", n)
 				}
-				if n := g5AuthReviewCount(t, s, "lingdoc_g5_records",
+				if n := authReviewCount(t, s, "lingdoc_g5_records",
 					"project_id=? AND kind='owner_transfer_origin'", p.ID); n != 0 {
 					t.Fatalf("failed request persisted origin proof: %d", n)
 				}
@@ -293,7 +293,7 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 				}
 			}
 
-			g5AuthReviewDropAuditTrigger(t, s)
+			authReviewDropAuditTrigger(t, s)
 			var raw json.RawMessage
 			var replay bool
 			if action == "owner.transfer.request" {
@@ -310,12 +310,12 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 					t.Fatalf("request retry receipt: %+v", receipt)
 				}
 			} else {
-				g5AuthReviewOwner(t, g5AuthReviewProject(t, s, member, p.ID), member.UserID)
+				authReviewOwner(t, authReviewProject(t, s, member, p.ID), member.UserID)
 				if receipt.Status != "accepted" || receipt.AcceptedAt == nil {
 					t.Fatalf("accept retry receipt: %+v", receipt)
 				}
 			}
-			if n := g5AuthReviewCount(t, s, "lingdoc_project_audits",
+			if n := authReviewCount(t, s, "lingdoc_project_audits",
 				"project_id=? AND action=?", p.ID, action); n != 1 {
 				t.Fatalf("expected one business audit after retry, got %d", n)
 			}
@@ -323,11 +323,11 @@ func TestG5AuthReviewOwnerTransferBusinessAuditRollsBackAtomically(t *testing.T)
 	}
 }
 
-func TestG5AuthReviewFormerSuccessorDoesNotRegainOldAuthorScope(t *testing.T) {
+func TestAuthReviewFormerSuccessorDoesNotRegainOldAuthorScope(t *testing.T) {
 	s, owner, member, p := firstPassMemberFixture(t)
 	ctx := context.Background()
 	invitation, _ := firstPassInvite(t, s, owner, member, p)
-	p = g5AuthReviewAcceptMember(t, s, member, p.ID, invitation)
+	p = authReviewAcceptMember(t, s, member, p.ID, invitation)
 	raw, _, _, err := s.SaveSpec(ctx, owner, p.ID, "auth-review-axis-spec",
 		SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "synthetic subject", "research_goal": "synthetic goal"}})
 	if err != nil {
@@ -362,12 +362,12 @@ func TestG5AuthReviewFormerSuccessorDoesNotRegainOldAuthorScope(t *testing.T) {
 	if err := json.Unmarshal(raw, &chapter); err != nil {
 		t.Fatal(err)
 	}
-	p = g5AuthReviewProject(t, s, owner, p.ID)
+	p = authReviewProject(t, s, owner, p.ID)
 	s.RequireActivationRead(true)
 
 	transfer := func(from, to Actor, prefix string) Project {
 		t.Helper()
-		current := g5AuthReviewProject(t, s, from, p.ID)
+		current := authReviewProject(t, s, from, p.ID)
 		raw, _, _, err := s.RequestOwnerTransfer(ctx, from, p.ID, prefix+"-request",
 			OwnerTransferInput{ExpectedProjectVersion: current.ProjectVersion, ToUserID: to.UserID})
 		if err != nil {
@@ -377,8 +377,8 @@ func TestG5AuthReviewFormerSuccessorDoesNotRegainOldAuthorScope(t *testing.T) {
 		if _, _, _, err := s.AcceptOwnerTransfer(ctx, to, p.ID, pending.ID, prefix+"-accept"); err != nil {
 			t.Fatal(err)
 		}
-		next := g5AuthReviewProject(t, s, to, p.ID)
-		g5AuthReviewOwner(t, next, to.UserID)
+		next := authReviewProject(t, s, to, p.ID)
+		authReviewOwner(t, next, to.UserID)
 		return next
 	}
 	p = transfer(owner, member, "auth-review-axis-first")
@@ -399,11 +399,11 @@ func TestG5AuthReviewFormerSuccessorDoesNotRegainOldAuthorScope(t *testing.T) {
 			BodyMarkdown: "forbidden after demotion", SourceIDs: []string{}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("demoted successor wrote old chapter: %v", err)
 	}
-	after := g5AuthReviewProject(t, s, owner, p.ID)
+	after := authReviewProject(t, s, owner, p.ID)
 	if after.ProjectVersion != p.ProjectVersion {
 		t.Fatalf("denied old-scope write advanced project: %d -> %d", p.ProjectVersion, after.ProjectVersion)
 	}
-	if n := g5AuthReviewCount(t, s, "lingdoc_chapter_versions", "project_id=? AND chapter_id=?", p.ID, chapter.ID); n != 1 {
+	if n := authReviewCount(t, s, "lingdoc_chapter_versions", "project_id=? AND chapter_id=?", p.ID, chapter.ID); n != 1 {
 		t.Fatalf("denied old-scope write changed persisted chapter versions: %d", n)
 	}
 }

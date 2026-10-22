@@ -23,26 +23,26 @@ func ownerCurrentlyAvailable(tx Transaction, p Project, tenant uint64, user stri
 	return ok && governanceRole(m) == "owner" && (m.Status == "" || m.Status == "active")
 }
 func recordOwnerTransferOrigin(tx Transaction, a Actor, p Project, transfer OwnerTransfer) error {
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
 	origin := ownerTransferOrigin{RequesterID: a.UserID, Recovery: a.UserID != transfer.FromUserID}
-	if err := store.G5Put(p.ID, "owner_transfer_origin", transfer.ID, 0, origin); err != nil {
+	if err := store.PutProjectRecord(p.ID, "owner_transfer_origin", transfer.ID, 0, origin); err != nil {
 		return err
 	}
-	return g5Audit(tx, a, p.ID, "owner.transfer.request", transfer.ID, "")
+	return recordProjectAuditEvent(tx, a, p.ID, "owner.transfer.request", transfer.ID, "")
 }
 func verifyOwnerTransferOrigin(ctx context.Context, tx Transaction, a Actor, p Project, transfer OwnerTransfer) error {
 	if err := RequireHumanDecision(ctx); err != nil {
 		return err
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
 	var origin ownerTransferOrigin
-	if _, err := store.G5Get(p.ID, "owner_transfer_origin", transfer.ID, &origin); err != nil {
+	if _, err := store.GetProjectRecord(p.ID, "owner_transfer_origin", transfer.ID, &origin); err != nil {
 		return ErrInvalidState
 	}
 	if origin.Recovery {

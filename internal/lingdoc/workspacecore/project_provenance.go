@@ -31,43 +31,43 @@ type ProjectProvenanceSnapshot struct {
 	Fields              []SpecProvenanceRef `json:"fields"`
 	Digest              string              `json:"digest"`
 }
-type g1SourceVersion struct {
+type provenanceSourceVersion struct {
 	ID, AssetID, Hash string
 	Revision          int
 }
-type g1ProvenancePin struct {
+type provenancePin struct {
 	ID, ProjectID, ValueHash, Kind, ObjectID, SessionID, LocalHash, SourceDigest string
 	ObjectVersion                                                                int64
 	Record                                                                       ProvenanceRecord
-	Sources                                                                      []g1SourceVersion
+	Sources                                                                      []provenanceSourceVersion
 	SourceIDs                                                                    []string
 	OriginalAIHashes                                                             []string
 	Verified                                                                     bool
 }
-type g1ProvenanceRequest struct {
+type provenanceRequest struct {
 	Key, Value, Origin, Creator string
 	Record                      *ProvenanceRecord
 	Fresh                       bool
 }
-type g1ProvenanceProofKey struct{}
-type g1SourceIOKey struct{}
-type g1ProvenanceProof struct {
+type provenanceProofKey struct{}
+type provenanceSourceIOKey struct{}
+type provenanceProof struct {
 	Project                  Project
 	ActorID                  string
 	TenantID                 uint64
 	Identity                 string
 	ForModel                 bool
 	Snapshot                 ProjectProvenanceSnapshot
-	Pins                     map[string]g1ProvenancePin
+	Pins                     map[string]provenancePin
 	States                   map[string]bool
-	Requests                 map[string]g1ProvenancePin
-	FreshPins                map[string]g1ProvenancePin
+	Requests                 map[string]provenancePin
+	FreshPins                map[string]provenancePin
 	NativeBefore             map[string]string
 	Operation, OperationBody string
 	Frozen                   bool
 }
 
-func g1RecordKey(pid, value string, record ProvenanceRecord) string {
+func provenanceRecordKey(pid, value string, record ProvenanceRecord) string {
 	record.Accessible = false
 	record.NeedsReview = false
 	return "g1." + hashImpactValue(struct {
@@ -75,17 +75,17 @@ func g1RecordKey(pid, value string, record ProvenanceRecord) string {
 		Record         ProvenanceRecord
 	}{pid, hashImpactValue(value), record})
 }
-func g1RequestKey(record *ProvenanceRecord, value string) string {
+func provenanceRequestKey(record *ProvenanceRecord, value string) string {
 	return hashImpactValue(struct {
 		Record *ProvenanceRecord
 		Value  string
 	}{record, value})
 }
-func g1SnapshotDigest(snapshot ProjectProvenanceSnapshot) string {
+func provenanceSnapshotDigest(snapshot ProjectProvenanceSnapshot) string {
 	snapshot.Digest = ""
 	return hashImpactValue(snapshot)
 }
-func g1ProjectHash(p Project) string {
+func provenanceProjectHash(p Project) string {
 	return hashImpactValue(struct {
 		ID                           string
 		Version, Spec, Context, Copy int64
@@ -93,7 +93,7 @@ func g1ProjectHash(p Project) string {
 		Fields                       map[string]SpecField
 	}{p.ID, p.ProjectVersion, p.SpecRevision, p.CurrentContextRevision, p.TemplateCopyVersion, p.Spec, p.SpecFields})
 }
-func g1IdentityMatches(ctx context.Context, actor Actor) bool {
+func provenanceIdentityMatches(ctx context.Context, actor Actor) bool {
 	caller := types.CallerFromContext(ctx)
 	if caller.UserID != "" && (caller.UserID != actor.UserID || caller.TenantID != actor.TenantID) {
 		return false
@@ -101,35 +101,35 @@ func g1IdentityMatches(ctx context.Context, actor Actor) bool {
 	tenant, present := types.TenantIDFromContext(ctx)
 	return !present || tenant == actor.TenantID
 }
-func g1SourceContext(ctx context.Context, actor Actor) context.Context {
+func provenanceSourceContext(ctx context.Context, actor Actor) context.Context {
 	if types.CallerFromContext(ctx).UserID == "" {
 		ctx = types.WithCaller(ctx, types.Caller{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role})
 	}
 	return ctx
 }
-func g1LoadPin(tx Transaction, pid, value string, record *ProvenanceRecord) (g1ProvenancePin, bool, error) {
+func loadProvenancePin(tx Transaction, pid, value string, record *ProvenanceRecord) (provenancePin, bool, error) {
 	if record == nil {
-		return g1ProvenancePin{}, false, nil
+		return provenancePin{}, false, nil
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
-		return g1ProvenancePin{}, false, nil
+		return provenancePin{}, false, nil
 	}
-	id := g1RecordKey(pid, value, *record)
-	var pin g1ProvenancePin
-	_, err := store.G5Get(pid, "g1_provenance", id, &pin)
+	id := provenanceRecordKey(pid, value, *record)
+	var pin provenancePin
+	_, err := store.GetProjectRecord(pid, "g1_provenance", id, &pin)
 	if errors.Is(err, ErrNotFound) {
 		return pin, false, nil
 	}
 	if err != nil {
 		return pin, false, err
 	}
-	if pin.ID != id || pin.ProjectID != pid || pin.ValueHash != hashImpactValue(value) || g1RecordKey(pid, value, pin.Record) != id {
+	if pin.ID != id || pin.ProjectID != pid || pin.ValueHash != hashImpactValue(value) || provenanceRecordKey(pid, value, pin.Record) != id {
 		return pin, false, ErrSourceUnavailable
 	}
 	return pin, true, nil
 }
-func g1UnknownPin(p Project, actor Actor, request g1ProvenanceRequest) g1ProvenancePin {
+func unknownProvenancePin(p Project, actor Actor, request provenanceRequest) provenancePin {
 	record := ProvenanceRecord{}
 	if request.Record != nil {
 		record = *request.Record
@@ -139,14 +139,14 @@ func g1UnknownPin(p Project, actor Actor, request g1ProvenanceRequest) g1Provena
 	record.Accessible = false
 	record.NeedsReview = true
 	record.AuthorizationScope = "project/" + p.ID
-	pin := g1ProvenancePin{ProjectID: p.ID, ValueHash: hashImpactValue(request.Value), Record: record, SourceIDs: []string{}, Sources: []g1SourceVersion{}, OriginalAIHashes: []string{}}
-	pin.ID = g1RecordKey(p.ID, request.Value, record)
+	pin := provenancePin{ProjectID: p.ID, ValueHash: hashImpactValue(request.Value), Record: record, SourceIDs: []string{}, Sources: []provenanceSourceVersion{}, OriginalAIHashes: []string{}}
+	pin.ID = provenanceRecordKey(p.ID, request.Value, record)
 	return pin
 }
-func g1VersionMatches(value string, version int64) bool {
+func provenanceVersionMatches(value string, version int64) bool {
 	return value == "" || value == strconv.FormatInt(version, 10)
 }
-func g1NativeSourceDigest(tx Transaction, pid string, ids []string) (string, error) {
+func nativeSourceDigest(tx Transaction, pid string, ids []string) (string, error) {
 	if len(ids) == 0 {
 		return hashImpactValue([]string{}), nil
 	}
@@ -159,12 +159,12 @@ func g1NativeSourceDigest(tx Transaction, pid string, ids []string) (string, err
 
 // Only local typed objects are read here. All gateway/origin IO is performed
 // after the parent transaction has released SQLite's pooled connection.
-func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor, p Project, request g1ProvenanceRequest) (g1ProvenancePin, error) {
-	pin := g1UnknownPin(p, actor, request)
+func (s *Service) resolveProvenancePin(ctx context.Context, tx Transaction, actor Actor, p Project, request provenanceRequest) (provenancePin, error) {
+	pin := unknownProvenancePin(p, actor, request)
 	if request.Record == nil {
 		return pin, nil
 	}
-	if previous, found, err := g1LoadPin(tx, p.ID, request.Value, request.Record); err != nil {
+	if previous, found, err := loadProvenancePin(tx, p.ID, request.Value, request.Record); err != nil {
 		return pin, err
 	} else if found {
 		return previous, nil
@@ -175,12 +175,12 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 	if id == "" {
 		return pin, nil
 	}
-	if (sourceType == "source" || sourceType == "upload") && s.g2Runtime.Sources == nil {
+	if (sourceType == "source" || sourceType == "upload") && s.agentRuntime.Sources == nil {
 		return pin, nil
 	}
 	switch sourceType {
 	case "agent_turn", "conversation":
-		store, ok := tx.(G2Transaction)
+		store, ok := tx.(ObjectStore)
 		if !ok {
 			return pin, nil
 		}
@@ -188,7 +188,7 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		if sourceType == "conversation" {
 			turnID = record.SourceVersion
 		}
-		object, err := store.G2Object(p.ID, G2TurnKind, turnID)
+		object, err := store.Object(p.ID, AgentTurnKind, turnID)
 		if errors.Is(err, ErrNotFound) {
 			return pin, nil
 		}
@@ -199,7 +199,7 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		if err = json.Unmarshal(object.Payload, &turn); err != nil {
 			return pin, err
 		}
-		sessionObject, err := store.G2Object(p.ID, G2SessionKind, turn.SessionID)
+		sessionObject, err := store.Object(p.ID, AgentSessionKind, turn.SessionID)
 		if errors.Is(err, ErrNotFound) {
 			return pin, nil
 		}
@@ -210,7 +210,7 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		if err = json.Unmarshal(sessionObject.Payload, &session); err != nil {
 			return pin, err
 		}
-		if turn.ID != turnID || turn.ProjectID != p.ID || turn.Version != object.Version || turn.Status != "completed" || turn.CreatedBy != actor.UserID || session.ProjectID != p.ID || session.ID != turn.SessionID || session.CreatedBy != actor.UserID || session.Version != sessionObject.Version || sourceType == "conversation" && session.ID != id || sourceType == "agent_turn" && !g1VersionMatches(record.SourceVersion, turn.Version) {
+		if turn.ID != turnID || turn.ProjectID != p.ID || turn.Version != object.Version || turn.Status != "completed" || turn.CreatedBy != actor.UserID || session.ProjectID != p.ID || session.ID != turn.SessionID || session.CreatedBy != actor.UserID || session.Version != sessionObject.Version || sourceType == "conversation" && session.ID != id || sourceType == "agent_turn" && !provenanceVersionMatches(record.SourceVersion, turn.Version) {
 			return pin, nil
 		}
 		if _, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationAgent, "")); err != nil {
@@ -233,30 +233,30 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		pin.OriginalAIHashes = []string{hashImpactValue(strings.TrimSpace(turn.Reply))}
 		var suggestions any
 		if json.Unmarshal(turn.Suggestions, &suggestions) == nil {
-			g1AIStrings(suggestions, &pin.OriginalAIHashes)
+			provenanceAIStrings(suggestions, &pin.OriginalAIHashes)
 		}
 		for _, source := range turn.Context.SourceRefs {
 			if source.SourceID == "" || source.AssetRevision < 1 || source.QuotedTextHash == "" {
-				return g1UnknownPin(p, actor, request), nil
+				return unknownProvenancePin(p, actor, request), nil
 			}
 			pin.SourceIDs = append(pin.SourceIDs, source.SourceID)
-			pin.Sources = append(pin.Sources, g1SourceVersion{ID: source.SourceID, AssetID: source.AssetID, Revision: source.AssetRevision, Hash: source.QuotedTextHash})
+			pin.Sources = append(pin.Sources, provenanceSourceVersion{ID: source.SourceID, AssetID: source.AssetID, Revision: source.AssetRevision, Hash: source.QuotedTextHash})
 		}
 	case "source_anchor", "sourceanchor", "anchor":
 		// Typed version lookup is deliberately separate from the current source IO.
-		anchor, stored, err := g2Load[SourceAnchor](tx, p.ID, G2AnchorKind, id)
+		anchor, stored, err := loadStoredObject[SourceAnchor](tx, p.ID, SourceAnchorKind, id)
 		if errors.Is(err, ErrNotFound) {
 			return pin, nil
 		}
 		if err != nil {
 			return pin, err
 		}
-		port, ok := tx.(g2AssetPolicyTransaction)
+		port, ok := tx.(assetPolicyTransaction)
 		if !ok {
 			return pin, nil
 		}
-		current, err := port.G2AnchorCurrent(anchor)
-		if err != nil || !current || anchor.ID != id || anchor.ProjectID != p.ID || anchor.Version != stored.Version || !g1VersionMatches(record.SourceVersion, anchor.Version) {
+		current, err := port.IsAnchorCurrent(anchor)
+		if err != nil || !current || anchor.ID != id || anchor.ProjectID != p.ID || anchor.Version != stored.Version || !provenanceVersionMatches(record.SourceVersion, anchor.Version) {
 			return pin, nil
 		}
 		pin.Kind = "SourceAnchor"
@@ -268,13 +268,13 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		record.SourceVersion = strconv.FormatInt(anchor.Version, 10)
 		record.Locator = anchor.Locator
 	case "project_asset", "projectasset", "asset", "upload":
-		port, ok := tx.(g2AssetPolicyTransaction)
+		port, ok := tx.(assetPolicyTransaction)
 		if !ok {
 			return pin, nil
 		}
-		truth, err := port.G2AssetTruth(p, id)
+		truth, err := port.AssetTruth(p, id)
 		if err == nil {
-			if !g1VersionMatches(record.SourceVersion, truth.Asset.AssetRevision) || len(truth.SourceIDs) == 0 {
+			if !provenanceVersionMatches(record.SourceVersion, truth.Asset.AssetRevision) || len(truth.SourceIDs) == 0 {
 				return pin, nil
 			}
 			pin.Kind = "ProjectAsset"
@@ -305,7 +305,7 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		if err != nil {
 			return pin, nil
 		}
-		if !g1VersionMatches(record.SourceVersion, int64(asset.AssetRevision)) {
+		if !provenanceVersionMatches(record.SourceVersion, int64(asset.AssetRevision)) {
 			return pin, nil
 		}
 		pin.Kind = "Source"
@@ -322,17 +322,17 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		return pin, nil
 	}
 	pin.SourceIDs = sortedImpactSourceIDs(pin.SourceIDs)
-	digest, err := g1NativeSourceDigest(tx, p.ID, pin.SourceIDs)
+	digest, err := nativeSourceDigest(tx, p.ID, pin.SourceIDs)
 	if err != nil {
-		return g1UnknownPin(p, actor, request), nil
+		return unknownProvenancePin(p, actor, request), nil
 	}
 	pin.Record = record
 	pin.SourceDigest = digest
 	pin.Verified = true
-	pin.ID = g1RecordKey(p.ID, request.Value, record)
+	pin.ID = provenanceRecordKey(p.ID, request.Value, record)
 	return pin, nil
 }
-func g1AIStrings(value any, hashes *[]string) {
+func provenanceAIStrings(value any, hashes *[]string) {
 	switch typed := value.(type) {
 	case string:
 		if strings.TrimSpace(typed) != "" {
@@ -340,31 +340,31 @@ func g1AIStrings(value any, hashes *[]string) {
 		}
 	case map[string]any:
 		for _, item := range typed {
-			g1AIStrings(item, hashes)
+			provenanceAIStrings(item, hashes)
 		}
 	case []any:
 		for _, item := range typed {
-			g1AIStrings(item, hashes)
+			provenanceAIStrings(item, hashes)
 		}
 	}
 }
 
-func (s *Service) g1PinCurrent(ctx context.Context, tx Transaction, actor Actor, p Project, pin g1ProvenancePin, forModel bool) bool {
+func (s *Service) provenancePinCurrent(ctx context.Context, tx Transaction, actor Actor, p Project, pin provenancePin, forModel bool) bool {
 	if !pin.Verified || pin.ProjectID != p.ID {
 		return false
 	}
-	request := g1ProvenanceRequest{Record: &pin.Record, Value: ""}
+	request := provenanceRequest{Record: &pin.Record, Value: ""}
 	// Resolve exact typed descriptor without reusing its server pin.
 	request.Record = new(ProvenanceRecord)
 	*request.Record = pin.Record
 	request.Record.CreatedAt = time.Time{}
-	actual, err := s.g1ResolvePin(ctx, tx, actor, p, request)
+	actual, err := s.resolveProvenancePin(ctx, tx, actor, p, request)
 	if err != nil || !actual.Verified || actual.Kind != pin.Kind || actual.ObjectID != pin.ObjectID || actual.ObjectVersion != pin.ObjectVersion || actual.LocalHash != pin.LocalHash || actual.SourceDigest != pin.SourceDigest || !slices.Equal(actual.SourceIDs, pin.SourceIDs) {
 		return false
 	}
-	return g1NativeSourceScope(ctx, tx, actor, p, pin.SourceIDs, forModel) == nil
+	return nativeSourceScope(ctx, tx, actor, p, pin.SourceIDs, forModel) == nil
 }
-func g1NativeSourceScope(ctx context.Context, tx Transaction, actor Actor, p Project, ids []string, forModel bool) error {
+func nativeSourceScope(ctx context.Context, tx Transaction, actor Actor, p Project, ids []string, forModel bool) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -385,7 +385,7 @@ func g1NativeSourceScope(ctx context.Context, tx Transaction, actor Actor, p Pro
 		if err = db.Where("id=? AND tenant_id=? AND deleted_at IS NULL", knowledge.KnowledgeBaseID, actor.TenantID).First(&kb).Error; err != nil {
 			return ErrSourceUnavailable
 		}
-		allowed, err := access.NewKBPermissions(g1SourceContext(ctx, actor), nil).Check(kb.ID, kb.TenantID, types.OrgRoleViewer)
+		allowed, err := access.NewKBPermissions(provenanceSourceContext(ctx, actor), nil).Check(kb.ID, kb.TenantID, types.OrgRoleViewer)
 		if err != nil || !allowed {
 			return ErrSourceUnavailable
 		}
@@ -403,7 +403,7 @@ func g1NativeSourceScope(ctx context.Context, tx Transaction, actor Actor, p Pro
 	}
 	return nil
 }
-func g1FieldRequests(p Project) []g1ProvenanceRequest {
+func provenanceFieldRequests(p Project) []provenanceRequest {
 	keys := map[string]bool{}
 	for key := range p.Spec {
 		keys[key] = true
@@ -411,44 +411,44 @@ func g1FieldRequests(p Project) []g1ProvenanceRequest {
 	for key := range p.SpecFields {
 		keys[key] = true
 	}
-	out := []g1ProvenanceRequest{}
+	out := []provenanceRequest{}
 	for key := range keys {
 		field := p.SpecFields[key]
 		value, found := p.Spec[key]
 		if !found {
 			value = field.Value
 		}
-		out = append(out, g1ProvenanceRequest{Key: key, Value: value, Origin: field.Origin, Creator: field.ModifiedBy, Record: field.Provenance})
+		out = append(out, provenanceRequest{Key: key, Value: value, Origin: field.Origin, Creator: field.ModifiedBy, Record: field.Provenance})
 	}
-	slices.SortFunc(out, func(a, b g1ProvenanceRequest) int { return strings.Compare(a.Key, b.Key) })
+	slices.SortFunc(out, func(a, b provenanceRequest) int { return strings.Compare(a.Key, b.Key) })
 	return out
 }
-func g1Snapshot(p Project, pins map[string]g1ProvenancePin) ProjectProvenanceSnapshot {
+func provenanceSnapshot(p Project, pins map[string]provenancePin) ProjectProvenanceSnapshot {
 	result := ProjectProvenanceSnapshot{ProjectID: p.ID, SpecRevision: p.SpecRevision, ContextRevision: p.CurrentContextRevision, TemplateCopyVersion: p.TemplateCopyVersion, Fields: []SpecProvenanceRef{}}
-	for _, request := range g1FieldRequests(p) {
+	for _, request := range provenanceFieldRequests(p) {
 		if _, found := p.Spec[request.Key]; !found {
 			continue
 		}
 		ref := SpecProvenanceRef{FieldKey: request.Key, ValueHash: hashImpactValue(request.Value)}
 		if request.Record != nil || request.Origin != "" && request.Origin != "human" {
-			ref.PinID = pins[g1RequestKey(request.Record, request.Value)].ID
+			ref.PinID = pins[provenanceRequestKey(request.Record, request.Value)].ID
 			if ref.PinID == "" {
 				ref.PinID = "unverified"
 			}
 		}
 		result.Fields = append(result.Fields, ref)
 	}
-	result.Digest = g1SnapshotDigest(result)
+	result.Digest = provenanceSnapshotDigest(result)
 	return result
 }
-func g1RedactProject(p Project, proof *g1ProvenanceProof) Project {
+func redactProvenanceProject(p Project, proof *provenanceProof) Project {
 	p.Spec = maps.Clone(p.Spec)
 	p.SpecFields = maps.Clone(p.SpecFields)
 	for key, field := range p.SpecFields {
 		if field.Provenance == nil && (field.Origin == "" || field.Origin == "human") {
 			continue
 		}
-		pin, found := proof.Requests[g1RequestKey(field.Provenance, field.Value)]
+		pin, found := proof.Requests[provenanceRequestKey(field.Provenance, field.Value)]
 		record := ProvenanceRecord{CreatedBy: field.ModifiedBy, NeedsReview: true}
 		if found {
 			record = pin.Record
@@ -457,7 +457,7 @@ func g1RedactProject(p Project, proof *g1ProvenanceProof) Project {
 		record.NeedsReview = !record.Accessible
 		field.Provenance = &record
 		if !record.Accessible {
-			g1RedactRecord(field.Provenance, pin.Verified)
+			redactProvenanceRecord(field.Provenance, pin.Verified)
 			field.Value = ""
 			field.Status = "pending_confirmation"
 			p.Spec[key] = ""
@@ -466,7 +466,7 @@ func g1RedactProject(p Project, proof *g1ProvenanceProof) Project {
 	}
 	return p
 }
-func g1RedactRecord(record *ProvenanceRecord, known bool) {
+func redactProvenanceRecord(record *ProvenanceRecord, known bool) {
 	record.Locator = ""
 	record.Purpose = ""
 	record.AuthorizationScope = ""
@@ -481,25 +481,25 @@ func g1RedactRecord(record *ProvenanceRecord, known bool) {
 		}
 	}
 }
-func g1StorageSnapshot(tx Transaction, p Project) (ProjectProvenanceSnapshot, error) {
-	pins := map[string]g1ProvenancePin{}
-	for _, request := range g1FieldRequests(p) {
+func provenanceStorageSnapshot(tx Transaction, p Project) (ProjectProvenanceSnapshot, error) {
+	pins := map[string]provenancePin{}
+	for _, request := range provenanceFieldRequests(p) {
 		if request.Record == nil {
 			continue
 		}
-		pin, found, err := g1LoadPin(tx, p.ID, request.Value, request.Record)
+		pin, found, err := loadProvenancePin(tx, p.ID, request.Value, request.Record)
 		if err != nil {
 			return ProjectProvenanceSnapshot{}, err
 		}
 		if found {
-			pins[g1RequestKey(request.Record, request.Value)] = pin
+			pins[provenanceRequestKey(request.Record, request.Value)] = pin
 		}
 	}
-	return g1Snapshot(p, pins), nil
+	return provenanceSnapshot(p, pins), nil
 }
 
 func ValidateFrozenProvenanceInput(spec map[string]string, snapshot ProjectProvenanceSnapshot) error {
-	if snapshot.Digest == "" || snapshot.ProjectID == "" || g1SnapshotDigest(snapshot) != snapshot.Digest {
+	if snapshot.Digest == "" || snapshot.ProjectID == "" || provenanceSnapshotDigest(snapshot) != snapshot.Digest {
 		return ErrSourceUnavailable
 	}
 	seen := map[string]bool{}
@@ -513,7 +513,7 @@ func ValidateFrozenProvenanceInput(spec map[string]string, snapshot ProjectProve
 	return nil
 }
 func ProjectProvenanceSnapshotFromContext(ctx context.Context, pid string) (ProjectProvenanceSnapshot, bool) {
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok || proof.Frozen || proof.Project.ID != pid {
 		return ProjectProvenanceSnapshot{}, false
 	}
@@ -523,11 +523,11 @@ func ProjectProvenanceSnapshotFromContext(ctx context.Context, pid string) (Proj
 }
 func ProvenanceSourceIDs(tx Transaction, p Project) ([]string, error) {
 	ids := []string{}
-	for _, request := range g1FieldRequests(p) {
+	for _, request := range provenanceFieldRequests(p) {
 		if request.Record == nil && (request.Origin == "" || request.Origin == "human") {
 			continue
 		}
-		pin, found, err := g1LoadPin(tx, p.ID, request.Value, request.Record)
+		pin, found, err := loadProvenancePin(tx, p.ID, request.Value, request.Record)
 		if err != nil {
 			return nil, err
 		}

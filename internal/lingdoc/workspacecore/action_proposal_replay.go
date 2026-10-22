@@ -21,7 +21,7 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 	var proposal ActionProposal
 	var sourceIDs []string
 	found := false
-	err = s.g2Read(ctx, actor, projectID, "agent", func(tx Transaction, p Project) error {
+	err = s.readWithCapability(ctx, actor, projectID, "agent", func(tx Transaction, p Project) error {
 		previous, exists, err := tx.Operation(identity)
 		if err != nil || !exists {
 			return err
@@ -40,7 +40,7 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 			return err
 		}
 		turnSources, err := agentChangeDraftSourcesAtBasis(tx, actor, p, request, false)
-		sourceIDs = g2IDs(append(current, turnSources...))
+		sourceIDs = sortedUniqueIDs(append(current, turnSources...))
 		return err
 	})
 	if err != nil || !found {
@@ -53,8 +53,8 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 	// Use exactly the normal creation canonicalization for hashing. Never
 	// force the receipt's source union onto a changed incoming payload; the
 	// existing G2 engine separately rechecks the receipt's historical sources.
-	input.SourceIDs = g2IDs(append(input.SourceIDs, sourceIDs...))
-	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, operationcore.HumanGateNotRequired, func(Transaction, Project) (any, int, error) {
+	input.SourceIDs = sortedUniqueIDs(append(input.SourceIDs, sourceIDs...))
+	return s.runAgentOperation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, operationcore.HumanGateNotRequired, func(Transaction, Project) (any, int, error) {
 		// If the previously observed operation disappeared, this is no longer
 		// a replay. Never execute an old request against a new baseline here.
 		return nil, 0, ErrVersionConflict

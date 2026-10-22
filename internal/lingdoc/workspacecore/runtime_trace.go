@@ -65,7 +65,7 @@ func RecordRuntimeOperationContext(ctx context.Context, tx Transaction, actor Ac
 	if !validRuntimeEvent(event) {
 		return ErrInvalidRequest
 	}
-	if err := store.G6Insert(actor.TenantID, p.ID, "event", event.ID, 1, event); err != nil {
+	if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "event", event.ID, 1, event); err != nil {
 		return err
 	}
 	return applyRuntimeAlerts(tx, actor, p, event)

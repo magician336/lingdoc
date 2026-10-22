@@ -173,7 +173,7 @@ func TestProjectionResolvesAcknowledgedPreflightProof(t *testing.T) {
 		InputHash: "guard-proof-input", ComputationBasisHash: "guard-proof-basis", SourceBasisHash: "guard-proof-sources",
 		SourceIDs: []string{guardProjectionSource}, CheckedAt: time.Now().UTC()}
 	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		return tx.(runtimeTransaction).G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
+		return tx.(runtimeTransaction).InsertRuntimeRecord(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
 	}))
 
 	ids, err := resolveProjection(t, svc, "acknowledgeImpactPreflight", p.ID+"/guard-proof", p.ID,

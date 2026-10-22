@@ -195,7 +195,7 @@ func (s *Service) CreateTrialWindow(ctx context.Context, actor Actor, projectID,
 		input.Version = 1
 		input.CreatedBy = actor.UserID
 		input.CreatedAt = time.Now().UTC()
-		if err := store.G6Insert(actor.TenantID, projectID, "trial_window", input.ID, 1, input); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, projectID, "trial_window", input.ID, 1, input); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "trial.window.create", input.ID, map[string]any{"version": 1, "status": "DRAFT"}); err != nil {
@@ -217,7 +217,7 @@ func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, 
 			return operationResult[TrialWindow]{}, ErrInvalidState
 		}
 		var old TrialWindow
-		version, err := store.G6Read(actor.TenantID, projectID, "trial_window", windowID, &old)
+		version, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_window", windowID, &old)
 		if err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
@@ -243,7 +243,7 @@ func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, 
 			next.Status = "CLOSED"
 		}
 		next.Version++
-		if err := store.G6CAS(actor.TenantID, projectID, "trial_window", windowID, version, next); err != nil {
+		if err := store.CompareAndSwapRuntimeRecord(actor.TenantID, projectID, "trial_window", windowID, version, next); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "trial.window."+input.Action, windowID, map[string]any{"version": next.Version, "reason": input.Reason}); err != nil {
@@ -262,7 +262,7 @@ func (s *Service) ListTrialWindows(ctx context.Context, actor Actor, projectID s
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G6List(actor.TenantID, projectID, "trial_window")
+		rows, err := store.ListRuntimeRecords(actor.TenantID, projectID, "trial_window")
 		if err != nil {
 			return err
 		}
@@ -316,7 +316,7 @@ func (s *Service) RecordTrialSample(ctx context.Context, actor Actor, projectID,
 			return operationResult[TrialSample]{}, ErrInvalidState
 		}
 		var window TrialWindow
-		if _, err := store.G6Read(actor.TenantID, projectID, "trial_window", windowID, &window); err != nil {
+		if _, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_window", windowID, &window); err != nil {
 			return operationResult[TrialSample]{}, err
 		}
 		if window.Status != "LOCKED" {
@@ -351,12 +351,12 @@ func (s *Service) RecordTrialSample(ctx context.Context, actor Actor, projectID,
 		input.RerunEvidence = ""
 		sampleKey := windowID + "/" + input.FixtureDigest + "/" + input.SampleVersion
 		var previous TrialSample
-		if _, err := store.G6Read(actor.TenantID, projectID, "trial_sample", sampleKey, &previous); err == nil {
+		if _, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_sample", sampleKey, &previous); err == nil {
 			return operationResult[TrialSample]{}, ErrVersionConflict
 		} else if err != ErrNotFound {
 			return operationResult[TrialSample]{}, err
 		}
-		if err := store.G6Insert(actor.TenantID, projectID, "trial_sample", sampleKey, 1, input); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, projectID, "trial_sample", sampleKey, 1, input); err != nil {
 			return operationResult[TrialSample]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "trial.sample.record", input.ID, map[string]any{"sample_version": input.SampleVersion, "quality_result": "NOT RUN"}); err != nil {
@@ -370,7 +370,7 @@ func trialSamples(tx Transaction, tenant uint64, project, windowID string) ([]Tr
 	if !ok {
 		return nil, ErrInvalidState
 	}
-	rows, err := store.G6List(tenant, project, "trial_sample")
+	rows, err := store.ListRuntimeRecords(tenant, project, "trial_sample")
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +436,7 @@ func (s *Service) ReviewTrialSample(ctx context.Context, actor Actor, projectID,
 			now := time.Now().UTC()
 			next.ReviewedAt = &now
 			store := tx.(runtimeTransaction)
-			if err := store.G6CAS(actor.TenantID, projectID, "trial_sample", windowID+"/"+old.FixtureDigest+"/"+old.SampleVersion, old.Version, next); err != nil {
+			if err := store.CompareAndSwapRuntimeRecord(actor.TenantID, projectID, "trial_sample", windowID+"/"+old.FixtureDigest+"/"+old.SampleVersion, old.Version, next); err != nil {
 				return operationResult[TrialSample]{}, err
 			}
 			if err := recordAuditEvent(tx, actor, projectID, "trial.sample.review", sampleID, map[string]any{"quality_result": next.QualityResult, "human_decision": next.HumanDecision, "reviewer": actor.UserID, "word_evidence": next.WordRoundtripEvidence}); err != nil {
@@ -453,7 +453,7 @@ func buildTrialReport(tx Transaction, actor Actor, projectID, windowID string) (
 		return TrialReport{}, ErrInvalidState
 	}
 	var window TrialWindow
-	if _, err := store.G6Read(actor.TenantID, projectID, "trial_window", windowID, &window); err != nil {
+	if _, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_window", windowID, &window); err != nil {
 		return TrialReport{}, err
 	}
 	samples, err := trialSamples(tx, actor.TenantID, projectID, windowID)
@@ -489,7 +489,7 @@ func buildTrialReport(tx Transaction, actor Actor, projectID, windowID string) (
 			categories := map[string]bool{}
 			for _, id := range sample.RuntimeEventIDs {
 				var event RuntimeEvent
-				if _, err := store.G6Read(actor.TenantID, sample.ProjectID, "event", id, &event); err != nil {
+				if _, err := store.ReadRuntimeRecord(actor.TenantID, sample.ProjectID, "event", id, &event); err != nil {
 					reason = "runtime_event_missing"
 					break
 				}
@@ -603,7 +603,7 @@ func (s *Service) CreateTrialDecision(ctx context.Context, actor Actor, projectI
 			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		record := TrialDecisionRecord{ID: uuid.NewString(), WindowID: windowID, Report: report, Decision: input.Decision, Reason: input.Reason, Signatures: map[string]string{}, Status: "WAITING_HUMAN", Version: 1, CreatedAt: time.Now().UTC()}
-		if err := tx.(runtimeTransaction).G6Insert(actor.TenantID, projectID, "trial_decision", record.ID, 1, record); err != nil {
+		if err := tx.(runtimeTransaction).InsertRuntimeRecord(actor.TenantID, projectID, "trial_decision", record.ID, 1, record); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "trial.decision.propose", record.ID, map[string]any{"decision": input.Decision, "report_hash": report.InputHash}); err != nil {
@@ -625,7 +625,7 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		var old TrialDecisionRecord
-		version, err := store.G6Read(actor.TenantID, projectID, "trial_decision", decisionID, &old)
+		version, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_decision", decisionID, &old)
 		if err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
@@ -636,7 +636,7 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		var lockedWindow TrialWindow
-		if _, err := store.G6Read(actor.TenantID, projectID, "trial_window", old.WindowID, &lockedWindow); err != nil {
+		if _, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_window", old.WindowID, &lockedWindow); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if lockedWindow.DecisionOwners[input.Responsibility] != actor.UserID {
@@ -662,18 +662,18 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 			next.DecidedAt = &now
 			if next.Decision == "pause" {
 				var window TrialWindow
-				windowVersion, err := store.G6Read(actor.TenantID, projectID, "trial_window", next.WindowID, &window)
+				windowVersion, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "trial_window", next.WindowID, &window)
 				if err != nil {
 					return operationResult[TrialDecisionRecord]{}, err
 				}
 				window.Status = "PAUSED"
 				window.Version++
-				if err := store.G6CAS(actor.TenantID, projectID, "trial_window", next.WindowID, windowVersion, window); err != nil {
+				if err := store.CompareAndSwapRuntimeRecord(actor.TenantID, projectID, "trial_window", next.WindowID, windowVersion, window); err != nil {
 					return operationResult[TrialDecisionRecord]{}, err
 				}
 			}
 		}
-		if err := store.G6CAS(actor.TenantID, projectID, "trial_decision", decisionID, version, next); err != nil {
+		if err := store.CompareAndSwapRuntimeRecord(actor.TenantID, projectID, "trial_decision", decisionID, version, next); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "trial.decision.sign", decisionID, map[string]any{"responsibility": input.Responsibility, "actor": actor.UserID, "status": next.Status, "reason": input.Reason}); err != nil {
@@ -692,7 +692,7 @@ func (s *Service) ListTrialDecisions(ctx context.Context, actor Actor, projectID
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G6List(actor.TenantID, projectID, "trial_decision")
+		rows, err := store.ListRuntimeRecords(actor.TenantID, projectID, "trial_decision")
 		if err != nil {
 			return err
 		}

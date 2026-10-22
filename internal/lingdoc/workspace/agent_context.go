@@ -15,7 +15,7 @@ type G2ActionExecutor struct {
 	exports ExportApplication
 }
 
-func NewG2ActionExecutor(actions core.AgentActionApplication, sources SourceApplicationService, exports ExportApplication) core.G2ActionExecutor {
+func NewG2ActionExecutor(actions core.AgentActionApplication, sources SourceApplicationService, exports ExportApplication) core.ActionExecutor {
 	return &G2ActionExecutor{actions: actions, sources: sources, exports: exports}
 }
 func g2ActionInput(raw json.RawMessage, value any) error {
@@ -32,7 +32,7 @@ func g2ActionInput(raw json.RawMessage, value any) error {
 }
 func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Actor, proposal core.ActionProposal, key string) (json.RawMessage, error) {
 	if nilPort(e.actions) {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
 	var raw json.RawMessage
 	var err error
@@ -45,7 +45,7 @@ func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Ac
 		raw, _, _, err = e.actions.SaveSpec(ctx, actor, proposal.ProjectID, key, input)
 	case "bind_asset":
 		if e.sources == nil {
-			return nil, core.ErrG2Unavailable
+			return nil, core.ErrDependencyUnavailable
 		}
 		var input struct {
 			KnowledgeID string `json:"knowledge_id"`
@@ -66,7 +66,7 @@ func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Ac
 		input.Confirmed = true
 		raw, _, _, err = e.actions.SaveEvidenceCard(ctx, actor, proposal.ProjectID, key, input)
 	case "confirm_evidence_card":
-		var input core.G2ConfirmedInput
+		var input core.ConfirmationInput
 		if err = g2ActionInput(proposal.Input, &input); err != nil {
 			return nil, err
 		}
@@ -96,7 +96,7 @@ func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Ac
 		raw, _, _, err = e.actions.CommitWorkingCopy(ctx, actor, proposal.ProjectID, proposal.TargetID, key, input)
 	case "export":
 		if e.exports == nil {
-			return nil, core.ErrG2Unavailable
+			return nil, core.ErrDependencyUnavailable
 		}
 		var input struct{}
 		if err = g2ActionInput(proposal.Input, &input); err != nil {
@@ -113,4 +113,4 @@ func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Ac
 	return raw, err
 }
 
-var _ core.G2ActionExecutor = (*G2ActionExecutor)(nil)
+var _ core.ActionExecutor = (*G2ActionExecutor)(nil)

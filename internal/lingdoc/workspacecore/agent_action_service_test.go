@@ -14,28 +14,28 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-type g2TestSourceReader struct {
-	sources map[string]G2Source
+type testSourceReader struct {
+	sources map[string]ResearchSource
 	denied  map[string]bool
 }
 
-func (r *g2TestSourceReader) ReadG2Source(_ context.Context, _ Actor, projectID, id string) (G2Source, error) {
+func (r *testSourceReader) ReadResearchSource(_ context.Context, _ Actor, projectID, id string) (ResearchSource, error) {
 	if projectID == "" || r.denied[id] {
-		return G2Source{}, ErrSourceUnavailable
+		return ResearchSource{}, ErrSourceUnavailable
 	}
 	source, ok := r.sources[id]
 	if !ok {
-		return G2Source{}, ErrNotFound
+		return ResearchSource{}, ErrNotFound
 	}
 	return source, nil
 }
-func (r *g2TestSourceReader) CheckG2AssetScope(_ context.Context, _ Actor, _ string, ids []string) ([]G2AssetVersion, error) {
-	out := []G2AssetVersion{}
-	for _, id := range g2IDs(ids) {
+func (r *testSourceReader) CheckAssetScope(_ context.Context, _ Actor, _ string, ids []string) ([]ProjectAssetVersion, error) {
+	out := []ProjectAssetVersion{}
+	for _, id := range sortedUniqueIDs(ids) {
 		found := false
 		for sourceID, source := range r.sources {
 			if source.AssetID == id && !r.denied[sourceID] && source.ProcessingState == "ready" {
-				out = append(out, G2AssetVersion{AssetID: id, AssetRevision: source.AssetRevision})
+				out = append(out, ProjectAssetVersion{AssetID: id, AssetRevision: source.AssetRevision})
 				found = true
 				break
 			}
@@ -47,14 +47,14 @@ func (r *g2TestSourceReader) CheckG2AssetScope(_ context.Context, _ Actor, _ str
 	return out, nil
 }
 
-type g2TestSearcher struct {
+type testSearcher struct {
 	calls    int
 	failAt   int
 	callback func(int)
 	results  []ResearchResult
 }
 
-func (f *g2TestSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ ResearchTask, _ string) ([]ResearchResult, string, error) {
+func (f *testSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ ResearchTask, _ string) ([]ResearchResult, string, error) {
 	f.calls++
 	if f.callback != nil {
 		f.callback(f.calls)
@@ -65,53 +65,53 @@ func (f *g2TestSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ 
 	return slices.Clone(f.results), "real_api_fake_model", nil
 }
 
-type g2TestModel struct {
+type testAgentModel struct {
 	calls    int
-	requests []G2ModelRequest
+	requests []ModelRequest
 	callback func()
 	err      error
 }
 
-func (m *g2TestModel) Reply(_ context.Context, _ Actor, input G2ModelRequest) (G2ModelReply, error) {
+func (m *testAgentModel) Reply(_ context.Context, _ Actor, input ModelRequest) (ModelReply, error) {
 	m.calls++
 	m.requests = append(m.requests, input)
 	if m.callback != nil {
 		m.callback()
 	}
-	return G2ModelReply{Content: "这是待核候选建议，不能证明主张。", StructuredOutput: json.RawMessage(`{"reply":"这是待核候选建议，不能证明主张。"}`), ModelID: "synthetic-model", RunMode: "real_api_fake_model", InputTokens: 100, OutputTokens: 20, FinishReason: "stop"}, m.err
+	return ModelReply{Content: "这是待核候选建议，不能证明主张。", StructuredOutput: json.RawMessage(`{"reply":"这是待核候选建议，不能证明主张。"}`), ModelID: "synthetic-model", RunMode: "real_api_fake_model", InputTokens: 100, OutputTokens: 20, FinishReason: "stop"}, m.err
 }
 
-type g2TestImporter struct {
+type testImporter struct {
 	calls  int
-	result G2ImportedAsset
+	result ImportedAsset
 	err    error
 }
 
-func (p *g2TestImporter) ImportResearchCandidate(context.Context, Actor, string, string, ImportCandidate) (G2ImportedAsset, error) {
+func (p *testImporter) ImportResearchCandidate(context.Context, Actor, string, string, ImportCandidate) (ImportedAsset, error) {
 	p.calls++
 	return p.result, p.err
 }
 
-type g2TestActionExecutor struct{ calls int }
+type testActionExecutor struct{ calls int }
 
-func (e *g2TestActionExecutor) ExecuteAgentAction(context.Context, Actor, ActionProposal, string) (json.RawMessage, error) {
+func (e *testActionExecutor) ExecuteAgentAction(context.Context, Actor, ActionProposal, string) (json.RawMessage, error) {
 	e.calls++
 	return json.RawMessage(`{"executed":true}`), nil
 }
 
-type g2Fixture struct {
+type agentFixture struct {
 	svc     *Service
 	owner   Actor
 	project Project
 	chapter Chapter
-	source  *g2TestSourceReader
-	search  *g2TestSearcher
-	model   *g2TestModel
+	source  *testSourceReader
+	search  *testSearcher
+	model   *testAgentModel
 	policy  *fakeSources
 	path    string
 }
 
-func newG2Fixture(t *testing.T, draft bool) g2Fixture {
+func newAgentFixture(t *testing.T, draft bool) agentFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "g2.db")
 	policy := &fakeSources{}
@@ -143,21 +143,21 @@ func newG2Fixture(t *testing.T, draft bool) g2Fixture {
 		}
 		chapter = chapters[0]
 	}
-	reader := &g2TestSourceReader{sources: map[string]G2Source{}, denied: map[string]bool{}}
+	reader := &testSourceReader{sources: map[string]ResearchSource{}, denied: map[string]bool{}}
 	for i := 1; i <= 3; i++ {
 		id := fmt.Sprintf("source-%d", i)
 		text := fmt.Sprintf("原始文献第%d条合成摘录；这是需人工核对的资料。", i)
-		reader.sources[id] = G2Source{SourceID: id, AssetID: fmt.Sprintf("asset-%d", i), AssetRevision: 1, KnowledgeID: fmt.Sprintf("knowledge-%d", i), Title: "合成文献", Locator: fmt.Sprintf("原文段落%d", i), QuotedText: text, QuotedTextHash: g2Hash(text), Status: "available", ProcessingState: "ready", StableOriginal: true, ModelUseAllowed: true}
+		reader.sources[id] = ResearchSource{SourceID: id, AssetID: fmt.Sprintf("asset-%d", i), AssetRevision: 1, KnowledgeID: fmt.Sprintf("knowledge-%d", i), Title: "合成文献", Locator: fmt.Sprintf("原文段落%d", i), QuotedText: text, QuotedTextHash: sha256Hex(text), Status: "available", ProcessingState: "ready", StableOriginal: true, ModelUseAllowed: true}
 	}
-	search := &g2TestSearcher{results: []ResearchResult{{ID: "same-result", Level: "candidate_evidence", SourceID: "source-1", AssetID: "asset-1", AssetRevision: 1, Locator: "原文段落1", QuotedTextHash: reader.sources["source-1"].QuotedTextHash, Title: "合成文献", Provider: "synthetic-provider", Status: "available"}}}
-	model := &g2TestModel{}
-	svc.ConfigureG2(G2Runtime{Sources: reader, Research: search, Model: model, Imports: &g2TestImporter{result: G2ImportedAsset{AssetID: "asset-1", AssetRevision: 1, ProcessingState: "ready", KnowledgeID: "knowledge-1"}}, Actions: &g2TestActionExecutor{}})
-	return g2Fixture{svc: svc, owner: owner, project: p, chapter: chapter, source: reader, search: search, model: model, policy: policy, path: path}
+	search := &testSearcher{results: []ResearchResult{{ID: "same-result", Level: "candidate_evidence", SourceID: "source-1", AssetID: "asset-1", AssetRevision: 1, Locator: "原文段落1", QuotedTextHash: reader.sources["source-1"].QuotedTextHash, Title: "合成文献", Provider: "synthetic-provider", Status: "available"}}}
+	model := &testAgentModel{}
+	svc.ConfigureAgentRuntime(AgentRuntime{Sources: reader, Research: search, Model: model, Imports: &testImporter{result: ImportedAsset{AssetID: "asset-1", AssetRevision: 1, ProcessingState: "ready", KnowledgeID: "knowledge-1"}}, Actions: &testActionExecutor{}})
+	return agentFixture{svc: svc, owner: owner, project: p, chapter: chapter, source: reader, search: search, model: model, policy: policy, path: path}
 }
-func (f g2Fixture) expectation(version int64) G2Expectation {
-	return G2Expectation{ExpectedProjectVersion: f.project.ProjectVersion, ExpectedContextRevision: f.project.CurrentContextRevision, ExpectedVersion: version}
+func (f agentFixture) expectation(version int64) VersionExpectation {
+	return VersionExpectation{ExpectedProjectVersion: f.project.ProjectVersion, ExpectedContextRevision: f.project.CurrentContextRevision, ExpectedVersion: version}
 }
-func g2Decode[T any](t *testing.T, raw json.RawMessage, err error) T {
+func decodeAgentJSON[T any](t *testing.T, raw json.RawMessage, err error) T {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
@@ -168,44 +168,44 @@ func g2Decode[T any](t *testing.T, raw json.RawMessage, err error) T {
 	}
 	return out
 }
-func (f g2Fixture) task(t *testing.T) ResearchTask {
+func (f agentFixture) task(t *testing.T) ResearchTask {
 	t.Helper()
-	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "g2-save-task", SaveResearchTaskInput{G2Expectation: f.expectation(0), Goal: "研究合成材料的定义与限制", Scope: "只查询项目资料", Queries: []string{"定义", "限制"}, AssetIDs: []string{"asset-1"}})
-	task := g2Decode[ResearchTask](t, raw, err)
-	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-approve-task", G2ConfirmedInput{G2Expectation: f.expectation(task.Version), Confirmed: true, Reason: "用户确认查询范围"})
-	return g2Decode[ResearchTask](t, raw, err)
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "g2-save-task", SaveResearchTaskInput{VersionExpectation: f.expectation(0), Goal: "研究合成材料的定义与限制", Scope: "只查询项目资料", Queries: []string{"定义", "限制"}, AssetIDs: []string{"asset-1"}})
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-approve-task", ConfirmationInput{VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "用户确认查询范围"})
+	return decodeAgentJSON[ResearchTask](t, raw, err)
 }
-func (f g2Fixture) anchor(t *testing.T, sourceID, key string) SourceAnchor {
+func (f agentFixture) anchor(t *testing.T, sourceID, key string) SourceAnchor {
 	t.Helper()
 	source := f.source.sources[sourceID]
-	raw, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, key, SaveSourceAnchorInput{G2Expectation: f.expectation(0), SourceID: sourceID, SelectionEnd: len([]rune(source.QuotedText)), ExtractionType: "native_text", OCRConfidence: 1, HumanVerified: true, Confirmed: true})
-	return g2Decode[SourceAnchor](t, raw, err)
+	raw, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, key, SaveSourceAnchorInput{VersionExpectation: f.expectation(0), SourceID: sourceID, SelectionEnd: len([]rune(source.QuotedText)), ExtractionType: "native_text", OCRConfidence: 1, HumanVerified: true, Confirmed: true})
+	return decodeAgentJSON[SourceAnchor](t, raw, err)
 }
-func (f g2Fixture) claim(t *testing.T) ResearchClaim {
+func (f agentFixture) claim(t *testing.T) ResearchClaim {
 	t.Helper()
-	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "g2-create-claim", SaveResearchClaimInput{G2Expectation: f.expectation(0), Text: "合成定义可用于本章节概念界定", Scope: "本章概念界定", Reason: "人工输入主张", Confirmed: true})
-	return g2Decode[ResearchClaim](t, raw, err)
+	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "g2-create-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(0), Text: "合成定义可用于本章节概念界定", Scope: "本章概念界定", Reason: "人工输入主张", Confirmed: true})
+	return decodeAgentJSON[ResearchClaim](t, raw, err)
 }
-func (f g2Fixture) card(t *testing.T, anchors []SourceAnchor, claim *ResearchClaim, key, support string) EvidenceCard {
+func (f agentFixture) card(t *testing.T, anchors []SourceAnchor, claim *ResearchClaim, key, support string) EvidenceCard {
 	t.Helper()
-	refs := []G2VersionRef{}
+	refs := []VersionRef{}
 	for _, anchor := range anchors {
-		refs = append(refs, G2VersionRef{ID: anchor.ID, Version: anchor.Version})
+		refs = append(refs, VersionRef{ID: anchor.ID, Version: anchor.Version})
 	}
-	var claimRef *G2VersionRef
+	var claimRef *VersionRef
 	if claim != nil {
-		claimRef = &G2VersionRef{ID: claim.ID, Version: claim.Version}
+		claimRef = &VersionRef{ID: claim.ID, Version: claim.Version}
 	}
-	raw, _, _, err := f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, key, SaveEvidenceCardInput{G2Expectation: f.expectation(0), AnchorRefs: refs, ClaimRef: claimRef, SupportType: support, Scope: "仅支持概念界定，不支持因果效果", ScopeChapterIDs: []string{f.chapter.ID}, Limitations: "合成材料，不能做实证结论", Confirmed: true})
-	return g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, key, SaveEvidenceCardInput{VersionExpectation: f.expectation(0), AnchorRefs: refs, ClaimRef: claimRef, SupportType: support, Scope: "仅支持概念界定，不支持因果效果", ScopeChapterIDs: []string{f.chapter.ID}, Limitations: "合成材料，不能做实证结论", Confirmed: true})
+	return decodeAgentJSON[EvidenceCard](t, raw, err)
 }
 
-func TestG2ResearchTwoRoundsDeduplicatesReplaysAndRestarts(t *testing.T) {
-	f := newG2Fixture(t, true)
+func TestResearchTwoRoundsDeduplicatesReplaysAndRestarts(t *testing.T) {
+	f := newAgentFixture(t, true)
 	task := f.task(t)
-	input := RunResearchTaskInput{G2Expectation: f.expectation(task.Version)}
+	input := RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)}
 	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-run-01", input)
-	run := g2Decode[ResearchRun](t, raw, err)
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	if run.Status != "completed" || len(run.Rounds) != 2 || len(run.Results) != 1 || f.search.calls != 2 || run.RunMode != "real_api_fake_model" {
 		t.Fatalf("run not complete/deduplicated: %+v calls=%d", run, f.search.calls)
 	}
@@ -217,24 +217,24 @@ func TestG2ResearchTwoRoundsDeduplicatesReplaysAndRestarts(t *testing.T) {
 		t.Fatalf("research autoactivated: %+v %v", p, err)
 	}
 	restarted := testStoreWithPolicy(t, f.path, f.policy)
-	restarted.ConfigureG2(f.svc.g2Runtime)
+	restarted.ConfigureAgentRuntime(f.svc.agentRuntime)
 	recovered, err := restarted.GetResearchRun(context.Background(), f.owner, f.project.ID, run.ID)
 	if err != nil || len(recovered.Rounds) != 2 || recovered.ID != run.ID {
 		t.Fatalf("restart lost run: %+v %v", recovered, err)
 	}
 }
-func TestG2ResearchPartialFailureRetainsResultsAndNoRetry(t *testing.T) {
-	f := newG2Fixture(t, true)
+func TestResearchPartialFailureRetainsResultsAndNoRetry(t *testing.T) {
+	f := newAgentFixture(t, true)
 	task := f.task(t)
 	f.search.failAt = 2
-	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-partial-run", RunResearchTaskInput{G2Expectation: f.expectation(task.Version)})
-	run := g2Decode[ResearchRun](t, raw, err)
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-partial-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	if run.Status != "failed" || len(run.Results) != 1 || len(run.Rounds) != 2 || run.Rounds[1].FailureCode != "provider_failure" || f.search.calls != 2 {
 		t.Fatalf("partial failure fabricated completion: %+v", run)
 	}
 }
-func TestG2ResearchOldBasisIsHistoricalAndNeverOverwrites(t *testing.T) {
-	f := newG2Fixture(t, true)
+func TestResearchOldBasisIsHistoricalAndNeverOverwrites(t *testing.T) {
+	f := newAgentFixture(t, true)
 	task := f.task(t)
 	f.search.callback = func(call int) {
 		if call == 2 {
@@ -243,14 +243,14 @@ func TestG2ResearchOldBasisIsHistoricalAndNeverOverwrites(t *testing.T) {
 			}
 		}
 	}
-	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-stale-run", RunResearchTaskInput{G2Expectation: f.expectation(task.Version)})
-	run := g2Decode[ResearchRun](t, raw, err)
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-stale-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	if run.Status != "stale" || run.Basis.ContextRevision != f.project.CurrentContextRevision || run.FailureCode != "stale_basis" {
 		t.Fatalf("stale basis accepted: %+v", run)
 	}
 }
-func TestG2ResearchCancelKeepsRunAndStopsNextRound(t *testing.T) {
-	f := newG2Fixture(t, true)
+func TestResearchCancelKeepsRunAndStopsNextRound(t *testing.T) {
+	f := newAgentFixture(t, true)
 	task := f.task(t)
 	f.search.callback = func(call int) {
 		if call == 1 {
@@ -258,97 +258,97 @@ func TestG2ResearchCancelKeepsRunAndStopsNextRound(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, _, err = f.svc.ControlResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-cancel-running", ControlResearchTaskInput{G2Expectation: f.expectation(tasks[0].Version), Action: "cancel", Reason: "用户取消"})
+			_, _, _, err = f.svc.ControlResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-cancel-running", ControlResearchTaskInput{VersionExpectation: f.expectation(tasks[0].Version), Action: "cancel", Reason: "用户取消"})
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
-	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-cancel-run", RunResearchTaskInput{G2Expectation: f.expectation(task.Version)})
-	run := g2Decode[ResearchRun](t, raw, err)
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-cancel-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	if run.Status != "cancelled" || f.search.calls != 1 || len(run.Results) != 1 {
 		t.Fatalf("cancel lost/continued work: %+v calls=%d", run, f.search.calls)
 	}
 }
-func TestG2DraftClaimCardAndSummaryPromotionAreBlocked(t *testing.T) {
-	f := newG2Fixture(t, true)
-	_, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "g2-draft-claim", SaveResearchClaimInput{G2Expectation: f.expectation(0), Text: "主张", Scope: "范围", Reason: "创建", Confirmed: true})
+func TestDraftClaimCardAndSummaryPromotionAreBlocked(t *testing.T) {
+	f := newAgentFixture(t, true)
+	_, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "g2-draft-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(0), Text: "主张", Scope: "范围", Reason: "创建", Confirmed: true})
 	if !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("draft claim: %v", err)
 	}
-	_, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "g2-draft-card", SaveEvidenceCardInput{G2Expectation: f.expectation(0), AnchorRefs: []G2VersionRef{{ID: "absent", Version: 1}}, Confirmed: true})
+	_, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "g2-draft-card", SaveEvidenceCardInput{VersionExpectation: f.expectation(0), AnchorRefs: []VersionRef{{ID: "absent", Version: 1}}, Confirmed: true})
 	if !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("draft card: %v", err)
 	}
-	_, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-summary-import", CreateImportCandidateInput{G2Expectation: f.expectation(0), URL: "https://example.org/synthetic", Purpose: "研究", SaveMode: "full_text", Scope: "project", License: "synthetic-license"})
-	if !errors.Is(err, ErrG2EvidenceIncomplete) {
+	_, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-summary-import", CreateImportCandidateInput{VersionExpectation: f.expectation(0), URL: "https://example.org/synthetic", Purpose: "研究", SaveMode: "full_text", Scope: "project", License: "synthetic-license"})
+	if !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("summary promoted: %v", err)
 	}
-	if f.svc.g2Runtime.Imports.(*g2TestImporter).calls != 0 {
+	if f.svc.agentRuntime.Imports.(*testImporter).calls != 0 {
 		t.Fatal("blocked summary imported")
 	}
 }
-func TestG2AnchorsRequireReadyVerbatimOriginalAndConsent(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestAnchorsRequireReadyVerbatimOriginalAndConsent(t *testing.T) {
+	f := newAgentFixture(t, false)
 	source := f.source.sources["source-1"]
-	input := SaveSourceAnchorInput{G2Expectation: f.expectation(0), SourceID: source.SourceID, SelectionEnd: len([]rune(source.QuotedText)), ExtractionType: "native_text", Confirmed: true}
+	input := SaveSourceAnchorInput{VersionExpectation: f.expectation(0), SourceID: source.SourceID, SelectionEnd: len([]rune(source.QuotedText)), ExtractionType: "native_text", Confirmed: true}
 	for _, state := range []string{"processing", "failed"} {
 		copy := source
 		copy.ProcessingState = state
 		f.source.sources[source.SourceID] = copy
-		if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-"+state, input); !errors.Is(err, ErrG2EvidenceIncomplete) {
+		if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-"+state, input); !errors.Is(err, ErrEvidenceIncomplete) {
 			t.Fatalf("unready anchor %s: %v", state, err)
 		}
 	}
 	copy := source
 	copy.StableOriginal = false
 	f.source.sources[source.SourceID] = copy
-	if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-summary", input); !errors.Is(err, ErrG2EvidenceIncomplete) {
+	if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-summary", input); !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("summary anchor: %v", err)
 	}
 	f.source.sources[source.SourceID] = source
 	input.Confirmed = false
-	if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-no-consent", input); !errors.Is(err, ErrG2ConsentRequired) {
+	if _, _, _, err := f.svc.SaveSourceAnchor(context.Background(), f.owner, f.project.ID, "g2-anchor-no-consent", input); !errors.Is(err, ErrConsentRequired) {
 		t.Fatalf("no consent: %v", err)
 	}
 }
-func TestG2CandidateNeedsClaimAndConfirmedVersionForGeneration(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestCandidateNeedsClaimAndConfirmedVersionForGeneration(t *testing.T) {
+	f := newAgentFixture(t, false)
 	anchor := f.anchor(t, "source-1", "g2-anchor-one")
 	card := f.card(t, []SourceAnchor{anchor}, nil, "g2-no-claim-card", "supports")
 	if card.Status != "CANDIDATE" || card.Confirmation != nil {
 		t.Fatalf("candidate auto-confirmed: %+v", card)
 	}
-	if _, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-no-claim-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"}); !errors.Is(err, ErrG2EvidenceIncomplete) {
+	if _, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-no-claim-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"}); !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("claimless confirmed: %v", err)
 	}
-	if _, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: card.ID, Version: card.Version}}, true); !errors.Is(err, ErrG2EvidenceIncomplete) {
+	if _, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: card.ID, Version: card.Version}}, true); !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("claimless formal: %v", err)
 	}
-	draft, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: card.ID, Version: card.Version}}, false)
+	draft, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: card.ID, Version: card.Version}}, false)
 	if err != nil || len(draft.Pending) != 1 {
 		t.Fatalf("candidate draft lost label: %+v %v", draft, err)
 	}
 }
-func TestG2EvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestEvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
+	f := newAgentFixture(t, false)
 	a := f.anchor(t, "source-1", "g2-anchor-a")
 	b := f.anchor(t, "source-2", "g2-anchor-b")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{a, b}, &claim, "g2-multiple-anchor-card", "supports")
 	opposite := f.card(t, []SourceAnchor{b}, &claim, "g2-opposite-card", "refutes")
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-confirm-multi", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "逐一原文核对，仅概念界定"})
-	confirmed := g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-confirm-multi", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "逐一原文核对，仅概念界定"})
+	confirmed := decodeAgentJSON[EvidenceCard](t, raw, err)
 	if confirmed.Status != "CONFIRMED" || !strings.Contains(confirmed.Confirmation.Meaning, "不表示") {
 		t.Fatalf("confirmation overclaimed: %+v", confirmed)
 	}
-	selection, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}, true)
+	selection, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}, true)
 	if err != nil || len(selection.Sources) != 2 {
 		t.Fatalf("formal selection: %+v %v", selection, err)
 	}
 	f.source.denied[a.SourceID] = true
 	f.policy.verdict = ErrSourceUnavailable
-	if _, _, _, err = f.svc.InvalidateG2Evidence(context.Background(), f.owner, f.project.ID, "g2-local-invalid", []string{a.SourceID}, "来源授权撤回"); err != nil {
+	if _, _, _, err = f.svc.InvalidateEvidence(context.Background(), f.owner, f.project.ID, "g2-local-invalid", []string{a.SourceID}, "来源授权撤回"); err != nil {
 		t.Fatal(err)
 	}
 	cards, err := f.svc.ListEvidenceCards(context.Background(), f.owner, f.project.ID)
@@ -363,12 +363,12 @@ func TestG2EvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
 			t.Fatal("unrelated opposite card invalidated")
 		}
 	}
-	if _, err = f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}, true); err == nil {
+	if _, err = f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}, true); err == nil {
 		t.Fatal("revoked evidence entered formal generation")
 	}
 	if err = f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		port, _ := g2Storage(tx)
-		row, err := port.G2ObjectVersion(f.project.ID, G2CardKind, confirmed.ID, confirmed.Version)
+		port, _ := agentObjectStore(tx)
+		row, err := port.ObjectVersion(f.project.ID, EvidenceCardKind, confirmed.ID, confirmed.Version)
 		if err != nil {
 			return err
 		}
@@ -395,8 +395,8 @@ func TestG2EvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
 		}
 	}
 }
-func TestG2AuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestAuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole(t *testing.T) {
+	f := newAgentFixture(t, false)
 	a := f.anchor(t, "source-1", "g2-permission-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{a}, &claim, "g2-permission-card", "supports")
@@ -419,12 +419,12 @@ func TestG2AuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole(t *testing.T
 		}); err != nil {
 			t.Fatal(err)
 		}
-		_, _, _, err = f.svc.ConfirmEvidenceCard(context.Background(), actor, f.project.ID, card.ID, "g2-unauth-"+name, G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "尝试代行"})
+		_, _, _, err = f.svc.ConfirmEvidenceCard(context.Background(), actor, f.project.ID, card.ID, "g2-unauth-"+name, ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "尝试代行"})
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("%s confirmed: %v", name, err)
 		}
 	}
-	input := G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"}
+	input := ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"}
 	if _, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-role-replay", input); err != nil {
 		t.Fatal(err)
 	}
@@ -435,15 +435,15 @@ func TestG2AuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole(t *testing.T
 		t.Fatalf("downgraded replay: %v", err)
 	}
 }
-func TestG2AgentSessionsRebuildHistoryAndEraseRevokedContent(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestAgentSessionsRebuildHistoryAndEraseRevokedContent(t *testing.T) {
+	f := newAgentFixture(t, false)
 	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, "task_assistant", "g2-task-session", f.expectation(0))
-	task := g2Decode[AgentSession](t, raw, err)
+	task := decodeAgentJSON[AgentSession](t, raw, err)
 	raw, _, _, err = f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, "research_agent", "g2-research-session", f.expectation(0))
-	research := g2Decode[AgentSession](t, raw, err)
-	input := AgentTurnInput{AgentContextInput: AgentContextInput{G2Expectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "解释这条候选资料的限制"}
+	research := decodeAgentJSON[AgentSession](t, raw, err)
+	input := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "解释这条候选资料的限制"}
 	raw, _, _, err = f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, task.ID, "g2-agent-turn-1", input)
-	turn := g2Decode[AgentTurn](t, raw, err)
+	turn := decodeAgentJSON[AgentTurn](t, raw, err)
 	if turn.Status != "completed" || f.model.calls != 1 {
 		t.Fatalf("agent turn: %+v", turn)
 	}
@@ -476,14 +476,14 @@ func TestG2AgentSessionsRebuildHistoryAndEraseRevokedContent(t *testing.T) {
 		t.Fatalf("revoked model access: %v calls=%d", err, f.model.calls)
 	}
 }
-func TestG2AgentModelTimeoutPreservesInputAndNeverAutoRetries(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestAgentModelTimeoutPreservesInputAndNeverAutoRetries(t *testing.T) {
+	f := newAgentFixture(t, false)
 	f.model.err = context.DeadlineExceeded
 	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, "task_assistant", "g2-timeout-session", f.expectation(0))
-	session := g2Decode[AgentSession](t, raw, err)
-	input := AgentTurnInput{AgentContextInput: AgentContextInput{G2Expectation: f.expectation(0), SourceIDs: []string{}}, UserInput: "保留我的调研问题"}
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	input := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{}}, UserInput: "保留我的调研问题"}
 	raw, _, _, err = f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "g2-timeout-turn", input)
-	turn := g2Decode[AgentTurn](t, raw, err)
+	turn := decodeAgentJSON[AgentTurn](t, raw, err)
 	if turn.Status != "failed" || turn.UserInput != input.UserInput || turn.FailureCode != "timeout" || f.model.calls != 1 {
 		t.Fatalf("timeout not recoverable: %+v", turn)
 	}
@@ -491,16 +491,16 @@ func TestG2AgentModelTimeoutPreservesInputAndNeverAutoRetries(t *testing.T) {
 		t.Fatalf("timeout automatically repeated: %v calls=%d", err, f.model.calls)
 	}
 }
-func TestG2ActionConfirmationIsExplicitAndIdempotent(t *testing.T) {
-	f := newG2Fixture(t, false)
-	executor := f.svc.g2Runtime.Actions.(*g2TestActionExecutor)
-	raw, _, _, err := f.svc.CreateActionProposal(context.Background(), f.owner, f.project.ID, "g2-action-preview", CreateActionProposalInput{G2Expectation: f.expectation(0), Action: "save_spec", TargetID: f.project.ID, Input: json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"更新合成目标"}}`), SourceIDs: []string{}, ExpectedEffect: "创建新的研究条件版本"})
-	proposal := g2Decode[ActionProposal](t, raw, err)
+func TestActionConfirmationIsExplicitAndIdempotent(t *testing.T) {
+	f := newAgentFixture(t, false)
+	executor := f.svc.agentRuntime.Actions.(*testActionExecutor)
+	raw, _, _, err := f.svc.CreateActionProposal(context.Background(), f.owner, f.project.ID, "g2-action-preview", CreateActionProposalInput{VersionExpectation: f.expectation(0), Action: "save_spec", TargetID: f.project.ID, Input: json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"更新合成目标"}}`), SourceIDs: []string{}, ExpectedEffect: "创建新的研究条件版本"})
+	proposal := decodeAgentJSON[ActionProposal](t, raw, err)
 	if executor.calls != 0 {
 		t.Fatal("proposal silently executed")
 	}
-	input := G2ConfirmedInput{G2Expectation: f.expectation(proposal.Version), Confirmed: false, Reason: "yes"}
-	if _, _, _, err = f.svc.ConfirmActionProposal(context.Background(), f.owner, f.project.ID, proposal.ID, "g2-action-no-confirm", input); !errors.Is(err, ErrG2ConsentRequired) || executor.calls != 0 {
+	input := ConfirmationInput{VersionExpectation: f.expectation(proposal.Version), Confirmed: false, Reason: "yes"}
+	if _, _, _, err = f.svc.ConfirmActionProposal(context.Background(), f.owner, f.project.ID, proposal.ID, "g2-action-no-confirm", input); !errors.Is(err, ErrConsentRequired) || executor.calls != 0 {
 		t.Fatalf("ordinary yes executed: %v", err)
 	}
 	input.Confirmed = true
@@ -515,12 +515,12 @@ func TestG2ActionConfirmationIsExplicitAndIdempotent(t *testing.T) {
 		t.Fatalf("same key altered request: %v", err)
 	}
 }
-func TestG2FailureRollsBackObjectVersionOperationAndAudit(t *testing.T) {
-	f := newG2Fixture(t, true)
+func TestFailureRollsBackObjectVersionOperationAndAudit(t *testing.T) {
+	f := newAgentFixture(t, true)
 	if err := f.svc.testDB().Exec("CREATE TRIGGER synthetic_version_failure BEFORE INSERT ON lingdoc_g2_object_versions BEGIN SELECT RAISE(ABORT, 'synthetic storage failure'); END").Error; err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "g2-failed-atomic", SaveResearchTaskInput{G2Expectation: f.expectation(0), Goal: "失败保留输入", Queries: []string{"查询一", "查询二"}, AssetIDs: []string{"asset-1"}})
+	_, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "g2-failed-atomic", SaveResearchTaskInput{VersionExpectation: f.expectation(0), Goal: "失败保留输入", Queries: []string{"查询一", "查询二"}, AssetIDs: []string{"asset-1"}})
 	if err == nil {
 		t.Fatal("version storage failure accepted")
 	}
@@ -531,28 +531,28 @@ func TestG2FailureRollsBackObjectVersionOperationAndAudit(t *testing.T) {
 		t.Fatalf("partial state remained: objects=%d operations=%d", objects, operations)
 	}
 }
-func TestG2ImportNeedsConsentAndSourceHashStillMatches(t *testing.T) {
-	f := newG2Fixture(t, true)
-	raw, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-import-candidate", CreateImportCandidateInput{G2Expectation: f.expectation(0), SourceID: "source-1", Purpose: "定义参考", SaveMode: "link_excerpt", Scope: "project", ModelUseAllowed: true, License: "合成公开fixture"})
-	candidate := g2Decode[ImportCandidate](t, raw, err)
-	input := G2ConfirmedInput{G2Expectation: f.expectation(candidate.Version), Confirmed: false, Reason: "确认用途"}
-	if _, _, _, err = f.svc.ConfirmImportCandidate(context.Background(), f.owner, f.project.ID, candidate.ID, "g2-import-without-confirm", input); !errors.Is(err, ErrG2ConsentRequired) {
+func TestImportNeedsConsentAndSourceHashStillMatches(t *testing.T) {
+	f := newAgentFixture(t, true)
+	raw, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-import-candidate", CreateImportCandidateInput{VersionExpectation: f.expectation(0), SourceID: "source-1", Purpose: "定义参考", SaveMode: "link_excerpt", Scope: "project", ModelUseAllowed: true, License: "合成公开fixture"})
+	candidate := decodeAgentJSON[ImportCandidate](t, raw, err)
+	input := ConfirmationInput{VersionExpectation: f.expectation(candidate.Version), Confirmed: false, Reason: "确认用途"}
+	if _, _, _, err = f.svc.ConfirmImportCandidate(context.Background(), f.owner, f.project.ID, candidate.ID, "g2-import-without-confirm", input); !errors.Is(err, ErrConsentRequired) {
 		t.Fatal(err)
 	}
 	source := f.source.sources["source-1"]
 	source.QuotedText += "变更"
-	source.QuotedTextHash = g2Hash(source.QuotedText)
+	source.QuotedTextHash = sha256Hex(source.QuotedText)
 	f.source.sources["source-1"] = source
 	input.Confirmed = true
-	if _, _, _, err = f.svc.ConfirmImportCandidate(context.Background(), f.owner, f.project.ID, candidate.ID, "g2-import-changed", input); !errors.Is(err, ErrG2EvidenceIncomplete) {
+	if _, _, _, err = f.svc.ConfirmImportCandidate(context.Background(), f.owner, f.project.ID, candidate.ID, "g2-import-changed", input); !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("changed source imported: %v", err)
 	}
-	if f.svc.g2Runtime.Imports.(*g2TestImporter).calls != 0 {
+	if f.svc.agentRuntime.Imports.(*testImporter).calls != 0 {
 		t.Fatal("import invoked after changed hash")
 	}
 }
 
-func g2SeedNativeEvidence(t *testing.T, f g2Fixture) {
+func seedNativeEvidence(t *testing.T, f agentFixture) {
 	t.Helper()
 	db := f.svc.testDB()
 	for _, ddl := range []string{
@@ -579,14 +579,14 @@ func g2SeedNativeEvidence(t *testing.T, f g2Fixture) {
 		}
 	}
 }
-func TestG2CurrentEvidenceObjectRechecksActualClaimAnchorAndFileFingerprint(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+func TestCurrentEvidenceObjectRechecksActualClaimAnchorAndFileFingerprint(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	anchor := f.anchor(t, "source-1", "g2-native-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-native-card", "supports")
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-current-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对原文定位及适用范围"})
-	card = g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-current-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对原文定位及适用范围"})
+	card = decodeAgentJSON[EvidenceCard](t, raw, err)
 	read := func() ImpactObjectState {
 		var out ImpactObjectState
 		err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -618,8 +618,8 @@ func TestG2CurrentEvidenceObjectRechecksActualClaimAnchorAndFileFingerprint(t *t
 		t.Fatal("unrefreshed file fingerprint retained confirmation")
 	}
 }
-func TestG2ClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards(t *testing.T) {
+	f := newAgentFixture(t, false)
 	anchor := f.anchor(t, "source-1", "g2-native-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-native-card", "supports")
@@ -645,7 +645,7 @@ func TestG2ClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards(t *testing.T
 	var stale EvidenceCard
 	err = f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var e error
-		stale, _, e = g2Load[EvidenceCard](tx, f.project.ID, G2CardKind, card.ID)
+		stale, _, e = loadStoredObject[EvidenceCard](tx, f.project.ID, EvidenceCardKind, card.ID)
 		return e
 	})
 	if err != nil || stale.Status != "NEEDS_REVIEW" || stale.Confirmation != nil {
@@ -659,9 +659,9 @@ func TestG2ClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards(t *testing.T
 		t.Fatal("no real dependency edges persisted")
 	}
 }
-func TestG2AssetPolicyDeltaPinsNativeRevisionAndConsentDoesNotFollowReparse(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+func TestAssetPolicyDeltaPinsNativeRevisionAndConsentDoesNotFollowReparse(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	anchor := f.anchor(t, "source-1", "g2-native-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-native-card", "supports")
@@ -690,7 +690,7 @@ func TestG2AssetPolicyDeltaPinsNativeRevisionAndConsentDoesNotFollowReparse(t *t
 	var stale EvidenceCard
 	err = f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var e error
-		stale, _, e = g2Load[EvidenceCard](tx, f.project.ID, G2CardKind, card.ID)
+		stale, _, e = loadStoredObject[EvidenceCard](tx, f.project.ID, EvidenceCardKind, card.ID)
 		return e
 	})
 	if err != nil || stale.Status != "NEEDS_REVIEW" {
@@ -709,9 +709,9 @@ func TestG2AssetPolicyDeltaPinsNativeRevisionAndConsentDoesNotFollowReparse(t *t
 		t.Fatalf("consent auto followed revision: %+v %v", read, err)
 	}
 }
-func TestG2AssetPolicyDeltaRollbackAndUnknownUserCannotGrant(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+func TestAssetPolicyDeltaRollbackAndUnknownUserCannotGrant(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	next := f.project
 	next.ProjectVersion++
 	next.CurrentContextRevision++
@@ -736,42 +736,42 @@ func TestG2AssetPolicyDeltaRollbackAndUnknownUserCannotGrant(t *testing.T) {
 		t.Fatalf("rollback left native delta: %+v %v", native, err)
 	}
 	var count int64
-	if err = f.svc.testDB().Table("lingdoc_g2_objects").Where("project_id = ? AND kind = ?", f.project.ID, G2AssetPolicyKind).Count(&count).Error; err != nil || count != 0 {
+	if err = f.svc.testDB().Table("lingdoc_g2_objects").Where("project_id = ? AND kind = ?", f.project.ID, AssetPolicyKind).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("rollback left policy object: %d %v", count, err)
 	}
 }
 
-func TestG2AgentJoinedTimeoutUnknownPreservesUnknownAndReplayNeverRecallsModel(t *testing.T) {
-	f := newG2Fixture(t, false)
-	f.model.err = errors.Join(context.DeadlineExceeded, ErrG2OutcomeUnknown)
+func TestAgentJoinedTimeoutUnknownPreservesUnknownAndReplayNeverRecallsModel(t *testing.T) {
+	f := newAgentFixture(t, false)
+	f.model.err = errors.Join(context.DeadlineExceeded, ErrOutcomeUnknown)
 	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, "task_assistant", "g2-joined-unknown-session", f.expectation(0))
-	session := g2Decode[AgentSession](t, raw, err)
-	input := AgentTurnInput{AgentContextInput: AgentContextInput{G2Expectation: f.expectation(0), SourceIDs: []string{}}, UserInput: "保留未取得确定回执的请求"}
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	input := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{}}, UserInput: "保留未取得确定回执的请求"}
 	raw, _, _, err = f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "g2-joined-unknown-turn", input)
-	turn := g2Decode[AgentTurn](t, raw, err)
+	turn := decodeAgentJSON[AgentTurn](t, raw, err)
 	if turn.FailureCode != "outcome_unknown" || turn.Status != "failed" || turn.UserInput != input.UserInput || f.model.calls != 1 {
 		t.Fatalf("unknown downgraded: %+v calls=%d", turn, f.model.calls)
 	}
 	raw, _, replay, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "g2-joined-unknown-turn", input)
-	receipt := g2Decode[AgentTurn](t, raw, err)
+	receipt := decodeAgentJSON[AgentTurn](t, raw, err)
 	if !replay || f.model.calls != 1 || receipt.ID != turn.ID || receipt.FailureCode != "outcome_unknown" {
 		t.Fatalf("unknown request repeated: %+v replay=%v calls=%d", receipt, replay, f.model.calls)
 	}
 }
 
-func TestG2FormalEvidenceSurvivesUnrelatedContextButNotClaimSpecDependencyChange(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+func TestFormalEvidenceSurvivesUnrelatedContextButNotClaimSpecDependencyChange(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	anchor := f.anchor(t, "source-1", "g2-unrelated-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-unrelated-card", "supports")
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-unrelated-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"})
-	card = g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-unrelated-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对"})
+	card = decodeAgentJSON[EvidenceCard](t, raw, err)
 	confirmedAt := card.Confirmation.ConfirmedAt
 	if err = f.svc.testDB().Exec("UPDATE lingdoc_projects SET project_version = project_version + 1,current_context_revision = current_context_revision + 1 WHERE id = ?", f.project.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	selection, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: card.ID, Version: card.Version}}, true)
+	selection, err := f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: card.ID, Version: card.Version}}, true)
 	if err != nil || len(selection.Cards) != 1 || !selection.Cards[0].Confirmation.ConfirmedAt.Equal(confirmedAt) {
 		t.Fatalf("unrelated context rewrote/invalidated confirmation: %+v %v", selection, err)
 	}
@@ -787,42 +787,42 @@ func TestG2FormalEvidenceSurvivesUnrelatedContextButNotClaimSpecDependencyChange
 	if err = f.svc.testDB().Exec("UPDATE lingdoc_projects SET spec_revision = spec_revision + 1 WHERE id = ?", f.project.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []G2VersionRef{{ID: card.ID, Version: card.Version}}, true); err == nil {
+	if _, err = f.svc.SelectGenerationEvidence(context.Background(), f.owner, f.project.ID, f.chapter.ID, []VersionRef{{ID: card.ID, Version: card.Version}}, true); err == nil {
 		t.Fatal("actual ProjectSpec claim dependency change accepted")
 	}
 }
 
-func TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag(t *testing.T) {
-	f := newG2Fixture(t, false)
+func TestMachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag(t *testing.T) {
+	f := newAgentFixture(t, false)
 	anchor := f.anchor(t, "source-1", "g2-machine-real-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-machine-real-card", "supports")
-	raw, _, _, err := f.svc.CreateActionProposal(context.Background(), f.owner, f.project.ID, "g2-machine-action-preview", CreateActionProposalInput{G2Expectation: f.expectation(0), Action: "save_spec", TargetID: f.project.ID, Input: json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"候选条件"}}`), SourceIDs: []string{}, ExpectedEffect: "生成新条件版本"})
-	action := g2Decode[ActionProposal](t, raw, err)
-	raw, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-machine-import-preview", CreateImportCandidateInput{G2Expectation: f.expectation(0), SourceID: "source-1", Purpose: "合成材料参考", SaveMode: "link_excerpt", Scope: "project", ModelUseAllowed: true, License: "合成fixture"})
-	imported := g2Decode[ImportCandidate](t, raw, err)
+	raw, _, _, err := f.svc.CreateActionProposal(context.Background(), f.owner, f.project.ID, "g2-machine-action-preview", CreateActionProposalInput{VersionExpectation: f.expectation(0), Action: "save_spec", TargetID: f.project.ID, Input: json.RawMessage(`{"expected_spec_revision":1,"fields":{"research_goal":"候选条件"}}`), SourceIDs: []string{}, ExpectedEffect: "生成新条件版本"})
+	action := decodeAgentJSON[ActionProposal](t, raw, err)
+	raw, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "g2-machine-import-preview", CreateImportCandidateInput{VersionExpectation: f.expectation(0), SourceID: "source-1", Purpose: "合成材料参考", SaveMode: "link_excerpt", Scope: "project", ModelUseAllowed: true, License: "合成fixture"})
+	imported := decodeAgentJSON[ImportCandidate](t, raw, err)
 	cases := []struct {
 		name string
 		call func(context.Context) error
 	}{
 		{"claim", func(ctx context.Context) error {
-			_, _, _, e := f.svc.SaveResearchClaim(ctx, f.owner, f.project.ID, "g2-machine-new-claim", SaveResearchClaimInput{G2Expectation: f.expectation(0), Text: "声称已经核实", Scope: "本章", Reason: "机器confirmed", Confirmed: true})
+			_, _, _, e := f.svc.SaveResearchClaim(ctx, f.owner, f.project.ID, "g2-machine-new-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(0), Text: "声称已经核实", Scope: "本章", Reason: "机器confirmed", Confirmed: true})
 			return e
 		}},
 		{"card_confirm", func(ctx context.Context) error {
-			_, _, _, e := f.svc.ConfirmEvidenceCard(ctx, f.owner, f.project.ID, card.ID, "g2-machine-card-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "机器confirmed"})
+			_, _, _, e := f.svc.ConfirmEvidenceCard(ctx, f.owner, f.project.ID, card.ID, "g2-machine-card-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "机器confirmed"})
 			return e
 		}},
 		{"import_consent", func(ctx context.Context) error {
-			_, _, _, e := f.svc.ConfirmImportCandidate(ctx, f.owner, f.project.ID, imported.ID, "g2-machine-import-confirm", G2ConfirmedInput{G2Expectation: f.expectation(imported.Version), Confirmed: true, Reason: "机器许可"})
+			_, _, _, e := f.svc.ConfirmImportCandidate(ctx, f.owner, f.project.ID, imported.ID, "g2-machine-import-confirm", ConfirmationInput{VersionExpectation: f.expectation(imported.Version), Confirmed: true, Reason: "机器许可"})
 			return e
 		}},
 		{"action_confirm", func(ctx context.Context) error {
-			_, _, _, e := f.svc.ConfirmActionProposal(ctx, f.owner, f.project.ID, action.ID, "g2-machine-action-confirm", G2ConfirmedInput{G2Expectation: f.expectation(action.Version), Confirmed: true, Reason: "机器confirmed"})
+			_, _, _, e := f.svc.ConfirmActionProposal(ctx, f.owner, f.project.ID, action.ID, "g2-machine-action-confirm", ConfirmationInput{VersionExpectation: f.expectation(action.Version), Confirmed: true, Reason: "机器confirmed"})
 			return e
 		}},
 		{"action_reject", func(ctx context.Context) error {
-			_, _, _, e := f.svc.RejectActionProposal(ctx, f.owner, f.project.ID, action.ID, "g2-machine-action-reject", G2ConfirmedInput{G2Expectation: f.expectation(action.Version), Confirmed: true, Reason: "机器confirmed"})
+			_, _, _, e := f.svc.RejectActionProposal(ctx, f.owner, f.project.ID, action.ID, "g2-machine-action-reject", ConfirmationInput{VersionExpectation: f.expectation(action.Version), Confirmed: true, Reason: "机器confirmed"})
 			return e
 		}},
 	}
@@ -845,7 +845,7 @@ func TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag(t
 	if err := cases[3].call(keyCtx); err == nil {
 		t.Fatal("key with no principal bypassed human guard")
 	}
-	if f.svc.g2Runtime.Actions.(*g2TestActionExecutor).calls != 0 || f.svc.g2Runtime.Imports.(*g2TestImporter).calls != 0 {
+	if f.svc.agentRuntime.Actions.(*testActionExecutor).calls != 0 || f.svc.agentRuntime.Imports.(*testImporter).calls != 0 {
 		t.Fatal("machine decision invoked external effects")
 	}
 	current, err := f.svc.ListEvidenceCards(context.Background(), f.owner, f.project.ID)

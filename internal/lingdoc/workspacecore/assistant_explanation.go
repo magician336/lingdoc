@@ -238,7 +238,7 @@ func assistantAffectedFromContext(ctx context.Context) *AssistantAffectedExplana
 // draft write fails with zero writes.
 func (s *Service) assistantAffectedForDraft(ctx context.Context, actor Actor, projectID string, input AgentChangeDraftInput) (*AssistantAffectedExplanation, error) {
 	var derived *AssistantAffectedExplanation
-	err := s.g2Read(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {
+	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {
 		turnID := ""
 		for _, metadata := range input.FieldMetadata {
 			if metadata.Provenance == nil || metadata.Provenance.SourceType != "agent_turn" {
@@ -255,7 +255,7 @@ func (s *Service) assistantAffectedForDraft(ctx context.Context, actor Actor, pr
 		if turnID == "" {
 			return nil
 		}
-		turn, stored, err := g2Load[AgentTurn](tx, p.ID, G2TurnKind, turnID)
+		turn, stored, err := loadStoredObject[AgentTurn](tx, p.ID, AgentTurnKind, turnID)
 		if err != nil {
 			return err
 		}

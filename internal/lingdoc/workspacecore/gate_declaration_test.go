@@ -42,7 +42,7 @@ var declaredGates = map[string]string{
 	"rejectActionProposal":   "Required",
 }
 
-// researchGateCallSites is the number of g2Operation call sites in the
+// researchGateCallSites is the number of runAgentOperation call sites in the
 // research domain. A new operation changes it, and it has to come with a
 // decision about its gate.
 const researchGateCallSites = 19
@@ -59,7 +59,7 @@ func TestTheResearchDomainDeclaresTheGateItUsedToEnforce(t *testing.T) {
 	found := map[string]string{}
 	sites := 0
 
-	for _, name := range []string{"g2_service.go", "g2_action_proposal_replay.go"} {
+	for _, name := range []string{"agent_action_service.go", "action_proposal_replay.go"} {
 		path := filepath.Join(directory, name)
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if err != nil {
@@ -67,12 +67,12 @@ func TestTheResearchDomainDeclaresTheGateItUsedToEnforce(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
-			if !ok || !isG2OperationCall(call) {
+			if !ok || !isAgentOperationCall(call) {
 				return true
 			}
 			sites++
 			if len(call.Args) < 11 {
-				t.Fatalf("%s: a g2Operation call has %d arguments, want 11", path, len(call.Args))
+				t.Fatalf("%s: a runAgentOperation call has %d arguments, want 11", path, len(call.Args))
 			}
 			operation, ok := stringLiteral(call.Args[4])
 			if !ok {
@@ -91,7 +91,7 @@ func TestTheResearchDomainDeclaresTheGateItUsedToEnforce(t *testing.T) {
 	}
 
 	if sites != researchGateCallSites {
-		t.Errorf("the research domain has %d g2Operation call sites, want %d; a new operation must come with a decision about its gate", sites, researchGateCallSites)
+		t.Errorf("the research domain has %d runAgentOperation call sites, want %d; a new operation must come with a decision about its gate", sites, researchGateCallSites)
 	}
 	for operation, want := range declaredGates {
 		got, ok := found[operation]
@@ -110,9 +110,9 @@ func TestTheResearchDomainDeclaresTheGateItUsedToEnforce(t *testing.T) {
 	}
 }
 
-func isG2OperationCall(call *ast.CallExpr) bool {
+func isAgentOperationCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "g2Operation" {
+	if !ok || selector.Sel.Name != "runAgentOperation" {
 		return false
 	}
 	receiver, ok := selector.X.(*ast.Ident)

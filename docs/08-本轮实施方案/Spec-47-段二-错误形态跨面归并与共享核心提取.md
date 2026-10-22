@@ -623,7 +623,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 **少数口径变更第 10 项**。
 
 **安全语义没有变**：机器身份仍然被拒绝，且仍然不触发任何外部效果。
-`TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag`
+`TestMachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag`
 的守门断言——「机器身份不得触发外部效果」「机器身份不得改写卡片真相」——**全部通过**，
 只有「必须是 `ErrHumanDecisionRequired`」这一条形态断言改成了「必须被拒绝」。
 

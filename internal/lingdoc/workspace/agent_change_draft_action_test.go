@@ -14,8 +14,8 @@ import (
 
 const agentDraftSyntheticValue = "仅使用合成访谈数据比较软件流程的可追踪性"
 
-func agentDraftExpectation(p core.Project, version int64) core.G2Expectation {
-	return core.G2Expectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision, ExpectedVersion: version}
+func agentDraftExpectation(p core.Project, version int64) core.VersionExpectation {
+	return core.VersionExpectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision, ExpectedVersion: version}
 }
 
 // The provider is an in-process existing chat stub. The real host parser,
@@ -44,7 +44,7 @@ func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture, selectedSourceIDs
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
-	f.projects.ConfigureG2(core.G2Runtime{
+	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
 		Sources: NewG2ResearchAdapter(f.db, f.projects, f.runtime, g4AdapterShares{}, nil, nil),
 		Model:   host, Actions: NewG2ActionExecutor(f.projects, f.runtime, nil),
 	})
@@ -53,7 +53,7 @@ func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture, selectedSourceIDs
 	var session core.AgentSession
 	require.NoError(t, json.Unmarshal(raw, &session))
 	raw, _, _, err = f.projects.SendAgentTurn(f.ctx, f.actor, p.ID, session.ID, "agent-draft-turn", core.AgentTurnInput{
-		AgentContextInput: core.AgentContextInput{G2Expectation: agentDraftExpectation(p, session.Version), SourceIDs: append([]string{}, selectedSourceIDs...), CardRefs: []core.G2VersionRef{}, SensitiveContextConfirmed: len(selectedSourceIDs) > 0},
+		AgentContextInput: core.AgentContextInput{VersionExpectation: agentDraftExpectation(p, session.Version), SourceIDs: append([]string{}, selectedSourceIDs...), CardRefs: []core.VersionRef{}, SensitiveContextConfirmed: len(selectedSourceIDs) > 0},
 		UserInput:         "请将 research_goal 改为：" + agentDraftSyntheticValue + "。只提出草稿。",
 	})
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func agentDraftPropose(t *testing.T, f deliveryGuardFixture, input core.AgentCha
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
 	raw, _, _, err := f.projects.CreateActionProposal(f.ctx, f.actor, p.ID, "agent-draft-proposal", core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
+		VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
 	})
 	require.NoError(t, err)
 	var proposal core.ActionProposal
@@ -136,9 +136,9 @@ func TestAgentChangeDraftFakeModelRequiresHumanThenPreservesAIThroughOwnerApply(
 	require.Zero(t, agentDraftCount(t, f), "model output alone must never create a draft")
 	proposal := agentDraftPropose(t, f, input)
 	require.Zero(t, agentDraftCount(t, f), "pending proposal is not business confirmation")
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(p, proposal.Version), Reason: "本人复核后仅确认建草稿"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(p, proposal.Version), Reason: "本人复核后仅确认建草稿"}
 	_, _, _, err = f.projects.ConfirmActionProposal(f.ctx, f.actor, p.ID, proposal.ID, "agent-draft-unconfirmed", decision)
-	require.ErrorIs(t, err, core.ErrG2ConsentRequired)
+	require.ErrorIs(t, err, core.ErrConsentRequired)
 	require.Zero(t, agentDraftCount(t, f))
 	decision.Confirmed = true
 	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, p.ID, proposal.ID, "agent-draft-confirmed", decision)
@@ -223,7 +223,7 @@ func TestAgentChangeDraftStrictPayloadTargetAndSelectedTurn(t *testing.T) {
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
 	_, _, _, err = f.projects.CreateActionProposal(f.ctx, f.actor, f.project.ID, "agent-draft-wrong-turn-version", core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(f.project, 0), Action: "create_change_set", TargetID: f.project.ID, Input: payload, ExpectedEffect: "不应创建",
+		VersionExpectation: agentDraftExpectation(f.project, 0), Action: "create_change_set", TargetID: f.project.ID, Input: payload, ExpectedEffect: "不应创建",
 	})
 	require.Error(t, err)
 	require.Zero(t, agentDraftCount(t, f))
@@ -251,7 +251,7 @@ func TestAgentChangeDraftCurrentHumanAndSourceGuards(t *testing.T) {
 			case "revoked_source":
 				require.NoError(t, f.db.Exec("UPDATE knowledge_bases SET deleted_at=CURRENT_TIMESTAMP WHERE id='kb-runtime'").Error)
 			}
-			_, _, _, err = f.projects.ConfirmActionProposal(ctx, actor, p.ID, proposal.ID, "agent-draft-denied-"+testCase, core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(p, proposal.Version), Confirmed: true, Reason: "不能越过当前边界"})
+			_, _, _, err = f.projects.ConfirmActionProposal(ctx, actor, p.ID, proposal.ID, "agent-draft-denied-"+testCase, core.ConfirmationInput{VersionExpectation: agentDraftExpectation(p, proposal.Version), Confirmed: true, Reason: "不能越过当前边界"})
 			require.Error(t, err)
 			require.Zero(t, agentDraftCount(t, f))
 		})
@@ -267,7 +267,7 @@ func TestAgentChangeDraftNativePinFailureRollsBackDraftAndFreshPins(t *testing.T
 	// Fail the same production sidecar update after InsertChangeSet and fresh
 	// pin storage. No alternate schema or repository implementation is created.
 	require.NoError(t, f.db.Exec(`CREATE TRIGGER agent_draft_pin_fail BEFORE UPDATE ON lingdoc_g5_records WHEN NEW.kind='g1_change_provenance' BEGIN SELECT RAISE(ABORT,'synthetic proposed pin write failure'); END`).Error)
-	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-rollback", core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "合成回滚验证"})
+	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-rollback", core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "合成回滚验证"})
 	// Existing G2 protocol returns the persisted failed proposal, rather than
 	// changing its public contract to surface executor errors as HTTP errors.
 	require.NoError(t, err)
@@ -291,7 +291,7 @@ func TestAgentChangeDraftModelCannotAssertConfirmationOrOldValues(t *testing.T) 
 		payload := `{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"合成修改","fields":{"research_goal":"new"},"affected_chapter_ids":[],` + injected + `}}`
 		model := &acceptanceChatStub{response: &types.ChatResponse{Content: payload, FinishReason: "stop"}}
 		host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
-		_, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+		_, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
 		require.Error(t, err, strings.TrimSpace(injected))
 	}
 }
@@ -303,7 +303,7 @@ func TestAgentChangeDraftHumanEditKeepsAIOriginAfterApply(t *testing.T) {
 	field.NewValue += "；人工补充范围限制"
 	input.Fields["research_goal"] = field
 	proposal := agentDraftPropose(t, f, input)
-	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-edited-confirm", core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "复核编辑后的候选"})
+	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-edited-confirm", core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "复核编辑后的候选"})
 	require.NoError(t, err)
 	var completed core.ActionProposal
 	require.NoError(t, json.Unmarshal(raw, &completed))
@@ -326,7 +326,7 @@ func TestAgentChangeDraftReassessmentRetainsExactNewValuePin(t *testing.T) {
 	f := newDeliveryGuardFixture(t, false)
 	turn, input, _ := agentDraftModelTurn(t, f)
 	proposal := agentDraftPropose(t, f, input)
-	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-reassess-confirm", core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "明确仅建草稿"})
+	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-draft-reassess-confirm", core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "明确仅建草稿"})
 	require.NoError(t, err)
 	var completed core.ActionProposal
 	require.NoError(t, json.Unmarshal(raw, &completed))
@@ -373,7 +373,7 @@ func TestAgentChangeDraftUnselectedReviewChapterDoesNotRegisterProposal(t *testi
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
 	_, _, _, err = f.projects.CreateActionProposal(f.ctx, f.actor, f.project.ID, "agent-draft-unselected-chapter", core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID,
+		VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID,
 		Input: payload, SourceIDs: []string{}, ExpectedEffect: "未选建议复核章节不得登记提案",
 	})
 	require.ErrorIs(t, err, core.ErrInvalidRequest)

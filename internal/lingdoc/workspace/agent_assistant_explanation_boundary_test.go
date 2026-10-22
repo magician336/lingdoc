@@ -38,7 +38,7 @@ func assistantBoundaryTurn(t *testing.T, f deliveryGuardFixture, payload map[str
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
-	f.projects.ConfigureG2(core.G2Runtime{
+	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
 		Sources: NewG2ResearchAdapter(f.db, f.projects, f.runtime, g4AdapterShares{}, nil, nil),
 		Model:   host, Actions: NewG2ActionExecutor(f.projects, f.runtime, nil),
 	})
@@ -47,7 +47,7 @@ func assistantBoundaryTurn(t *testing.T, f deliveryGuardFixture, payload map[str
 	var session core.AgentSession
 	require.NoError(t, json.Unmarshal(raw, &session))
 	raw, _, _, err = f.projects.SendAgentTurn(f.ctx, f.actor, p.ID, session.ID, "agent-boundary-turn-"+key, core.AgentTurnInput{
-		AgentContextInput: core.AgentContextInput{G2Expectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.G2VersionRef{}, SensitiveContextConfirmed: false},
+		AgentContextInput: core.AgentContextInput{VersionExpectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.VersionRef{}, SensitiveContextConfirmed: false},
 		UserInput:         "请将 research_goal 改为：" + assistantBoundarySyntheticValue + "。只提出草稿。",
 	})
 	require.NoError(t, err)
@@ -74,12 +74,12 @@ func assistantBoundaryDraft(t *testing.T, f deliveryGuardFixture, input core.Age
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
 	raw, _, _, err := f.projects.CreateActionProposal(f.ctx, f.actor, p.ID, "agent-boundary-proposal-"+key, core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
+		VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
 	})
 	require.NoError(t, err)
 	var proposal core.ActionProposal
 	require.NoError(t, json.Unmarshal(raw, &proposal))
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
 	raw, _, _, err = f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-boundary-confirmed-"+key, decision)
 	require.NoError(t, err)
 	var completed core.ActionProposal
@@ -208,13 +208,13 @@ func TestAssistantBoundaryRefusesUntraceableExplanation(t *testing.T) {
 func TestAssistantBoundaryModelReplyKeepsDraftWithoutAffectedExplanation(t *testing.T) {
 	model := &acceptanceChatStub{response: &types.ChatResponse{Content: `{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"明确请求调整 research_goal","fields":{"research_goal":"` + assistantBoundarySyntheticValue + `"},"affected_chapter_ids":[]}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
-	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
 	require.NoError(t, err, "a reply without the two groups must not be refused as a whole")
 	require.Equal(t, "候选", reply.Content)
 	require.Contains(t, string(reply.StructuredOutput), "change_draft")
 
 	// 依据不可追溯的回包仍然被拒（既有语义不变）。
 	model.response = &types.ChatResponse{Content: `{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"明确请求调整 research_goal","fields":{"research_goal":"` + assistantBoundarySyntheticValue + `"},"affected_chapter_ids":[]},"affected_explanation":{"definite_affected":[{"object":{"kind":"ChapterVersion","id":"chapter-1","version":"v1"},"reason":"没有依据"}],"possible_affected":[]}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}
-	_, err = host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	_, err = host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
 	require.Error(t, err, "an entry without a basis must still be refused")
 }

@@ -46,7 +46,7 @@ type ActivationReadReceipt struct {
 	SpecRevision   int64     `json:"spec_revision"`
 	ReadAt         time.Time `json:"read_at"`
 }
-type g5RecordRow struct {
+type projectRecordRow struct {
 	ProjectID   string `gorm:"primaryKey"`
 	Kind        string `gorm:"primaryKey"`
 	ID          string `gorm:"primaryKey"`
@@ -54,31 +54,31 @@ type g5RecordRow struct {
 	PayloadJSON string
 }
 
-func (g5RecordRow) TableName() string { return "lingdoc_g5_records" }
+func (projectRecordRow) TableName() string { return "lingdoc_g5_records" }
 
-type g5Transaction interface {
-	G5Get(string, string, string, any) (int64, error)
-	G5Put(string, string, string, int64, any) error
-	G5List(string, string) ([]g5RecordRow, error)
+type projectRecordTransaction interface {
+	GetProjectRecord(string, string, string, any) (int64, error)
+	PutProjectRecord(string, string, string, int64, any) error
+	ListProjectRecords(string, string) ([]projectRecordRow, error)
 }
 
-func (t gormTransaction) G5Get(p, k, id string, dst any) (int64, error) {
-	var row g5RecordRow
+func (t gormTransaction) GetProjectRecord(p, k, id string, dst any) (int64, error) {
+	var row projectRecordRow
 	err := t.db.Where("project_id = ? AND kind = ? AND id = ?", p, k, id).Take(&row).Error
 	if err != nil {
 		return 0, storageError(err)
 	}
 	return row.Version, json.Unmarshal([]byte(row.PayloadJSON), dst)
 }
-func (t gormTransaction) G5Put(p, k, id string, expected int64, value any) error {
+func (t gormTransaction) PutProjectRecord(p, k, id string, expected int64, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	if expected == 0 {
-		return t.db.Create(&g5RecordRow{ProjectID: p, Kind: k, ID: id, Version: 1, PayloadJSON: string(raw)}).Error
+		return t.db.Create(&projectRecordRow{ProjectID: p, Kind: k, ID: id, Version: 1, PayloadJSON: string(raw)}).Error
 	}
-	result := t.db.Model(&g5RecordRow{}).Where("project_id = ? AND kind = ? AND id = ? AND version = ?", p, k, id, expected).Updates(map[string]any{"version": expected + 1, "payload_json": string(raw)})
+	result := t.db.Model(&projectRecordRow{}).Where("project_id = ? AND kind = ? AND id = ? AND version = ?", p, k, id, expected).Updates(map[string]any{"version": expected + 1, "payload_json": string(raw)})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -87,12 +87,12 @@ func (t gormTransaction) G5Put(p, k, id string, expected int64, value any) error
 	}
 	return nil
 }
-func (t gormTransaction) G5List(p, k string) ([]g5RecordRow, error) {
-	var rows []g5RecordRow
+func (t gormTransaction) ListProjectRecords(p, k string) ([]projectRecordRow, error) {
+	var rows []projectRecordRow
 	err := t.db.Where("project_id = ? AND kind = ?", p, k).Order("id").Find(&rows).Error
 	return rows, err
 }
-func g5Audit(tx Transaction, actor Actor, p, action, target, reason string) error {
+func recordProjectAuditEvent(tx Transaction, actor Actor, p, action, target, reason string) error {
 	audit, ok := tx.(auditTransaction)
 	if !ok {
 		return ErrInvalidState
@@ -158,7 +158,7 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor Actor, pid, key
 		if !active {
 			return operationResult[MemberInvitation]{}, ErrNotFound
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return operationResult[MemberInvitation]{}, ErrInvalidState
 		}
@@ -166,7 +166,7 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor Actor, pid, key
 		version := int64(0)
 		if id != "" {
 			var old MemberInvitation
-			version, err = store.G5Get(pid, "invitation", id, &old)
+			version, err = store.GetProjectRecord(pid, "invitation", id, &old)
 			if err != nil {
 				return operationResult[MemberInvitation]{}, err
 			}
@@ -184,7 +184,7 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor Actor, pid, key
 		m.Role = "collaborator"
 		m.Status = "invited"
 		invitation := MemberInvitation{ID: id, ProjectID: pid, UserID: m.UserID, Version: version + 1, Assignment: m, Status: "invited", Inviter: actor.UserID, Reason: input.Reason, CreatedAt: now, ExpiresAt: now.Add(72 * time.Hour)}
-		if err := store.G5Put(pid, "invitation", id, version, invitation); err != nil {
+		if err := store.PutProjectRecord(pid, "invitation", id, version, invitation); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
 		next := p
@@ -206,7 +206,7 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor Actor, pid, key
 		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
-		if err := g5Audit(tx, actor, pid, "member.invite", m.UserID, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, pid, "member.invite", m.UserID, input.Reason); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
 		return operationResult[MemberInvitation]{Value: invitation, Status: operationStatusCreated}, nil
@@ -229,11 +229,11 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor Actor, pid,
 		if p.DiscardedAt != nil {
 			return ErrInvalidState
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		v, err := store.G5Get(pid, "invitation", id, &checked)
+		v, err := store.GetProjectRecord(pid, "invitation", id, &checked)
 		if err != nil {
 			return err
 		}
@@ -261,9 +261,9 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor Actor, pid,
 		if err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
-		store := tx.(g5Transaction)
+		store := tx.(projectRecordTransaction)
 		var invitation MemberInvitation
-		version, err := store.G5Get(pid, "invitation", id, &invitation)
+		version, err := store.GetProjectRecord(pid, "invitation", id, &invitation)
 		if err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
@@ -293,7 +293,7 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor Actor, pid,
 		invitation.Status = "accepted"
 		now := time.Now().UTC()
 		invitation.AcceptedAt = &now
-		if err := store.G5Put(pid, "invitation", id, version, invitation); err != nil {
+		if err := store.PutProjectRecord(pid, "invitation", id, version, invitation); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
@@ -302,7 +302,7 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor Actor, pid,
 		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
-		if err := g5Audit(tx, actor, pid, "member.accept", actor.UserID, ""); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, pid, "member.accept", actor.UserID, ""); err != nil {
 			return operationResult[MemberInvitation]{}, err
 		}
 		return operationResult[MemberInvitation]{Value: invitation, Status: operationStatusOK}, nil
@@ -324,11 +324,11 @@ func (s *Service) ListProjectInvitations(ctx context.Context, actor Actor, pid s
 			_, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationManage, ""))
 			manager = err == nil
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G5List(pid, "invitation")
+		rows, err := store.ListProjectRecords(pid, "invitation")
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func (s *Service) ChangeMemberState(ctx context.Context, actor Actor, pid, user,
 		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
 			return operationResult[Project]{}, err
 		}
-		if err := g5Audit(tx, actor, pid, "member."+input.Action, user, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, pid, "member."+input.Action, user, input.Reason); err != nil {
 			return operationResult[Project]{}, err
 		}
 		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
@@ -437,7 +437,7 @@ func (s *Service) CaptureTenantSuspension(ctx context.Context, tenantID uint64, 
 			if err := tx.ReplaceMembers(p.ID, next.Members); err != nil {
 				return err
 			}
-			if err := g5Audit(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
+			if err := recordProjectAuditEvent(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
 				return err
 			}
 		}
@@ -460,25 +460,25 @@ func (s *Service) RecordActivationRead(ctx context.Context, actor Actor, pid str
 		if p.ProjectVersion != version {
 			return ErrVersionConflict
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
 		result = ActivationReadReceipt{ID: uuid.NewString(), ActorID: actor.UserID, ProjectID: pid, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, ReadAt: time.Now().UTC()}
-		if err := store.G5Put(pid, "activation_read", result.ID, 0, result); err != nil {
+		if err := store.PutProjectRecord(pid, "activation_read", result.ID, 0, result); err != nil {
 			return err
 		}
-		return g5Audit(tx, actor, pid, "project.activation_diff_read", result.ID, "")
+		return recordProjectAuditEvent(tx, actor, pid, "project.activation_diff_read", result.ID, "")
 	})
 	return result, err
 }
 func validateActivationRead(tx Transaction, actor Actor, p Project, id string) error {
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
 	var receipt ActivationReadReceipt
-	_, err := store.G5Get(p.ID, "activation_read", id, &receipt)
+	_, err := store.GetProjectRecord(p.ID, "activation_read", id, &receipt)
 	if err != nil {
 		return err
 	}

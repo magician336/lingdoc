@@ -16,9 +16,9 @@ import (
 // surfaces, and errors.Is still finds it.
 var (
 	g2FormalChangeRequired = clienterror.Wrap(clienterror.Form{Status: 422, Code: "invalid_state", Message: "该对象已确认或进入正式依据，请在“正式变更”中建立草稿，评估后由 Owner 应用。", Retryable: false}, "g2: the object needs a formal change", core.ErrFormalChangeRequired)
-	g2EvidenceIncomplete   = clienterror.Wrap(clienterror.Form{Status: 422, Code: "evidence_incomplete", Message: "定位、来源、主张或当前版本尚未满足证据要求。", Retryable: false}, "g2: the evidence is incomplete", core.ErrG2EvidenceIncomplete)
-	g2OutcomeUnknown       = clienterror.Wrap(clienterror.Form{Status: 409, Code: "outcome_unknown", Message: "操作结果尚待核对，请读取已有回执，不要重复执行。", Retryable: false}, "g2: the outcome is not known yet", core.ErrG2OutcomeUnknown)
-	g2Unavailable          = clienterror.Wrap(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "所需资料、搜索或模型能力暂不可用。", Retryable: false}, "g2: a dependency is unavailable", core.ErrG2Unavailable)
+	g2EvidenceIncomplete   = clienterror.Wrap(clienterror.Form{Status: 422, Code: "evidence_incomplete", Message: "定位、来源、主张或当前版本尚未满足证据要求。", Retryable: false}, "g2: the evidence is incomplete", core.ErrEvidenceIncomplete)
+	g2OutcomeUnknown       = clienterror.Wrap(clienterror.Form{Status: 409, Code: "outcome_unknown", Message: "操作结果尚待核对，请读取已有回执，不要重复执行。", Retryable: false}, "g2: the outcome is not known yet", core.ErrOutcomeUnknown)
+	g2Unavailable          = clienterror.Wrap(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "所需资料、搜索或模型能力暂不可用。", Retryable: false}, "g2: a dependency is unavailable", core.ErrDependencyUnavailable)
 )
 
 // g2SurfaceError presents a core failure the way the G2 surface words it.
@@ -31,11 +31,11 @@ func g2SurfaceError(err error) error {
 		return nil
 	case errors.Is(err, core.ErrFormalChangeRequired):
 		return g2FormalChangeRequired
-	case errors.Is(err, core.ErrG2EvidenceIncomplete):
+	case errors.Is(err, core.ErrEvidenceIncomplete):
 		return g2EvidenceIncomplete
-	case errors.Is(err, core.ErrG2OutcomeUnknown):
+	case errors.Is(err, core.ErrOutcomeUnknown):
 		return g2OutcomeUnknown
-	case errors.Is(err, core.ErrG2Unavailable):
+	case errors.Is(err, core.ErrDependencyUnavailable):
 		return g2Unavailable
 	}
 	return err

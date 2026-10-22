@@ -15,9 +15,9 @@ import (
 // CandidateEvidencePolicy is an internal current-evidence adapter. Requests
 // cannot supply a PASS result; explicit card references require both ports.
 type CandidateEvidencePolicy interface {
-	PrepareCandidateEvidence(context.Context, string, string, string, []core.G2VersionRef, []string) (context.Context, core.G2EvidenceSelection, error)
-	ValidateCandidateEvidence(context.Context, string, string, string, []core.G2VersionRef, []string) (core.G2EvidenceSelection, error)
-	ValidateCandidateEvidenceInTransaction(context.Context, *gorm.DB, string, string, string, []core.G2VersionRef, []string) (core.G2EvidenceSelection, error)
+	PrepareCandidateEvidence(context.Context, string, string, string, []core.VersionRef, []string) (context.Context, core.EvidenceSelection, error)
+	ValidateCandidateEvidence(context.Context, string, string, string, []core.VersionRef, []string) (core.EvidenceSelection, error)
+	ValidateCandidateEvidenceInTransaction(context.Context, *gorm.DB, string, string, string, []core.VersionRef, []string) (core.EvidenceSelection, error)
 }
 
 func validateNewBasis(current, proposed Basis) error {
@@ -93,7 +93,7 @@ func currentAdoptionBasis(tx *gorm.DB, project projectRow, chapter Chapter) (Bas
 
 // The card list must represent evidence actually used in the chapter; a
 // confirmed but unrelated card cannot manufacture a dependency edge.
-func validateEvidenceSelection(refs []core.G2VersionRef, sourceIDs []string, selected core.G2EvidenceSelection) error {
+func validateEvidenceSelection(refs []core.VersionRef, sourceIDs []string, selected core.EvidenceSelection) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -223,7 +223,7 @@ func (s *CandidateAdoptionService) recheckCandidateAcceptance(ctx context.Contex
 	_, err := s.prepareCandidateEvidence(ctx, in, candidate)
 	return err
 }
-func validateCandidateSelection(candidate Candidate, selected core.G2EvidenceSelection) error {
+func validateCandidateSelection(candidate Candidate, selected core.EvidenceSelection) error {
 	if err := validateEvidenceSelection(candidate.Basis.EvidenceCardRefs, candidate.SourceIDs, selected); err != nil {
 		return err
 	}

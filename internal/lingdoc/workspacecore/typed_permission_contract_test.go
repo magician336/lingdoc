@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// TestG5C1TypedMutationContractMatrix is a characterization test at the
+// TestTypedMutationContractMatrix is a characterization test at the
 // highest workspace application seam. It deliberately uses the typed result
 // method rather than the legacy raw JSON/status method so future port changes
 // cannot move transport concerns back into callers.
-func TestG5C1TypedMutationContractMatrix(t *testing.T) {
+func TestTypedMutationContractMatrix(t *testing.T) {
 	repository := fakeWorkspace()
 	service := NewService(repository)
 	actor := Actor{TenantID: 1, UserID: "owner"}
