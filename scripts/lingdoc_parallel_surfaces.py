@@ -135,19 +135,27 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-1 G6 运维与试用前端",
         "issue": 325,
         "issues": (145, 146),
-        "status": "available",
+        "status": "done",
         "claimed_by": "",
         "paths": (
-            ("frontend/src/api/lingdoc/g6Runtime.ts", "file"),
-            ("frontend/src/api/lingdoc/g6Trial.ts", "file"),
-            ("frontend/src/views/lingdoc/G6OpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
+            ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
+            ("frontend/src/api/lingdoc/mainlineChanges.test.js", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.test.js", "file"),
         ),
         "resolves": (),
         "summary": (
-            "G6 的运行观测、告警、暂停回退与试用窗口在后端已齐"
-            "（workspacecore/g6_runtime.go、g6_trial.go、HTTP 路由），"
-            "但 frontend/src/api/lingdoc/ 下零 G6 客户端，值班人员拿不到界面。"
-            "本面只新增文件。"
+            "G6 的运行观测、告警、暂停与试用窗口，后端与前端都已在 main 上："
+            "后端 16 条路由在 internal/lingdoc/workspace/impact_routes.go:135-182，"
+            "前端客户端在 api/lingdoc/mainlineChanges.ts:112-127，"
+            "界面在 views/lingdoc/ImpactOpsPanel.vue:55-83。"
+            "票面「前端零文件」的前提已过时，本面据此缩为补真实缺口："
+            "把服务端 RuntimeMetrics.counts 投影成值班可读的指标视图，"
+            "并给 G6 前端补一层契约保护。"
+            "G6 前端的独立面板与 Workspace 集成不在本面，另开票。"
+            "2026-10-22 由 magician336 认领并完成；"
+            "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
     {
