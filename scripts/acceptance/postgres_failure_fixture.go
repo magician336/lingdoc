@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,19 +26,30 @@ var (
 	targetOverrideKeywordPattern = regexp.MustCompile(`(?i)(?:^|\s)(?:hostaddr|service|passfile)\s*=`)
 )
 
-var lingdocMigrations = []string{
-	"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
-	"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
-	"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
-	"000103_lingdoc_delivery_stores.up.sql", "000104_lingdoc_member_permissions.up.sql",
-	"000105_lingdoc_project_context_revision.up.sql", "000106_lingdoc_draft_provenance.up.sql",
-	"000107_lingdoc_owner_transfers.up.sql", "000108_lingdoc_project_discard.up.sql",
-	"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
-	"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
-	"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
-	"000115_lingdoc_rule_sets.up.sql", "000118_lingdoc_ruleset_export_reference.up.sql",
-	"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
-	"000121_lingdoc_ruleset_metrics.up.sql",
+// lingdocMigrationNames 发现生产用的 LingDoc 迁移链。
+//
+// 这条链以前是一份手抄的截止清单。迁移版本号是共享序列资源：任何一次重编号
+// 都会把文件挪到那份清单的后面，于是这个 fixture 悄悄建出一个比仓库当前契约
+// 更旧的 schema —— 生成运行表里没有 digest_version 列，PostgreSQL 故障场景
+// 就带着 "column digest_version does not exist" 失败。
+//
+// 所以这里从目录里发现整条链，和仓内自己的数据库夹具一个做法
+// （internal/lingdoc/workspacecore: productionLingDocMigrationNames）。
+// 清单不再需要维护，也就没有可能悄悄落后于仓库当前状态。
+func lingdocMigrationNames() ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join("migrations", "versioned", "*_lingdoc_*.up.sql"))
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no LingDoc migrations found under migrations/versioned")
+	}
+	sort.Strings(matches)
+	names := make([]string, len(matches))
+	for i, match := range matches {
+		names[i] = filepath.Base(match)
+	}
+	return names, nil
 }
 
 func main() {
@@ -194,6 +206,12 @@ func openPostgres(dsn string) (*gorm.DB, *sql.DB, error) {
 }
 
 func applyLingDocMigrations(dsn string) error {
+	migrations, err := lingdocMigrationNames()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "fixture applies %d production LingDoc migrations through %s\n",
+		len(migrations), migrations[len(migrations)-1])
 	_, db, err := openPostgres(dsn)
 	if err != nil {
 		return err
@@ -202,7 +220,7 @@ func applyLingDocMigrations(dsn string) error {
 	if _, err := db.ExecContext(context.Background(), "CREATE TABLE IF NOT EXISTS tenants (id BIGINT PRIMARY KEY)"); err != nil {
 		return fmt.Errorf("create base tenants table: %w", err)
 	}
-	for _, migration := range lingdocMigrations {
+	for _, migration := range migrations {
 		raw, err := os.ReadFile(filepath.Join("migrations", "versioned", migration))
 		if err != nil {
 			return err
@@ -215,12 +233,16 @@ func applyLingDocMigrations(dsn string) error {
 }
 
 func rollbackAndReapplyLingDocMigrations(dsn string) error {
+	migrations, err := lingdocMigrationNames()
+	if err != nil {
+		return err
+	}
 	_, sqlDB, err := openPostgres(dsn)
 	if err != nil {
 		return err
 	}
-	for i := len(lingdocMigrations) - 1; i >= 0; i-- {
-		upName := lingdocMigrations[i]
+	for i := len(migrations) - 1; i >= 0; i-- {
+		upName := migrations[i]
 		downName := strings.Replace(upName, ".up.sql", ".down.sql", 1)
 		raw, err := os.ReadFile(filepath.Join("migrations", "versioned", downName))
 		if err != nil {
