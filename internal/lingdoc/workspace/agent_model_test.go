@@ -1,9 +1,12 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +15,8 @@ import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
 
 func testModelContext() core.AgentContextPackage {
@@ -97,6 +102,82 @@ func TestResearchPromptAsksForTheWholeProposalShape(t *testing.T) {
 		if !strings.Contains(system, column) {
 			t.Fatalf("the research prompt does not ask for %s: %s", column, system)
 		}
+	}
+}
+
+// postAgentJSON posts one JSON body to a registered route and returns the
+// data the route answered with.
+func postAgentJSON[T any](t *testing.T, engine *gin.Engine, ctx context.Context, method, path, key string, input any) T {
+	t.Helper()
+	body, err := json.Marshal(input)
+	require.NoError(t, err)
+	request := httptest.NewRequest(method, path, bytes.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", key)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	require.GreaterOrEqual(t, response.Code, 200, response.Body.String())
+	require.Less(t, response.Code, 300, response.Body.String())
+	envelope := struct {
+		Data json.RawMessage `json:"data"`
+	}{}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &envelope), response.Body.String())
+	var out T
+	require.NoError(t, json.Unmarshal(envelope.Data, &out), response.Body.String())
+	return out
+}
+
+// A4: the research proposal travels on the real turn route.
+//
+// The other cases of this face drive the application service directly, because
+// the repository had no HTTP-level case for the turn endpoint. This one goes
+// through the registered route, the real core service, the real agent runtime,
+// the real host model parser and a real SQLite file - so the proposal is
+// proven to arrive over the same transport the client uses.
+func TestResearchProposalTravelsOnTheRealTurnRoute(t *testing.T) {
+	f := newDeliveryGuardFixture(t, false)
+	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
+	require.NoError(t, err)
+	response, err := json.Marshal(map[string]any{
+		"reply":     "我按你的问题整理了一条检索计划，请核对后自行保存。",
+		"task_card": map[string]any{"goal": "弄清合成材料的定义", "question_type": "定义", "scope": "只查项目资料", "exclusions": []string{}, "queries": []string{"合成材料 定义", "合成材料 反例"}, "expected_output": "候选资料与反例"},
+	})
+	require.NoError(t, err)
+	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
+	registered := acceptanceDeepSeekModel()
+	registered.Parameters.Provider = "fake"
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
+		Sources: NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil),
+		Model:   host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
+	})
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	RegisterAgentRoutes(engine.Group("/api"), agentRoutePortsFor(f.projects))
+
+	session := postAgentJSON[core.AgentSession](t, engine, f.ctx, http.MethodPost, "/api/projects/"+p.ID+"/agents/research_agent/sessions", "pf5-http-session", agentDraftExpectation(p, 0))
+	turn := postAgentJSON[core.AgentTurn](t, engine, f.ctx, http.MethodPost, "/api/projects/"+p.ID+"/agent-sessions/"+session.ID+"/turns", "pf5-http-turn", core.AgentTurnInput{
+		AgentContextInput: core.AgentContextInput{VersionExpectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.VersionRef{}, SensitiveContextConfirmed: false},
+		UserInput:         "帮我找合成材料的资料",
+	})
+	if turn.Status != "completed" {
+		t.Fatalf("the turn did not complete: %+v", turn)
+	}
+	suggestions := struct {
+		TaskCard *struct {
+			Goal           string   `json:"goal"`
+			Scope          string   `json:"scope"`
+			Queries        []string `json:"queries"`
+			ExpectedOutput string   `json:"expected_output"`
+		} `json:"task_card"`
+	}{}
+	require.NoError(t, json.Unmarshal(turn.Suggestions, &suggestions), string(turn.Suggestions))
+	if suggestions.TaskCard == nil {
+		t.Fatalf("the proposal did not travel with the turn: %s", turn.Suggestions)
+	}
+	if suggestions.TaskCard.Goal != "弄清合成材料的定义" || suggestions.TaskCard.Scope != "只查项目资料" || len(suggestions.TaskCard.Queries) != 2 || suggestions.TaskCard.ExpectedOutput != "候选资料与反例" {
+		t.Fatalf("the proposal lost a field on the route: %+v", suggestions.TaskCard)
 	}
 }
 
