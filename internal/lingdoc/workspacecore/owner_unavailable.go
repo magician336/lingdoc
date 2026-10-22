@@ -134,7 +134,7 @@ func OwnerAvailabilityOf(tx Transaction, p Project, tenant uint64) OwnerAvailabi
 		OwnerUserID: authority.OwnerUserID,
 		// A project without an Owner has nothing frozen: the Owner-only
 		// actions are not blocked, they are simply not this project's shape.
-		Available: true,
+		Available:  true,
 		ReasonCode: ReasonAllowed,
 		// The list is never nil: a reader can tell "no way back is offered"
 		// from "the outlet did not answer".

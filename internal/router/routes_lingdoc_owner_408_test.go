@@ -13,62 +13,14 @@ package router
 // only owns the assertions of this ticket.
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
-
-// newOwnerFreezeFixtureWithAuditShape builds the shared fixture and brings
-// its audit table to the current production shape.
-//
-// The shared fixture applies the migration chain by hand, and the audit table
-// gained two columns in #327 (target_version / project_revision). A fixture
-// whose chain stops before that migration cannot hold the audit rows the
-// write path now produces, and the write fails with an opaque 500 instead of
-// a schema error. Applying the production migration here keeps this file's
-// assertions on the current schema without touching the shared fixture.
-func newOwnerFreezeFixtureWithAuditShape(t *testing.T) *ownerFreezeFixture {
-	t.Helper()
-	fixture := newOwnerFreezeFixture(t)
-	fixture.ensureAuditEventShape(t)
-	return fixture
-}
-
-// ensureAuditEventShape applies the audit version-fields migration when the
-// table does not carry its columns yet.
-func (f *ownerFreezeFixture) ensureAuditEventShape(t *testing.T) {
-	t.Helper()
-	var columns []struct {
-		Name string
-	}
-	if err := f.db.Raw("PRAGMA table_info(lingdoc_project_audits)").Scan(&columns).Error; err != nil {
-		t.Fatalf("read the audit table columns: %v", err)
-	}
-	for _, column := range columns {
-		if column.Name == "target_version" {
-			return
-		}
-	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite",
-		"000052_lingdoc_audit_version_fields.up.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool, err := f.db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.ExecContext(context.Background(), string(migration)); err != nil {
-		t.Fatalf("apply the audit version fields migration: %v", err)
-	}
-}
 
 // draftProjectForActivation creates a project and leaves it in the draft
 // period, so the activation gate is the one under test.
@@ -204,7 +156,7 @@ func (f *ownerFreezeFixture) proposeTemplateUpgrade(t *testing.T, project worksp
 // of the freeze: the activation is the Owner's decision, so it stops while
 // the Owner's tenant identity has lapsed, and the refusal says why.
 func TestActivationFreezesWhileTheOwnerIsUnavailable(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.draftProjectForActivation(t)
 	f.addAdmin(t, project.ID)
 
@@ -228,7 +180,7 @@ func TestActivationFreezesWhileTheOwnerIsUnavailable(t *testing.T) {
 // activation refusal has to carry: the freeze and the caller's own lack of
 // authority are two different answers.
 func TestActivationRefusalIsNotTheOwnersOwnRefusal(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.draftProjectForActivation(t)
 	f.addAdmin(t, project.ID)
 	f.lapseOwner(t, project.ID)
@@ -256,7 +208,7 @@ func TestActivationRefusalIsNotTheOwnersOwnRefusal(t *testing.T) {
 // activation is not a state anybody repairs, it is a fact that changes by
 // itself.
 func TestActivationUnfreezesWhenTheIdentityComesBack(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.draftProjectForActivation(t)
 
 	f.lapseOwner(t, project.ID)
@@ -275,7 +227,7 @@ func TestActivationUnfreezesWhenTheIdentityComesBack(t *testing.T) {
 // and the template upgrade is an active-period one, and both refusals name
 // the same freeze.
 func TestActivationAndTemplateUpgradeShareTheFreezeReason(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 
 	draft := f.draftProjectForActivation(t)
 	f.lapseOwner(t, draft.ID)
@@ -309,7 +261,7 @@ func TestActivationAndTemplateUpgradeShareTheFreezeReason(t *testing.T) {
 // lapsed Owner cannot even read the project any more, so the outlet is not
 // where that side of the story is told.
 func TestPermissionOutletAgreesWithTheActivationRefusal(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.draftProjectForActivation(t)
 	f.addDraftPeriodMember(t, project.ID)
 	f.lapseOwner(t, project.ID)
@@ -329,7 +281,7 @@ func TestPermissionOutletAgreesWithTheActivationRefusal(t *testing.T) {
 // candidates stay readable, and the Owner's own candidate save is refused by
 // the ordinary membership rule rather than by the freeze.
 func TestDraftCollaborationSurvivesTheOwnerFreeze(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.draftProjectForActivation(t)
 	f.addAdmin(t, project.ID)
 	f.addDraftPeriodMember(t, project.ID)
@@ -366,7 +318,7 @@ func TestDraftCollaborationSurvivesTheOwnerFreeze(t *testing.T) {
 // member still comments and still reviews while the Owner-only decisions are
 // frozen.
 func TestActiveCollaborationSurvivesTheOwnerFreeze(t *testing.T) {
-	f := newOwnerFreezeFixtureWithAuditShape(t)
+	f := newOwnerFreezeFixture(t)
 	project := f.activeProject(t)
 	chapters := f.chapters(t, project.ID)
 	if len(chapters) == 0 {
