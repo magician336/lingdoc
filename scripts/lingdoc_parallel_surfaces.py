@@ -313,12 +313,26 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
         "issue": 328,
         "issues": (127,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
+            ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/membership.go", "file"),
+            ("internal/lingdoc/membership/results.go", "file"),
+            ("internal/lingdoc/membership/policy.go", "file"),
+            ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
+            ("internal/router/routes_lingdoc.go", "file"),
+            ("internal/router/routes_lingdoc_owner_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("frontend/src/api/lingdoc/permissions.ts", "file"),
+            ("frontend/src/composables/useOwnerAvailability.ts", "file"),
+            ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
+            ("frontend/src/composables/useOwnerAvailability.test.ts", "file"),
         ),
         "resolves": ((127, 143),),
         "summary": (
@@ -327,14 +341,22 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "只能用「再提名一次」代替。这是 66 条原生依赖里唯一一条"
             "「行为未稳定」级的实现依赖（#127 → #143），"
             "修完它就解开 G1 立项的一个验收点。状态串放独立新文件，避开 model.go。"
+            "路径集按 2026-10-22 实测修正：Spec-47 把转让的 Service 方法搬进了 "
+            "internal/lingdoc/membership/，workspacecore/membership.go 只剩 "
+            "TransferOwnerInput；冻结判定要收口的出口是 member_judgement.go 与 "
+            "delivery_export_guard.go。本面另按 #127 的冻结清单补上尚不存在的归档能力，"
+            "并把五项 Owner-only 动作的可用性判定收口到一处。"
+            "两处前端改动是集成步骤而非面拥有："
+            "frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点（保留路径，不得被任一面独占），"
+            "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
         ),
     },
     {
         "name": "PF-5 Agent research purpose",
         "issue": 329,
         "issues": (135, 125),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
@@ -342,9 +364,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "agent_model.go 只有 rule_suggestion 与 change_draft 两种 purpose，"
-            "没有 research 用途，所以「Agent 推荐查询词与来源并解释理由与缺口」在产品层是空的。"
-            "上下文包后端已在 g2_model.go 落地，不必等 #124 的前端消费。"
+            "「research purpose」在词汇上不存在：purpose 只有 conversation 与 rule_suggestion 两种取值，"
+            "change_draft 是模型输出的键而不是 purpose，"
+            "所以本面缺的是「一个可被服务端校验的研究提案契约」，"
+            "不是执行侧——ResearchTask / ResearchRun / ResearchResult / SearchResearch / 导入候选都已齐备。"
+            "现状是 HostAgentModel.Reply 按 request.Agent == \"research_agent\" 换一段提示词，"
+            "但模型交回来的 task_card 没有任何解码器校验，"
+            "「推荐查询词与来源并解释理由与缺口」因此没有形状、也没有边界。"
+            "2026-10-22 实测更正了两条过时断言："
+            "上下文包后端已不在 g2_model.go（该文件不存在），"
+            "它现在住在 workspace/agent_model.go 与 workspacecore 的 context_ports.go、agent_research_model.go；"
+            "不必等 #124 的前端消费（PF-6）。"
+            "2026-10-22 由 magician336 认领。"
         ),
     },
     {
