@@ -2787,6 +2787,319 @@
       "providers": [
         "workspace"
       ]
+    },
+    {
+      "id": "G2-RP-01",
+      "name": "研究提案随既有 turn 端点送达",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体会话的一轮回答带着一份服务端校验过的研究提案；提案随既有 turn 端点送达，不新增端点，提案本身不创建调研任务。",
+      "steps": [
+        {
+          "id": "G2-RP-01-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-01-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal",
+          "checks": [
+            {
+              "path": "/data/suggestions/task_card/queries",
+              "length": 3,
+              "intent": "提案带着至少两条查询词；同义词作为额外查询词并入其中，不另立字段。"
+            },
+            {
+              "path": "/data/suggestions/task_card/goal",
+              "equals": "synthetic-goal",
+              "intent": "提案带着目标，形状与服务端契约逐字一致。"
+            },
+            {
+              "path": "/data/suggestions/task_card/candidate_sources",
+              "length": 1,
+              "intent": "提案带着候选来源；每一份都指回这一轮授权上下文里的资料，服务端逐条比对过。"
+            },
+            {
+              "path": "/data/suggestions/task_card/reasons",
+              "length": 1,
+              "intent": "提案说清为什么这么建议：目标为什么是这个目标、范围为什么划到这里。"
+            },
+            {
+              "path": "/data/suggestions/task_card/gaps",
+              "length": 1,
+              "intent": "提案说清还缺什么；每条分「缺什么」与「期望补什么」，不是空泛的「没有来源」。"
+            },
+            {
+              "path": "/data/model_id",
+              "equals": "synthetic-model-id",
+              "intent": "提案带着它来自的模型与运行模式，演示不冒充真实证据。"
+            }
+          ],
+          "assertion": "合法提案随既有 turn 端点送达；它仍是候选，用户自己保存才成为调研任务。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "G2-RP-02",
+      "name": "提案引用上下文外的资料被拒",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体的一轮回答给出一份提案，其中一条候选来源引用了这一轮没有给出的资料（撤权的、别的项目的、根本没给过模型的都算）。服务端整份拒绝：那份提案不送达，零写入；拒的是提案，不是整轮的问答复——那一轮的自然语言回复留着，并带一个读得懂的失败码。",
+      "steps": [
+        {
+          "id": "G2-RP-02-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-02-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal_refused",
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "completed",
+              "intent": "拒的是提案，不是整轮的问答复：这一轮照样完成。"
+            },
+            {
+              "path": "/data/failure_code",
+              "equals": "invalid_proposal",
+              "intent": "失败码读得懂：本轮的建议未通过服务端校验，不是降级，也不是悄悄丢掉那一条来源。"
+            },
+            {
+              "path": "/data/reply",
+              "equals": "synthetic-reply",
+              "intent": "那一轮的自然语言回复留着：坏建议不该连累用户的答案。"
+            },
+            {
+              "path": "/data/suggestions",
+              "keys": [
+                "reply"
+              ],
+              "intent": "被拒的提案整块不在建议里，界面上不会出现这条候选来源。"
+            }
+          ],
+          "assertion": "引用上下文外的资料的提案被拒绝、零写入、界面上不出现这条来源；那一轮的自然语言回复仍在。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "G2-RP-03",
+      "name": "提案的理由或缺口超长被拒",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体的一轮回答给出一份提案，其中一条理由或一条缺口超长（或者缺口只说了缺什么、没说期望补什么）。服务端整份拒绝：那份提案不送达，零写入；那一轮的自然语言回复留着，并带一个读得懂的失败码。",
+      "steps": [
+        {
+          "id": "G2-RP-03-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-03-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal_refused_oversized_reason",
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "completed",
+              "intent": "拒的是提案，不是整轮的问答复：这一轮照样完成。"
+            },
+            {
+              "path": "/data/failure_code",
+              "equals": "invalid_proposal",
+              "intent": "失败码读得懂：本轮的建议未通过服务端校验，不是降级，也不是悄悄丢掉那一条理由。"
+            },
+            {
+              "path": "/data/reply",
+              "equals": "synthetic-reply",
+              "intent": "那一轮的自然语言回复留着：坏建议不该连累用户的答案。"
+            },
+            {
+              "path": "/data/suggestions",
+              "keys": [
+                "reply"
+              ],
+              "intent": "被拒的提案整块不在建议里，界面上不会出现理由与缺口。"
+            }
+          ],
+          "assertion": "理由或缺口超长的提案被拒绝、零写入、界面上不出现这份提案；那一轮的自然语言回复仍在。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "G2-RP-04",
+      "name": "这一轮没给建议，答复照样在",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体这一轮只给了自然语言回复，没有给建议。缺建议不是失败：这一轮照样完成、答复照样在、这一轮没有提案。",
+      "steps": [
+        {
+          "id": "G2-RP-04-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-04-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal_absent",
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "completed",
+              "intent": "缺建议不是失败：这一轮照样完成。"
+            },
+            {
+              "path": "/data/reply",
+              "equals": "synthetic-reply",
+              "intent": "自然语言回复仍在：用户提问就有答案，不会因为模型忘了给建议就得到一个空响应。"
+            },
+            {
+              "path": "/data/suggestions",
+              "keys": [
+                "reply"
+              ],
+              "intent": "这一轮没有提案：建议块里只有回复，界面上不出现提案。"
+            }
+          ],
+          "assertion": "缺提案不打断对话：这一轮完成、答复仍在、没有提案。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "G2-RP-05",
+      "name": "形状非法的提案被整份拒绝",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体的一轮回答给出一份形状非法的提案：多了契约不认的字段、少了目标/范围/预期产物其中一样，或者查询词只有一条。服务端整份拒绝，不改写成别的样子：那份提案不送达，零写入；那一轮的自然语言回复留着，并带一个读得懂的失败码。",
+      "steps": [
+        {
+          "id": "G2-RP-05-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-05-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal_refused_invalid_shape",
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "completed",
+              "intent": "拒的是提案，不是整轮的问答复：这一轮照样完成。"
+            },
+            {
+              "path": "/data/failure_code",
+              "equals": "invalid_proposal",
+              "intent": "失败码读得懂：本轮的建议未通过服务端校验，不是降级，也不是悄悄改写成别的样子。"
+            },
+            {
+              "path": "/data/reply",
+              "equals": "synthetic-reply",
+              "intent": "那一轮的自然语言回复留着：坏建议不该连累用户的答案。"
+            },
+            {
+              "path": "/data/suggestions",
+              "keys": [
+                "reply"
+              ],
+              "intent": "被拒的提案整块不在建议里，界面上不会出现这份草案。"
+            }
+          ],
+          "assertion": "形状非法的提案被整份拒绝、零写入、界面上不出现这份草案；那一轮的自然语言回复仍在。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
     }
   ],
   "starting_states_note": "场景的起点状态。只声明能靠写请求造出来的部分：project（含 spec、协作者、是否立项）、assets（绑定资料）、chapters（章节正文——body_markdown 为空表示「这一节存在但还没有正文」，装载器不会为它写版本，读回时会确认它确实没有版本）。template、source、candidate、confirmation、release、export 造不出来——它们要么由服务固定提供，要么是检索、生成、确认、冻结、导出的产物；写进声明的会被装载器连理由一起拒绝，不会被静默忽略。资料与成员用契约里的名字声明，真实 ID 由运行环境注入：k-demo 是一条当前可用的资料，k-notready 是一条当前不可用的资料（解析没跑完），u-member 是一名租户成员。",

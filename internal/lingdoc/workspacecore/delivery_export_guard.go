@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -35,10 +36,23 @@ func (s *Service) AuthorizeDeliveryExportInTransaction(ctx context.Context, tx T
 	actor.Role = caller.Role
 	p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationOpsControl, ""))
 	if err != nil {
+		// The ordinary authorization answers a lapsed Owner with a plain "not
+		// found" -- and that is the answer the caller cannot act on. The
+		// freeze names itself, so the refusal can say which of the two it is.
+		if errors.Is(err, ErrNotFound) {
+			if refusal := ownerFreezeRefusal(tx, actor, projectID); refusal != nil {
+				return refusal
+			}
+		}
 		return err
 	}
-	if p.Status != "active" || !ownerCurrentlyAvailable(tx, p, actor.TenantID, actor.UserID) {
+	if p.Status != "active" {
 		return ErrNotFound
+	}
+	// The formal export is an Owner-only action: it runs only while the Owner
+	// may still act as the Owner of this project.
+	if err := ownerDecisionInTransaction(tx, p, actor); err != nil {
+		return err
 	}
 	if err := RuntimeGate(tx, actor, p, "export_start", effectiveRuntimeMode(s.runtimeMode)); err != nil {
 		return err

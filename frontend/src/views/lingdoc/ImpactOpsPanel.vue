@@ -33,11 +33,12 @@
           <button v-if="canEditDraft(change)" :disabled="busy || loading" @click="editDraft(change)">编辑草稿</button>
           <button v-if="changeActionAllowed(change, 'assess')" :disabled="busy || loading" @click="changeAction(change, 'assess')">评估当前影响</button>
           <button v-if="changeActionAllowed(change, 'reassess')" :disabled="busy || loading" @click="changeAction(change, 'reassess')">按当前基线重评</button>
-          <button v-if="changeActionAllowed(change, 'apply')" :disabled="busy || loading" @click="changeAction(change, 'apply')">Owner 应用</button>
-          <button v-if="changeActionAllowed(change, 'reject')" :disabled="busy || loading" @click="changeAction(change, 'reject')">Owner 驳回</button>
+          <button v-if="changeActionAllowed(change, 'apply')" :disabled="busy || loading || ownerActionsFrozen" @click="changeAction(change, 'apply')">Owner 应用</button>
+          <button v-if="changeActionAllowed(change, 'reject')" :disabled="busy || loading || ownerActionsFrozen" @click="changeAction(change, 'reject')">Owner 驳回</button>
           <button v-if="changeActionAllowed(change, 'stabilize')" :disabled="busy || loading" @click="changeAction(change, 'stabilize')">检查稳定化</button>
           <button v-if="changeActionAllowed(change, 'reverse')" :disabled="busy || loading" @click="changeAction(change, 'reverse')">起草逆向变更</button>
         </div>
+        <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
       </article>
       <article v-if="assessment"><h3>影响预览 · 基线 {{ assessment.context_revision }}</h3><p>评估指纹 {{ assessment.input_hash }}</p><h4>本次必须处理的对象</h4><ul v-if="assessment.objects && assessment.objects.length"><li v-for="(object, index) in assessment.objects" :key="index">{{ kindLabel(object.ref.kind) }} · {{ object.ref.kind }}/{{ object.ref.id }} @ {{ object.ref.version }} · {{ objectStateLabel(object.state) }} · {{ object.confirmed ? '已确认' : '未确认' }} · 基线 {{ object.context_revision }}</li></ul><p v-else>本次评估没有要求处理的对象。</p><h4>确定影响</h4><ul v-if="definiteImpacts.length"><li v-for="(impact, index) in definiteImpacts" :key="'definite-'+index"><strong>确定影响</strong>：{{ kindLabel(impact.target.kind) }} · {{ impact.target.kind }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<span v-if="impact.action === 'NO_ACTION'">（不创建影响任务）</span><ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }}<template v-if="cause.source"> · 来源 {{ kindLabel(cause.source.kind) }} · {{ cause.source.kind }}/{{ cause.source.id }} @ {{ cause.source.version }}</template> · 边 {{ cause.edge_id }}</li></ul></li></ul><p v-else>本次没有此类影响。</p><h4>可能影响，等待人工判断</h4><ul v-if="possibleImpacts.length"><li v-for="(impact, index) in possibleImpacts" :key="'possible-'+index"><strong>可能影响，等待人工判断</strong>：{{ kindLabel(impact.target.kind) }} · {{ impact.target.kind }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<span v-if="impact.action === 'NO_ACTION'">（不创建影响任务）</span><ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }}<template v-if="cause.source"> · 来源 {{ kindLabel(cause.source.kind) }} · {{ cause.source.kind }}/{{ cause.source.id }} @ {{ cause.source.version }}</template> · 边 {{ cause.edge_id }}</li></ul></li></ul><p v-else>本次没有此类影响。</p><h4>本次评估依据的依赖边</h4><p>以下依赖边来自本次评估响应的快照，不是人工登记的依赖全集。</p><ul v-if="assessment.edges && assessment.edges.length"><li v-for="(edge, index) in assessment.edges" :key="index">{{ kindLabel(edge.source.kind) }} · {{ edge.source.kind }}/{{ edge.source.id }} → {{ kindLabel(edge.target.kind) }} · {{ edge.target.kind }}/{{ edge.target.id }} · {{ actionLabel(edge.action) }} · {{ edge.relation }} · {{ label(edge.status) }} · {{ edge.reason }}</li></ul><p v-else>本次评估没有记录依赖边。</p></article>
       <article v-if="stabilization"><h3>{{ stabilization.status === 'STABILIZED' ? '当前变更已稳定' : '仍有稳定化阻断' }}</h3><p>稳定后仍需冻结快照与交付 Preflight。</p><p>判定时间 {{ stabilization.checked_at }}</p><ul><li v-for="(blocker, index) in stabilization.blockers" :key="index">{{ blocker.reason }} · {{ blocker.target_id }}</li></ul><p v-if="stabilization.stale_task_ids.length">已失效任务 {{ stabilization.stale_task_ids.join('、') }}：依据已消失，既不算闭环也不算阻断。</p></article>
@@ -91,7 +92,9 @@ import * as api from '@/api/lingdoc/mainlineChanges'
 import { listResearchClaims, listEvidenceCards, type ResearchClaim, type EvidenceCard } from '@/api/lingdoc/agentApi'
 import { listAssets, type Asset } from '@/api/lingdoc/workspace'
 import { useAuthStore } from '@/stores/auth'
+import { useOwnerAvailability } from '@/composables/useOwnerAvailability'
 import DependencyCandidatePanel from './DependencyCandidatePanel.vue'
+import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { projectRuntimeMetrics, expandRuntimeCounts } from './runtimeMetrics'
 const props = withDefaults(defineProps<{ project: Project; readonly?: boolean; currentUserId?: string; preflightReceiptId?: string }>(), { readonly: true, currentUserId: '', preflightReceiptId: '' })
 const emit = defineEmits<{ close: []; changed: []; dirty: [boolean] }>()
@@ -120,6 +123,14 @@ const ownMember = computed(() => activeMembers.value.find(member => member.user_
 const canWrite = computed(() => !props.readonly)
 const canOwner = computed(() => canWrite.value && ownMember.value?.role === 'owner')
 const canManage = computed(() => canOwner.value || canWrite.value && ownMember.value?.governance_role === 'admin')
+// Owner 可用性事实与恢复指引文案都在组合式函数里持有：置灰条件与提示文案
+// 从同一处取，不在本面板另写一遍。
+const {
+  frozen: ownerActionsFrozen,
+  reason: ownerUnavailableReason,
+  recovery: ownerRecoveryGuidance,
+  refresh: refreshOwnerAvailability,
+} = useOwnerAvailability(() => props.project.id)
 const draftField = ref(''), draftValue = ref(''), affectedIds = ref<string[]>([]), editId = ref('')
 const semanticKind = ref<api.SemanticDelta['kind']>('ResearchClaim'), semanticTarget = ref(''), semanticVersion = ref(1), semanticDraft = ref<api.SemanticDelta[]>([])
 const claimText = ref(''), claimScope = ref(''), claimStatus = ref<'active' | 'disputed' | 'superseded'>('active'), claimExplanation = ref(''), claimConsent = ref(false)
@@ -229,6 +240,7 @@ async function refresh() {
   const stamp = ++epoch, id = props.project.id, identity=currentIdentity.value
   if(tab.value==='runtime')runtimeReadReady.value=false
   loading.value = true; error.value = ''
+  void refreshOwnerAvailability()
   try {
     if (tab.value === 'changes') { const result = await Promise.all([api.listMainlineChanges(id), listChapters(id), api.listContextRevisions(id), listResearchClaims(id), listAssets(id), api.listRouteNodes(id), listEvidenceCards(id)]); if (epoch === stamp && identity===currentIdentity.value) { changes.value = result[0].data || []; chapters.value = result[1].data || []; revisions.value = result[2].data || []; claims.value = result[3].data || []; assets.value = result[4].data || []; routes.value = result[5].data || []; cards.value = result[6].data || [] } }
     if (tab.value === 'impacts') { const result = await Promise.all([api.listDependencies(id), api.listImpactTasks(id)]); if (epoch === stamp && identity===currentIdentity.value) { edges.value = result[0].data || []; tasks.value = result[1].data || [] } }

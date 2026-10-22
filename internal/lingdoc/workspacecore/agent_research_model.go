@@ -28,6 +28,44 @@ const (
 	ActionProposalKind  = "action_proposal"
 )
 
+// The agents a session may declare, and the shapes an answer may take.
+//
+// These words belong to the server. The model adapter refers to them instead
+// of comparing loose strings: a prompt that branches on a misspelled word
+// loses its instructions without anybody noticing, and the server would go on
+// believing the turn got the answer shape it asked for.
+//
+// The two vocabularies have different jobs and stay apart: an agent is the
+// role a session plays, a purpose is the shape the answer of that role takes.
+const (
+	AgentTaskAssistant = "task_assistant"
+	AgentResearch      = "research_agent"
+	AgentConstraint    = "constraint"
+)
+
+const (
+	AgentPurposeConversation   = "conversation"
+	AgentPurposeRuleSuggestion = "rule_suggestion"
+	AgentPurposeResearch       = "research_proposal"
+)
+
+// AgentPurposeForAgent derives the purpose of a turn from the agent its
+// session declares.
+//
+// The purpose is the shape of the answer, and the shape is the server's to
+// decide: the client states no purpose, so the request shape - and with it
+// the idempotency digest - does not move, and a key issued before this
+// derivation existed still replays.
+//
+// The research agent answers with a research proposal; every other session
+// keeps the conversation shape it has always had.
+func AgentPurposeForAgent(agent string) string {
+	if agent == AgentResearch {
+		return AgentPurposeResearch
+	}
+	return AgentPurposeConversation
+}
+
 type VersionRef struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
@@ -64,6 +102,26 @@ type ProjectAssetVersion struct {
 	AssetID       string `json:"asset_id"`
 	AssetRevision int    `json:"asset_revision"`
 }
+
+// The research task's own bounds. They live here, next to the task they
+// belong to, and the research proposal contract refers to them instead of
+// restating them: two copies of a number are two numbers that drift, and a
+// proposal that decodes has to be savable as a task without being edited into
+// shape first.
+const (
+	// researchTaskMinimumQueries is the smallest number of queries a task may
+	// carry. One query does not define a search.
+	researchTaskMinimumQueries = 2
+	// researchTaskMaximumQueries is the largest number of queries a task may
+	// carry.
+	researchTaskMaximumQueries = 8
+	// researchTaskMaximumQueryLength is the longest a single query may be.
+	researchTaskMaximumQueryLength = 1000
+	// researchTaskMaximumTextLength is the longest a task's long text field may
+	// be: the goal, and the proposal's scope and expected output.
+	researchTaskMaximumTextLength = 6000
+)
+
 type ResearchTask struct {
 	ID             string       `json:"id"`
 	ProjectID      string       `json:"project_id"`

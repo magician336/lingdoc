@@ -5715,6 +5715,211 @@
         "x-domain": "workspace"
       }
     },
+    "/projects/{projectId}/archive": {
+      "post": {
+        "operationId": "archiveProject",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "归档项目（Owner 专属，终态）",
+        "description": "归档是项目生命周期的终态：归档之后项目不再接受任何变更。只有 active 项目可归档，draft 项目只能丢弃；丢弃（discarded_at）与归档（status = archived）是两回事，不可共用。该动作仅 Owner 可执行：请求必须带上调用方读到的项目版本，陈旧版本返回 409；幂等键让重试只有一次效果，重试不会产生第二条归档审计。Owner 的租户身份失效时该动作被冻结，拒绝在既有错误形状里带出 owner_unavailable 原因码，可与「你不是 Owner」区分。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveProject"
+              },
+              "example": {
+                "expected_project_version": 3
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "项目已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                },
+                "examples": {
+                  "archived": {
+                    "summary": "Synthetic contract illustration only; not an executed API result",
+                    "value": {
+                      "data": {
+                        "id": "p-demo",
+                        "name": "合成资料演示项目",
+                        "status": "archived",
+                        "project_version": 4,
+                        "current_context_revision": 1,
+                        "delivery_status": "NOT_READY",
+                        "spec_revision": 1,
+                        "spec": {
+                          "research_subject": "公开的合成调查样本",
+                          "research_goal": "验证资料到章节的工作流程"
+                        },
+                        "template_id": "template-demo",
+                        "template_version": "1",
+                        "template_copy_version": 1,
+                        "members": [
+                          {
+                            "user_id": "u-owner",
+                            "role": "owner"
+                          }
+                        ]
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行该动作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可访问，或 Owner 的租户身份失效导致该动作被冻结",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false,
+                        "details": {
+                          "reason_code": "owner_unavailable"
+                        }
+                      },
+                      "request_id": "req-demo"
+                    },
+                    "summary": "Owner 的租户身份失效时冻结归档；原因码带在既有错误形状的 details 里"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "项目版本已变化，或同一幂等键对应不同请求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态不允许：draft 项目只能丢弃，active 项目才能归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前项目状态或研究条件不满足操作要求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/assets": {
       "get": {
         "operationId": "listAssets",
@@ -21437,6 +21642,57 @@
                           "output_tokens": 1,
                           "created_by": "synthetic-created-by",
                           "created_at": "2026-10-18T00:00:00Z"
+                        },
+                        {
+                          "id": "synthetic-proposal-turn-id",
+                          "project_id": "synthetic-project-id",
+                          "session_id": "synthetic-session-id",
+                          "version": 2,
+                          "agent": "research_agent",
+                          "user_input": "synthetic-user-input",
+                          "reply": "synthetic-reply",
+                          "suggestions": {
+                            "reply": "synthetic-reply",
+                            "task_card": {
+                              "goal": "synthetic-goal",
+                              "question_type": "synthetic-question-type",
+                              "scope": "synthetic-scope",
+                              "exclusions": [
+                                "synthetic-exclusion"
+                              ],
+                              "queries": [
+                                "synthetic-query-1",
+                                "synthetic-query-2",
+                                "synthetic-synonym-query"
+                              ],
+                              "expected_output": "synthetic-expected-output"
+                            }
+                          },
+                          "context": {
+                            "project_id": "synthetic-project-id",
+                            "project_version": 1,
+                            "spec_revision": 1,
+                            "context_revision": 1,
+                            "template_id": "synthetic-template-id",
+                            "template_version": "synthetic-template-version",
+                            "source_refs": [],
+                            "card_refs": [],
+                            "selection_reasons": [
+                              "synthetic-selection-reasons"
+                            ],
+                            "authorization_state": "synthetic-authorization-state",
+                            "output_constraints": [
+                              "synthetic-output-constraints"
+                            ],
+                            "correlation_id": "synthetic-correlation-id"
+                          },
+                          "status": "completed",
+                          "model_id": "synthetic-model-id",
+                          "run_mode": "real_api_fake_model",
+                          "input_tokens": 1,
+                          "output_tokens": 1,
+                          "created_by": "synthetic-created-by",
+                          "created_at": "2026-10-18T00:00:00Z"
                         }
                       ],
                       "request_id": "synthetic-contract-example",
@@ -21638,6 +21894,351 @@
                           "correlation_id": "synthetic-correlation-id"
                         },
                         "status": "completed",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal": {
+                    "summary": "Synthetic contract illustration only; a server-validated research proposal travelling with the turn it belongs to",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply",
+                          "task_card": {
+                            "goal": "synthetic-goal",
+                            "question_type": "synthetic-question-type",
+                            "scope": "synthetic-scope",
+                            "exclusions": [
+                              "synthetic-exclusion"
+                            ],
+                            "queries": [
+                              "synthetic-query-1",
+                              "synthetic-query-2",
+                              "synthetic-synonym-query"
+                            ],
+                            "expected_output": "synthetic-expected-output",
+                            "candidate_sources": [
+                              {
+                                "source_id": "synthetic-proposal-source-id",
+                                "reason": "synthetic-candidate-reason"
+                              }
+                            ],
+                            "reasons": [
+                              "synthetic-reason-why-this-goal"
+                            ],
+                            "gaps": [
+                              {
+                                "description": "synthetic-gap-description",
+                                "expected_evidence": "synthetic-gap-expected-evidence"
+                              }
+                            ]
+                          }
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-source-id",
+                              "asset_id": "synthetic-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "locator": "synthetic-locator",
+                              "model_use_allowed": false
+                            },
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "model_id": "synthetic-model-id",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal_refused": {
+                    "summary": "Synthetic contract illustration only; a research proposal that named a source outside this turn's authorization is refused whole - the proposal never reaches the interface, the turn keeps the answer the model gave, and the refusal is readable",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-refused-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply"
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "failure_code": "invalid_proposal",
+                        "model_id": "synthetic-model-id",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal_refused_oversized_reason": {
+                    "summary": "Synthetic contract illustration only; a research proposal whose reason or gap is overlong - or whose gap does not say what would fill it - is refused whole: the proposal never reaches the interface, the turn keeps the answer the model gave, and neither the reason nor the gap reaches the interface",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-oversized-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply"
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "failure_code": "invalid_proposal",
+                        "model_id": "synthetic-model-id",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal_absent": {
+                    "summary": "Synthetic contract illustration only; a turn whose model answer carried no proposal at all - the answer still comes back, the turn completes, and it carries no proposal",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-absent-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply"
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-source-id",
+                              "asset_id": "synthetic-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "locator": "synthetic-locator",
+                              "model_use_allowed": false
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "model_id": "synthetic-model-id",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal_refused_invalid_shape": {
+                    "summary": "Synthetic contract illustration only; a research proposal whose shape the contract does not accept - an unknown field, a missing required field, or fewer than two queries - is refused whole: the proposal never reaches the interface, the turn keeps the answer the model gave, and the refusal is readable",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-invalid-shape-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply"
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "failure_code": "invalid_proposal",
+                        "model_id": "synthetic-model-id",
                         "run_mode": "real_api_fake_model",
                         "input_tokens": 1,
                         "output_tokens": 1,
@@ -30041,6 +30642,155 @@
         "x-lingdoc-route-line": 41,
         "x-lingdoc-service": "EffectivePermission",
         "x-lingdoc-go-response": "EffectivePermission",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/owner-availability": {
+      "get": {
+        "operationId": "ownerAvailability",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "OwnerAvailability",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAvailabilityResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "owner_user_id": "synthetic-owner",
+                        "available": false,
+                        "reason_code": "owner_unavailable",
+                        "recovery_paths": [
+                          "restore_tenant_identity",
+                          "tenant_owner_nomination"
+                        ]
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "full_workflow_http.go",
+        "x-lingdoc-route-line": 52,
+        "x-lingdoc-service": "OwnerAvailability",
+        "x-lingdoc-go-response": "OwnerAvailability",
         "x-lingdoc-human-decision": {
           "mode": "no_explicit_guard",
           "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
@@ -38781,7 +39531,8 @@
             "type": "string",
             "enum": [
               "draft",
-              "active"
+              "active",
+              "archived"
             ]
           },
           "project_version": {
@@ -40212,6 +40963,22 @@
         "required": [
           "expected_spec_revision",
           "activation_read_id"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveProject": {
+        "type": "object",
+        "description": "归档请求体。expected_project_version 是调用方读到的项目版本：服务端据此拒绝陈旧决定，省略或 0 视为无效请求。",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64",
+            "description": "调用方读到的项目版本；与服务端当前版本不一致时返回 409。"
+          }
+        },
+        "required": [
+          "expected_project_version"
         ],
         "additionalProperties": false
       },
@@ -44202,27 +44969,119 @@
         "x-go-type": "core.CommitWorkingCopyInput",
         "x-go-source": "internal/lingdoc/workspacecore/service_facade.go"
       },
-      "AgentTaskSuggestion": {
+      "ResearchProposal": {
         "type": "object",
         "properties": {
-          "expected_project_version": {
-            "type": "integer",
-            "format": "int64"
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
           },
-          "expected_context_revision": {
-            "type": "integer",
-            "format": "int64"
+          "question_type": {
+            "type": "string",
+            "maxLength": 2000
           },
-          "expected_version": {
-            "type": "integer",
-            "format": "int64"
+          "scope": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
           },
-          "task_id": {
-            "type": "string"
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 50
           },
-          "chapter_id": {
-            "type": "string"
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "minItems": 2,
+            "maxItems": 8
           },
+          "expected_output": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
+          },
+          "candidate_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "source_id",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 10
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "expected_evidence": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "description",
+                "expected_evidence"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 10
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "goal",
+          "scope",
+          "queries",
+          "expected_output"
+        ],
+        "x-go-type": "core.ResearchProposal",
+        "x-go-source": "internal/lingdoc/workspacecore/research_proposal.go",
+        "description": "调研智能体的研究提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级：每一份都指回这一轮授权上下文里的资料（source_id 必须在该轮 context.source_refs 里且 model_use_allowed 为真），服务端逐条比对，对不上就整份拒绝，不降级、不悄悄丢掉那一条。reasons 是整份提案为什么这么定（目标为什么是这个目标、范围为什么划到这里）；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选：用户自己保存才成为调研任务。三态是关于这一轮答案的事实，不是判决：有提案（present，形状逐字照上）；没给提案（absent，这一轮照样有自然语言回复，没有提案，也不是失败）；给了但不可信（invalid，整份拒绝、提案不送达、零写入，而那一轮的自然语言回复留着——坏建议不该连累用户的答案）。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，不受本契约约束，另票收紧。"
+      },
+      "AssistantTaskSuggestion": {
+        "type": "object",
+        "properties": {
           "goal": {
             "type": "string"
           },
@@ -44236,34 +45095,19 @@
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "nullable": true
+            }
           },
           "queries": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "nullable": true
-          },
-          "asset_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "provider_id": {
-            "type": "string"
+            }
           },
           "expected_output": {
             "type": "string"
           }
         },
-        "additionalProperties": false,
-        "x-go-type": "core.SaveResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
-        "description": "Editable candidate task fields; not an execution or permission grant."
+        "description": "任务助手那张同名卡片：助手自己的可编辑调研任务建议。服务端不按研究提案契约校验它——查询词条数、字段集、来源引用都不检查——所以这里不写条数与长度约束，也不禁止额外字段：契约不能承诺运行时不做的事。助手自己的提示词要求至少两条查询词，但服务端不强制，所以这一份声明也不能强制。"
       },
       "AgentSuggestions": {
         "type": "object",
@@ -44272,7 +45116,15 @@
             "type": "string"
           },
           "task_card": {
-            "$ref": "#/components/schemas/AgentTaskSuggestion"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchProposal"
+              },
+              {
+                "$ref": "#/components/schemas/AssistantTaskSuggestion"
+              }
+            ],
+            "description": "两个来源，两种强度。调研智能体那一轮：ResearchProposal——服务端按唯一一份契约解码过，查询词少于两条即整份拒绝，候选来源逐条对过该轮授权上下文。任务助手那一轮：AssistantTaskSuggestion——助手自己的可编辑调研任务建议，不经这份契约校验。这一份声明是两者的并集：「按来源收紧」这条规则只能由服务端保证，schema 表达不了。"
           },
           "change_draft": {
             "$ref": "#/components/schemas/AgentChangeDraftSuggestion"
@@ -47064,7 +47916,8 @@
           "created_at"
         ],
         "x-go-type": "core.AgentTurn",
-        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
+        "description": "一轮问答。status=completed 表示这一轮有答案：reply 是模型写的自然语言答复，suggestions 是这一轮可采纳的候选建议。研究提案有三态，这是关于这一轮答案的事实而不是判决：present（有合法提案，提案在 suggestions.task_card 里）；absent（模型这一轮没给建议——reply 照样在，这一轮没有提案，也不是失败）；invalid（模型给了但不可信——整份提案被拒、绝不落进 suggestions，这一轮仍 completed、reply 仍在，failure_code=invalid_proposal 读得懂地说明「本轮的建议未通过服务端校验」）。failure_code 记的是这一轮出了什么事，不是这一轮成没成：它可以与 status=completed 同时出现，那时它说的正是「答复在，建议没有」。需求由服务端按会话的 agent 派生，客户端不声明，请求形状与幂等摘要因此不变。"
       },
       "FullAgentTurnListResponse": {
         "type": "object",
@@ -48722,6 +49575,55 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/EffectivePermission"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "OwnerAvailability": {
+        "type": "object",
+        "properties": {
+          "owner_user_id": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "recovery_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "owner_user_id",
+          "available",
+          "reason_code",
+          "recovery_paths"
+        ],
+        "x-go-type": "core.OwnerAvailability",
+        "x-go-source": "internal/lingdoc/workspacecore/owner_unavailable.go"
+      },
+      "OwnerAvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnerAvailability"
           },
           "request_id": {
             "type": "string"
