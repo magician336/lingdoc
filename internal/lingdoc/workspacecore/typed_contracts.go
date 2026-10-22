@@ -415,11 +415,11 @@ type ownerTransferTransaction = ownerTransferStore
 // AuthorizeRequest is the structured application seam for callers that already
 // know their action and resource. Capability conversion stays at legacy edges.
 func (s *Service) AuthorizeRequest(ctx context.Context, request AuthorizationRequest) error {
-	return s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
-		_, err := s.authorizeProject(ctx, tx, request)
-		_ = s.recordAuditInTransaction(ctx, tx, request.Actor, request.ProjectID, request.capability(), err)
-		return err
-	})
+	return s.readWithAudit(ctx, request.Actor, request.ProjectID, request.capability(),
+		TransactionOptions{RepeatableRead: true},
+		func(tx Transaction) (Project, error) {
+			return s.authorizeProject(ctx, tx, request)
+		})
 }
 
 // ReassessChangeSetResult keeps reassessment on the same typed application
