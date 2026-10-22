@@ -14,8 +14,10 @@ as it is and say nothing about a particular event:
   declared, every declared file still exists, and the live debt sits inside
   the ratchet;
 * the **rules bite on new code** -- a synthetic tree with a ``g9_`` file, a
-  ``G9`` export, a ticket number in a file name or a kebab front-end name is
-  detected, so the guard would reject it;
+  ``G9`` export, a ``seg3_`` file, a ``verify_t11_test.go`` name, a task
+  number inside a file name, a numbered body under a clean name, a ticket
+  number in a file name or a kebab front-end name is detected, so the guard
+  would reject it;
 * **bad registry data is rejected loudly** -- the loader raises instead of
   degrading silently, because a silently degraded registry would let the debt
   grow unnoticed.
@@ -163,7 +165,17 @@ class RegistryShapeTests(unittest.TestCase):
         for entry in self.identifiers:
             with self.subTest(name=entry.name, file=entry.file):
                 self.assertIn(entry.scope, registry.IDENTIFIER_SCOPES)
-                self.assertTrue(registry.NUMBERED_NAME.match(entry.name))
+                self.assertTrue(registry.is_work_numbered(entry.name))
+
+    def test_the_registry_uses_the_extended_rule_vocabulary(self):
+        """A rule that no entry uses is decoration.  The extended rule set has
+        to be exercised by the committed registry, otherwise the coverage
+        holes it closes would be open again."""
+        used = {defect for entry in self.files for defect in entry.defects}
+        for defect in ("segment_number", "task_number", "numbered_identifiers"):
+            with self.subTest(defect=defect):
+                self.assertIn(defect, used)
+                self.assertIn(defect, registry.FILE_DEFECTS)
 
     def test_the_baseline_records_its_sha_and_its_scope(self):
         self.assertEqual(self.ratchet.base_sha, registry.RATCHET_BASELINE["base_sha"])
@@ -247,6 +259,37 @@ class RepositoryAgreementTests(unittest.TestCase):
         undeclared = sorted(self.live_identifiers - self.declared_identifiers)
         self.assertEqual(undeclared, [], f"undeclared numbered identifiers: {undeclared}")
 
+    def test_every_product_file_that_owns_a_numbered_identifier_is_declared(self):
+        """AC-48-06: a numbered identifier needs an owner file, and an owner
+        file needs a rename ticket.
+
+        A file that is not declared has no ticket, so nothing would ever
+        rename the identifiers it owns.  This is the hole a clean file name
+        used to leave open.
+        """
+        undeclared = sorted({path for _name, _scope, path in self.live_identifiers
+                             if not registry.is_acceptance_rig(path)} - self.declared_files)
+        self.assertEqual(
+            undeclared, [],
+            f"files that own numbered identifiers but are not declared: {undeclared}")
+
+    def test_every_declared_file_still_breaks_the_rule_it_declares(self):
+        """The registry says which rules a file breaks.  The scanner says
+        which rules it actually breaks; the two must not drift apart.
+
+        Only the entries that still carry debt are judged: an entry whose
+        legacy flag has been cleared keeps the rules it used to break as a
+        historical record.
+        """
+        for entry in self.files:
+            if not entry.legacy:
+                continue
+            with self.subTest(path=entry.path):
+                live = set(self.live_defects.get(entry.path, ()))
+                self.assertTrue(set(entry.defects) <= live,
+                                f"{entry.path} declares {entry.defects} but only "
+                                f"breaks {sorted(live)}")
+
     def test_every_declared_identifier_is_still_defined_where_it_is_declared(self):
         stale = sorted(self.declared_identifiers - self.live_identifiers)
         self.assertEqual(stale, [], f"declared identifiers that no longer exist: {stale}")
@@ -299,6 +342,79 @@ class NewViolationTests(unittest.TestCase):
         found = registry.scan_file_defects(self.root)
         self.assertIn("internal/lingdoc/t9_new.go", found)
 
+    def test_a_new_segment_numbered_file_is_detected(self):
+        """AC-48-01: ``seg3_`` is a work coordinate like ``G5``."""
+        self._write("internal/lingdoc/seg3_new.go", "package lingdoc\n")
+        found = registry.scan_file_defects(self.root)
+        self.assertIn("internal/lingdoc/seg3_new.go", found)
+        self.assertIn("segment_number", found["internal/lingdoc/seg3_new.go"])
+
+    def test_a_new_segment_numbered_directory_is_detected(self):
+        """The directory name counts too, exactly as it does for ``g9``."""
+        self._write("internal/lingdoc/seg3pkg/thing.go", "package seg3pkg\n")
+        found = registry.scan_file_defects(self.root)
+        self.assertIn("internal/lingdoc/seg3pkg/thing.go", found)
+        self.assertIn("segment_number", found["internal/lingdoc/seg3pkg/thing.go"])
+
+    def test_a_task_number_inside_a_file_name_is_detected(self):
+        """AC-48-03: ``T01``-``T16`` are the documentation layer's task pool.
+
+        The number does not have to sit at the front of the name to be a
+        defect: ``verify_t09_test.go`` used to slip through.
+        """
+        self._write("internal/evidence/verify_t11_test.go", "package evidence\n")
+        found = registry.scan_file_defects(self.root)
+        self.assertIn("internal/evidence/verify_t11_test.go", found)
+        self.assertIn("task_number", found["internal/evidence/verify_t11_test.go"])
+
+    def test_a_file_with_a_numbered_identifier_is_detected_even_when_its_name_is_clean(self):
+        """AC-48-06: a clean name does not make a numbered body acceptable.
+
+        The file owns those identifiers, so it needs an owner entry -- and an
+        owner entry is what gives them a rename ticket.
+        """
+        self._write("internal/lingdoc/permission.go",
+                    "package lingdoc\n\nfunc G9DoThing() {}\n")
+        found = registry.scan_file_defects(self.root)
+        self.assertIn("internal/lingdoc/permission.go", found)
+        self.assertIn("numbered_identifiers", found["internal/lingdoc/permission.go"])
+
+    def test_a_clean_named_file_without_numbered_identifiers_is_not_flagged(self):
+        self._write("internal/lingdoc/permission.go",
+                    "package lingdoc\n\nfunc DoThing() {}\n")
+        self.assertEqual(registry.scan_file_defects(self.root), {})
+
+    def test_a_name_that_only_looks_like_a_number_is_not_flagged(self):
+        """``design``/``latest``/``test2``/``segment`` are words, not numbers.
+
+        The number rules look for a number, not for a letter that happens to
+        start one.
+        """
+        for name in ("design.go", "latest.go", "test2.go", "segment.go"):
+            with self.subTest(name=name):
+                self.assertEqual(self._defects(f"internal/lingdoc/{name}"), ())
+
+    def test_a_segment_number_that_is_not_a_prefix_is_not_a_defect(self):
+        """The Spec's rule A' is about the *prefix* ``seg<数字>_``, exactly
+        like the project-number rule is about a prefix.  A segment number in
+        the middle of a name is not what the Spec states."""
+        self.assertEqual(self._defects("internal/lingdoc/user_seg3_profile.go"), ())
+
+    def test_the_acceptance_rig_keeps_its_own_vocabulary(self):
+        """The rig's ``T15`` words are the rig's own: they are not product debt."""
+        rig = "scripts/lingdoc_mock/build_t15_matrix.py"
+        self._write(rig, "T15_SCENARIO_IDS = ['a']\n")
+        self.assertNotIn(rig, registry.scan_file_defects(self.root))
+
+    def test_the_acceptance_rig_still_reports_its_grandfathered_names(self):
+        """The rig's old ``g6_`` names were recognised before the exemption
+        and stay reported."""
+        rig = "scripts/lingdoc_mock/g6_thing.py"
+        self._write(rig, "G6Thing = 1\n")
+        found = registry.scan_file_defects(self.root)
+        self.assertIn(rig, found)
+        self.assertIn("numbered", found[rig])
+
     def test_a_compliant_file_is_not_flagged(self):
         self._write("internal/lingdoc/permission.go", "package lingdoc\n")
         found = registry.scan_file_defects(self.root)
@@ -321,6 +437,17 @@ class NewViolationTests(unittest.TestCase):
         self._write("internal/lingdoc/thing.go", "package lingdoc\n\nfunc T9Thing() {}\n")
         found = registry.scan_identifier_definitions(self.root)
         self.assertIn(("T9Thing", "exported", "internal/lingdoc/thing.go"), found)
+
+    def test_a_new_segment_numbered_export_is_detected(self):
+        """AC-48-02: ``Seg3`` names a batch of work, not a piece of knowledge."""
+        self._write("internal/lingdoc/thing.go", "package lingdoc\n\nfunc Seg3Thing() {}\n")
+        found = registry.scan_identifier_definitions(self.root)
+        self.assertIn(("Seg3Thing", "exported", "internal/lingdoc/thing.go"), found)
+
+    def test_a_new_segment_numbered_private_identifier_is_detected(self):
+        self._write("internal/lingdoc/thing.go", "package lingdoc\n\nfunc seg3Helper() {}\n")
+        found = registry.scan_identifier_definitions(self.root)
+        self.assertIn(("seg3Helper", "private", "internal/lingdoc/thing.go"), found)
 
     def test_a_ticket_number_in_a_file_name_is_detected(self):
         """AC-48-03: ``issue``/``spec``/``ac`` numbers do not belong in code."""
@@ -398,6 +525,35 @@ class NewViolationTests(unittest.TestCase):
             undeclared_identifiers(self.root, declared_identifiers),
             [("G9DoThing", "exported", "internal/lingdoc/thing.go")])
 
+    def test_a_new_segment_numbered_file_would_be_rejected_by_the_guard(self):
+        """AC-48-06: a new ``seg3_`` file that is not declared is refused."""
+        _files, identifiers, _ratchet = registry.load_and_validate()
+        declared_files = {entry.path for entry in _files}
+        declared_identifiers = {(e.name, e.scope, e.file) for e in identifiers}
+        self._write("internal/lingdoc/seg3_new.go", "package lingdoc\n")
+        self.assertEqual(undeclared_files(self.root, declared_files),
+                         ["internal/lingdoc/seg3_new.go"])
+        self.assertEqual(undeclared_identifiers(self.root, declared_identifiers), [])
+
+    def test_a_new_task_numbered_file_would_be_rejected_by_the_guard(self):
+        """AC-48-03: a new ``verify_t11_test.go`` that is not declared is
+        refused."""
+        _files, identifiers, _ratchet = registry.load_and_validate()
+        declared_files = {entry.path for entry in _files}
+        self._write("internal/evidence/verify_t11_test.go", "package evidence\n")
+        self.assertEqual(undeclared_files(self.root, declared_files),
+                         ["internal/evidence/verify_t11_test.go"])
+
+    def test_a_clean_named_file_with_a_numbered_body_would_be_rejected(self):
+        """AC-48-06: the owner file is what gives the identifier a ticket, so
+        an undeclared one is refused as well."""
+        _files, identifiers, _ratchet = registry.load_and_validate()
+        declared_files = {entry.path for entry in _files}
+        self._write("internal/lingdoc/permission.go",
+                    "package lingdoc\n\nfunc G9DoThing() {}\n")
+        self.assertEqual(undeclared_files(self.root, declared_files),
+                         ["internal/lingdoc/permission.go"])
+
 
 class NegativeTests(unittest.TestCase):
     """A broken registry must be rejected, never accepted with a warning."""
@@ -445,6 +601,24 @@ class NegativeTests(unittest.TestCase):
         with self.assertRaises(registry.NamingRegistryError):
             registry.validate_records([_file_record(defects=("mystery",))],
                                        [_identifier_record()], _baseline())
+
+    def test_a_file_entry_with_no_defect_is_rejected(self):
+        """A file that breaks no rule has no entry: it is not debt."""
+        with self.assertRaises(registry.NamingRegistryError):
+            registry.validate_records([_file_record(defects=())],
+                                       [_identifier_record()], _baseline())
+
+    def test_an_identifier_that_carries_no_work_number_is_rejected(self):
+        with self.assertRaises(registry.NamingRegistryError):
+            registry.validate_records([_file_record()],
+                                       [_identifier_record(name="DoThing")], _baseline())
+
+    def test_a_segment_numbered_identifier_is_accepted(self):
+        """``seg3`` is a work coordinate like ``G5``: the registry may hold it
+        so that a ticket can repay it."""
+        _files, identifiers, _ratchet = registry.validate_records(
+            [_file_record()], [_identifier_record(name="Seg3Thing")], _baseline())
+        self.assertEqual(identifiers[0].name, "Seg3Thing")
 
     def test_an_illegal_identifier_scope_is_rejected(self):
         with self.assertRaises(registry.NamingRegistryError):
