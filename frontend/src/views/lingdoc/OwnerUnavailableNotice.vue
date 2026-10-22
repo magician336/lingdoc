@@ -15,7 +15,19 @@ const props = withDefaults(defineProps<{
 
 <template>
   <div v-if="props.reason" class="owner-unavailable-notice">
-    <p>{{ props.reason }}</p>
-    <p v-if="props.recovery" class="muted">{{ props.recovery }}</p>
+    <p class="owner-unavailable-notice__reason">{{ props.reason }}</p>
+    <p v-if="props.recovery" class="owner-unavailable-notice__recovery">{{ props.recovery }}</p>
   </div>
 </template>
+
+<style scoped>
+.owner-unavailable-notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #edf3ee;
+  font-size: 13px;
+}
+.owner-unavailable-notice__reason { margin: 0; }
+.owner-unavailable-notice__recovery { margin: 6px 0 0; color: #64748b; }
+</style>
