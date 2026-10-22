@@ -379,3 +379,42 @@ test('被服务端拒绝的提案在面板上不出现任何候选来源',async(
  assert.doesNotMatch(f.ui(),/source-1/)
  f.close()
 })
+
+// A13: 理由与缺口在提案块里分列展示：理由一条一行，缺口分「缺什么」与
+// 「期望补什么」两列，都不与候选来源揉成一段话。
+test('提案的理由与缺口在面板上分列展示，缺口分缺什么与期望补什么',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const turn={...base,suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,reasons:['目标定成「定义」是因为用户问的就是这个词本身','范围只划到项目资料是因为公开综述尚未授权'],gaps:[{description:'缺一篇给出反例的对照研究',expected_evidence:'一篇标注了反例的同行评议文章'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[turn]
+ await tick()
+ const reasons=byClass(f.container,'proposal-reason').map(nodeText)
+ assert.deepEqual(reasons,['目标定成「定义」是因为用户问的就是这个词本身','范围只划到项目资料是因为公开综述尚未授权'])
+ const missing=byClass(f.container,'proposal-gap-description').map(nodeText)
+ const expected=byClass(f.container,'proposal-gap-evidence').map(nodeText)
+ assert.deepEqual(missing,['缺一篇给出反例的对照研究'])
+ assert.deepEqual(expected,['一篇标注了反例的同行评议文章'])
+ // 分列：理由、缺什么、补什么各自在自己的格子里，没有被揉成一段话
+ for(const node of byClass(f.container,'proposal-reason'))assert.doesNotMatch(nodeText(node),/缺一篇给出反例|一篇标注了反例/)
+ for(const node of byClass(f.container,'proposal-gap-description'))assert.doesNotMatch(nodeText(node),/一篇标注了反例/)
+ for(const node of byClass(f.container,'proposal-gap-evidence'))assert.doesNotMatch(nodeText(node),/缺一篇给出反例/)
+ assert.match(f.ui(),/建议理由/)
+ assert.match(f.ui(),/还缺什么/)
+ f.close()
+})
+
+// A13: 服务端拒掉的提案，理由与缺口都不到界面上。
+test('被服务端拒绝的提案在面板上不出现理由与缺口',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const refused={...base,status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.equal(byClass(f.container,'proposal-reason').length,0)
+ assert.equal(byClass(f.container,'proposal-gap-description').length,0)
+ assert.equal(byClass(f.container,'proposal-gap-evidence').length,0)
+ assert.doesNotMatch(f.ui(),/缺一篇给出反例/)
+ f.close()
+})
