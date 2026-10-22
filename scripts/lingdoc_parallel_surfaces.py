@@ -140,10 +140,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "paths": (
             # 2026-10-23：G6 前端独立化（PF-7 / #384）把 ImpactOpsPanel.vue、
             # mainlineChanges.test.js、ImpactOpsPanel.test.js 三个路径的所有权
-            # 转给了 PF-7——它们随 G6 段一起搬走了。本面只留口径表这两个文件，
-            # 拆分时它们原地未动。
-            ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
-            ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
+            # 转给了 PF-7——它们随 G6 段一起搬走了。同日口径表的代码与测试
+            # 也转给 PF-7：它要随后端补上的授权拒绝观测演进（PF-3 / #382）。
+            # 本面已交面，只保留自己的方案档。
+            ("docs/08-本轮实施方案/G6-运维前端-指标视图与契约-20261022.md", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -158,7 +158,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "2026-10-22 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
             "2026-10-23 该独立化由 PF-7（#384）完成，"
-            "本面交出 ImpactOpsPanel.vue 与两个测试文件的所有权。"
+            "本面交出 ImpactOpsPanel.vue 与两个测试文件的所有权；"
+            "同日口径表 runtimeMetrics.ts / runtimeMetrics.test.ts 也交给 PF-7"
+            "（它随后端补上的授权拒绝观测演进）。本面只保留自己的方案档。"
         ),
     },
     {
@@ -323,15 +325,19 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
             ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
-            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
-            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            # 2026-10-23 让出三个路径给 PF-3：PF-3 的 #382/#327/#383 实现已就位
+            # 且测试全绿，而本面只有「打算碰」的声明、实现尚未开工。登记处的
+            # 重叠检查是路径级的（不看 status、不看改动行），两边同时声明就
+            # 直接拒绝加载。**待 PF-3 合入 main 后，本面把这三个路径拿回来**：
+            #   internal/lingdoc/workspacecore/service_facade.go
+            #   internal/lingdoc/workspacecore/typed_contracts.go
+            #   docs/08-本轮实施方案/contracts/openapi.json
             ("internal/lingdoc/workspacecore/membership.go", "file"),
             ("internal/lingdoc/membership/results.go", "file"),
             ("internal/lingdoc/membership/policy.go", "file"),
             ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
-            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("frontend/src/api/lingdoc/permissions.ts", "file"),
             ("frontend/src/composables/useOwnerAvailability.ts", "file"),
             ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
@@ -352,6 +358,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "两处前端改动是集成步骤而非面拥有："
             "frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点（保留路径，不得被任一面独占），"
             "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
+            "2026-10-23 本面把 service_facade.go、typed_contracts.go 与 "
+            "contracts/openapi.json 三个路径让给 PF-3（其 #382/#327/#383 实现已就位），"
+            "待 PF-3 合入 main 后归还——届时本面在这三个文件上的改动点需人工解一次冲突"
+            "（两边都在授权判定附近）。"
         ),
     },
     {
@@ -421,6 +431,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/api/lingdoc/trialWindow.test.ts", "file"),
             ("frontend/src/views/lingdoc/RuntimeOpsPanel.vue", "file"),
             ("frontend/src/views/lingdoc/RuntimeOpsPanel.test.js", "file"),
+            # 2026-10-23 从 PF-1 交来：口径表随后端补上的授权拒绝观测演进
+            # （PF-3 / #382），改动在本面（PF-7）里做。
+            ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
+            ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
         ),
         "resolves": (),
         "summary": (

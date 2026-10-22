@@ -131,8 +131,8 @@ test('the runtime tab groups the server counts and keeps unmeasured metrics unob
   assert.equal(byKey.get('stale').total, null)
   assert.equal(byKey.get('permission_rejected').total, 1)
   assert.equal(byKey.get('download_reauth').total, 1)
-  assert.equal(byKey.get('permission_decisions').total, null)
-  assert.match(String(byKey.get('permission_decisions').unavailableReason), /未提供/)
+  assert.equal(byKey.get('authorization_denial').total, null)
+  assert.match(String(byKey.get('authorization_allow').unavailableReason), /未提供/)
   // The rows come from a vm realm, so compare the joined keys instead of
   // deep-comparing an array against one from this realm.
   assert.equal(state.runtimeCountRows.value.map(row => row.key).join(','), 'download/rejected,task/failed')
