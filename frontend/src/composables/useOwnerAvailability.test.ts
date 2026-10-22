@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import fs from 'node:fs'
+import vm from 'node:vm'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const ts = require('typescript')
+
+/**
+ * Owner 可用性事实的界面契约。
+ *
+ * 这个组合式函数在运行时引入了带路径别名的接口客户端，直接 import 在这条测试
+ * 的运行环境里解析不了别名——所以这里转译后注入，仓库里已有同样的做法
+ * （ImpactOpsPanel.test.js 加载它的主体模块）。
+ *
+ * 断言的是**界面看得到的事实**：冻结时入口置灰、原因与恢复指引都在；
+ * 没有冻结、或者读出口答不出来时，界面不谎称有冻结。
+ */
+const SOURCE = new URL('./useOwnerAvailability.ts', import.meta.url)
+
+type PermissionAnswer = { data: { reason_code: string } }
+
+function load(read: (projectId: string, capability: string) => Promise<PermissionAnswer>) {
+  const exports: Record<string, unknown> = {}
+  const vue = {
+    ref: (value: unknown) => ({ value }),
+    computed: (fn: () => unknown) => ({ get value() { return fn() } }),
+  }
+  const permissions = { getEffectivePermission: read }
+  const js = ts.transpileModule(fs.readFileSync(SOURCE, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  vm.runInNewContext(js, {
+    exports,
+    require(name: string) {
+      if (name === 'vue') return vue
+      if (name === '@/api/lingdoc/permissions') return permissions
+      throw new Error(`unexpected import ${name}`)
+    },
+    console,
+  })
+  return exports as {
+    useOwnerAvailability: (projectId: () => string | undefined) => {
+      frozen: { value: boolean }
+      reasonCode: { value: string }
+      reason: { value: string }
+      recovery: { value: string }
+      refresh: () => Promise<void>
+    }
+  }
+}
+
+test('a frozen project disables the Owner-only entries and says why', async () => {
+  const asked: string[] = []
+  const subject = load(async (projectId, capability) => {
+    asked.push(`${projectId}/${capability}`)
+    return { data: { reason_code: 'owner_unavailable' } }
+  })
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.deepEqual(asked, ['project-1/manage'], 'the read outlet answers for the change set capability')
+  assert.equal(availability.frozen.value, true)
+  assert.equal(availability.reasonCode.value, 'owner_unavailable')
+  assert.match(availability.reason.value, /Owner/, 'the reason names the Owner')
+  assert.match(availability.recovery.value, /恢复|转让/, 'the recovery guidance names a way back')
+})
+
+test('a project that is not frozen leaves the Owner-only entries alone', async () => {
+  const subject = load(async () => ({ data: { reason_code: 'capability_or_scope_denied' } }))
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.equal(availability.frozen.value, false)
+  assert.equal(availability.reason.value, '')
+  assert.equal(availability.recovery.value, '')
+})
+
+test('the read outlet failing leaves the Owner-only entries alone', async () => {
+  const subject = load(async () => { throw new Error('synthetic read failure') })
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.equal(availability.frozen.value, false, 'the interface never claims a freeze it could not read')
+  assert.equal(availability.reasonCode.value, '')
+})
+
+test('no project means no freeze', async () => {
+  const subject = load(async () => ({ data: { reason_code: 'owner_unavailable' } }))
+  const availability = subject.useOwnerAvailability(() => undefined)
+  await availability.refresh()
+  assert.equal(availability.frozen.value, false)
+})

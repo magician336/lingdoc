@@ -2053,15 +2053,6 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "机器只读验收：只读授权不得开写、撤销与依赖缺失一律失败关闭",
     },
     {
-        "path": "internal/lingdoc/workspacecore/owner_transfer_proof.go",
-        "ticket": 362,
-        "batch": 4,
-        "legacy": False,
-        "harness": False,
-        "defects": ("numbered",),
-        "knowledge": "Owner 转移证明：转移发起人、恢复场景与当前 Owner 是否仍可用的判定",
-    },
-    {
         "path": "internal/lingdoc/workspacecore/permission_policy.go",
         "ticket": 362,
         "batch": 4,

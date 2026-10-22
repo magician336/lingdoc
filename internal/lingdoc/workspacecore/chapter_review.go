@@ -207,7 +207,11 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 			if comment.ChapterID != cid || comment.ChapterVersionID != input.ChapterVersionID || comment.Version != input.ExpectedVersion {
 				return operationResult[ChapterComment]{}, ErrVersionConflict
 			}
-			if comment.ActorID != actor.UserID && !projectOwner(p, actor.UserID) {
+			// The commenter may edit their own comment, and the Owner may
+			// edit any. The Owner's tenant identity lapsing removes the
+			// Owner's own alternative and nothing else, so this use is never
+			// frozen.
+			if comment.ActorID != actor.UserID && !OwnerMayAct(p, actor) {
 				return operationResult[ChapterComment]{}, ErrNotFound
 			}
 			comment.Version++

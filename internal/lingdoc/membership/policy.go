@@ -38,7 +38,14 @@ func (s *Service) EffectivePermission(
 		_, err = s.authorizer.AuthorizeProject(ctx, tx, request)
 		if err == nil {
 			result.Allowed = true
-			result.ReasonCode = "allowed"
+			result.ReasonCode = core.ReasonAllowed
+			return nil
+		}
+		// The Owner may be unable to act at all, and then every Owner-only
+		// entry is frozen. The refusal says so, so the caller can tell a
+		// frozen project from a request it was never allowed to make.
+		if authority := core.OwnerAuthorityOf(tx, p, actor.TenantID); authority.OwnerUserID != "" && !authority.Available {
+			result.ReasonCode = core.ReasonOwnerUnavailable
 			return nil
 		}
 		result.ReasonCode = "capability_or_scope_denied"

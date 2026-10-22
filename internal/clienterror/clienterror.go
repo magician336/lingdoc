@@ -22,12 +22,18 @@ import "errors"
 // repeating the same request could succeed. RetryAfter is the number of
 // seconds the caller should wait before repeating it, when the failure has a
 // known wait (0 means it does not).
+//
+// Details is optional: a failure that can name its reason carries it there,
+// and a failure that has nothing extra to say leaves it empty. It is rendered
+// only when it is present, so the responses of the failures that never carry
+// one keep exactly the shape they had.
 type Form struct {
 	Status     int
 	Code       string
 	Message    string
 	Retryable  bool
 	RetryAfter int
+	Details    any
 }
 
 // Presenter is implemented by errors that know their own client presentation.

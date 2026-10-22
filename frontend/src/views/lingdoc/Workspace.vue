@@ -238,9 +238,10 @@
                   <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
                 </ul>
                 <div class="change-set-actions">
-                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
-                  <button type="button" :disabled="busy" @click="rejectTemplateUpgrade">驳回评估</button>
+                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches || ownerActionsFrozen" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
+                  <button type="button" :disabled="busy || ownerActionsFrozen" @click="rejectTemplateUpgrade">驳回评估</button>
                 </div>
+                <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
                 <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿或理由已变化；请重新创建评估后再应用。</p>
               </section>
             </template>
@@ -590,13 +591,14 @@
               </ul>
               <p class="muted">尚未核对范围：{{ uncheckedChapterTitles.length > 0 ? uncheckedChapterTitles.join('、') : '无（已登记章节覆盖当前章节列表）' }}</p>
               <div class="change-set-actions">
-                <button type="button" :disabled="busy || !pendingDraftMatches" @click="applyConditionsChange">
+                <button type="button" :disabled="busy || !pendingDraftMatches || ownerActionsFrozen" @click="applyConditionsChange">
                   应用预览并开始复核
                 </button>
-                <button type="button" :disabled="busy" @click="rejectConditionsChange">
+                <button type="button" :disabled="busy || ownerActionsFrozen" @click="rejectConditionsChange">
                   驳回预览
                 </button>
               </div>
+              <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
               <p v-if="!pendingDraftMatches" class="muted">研究条件已改变，请重新生成预览。</p>
             </div>
           </div>
@@ -797,6 +799,8 @@ import { rewriteStage, rewriteStageAdoptable, rewriteStageLabel, rewriteStageNot
 import { inspectorOnNarrowTransition, mergeWbLayoutPref, readWbLayoutPref, wbLayoutStorageKey, type WbLayoutPref } from './layoutPref'
 import { filterProjects } from './projectPicker'
 import { rewriteAdoptionConfirmation } from './candidateAdoption'
+import { useOwnerAvailability } from '@/composables/useOwnerAvailability'
+import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
@@ -815,6 +819,14 @@ const projects = ref<Project[]>([])
 const auth = useAuthStore()
 const truncated = ref(false)
 const project = ref<Project | null>(null)
+// Owner 可用性事实与恢复指引文案都在这一处持有：按钮的置灰条件与提示文案
+// 从这里取，不在本页另写一遍。
+const {
+  frozen: ownerActionsFrozen,
+  reason: ownerUnavailableReason,
+  recovery: ownerRecoveryGuidance,
+  refresh: refreshOwnerAvailability,
+} = useOwnerAvailability(() => project.value?.id)
 const memberSaving = ref(false)
 const memberDraftDirty = ref(false)
 
@@ -1979,6 +1991,7 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
       savedReviewDrafts.value = {}
     }
     project.value = result.data
+    void refreshOwnerAvailability()
     hydrateTemplateCopyDraft(result.data)
     specEditingRevision.value=result.data.spec_revision
     subject.value = result.data.spec.research_subject ?? ''

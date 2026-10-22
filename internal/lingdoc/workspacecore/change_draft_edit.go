@@ -63,7 +63,10 @@ func (s *Service) prepareAgentChangeDraftEdit(ctx context.Context, actor Actor, 
 		// Preparation also runs before idempotent replay lookup. State,
 		// revision and input old-value checks belong to the cache-miss
 		// mutation callback; current access and source proofs still apply.
-		if old.CreatedBy != actor.UserID && !projectOwner(p, actor.UserID) {
+		// The creator may edit their own draft, and the Owner may edit any.
+		// The Owner's tenant identity lapsing removes the Owner's own
+		// alternative and nothing else, so this use is never frozen.
+		if old.CreatedBy != actor.UserID && !OwnerMayAct(p, actor) {
 			return ErrNotFound
 		}
 		return nil

@@ -69,6 +69,7 @@ export function mountPanel(name,options={}){
    if(id==='@/stores/auth')return {useAuthStore:()=>auth}
    if(id==='@/utils/request')return request
    if(id.startsWith('@/api/'))return local(resolveLocal(path.join(frontend,'src',id.slice(2))))
+   if(id.startsWith('@/composables/'))return local(resolveLocal(path.join(frontend,'src',id.slice(2))))
    if(id.startsWith('.')){
     const resolved=resolveLocal(path.resolve(path.dirname(file),id))
     if(resolved===path.join(frontend,'src/utils/request.ts'))return request

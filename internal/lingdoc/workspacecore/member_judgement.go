@@ -2,7 +2,7 @@ package workspacecore
 
 // The workspace's judgements about a project's members.
 //
-// These three are not the member and owner context's own: the workspace asks
+// These are not the member and owner context's own: the workspace asks
 // them everywhere — in the change set, the evidence card, the runtime
 // control, the review comment, the semantic delta. A project has one owner
 // and one member list, and every part of the workspace asks the same
@@ -10,6 +10,9 @@ package workspacecore
 //
 // So they stay here, in one place, and a context that has left the aggregate
 // calls them by name.
+//
+// Whether the Owner may still act is a different question, and it lives with
+// its own judgement in owner_unavailable.go.
 
 // ProjectMember returns the member with that user id, if the project has one.
 func ProjectMember(project Project, userID string) (Member, bool) {
@@ -27,13 +30,4 @@ func GovernanceRole(member Member) string {
 // ProjectOwner reports whether the user owns the project.
 func ProjectOwner(project Project, userID string) bool {
 	return projectOwner(project, userID)
-}
-
-// OwnerCurrentlyAvailable reports whether the user still owns the project and
-// still may act in the tenant.
-//
-// The owner may have transferred the ownership, or the tenant may have
-// suspended them; either way the answer is no.
-func OwnerCurrentlyAvailable(tx Transaction, project Project, tenant uint64, user string) bool {
-	return ownerCurrentlyAvailable(tx, project, tenant, user)
 }
