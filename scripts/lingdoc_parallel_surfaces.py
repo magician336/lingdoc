@@ -414,6 +414,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # the proposal's 候选来源, 理由 and 缺口 beside that draft.
             ("frontend/src/api/lingdoc/agentApi.ts", "file"),
             ("frontend/src/api/lingdoc/agentApi.test.js", "file"),
+            # 类型层用例：助手那张更松的卡片必须能被 task_card 的类型接受。
+            # 它是 .ts，所以 vue-tsc 会真的检查它（.js 用例不在类型检查里）。
+            ("frontend/src/api/lingdoc/agentApi.types.test.ts", "file"),
             ("frontend/src/views/lingdoc/ResearchPanel.vue", "file"),
             ("frontend/src/views/lingdoc/ResearchPanel.test.js", "file"),
             # #404 的词汇归一（agent / purpose 常量）顺手改到了这两个文件：
