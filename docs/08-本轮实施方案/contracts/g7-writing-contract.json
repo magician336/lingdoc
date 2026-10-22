@@ -12,7 +12,10 @@
       "path": "/projects/{projectId}/chapters/{chapterId}/working-copy",
       "response_schema": "WorkingCopy",
       "side_effect": "none",
-      "authorization": ["current project read", "current authorization for every referenced source"]
+      "authorization": [
+        "current project read",
+        "current authorization for every referenced source"
+      ]
     },
     {
       "operation_id": "saveWorkingCopy",
@@ -22,7 +25,10 @@
       "response_schema": "WorkingCopy",
       "requires_idempotency_key": true,
       "side_effect": "create a mutable work-copy checkpoint only; never create a ChapterVersion",
-      "authorization": ["current project write", "recheck every referenced source before write and replay"]
+      "authorization": [
+        "current project write",
+        "recheck every referenced source before write and replay"
+      ]
     },
     {
       "operation_id": "listChapterVersions",
@@ -30,7 +36,10 @@
       "path": "/projects/{projectId}/chapters/{chapterId}/versions",
       "response_schema": "ChapterVersionList",
       "side_effect": "none",
-      "authorization": ["current project read", "current authorization for every referenced source"]
+      "authorization": [
+        "current project read",
+        "current authorization for every referenced source"
+      ]
     },
     {
       "operation_id": "restoreWorkingCopy",
@@ -40,7 +49,10 @@
       "response_schema": "WorkingCopy",
       "requires_idempotency_key": true,
       "side_effect": "copy an immutable chapter version into the current working copy; do not create or alter a ChapterVersion",
-      "authorization": ["current project write", "recheck every referenced source before restore and replay"]
+      "authorization": [
+        "current project write",
+        "recheck every referenced source before restore and replay"
+      ]
     },
     {
       "operation_id": "requestSelectedRewrite",
@@ -50,7 +62,10 @@
       "response_schema": "RewriteCandidate",
       "requires_idempotency_key": true,
       "side_effect": "create a candidate only; do not mutate the working copy or ChapterVersion",
-      "authorization": ["current project write", "current authorization for every referenced source"]
+      "authorization": [
+        "current project write",
+        "current authorization for every referenced source"
+      ]
     },
     {
       "operation_id": "getSelectedRewrite",
@@ -58,7 +73,10 @@
       "path": "/projects/{projectId}/rewrite-candidates/{candidateId}",
       "response_schema": "RewriteCandidate",
       "side_effect": "none",
-      "authorization": ["current project read", "recheck candidate source authorization; revoke returns no candidate text"]
+      "authorization": [
+        "current project read",
+        "recheck candidate source authorization; revoke returns no candidate text"
+      ]
     },
     {
       "operation_id": "applySelectedRewrite",
@@ -68,7 +86,10 @@
       "response_schema": "WorkingCopy",
       "requires_idempotency_key": true,
       "side_effect": "replace only the bound selection in the working copy; never create a ChapterVersion",
-      "authorization": ["current project write", "recheck every candidate source before apply and replay"]
+      "authorization": [
+        "current project write",
+        "recheck every candidate source before apply and replay"
+      ]
     },
     {
       "operation_id": "commitWorkingCopy",
@@ -78,173 +99,788 @@
       "response_schema": "CommittedChapterVersion",
       "requires_idempotency_key": true,
       "side_effect": "create exactly one immutable ChapterVersion from the persisted current working-copy revision, atomically advance the work-copy base to that version, increment its revision, and stale prior candidates",
-      "authorization": ["current project write", "recheck every referenced source before commit and replay"]
+      "authorization": [
+        "current project write",
+        "recheck every referenced source before commit and replay"
+      ]
+    },
+    {
+      "operation_id": "listWritingActions",
+      "method": "GET",
+      "path": "/projects/{projectId}/writing-actions",
+      "response_schema": "WritingActionDescription",
+      "side_effect": "none",
+      "authorization": [
+        "current project read"
+      ]
+    },
+    {
+      "operation_id": "createReviewReport",
+      "method": "POST",
+      "path": "/projects/{projectId}/chapters/{chapterId}/review-reports",
+      "request_schema": "ReviewReportRequest",
+      "response_schema": "ReviewReport",
+      "side_effect": "create a review report; the working copy is not changed",
+      "authorization": [
+        "current project write",
+        "current authorization for every referenced source"
+      ]
+    },
+    {
+      "operation_id": "getReviewReport",
+      "method": "GET",
+      "path": "/projects/{projectId}/review-reports/{reportId}",
+      "response_schema": "ReviewReport",
+      "side_effect": "none",
+      "authorization": [
+        "current project read",
+        "current authorization for every referenced source"
+      ]
+    },
+    {
+      "operation_id": "rejectReviewReport",
+      "method": "POST",
+      "path": "/projects/{projectId}/review-reports/{reportId}/reject",
+      "response_schema": "ReviewReport",
+      "side_effect": "mark the report rejected; the working copy is not changed",
+      "authorization": [
+        "current project write"
+      ]
+    },
+    {
+      "operation_id": "applyReview",
+      "method": "POST",
+      "path": "/projects/{projectId}/chapters/{chapterId}/review-reports/{reportId}/apply",
+      "request_schema": "ApplyReviewRequest",
+      "response_schema": "WorkingCopy",
+      "side_effect": "apply the report's findings to the working copy; the body is not changed",
+      "authorization": [
+        "current project write",
+        "current authorization for every referenced source"
+      ]
     }
   ],
   "schemas": {
     "ReviewItem": {
       "type": "object",
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "statement": {"type": "string", "minLength": 1},
-        "origin_candidate_id": {"type": "string", "minLength": 1}
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin_candidate_id": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "required": ["id", "statement", "origin_candidate_id"],
+      "required": [
+        "id",
+        "statement",
+        "origin_candidate_id"
+      ],
       "additionalProperties": false
     },
     "WorkingCopy": {
       "type": "object",
       "properties": {
-        "project_id": {"type": "string", "minLength": 1},
-        "chapter_id": {"type": "string", "minLength": 1},
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "working_copy_revision": {"type": "integer", "minimum": 1},
-        "body_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
-        "updated_at": {"type": "string", "format": "date-time"}
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "body_markdown": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "review_items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewItem"
+          }
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["project_id", "chapter_id", "base_chapter_version_id", "spec_revision", "working_copy_revision", "body_markdown", "source_ids", "review_items", "updated_at"],
+      "required": [
+        "project_id",
+        "chapter_id",
+        "base_chapter_version_id",
+        "spec_revision",
+        "working_copy_revision",
+        "body_markdown",
+        "source_ids",
+        "review_items",
+        "updated_at"
+      ],
       "additionalProperties": false
     },
     "SaveWorkingCopyRequest": {
       "type": "object",
       "properties": {
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "body_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "body_markdown": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
       },
-      "required": ["base_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision", "body_markdown", "source_ids"],
+      "required": [
+        "base_chapter_version_id",
+        "expected_spec_revision",
+        "expected_working_copy_revision",
+        "body_markdown",
+        "source_ids"
+      ],
       "additionalProperties": false
     },
     "ChapterVersion": {
       "type": "object",
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "project_id": {"type": "string", "minLength": 1},
-        "chapter_id": {"type": "string", "minLength": 1},
-        "parent_version_id": {"type": ["string", "null"]},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "body_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
-        "confirmation_valid": {"type": "boolean"},
-        "created_at": {"type": "string", "format": "date-time"}
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "body_markdown": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "review_items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewItem"
+          }
+        },
+        "confirmation_valid": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "project_id", "chapter_id", "parent_version_id", "spec_revision", "body_markdown", "source_ids", "review_items", "confirmation_valid", "created_at"],
+      "required": [
+        "id",
+        "project_id",
+        "chapter_id",
+        "parent_version_id",
+        "spec_revision",
+        "body_markdown",
+        "source_ids",
+        "review_items",
+        "confirmation_valid",
+        "created_at"
+      ],
       "additionalProperties": false
     },
     "ChapterVersionList": {
       "type": "object",
-      "properties": {"items": {"type": "array", "items": {"$ref": "#/schemas/ChapterVersion"}}},
-      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ChapterVersion"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
       "additionalProperties": false
     },
     "RestoreWorkingCopyRequest": {
       "type": "object",
       "properties": {
-        "chapter_version_id": {"type": "string", "minLength": 1},
-        "expected_chapter_version_id": {"type": ["string", "null"]},
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1}
+        "chapter_version_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
-      "required": ["chapter_version_id", "expected_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision"],
+      "required": [
+        "chapter_version_id",
+        "expected_chapter_version_id",
+        "expected_spec_revision",
+        "expected_working_copy_revision"
+      ],
       "additionalProperties": false
     },
     "Selection": {
       "type": "object",
       "properties": {
-        "start_utf16": {"type": "integer", "minimum": 0},
-        "end_utf16": {"type": "integer", "minimum": 1},
-        "selected_text": {"type": "string", "minLength": 1}
+        "start_utf16": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_utf16": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selected_text": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "required": ["start_utf16", "end_utf16", "selected_text"],
+      "required": [
+        "start_utf16",
+        "end_utf16",
+        "selected_text"
+      ],
       "additionalProperties": false
     },
     "SelectedRewriteRequest": {
       "type": "object",
       "properties": {
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "selection": {"$ref": "#/schemas/Selection"},
-        "instruction": {"type": "string", "minLength": 1, "maxLength": 2000},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selection": {
+          "$ref": "#/schemas/Selection"
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "writing_action": {
+          "type": "string",
+          "enum": [
+            "outline",
+            "generate",
+            "continue",
+            "rewrite",
+            "compress",
+            "expand",
+            "transform",
+            "review"
+          ],
+          "description": "按动作发起时的动作标识；缺省是旧路径（自由文本说明驱动）。"
+        },
+        "output_params": {
+          "type": "object",
+          "description": "产出参数：动作自己声明用哪几个维度，没用的维度必须没给。",
+          "properties": {
+            "length": {
+              "type": "string",
+              "enum": [
+                "short",
+                "medium",
+                "long"
+              ]
+            },
+            "tone": {
+              "type": "string",
+              "enum": [
+                "neutral",
+                "formal",
+                "academic",
+                "plain"
+              ]
+            },
+            "ratio": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 90
+            },
+            "transform": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "translate",
+                    "explain"
+                  ]
+                },
+                "target_language": {
+                  "type": "string",
+                  "enum": [
+                    "zh",
+                    "en",
+                    "ja",
+                    "de",
+                    "fr"
+                  ]
+                },
+                "audience": {
+                  "type": "string",
+                  "enum": [
+                    "peer",
+                    "reviewer",
+                    "novice"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "chapter",
+            "section"
+          ],
+          "description": "目标范围；缺省是选段。"
+        },
+        "context": {
+          "type": "object",
+          "description": "用户对可选上下文的选择：类别 => 条目。",
+          "additionalProperties": true
+        }
       },
-      "required": ["base_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision", "selection", "instruction", "source_ids"],
+      "required": [
+        "base_chapter_version_id",
+        "expected_spec_revision",
+        "expected_working_copy_revision",
+        "selection",
+        "instruction",
+        "source_ids"
+      ],
       "additionalProperties": false
     },
     "AuthorizedSourceSnapshot": {
       "type": "object",
       "properties": {
-        "source_id": {"type": "string", "minLength": 1},
-        "asset_id": {"type": "string", "minLength": 1},
-        "asset_revision": {"type": "integer", "minimum": 1},
-        "locator": {"type": "string", "minLength": 1},
-        "quoted_text_hash": {"type": "string", "minLength": 1},
-        "authorized_at": {"type": "string", "format": "date-time"}
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quoted_text_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorized_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["source_id", "asset_id", "asset_revision", "locator", "quoted_text_hash", "authorized_at"],
+      "required": [
+        "source_id",
+        "asset_id",
+        "asset_revision",
+        "locator",
+        "quoted_text_hash",
+        "authorized_at"
+      ],
       "additionalProperties": false
     },
     "RewriteCandidate": {
       "type": "object",
       "properties": {
-        "candidate_id": {"type": "string", "minLength": 1},
-        "project_id": {"type": "string", "minLength": 1},
-        "chapter_id": {"type": "string", "minLength": 1},
-        "status": {"enum": ["queued", "ready", "applying", "failed", "stale"]},
-        "run_mode": {"enum": ["mock", "real_api_fake_model", "real"], "description": "服务端记录的实际运行模式；不可由客户端声明"},
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "working_copy_revision": {"type": "integer", "minimum": 1},
-        "selection": {"$ref": "#/schemas/Selection"},
-        "replacement_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "authorized_sources": {"type": "array", "items": {"$ref": "#/schemas/AuthorizedSourceSnapshot"}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
-        "error_code": {"type": "string"},
-        "created_at": {"type": "string", "format": "date-time"}
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_mode": {
+          "enum": [
+            "mock",
+            "real_api_fake_model",
+            "real"
+          ],
+          "description": "服务端记录的实际运行模式；不可由客户端声明"
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selection": {
+          "$ref": "#/schemas/Selection"
+        },
+        "replacement_markdown": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "authorized_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/AuthorizedSourceSnapshot"
+          },
+          "uniqueItems": true
+        },
+        "review_items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewItem"
+          }
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validity": {
+          "type": "string",
+          "enum": [
+            "",
+            "fresh",
+            "stale",
+            "not_authorized"
+          ],
+          "description": "这个候选还能不能被采纳：与候选层同一份词表。空值表示这次运行没有交出可采纳的产出。"
+        },
+        "writing_action": {
+          "type": "string",
+          "enum": [
+            "outline",
+            "generate",
+            "continue",
+            "rewrite",
+            "compress",
+            "expand",
+            "transform",
+            "review"
+          ],
+          "description": "产生这个候选的动作。"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "",
+            "human",
+            "ai_generated",
+            "ai_assisted_human"
+          ],
+          "description": "候选正文的来源。"
+        }
       },
-      "required": ["candidate_id", "project_id", "chapter_id", "status", "run_mode", "base_chapter_version_id", "spec_revision", "working_copy_revision", "selection", "replacement_markdown", "source_ids", "authorized_sources", "review_items", "error_code", "created_at"],
+      "required": [
+        "candidate_id",
+        "project_id",
+        "chapter_id",
+        "run_mode",
+        "base_chapter_version_id",
+        "spec_revision",
+        "working_copy_revision",
+        "selection",
+        "replacement_markdown",
+        "source_ids",
+        "authorized_sources",
+        "review_items",
+        "error_code",
+        "created_at",
+        "validity"
+      ],
       "additionalProperties": false
     },
     "ApplySelectedRewriteRequest": {
       "type": "object",
       "properties": {
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "base_chapter_version_id": {"type": ["string", "null"]}
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confirmation": {
+          "type": "object",
+          "description": "显式确认载荷：动作、采纳目标、目标范围、确认时刻、确认人与来源。缺省即没确认。",
+          "properties": {
+            "writing_action": {
+              "type": "string",
+              "enum": [
+                "outline",
+                "generate",
+                "continue",
+                "rewrite",
+                "compress",
+                "expand",
+                "transform",
+                "review"
+              ]
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "working_copy_partial",
+                "working_copy_whole",
+                "formal_version_whole"
+              ]
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "start_utf16": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end_utf16": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "start_utf16",
+                "end_utf16"
+              ],
+              "additionalProperties": false
+            },
+            "confirmed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "confirmed_by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "type": "string",
+              "enum": [
+                "",
+                "human",
+                "ai_generated",
+                "ai_assisted_human"
+              ]
+            }
+          },
+          "required": [
+            "writing_action",
+            "target",
+            "confirmed_at",
+            "confirmed_by",
+            "origin"
+          ],
+          "additionalProperties": false
+        }
       },
-      "required": ["expected_spec_revision", "expected_working_copy_revision", "base_chapter_version_id"],
+      "required": [
+        "expected_spec_revision",
+        "expected_working_copy_revision",
+        "base_chapter_version_id"
+      ],
       "additionalProperties": false
     },
     "CommitWorkingCopyRequest": {
       "type": "object",
       "properties": {
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "expected_chapter_version_id": {"type": ["string", "null"]}
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["expected_spec_revision", "expected_working_copy_revision", "expected_chapter_version_id"],
+      "required": [
+        "expected_spec_revision",
+        "expected_working_copy_revision",
+        "expected_chapter_version_id"
+      ],
       "additionalProperties": false
     },
     "CommittedChapterVersion": {
       "type": "object",
       "properties": {
-        "chapter_version_id": {"type": "string", "minLength": 1},
-        "parent_chapter_version_id": {"type": ["string", "null"]},
-        "committed_working_copy_revision": {"type": "integer", "minimum": 1},
-        "next_working_copy_revision": {"type": "integer", "minimum": 2},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "body_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}}
+        "chapter_version_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "committed_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "next_working_copy_revision": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "body_markdown": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "review_items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewItem"
+          }
+        }
       },
-      "required": ["chapter_version_id", "parent_chapter_version_id", "committed_working_copy_revision", "next_working_copy_revision", "spec_revision", "body_markdown", "source_ids", "review_items"],
+      "required": [
+        "chapter_version_id",
+        "parent_chapter_version_id",
+        "committed_working_copy_revision",
+        "next_working_copy_revision",
+        "spec_revision",
+        "body_markdown",
+        "source_ids",
+        "review_items"
+      ],
       "additionalProperties": false
     },
     "ApiErrorResponse": {
@@ -253,16 +889,355 @@
         "error": {
           "type": "object",
           "properties": {
-            "code": {"type": "string", "minLength": 1},
-            "message": {"type": "string"},
-            "retryable": {"type": "boolean"}
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            }
           },
-          "required": ["code", "message", "retryable"],
+          "required": [
+            "code",
+            "message",
+            "retryable"
+          ],
           "additionalProperties": false
         },
-        "request_id": {"type": "string", "minLength": 1}
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "required": ["error", "request_id"],
+      "required": [
+        "error",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "WritingActionDescription": {
+      "type": "object",
+      "description": "动作表的一条描述：动作、允许范围、可用产出参数、产出形状与允许的采纳目标。",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "outline",
+            "generate",
+            "continue",
+            "rewrite",
+            "compress",
+            "expand",
+            "transform",
+            "review"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "section"
+            ]
+          }
+        },
+        "output_params": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "produce": {
+          "type": "string",
+          "enum": [
+            "prose",
+            "outline",
+            "findings"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "working_copy_partial",
+              "working_copy_whole",
+              "formal_version_whole"
+            ]
+          }
+        }
+      },
+      "required": [
+        "action",
+        "label",
+        "scopes",
+        "output_params",
+        "produce",
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewBaseline": {
+      "type": "object",
+      "description": "应用报告时要复核的那个基线：用户当时看到的是哪一份。",
+      "properties": {
+        "working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "body_hash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "working_copy_revision",
+        "base_chapter_version_id",
+        "spec_revision",
+        "body_hash"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewDecision": {
+      "type": "object",
+      "description": "逐条处置：处置 ∈ {resolved, retained_warning}，理由必填。",
+      "properties": {
+        "review_item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "retained_warning"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "review_item_id",
+        "disposition",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewReport": {
+      "type": "object",
+      "description": "一份语言评审报告：评审意见、来源、基线版本、报告版本与撤权状态。",
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewItem"
+          }
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorized_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/AuthorizedSourceSnapshot"
+          }
+        },
+        "baseline": {
+          "$ref": "#/schemas/ReviewBaseline"
+        },
+        "report_version": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "authorization_state": {
+          "type": "string",
+          "enum": [
+            "",
+            "fresh",
+            "stale",
+            "not_authorized"
+          ]
+        },
+        "run_mode": {
+          "type": "string",
+          "enum": [
+            "real",
+            "mock",
+            "real_api_fake_model"
+          ]
+        },
+        "writing_action": {
+          "type": "string",
+          "enum": [
+            "review"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "ai_generated"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "applied",
+            "rejected"
+          ]
+        },
+        "review_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewDecision"
+          }
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "chapter",
+            "section"
+          ]
+        },
+        "selection": {
+          "$ref": "#/schemas/Selection"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "report_id",
+        "project_id",
+        "chapter_id",
+        "findings",
+        "source_ids",
+        "authorized_sources",
+        "baseline",
+        "report_version",
+        "authorization_state",
+        "run_mode",
+        "state",
+        "review_decisions",
+        "scope",
+        "selection"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewReportRequest": {
+      "type": "object",
+      "description": "发起一次语言评审的请求。",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "chapter",
+            "section"
+          ]
+        },
+        "selection": {
+          "$ref": "#/schemas/Selection"
+        },
+        "context": {
+          "type": "object"
+        },
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instruction": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "expected_spec_revision",
+        "expected_working_copy_revision"
+      ],
+      "additionalProperties": false
+    },
+    "ApplyReviewRequest": {
+      "type": "object",
+      "description": "应用一份评审报告的请求：逐条处置必填，基线必填。",
+      "properties": {
+        "expected_spec_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_working_copy_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_chapter_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ReviewDecision"
+          }
+        }
+      },
+      "required": [
+        "expected_spec_revision",
+        "expected_working_copy_revision",
+        "review_decisions"
+      ],
       "additionalProperties": false
     }
   },
@@ -276,7 +1251,9 @@
         "expected_spec_revision": 1,
         "expected_working_copy_revision": 1,
         "body_markdown": "🧪合成研究问题 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"]
+        "source_ids": [
+          "src-synthetic-1"
+        ]
       }
     },
     {
@@ -290,7 +1267,9 @@
         "spec_revision": 1,
         "working_copy_revision": 1,
         "body_markdown": "🧪合成研究问题 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
+        "source_ids": [
+          "src-synthetic-1"
+        ],
         "review_items": [],
         "updated_at": "2026-10-03T09:00:00Z"
       }
@@ -300,18 +1279,20 @@
       "schema": "ChapterVersionList",
       "accepted": true,
       "value": {
-        "items": [{
-          "id": "cv-synthetic-1",
-          "project_id": "project-synthetic-1",
-          "chapter_id": "chapter-question-synthetic-1",
-          "parent_version_id": null,
-          "spec_revision": 1,
-          "body_markdown": "🧪合成章节",
-          "source_ids": [],
-          "review_items": [],
-          "confirmation_valid": false,
-          "created_at": "2026-10-03T09:00:00Z"
-        }]
+        "items": [
+          {
+            "id": "cv-synthetic-1",
+            "project_id": "project-synthetic-1",
+            "chapter_id": "chapter-question-synthetic-1",
+            "parent_version_id": null,
+            "spec_revision": 1,
+            "body_markdown": "🧪合成章节",
+            "source_ids": [],
+            "review_items": [],
+            "confirmation_valid": false,
+            "created_at": "2026-10-03T09:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -322,9 +1303,15 @@
         "base_chapter_version_id": null,
         "expected_spec_revision": 1,
         "expected_working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
+        "selection": {
+          "start_utf16": 0,
+          "end_utf16": 6,
+          "selected_text": "🧪研究方案"
+        },
         "instruction": "将选中内容改写得更清晰，不增加事实。",
-        "source_ids": ["src-synthetic-1"]
+        "source_ids": [
+          "src-synthetic-1"
+        ]
       }
     },
     {
@@ -334,7 +1321,11 @@
       "value": {
         "base_chapter_version_id": null,
         "expected_spec_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
+        "selection": {
+          "start_utf16": 0,
+          "end_utf16": 6,
+          "selected_text": "🧪研究方案"
+        },
         "instruction": "改写",
         "source_ids": []
       }
@@ -347,7 +1338,11 @@
         "base_chapter_version_id": null,
         "expected_spec_revision": 1,
         "expected_working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
+        "selection": {
+          "start_utf16": 0,
+          "end_utf16": 6,
+          "selected_text": "🧪研究方案"
+        },
         "instruction": "改写",
         "source_ids": [],
         "client_user_id": "u-owner"
@@ -361,25 +1356,46 @@
         "candidate_id": "cand-synthetic-1",
         "project_id": "project-synthetic-1",
         "chapter_id": "chapter-question-synthetic-1",
-        "status": "ready",
         "run_mode": "real_api_fake_model",
         "base_chapter_version_id": null,
         "spec_revision": 1,
         "working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
+        "selection": {
+          "start_utf16": 0,
+          "end_utf16": 6,
+          "selected_text": "🧪研究方案"
+        },
         "replacement_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
-        "authorized_sources": [{"source_id": "src-synthetic-1", "asset_id": "asset-synthetic-1", "asset_revision": 1, "locator": "synthetic/page/1", "quoted_text_hash": "sha256-synthetic", "authorized_at": "2026-10-03T09:00:00Z"}],
+        "source_ids": [
+          "src-synthetic-1"
+        ],
+        "authorized_sources": [
+          {
+            "source_id": "src-synthetic-1",
+            "asset_id": "asset-synthetic-1",
+            "asset_revision": 1,
+            "locator": "synthetic/page/1",
+            "quoted_text_hash": "sha256-synthetic",
+            "authorized_at": "2026-10-03T09:00:00Z"
+          }
+        ],
         "review_items": [],
         "error_code": "",
-        "created_at": "2026-10-03T09:00:00Z"
+        "created_at": "2026-10-03T09:00:00Z",
+        "validity": "fresh",
+        "writing_action": "rewrite",
+        "origin": "ai_generated"
       }
     },
     {
       "id": "apply-selected-rewrite-valid",
       "schema": "ApplySelectedRewriteRequest",
       "accepted": true,
-      "value": {"expected_spec_revision": 1, "expected_working_copy_revision": 1, "base_chapter_version_id": null}
+      "value": {
+        "expected_spec_revision": 1,
+        "expected_working_copy_revision": 1,
+        "base_chapter_version_id": null
+      }
     },
     {
       "id": "apply-selected-rewrite-readback-valid",
@@ -392,7 +1408,9 @@
         "spec_revision": 1,
         "working_copy_revision": 2,
         "body_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
+        "source_ids": [
+          "src-synthetic-1"
+        ],
         "review_items": [],
         "updated_at": "2026-10-03T09:01:00Z"
       }
@@ -401,7 +1419,11 @@
       "id": "commit-working-copy-valid",
       "schema": "CommitWorkingCopyRequest",
       "accepted": true,
-      "value": {"expected_spec_revision": 1, "expected_working_copy_revision": 2, "expected_chapter_version_id": null}
+      "value": {
+        "expected_spec_revision": 1,
+        "expected_working_copy_revision": 2,
+        "expected_chapter_version_id": null
+      }
     },
     {
       "id": "commit-working-copy-response-valid",
@@ -414,7 +1436,9 @@
         "next_working_copy_revision": 3,
         "spec_revision": 1,
         "body_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
+        "source_ids": [
+          "src-synthetic-1"
+        ],
         "review_items": []
       }
     },
@@ -422,30 +1446,158 @@
       "id": "existing-save-chapter-valid",
       "schema": "ExistingSaveChapter",
       "accepted": true,
-      "value": {"expected_chapter_version_id": "cv-question-1", "expected_spec_revision": 1, "body_markdown": "🧪合成研究问题", "source_ids": []}
+      "value": {
+        "expected_chapter_version_id": "cv-question-1",
+        "expected_spec_revision": 1,
+        "body_markdown": "🧪合成研究问题",
+        "source_ids": []
+      }
     },
     {
       "id": "work-copy-conflict-error",
       "schema": "ApiErrorResponse",
       "accepted": true,
-      "value": {"error": {"code": "version_conflict", "message": "Working copy or chapter baseline changed; reload before retrying.", "retryable": false}, "request_id": "req-synthetic-409"}
+      "value": {
+        "error": {
+          "code": "version_conflict",
+          "message": "Working copy or chapter baseline changed; reload before retrying.",
+          "retryable": false
+        },
+        "request_id": "req-synthetic-409"
+      }
     },
     {
       "id": "source-revoked-does-not-return-content",
       "schema": "ApiErrorResponse",
       "accepted": true,
-      "value": {"error": {"code": "source_not_authorized", "message": "One or more sources are no longer available.", "retryable": false}, "request_id": "req-synthetic-403"}
+      "value": {
+        "error": {
+          "code": "source_not_authorized",
+          "message": "One or more sources are no longer available.",
+          "retryable": false
+        },
+        "request_id": "req-synthetic-403"
+      }
     },
     {
       "id": "stale-candidate-error",
       "schema": "ApiErrorResponse",
       "accepted": true,
-      "value": {"error": {"code": "candidate_stale", "message": "The working copy changed after this candidate was created.", "retryable": false}, "request_id": "req-synthetic-stale"}
+      "value": {
+        "error": {
+          "code": "candidate_stale",
+          "message": "The working copy changed after this candidate was created.",
+          "retryable": false
+        },
+        "request_id": "req-synthetic-stale"
+      }
+    },
+    {
+      "id": "review-report-valid",
+      "schema": "ReviewReport",
+      "accepted": true,
+      "value": {
+        "report_id": "report-1",
+        "project_id": "project-1",
+        "chapter_id": "chapter-1",
+        "findings": [
+          {
+            "id": "finding-1",
+            "statement": "这一句的主语与后文不一致",
+            "origin_candidate_id": "report-1"
+          }
+        ],
+        "source_ids": [
+          "source-a"
+        ],
+        "authorized_sources": [
+          {
+            "source_id": "source-a",
+            "asset_id": "asset-1",
+            "asset_revision": 1,
+            "locator": "page/1",
+            "quoted_text_hash": "hash-a",
+            "authorized_at": "2026-10-22T02:00:00Z"
+          }
+        ],
+        "baseline": {
+          "working_copy_revision": 3,
+          "base_chapter_version_id": null,
+          "spec_revision": 7,
+          "body_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "report_version": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "authorization_state": "fresh",
+        "run_mode": "mock",
+        "writing_action": "review",
+        "origin": "ai_generated",
+        "state": "ready",
+        "review_decisions": [],
+        "error_code": "",
+        "scope": "section",
+        "selection": {
+          "start_utf16": 0,
+          "end_utf16": 4,
+          "selected_text": "研究问题"
+        },
+        "created_at": "2026-10-22T02:00:00Z"
+      }
+    },
+    {
+      "id": "apply-review-valid",
+      "schema": "ApplyReviewRequest",
+      "accepted": true,
+      "value": {
+        "expected_spec_revision": 7,
+        "expected_working_copy_revision": 3,
+        "base_chapter_version_id": null,
+        "review_decisions": [
+          {
+            "review_item_id": "finding-1",
+            "disposition": "resolved",
+            "reason": "已按意见改写"
+          }
+        ]
+      }
+    },
+    {
+      "id": "apply-review-missing-reason-rejected",
+      "schema": "ApplyReviewRequest",
+      "accepted": false,
+      "value": {
+        "expected_spec_revision": 7,
+        "expected_working_copy_revision": 3,
+        "base_chapter_version_id": null,
+        "review_decisions": [
+          {
+            "review_item_id": "finding-1",
+            "disposition": "resolved"
+          }
+        ]
+      }
     }
   ],
   "semantic_cases": [
-    {"id": "emoji-range-counts-utf16-code-units", "start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案", "accepted": true},
-    {"id": "emoji-range-must-not-count-code-points", "start_utf16": 0, "end_utf16": 5, "selected_text": "🧪研究方案", "accepted": false},
-    {"id": "selection-range-must-not-be-empty", "start_utf16": 4, "end_utf16": 4, "selected_text": "", "accepted": false}
+    {
+      "id": "emoji-range-counts-utf16-code-units",
+      "start_utf16": 0,
+      "end_utf16": 6,
+      "selected_text": "🧪研究方案",
+      "accepted": true
+    },
+    {
+      "id": "emoji-range-must-not-count-code-points",
+      "start_utf16": 0,
+      "end_utf16": 5,
+      "selected_text": "🧪研究方案",
+      "accepted": false
+    },
+    {
+      "id": "selection-range-must-not-be-empty",
+      "start_utf16": 4,
+      "end_utf16": 4,
+      "selected_text": "",
+      "accepted": false
+    }
   ]
 }
