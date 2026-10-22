@@ -162,8 +162,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-2 G7 AI 动作族",
         "issue": 326,
         "issues": (134,),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             # The two packages below are claimed as directories, so that a new
             # file inside them is covered by this face's ownership without a
@@ -258,6 +258,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "改为在 AcceptCandidate 里直接调 workspacecore.RequireHumanDecision。"
             "证据那半边用 #138 已落地的生成接入，"
             "不必等 #137 或 #133 的新行为。"
+            "2026-10-22 由 magician336 认领并完成："
+            "十四张施工票（#350–#355、#375、#341–#345、#347、#348）、集成步、"
+            "并入 main、迁移重编号与契约对齐已随 PR #357 合入 main，合并提交 c4c9ac93；"
+            "Spec #134 随之关闭。两张残留票保持开放："
+            "#385（动作表按目标范围给动作、执行按管道分）、"
+            "#386（两处手抄迁移子集夹具）。"
+            "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
     {
