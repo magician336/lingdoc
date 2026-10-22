@@ -157,6 +157,68 @@ func TestResearchProposalRefusesBrokenCandidateSource(t *testing.T) {
 	}
 }
 
+// proposalWithExtras builds a legal proposal payload with the extra columns
+// filled in, so a case only has to state what it changes.
+func proposalWithExtras(extras string) string {
+	return `{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"` + extras + `}`
+}
+
+// A13: a proposal may say why it is shaped this way, and what it still
+// misses. A gap carries two parts - what is missing and what would fill it.
+func TestResearchProposalAcceptsReasonsAndGaps(t *testing.T) {
+	raw := json.RawMessage(proposalWithExtras(`,"reasons":["目标定成「定义」是因为用户问的就是这个词本身","范围只划到项目资料是因为公开综述尚未授权"],"gaps":[{"description":"缺一篇给出反例的对照研究","expected_evidence":"一篇标注了反例的同行评议文章"}]`))
+	proposal, err := DecodeResearchProposal(raw, authorizedContext("source-1"))
+	if err != nil {
+		t.Fatalf("a proposal carrying reasons and gaps was refused: %v", err)
+	}
+	if len(proposal.Reasons) != 2 || proposal.Reasons[0] != "目标定成「定义」是因为用户问的就是这个词本身" {
+		t.Fatalf("the reasons did not survive: %+v", proposal.Reasons)
+	}
+	if len(proposal.Gaps) != 1 {
+		t.Fatalf("the gaps did not survive: %+v", proposal.Gaps)
+	}
+	if proposal.Gaps[0].Description != "缺一篇给出反例的对照研究" || proposal.Gaps[0].ExpectedEvidence != "一篇标注了反例的同行评议文章" {
+		t.Fatalf("a gap lost one of its two parts: %+v", proposal.Gaps[0])
+	}
+}
+
+// A13: the reasons and the gaps are held to bounds like the rest of the
+// shape. An over-long reason, an over-long gap and a list that grew past its
+// count are refused whole - a proposal nobody can read is worse than none.
+func TestResearchProposalRefusesOverlongReasonsAndGaps(t *testing.T) {
+	manyReasons := strings.TrimSuffix(strings.Repeat(`"目标定成这样是因为用户问的就是这个词",`, 11), ",")
+	manyGaps := strings.TrimSuffix(strings.Repeat(`{"description":"缺一篇反例","expected_evidence":"一篇标注了反例的同行评议文章"},`, 11), ",")
+	for name, raw := range map[string]string{
+		"reason too long":            proposalWithExtras(`,"reasons":["` + strings.Repeat("长", 2000) + `"]`),
+		"blank reason":               proposalWithExtras(`,"reasons":["  "]`),
+		"gap description too long":   proposalWithExtras(`,"gaps":[{"description":"` + strings.Repeat("长", 2000) + `","expected_evidence":"一篇标注了反例的同行评议文章"}]`),
+		"gap expected evidence long": proposalWithExtras(`,"gaps":[{"description":"缺一篇反例","expected_evidence":"` + strings.Repeat("长", 2000) + `"}]`),
+		"too many reasons":           proposalWithExtras(`,"reasons":[` + manyReasons + `]`),
+		"too many gaps":              proposalWithExtras(`,"gaps":[` + manyGaps + `]`),
+	} {
+		if _, err := DecodeResearchProposal(json.RawMessage(raw), authorizedContext("source-1")); err == nil {
+			t.Fatalf("an overlong reason or gap was accepted: %s", name)
+		}
+	}
+}
+
+// A13: a gap that does not say what would fill it is not a gap the user can
+// act on. "没有来源" is the shape of that emptiness, and it is refused with
+// the rest of the proposal.
+func TestResearchProposalRefusesAGapThatDoesNotSayWhatWouldFillIt(t *testing.T) {
+	for name, raw := range map[string]string{
+		"no expected evidence":    proposalWithExtras(`,"gaps":[{"description":"缺一篇给出反例的对照研究"}]`),
+		"blank expected evidence": proposalWithExtras(`,"gaps":[{"description":"缺一篇给出反例的对照研究","expected_evidence":"  "}]`),
+		"no description":          proposalWithExtras(`,"gaps":[{"expected_evidence":"一篇标注了反例的同行评议文章"}]`),
+		"blank description":       proposalWithExtras(`,"gaps":[{"description":"  ","expected_evidence":"一篇标注了反例的同行评议文章"}]`),
+		"empty gap":               proposalWithExtras(`,"gaps":[{}]`),
+	} {
+		if _, err := DecodeResearchProposal(json.RawMessage(raw), authorizedContext("source-1")); err == nil {
+			t.Fatalf("a gap that does not say what would fill it was accepted: %s", name)
+		}
+	}
+}
+
 // The retrieval levels (候选证据 / 背景线索 / 发现入口 / 未读检索摘要) belong
 // to the search path: they grade what a search produced. The candidate
 // sources of a proposal are references, checked against the authorization of
@@ -211,6 +273,19 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 	if len(candidateCopies) != 1 || candidateCopies[0] != "research_proposal.go:ResearchProposalCandidateSource" {
 		t.Fatalf("the candidate source shape is declared more than once: %v", candidateCopies)
 	}
+	// The gap is part of the same shape, so it has one owner too. Its own
+	// field names are partly common words - "description" could turn up in
+	// another contract - but the pair is what the guard looks for, and
+	// "expected_evidence" appears nowhere else in the server, so the pair
+	// cannot be mistaken for another contract's shape.
+	gap := ResearchProposalGapFieldSet()
+	if len(gap) == 0 {
+		t.Fatal("the contract declares no gap field")
+	}
+	gapCopies := proposalShapeCopies(t, gap)
+	if len(gapCopies) != 1 || gapCopies[0] != "research_proposal.go:ResearchProposalGap" {
+		t.Fatalf("the gap shape is declared more than once: %v", gapCopies)
+	}
 	// The rendering and the decoder must speak the same names: the prompt
 	// asks for the fields the decoder reads.
 	if names := jsonFieldNamesOf(ResearchProposalCandidateSource{}); len(names) != len(candidate) {
@@ -219,6 +294,17 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 	for _, name := range candidate {
 		if !jsonFieldNamesOf(ResearchProposalCandidateSource{})[name] {
 			t.Fatalf("the candidate source shape does not declare %s", name)
+		}
+		if !strings.Contains(ResearchProposalShapeText(), name) {
+			t.Fatalf("the rendered shape does not mention %s", name)
+		}
+	}
+	if names := jsonFieldNamesOf(ResearchProposalGap{}); len(names) != len(gap) {
+		t.Fatalf("the gap names drifted from the shape: %v", names)
+	}
+	for _, name := range gap {
+		if !jsonFieldNamesOf(ResearchProposalGap{})[name] {
+			t.Fatalf("the gap shape does not declare %s", name)
 		}
 		if !strings.Contains(ResearchProposalShapeText(), name) {
 			t.Fatalf("the rendered shape does not mention %s", name)
@@ -263,6 +349,11 @@ func ResearchProposalFieldSet() []string {
 // source shape owns.
 func ResearchProposalCandidateSourceFieldSet() []string {
 	return []string{researchProposalCandidateSourceIDField, researchProposalCandidateSourceReasonField}
+}
+
+// ResearchProposalGapFieldSet is the field names the gap shape owns.
+func ResearchProposalGapFieldSet() []string {
+	return []string{researchProposalGapDescriptionField, researchProposalGapExpectedEvidenceField}
 }
 
 // jsonFieldNamesOf reads the JSON field names a value's struct declares.
@@ -548,6 +639,52 @@ func TestResearchProposalCarriesItsCandidateSourcesToTheTurn(t *testing.T) {
 		t.Fatalf("a candidate source lost its reason on the way: %+v", proposal.CandidateSources[0])
 	}
 	assertProposalCreatedNothing(t, f)
+}
+
+// A13: the reasons and the gaps travel with the turn they belong to, beside
+// the editable draft - and they create nothing by themselves.
+func TestResearchProposalCarriesItsReasonsAndGapsToTheTurn(t *testing.T) {
+	f := newAgentFixture(t, false)
+	payload := `{"reply":"我按你的问题整理了一条检索计划。","task_card":{"goal":"弄清合成材料的定义","scope":"只查项目资料","queries":["合成材料 定义","合成材料 反例"],"expected_output":"候选资料与反例","reasons":["目标定成「定义」是因为用户问的就是这个词本身","范围只划到项目资料是因为公开综述尚未授权"],"gaps":[{"description":"缺一篇给出反例的对照研究","expected_evidence":"一篇标注了反例的同行评议文章"}]}}`
+	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我按你的问题整理了一条检索计划。"}
+	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-reasons", stub)
+	if turn.Status != "completed" {
+		t.Fatalf("the turn did not complete: %+v", turn)
+	}
+	proposal := proposalOfTurn(t, turn)
+	if len(proposal.Reasons) != 2 || proposal.Reasons[1] != "范围只划到项目资料是因为公开综述尚未授权" {
+		t.Fatalf("the reasons did not travel with the turn: %+v", proposal.Reasons)
+	}
+	if len(proposal.Gaps) != 1 {
+		t.Fatalf("the gaps did not travel with the turn: %+v", proposal.Gaps)
+	}
+	if proposal.Gaps[0].Description != "缺一篇给出反例的对照研究" || proposal.Gaps[0].ExpectedEvidence != "一篇标注了反例的同行评议文章" {
+		t.Fatalf("a gap lost one of its two parts on the way: %+v", proposal.Gaps[0])
+	}
+	assertProposalCreatedNothing(t, f)
+}
+
+// A13: a proposal whose reason or gap is overlong - or whose gap does not
+// say what would fill it - never reaches the interface: the turn fails with
+// a readable code, nothing is written, and no proposal shows up beside the
+// draft.
+func TestResearchProposalWithOverlongReasonOrGapFailsTheTurnWithoutWritingAnything(t *testing.T) {
+	for name, payload := range map[string]string{
+		"overlong reason":                `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","reasons":["` + strings.Repeat("长", 2000) + `"]}}`,
+		"overlong gap":                   `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","gaps":[{"description":"缺一篇反例","expected_evidence":"` + strings.Repeat("长", 2000) + `"}]}}`,
+		"gap without what would fill it": `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","gaps":[{"description":"没有来源"}]}}`,
+	} {
+		f := newAgentFixture(t, false)
+		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
+		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-overlong", stub)
+		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
+			t.Fatalf("%s: the proposal was not refused: %+v", name, turn)
+		}
+		if len(turn.Suggestions) != 0 || turn.Reply != "" {
+			t.Fatalf("%s: the refused proposal still reached the interface: %+v", name, turn)
+		}
+		assertProposalCreatedNothing(t, f)
+	}
 }
 
 // A7: a proposal that names a source this turn was never given is refused
