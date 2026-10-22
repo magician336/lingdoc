@@ -206,7 +206,10 @@ func (s *Service) listOwnerTransfers(
 	result := []OwnerTransfer{}
 	for _, row := range rows {
 		item := OwnerTransfer(row)
-		if !projectOwner(p, userID) && item.FromUserID != userID && item.ToUserID != userID {
+		// The transfer is visible to the Owner, to the predecessor and to the
+		// successor. The Owner's tenant identity lapsing removes the Owner's
+		// own view and nothing else, so this use is never frozen.
+		if !OwnerMayAct(p, Actor{UserID: userID}) && item.FromUserID != userID && item.ToUserID != userID {
 			continue
 		}
 		if item.Status == "pending" && time.Since(item.CreatedAt) > 72*time.Hour {

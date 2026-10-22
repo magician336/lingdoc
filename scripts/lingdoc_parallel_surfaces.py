@@ -120,7 +120,11 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # #393 is the 研究提案 Spec (the research proposal contract) that PF-5
 # delivers: it is a G-line Spec like the others, so the set is extended
 # rather than worked around.  A face that delivers it may name it.
-G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {393}
+#
+# #391 is the owner_unavailable Spec that PF-4 delivers, for the same
+# reason: the set lists the G-line Specs, and a face may only name one it
+# actually delivers.
+G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393}
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
 # "somebody may start this right now".
@@ -221,10 +225,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
-            # The production composition's route-count assertion follows the
-            # new endpoints: the review report endpoints are part of the
-            # rewrite capability, so the composition serves four more routes.
-            ("internal/container/lingdoc_test.go", "file"),
+            # internal/container/lingdoc_test.go moved to PF-4 on 2026-10-23:
+            # it holds the production composition's route-count assertion, and
+            # PF-4's archive endpoint adds a route to that composition. PF-2
+            # is closed and no longer building, so the path moves with the
+            # work rather than being fought over.
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
@@ -352,27 +357,61 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
     {
         "name": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
         "issue": 328,
-        "issues": (127,),
+        "issues": (127, 391),
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
-            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_unavailable_single_source_test.go", "file"),
+            ("internal/lingdoc/workspacecore/change_draft_edit.go", "file"),
+            ("internal/lingdoc/workspacecore/chapter_review.go", "file"),
+            ("internal/lingdoc/workspacecore/context_revision.go", "file"),
+            ("internal/lingdoc/workspacecore/member_records.go", "file"),
+            ("internal/lingdoc/workspacecore/human_decision.go", "file"),
+            ("internal/lingdoc/workspacecore/migrated_context_ports.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("internal/lingdoc/workspacecore/project_archive.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
             ("internal/lingdoc/workspacecore/service_facade.go", "file"),
             ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
             ("internal/lingdoc/workspacecore/membership.go", "file"),
             ("internal/lingdoc/membership/results.go", "file"),
             ("internal/lingdoc/membership/policy.go", "file"),
+            ("internal/lingdoc/membership/ports.go", "file"),
+            ("internal/lingdoc/membership/ports_test.go", "file"),
             ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
+            ("internal/clienterror/clienterror.go", "file"),
+            # Moved from PF-2 on 2026-10-23: the production composition's
+            # route-count assertion follows the archive endpoint this face
+            # adds. PF-2 is closed and no longer building.
+            ("internal/container/lingdoc_test.go", "file"),
+            ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_407_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_408_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_409_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_410_test.go", "file"),
+            ("docs/08-本轮实施方案/Spec-49-owner_unavailable派生状态与Owner-only冻结.md", "file"),
             ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("docs/08-本轮实施方案/contracts/validation-result.json", "file"),
+            ("migrations/sqlite/000053_lingdoc_project_archive.up.sql", "file"),
+            ("migrations/sqlite/000053_lingdoc_project_archive.down.sql", "file"),
+            ("migrations/versioned/000132_lingdoc_project_archive.up.sql", "file"),
+            ("migrations/versioned/000132_lingdoc_project_archive.down.sql", "file"),
             ("frontend/src/api/lingdoc/permissions.ts", "file"),
+            ("frontend/src/api/lingdoc/collaboration.ts", "file"),
+            ("frontend/src/api/lingdoc/projectArchive.ts", "file"),
+            ("frontend/src/api/lingdoc/projectArchive.test.ts", "file"),
             ("frontend/src/composables/useOwnerAvailability.ts", "file"),
-            ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
             ("frontend/src/composables/useOwnerAvailability.test.ts", "file"),
+            ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
+            ("frontend/src/views/lingdoc/ProjectMembers.vue", "file"),
+            ("frontend/src/views/lingdoc/ProjectArchivePanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ProjectArchivePanel.test.ts", "file"),
+            ("frontend/src/views/lingdoc/workspaceOwnerFreeze.test.js", "file"),
         ),
         "resolves": ((127, 143),),
         "summary": (
@@ -389,6 +428,37 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "两处前端改动是集成步骤而非面拥有："
             "frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点（保留路径，不得被任一面独占），"
             "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
+            "**路径集按 2026-10-23 实测补齐**（实现合入前，PR 未开时）："
+            "owner_transfer_proof.go 已随 #406 删除，判定内核改由 owner_unavailable.go 承担，"
+            "原条目换成它；member_lifecycle_state.go 从未存在（路径图曾把它写成「新增」），"
+            "一并从登记处删掉 —— 登记处只登记真实存在的路径。"
+            "补进来的还有：判定内核周边（change_draft_edit.go、chapter_review.go、"
+            "context_revision.go、member_records.go）、归档能力（project_archive.go、"
+            "human_decision.go、migrated_context_ports.go、context_ports_test.go）、"
+            "错误层的可选 details（internal/clienterror/clienterror.go）、"
+            "权限读出口与接口（membership/ports.go、ports_test.go、workspace/full_workflow_http.go）、"
+            "四张票各自的 HTTP 断言文件、归档迁移（sqlite/000053 与 versioned/000132）、"
+            "契约产物与实施档、以及前端的项目级出口与归档面板。"
+            "**本面确实改了下列跨面共享文件，按「共享维护点」约定不登记进任何面的路径集**："
+            "internal/database/migration_sqlite_versioned_schema_test.go 与 "
+            "internal/router/lingdoc_integration_test.go（迁移子集清单，PF-3 已定此约定）、"
+            "frontend/src/views/lingdoc/firstPassIdentity.test.js、"
+            "frontend/src/views/lingdoc/r26ComponentRuntimeFixture.js 与 "
+            "frontend/src/views/lingdoc/workspaceHistory.test.js（模块桩清单，"
+            "每个引入新 composable 的面都要在这里加一行）、"
+            "scripts/lingdoc_naming_registry.py（命名登记表，全仓共用）。"
+            "**本面确实改了下列已被别的面占有的文件**：internal/lingdoc/workspace/http.go 与 "
+            "internal/router/lingdoc_routes_test.go 与 frontend/src/api/lingdoc/workspace.ts"
+            "属 PF-2 已占有（PF-2 已交面 done，done 不释放路径）；"
+            "frontend/src/views/lingdoc/ImpactOpsPanel.vue 与 ImpactOpsPanel.test.js 属 PF-1 已交面。"
+            "internal/container/lingdoc_test.go 原属 PF-2，它钉着生产组合的路由总数，"
+            "本面新增归档端点后它必须跟着改 —— PF-2 已交面不再施工，"
+            "该路径于 2026-10-23 移交给本面（PF-2 路径集同步移除，两边 summary 都记了这次移交）。"
+            "这些改动与基线合并组合在同一棵树上，后续冲突会显式报出，不会静默覆盖。"
+            "**本面还改了一个 owner 冻结夹具**：internal/router/routes_lingdoc_owner_test.go 的"
+            "迁移清单补上 PF-3 的 000052 审计版本列迁移 —— 清单停在 000041 时，"
+            "夹具建不出 target_version / project_revision，任何带审计的写入都以 500 结束，"
+            "被测的冻结拒绝根本没机会发生。"
         ),
     },
     {

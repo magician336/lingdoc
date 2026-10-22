@@ -61,3 +61,5 @@ _避免_：把创建证据卡、提交章节或确认记录误读成模型或系
 **审计失败策略**：审计写入失败时，普通读取采用 fail-open，继续读取并记录故障告警；成员赋权、scope 变更、Owner 转让、正式确认、ChangeSet 应用和正式导出采用 fail-closed，业务写入与审计记录一起成功或一起失败。fail-open 不改变权限判断，越权请求仍然拒绝。故障告警以一条「运行事件」的形式发布在**自己的事务**里——业务事务可能正因这次失败而回滚，告警写在它内部会在最需要的时候一起消失。读类与关键写的区分、告警与版本字段的术语见 [GLOSSARY.md](GLOSSARY.md) 的「审计与失败策略」一节；归属决策见 [ADR 0011](docs/adr/0011-audit-failure-alert-on-its-own-transaction.md) 与 [ADR 0012](docs/adr/0012-audit-version-fields-are-first-class-columns.md)。
 
 **待恢复授权**：普通项目成员因租户身份失效进入 `suspended_by_tenant` 后，原治理角色、职能角色和 scope 保留但不生效；租户身份恢复后，必须由项目 Owner 或 Admin 显式恢复，并重新检查项目与资源授权。项目 Owner 采用单独的 `owner_unavailable` 恢复规则。
+
+**Owner 专属动作在 Owner 租户身份失效时冻结**：项目 Owner 的租户身份失效（停用、降权或被移出租户成员）时，立项确认、模板升级、ChangeSet 应用、正式导出与归档这五项 Owner 专属动作被冻结，普通协作照常。这个状态叫 `owner_unavailable`，是**读时派生**的只读标记——不落库、不新增项目状态、不进项目结构体，所以租户身份恢复即自动解冻，没有「解冻忘了做」的中间态。冻结时的拒绝带原因，调用方能区分「Owner 租户身份失效」与「你不是 Owner」；既有状态码与既有错误码语义不变。`owner_unavailable`、Owner 专属动作、Owner 也有权、恢复路径与归档的完整词汇见 [GLOSSARY.md](GLOSSARY.md) 的「Owner 与冻结」一节；实现契约见 [Spec 49](docs/06-灵档产品开发规划/49-Spec-owner_unavailable派生状态与Owner-only冻结.md)（发布副本 Issue #391）。

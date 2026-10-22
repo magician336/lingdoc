@@ -46,6 +46,7 @@
     </header>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
+    <OwnerUnavailableNotice v-if="project" :reason="ownerNoticeReason" :recovery="ownerNoticeRecovery" />
     <section class="wb-notify" aria-label="通知">
       <button type="button" class="wb-notify-toggle" :aria-expanded="notifyOpen" @click="notifyOpen = !notifyOpen">
         <span class="wb-notify-title">通知</span>
@@ -238,9 +239,10 @@
                   <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
                 </ul>
                 <div class="change-set-actions">
-                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
-                  <button type="button" :disabled="busy" @click="rejectTemplateUpgrade">驳回评估</button>
+                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
+                  <button type="button" :disabled="busy || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="rejectTemplateUpgrade">驳回评估</button>
                 </div>
+                <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
                 <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿或理由已变化；请重新创建评估后再应用。</p>
               </section>
             </template>
@@ -554,12 +556,16 @@
           <section v-if="specBasisChanged" class="warning" role="alert"><h4>服务器研究条件已变化，当前输入保留</h4><p>本页输入基于条件版本 {{specEditingRevision}}，服务器当前为 {{project.spec_revision}}。普通课题刷新不会把你的输入自动绑定到新版本。</p><dl><template v-for="field in project.template_copy?.definition.fields" :key="field.field_id"><dt>{{field.label}}</dt><dd>服务器：{{project.spec[field.field_id]||'（空）'}}<br>你的输入：{{specDraftFields[field.field_id]||'（空）'}}</dd></template></dl><button type="button" :disabled="busy" @click="acknowledgeCurrentSpecBasis">已比较，保留输入并关联当前条件版本</button></section>
           <div class="actions">
             <button type="submit" :disabled="busy || !specChanged || specBasisChanged">保存研究条件</button>
-            <button v-if="project.status === 'draft'" type="button" @click="activate" :disabled="busy || specChanged || !requiredSpecComplete">立项并创建章节</button>
+            <button v-if="project.status === 'draft'" type="button" @click="activate" :disabled="busy || specChanged || !requiredSpecComplete || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''">立项并创建章节</button>
           </div>
           <p v-if="specChanged && project.status === 'draft'" class="muted">立项前请先保存研究条件。</p>
+          <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
         </form>
 
         <DraftCandidatePanel ref="draftCandidatePanelRef" v-if="project.status==='draft'" :project="project" :readonly="!canManageProjectMembers" :current-user-id="auth.currentUserId??''" @dirty="draftCandidateDirty=$event" @use-field="useManualDraftField" />
+
+        <!-- 归档入口是本面新建的组件；这里是集成步骤，不独占这个文件。 -->
+        <ProjectArchivePanel v-if="project.status === 'active'" :project="project" @archived="refreshProjectVersion()" />
 
         <section v-if="project.status === 'active' && (specChanged || lastChangeSet)" class="change-set-panel" aria-label="研究条件变更复核">
           <div v-if="specChanged">
@@ -590,13 +596,14 @@
               </ul>
               <p class="muted">尚未核对范围：{{ uncheckedChapterTitles.length > 0 ? uncheckedChapterTitles.join('、') : '无（已登记章节覆盖当前章节列表）' }}</p>
               <div class="change-set-actions">
-                <button type="button" :disabled="busy || !pendingDraftMatches" @click="applyConditionsChange">
+                <button type="button" :disabled="busy || !pendingDraftMatches || ownerActionsFrozen" @click="applyConditionsChange">
                   应用预览并开始复核
                 </button>
-                <button type="button" :disabled="busy" @click="rejectConditionsChange">
+                <button type="button" :disabled="busy || ownerActionsFrozen" @click="rejectConditionsChange">
                   驳回预览
                 </button>
               </div>
+              <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
               <p v-if="!pendingDraftMatches" class="muted">研究条件已改变，请重新生成预览。</p>
             </div>
           </div>
@@ -764,6 +771,7 @@ import {
 } from '@/api/lingdoc/generation'
 import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
+import ProjectArchivePanel from './ProjectArchivePanel.vue'
 import ResearchPanel from './ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
 import LingDocReviewReportPanel from './LingDocReviewReportPanel.vue'
@@ -797,6 +805,8 @@ import { rewriteStage, rewriteStageAdoptable, rewriteStageLabel, rewriteStageNot
 import { inspectorOnNarrowTransition, mergeWbLayoutPref, readWbLayoutPref, wbLayoutStorageKey, type WbLayoutPref } from './layoutPref'
 import { filterProjects } from './projectPicker'
 import { rewriteAdoptionConfirmation } from './candidateAdoption'
+import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composables/useOwnerAvailability'
+import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
@@ -815,6 +825,16 @@ const projects = ref<Project[]>([])
 const auth = useAuthStore()
 const truncated = ref(false)
 const project = ref<Project | null>(null)
+// Owner 可用性事实与恢复指引文案都在这一处持有：按钮的置灰条件与提示文案
+// 从这里取，不在本页另写一遍。
+const {
+  frozen: ownerActionsFrozen,
+  reason: ownerUnavailableReason,
+  recovery: ownerRecoveryGuidance,
+  noticeReason: ownerNoticeReason,
+  noticeRecovery: ownerNoticeRecovery,
+  refresh: refreshOwnerAvailability,
+} = useOwnerAvailability(() => project.value?.id, { reasonText: OWNER_DECISION_UNAVAILABLE_TEXT })
 const memberSaving = ref(false)
 const memberDraftDirty = ref(false)
 
@@ -1979,6 +1999,7 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
       savedReviewDrafts.value = {}
     }
     project.value = result.data
+    void refreshOwnerAvailability()
     hydrateTemplateCopyDraft(result.data)
     specEditingRevision.value=result.data.spec_revision
     subject.value = result.data.spec.research_subject ?? ''

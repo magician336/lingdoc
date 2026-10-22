@@ -169,6 +169,9 @@ var narrowPortMethods = map[string][]string{
 	}, "ProjectApplication": {
 		"ActivateProjectResult",
 		"ActivationDiff",
+		// The archive entry is the project's terminal lifecycle decision: it
+		// belongs to the project context, so the project port carries it.
+		"ArchiveProjectResult",
 		"CreateDraftCandidateResult",
 		"CreateProjectResult",
 		"DiscardProjectResult",

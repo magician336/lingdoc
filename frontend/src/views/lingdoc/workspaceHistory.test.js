@@ -46,6 +46,7 @@ function evaluate(source, filename) {
     if (id === 'vue') return { ...vue, onMounted: () => {}, onUnmounted: () => {} }
     if (id === 'vue-router') return { onBeforeRouteLeave: () => {} }
     if (id === '@/stores/auth') return { useAuthStore: () => auth }
+    if (id === '@/composables/useOwnerAvailability') return { useOwnerAvailability: () => ({ frozen: { value: false }, reason: { value: '' }, recovery: { value: '' }, refresh: async () => {} }) }
     if (id.endsWith('.vue')) return { __esModule: true, default: child }
     if (id.startsWith('@/api/')) return api
     if (id.startsWith('.')) {

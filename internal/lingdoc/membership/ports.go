@@ -34,6 +34,7 @@ type MemberLifecycleApplication interface {
 	ListMyProjectInvitations(ctx context.Context, a core.Actor) ([]core.MemberInvitation, error)
 	ListOwnerTransfers(ctx context.Context, a core.Actor, pid string) ([]core.OwnerTransfer, error)
 	ListProjectInvitations(ctx context.Context, actor core.Actor, pid string) ([]core.MemberInvitation, error)
+	OwnerAvailability(ctx context.Context, actor core.Actor, projectID string) (core.OwnerAvailability, error)
 	ProjectMemberDirectory(ctx context.Context, a core.Actor, pid string) ([]core.MemberDirectoryEntry, error)
 	RejectOwnerTransfer(ctx context.Context, a core.Actor, pid, id, key string, input core.OwnerTransferDecisionInput) (json.RawMessage, int, bool, error)
 	SaveProjectAPIKeyGrant(ctx context.Context, a core.Actor, pid, key string, input core.ProjectAPIKeyGrant) (json.RawMessage, int, bool, error)

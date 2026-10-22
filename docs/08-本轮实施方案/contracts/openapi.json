@@ -5715,6 +5715,211 @@
         "x-domain": "workspace"
       }
     },
+    "/projects/{projectId}/archive": {
+      "post": {
+        "operationId": "archiveProject",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "归档项目（Owner 专属，终态）",
+        "description": "归档是项目生命周期的终态：归档之后项目不再接受任何变更。只有 active 项目可归档，draft 项目只能丢弃；丢弃（discarded_at）与归档（status = archived）是两回事，不可共用。该动作仅 Owner 可执行：请求必须带上调用方读到的项目版本，陈旧版本返回 409；幂等键让重试只有一次效果，重试不会产生第二条归档审计。Owner 的租户身份失效时该动作被冻结，拒绝在既有错误形状里带出 owner_unavailable 原因码，可与「你不是 Owner」区分。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveProject"
+              },
+              "example": {
+                "expected_project_version": 3
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "项目已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                },
+                "examples": {
+                  "archived": {
+                    "summary": "Synthetic contract illustration only; not an executed API result",
+                    "value": {
+                      "data": {
+                        "id": "p-demo",
+                        "name": "合成资料演示项目",
+                        "status": "archived",
+                        "project_version": 4,
+                        "current_context_revision": 1,
+                        "delivery_status": "NOT_READY",
+                        "spec_revision": 1,
+                        "spec": {
+                          "research_subject": "公开的合成调查样本",
+                          "research_goal": "验证资料到章节的工作流程"
+                        },
+                        "template_id": "template-demo",
+                        "template_version": "1",
+                        "template_copy_version": 1,
+                        "members": [
+                          {
+                            "user_id": "u-owner",
+                            "role": "owner"
+                          }
+                        ]
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行该动作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可访问，或 Owner 的租户身份失效导致该动作被冻结",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false,
+                        "details": {
+                          "reason_code": "owner_unavailable"
+                        }
+                      },
+                      "request_id": "req-demo"
+                    },
+                    "summary": "Owner 的租户身份失效时冻结归档；原因码带在既有错误形状的 details 里"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "项目版本已变化，或同一幂等键对应不同请求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态不允许：draft 项目只能丢弃，active 项目才能归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_example": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前项目状态或研究条件不满足操作要求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/assets": {
       "get": {
         "operationId": "listAssets",
@@ -30049,6 +30254,155 @@
         "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
       }
     },
+    "/projects/{projectId}/owner-availability": {
+      "get": {
+        "operationId": "ownerAvailability",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "OwnerAvailability",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAvailabilityResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "owner_user_id": "synthetic-owner",
+                        "available": false,
+                        "reason_code": "owner_unavailable",
+                        "recovery_paths": [
+                          "restore_tenant_identity",
+                          "tenant_owner_nomination"
+                        ]
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "full_workflow_http.go",
+        "x-lingdoc-route-line": 52,
+        "x-lingdoc-service": "OwnerAvailability",
+        "x-lingdoc-go-response": "OwnerAvailability",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
     "/projects/{projectId}/members/directory": {
       "get": {
         "operationId": "projectMemberDirectory",
@@ -38781,7 +39135,8 @@
             "type": "string",
             "enum": [
               "draft",
-              "active"
+              "active",
+              "archived"
             ]
           },
           "project_version": {
@@ -40212,6 +40567,22 @@
         "required": [
           "expected_spec_revision",
           "activation_read_id"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveProject": {
+        "type": "object",
+        "description": "归档请求体。expected_project_version 是调用方读到的项目版本：服务端据此拒绝陈旧决定，省略或 0 视为无效请求。",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64",
+            "description": "调用方读到的项目版本；与服务端当前版本不一致时返回 409。"
+          }
+        },
+        "required": [
+          "expected_project_version"
         ],
         "additionalProperties": false
       },
@@ -48722,6 +49093,55 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/EffectivePermission"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "OwnerAvailability": {
+        "type": "object",
+        "properties": {
+          "owner_user_id": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "recovery_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "owner_user_id",
+          "available",
+          "reason_code",
+          "recovery_paths"
+        ],
+        "x-go-type": "core.OwnerAvailability",
+        "x-go-source": "internal/lingdoc/workspacecore/owner_unavailable.go"
+      },
+      "OwnerAvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnerAvailability"
           },
           "request_id": {
             "type": "string"
