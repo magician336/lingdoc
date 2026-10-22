@@ -116,7 +116,11 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 
 # The G1-G7 Spec issue line.  #144 is the wayfinder map, not a Spec, so it is
 # not part of this set.  A face may only deliver issues from this set.
-G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146}
+#
+# #393 is the 研究提案 Spec (the research proposal contract) that PF-5
+# delivers: it is a G-line Spec like the others, so the set is extended
+# rather than worked around.  A face that delivers it may name it.
+G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {393}
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
 # "somebody may start this right now".
@@ -367,13 +371,28 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
     {
         "name": "PF-5 Agent research purpose",
         "issue": 329,
-        "issues": (135, 125),
+        "issues": (135, 125, 393),
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
             ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
+            # The 研究提案 contract: the model-output contract that owns the
+            # shape of a research proposal.  It is a module of its own,
+            # alongside the two model-output contracts the agent surface
+            # already has, because the large service module already holds
+            # seven concerns and must not receive an eighth.
+            ("internal/lingdoc/workspacecore/research_proposal.go", "file"),
+            ("internal/lingdoc/workspacecore/research_proposal_test.go", "file"),
+            # The proposal is delivered on the existing turn endpoint and
+            # consumed by the 调研面板 that already adopts an editable
+            # 调研任务建议; these files are claimed so the panel may render
+            # the proposal's 候选来源, 理由 and 缺口 beside that draft.
+            ("frontend/src/api/lingdoc/agentApi.ts", "file"),
+            ("frontend/src/api/lingdoc/agentApi.test.js", "file"),
+            ("frontend/src/views/lingdoc/ResearchPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ResearchPanel.test.js", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -389,6 +408,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "它现在住在 workspace/agent_model.go 与 workspacecore 的 context_ports.go、agent_research_model.go；"
             "不必等 #124 的前端消费（PF-6）。"
             "2026-10-22 由 magician336 认领。"
+            "同日补交一张 G 线 Spec #393（调研智能体的研究提案，文档 "
+            "docs/06-灵档产品开发规划/50-Spec-调研智能体研究提案.md）："
+            "研究提案的形状由一份服务端契约拥有并校验，"
+            "候选来源必须可追溯到该轮的授权上下文，"
+            "提案永远是候选（不自动成为调研任务、导入候选、证据卡或研究主张）。"
+            "路径集同日从 3 条扩到 9 条（新增研究提案契约模块与前端四处），"
+            "因为该 Spec 的答案要真正被看到。"
         ),
     },
     {
