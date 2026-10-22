@@ -254,7 +254,7 @@ graph TD
 
 两个面碰同一个文件，并行就会互相覆盖；而这种撞车在合并前看不出来。登记处把**文件所有权**变成可执行约束：任何两个面的路径集重叠，登记处直接拒绝加载并以非零退出，守护测试 `scripts/ci/test_lingdoc_parallel_surfaces.py` 守住这条不变量（随 `lingdoc-review.yml` 的 `test_lingdoc_*.py` 自动进 CI）。
 
-### 当前的六个面
+### 当前的七个面
 
 每个面在 tracker 上有一张自己的票（**票是执行单元，Spec 是交付单元**），票已挂成对应 Spec 票的 GitHub 子票。
 
@@ -266,9 +266,12 @@ graph TD
 | [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
 | [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/agent_action_service.go`、`agent_research_model.go` | 上下文包后端已在 `agent_research_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
+| [#384](https://github.com/magician336/lingdoc/issues/384) | **PF-7** G6 运维面板独立化与 Workspace 集成 | #145 #146 | `frontend/src/api/lingdoc/mainlineChanges.ts`、`runtimeControl.ts`、`runtimeControl.test.ts`、`trialWindow.ts`、`trialWindow.test.ts`、`frontend/src/views/lingdoc/RuntimeOpsPanel.vue`、`RuntimeOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上；本面把 G6 前端从 G3 面板里拆出来，并给它自己的入口位。**保留路径** `Workspace.vue` 由维护者授权本轮改动 |
 
-六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领并完成**（登记处 `status` 均为 `done`；完成态不保留 `claimed_by`，认领与完成的人记在 `summary` 里）：PF-1 于 2026-10-22 完成，**PF-2 同日完成**——十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭，#326 及下面 17 张票全部关闭。两张残留票保持开放：[#385](https://github.com/magician336/lingdoc/issues/385)（动作表按目标范围给动作、执行按管道分）、[#386](https://github.com/magician336/lingdoc/issues/386)（两处手抄迁移子集夹具）。其余四张（PF-3…PF-6）在登记处仍是 `available`，未被认领——**认领状态以登记处为准**。
+七张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领并完成**（登记处 `status` 均为 `done`；完成态不保留 `claimed_by`，认领与完成的人记在 `summary` 里）：PF-1 于 2026-10-22 完成，**PF-2 同日完成**——十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭，#326 及下面 17 张票全部关闭。两张残留票保持开放：[#385](https://github.com/magician336/lingdoc/issues/385)（动作表按目标范围给动作、执行按管道分）、[#386](https://github.com/magician336/lingdoc/issues/386)（两处手抄迁移子集夹具）。`#384`（PF-7）于 2026-10-23 由 magician336 认领（登记处 `status` 为 `claimed`）。其余四张（PF-3…PF-6）在登记处仍是 `available`，未被认领——**认领状态以登记处为准**。
 
+> **PF-7 的路径集有两处需要读者知道**：一是 `mainlineChanges.ts`——PF-1 留下的「无主路径」缺口，由本面认领（G6 客户端从这里搬出去，文件本身留下 G3 的变更集与影响任务）；二是 PF-1 名下的 `ImpactOpsPanel.vue`、`mainlineChanges.test.js`、`ImpactOpsPanel.test.js` 三个文件本面也要改（把 G6 段搬走），但登记处不允许两面包同一路径，且本轮不得改动已完成面的记录，故这三个路径**仍记在 PF-1 名下**——所有权转移留给维护者处理。
+>
 > **PF-1 的路径集在 2026-10-22 改过**：初次登记时列的是三个**新建**文件（`g6Runtime.ts` / `g6Trial.ts` / `G6OpsPanel.vue`），前提是「G6 前端为零」。施工时核实发现该前提已过时——16 个 G6 端点客户端与两个 tab 的界面早已在 main 上，重复新建会造成两套并行实现。于是本面缩为「补真实缺口」：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。**G6 前端的独立化与 Workspace 集成不在本面**，另开 [#384](https://github.com/magician336/lingdoc/issues/384)。路径集与边界以登记处 `scripts/lingdoc_parallel_surfaces.py` 为准，本表只是它的说明副本。
 
 **PF-2 的路径集是按票面实测补齐的**：初次登记时只列了 6 个文件，#326 认领后实测发现它还要改 `candidateadoption/*`、`generation/store.go`、`workspace/http.go`、`workspacecore/human_decision.go`、`clienterror/catalog.go`、`router/lingdoc_routes_test.go` —— 这些**不被任何面拥有**，即两个面会碰同一文件的撞车风险。补齐后与其余五面仍然零重叠（PF-3 独占 `workspacecore/model.go`、PF-5 独占 `workspacecore/g2_*.go`，都没冲突）。
@@ -313,7 +316,7 @@ graph TD
 
 ### ④ 前端与动作族
 
-- **G6 前端已接线，但仍寄生在 G3 面板里**：16 个 G6 端点客户端与运行/试用两个 tab 早已在 main 上（`api/lingdoc/mainlineChanges.ts:112-127`、`ImpactOpsPanel.vue:55-83`），不是「零文件」。PF-1（#325）已于 2026-10-22 补上运行指标视图与前端契约保护。**未完成的是独立化与 Workspace 集成**：G6 仍寄居在「变更与运行质量」面板里，值班人员要先进入该面板再切 tab。归属 [#384](https://github.com/magician336/lingdoc/issues/384)。
+- **G6 前端已独立成面板（PF-7，#384，2026-10-23 施工中）**：16 个 G6 端点客户端与运行/试用两个 tab 原本寄生在 G3 面板里（`api/lingdoc/mainlineChanges.ts:112-127`、`ImpactOpsPanel.vue:55-83`），值班人员要先进入「变更与运行质量」再切 tab。PF-1（#325）于 2026-10-22 补上运行指标视图与前端契约保护；**独立化与 Workspace 集成由 PF-7 承接**：客户端搬到 `api/lingdoc/runtimeControl.ts` 与 `api/lingdoc/trialWindow.ts`，界面搬到 `views/lingdoc/RuntimeOpsPanel.vue`，Workspace 抽屉里给它自己的入口位（「运行观测与试用」）。后端不动，行为不变。
 - **#134 动作族已落地**（PF-2，2026-10-22 完成）：八类动作（提纲 / 生成 / 续写 / 改写 / 压缩 / 扩展 / 转写 / 语言评审）由 `internal/lingdoc/writingaction` **独占拥有**，产出参数是闭合取值集，采纳必须带**显式确认载荷**（动作 × 采纳目标 × 目标范围 × 确认时刻 × 确认人 × 来源，六项缺一在服务层被拒），「人工 / AI 生成 / AI 辅助」来源标注随候选走。**未裁决的遗留**：续写是「替换选区」还是「插入其后」（#342）、提纲是「替换整篇工作副本」还是「与已有正文并存」（#347）——两者都要词汇包先声明「插入 vs 替换」语义。
 
 ### 缺口簇与施工并行面的对应

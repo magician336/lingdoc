@@ -339,6 +339,43 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "本面只新增文件；与 PF-1 同属前端目录，两者不得互相改对方的文件。"
         ),
     },
+    {
+        "name": "PF-7 G6 运维面板独立化与 Workspace 集成",
+        "issue": 384,
+        "issues": (145, 146),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # The G6 client leaves the change-set client: it gets a home of its
+            # own, and mainlineChanges.ts -- which PF-1's own summary listed as
+            # an unowned path -- is claimed by the face that moves the code out.
+            ("frontend/src/api/lingdoc/mainlineChanges.ts", "file"),
+            ("frontend/src/api/lingdoc/runtimeControl.ts", "file"),
+            ("frontend/src/api/lingdoc/runtimeControl.test.ts", "file"),
+            ("frontend/src/api/lingdoc/trialWindow.ts", "file"),
+            ("frontend/src/api/lingdoc/trialWindow.test.ts", "file"),
+            ("frontend/src/views/lingdoc/RuntimeOpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/RuntimeOpsPanel.test.js", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "G6 的前端至今寄生在 G3 的「变更与运行质量」面板里：16 个 G6 端点客户端在 "
+            "api/lingdoc/mainlineChanges.ts:112-127，运行与恢复、真实试用两个 tab 的界面在 "
+            "views/lingdoc/ImpactOpsPanel.vue:55-83，值班人员要先进入该面板再切 tab 才够得着运行观测。"
+            "本面把这块前端拆成自己的面板：端点与类型搬到 api/lingdoc/runtimeControl.ts（运行控制、"
+            "事件、指标、告警、告警规则）与 api/lingdoc/trialWindow.ts（试用窗口与试用证据目录），"
+            "界面搬到 views/lingdoc/RuntimeOpsPanel.vue，并在 Workspace 的抽屉里给它自己的入口位。"
+            "行为不变：指标视图（定向汇总 + 完整展开表 + 无观测/后端未提供）、暂停与恢复（五种运行范围）、"
+            "运行事件链、告警与告警规则、试用窗口生命周期、样本记录与人工裁定、三方签署、"
+            "epoch 与身份过期守卫、mutate() 幂等键复用、只读默认，逐项照旧。"
+            "本面同时认领 mainlineChanges.ts——PF-1 留下的「无主路径」缺口由本面合上。"
+            "PF-1 仍登记着 ImpactOpsPanel.vue、runtimeMetrics.ts、runtimeMetrics.test.ts、"
+            "mainlineChanges.test.js、ImpactOpsPanel.test.js 五个路径；本面也要改其中三个"
+            "（ImpactOpsPanel.vue 与两个测试文件），但登记处不允许两面包同一路径，"
+            "且本轮不得改动已完成面的记录，故这五个路径仍记在 PF-1 名下——"
+            "这五个路径的所有权转移由维护者另行处理。"
+        ),
+    },
 )
 
 
