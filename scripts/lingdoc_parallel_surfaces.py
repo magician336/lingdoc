@@ -225,10 +225,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
-            # The production composition's route-count assertion follows the
-            # new endpoints: the review report endpoints are part of the
-            # rewrite capability, so the composition serves four more routes.
-            ("internal/container/lingdoc_test.go", "file"),
+            # internal/container/lingdoc_test.go moved to PF-4 on 2026-10-23:
+            # it holds the production composition's route-count assertion, and
+            # PF-4's archive endpoint adds a route to that composition. PF-2
+            # is closed and no longer building, so the path moves with the
+            # work rather than being fought over.
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
@@ -381,6 +382,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/membership/ports_test.go", "file"),
             ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
             ("internal/clienterror/clienterror.go", "file"),
+            # Moved from PF-2 on 2026-10-23: the production composition's
+            # route-count assertion follows the archive endpoint this face
+            # adds. PF-2 is closed and no longer building.
+            ("internal/container/lingdoc_test.go", "file"),
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
@@ -446,6 +451,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "internal/router/lingdoc_routes_test.go 与 frontend/src/api/lingdoc/workspace.ts"
             "属 PF-2 已占有（PF-2 已交面 done，done 不释放路径）；"
             "frontend/src/views/lingdoc/ImpactOpsPanel.vue 与 ImpactOpsPanel.test.js 属 PF-1 已交面。"
+            "internal/container/lingdoc_test.go 原属 PF-2，它钉着生产组合的路由总数，"
+            "本面新增归档端点后它必须跟着改 —— PF-2 已交面不再施工，"
+            "该路径于 2026-10-23 移交给本面（PF-2 路径集同步移除，两边 summary 都记了这次移交）。"
             "这些改动与基线合并组合在同一棵树上，后续冲突会显式报出，不会静默覆盖。"
             "**本面还改了一个 owner 冻结夹具**：internal/router/routes_lingdoc_owner_test.go 的"
             "迁移清单补上 PF-3 的 000052 审计版本列迁移 —— 清单停在 000041 时，"
