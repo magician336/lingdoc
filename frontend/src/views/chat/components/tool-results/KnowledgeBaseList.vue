@@ -43,7 +43,7 @@ const props = defineProps<{
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .knowledge-base-list {
   display: flex;

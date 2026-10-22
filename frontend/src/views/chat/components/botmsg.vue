@@ -449,9 +449,9 @@ onBeforeUnmount(() => {
 });
 </script>
 <style lang="less" scoped>
-@import '../../../components/css/chat-markdown.less';
-@import '../../../components/css/chat-message-shared.less';
-@import '../../../components/css/chat-citations.less';
+@import '../../../components/css/chatMarkdown.less';
+@import '../../../components/css/chatMessageShared.less';
+@import '../../../components/css/chatCitations.less';
 
 .bot_msg {
     &.is-embedded {
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
 }
 
 .markdown-content {
-    // Chat Markdown visual styles are centralized in chat-markdown.less.
+    // Chat Markdown visual styles are centralized in chatMarkdown.less.
     // Do not add element-level Markdown rules here; update the shared mixin.
     .chat-markdown-typography();
     .chat-citation-pills();

@@ -58,7 +58,7 @@ const meta = computed(() => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .sandbox-files-result {
   display: flex;

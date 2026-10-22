@@ -245,5 +245,5 @@ const submit = async (decision: 'approve' | 'reject') => {
 </script>
 
 <style scoped lang="less">
-@import './agent-interaction-card.less';
+@import './agentInteractionCard.less';
 </style>

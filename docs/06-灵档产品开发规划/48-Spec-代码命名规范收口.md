@@ -145,7 +145,7 @@
 | **2** | 56 个带编号的**导出**标识符 | 1–2 个 PR | 调用点少、收益直接；`G6CAS` 这类名字改完立刻自足。**直接完成完整改名**（新名落到定义处、全部调用点改用新名、旧名删掉），不留别名缓冲层 |
 | **3** | `frontend/src/views/lingdoc/g3demo/` 目录 + `frontend/scripts/g3demo/`，共 52 个文件 | 1–2 个 PR | 单文件最大 3,294 行，需要独立批次 |
 | **4** | `internal/lingdoc/workspacecore` 与 `internal/lingdoc/workspace` 的 g* 文件 | 2–4 个 PR | 两个包内改名，按知识簇切 |
-| **5** | 弱语义名与调试残留（`temporary_*`、`_repro_gap.mjs`、`copy.go`、`legacy`） | 1 个 PR | 独立于编号问题 |
+| **5** | 弱语义名与调试残留（`temporary_*`、`_repro_gap.mjs`、`copy.go`→`index_copy.go`、`legacy`） | 1 个 PR | 独立于编号问题 |
 | **6** | 包名万能词（`workspacecore` / `workspace` / `demoroute`） | 另案 | 涉及包边界，需单独设计讨论 |
 
 **每个批次一个 PR。** 批次之间不合并。

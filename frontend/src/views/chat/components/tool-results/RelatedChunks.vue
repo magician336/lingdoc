@@ -48,7 +48,7 @@ const props = defineProps<{
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .related-chunks {
   display: flex;

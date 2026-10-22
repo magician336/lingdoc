@@ -65,7 +65,7 @@ Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273
 信封：`{"error":{"code","message","retryable"},"request_id"}`——**无 `details` 键**。
 `retryable` 由 `writeError` 按 `status >= 500` 推导。
 
-### 面 2：`internal/lingdoc/workspace/g4_full_http.go` → `G4ErrorStatus`（治理面）
+### 面 2：`internal/lingdoc/workspace/template_governance_routes.go` → `G4ErrorStatus`（治理面）
 
 | 匹配的错误 | 状态 | 错误码 | 文案 |
 | --- | --- | --- | --- |
@@ -129,7 +129,7 @@ Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273
 
 信封：无 `details` 键。`retryable` 默认 false，只有 `ErrDependencyUnavailable` 显式为 true。
 
-### 面 5：`internal/lingdoc/workspace/g2_full_http.go` → `g2FullError`
+### 面 5：`internal/lingdoc/workspace/agent_routes.go` → `g2FullError`
 
 5 个分支（`ErrFormalChangeRequired` / `ErrG2ConsentRequired` / `ErrG2EvidenceIncomplete` /
 `ErrG2OutcomeUnknown` / `ErrG2Unavailable`），未命中者落到工作区主路由的 `sendError`。
@@ -397,7 +397,7 @@ DR-47-03 曾暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 2. 生成面 `ErrStaleInput` 的文案取候选采纳面措辞「候选稿或快照基于旧输入。」。
 3. 治理面与候选采纳面的**兜底 500** 也按第 4/5 项改为 `retryable: true`。
 4. 规则集存储面、候选采纳面、G2 面的同码不同文冲突，一律用具名场景值承载各面自己的措辞。
-5. `impact_routes.go` 与 `g5_machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
+5. `impact_routes.go` 与 `machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
 6. `ErrAdoptionServiceUnavailable`（503 + `invalid_state`）保留旧形态，以逐字节不变。
 
 ## 47.08 的第一片：共享核心模块与两条规则归一（2026-10-20）
@@ -563,7 +563,7 @@ DR-47-03 曾暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 扫工作区核心源码，报告任何**在管道接缝之外写入幂等记录**的地方。
 
 断言范围经过收窄：只断言「写入」不断言「读取」。理由是读取有两类：
-管道通过 `Ledger` 接缝读一次（管道自己的），而 `g1_operation_provenance.go:66` 的
+管道通过 `Ledger` 接缝读一次（管道自己的），而 `operation_provenance.go:66` 的
 溯源证明校验还要读同一张表来确认「操作记录与已存证明仍然一致」——那是工作区自己的
 一致性规则，不是管道步骤。写入则是管道的独占职责：一条已存记录就是「这个操作发生过」
 的证明，只有管道能创建。
@@ -586,7 +586,7 @@ DR-47-03 曾暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 
 ### 第二套管道没有了
 
-调研域原来有自己的管道：`g2Operation`（`g2_service.go`）自己实现幂等键检查、
+调研域原来有自己的管道：`g2Operation`（`agent_action_service.go`）自己实现幂等键检查、
 请求体摘要、只读复核、来源重查、授权、幂等记录读写、业务写入、投影。
 
 现在它走共享管道：`g2Operation` 只声明「做什么操作」，管道由
@@ -693,11 +693,11 @@ basis 比较与幂等检查的先后顺序与旧实现相反——「同键不�
 | 断言 | 注入的违规 | 报出 |
 | --- | --- | --- |
 | 共享核心不得持有门名单 | 在 `operationcore` 注入 `RequiresHumanDecision(operation)` | `zz_negative_probe.go: RequiresHumanDecision decides the gate from the operation name: the caller declares it` |
-| 每个调研域操作声明了哪个门 | 把 `approveResearchTask` 的声明从 `HumanGateRequired` 改成 `HumanGateNotRequired` | `g2_gate_declaration_test.go:103: approveResearchTask declares NotRequired, want Required (the baseline enforced Required)` |
+| 每个调研域操作声明了哪个门 | 把 `approveResearchTask` 的声明从 `HumanGateRequired` 改成 `HumanGateNotRequired` | `gate_declaration_test.go:103: approveResearchTask declares NotRequired, want Required (the baseline enforced Required)` |
 
 另外，门的状态用**机械扫描**核对过：从基线代码（`28a76a5`）读出每个方法自己是否调用
 `RequireHumanDecision`（以及是在什么条件下调用），与归一后的声明逐条比对，
-**19 个调用点的门要求全部一致**（`g2_service.go` 18 个 + `g2_action_proposal_replay.go` 1 个；
+**19 个调用点的门要求全部一致**（`agent_action_service.go` 18 个 + `action_proposal_replay.go` 1 个；
 此前本文档写成 18 个，是漏数，已更正）。归一后的分布是 **10 个必门 + 8 个不要门 + 1 个条件门**
 （`SendAgentTurn`：`g2AgentTurnGate(input)` 按 `input.SensitiveContextConfirmed` 决定，
 与基线里 `if input.SensitiveContextConfirmed { RequireHumanDecision(ctx) }` 同义）。

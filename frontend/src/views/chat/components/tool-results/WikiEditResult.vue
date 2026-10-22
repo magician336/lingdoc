@@ -155,7 +155,7 @@ const headerTitle = computed(() => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .wiki-edit-result {
   display: flex;

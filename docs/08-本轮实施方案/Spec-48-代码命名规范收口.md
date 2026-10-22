@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | 1 | 登记表 + 守护测试 + 棘轮基线 | 1 PR | 本 Spec 自身的交付 |
 | 2 | 47 个带编号的导出标识符 | 1–2 PR | 每个知识簇一张 |
-| 3 | `frontend/src/views/lingdoc/g3demo/` 44 个文件 | 1–2 PR | 目录整体改名一张 |
+| 3 | `frontend/src/views/lingdoc/impactCenterAcceptance/` 44 个文件 | 1–2 PR | 目录整体改名一张 |
 | 4 | `workspacecore` / `workspace` 的 g* 文件 | 2–4 PR | 按知识簇切 |
 | 5 | 弱语义名与调试残留 | 1 PR | 一张 |
 | 6 | 包名万能词 | 另案 | **不在本 Spec 内**，需单独设计讨论 |
@@ -63,7 +63,7 @@
 3. **任务号不在规则里。** 现有 `ticket_number` 只覆盖 `issue<数字>` / `spec<数字>` / `ac<数字>`。
    **补法**：新增 `task_number` 缺陷类型（文件名内任意位置，与 `ticket_number` 同口径）与 `TASK_NUMBER`。
 
-**验收台豁免**：`ACCEPTANCE_RIG_DIRS`（`g3demo/`、`frontend/scripts/`、`scripts/acceptance/`、`scripts/lingdoc_mock/`）里的 `G3*` / `T15*` 是验收台自己的词汇。新规则**不向验收台加债**（`RIG_EXEMPT_RULES`），其既有 `numbered` 条目保持原样。**单元测试文件不豁免**——测试助手是产品词汇，随包一起改名。
+**验收台豁免**：`ACCEPTANCE_RIG_DIRS`（`impactCenterAcceptance/`、`frontend/scripts/`、`scripts/acceptance/`、`scripts/lingdoc_mock/`）里的 `G3*` / `T15*` 是验收台自己的词汇。新规则**不向验收台加债**（`RIG_EXEMPT_RULES`），其既有 `numbered` 条目保持原样。**单元测试文件不豁免**——测试助手是产品词汇，随包一起改名。
 
 **棘轮基线**：本次把「已识别但从未登记」的存量债务一次性计入，基线由 `186/54/205` 上调到 `211/54/205`（文件档 +25；两档标识符计数不变，因为段号与任务号标识符此前已全部登记，只是其宿主文件没进清单）。**上调只此一次**，之后只减不增。
 

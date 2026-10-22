@@ -110,7 +110,7 @@ const rows = computed((): GrepRow[] => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .grep-results {
   display: flex;

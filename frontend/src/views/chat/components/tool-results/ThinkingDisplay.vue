@@ -19,7 +19,7 @@ useI18n(); // ensure component reacts to locale changes if needed
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .thinking-display {
   padding: 0;

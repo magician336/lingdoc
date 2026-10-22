@@ -159,7 +159,7 @@ const formatMetadataValue = (value: unknown) => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .document-info {
   display: flex;

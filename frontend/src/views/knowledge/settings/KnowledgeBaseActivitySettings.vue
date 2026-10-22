@@ -717,7 +717,7 @@ onUnmounted(() => detachInfiniteScroll())
 </script>
 
 <style scoped lang="less">
-@import '@/components/css/suggested-questions.less';
+@import '@/components/css/suggestedQuestions.less';
 
 .section-content {
   width: 100%;

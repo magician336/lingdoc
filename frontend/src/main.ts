@@ -7,8 +7,8 @@ import TDesign from "tdesign-vue-next";
 // 引入组件库的少量全局样式变量
 import "tdesign-vue-next/dist/tdesign.css";
 import "@/assets/theme/theme.css";
-import "@/assets/dropdown-menu.less";
-import "@/components/css/chat-hljs-dark.less";
+import "@/assets/dropdownMenu.less";
+import "@/components/css/chatHljsDark.less";
 // vue-virtual-scroller ships its own tiny stylesheet — required for
 // RecycleScroller/DynamicScroller to size their viewport correctly.
 // Without it the scroller computes 0 height and renders no items.

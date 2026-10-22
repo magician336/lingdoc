@@ -63,7 +63,7 @@ const dismiss = () => {
 </script>
 
 <style scoped lang="less">
-@import (reference) '../css/suggested-questions.less';
+@import (reference) '../css/suggestedQuestions.less';
 
 .follow-ups {
   width: 100%;

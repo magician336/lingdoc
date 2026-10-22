@@ -32,5 +32,5 @@ const loadingText = t('common.loading')
 </script>
 
 <style lang="less">
-@import './css/chat-citations.less';
+@import './css/chatCitations.less';
 </style>

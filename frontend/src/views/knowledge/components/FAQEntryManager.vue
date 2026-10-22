@@ -2869,7 +2869,7 @@ watch(() => entries.value.map(e => ({
 </script>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 .tag-filter-popup {
   z-index: 5500 !important;
 }
@@ -3907,7 +3907,7 @@ watch(() => entries.value.map(e => ({
   }
 }
 
-/* card-menu 样式已统一至 @/assets/dropdown-menu.less，使用 .popup-menu 类 */
+/* card-menu 样式已统一至 @/assets/dropdownMenu.less，使用 .popup-menu 类 */
 
 .faq-question {
   flex: 1;
@@ -4504,7 +4504,7 @@ watch(() => entries.value.map(e => ({
 
 // 响应式布局由 JavaScript 动态计算，这里不需要媒体查询
 
-// 卡片菜单弹窗样式已统一至 @/assets/dropdown-menu.less
+// 卡片菜单弹窗样式已统一至 @/assets/dropdownMenu.less
 
 // FAQ 编辑器抽屉样式
 :deep(.faq-editor-drawer) {

@@ -2836,7 +2836,7 @@ async function createNewSession(value: string): Promise<void> {
   />
 </template>
 <style>
-/* 下拉菜单容器样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单容器样式已统一至 @/assets/dropdownMenu.less */
 .tag-filter-popup {
   z-index: 5500 !important;
 }

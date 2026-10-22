@@ -1927,7 +1927,7 @@ onUnmounted(() => {
 </style>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 
 // 创建对话框样式优化
 .create-org-dialog,

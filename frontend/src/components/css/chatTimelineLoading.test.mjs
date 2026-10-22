@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const css = readFileSync(join(here, 'chat-timeline-loading.less'), 'utf8')
+const css = readFileSync(join(here, 'chatTimelineLoading.less'), 'utf8')
 
 test('shared timeline styles do not add a detached loading row', () => {
   assert.doesNotMatch(css, /\.streaming-loading-node/)

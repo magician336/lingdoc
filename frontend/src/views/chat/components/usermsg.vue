@@ -192,7 +192,7 @@ const closePreImg = () => {
 };
 </script>
 <style scoped lang="less">
-@import '../../../components/css/chat-resource-chips.less';
+@import '../../../components/css/chatResourceChips.less';
 
 .user_msg_container {
     display: flex;

@@ -292,7 +292,7 @@ const handleKBEditorSuccess = (kbId: string) => {
     }
 }
 
-@import '../../components/css/suggested-questions.less';
+@import '../../components/css/suggestedQuestions.less';
 
 @keyframes skeletonFadeIn {
     from {

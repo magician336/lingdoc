@@ -2544,7 +2544,7 @@ defineExpose({
 </style>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 
 // 共享智能体详情侧边栏
 .shared-detail-drawer-overlay {

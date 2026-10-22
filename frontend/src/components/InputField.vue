@@ -2930,7 +2930,7 @@ const getImgSrc = (url: string) => {
 }
 </script>
 <style scoped lang="less">
-@import './css/chat-resource-chips.less';
+@import './css/chatResourceChips.less';
 
 .answers-input {
   position: absolute;

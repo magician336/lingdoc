@@ -691,12 +691,20 @@ class NegativeTests(unittest.TestCase):
                                        _baseline())
 
     def test_a_registry_that_forgets_a_declaration_is_rejected(self):
-        """AC-48-06: the registry is a complete list.  Dropping one entry
-        leaves a file undeclared, and the guard says so."""
+        """AC-48-06: the registry is a complete list.  Dropping one declaration
+        leaves the tree's numbered vocabulary undeclared, and the guard says so.
+
+        The declaration that is dropped is a numbered identifier, not a file:
+        the file side of the rule ("a file that breaks a rule has to be
+        declared") is exercised on a throw-away tree by ``ScannerTests``, and
+        on the real tree it has nothing left to fire on once the ratchet has
+        reached zero.  The identifier side still carries declarations, so the
+        completeness rule is still live there.
+        """
         files, identifiers, ratchet = registry.load_and_validate()
-        dropped = files[0].path
-        trimmed = tuple(entry for entry in files if entry.path != dropped)
-        complaints = registry.check_repository(REPO_ROOT, trimmed, identifiers, ratchet)
+        dropped = identifiers[0].name
+        trimmed = tuple(entry for entry in identifiers if entry.name != dropped)
+        complaints = registry.check_repository(REPO_ROOT, files, trimmed, ratchet)
         self.assertTrue(
             any(dropped in complaint for complaint in complaints),
             f"dropping {dropped} from the registry was not reported: {complaints}")

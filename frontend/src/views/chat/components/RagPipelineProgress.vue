@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="less">
-@import '@/components/css/chat-timeline-loading.less';
+@import '@/components/css/chatTimelineLoading.less';
 
 .rag-pipeline-progress {
   --agent-step-text-size: 14px;

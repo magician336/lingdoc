@@ -145,7 +145,7 @@ const formatDate = (dateStr: string): string => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .web-search-results {
   display: flex;

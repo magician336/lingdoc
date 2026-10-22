@@ -383,7 +383,7 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 				ChangeSets: projects, Impact: projects, Dependency: projects,
 				Runtime: projects, Trials: projects, Roadmap: projects,
 			},
-			agent: workspace.AgentRoutePorts{
+			Agent: workspace.AgentRoutePorts{
 				Research: projects, Imports: projects, EvidenceCards: projects,
 				Claims: projects, Anchors: projects, AgentSessions: projects, Proposals: projects,
 				Context: projects, ChangeSets: projects,

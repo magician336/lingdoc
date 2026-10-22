@@ -96,7 +96,7 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .graph-query-results {
   display: flex;

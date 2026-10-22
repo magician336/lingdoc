@@ -1844,7 +1844,7 @@ onBeforeRouteUpdate((to, from, next) => {
     }
 }
 
-@import '../../components/css/suggested-questions.less';
+@import '../../components/css/suggestedQuestions.less';
 
 .suggested-questions-container {
     transition: min-height 0.3s @suggested-ease;

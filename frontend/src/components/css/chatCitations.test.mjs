@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const css = readFileSync(join(here, 'chat-citations.less'), 'utf8')
+const css = readFileSync(join(here, 'chatCitations.less'), 'utf8')
 
 test('citation pills use compact baseline-aligned source styling', () => {
   assert.match(css, /border-radius:\s*999px/)

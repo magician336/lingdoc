@@ -3132,10 +3132,10 @@ const handleAddToKnowledge = (answerEvent: any) => {
 </script>
 
 <style lang="less" scoped>
-@import '../../../components/css/chat-markdown.less';
-@import '../../../components/css/chat-message-shared.less';
-@import '../../../components/css/chat-citations.less';
-@import '../../../components/css/chat-timeline-loading.less';
+@import '../../../components/css/chatMarkdown.less';
+@import '../../../components/css/chatMessageShared.less';
+@import '../../../components/css/chatCitations.less';
+@import '../../../components/css/chatTimelineLoading.less';
 
 .agent-stream-display {
   display: flex;
@@ -3309,7 +3309,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
   &.markdown-content {
     // Compact thinking-panel Markdown is intentionally not the chat answer body.
-    // Answer Markdown typography belongs to chat-markdown.less.
+    // Answer Markdown typography belongs to chatMarkdown.less.
     .chat-citation-pills();
   }
 }
@@ -3331,7 +3331,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
   .answer-content {
     &.markdown-content {
-      // Chat Markdown visual styles are centralized in chat-markdown.less.
+      // Chat Markdown visual styles are centralized in chatMarkdown.less.
       // Do not add element-level Markdown rules here; update the shared mixin.
       .chat-markdown-typography();
       .chat-citation-pills();
@@ -3405,7 +3405,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
     .tool-summary-markdown {
       // Compact tool summaries have local spacing by design; full chat answer
-      // Markdown typography belongs to chat-markdown.less.
+      // Markdown typography belongs to chatMarkdown.less.
       font-weight: 400;
       line-height: 1.6;
       color: var(--td-text-color-primary);
@@ -4082,7 +4082,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
 
   // Wiki drawer is a non-chat reader surface. Chat answer Markdown styles are
-  // centralized in chat-markdown.less; do not copy these rules into chat message components.
+  // centralized in chatMarkdown.less; do not copy these rules into chat message components.
   .wiki-reader-body {
     line-height: 1.6;
     font-size: 14px;
