@@ -479,7 +479,7 @@ class NewViolationTests(unittest.TestCase):
     def test_the_acceptance_rig_vocabulary_is_not_counted_as_debt(self):
         """``G3SnapshotProject`` describes an object of the acceptance rig.  It
         is declared in the registry and never counted."""
-        rig = "frontend/src/views/lingdoc/g3demo/g3Snapshot.ts"
+        rig = "frontend/src/views/lingdoc/impactCenterAcceptance/runtimeSnapshot.ts"
         self._write(rig, "export interface G3SnapshotProject {\n  id: string\n}\n")
         found = registry.scan_identifier_definitions(self.root)
         self.assertIn(("G3SnapshotProject", "exported", rig), found)

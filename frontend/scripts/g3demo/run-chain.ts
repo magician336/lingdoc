@@ -19,10 +19,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
-import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
-import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/views/lingdoc/g3demo/runner/httpClient'
+import { runChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/chainExecution'
+import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/impactCenterAcceptance/chains/demoIdentity'
+import { createRunId } from '../../src/views/lingdoc/impactCenterAcceptance/chains/runContext'
+import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/views/lingdoc/impactCenterAcceptance/chains/httpClient'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '../../..')

@@ -17,14 +17,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
+import { runChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/chainExecution'
 import {
   G3StabilizationChainError,
   runStabilizationChain,
   type G3StabilizationChainResult,
-} from '../../src/views/lingdoc/g3demo/runner/stabilization'
-import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
+} from '../../src/views/lingdoc/impactCenterAcceptance/chains/stabilizationChain'
+import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/impactCenterAcceptance/chains/demoIdentity'
+import { createRunId } from '../../src/views/lingdoc/impactCenterAcceptance/chains/runContext'
 import { createFetchClient } from './fetchClient'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

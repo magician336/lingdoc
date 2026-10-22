@@ -2,7 +2,7 @@
  * G3 验收台-7 · 真实模型验收项：对真实后端跑一遍本票链路，把证据 JSON 落盘。
  *
  * 与 #238 / #239 / #240 同一形态：执行器是纯 TS、注入式 HTTP 客户端，页面与本脚本
- * 跑的是**同一份**执行器（`runner/model.ts`），所以页面上的判定与落盘的证据不会走样。
+ * 跑的是**同一份**执行器（`chains/modelChain.ts`），所以页面上的判定与落盘的证据不会走样。
  *
  * 用法（在 `frontend/` 目录下）：
  *   npx tsx scripts/g3demo/run-model.ts
@@ -17,10 +17,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
-import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { runModelChain } from '../../src/views/lingdoc/g3demo/runner/model'
-import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
+import { runChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/chainExecution'
+import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/impactCenterAcceptance/chains/demoIdentity'
+import { runModelChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/modelChain'
+import { createRunId } from '../../src/views/lingdoc/impactCenterAcceptance/chains/runContext'
 import { createFetchClient } from './fetchClient'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
