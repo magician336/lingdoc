@@ -48,7 +48,11 @@ function load(
     console,
   })
   return exports as {
-    useOwnerAvailability: (projectId: () => string | undefined) => {
+    OWNER_DECISION_UNAVAILABLE_TEXT: string
+    useOwnerAvailability: (
+      projectId: () => string | undefined,
+      options?: { capability?: string; reasonText?: string },
+    ) => {
       frozen: { value: boolean }
       reasonCode: { value: string }
       reason: { value: string }
@@ -70,12 +74,18 @@ test('a frozen project disables the Owner-only entries and says why', async () =
     asked.push(`${projectId}/${capability}`)
     return { data: { reason_code: 'owner_unavailable' } }
   })
-  const availability = subject.useOwnerAvailability(() => 'project-1')
+  // The Owner-only entries name the decisions they cover, so they pass their own
+  // sentence in; the composable itself only holds the generic one.
+  const availability = subject.useOwnerAvailability(() => 'project-1', {
+    reasonText: subject.OWNER_DECISION_UNAVAILABLE_TEXT,
+  })
   await availability.refresh()
-  assert.deepEqual(asked, ['project-1/manage'], 'the read outlet answers for the change set capability')
+  assert.deepEqual(asked, ['project-1/manage'], 'one read answers for every Owner-only entry')
   assert.equal(availability.frozen.value, true)
   assert.equal(availability.reasonCode.value, 'owner_unavailable')
   assert.match(availability.reason.value, /Owner/, 'the reason names the Owner')
+  assert.match(availability.reason.value, /立项/, 'the reason names the activation entry')
+  assert.match(availability.reason.value, /模板/, 'the reason names the template upgrade entry')
   assert.match(availability.recovery.value, /恢复|转让/, 'the recovery guidance names a way back')
 })
 

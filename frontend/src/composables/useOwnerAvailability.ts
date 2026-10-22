@@ -12,17 +12,22 @@ import { getOwnerAvailability } from '@/api/lingdoc/collaboration'
 export const OWNER_UNAVAILABLE_REASON = 'owner_unavailable'
 
 /**
- * 变更集应用与驳回所要求的能力。
+ * Owner 专属决策所要求的能力。
  *
- * 这两个动作是 Owner 专属的；权限读出口对这个能力回答「可否执行 + 原因」。
+ * 立项确认、模板升级与变更集应用都是 Owner 专属的决策：它们没有第二个
+ * 权威。权限读出口对这个能力回答「可否执行 + 原因」，所以三处入口读的是
+ * 同一个答案——读一次，就知道这些入口现在是不是冻结的。
  */
-export const OWNER_CHANGE_SET_CAPABILITY = 'manage'
+export const OWNER_ONLY_CAPABILITY = 'manage'
 
 /** 冻结原因文案。 */
 export const OWNER_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，该入口已冻结。'
 
+/** Owner 专属决策被冻结时的文案。 */
+export const OWNER_DECISION_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，立项确认、模板升级与变更集应用已冻结。'
+
 /** 恢复指引文案。 */
-export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或由租户 Owner 指定受让人完成一次所有权转让。'
+export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或由 WeKnora 租户 Owner 指定受让人完成一次所有权转让。'
 
 /**
  * 恢复路径的文案。
@@ -33,6 +38,18 @@ export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或�
 export const OWNER_RECOVERY_PATH_TEXTS: Record<string, string> = {
   restore_tenant_identity: '等待租户恢复 Owner 的租户身份；身份恢复后冻结自动解除。',
   tenant_owner_nomination: '由 WeKnora 租户 Owner 指定受让人并发起一次所有权转让。',
+}
+
+/**
+ * 冻结文案的选项。
+ *
+ * 文案由这一处持有，各入口只说自己在讲哪一个动作：页面与按钮不各写一遍。
+ */
+export interface OwnerAvailabilityOptions {
+  /** 入口要问的能力；缺省是 Owner 专属决策所用的 manage。 */
+  capability?: string
+  /** 冻结原因文案；缺省是通用的那一句。 */
+  reasonText?: string
 }
 
 /**
@@ -75,7 +92,7 @@ export interface OwnerAvailability {
  */
 export function useOwnerAvailability(
   projectId: () => string | undefined,
-  capability: string = OWNER_CHANGE_SET_CAPABILITY,
+  options: OwnerAvailabilityOptions = {},
 ) {
   const reasonCode = ref('')
   const ownerUserId = ref('')
@@ -84,7 +101,7 @@ export function useOwnerAvailability(
   const loading = ref(false)
 
   const frozen = computed(() => reasonCode.value === OWNER_UNAVAILABLE_REASON)
-  const reason = computed(() => (frozen.value ? OWNER_UNAVAILABLE_TEXT : ''))
+  const reason = computed(() => (frozen.value ? (options.reasonText ?? OWNER_UNAVAILABLE_TEXT) : ''))
   const recovery = computed(() => (frozen.value ? OWNER_RECOVERY_TEXT : ''))
 
   // 项目级事实：横幅说清「Owner 不可用」与「怎么恢复」。
@@ -114,7 +131,7 @@ export function useOwnerAvailability(
     try {
       // 入口级：这个入口被冻了吗。问权限读出口，答案带着原因码。
       try {
-        const answer = await getEffectivePermission(id, capability)
+        const answer = await getEffectivePermission(id, options.capability ?? OWNER_ONLY_CAPABILITY)
         reasonCode.value = answer?.data?.reason_code ?? ''
       } catch {
         // 读出口答不出来的时候，界面不谎称有冻结原因：入口保持原样。

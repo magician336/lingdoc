@@ -239,8 +239,8 @@
                   <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
                 </ul>
                 <div class="change-set-actions">
-                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches || ownerActionsFrozen" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
-                  <button type="button" :disabled="busy || ownerActionsFrozen" @click="rejectTemplateUpgrade">驳回评估</button>
+                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
+                  <button type="button" :disabled="busy || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="rejectTemplateUpgrade">驳回评估</button>
                 </div>
                 <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
                 <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿或理由已变化；请重新创建评估后再应用。</p>
@@ -556,9 +556,10 @@
           <section v-if="specBasisChanged" class="warning" role="alert"><h4>服务器研究条件已变化，当前输入保留</h4><p>本页输入基于条件版本 {{specEditingRevision}}，服务器当前为 {{project.spec_revision}}。普通课题刷新不会把你的输入自动绑定到新版本。</p><dl><template v-for="field in project.template_copy?.definition.fields" :key="field.field_id"><dt>{{field.label}}</dt><dd>服务器：{{project.spec[field.field_id]||'（空）'}}<br>你的输入：{{specDraftFields[field.field_id]||'（空）'}}</dd></template></dl><button type="button" :disabled="busy" @click="acknowledgeCurrentSpecBasis">已比较，保留输入并关联当前条件版本</button></section>
           <div class="actions">
             <button type="submit" :disabled="busy || !specChanged || specBasisChanged">保存研究条件</button>
-            <button v-if="project.status === 'draft'" type="button" @click="activate" :disabled="busy || specChanged || !requiredSpecComplete">立项并创建章节</button>
+            <button v-if="project.status === 'draft'" type="button" @click="activate" :disabled="busy || specChanged || !requiredSpecComplete || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''">立项并创建章节</button>
           </div>
           <p v-if="specChanged && project.status === 'draft'" class="muted">立项前请先保存研究条件。</p>
+          <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
         </form>
 
         <DraftCandidatePanel ref="draftCandidatePanelRef" v-if="project.status==='draft'" :project="project" :readonly="!canManageProjectMembers" :current-user-id="auth.currentUserId??''" @dirty="draftCandidateDirty=$event" @use-field="useManualDraftField" />
@@ -800,7 +801,7 @@ import { rewriteStage, rewriteStageAdoptable, rewriteStageLabel, rewriteStageNot
 import { inspectorOnNarrowTransition, mergeWbLayoutPref, readWbLayoutPref, wbLayoutStorageKey, type WbLayoutPref } from './layoutPref'
 import { filterProjects } from './projectPicker'
 import { rewriteAdoptionConfirmation } from './candidateAdoption'
-import { useOwnerAvailability } from '@/composables/useOwnerAvailability'
+import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composables/useOwnerAvailability'
 import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import LingDocEditor from './editor/LingDocEditor.vue'
@@ -829,7 +830,7 @@ const {
   noticeReason: ownerNoticeReason,
   noticeRecovery: ownerNoticeRecovery,
   refresh: refreshOwnerAvailability,
-} = useOwnerAvailability(() => project.value?.id)
+} = useOwnerAvailability(() => project.value?.id, { reasonText: OWNER_DECISION_UNAVAILABLE_TEXT })
 const memberSaving = ref(false)
 const memberDraftDirty = ref(false)
 
