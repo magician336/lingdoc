@@ -109,8 +109,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-1 G6 运维与试用前端",
         "issue": 325,
         "issues": (145, 146),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("frontend/src/api/lingdoc/g6Runtime.ts", "file"),
             ("frontend/src/api/lingdoc/g6Trial.ts", "file"),
