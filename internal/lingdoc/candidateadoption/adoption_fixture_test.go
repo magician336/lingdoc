@@ -43,11 +43,3 @@ func fixturePartialConfirmation(actor string, start, end int) *AdoptionConfirmat
 	confirmation.Scope = &AdoptionScope{StartUTF16: start, EndUTF16: end}
 	return confirmation
 }
-
-// fixtureWorkingCopyState 造一份「客户端看到的工作副本」声明。
-//
-// 没有工作副本的用例声明修订号 0 与空正文的摘要：服务端把「没有工作副本」
-// 看成修订号 0、正文为空，两边算的是同一件事。
-func fixtureWorkingCopyState(revision int64, body string) (int64, string) {
-	return revision, workingCopyBodyHash(body)
-}

@@ -75,9 +75,7 @@ func TestRunModeVocabularyHasExactlyOneOwner(t *testing.T) {
 		}
 		rel = filepath.ToSlash(rel)
 		pkg := file.Name.Name
-		for _, violation := range runModeVocabularyViolations(fset, file, pkg, rel) {
-			violations = append(violations, violation)
-		}
+		violations = append(violations, runModeVocabularyViolations(fset, file, pkg, rel)...)
 		if pkg == runModeVocabularyOwner {
 			for name := range runModeVocabulary {
 				if definesRunModeConstant(file, name) {

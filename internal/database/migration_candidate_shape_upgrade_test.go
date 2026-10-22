@@ -449,7 +449,7 @@ func TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState(t *testing.T) {
 		afterRefusal.RowCount, afterRefusal.PrimaryKeys, afterRefusal.Indexes, len(afterRefusal.ForeignKeys))
 
 	// 版本记账停在脏状态上。
-	version, dirty, err := migrator.Version()
+	_, dirty, err := migrator.Version()
 	require.NoError(t, err)
 	require.True(t, dirty, "被拒绝的回滚必须把版本标成脏的")
 
@@ -459,7 +459,7 @@ func TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, migrator.Steps(-1), "修掉授权失效的候选之后必须能重跑")
-	version, dirty, err = migrator.Version()
+	version, dirty, err := migrator.Version()
 	require.NoError(t, err)
 	require.Equal(t, uint(legacyShapePostgresVersion), version)
 	require.False(t, dirty)

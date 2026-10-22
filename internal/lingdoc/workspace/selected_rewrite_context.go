@@ -20,8 +20,6 @@ import (
 const (
 	// rewriteContextDroppedNotAuthorized 表示这条上下文当前没有授权。
 	rewriteContextDroppedNotAuthorized = "not_authorized"
-	// rewriteContextDroppedNotAvailable 表示这一类里没有可纳入的条目。
-	rewriteContextDroppedNotAvailable = "not_available"
 )
 
 // resolveRewriteContext 解析用户对可选上下文的选择。
@@ -91,21 +89,6 @@ func checkRewriteContextPolicy(plan writingaction.Plan, selection writingaction.
 func (s *SelectedRewriteService) checkRewriteCard(ctx context.Context, actor Actor, projectID, chapterID string, ref generation.EvidenceCardRef) error {
 	_, err := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs([]generation.EvidenceCardRef{ref}))
 	return err
-}
-
-// authorizedSourcesOfAsset 取出一个资料下已授权的来源。
-func (s *SelectedRewriteService) authorizedSourcesOfAsset(ctx context.Context, actor Actor, projectID, assetID string) []string {
-	sources, err := s.sources.RetrieveSources(ctx, actor, projectID, RetrieveSourcesInput{AssetIDs: []string{assetID}})
-	if err != nil {
-		return nil
-	}
-	ids := make([]string, 0, len(sources))
-	for _, source := range sources {
-		if source.ProjectID == projectID && source.Status == evidence.SourceAvailable {
-			ids = append(ids, source.ID)
-		}
-	}
-	return ids
 }
 
 // removeRewriteExcludedSources 把用户剔除的来源从有效来源里去掉。
