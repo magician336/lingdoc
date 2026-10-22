@@ -189,12 +189,23 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/selected_rewrite_unsupported_reference_test.go", "file"),
             ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
+            # These two files are changed by this branch but were left out of
+            # the path set, so their edits were not covered by the overlap
+            # check at all.  Claimed here for that reason only.
+            ("internal/lingdoc/workspace/client_form_contract_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_inherited_sources_test.go", "file"),
+            # The lifecycle-stage / validity split gets its own assertion file.
+            ("internal/lingdoc/workspace/selected_rewrite_lifecycle_test.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
             ("internal/lingdoc/workspace/generation.go", "file"),
             ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/database/migration_generation_digest_version_test.go", "file"),
             ("internal/database/migration_rewrite_validity_legacy_test.go", "file"),
+            # The candidate shape migration tests follow the candidate shape
+            # normalisation this branch landed.
+            ("internal/database/migration_candidate_shape_legacy_test.go", "file"),
+            ("internal/database/migration_sqlite_candidate_shape_test.go", "file"),
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
