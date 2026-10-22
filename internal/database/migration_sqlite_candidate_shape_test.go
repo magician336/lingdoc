@@ -70,7 +70,7 @@ func TestSQLiteCandidateStorageShapeMigrationGoesUpAndDown(t *testing.T) {
 	require.NoError(t, migrator.Steps(-1))
 	version, dirty, err = migrator.Version()
 	require.NoError(t, err)
-	require.Equal(t, uint(45), version)
+	require.Equal(t, uint(46), version)
 	require.False(t, dirty)
 
 	for _, column := range []string{"writing_action", "origin", "run_mode", "model_id"} {

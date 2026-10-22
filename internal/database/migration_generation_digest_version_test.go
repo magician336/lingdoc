@@ -17,13 +17,13 @@ import (
 // 版本号，不是「最新的那个」——这样后来再加迁移不会把这条测试碰坏。
 const (
 	// generationDigestVersionSQLiteVersion 是本迁移在 SQLite 链上的版本号。
-	generationDigestVersionSQLiteVersion = 48
+	generationDigestVersionSQLiteVersion = 49
 	// generationDigestVersionSQLitePrevious 是它在 SQLite 链上的前一个版本号。
-	generationDigestVersionSQLitePrevious = 47
+	generationDigestVersionSQLitePrevious = 48
 	// generationDigestVersionPostgresVersion 是本迁移在 PostgreSQL 链上的版本号。
-	generationDigestVersionPostgresVersion = 127
+	generationDigestVersionPostgresVersion = 128
 	// generationDigestVersionPostgresPrevious 是它在 PostgreSQL 链上的前一个版本号。
-	generationDigestVersionPostgresPrevious = 126
+	generationDigestVersionPostgresPrevious = 127
 )
 
 // TestSQLiteGenerationDigestVersionMigrationGoesUpAndDown 证明 SQLite 侧的摘要

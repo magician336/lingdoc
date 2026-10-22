@@ -17,13 +17,13 @@ import (
 // 版本号，不是「最新的那个」——这样后来再加迁移不会把这条测试碰坏。
 const (
 	// rewriteActionShapeSQLiteVersion 是本迁移在 SQLite 链上的版本号。
-	rewriteActionShapeSQLiteVersion = 47
+	rewriteActionShapeSQLiteVersion = 48
 	// rewriteActionShapeSQLitePrevious 是它在 SQLite 链上的前一个版本号。
-	rewriteActionShapeSQLitePrevious = 46
+	rewriteActionShapeSQLitePrevious = 47
 	// rewriteActionShapePostgresVersion 是本迁移在 PostgreSQL 链上的版本号。
-	rewriteActionShapePostgresVersion = 126
+	rewriteActionShapePostgresVersion = 127
 	// rewriteActionShapePostgresPrevious 是它在 PostgreSQL 链上的前一个版本号。
-	rewriteActionShapePostgresPrevious = 125
+	rewriteActionShapePostgresPrevious = 126
 )
 
 // TestSQLiteSelectedRewriteActionShapeMigrationGoesUpAndDown 证明 SQLite

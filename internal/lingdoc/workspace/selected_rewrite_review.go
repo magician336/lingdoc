@@ -216,8 +216,8 @@ func (reviewReportRow) TableName() string { return "lingdoc_review_reports" }
 // reviewReportStore 是评审报告的存储。
 type reviewReportStore struct{ db *gorm.DB }
 
-// autoMigrate 在测试里建这张表。生产库由迁移建它（migrations/versioned/000129、
-// migrations/sqlite/000050）。
+// autoMigrate 在测试里建这张表。生产库由迁移建它（migrations/versioned/000130、
+// migrations/sqlite/000051）。
 func (s *reviewReportStore) autoMigrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).AutoMigrate(&reviewReportRow{})
 }

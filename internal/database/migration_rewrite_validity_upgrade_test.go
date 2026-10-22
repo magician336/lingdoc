@@ -1,7 +1,7 @@
 package database
 
 // 本文件在**真实旧库**上演练选段候选的失效状态迁移（PF-2/9 交付的
-// migrations/versioned/000128 与 migrations/sqlite/000049）。
+// migrations/versioned/000129 与 migrations/sqlite/000050）。
 //
 // 迁移把选段候选的自带状态词表换成候选层的失效枚举。这件事只有脚本写得出来
 // 是不够的：SQLite 侧靠临时表重建，任何一次重建都可能悄悄丢掉索引或外键，
@@ -24,13 +24,13 @@ import (
 
 const (
 	// legacyRewriteValiditySQLiteVersion 是失效状态迁移之前的 SQLite 版本号。
-	legacyRewriteValiditySQLiteVersion = 48
+	legacyRewriteValiditySQLiteVersion = 49
 	// rewriteValiditySQLiteVersion 是失效状态迁移之后的 SQLite 版本号。
-	rewriteValiditySQLiteVersion = 49
+	rewriteValiditySQLiteVersion = 50
 	// legacyRewriteValidityPostgresVersion 是迁移之前的 PostgreSQL 版本号。
-	legacyRewriteValidityPostgresVersion = 127
+	legacyRewriteValidityPostgresVersion = 128
 	// rewriteValidityPostgresVersion 是迁移之后的 PostgreSQL 版本号。
-	rewriteValidityPostgresVersion = 128
+	rewriteValidityPostgresVersion = 129
 )
 
 // legacyRewriteRow 是旧库里的一条选段候选。

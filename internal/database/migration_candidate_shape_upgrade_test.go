@@ -1,7 +1,7 @@
 package database
 
 // 本文件在**真实旧库**上演练候选存储形状迁移（PF-2/1b 交付的
-// migrations/versioned/000125 与 migrations/sqlite/000046）。
+// migrations/versioned/000126 与 migrations/sqlite/000047）。
 //
 // #351 证明了脚本写得出来；这里证明旧库升得上去、降得回来。两件事必须成立：
 //
@@ -39,13 +39,13 @@ import (
 
 const (
 	// legacyShapeSQLiteVersion 是候选存储形状迁移之前的 SQLite 版本号。
-	legacyShapeSQLiteVersion = 45
+	legacyShapeSQLiteVersion = 46
 	// candidateShapeSQLiteVersion 是候选存储形状迁移之后的 SQLite 版本号。
-	candidateShapeSQLiteVersion = 46
+	candidateShapeSQLiteVersion = 47
 	// legacyShapePostgresVersion 是候选存储形状迁移之前的 PostgreSQL 版本号。
-	legacyShapePostgresVersion = 124
+	legacyShapePostgresVersion = 125
 	// candidateShapePostgresVersion 是候选存储形状迁移之后的 PostgreSQL 版本号。
-	candidateShapePostgresVersion = 125
+	candidateShapePostgresVersion = 126
 )
 
 // candidateShapeNewColumns 是候选存储形状迁移新增的四列。
