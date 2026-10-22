@@ -29,7 +29,7 @@ type Pipeline string
 const (
 	// PipelineGeneration 是整章生成管道：它实现「生成」这个动作。
 	PipelineGeneration Pipeline = "generation"
-	// PipelineRewrite 是选段管道：它实现「改写」与「续写」这两个动作。
+	// PipelineRewrite 是选段管道：它实现「改写」「续写」与「压缩」这三个动作。
 	//
 	// 它叫「选段管道」而不是「改写管道」：一条管道可以实现多个动作，动作之间
 	// 的差别由词汇包给出，执行方不解释。
@@ -43,7 +43,7 @@ const (
 // 两条轴的同一个拥有者。
 var pipelineActions = map[Pipeline][]Action{
 	PipelineGeneration: {ActionGenerate},
-	PipelineRewrite:    {ActionRewrite, ActionContinue},
+	PipelineRewrite:    {ActionRewrite, ActionContinue, ActionCompress},
 }
 
 // ActionsFor 返回这个管道实现的动作集合。
