@@ -5,8 +5,8 @@
  * 跑的是**同一份**执行器，所以页面上的判定与落盘的证据不会走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-stabilization.ts
- *   npx tsx scripts/g3demo/run-stabilization.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runStabilization.ts
+ *   npx tsx scripts/impactChains/runStabilization.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080
@@ -55,7 +55,7 @@ const OUT_PATH = outArg
 
 async function main(): Promise<void> {
   // 账号文件放在系统临时目录里，**不进仓库**：口令不能落进版本库。
-  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account-t5.json'))
+  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'impactChains-account-t5.json'))
   const reuse = process.argv.includes('--reuse')
 
   let account: G3DemoAccount
@@ -70,15 +70,15 @@ async function main(): Promise<void> {
 
   const client = createFetchClient(BASE_URL)
   const runId = createRunId()
-  console.log(`[g3demo] 后端：${BASE_URL}`)
-  console.log(`[g3demo] 运行标识：${runId}`)
-  console.log(`[g3demo] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
+  console.log(`[impactChains] 后端：${BASE_URL}`)
+  console.log(`[impactChains] 运行标识：${runId}`)
+  console.log(`[impactChains] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
 
   const chain = await runChain(client, { account, registerFirst, runId })
   if (!reuse) {
     writeFileSync(accountFile, `${JSON.stringify(account)}\n`, 'utf8')
   }
-  console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
+  console.log(`[impactChains] 前置链完成：项目 ${chain.project.id}`)
 
   let result: G3StabilizationChainResult | null = null
   let failure = ''
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     if (error instanceof G3StabilizationChainError) {
       result = error.partial as G3StabilizationChainResult
     }
-    console.error(`[g3demo] 链路中断：${failure}`)
+    console.error(`[impactChains] 链路中断：${failure}`)
   }
 
   const evidence = {
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
 
   console.log('')
-  console.log('[g3demo] 逐步结果：')
+  console.log('[impactChains] 逐步结果：')
   for (const step of chain.ctx.steps) {
     console.log(
       `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path}` +
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
 
   if (result) {
     console.log('')
-    console.log('[g3demo] 稳定化（阻断态）：')
+    console.log('[impactChains] 稳定化（阻断态）：')
     console.log(`  状态：${result.blocked.status} · 检查时刻：${result.blocked.checkedAt || '（服务端未给）'}`)
     for (const blocker of result.blocked.blockers) {
       console.log(`  阻断原因：${blocker.code}｜对象 ${blocker.targetId}｜原因 ${blocker.reason}`)
@@ -165,11 +165,11 @@ async function main(): Promise<void> {
     console.log(`  失效任务：${result.blocked.staleTaskIds.length} 条`)
     console.log(`  稳定化前冻结：HTTP ${result.freezeBeforeStable.status} · code=${result.freezeBeforeStable.code}`)
     console.log('')
-    console.log('[g3demo] 稳定化（闭环后）：')
+    console.log('[impactChains] 稳定化（闭环后）：')
     console.log(`  状态：${result.stabilized.status} · 检查时刻：${result.stabilized.checkedAt || '（服务端未给）'}`)
     console.log(`  阻断原因：${result.stabilized.blockers.length} 条`)
     console.log('')
-    console.log('[g3demo] 交付检查与导出：')
+    console.log('[impactChains] 交付检查与导出：')
     console.log(`  交付检查：${result.check.status} · 回执 ${result.check.receiptId || '（无）'}`)
     console.log(`  快照：${result.snapshot.id} · check.status=${result.snapshot.checkStatus} · is_current=${result.snapshot.isCurrent}`)
     console.log(`  受理：HTTP ${result.exportAccepted.status} · 产物状态序列：${result.pollStatuses.join(' → ')}`)
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
     }
     console.log(`  下载：${result.download.size} 字节 · sha256=${result.download.sha256} · 与产物一致=${result.download.matches}`)
     console.log('')
-    console.log('[g3demo] 判定：')
+    console.log('[impactChains] 判定：')
     for (const verdict of result.verdicts) {
       console.log(`  ${verdict.id} ${verdict.holds ? '成立' : '不成立'} —— ${verdict.detail}`)
       for (const line of verdict.evidence) {
@@ -189,9 +189,9 @@ async function main(): Promise<void> {
   }
 
   console.log('')
-  console.log(`[g3demo] 后端 head：${chain.ctx.head?.commitId ?? '未读到'}`)
-  console.log(`[g3demo] 项目 id：${chain.project.id}`)
-  console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+  console.log(`[impactChains] 后端 head：${chain.ctx.head?.commitId ?? '未读到'}`)
+  console.log(`[impactChains] 项目 id：${chain.project.id}`)
+  console.log(`[impactChains] 证据落盘：${OUT_PATH}`)
   if (failure) {
     process.exitCode = 1
   }
@@ -206,15 +206,15 @@ main().catch((error: unknown) => {
     code?: string
     runContext?: { steps: unknown[] }
   }
-  console.error(`[g3demo] 运行失败：${message}`)
+  console.error(`[impactChains] 运行失败：${message}`)
   if (detail?.step) {
-    console.error(`[g3demo] 失败步骤：${detail.step} · ${detail.path} · HTTP ${detail.status} · code=${detail.code}`)
+    console.error(`[impactChains] 失败步骤：${detail.step} · ${detail.path} · HTTP ${detail.status} · code=${detail.code}`)
   }
   const steps = detail?.runContext?.steps as
     | { index: number; name: string; method: string; path: string; status: number; ok: boolean; conclusion: string }[]
     | undefined
   if (steps) {
-    console.error('[g3demo] 已跑过的步骤：')
+    console.error('[impactChains] 已跑过的步骤：')
     for (const step of steps) {
       console.error(
         `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path} → ${step.status} ${step.ok ? '' : '✗'} ${step.conclusion}`,

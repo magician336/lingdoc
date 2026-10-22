@@ -7,8 +7,8 @@
  * 也能在这里被直接调用——两处跑的是同一套代码，证据不会被复制粘贴走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-chain.ts
- *   npx tsx scripts/g3demo/run-chain.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runChain.ts
+ *   npx tsx scripts/impactChains/runChain.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080
@@ -81,7 +81,7 @@ const client: G3HttpClient = async (request: G3HttpRequest): Promise<G3HttpRespo
 
 async function main(): Promise<void> {
   // 账号文件放在系统临时目录里，**不进仓库**：口令不能落进版本库。
-  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account.json'))
+  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'impactChains-account.json'))
   const reuse = process.argv.includes('--reuse')
 
   let account: G3DemoAccount
@@ -95,9 +95,9 @@ async function main(): Promise<void> {
   }
 
   const runId = createRunId()
-  console.log(`[g3demo] 后端：${BASE_URL}`)
-  console.log(`[g3demo] 运行标识：${runId}`)
-  console.log(`[g3demo] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
+  console.log(`[impactChains] 后端：${BASE_URL}`)
+  console.log(`[impactChains] 运行标识：${runId}`)
+  console.log(`[impactChains] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
 
   const result = await runChain(client, { account, registerFirst, runId })
 
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
 
   console.log('')
-  console.log('[g3demo] 逐步结果：')
+  console.log('[impactChains] 逐步结果：')
   for (const step of result.ctx.steps) {
     console.log(
       `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path}` +
@@ -133,18 +133,18 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log(`[g3demo] 后端 head：${result.ctx.head?.commitId ?? '未读到'}`)
-  console.log(`[g3demo] 项目 id：${result.project.id}`)
-  console.log(`[g3demo] 项目状态：${result.project.status}`)
+  console.log(`[impactChains] 后端 head：${result.ctx.head?.commitId ?? '未读到'}`)
+  console.log(`[impactChains] 项目 id：${result.project.id}`)
+  console.log(`[impactChains] 项目状态：${result.project.status}`)
   console.log(
-    `[g3demo] 激活后的章节：${result.chapters.map((c) => `${c.sectionId}(${c.id})`).join('、')}`,
+    `[impactChains] 激活后的章节：${result.chapters.map((c) => `${c.sectionId}(${c.id})`).join('、')}`,
   )
-  console.log(`[g3demo] 必需章节缺失：${result.missingSections.length ? result.missingSections.join('、') : '无'}`)
-  console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+  console.log(`[impactChains] 必需章节缺失：${result.missingSections.length ? result.missingSections.join('、') : '无'}`)
+  console.log(`[impactChains] 证据落盘：${OUT_PATH}`)
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
-  console.error(`[g3demo] 运行失败：${message}`)
+  console.error(`[impactChains] 运行失败：${message}`)
   process.exitCode = 1
 })

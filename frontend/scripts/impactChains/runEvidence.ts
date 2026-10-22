@@ -8,10 +8,10 @@
  * 重跑一遍只会得到同样的结论，却丢掉「哪一条结论来自哪一次运行」这件事。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-evidence.ts
- *   npx tsx scripts/g3demo/run-evidence.ts --out ../docs/08-本轮实施方案/xxx.json
- *   npx tsx scripts/g3demo/run-evidence.ts --live   # 额外跑一次真实链路并落一份本次运行导出
- *   npx tsx scripts/g3demo/run-evidence.ts --chain   # 走页面的「整链证据」口径落盘
+ *   npx tsx scripts/impactChains/runEvidence.ts
+ *   npx tsx scripts/impactChains/runEvidence.ts --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runEvidence.ts --live   # 额外跑一次真实链路并落一份本次运行导出
+ *   npx tsx scripts/impactChains/runEvidence.ts --chain   # 走页面的「整链证据」口径落盘
  *
  * 环境变量：
  *   G3_BASE_URL     后端地址，默认 http://127.0.0.1:8080
@@ -153,7 +153,7 @@ function accountFromEnv(): G3DemoAccount | null {
   const password = process.env.G3_ACCOUNT_PASSWORD ?? ''
   if (!email || !password) return null
   return {
-    username: (process.env.G3_ACCOUNT_USERNAME ?? '').trim() || email.split('@')[0] || 'g3demo',
+    username: (process.env.G3_ACCOUNT_USERNAME ?? '').trim() || email.split('@')[0] || 'impactChains',
     email,
     password,
   }
@@ -165,13 +165,13 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   const account = reused ?? createDemoAccount()
   const client = createFetchClient(BASE_URL)
   const runId = createRunId()
-  console.log(`[g3demo] 实时链路：后端 ${BASE_URL} · 运行标识 ${runId}`)
+  console.log(`[impactChains] 实时链路：后端 ${BASE_URL} · 运行标识 ${runId}`)
   if (reused) {
-    console.log(`[g3demo] 复用已注册账号 ${reused.email}（不落盘口令）`)
+    console.log(`[impactChains] 复用已注册账号 ${reused.email}（不落盘口令）`)
   }
 
   const chain = await runChain(client, { account, registerFirst: !reused, runId })
-  console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
+  console.log(`[impactChains] 前置链完成：项目 ${chain.project.id}`)
 
   // 变更集链（前置）：它在 apply 成功时才会跑完。**装配了受控故障注入的那一轮里，
   // apply 会返回 503**，变更集链会因此中断并把整轮实跑带崩——所以那一轮用
@@ -362,7 +362,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
 
   const verdicts = [...(lifecycle?.verdicts ?? []), ...extra]
   // 账号口令**不落盘**：证据里只留账号标识，不留凭据。
-  console.log(`[g3demo] 实时链路判定：${verdicts.length} 条`)
+  console.log(`[impactChains] 实时链路判定：${verdicts.length} 条`)
 
   return {
     input: {
@@ -453,7 +453,7 @@ async function main(): Promise<void> {
     const body = buildChainExport(loaded)
     mkdirSync(dirname(OUT_PATH), { recursive: true })
     writeFileSync(OUT_PATH, `${JSON.stringify(body, null, 2)}\n`, 'utf8')
-    console.log('[g3demo] 整链证据（逐段记账）：')
+    console.log('[impactChains] 整链证据（逐段记账）：')
     for (const run of body.runs ?? []) {
       console.log(
         `  ${run.run_id} · head ${run.head?.commitId ?? '未读到'} · 步骤 ${run.steps} 条 · ` +
@@ -461,7 +461,7 @@ async function main(): Promise<void> {
       )
     }
     console.log('')
-    console.log(`[g3demo] 验收行：${body.ac_rows.length} 条`)
+    console.log(`[impactChains] 验收行：${body.ac_rows.length} 条`)
     for (const row of body.ac_rows) {
       console.log(
         `  ${row.id.padEnd(10)} ${row.status.padEnd(16)} ${row.source_label}` +
@@ -470,8 +470,8 @@ async function main(): Promise<void> {
       )
     }
     console.log('')
-    console.log(`[g3demo] 后端 head：${body.head?.commitId ?? '未读到'}${body.head_stale ? '（已过期）' : ''}`)
-    console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+    console.log(`[impactChains] 后端 head：${body.head?.commitId ?? '未读到'}${body.head_stale ? '（已过期）' : ''}`)
+    console.log(`[impactChains] 证据落盘：${OUT_PATH}`)
     return
   }
 
@@ -495,7 +495,7 @@ async function main(): Promise<void> {
     })
     const runPath = resolve(EVIDENCE_DIR, exportFileName(dateStamp(), liveInput.runId))
     writeFileSync(runPath, `${JSON.stringify(runExport, null, 2)}\n`, 'utf8')
-    console.log(`[g3demo] 本次运行导出落盘：${runPath}`)
+    console.log(`[impactChains] 本次运行导出落盘：${runPath}`)
   }
 
   const exportBody = buildAggregateEvidenceExport({
@@ -508,7 +508,7 @@ async function main(): Promise<void> {
   mkdirSync(dirname(OUT_PATH), { recursive: true })
   writeFileSync(OUT_PATH, `${JSON.stringify(exportBody, null, 2)}\n`, 'utf8')
 
-  console.log('[g3demo] 汇总的证据文件：')
+  console.log('[impactChains] 汇总的证据文件：')
   for (const run of exportBody.runs ?? []) {
     console.log(
       `  ${run.file} · 运行标识 ${run.run_id} · head ${run.head?.commitId ?? '未读到'} · ` +
@@ -516,7 +516,7 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log(`[g3demo] 验收行：${exportBody.ac_rows.length} 条`)
+  console.log(`[impactChains] 验收行：${exportBody.ac_rows.length} 条`)
   for (const row of exportBody.ac_rows) {
     console.log(
       `  ${row.id.padEnd(10)} ${row.status.padEnd(16)} ${row.source_label}` +
@@ -525,13 +525,13 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log(`[g3demo] 实现缺口：${exportBody.gaps.length} 条（缺口清单 Issue #246）`)
-  console.log(`[g3demo] 后端 head：${exportBody.head?.commitId ?? '未读到'}${exportBody.head_stale ? '（已过期）' : ''}`)
-  console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+  console.log(`[impactChains] 实现缺口：${exportBody.gaps.length} 条（缺口清单 Issue #246）`)
+  console.log(`[impactChains] 后端 head：${exportBody.head?.commitId ?? '未读到'}${exportBody.head_stale ? '（已过期）' : ''}`)
+  console.log(`[impactChains] 证据落盘：${OUT_PATH}`)
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
-  console.error(`[g3demo] 运行失败：${message}`)
+  console.error(`[impactChains] 运行失败：${message}`)
   process.exitCode = 1
 })

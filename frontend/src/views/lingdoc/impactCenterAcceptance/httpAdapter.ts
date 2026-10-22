@@ -21,7 +21,7 @@ import { isSuccessStatus } from './chains/factReaders'
  * 看上去像跑得慢，实际上什么结论都没有。带上超时之后，挂住会变成一次可读的失败——
  * 链路把它记成「本条链没有跑完：请求超时」，其余链路照跑。
  *
- * 口径与 node 脚本那份客户端一致（`frontend/scripts/impactCenterAcceptance/fetchClient.ts`）：
+ * 口径与 node 脚本那份客户端一致（`frontend/scripts/impactChains/fetchClient.ts`）：
  * 同一份执行器契约，两边的超时口径不能不一样。
  */
 const REQUEST_TIMEOUT_MS = 60_000

@@ -172,9 +172,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 稳定化链在当前 head 实跑出「旧基线被拒 + 无半完成写入」，因此判 PASS。
     status: 'PASS',
     evidence:
-      `稳定化与交付闭环链实跑（run-stabilization.ts · 判定卡 G3.1）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `稳定化与交付闭环链实跑（runStabilization.ts · 判定卡 G3.1）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-stabilization.ts', card: 'G3.1' },
+    judgedBy: { chain: 'runStabilization.ts', card: 'G3.1' },
     note:
       '本轮实跑判定成立：同基线的第二个变更集在第一个应用后被服务端按 409 拒掉' +
       '（code=version_conflict），该变更集落为 stale（stale_reason=spec_revision_changed）；' +
@@ -191,9 +191,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 依赖链在当前 head 实跑出三类边的语义，这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
     evidence:
-      `依赖图与影响任务链实跑（run-dependencies.ts · 判定卡 G3.2）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `依赖图与影响任务链实跑（runDependencies.ts · 判定卡 G3.2）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-dependencies.ts', card: 'G3.2' },
+    judgedBy: { chain: 'runDependencies.ts', card: 'G3.2' },
     note:
       '本轮实跑判定成立：影响评估的 6 条影响全部可追溯到来源（裁决之后读回依赖边 9 条' +
       '——确认 7 / 建议 1 / 拒绝 1，未能追溯 0 条；变更集直接列入的对象按服务端给的 ' +
@@ -214,9 +214,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
     evidence:
-      `实时链路实跑（run-evidence.ts · 判定卡 G3.3）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `实时链路实跑（runEvidence.ts · 判定卡 G3.3）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-evidence.ts', card: 'G3.3', segment: '实时链路' },
+    judgedBy: { chain: 'runEvidence.ts', card: 'G3.3', segment: '实时链路' },
     note:
       '本轮实跑判定成立：应用之后读回的影响任务，每一条的目标都在本次变更集的受影响集合里' +
       '（评估对象与评估影响构成那个集合，集合外的任务 0 条）；' +
@@ -233,9 +233,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 阻断链在当前 head 实跑出两段语义，这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
     evidence:
-      `阻断与恢复链实跑（run-blocked.ts · 判定卡 G3.4）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `阻断与恢复链实跑（runBlocked.ts · 判定卡 G3.4）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-blocked.ts', card: 'G3.4' },
+    judgedBy: { chain: 'runBlocked.ts', card: 'G3.4' },
     note:
       '本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现' +
       '版本不匹配（HTTP 200 · status=BLOCKED）——这一版修订没有被放行；' +
@@ -256,9 +256,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 「必需项**缺失**」那一种前置本轮没有落点 ⇒ 覆盖受限，记 WARNING。
     status: 'WARNING',
     evidence:
-      `实时链路的 roadmap 段实跑（run-evidence.ts · 判定卡 G3.5）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `实时链路的 roadmap 段实跑（runEvidence.ts · 判定卡 G3.5）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-evidence.ts', card: 'G3.5', segment: '实时链路的 roadmap 段' },
+    judgedBy: { chain: 'runEvidence.ts', card: 'G3.5', segment: '实时链路的 roadmap 段' },
     note:
       '本轮实跑只成立一部分：**可比较**（读出版本序列并读出两个版本之间的前后比较）、' +
       '**可恢复**（取消未冻结编辑后冻结基线回到取消前的版本，节点版本一并恢复）、' +
@@ -280,9 +280,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 记 WARNING（见 G3-GAP-08）。
     status: 'WARNING',
     evidence:
-      `稳定化与交付闭环链实跑（run-stabilization.ts · 判定卡 G3.6）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `稳定化与交付闭环链实跑（runStabilization.ts · 判定卡 G3.6）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-stabilization.ts', card: 'G3.6' },
+    judgedBy: { chain: 'runStabilization.ts', card: 'G3.6' },
     note:
       '本轮实跑只成立一部分：阻断影响未闭环时，稳定化以 200 成功响应返回 BLOCKED 并给出' +
       '7 条完整阻断原因（impact_task_open / impact_object_unconfirmed / ' +
@@ -305,9 +305,9 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 记 PASS (follow-up)。
     status: 'PASS (follow-up)',
     evidence:
-      `依赖图与影响任务链实跑（run-dependencies.ts · 判定卡 G3.7）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
+      `依赖图与影响任务链实跑（runDependencies.ts · 判定卡 G3.7）· 落证：${G3_SLICE_EVIDENCE_FILE}`,
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-dependencies.ts', card: 'G3.7' },
+    judgedBy: { chain: 'runDependencies.ts', card: 'G3.7' },
     note:
       '本轮实跑判定成立（**数据面**）：「本次必须处理的对象」集合 3 个，逐对象核对 ' +
       'state / confirmed / context_revision 齐全；6 条影响都带来源对象与原因（缺 0 条）；' +
@@ -359,7 +359,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     evidence:
       'docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json（当前 head 的两轮实跑）',
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-evidence.ts', card: 'AC-G3-03', segment: '实时链路的故障注入段' },
+    judgedBy: { chain: 'runEvidence.ts', card: 'AC-G3-03', segment: '实时链路的故障注入段' },
     note:
       '本轮实跑判定成立（轮 2 装配了受控故障注入）：apply 返回 503 + injected_fault，' +
       '读回证明项目 revision、模板引用与 ImpactTask 集合均未变、变更集未变成 applied。' +
@@ -439,7 +439,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-evidence.ts', card: 'AC-G3-08', segment: '实时链路的 roadmap 段' },
+    judgedBy: { chain: 'runEvidence.ts', card: 'AC-G3-08', segment: '实时链路的 roadmap 段' },
     note:
       '路线图的版本化编辑会话与节点写入**已实现**，验收台链路也已补上（#295）；' +
       '演示模板新增不可变 v2 并声明 `route-r7` 为必需节点（#314），服务端按模板规则算出 required=true。' +
@@ -532,7 +532,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     status: 'WARNING',
     evidence: '实现缺口 · 缺口清单 #246',
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-model.ts', card: 'AC-G3-14' },
+    judgedBy: { chain: 'runModel.ts', card: 'AC-G3-14' },
     note:
       '助手草稿里的「确定受影响 / 可能受影响」**解释分组已实现**，验收台读回链路也已补上（#295）；' +
       '模型边界已放宽（#315：缺两组说明时不再整条拒，改为如实标注「缺说明」）。' +
@@ -554,7 +554,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-dependencies.ts', card: 'AC-G3-15' },
+    judgedBy: { chain: 'runDependencies.ts', card: 'AC-G3-15' },
     note:
       '依赖边的确认 / 修改 / 拒绝三态有端点，依赖候选的批量提出也已实现（#252）。' +
       '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），' +
@@ -576,7 +576,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     evidenceKind: 'this_run',
-    judgedBy: { chain: 'run-evidence.ts', card: 'AC-G3-16', segment: '实时链路的 roadmap 段' },
+    judgedBy: { chain: 'runEvidence.ts', card: 'AC-G3-16', segment: '实时链路的 roadmap 段' },
     note:
       '路线图的版本化编辑会话与节点写入**已实现**（#250），台面链路已补上（#295）。' +
       '**本轮实跑判定成立**（#318）：取消未冻结编辑后冻结基线版本回到取消前的版本，' +

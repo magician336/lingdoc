@@ -5,8 +5,8 @@
  * 跑的是**同一份**执行器（`chains/modelChain.ts`），所以页面上的判定与落盘的证据不会走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-model.ts
- *   npx tsx scripts/g3demo/run-model.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runModel.ts
+ *   npx tsx scripts/impactChains/runModel.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080
@@ -51,7 +51,7 @@ const OUT_PATH = outArg
 
 async function main(): Promise<void> {
   // 账号文件放在系统临时目录里，**不进仓库**：口令不能落进版本库。
-  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account-t7.json'))
+  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'impactChains-account-t7.json'))
   const reuse = process.argv.includes('--reuse')
 
   let account: G3DemoAccount
@@ -66,15 +66,15 @@ async function main(): Promise<void> {
 
   const client = createFetchClient(BASE_URL)
   const runId = createRunId()
-  console.log(`[g3demo] 后端：${BASE_URL}`)
-  console.log(`[g3demo] 运行标识：${runId}`)
-  console.log(`[g3demo] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
+  console.log(`[impactChains] 后端：${BASE_URL}`)
+  console.log(`[impactChains] 运行标识：${runId}`)
+  console.log(`[impactChains] 演示账号：${account.email}（${registerFirst ? '本次自建' : '复用本地账号'}）`)
 
   const chain = await runChain(client, { account, registerFirst, runId })
   if (!reuse) {
     writeFileSync(accountFile, `${JSON.stringify(account)}\n`, 'utf8')
   }
-  console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
+  console.log(`[impactChains] 前置链完成：项目 ${chain.project.id}`)
 
   const model = await runModelChain(chain.ctx, client, chain.token, {
     projectId: chain.project.id,
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
 
   console.log('')
-  console.log('[g3demo] 逐步结果：')
+  console.log('[impactChains] 逐步结果：')
   for (const step of chain.ctx.steps) {
     console.log(
       `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path}` +
@@ -140,7 +140,7 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log('[g3demo] 模型调用（运行标识与耗时）：')
+  console.log('[impactChains] 模型调用（运行标识与耗时）：')
   for (const run of model.runs) {
     console.log(
       `  运行标识 ${run.runId} · 模型 ${run.modelId || '（未登记）'} · 模式 ${run.runMode || '（未登记）'} · ` +
@@ -149,10 +149,10 @@ async function main(): Promise<void> {
     )
   }
   if (!model.modelAvailable) {
-    console.log(`[g3demo] 模型不可用：${model.unavailableReason}`)
+    console.log(`[impactChains] 模型不可用：${model.unavailableReason}`)
   }
   console.log('')
-  console.log('[g3demo] 判定：')
+  console.log('[impactChains] 判定：')
   for (const verdict of model.verdicts) {
     console.log(`  ${verdict.id} ${verdict.holds ? '成立' : '不成立'}（矩阵状态 ${verdict.status ?? '（由规则表决定）'}）—— ${verdict.detail}`)
     for (const line of verdict.evidence) {
@@ -160,9 +160,9 @@ async function main(): Promise<void> {
     }
   }
   console.log('')
-  console.log(`[g3demo] 后端 head：${chain.ctx.head?.commitId ?? '未读到'}`)
-  console.log(`[g3demo] 项目 id：${chain.project.id}`)
-  console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+  console.log(`[impactChains] 后端 head：${chain.ctx.head?.commitId ?? '未读到'}`)
+  console.log(`[impactChains] 项目 id：${chain.project.id}`)
+  console.log(`[impactChains] 证据落盘：${OUT_PATH}`)
 }
 
 main().catch((error: unknown) => {
@@ -174,15 +174,15 @@ main().catch((error: unknown) => {
     code?: string
     runContext?: { steps: unknown[] }
   }
-  console.error(`[g3demo] 运行失败：${message}`)
+  console.error(`[impactChains] 运行失败：${message}`)
   if (detail?.step) {
-    console.error(`[g3demo] 失败步骤：${detail.step} · ${detail.path} · HTTP ${detail.status} · code=${detail.code}`)
+    console.error(`[impactChains] 失败步骤：${detail.step} · ${detail.path} · HTTP ${detail.status} · code=${detail.code}`)
   }
   const steps = detail?.runContext?.steps as
     | { index: number; name: string; method: string; path: string; status: number; ok: boolean; conclusion: string }[]
     | undefined
   if (steps) {
-    console.error('[g3demo] 已跑过的步骤：')
+    console.error('[impactChains] 已跑过的步骤：')
     for (const step of steps) {
       console.error(
         `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path} → ${step.status} ${step.ok ? '' : '✗'} ${step.conclusion}`,
