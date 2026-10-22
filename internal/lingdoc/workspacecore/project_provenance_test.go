@@ -11,21 +11,21 @@ import (
 
 // Persisted synthetic server objects exercise typed provenance resolution;
 // these fixtures do not claim a live model run or human scientific review.
-func g1SeedActualTurn(t *testing.T, s *Service, a Actor, pid, sessionID, turnID, reply string) {
+func seedActualTurn(t *testing.T, s *Service, a Actor, pid, sessionID, turnID, reply string) {
 	t.Helper()
 	err := s.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		store := tx.(G2Transaction)
+		store := tx.(ObjectStore)
 		session := AgentSession{ID: sessionID, ProjectID: pid, Version: 1, Agent: "research", CreatedBy: a.UserID, CreatedAt: time.Now().UTC()}
 		turn := AgentTurn{ID: turnID, ProjectID: pid, SessionID: sessionID, Version: 1, Agent: "research", Reply: reply, Status: "completed", CreatedBy: a.UserID, CreatedAt: time.Now().UTC(), Context: AgentContextPackage{ProjectID: pid, SourceRefs: []AgentSourceRef{}}}
 		for _, entry := range []struct {
 			kind, id string
 			value    any
-		}{{G2SessionKind, sessionID, session}, {G2TurnKind, turnID, turn}} {
+		}{{AgentSessionKind, sessionID, session}, {AgentTurnKind, turnID, turn}} {
 			raw, err := json.Marshal(entry.value)
 			if err != nil {
 				return err
 			}
-			if err = store.InsertG2Object(G2StoredObject{ProjectID: pid, Kind: entry.kind, ID: entry.id, Version: 1, Payload: raw}); err != nil {
+			if err = store.InsertObject(StoredObject{ProjectID: pid, Kind: entry.kind, ID: entry.id, Version: 1, Payload: raw}); err != nil {
 				return err
 			}
 		}
@@ -36,7 +36,7 @@ func g1SeedActualTurn(t *testing.T, s *Service, a Actor, pid, sessionID, turnID,
 	}
 }
 
-func TestG1OriginUsesRealTurnAndServerCreator(t *testing.T) {
+func TestOriginUsesRealTurnAndServerCreator(t *testing.T) {
 	s := testStore(t, filepath.Join(t.TempDir(), "origin.db"))
 	a := Actor{TenantID: 891, UserID: "owner"}
 	seedTenantMember(t, s, a)
@@ -45,7 +45,7 @@ func TestG1OriginUsesRealTurnAndServerCreator(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := asProject(t, raw)
-	g1SeedActualTurn(t, s, a, p.ID, "actual-session", "actual-turn", "真实合成回复")
+	seedActualTurn(t, s, a, p.ID, "actual-session", "actual-turn", "真实合成回复")
 	record := &ProvenanceRecord{SourceType: "agent_turn", SourceID: "actual-turn", SourceVersion: "1", CreatedBy: "forged-user", Accessible: false, Locator: "fake locator"}
 	input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "真实合成回复"}, FieldMetadata: map[string]SpecFieldInput{"research_subject": {Origin: "human", Status: "draft", Provenance: record}}}
 	raw, _, _, err = s.SaveSpec(context.Background(), a, p.ID, "g1-origin-spec1", input)
@@ -80,7 +80,7 @@ func TestG1OriginUsesRealTurnAndServerCreator(t *testing.T) {
 	}
 }
 
-func TestG1UnknownLegacySourceIsRetainedHiddenAndCannotActivate(t *testing.T) {
+func TestUnknownLegacySourceIsRetainedHiddenAndCannotActivate(t *testing.T) {
 	s := testStore(t, filepath.Join(t.TempDir(), "unknown.db"))
 	a := Actor{TenantID: 892, UserID: "owner"}
 	seedTenantMember(t, s, a)
@@ -128,7 +128,7 @@ func TestG1UnknownLegacySourceIsRetainedHiddenAndCannotActivate(t *testing.T) {
 	}
 }
 
-func TestG1TypedTurnRejectsCrossProjectAndVersionMutation(t *testing.T) {
+func TestTypedTurnRejectsCrossProjectAndVersionMutation(t *testing.T) {
 	s := testStore(t, filepath.Join(t.TempDir(), "version.db"))
 	a := Actor{TenantID: 893, UserID: "owner"}
 	seedTenantMember(t, s, a)
@@ -141,7 +141,7 @@ func TestG1TypedTurnRejectsCrossProjectAndVersionMutation(t *testing.T) {
 	}
 	p := create("g1-vers-project1")
 	other := create("g1-vers-project2")
-	g1SeedActualTurn(t, s, a, p.ID, "s1", "t1", "versioned reply")
+	seedActualTurn(t, s, a, p.ID, "s1", "t1", "versioned reply")
 	record := &ProvenanceRecord{SourceType: "agent_turn", SourceID: "t1", SourceVersion: "1", Accessible: true}
 	input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "versioned reply"}, FieldMetadata: map[string]SpecFieldInput{"research_subject": {Origin: "ai_generated", Status: "pending_confirmation", Provenance: record}}}
 	raw, _, _, err := s.SaveSpec(context.Background(), a, other.ID, "g1-vers-cross-spec", input)
@@ -156,8 +156,8 @@ func TestG1TypedTurnRejectsCrossProjectAndVersionMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = s.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		store := tx.(G2Transaction)
-		old, err := store.G2Object(p.ID, G2TurnKind, "t1")
+		store := tx.(ObjectStore)
+		old, err := store.Object(p.ID, AgentTurnKind, "t1")
 		if err != nil {
 			return err
 		}
@@ -170,7 +170,7 @@ func TestG1TypedTurnRejectsCrossProjectAndVersionMutation(t *testing.T) {
 		next := old
 		next.Version++
 		next.Payload, _ = json.Marshal(turn)
-		return store.AppendG2Object(old, next)
+		return store.AppendObject(old, next)
 	})
 	if err != nil {
 		t.Fatal(err)

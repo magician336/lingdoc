@@ -106,7 +106,7 @@ func CaptureTenantSuspensionInTransaction(db *gorm.DB, tenantID uint64, userID s
 		if err := tx.ReplaceMembers(p.ID, next.Members); err != nil {
 			return err
 		}
-		if err := g5Audit(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
+		if err := recordProjectAuditEvent(tx, Actor{TenantID: tenantID, UserID: userID}, p.ID, "member.tenant_suspended", userID, "tenant_membership_changed"); err != nil {
 			return err
 		}
 	}
@@ -141,12 +141,12 @@ func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability
 	if !slices.Contains([]string{"read", "write", "research", "agent", "evidence-write"}, base) {
 		return ErrNotFound
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrNotFound
 	}
 	var grant ProjectAPIKeyGrant
-	if _, err := store.G5Get(pid, "api_key_grant", hashImpactValue(scope.KeyID), &grant); err != nil || !grant.Active || grant.KeyID != scope.KeyID || !slices.Contains(grant.Capabilities, base) {
+	if _, err := store.GetProjectRecord(pid, "api_key_grant", hashImpactValue(scope.KeyID), &grant); err != nil || !grant.Active || grant.KeyID != scope.KeyID || !slices.Contains(grant.Capabilities, base) {
 		return ErrNotFound
 	}
 	db, err := TransactionDatabase(tx)

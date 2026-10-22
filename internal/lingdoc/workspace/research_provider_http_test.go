@@ -61,8 +61,8 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewG2ResearchAdapter(db, projects, runtime, nil, nil, nil)
 	// 生产组合根把同一个适配器同时装成 Sources 与 Research；只有 Research
-	// 走的是目录版本这条路径（core.G2Runtime.Research 的 G2ResearchCatalog）。
-	projects.ConfigureG2(core.G2Runtime{Sources: adapter, Research: adapter})
+	// 走的是目录版本这条路径（core.AgentRuntime.Research 的 G2ResearchCatalog）。
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter, Research: adapter})
 
 	engine := gin.New()
 	RegisterG2FullRoutes(engine.Group("/api"), G2RoutePorts{

@@ -12,13 +12,13 @@ import (
 
 // The references are created from server-owned history only. Client-origin and
 // accessibility assertions cannot erase a restored source binding.
-func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, actor Actor, change ChangeSet, next *Project) error {
-	store, ok := tx.(g5Transaction)
+func (s *Service) restoreInheritedFields(ctx context.Context, tx Transaction, actor Actor, change ChangeSet, next *Project) error {
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
-	var history g1ChangeProvenance
-	_, err := store.G5Get(change.ProjectID, "g1_change_provenance", change.ID, &history)
+	var history changeProvenance
+	_, err := store.GetProjectRecord(change.ProjectID, "g1_change_provenance", change.ID, &history)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
@@ -28,7 +28,7 @@ func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, 
 	if len(history.InheritedFields) == 0 && len(history.ProposedFields) == 0 {
 		return nil
 	}
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.Identity != candidateIdentityHash(ctx) {
 		return fmt.Errorf("%w: inverse provenance context is missing or mismatched", ErrSourceUnavailable)
 	}
@@ -51,7 +51,7 @@ func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, 
 		if pin.ProjectID != change.ProjectID || pin.ValueHash != ref.ValueHash {
 			return fmt.Errorf("%w: inverse source value identity changed", ErrSourceUnavailable)
 		}
-		if !s.g1PinCurrent(ctx, tx, actor, proof.Project, pin, false) {
+		if !s.provenancePinCurrent(ctx, tx, actor, proof.Project, pin, false) {
 			return fmt.Errorf("%w: inverse source native descriptor changed", ErrSourceUnavailable)
 		}
 		field := next.SpecFields[key]
@@ -77,29 +77,29 @@ func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, 
 	return nil
 }
 
-func g1StoreActionProvenance(tx Transaction, p Project, proposal ActionProposal) error {
-	snapshot, err := g1PersistSnapshot(tx, p)
+func storeActionProvenance(tx Transaction, p Project, proposal ActionProposal) error {
+	snapshot, err := persistProvenanceSnapshot(tx, p)
 	if err != nil {
 		return err
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
-	return store.G5Put(p.ID, "g1_action_provenance", proposal.ID, 0, g1ChangeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)})
+	return store.PutProjectRecord(p.ID, "g1_action_provenance", proposal.ID, 0, changeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)})
 }
 
-func (s *Service) g1AssertActionProvenance(ctx context.Context, actor Actor, proposal ActionProposal) error {
-	var history g1ChangeProvenance
+func (s *Service) assertInheritedActionProvenance(ctx context.Context, actor Actor, proposal ActionProposal) error {
+	var history changeProvenance
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, proposal.ProjectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrSourceUnavailable
 		}
-		_, err := store.G5Get(proposal.ProjectID, "g1_action_provenance", proposal.ID, &history)
+		_, err := store.GetProjectRecord(proposal.ProjectID, "g1_action_provenance", proposal.ID, &history)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) {
@@ -124,8 +124,8 @@ func (s *Service) g1AssertActionProvenance(ctx context.Context, actor Actor, pro
 	return nil
 }
 
-func (s *Service) g1ActionProjection(ctx context.Context, actor Actor, proposal ActionProposal) (ActionProposal, error) {
-	err := s.g1AssertActionProvenance(ctx, actor, proposal)
+func (s *Service) inheritedActionProjection(ctx context.Context, actor Actor, proposal ActionProposal) (ActionProposal, error) {
+	err := s.assertInheritedActionProvenance(ctx, actor, proposal)
 	if err != nil {
 		if !errors.Is(err, ErrSourceUnavailable) {
 			return ActionProposal{}, err
@@ -136,11 +136,11 @@ func (s *Service) g1ActionProjection(ctx context.Context, actor Actor, proposal 
 		proposal.Status = "restricted"
 		return proposal, nil
 	}
-	input, err := s.g1OperationProjection(ctx, actor, "actionInput", proposal.ProjectID, proposal.Input)
+	input, err := s.operationProvenanceProjection(ctx, actor, "actionInput", proposal.ProjectID, proposal.Input)
 	if err != nil {
 		return ActionProposal{}, err
 	}
-	result, err := s.g1OperationProjection(ctx, actor, "actionResult", proposal.ProjectID, proposal.Result)
+	result, err := s.operationProvenanceProjection(ctx, actor, "actionResult", proposal.ProjectID, proposal.Result)
 	if err != nil {
 		return ActionProposal{}, err
 	}

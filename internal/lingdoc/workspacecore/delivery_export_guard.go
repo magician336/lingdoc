@@ -77,7 +77,7 @@ func (s *Service) ObserveDeliveryRuntime(ctx context.Context, actor Actor, proje
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G6List(actor.TenantID, projectID, "event")
+		rows, err := store.ListRuntimeRecords(actor.TenantID, projectID, "event")
 		if err != nil {
 			return err
 		}

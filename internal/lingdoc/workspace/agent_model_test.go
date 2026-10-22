@@ -20,7 +20,7 @@ func g2TestModelContext() core.AgentContextPackage {
 func TestG2HostAgentUsesExistingChatAndStructuredCandidateOutput(t *testing.T) {
 	model := &acceptanceChatStub{response: &types.ChatResponse{Content: `{"reply":"这是一条待核建议","task_card":{"goal":"合成调研","queries":["定义","限制"]}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
-	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.G2ModelRequest{Agent: "research_agent", Purpose: "conversation", Context: g2TestModelContext(), History: []core.AgentMessage{{Role: "user", Content: "上一轮问题"}, {Role: "assistant", Content: "上一轮候选"}}, UserInput: "给出可编辑检索计划"})
+	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "research_agent", Purpose: "conversation", Context: g2TestModelContext(), History: []core.AgentMessage{{Role: "user", Content: "上一轮问题"}, {Role: "assistant", Content: "上一轮候选"}}, UserInput: "给出可编辑检索计划"})
 	if err != nil || reply.Content != "这是一条待核建议" || !json.Valid(reply.StructuredOutput) || reply.ModelID == "" {
 		t.Fatalf("candidate reply not parsed: %+v %v", reply, err)
 	}
@@ -36,7 +36,7 @@ func TestG2HostAgentRejectsMissingConsentBeforeChat(t *testing.T) {
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
 	pack := g2TestModelContext()
 	pack.SourceRefs = []core.AgentSourceRef{{SourceID: "source", QuotedTextHash: "hash", ModelUseAllowed: false}}
-	if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, core.G2ModelRequest{Agent: "task_assistant", Context: pack}); !errors.Is(err, core.ErrG2ConsentRequired) {
+	if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Context: pack}); !errors.Is(err, core.ErrConsentRequired) {
 		t.Fatalf("unconsented source: %v", err)
 	}
 	if model.messages != nil {
@@ -47,8 +47,8 @@ func TestG2HostAgentTimeoutOutcomeBlocksSharedLedgerWithoutRetry(t *testing.T) {
 	model := &acceptanceChatStub{response: &types.ChatResponse{Content: `{"reply":"合成响应"}`, Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 0}}}
 	path := filepath.Join(t.TempDir(), "agent-ledger.json")
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}, budget: &generationAcceptanceBudget{ledgerPath: path}}
-	request := core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "解释当前任务"}
-	if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, request); !errors.Is(err, core.ErrG2OutcomeUnknown) {
+	request := core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "解释当前任务"}
+	if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, request); !errors.Is(err, core.ErrOutcomeUnknown) {
 		t.Fatalf("unknown usage: %v", err)
 	}
 	model.messages = nil
@@ -73,7 +73,7 @@ func TestG2RuleSuggestionUsesSharedEmbeddingAndGenerationBudget(t *testing.T) {
 	}
 	model := &acceptanceChatStub{response: &types.ChatResponse{Content: `{"suggestions":[],"basis":{"template_version":"v1"}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}, budget: &generationAcceptanceBudget{ledgerPath: path, total: shared}}
-	request := core.G2ModelRequest{Agent: "task_assistant", Purpose: "rule_suggestion", Context: g2TestModelContext(), StructuredInput: json.RawMessage(`{"template_version":"v1"}`), UserInput: "给出规则候选"}
+	request := core.ModelRequest{Agent: "task_assistant", Purpose: "rule_suggestion", Context: g2TestModelContext(), StructuredInput: json.RawMessage(`{"template_version":"v1"}`), UserInput: "给出规则候选"}
 	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, request)
 	if err != nil || !json.Valid(reply.StructuredOutput) {
 		t.Fatalf("rule suggestion: %+v %v", reply, err)
@@ -90,7 +90,7 @@ func TestG2HostRejectsTruncatedOrNonObjectOutput(t *testing.T) {
 	for _, payload := range []string{`[]`, `{"reply":"候选"} {"reply":"尾随"}`, `{"missing_reply":true}`} {
 		model := &acceptanceChatStub{response: &types.ChatResponse{Content: payload, FinishReason: "stop"}}
 		host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
-		if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext()}); err == nil {
+		if _, err := host.Reply(context.Background(), core.Actor{TenantID: 1, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext()}); err == nil {
 			t.Fatalf("invalid output accepted: %s", payload)
 		}
 	}

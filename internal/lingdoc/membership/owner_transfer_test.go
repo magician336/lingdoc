@@ -9,7 +9,7 @@ import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
-func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
+func TestOwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	w := newTestWorkspace(t, filepath.Join(t.TempDir(), "g1-owner-transfer.db"))
 	owner := core.Actor{TenantID: 84, UserID: "owner"}
 	target := core.Actor{TenantID: 84, UserID: "target"}
@@ -67,7 +67,7 @@ func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestG1TenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
+func TestTenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
 	w := newTestWorkspace(t, filepath.Join(t.TempDir(), "g1-owner-recovery.db"))
 	owner := core.Actor{TenantID: 88, UserID: "owner"}
 	target := core.Actor{TenantID: 88, UserID: "target"}

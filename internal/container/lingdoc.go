@@ -83,7 +83,7 @@ func NewLingDocWorkspaceHandler(
 	projectService.SetRuntimeMode("real")
 	research := workspace.NewG2ResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
 	model := workspace.NewG2HostAgentModel(models)
-	projectService.ConfigureG2(workspacecore.G2Runtime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewG2ActionExecutor(projectService, runtime, nil)})
+	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewG2ActionExecutor(projectService, runtime, nil)})
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
 		return LingDocWorkspace{}, err

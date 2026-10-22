@@ -9,7 +9,7 @@ import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
-func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
+func TestActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
 	w := newTestWorkspace(t, filepath.Join(t.TempDir(), "g1-activation-gate.db"))
 	owner := core.Actor{TenantID: 86, UserID: "owner"}
 	collaborator := core.Actor{TenantID: 86, UserID: "collaborator"}

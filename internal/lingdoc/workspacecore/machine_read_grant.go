@@ -160,12 +160,12 @@ func (s *Service) machineReadSnapshot(ctx context.Context, projectID, chapterID 
 		if err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrMachineReadDependency
 		}
 		var grant ProjectAPIKeyGrant
-		version, err := store.G5Get(projectID, "api_key_grant", hashImpactValue(key.ID), &grant)
+		version, err := store.GetProjectRecord(projectID, "api_key_grant", hashImpactValue(key.ID), &grant)
 		if err != nil || !grant.Active || grant.KeyID != key.ID || grant.CreatedBy == "" ||
 			!slices.Contains(grant.Capabilities, "read") {
 			return ErrNotFound

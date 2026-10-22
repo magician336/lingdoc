@@ -159,7 +159,7 @@ func (s *Service) StoreImpactComputationReceipt(ctx context.Context, actor Actor
 		if !ok {
 			return ErrInvalidState
 		}
-		if err := store.G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
 			return err
 		}
 		if err := recordAuditEvent(tx, actor, p.ID, "preflight.compute", receipt.ID, map[string]any{"status": status, "input_hash": inputHash, "basis_hash": actual.InputBasisHash, "ruleset_hash": receipt.RulesetHash}); err != nil {
@@ -380,6 +380,6 @@ func (s *Service) ReassessSemanticPlan(ctx context.Context, tx Transaction, acto
 }
 
 func researchClaimReviewCurrent(tx Transaction, p Project, ref ObjectVersionRef) bool {
-	claim, _, err := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, ref.ID)
+	claim, _, err := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, ref.ID)
 	return err == nil && ref.Version == fmt.Sprint(claim.Version) && (claim.Status == "active" || claim.Status == "disputed" || claim.Status == "superseded") && claim.Basis.SpecRevision == p.SpecRevision
 }

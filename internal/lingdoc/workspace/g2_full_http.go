@@ -132,7 +132,7 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 		input.TaskID = c.Param("taskID")
 		return ports.Research.SaveResearchTask(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
-	group.POST("/projects/:projectId/research-tasks/:taskID/approve", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/research-tasks/:taskID/approve", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Research.ApproveResearchTask(c.Request.Context(), actor, c.Param("projectId"), c.Param("taskID"), key, input)
 	}))
 	group.POST("/projects/:projectId/research-tasks/:taskID/run", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.RunResearchTaskInput) (json.RawMessage, int, bool, error) {
@@ -144,10 +144,10 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 	group.POST("/projects/:projectId/import-candidates", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.CreateImportCandidateInput) (json.RawMessage, int, bool, error) {
 		return ports.Imports.CreateImportCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
-	group.POST("/projects/:projectId/import-candidates/:candidateID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/import-candidates/:candidateID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Imports.ConfirmImportCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("candidateID"), key, input)
 	}))
-	group.POST("/projects/:projectId/import-candidates/:candidateID/reject", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/import-candidates/:candidateID/reject", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Imports.RejectImportCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("candidateID"), key, input)
 	}))
 	group.POST("/projects/:projectId/source-anchors", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.SaveSourceAnchorInput) (json.RawMessage, int, bool, error) {
@@ -159,13 +159,13 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 	group.POST("/projects/:projectId/evidence-cards", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.SaveEvidenceCardInput) (json.RawMessage, int, bool, error) {
 		return ports.EvidenceCards.SaveEvidenceCard(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
-	group.POST("/projects/:projectId/evidence-cards/:cardID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/evidence-cards/:cardID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.EvidenceCards.ConfirmEvidenceCard(c.Request.Context(), actor, c.Param("projectId"), c.Param("cardID"), key, input)
 	}))
 	group.POST("/projects/:projectId/evidence-cards/:cardID/review", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ReviewEvidenceCardInput) (json.RawMessage, int, bool, error) {
 		return ports.EvidenceCards.ReviewEvidenceCard(c.Request.Context(), actor, c.Param("projectId"), c.Param("cardID"), key, input)
 	}))
-	group.POST("/projects/:projectId/agents/:agent/sessions", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2Expectation) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/agents/:agent/sessions", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.VersionExpectation) (json.RawMessage, int, bool, error) {
 		return ports.AgentSessions.CreateAgentSession(c.Request.Context(), actor, c.Param("projectId"), c.Param("agent"), key, input)
 	}))
 	group.POST("/projects/:projectId/agent-sessions/:sessionID/turns", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.AgentTurnInput) (json.RawMessage, int, bool, error) {
@@ -174,10 +174,10 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 	group.POST("/projects/:projectId/action-proposals", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.CreateActionProposalInput) (json.RawMessage, int, bool, error) {
 		return ports.Proposals.CreateActionProposal(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
-	group.POST("/projects/:projectId/action-proposals/:proposalID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/action-proposals/:proposalID/confirm", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Proposals.ConfirmActionProposal(c.Request.Context(), actor, c.Param("projectId"), c.Param("proposalID"), key, input)
 	}))
-	group.POST("/projects/:projectId/action-proposals/:proposalID/reject", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.G2ConfirmedInput) (json.RawMessage, int, bool, error) {
+	group.POST("/projects/:projectId/action-proposals/:proposalID/reject", g2FullWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Proposals.RejectActionProposal(c.Request.Context(), actor, c.Param("projectId"), c.Param("proposalID"), key, input)
 	}))
 
@@ -207,7 +207,7 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 			return nil, 0, false, err
 		}
 		if !input.Confirmed {
-			return nil, 0, false, core.ErrG2ConsentRequired
+			return nil, 0, false, core.ErrConsentRequired
 		}
 		current, err := ports.Context.GetProjectAssetPolicy(c.Request.Context(), actor, c.Param("projectId"), c.Param("assetID"))
 		if err != nil {
@@ -222,7 +222,7 @@ func RegisterG2FullRoutes(group *gin.RouterGroup, ports G2RoutePorts) {
 }
 
 type g2PolicyProposalInput struct {
-	core.G2Expectation
+	core.VersionExpectation
 	Policy    core.ProjectAssetPolicy `json:"policy"`
 	Confirmed bool                    `json:"confirmed"`
 	Reason    string                  `json:"reason"`

@@ -35,7 +35,7 @@ func agentConfirmPreparedDraft(t *testing.T, f deliveryGuardFixture, proposal co
 	t.Helper()
 	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
 	require.NoError(t, err)
-	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, p.ID, proposal.ID, "agent-edit-initial-confirm", core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(p, proposal.Version), Confirmed: true, Reason: "真人仅确认建草稿"})
+	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, p.ID, proposal.ID, "agent-edit-initial-confirm", core.ConfirmationInput{VersionExpectation: agentDraftExpectation(p, proposal.Version), Confirmed: true, Reason: "真人仅确认建草稿"})
 	require.NoError(t, err)
 	var completed core.ActionProposal
 	require.NoError(t, json.Unmarshal(raw, &completed))
@@ -54,7 +54,7 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(f.db, projects, runtime, g4AdapterShares{}, nil, nil)})
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewG2ResearchAdapter(f.db, projects, runtime, g4AdapterShares{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(f.db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)
@@ -239,7 +239,7 @@ func TestAgentChangeDraftEditRechecksCurrentSourceAndActor(t *testing.T) {
 			case "source_revoked":
 				require.NoError(t, f.db.Exec("UPDATE knowledge_bases SET deleted_at=CURRENT_TIMESTAMP WHERE id='kb-runtime'").Error)
 			case "turn_version_mutated":
-				require.NoError(t, f.db.Table("lingdoc_g2_objects").Where("project_id=? AND kind=? AND id=?", f.project.ID, core.G2TurnKind, turn.ID).Update("version", turn.Version+1).Error)
+				require.NoError(t, f.db.Table("lingdoc_g2_objects").Where("project_id=? AND kind=? AND id=?", f.project.ID, core.AgentTurnKind, turn.ID).Update("version", turn.Version+1).Error)
 			case "other_actor":
 				actor.UserID = "unrelated-user"
 				ctx = f.requestContext(actor.UserID, actor.Role, "agent-edit-other-actor")

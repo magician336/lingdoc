@@ -66,7 +66,7 @@ func ValidActor(actor Actor) bool {
 // The audit row is the workspace's own record; the caller states what
 // happened and the workspace says how it is written.
 func RecordProjectAudit(tx Transaction, actor Actor, projectID, action, target, reason string) error {
-	return g5Audit(tx, actor, projectID, action, target, reason)
+	return recordProjectAuditEvent(tx, actor, projectID, action, target, reason)
 }
 
 // MutationPort returns the typed transaction port for a transaction.

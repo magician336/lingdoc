@@ -103,15 +103,15 @@ func agentChangeDraftSourcesAtBasis(tx Transaction, actor Actor, p Project, inpu
 	ids := []string{}
 	for _, metadata := range input.FieldMetadata {
 		record := metadata.Provenance
-		turn, stored, err := g2Load[AgentTurn](tx, p.ID, G2TurnKind, record.SourceID)
+		turn, stored, err := loadStoredObject[AgentTurn](tx, p.ID, AgentTurnKind, record.SourceID)
 		if err != nil {
 			return nil, err
 		}
-		session, sessionRow, err := g2Load[AgentSession](tx, p.ID, G2SessionKind, turn.SessionID)
+		session, sessionRow, err := loadStoredObject[AgentSession](tx, p.ID, AgentSessionKind, turn.SessionID)
 		if err != nil {
 			return nil, err
 		}
-		if turn.ID != record.SourceID || turn.ProjectID != p.ID || turn.Version != stored.Version || !g1VersionMatches(record.SourceVersion, turn.Version) || turn.CreatedBy != actor.UserID || turn.Status != "completed" || turn.Agent != "task_assistant" || session.ID != turn.SessionID || session.Agent != "task_assistant" || session.ProjectID != p.ID || session.CreatedBy != actor.UserID || session.Version != sessionRow.Version || requireCurrentBasis && (turn.Context.ProjectVersion != p.ProjectVersion || turn.Context.SpecRevision != p.SpecRevision || turn.Context.ContextRevision != p.CurrentContextRevision) {
+		if turn.ID != record.SourceID || turn.ProjectID != p.ID || turn.Version != stored.Version || !provenanceVersionMatches(record.SourceVersion, turn.Version) || turn.CreatedBy != actor.UserID || turn.Status != "completed" || turn.Agent != "task_assistant" || session.ID != turn.SessionID || session.Agent != "task_assistant" || session.ProjectID != p.ID || session.CreatedBy != actor.UserID || session.Version != sessionRow.Version || requireCurrentBasis && (turn.Context.ProjectVersion != p.ProjectVersion || turn.Context.SpecRevision != p.SpecRevision || turn.Context.ContextRevision != p.CurrentContextRevision) {
 			return nil, ErrVersionConflict
 		}
 		var output struct {
@@ -140,32 +140,32 @@ func agentChangeDraftSourcesAtBasis(tx Transaction, actor Actor, p Project, inpu
 			ids = append(ids, source.SourceID)
 		}
 	}
-	return g2IDs(ids), nil
+	return sortedUniqueIDs(ids), nil
 }
 
-func (s *Service) validateAgentChangeDraftProvenance(ctx context.Context, actor Actor, projectID string, basis G2Basis, input AgentChangeDraftInput) (context.Context, error) {
-	requests := []g1ProvenanceRequest{}
-	err := s.g2Read(ctx, actor, projectID, "write", func(tx Transaction, p Project) error {
-		if !g2BasisCurrent(p, basis) {
+func (s *Service) validateAgentChangeDraftProvenance(ctx context.Context, actor Actor, projectID string, basis VersionBasis, input AgentChangeDraftInput) (context.Context, error) {
+	requests := []provenanceRequest{}
+	err := s.readWithCapability(ctx, actor, projectID, "write", func(tx Transaction, p Project) error {
+		if !versionBasisCurrent(p, basis) {
 			return ErrVersionConflict
 		}
 		if _, err := agentChangeDraftSources(tx, actor, p, input); err != nil {
 			return err
 		}
-		requests = g1FieldRequests(p)
+		requests = provenanceFieldRequests(p)
 		for key, field := range input.Fields {
 			if _, present := p.Spec[key]; !present || p.Spec[key] != field.OldValue {
 				return ErrVersionConflict
 			}
 			metadata := input.FieldMetadata[key]
-			requests = append(requests, g1ProvenanceRequest{Key: key, Value: field.NewValue, Record: metadata.Provenance, Origin: metadata.Origin, Creator: actor.UserID, Fresh: true})
+			requests = append(requests, provenanceRequest{Key: key, Value: field.NewValue, Record: metadata.Provenance, Origin: metadata.Origin, Creator: actor.UserID, Fresh: true})
 		}
 		return nil
 	})
 	if err != nil {
 		return ctx, err
 	}
-	prepared, proof, err := s.g1Prepare(ctx, actor, projectID, requests, false)
+	prepared, proof, err := s.prepareProvenance(ctx, actor, projectID, requests, false)
 	if err != nil {
 		return ctx, err
 	}
@@ -175,7 +175,7 @@ func (s *Service) validateAgentChangeDraftProvenance(ctx context.Context, actor 
 		}
 	}
 	for key, metadata := range input.FieldMetadata {
-		pin, ok := proof.Requests[g1RequestKey(metadata.Provenance, input.Fields[key].NewValue)]
+		pin, ok := proof.Requests[provenanceRequestKey(metadata.Provenance, input.Fields[key].NewValue)]
 		if !ok || pin.Kind != "AgentTurn" || !proof.States[pin.ID] {
 			return ctx, ErrSourceUnavailable
 		}
@@ -208,7 +208,7 @@ func (s *Service) PrepareAgentChangeDraft(ctx context.Context, actor Actor, prop
 	if err != nil {
 		return ctx, err
 	}
-	proof := prepared.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof := prepared.Value(provenanceProofKey{}).(*provenanceProof)
 	proof.Operation = string(operationCreateChangeDraft)
 	proof.OperationBody = hashImpactValue(input.ExtendedChangeSetInput)
 	return withAssistantAffected(context.WithValue(prepared, agentChangeDraftContextKey{}, agentChangeDraftProof{ProjectID: proposal.ProjectID, BodyHash: proof.OperationBody, Input: input}), affected), nil
@@ -222,16 +222,16 @@ func storeAgentChangeDraftFields(ctx context.Context, tx Transaction, p Project,
 	if request.ProjectID != p.ID || request.BodyHash != hashImpactValue(input) {
 		return ErrSourceUnavailable
 	}
-	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
 	if !ok {
 		return ErrSourceUnavailable
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
-	var history g1ChangeProvenance
-	version, err := store.G5Get(p.ID, "g1_change_provenance", change.ID, &history)
+	var history changeProvenance
+	version, err := store.GetProjectRecord(p.ID, "g1_change_provenance", change.ID, &history)
 	if err != nil {
 		return err
 	}
@@ -239,14 +239,14 @@ func storeAgentChangeDraftFields(ctx context.Context, tx Transaction, p Project,
 	history.ProposedOrigins = map[string]string{}
 	for key, metadata := range request.Input.FieldMetadata {
 		value := input.Fields[key].NewValue
-		pin, ok := proof.Requests[g1RequestKey(metadata.Provenance, value)]
+		pin, ok := proof.Requests[provenanceRequestKey(metadata.Provenance, value)]
 		if !ok || !proof.States[pin.ID] {
 			return ErrSourceUnavailable
 		}
 		history.ProposedFields[key] = SpecProvenanceRef{FieldKey: key, ValueHash: hashImpactValue(value), PinID: pin.ID}
 		history.ProposedOrigins[key] = metadata.Origin
 	}
-	return store.G5Put(p.ID, "g1_change_provenance", change.ID, version, history)
+	return store.PutProjectRecord(p.ID, "g1_change_provenance", change.ID, version, history)
 }
 
 func (s *Service) prepareProposedChangeFields(ctx context.Context, actor Actor, change ChangeSet, refs map[string]SpecProvenanceRef) (context.Context, error) {
@@ -257,12 +257,12 @@ func (s *Service) prepareProposedChangeFields(ctx context.Context, actor Actor, 
 	for _, field := range change.Fields {
 		values[field.Key] = field.NewValue
 	}
-	requests := []g1ProvenanceRequest{}
+	requests := []provenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, change.ProjectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrSourceUnavailable
 		}
@@ -271,27 +271,27 @@ func (s *Service) prepareProposedChangeFields(ctx context.Context, actor Actor, 
 			if !present || hashImpactValue(value) != ref.ValueHash || ref.PinID == "" {
 				return ErrSourceUnavailable
 			}
-			var pin g1ProvenancePin
-			if _, err := store.G5Get(change.ProjectID, "g1_provenance", ref.PinID, &pin); err != nil {
+			var pin provenancePin
+			if _, err := store.GetProjectRecord(change.ProjectID, "g1_provenance", ref.PinID, &pin); err != nil {
 				return err
 			}
 			if pin.ProjectID != change.ProjectID || pin.ValueHash != ref.ValueHash || pin.Kind != "AgentTurn" {
 				return ErrSourceUnavailable
 			}
 			record := pin.Record
-			requests = append(requests, g1ProvenanceRequest{Key: key, Value: value, Record: &record, Creator: record.CreatedBy})
+			requests = append(requests, provenanceRequest{Key: key, Value: value, Record: &record, Creator: record.CreatedBy})
 		}
 		return nil
 	})
 	if err != nil {
 		return ctx, err
 	}
-	_, proposed, err := s.g1Prepare(ctx, actor, change.ProjectID, requests, false)
+	_, proposed, err := s.prepareProvenance(ctx, actor, change.ProjectID, requests, false)
 	if err != nil {
 		return ctx, err
 	}
-	base, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
-	if !ok || g1ProjectHash(base.Project) != g1ProjectHash(proposed.Project) {
+	base, ok := ctx.Value(provenanceProofKey{}).(*provenanceProof)
+	if !ok || provenanceProjectHash(base.Project) != provenanceProjectHash(proposed.Project) {
 		return ctx, ErrVersionConflict
 	}
 	for id, pin := range proposed.Pins {
@@ -304,16 +304,16 @@ func (s *Service) prepareProposedChangeFields(ctx context.Context, actor Actor, 
 }
 
 func (s *Service) assertAgentChangeDraftProvenance(ctx context.Context, actor Actor, projectID string, input AgentChangeDraftInput) error {
-	requests := []g1ProvenanceRequest{}
+	requests := []provenanceRequest{}
 	for key, metadata := range input.FieldMetadata {
-		requests = append(requests, g1ProvenanceRequest{Key: key, Value: input.Fields[key].NewValue, Record: metadata.Provenance, Creator: actor.UserID, Fresh: true})
+		requests = append(requests, provenanceRequest{Key: key, Value: input.Fields[key].NewValue, Record: metadata.Provenance, Creator: actor.UserID, Fresh: true})
 	}
-	_, proof, err := s.g1Prepare(ctx, actor, projectID, requests, false)
+	_, proof, err := s.prepareProvenance(ctx, actor, projectID, requests, false)
 	if err != nil {
 		return err
 	}
 	for key, metadata := range input.FieldMetadata {
-		pin, ok := proof.Requests[g1RequestKey(metadata.Provenance, input.Fields[key].NewValue)]
+		pin, ok := proof.Requests[provenanceRequestKey(metadata.Provenance, input.Fields[key].NewValue)]
 		if !ok || pin.Kind != "AgentTurn" || !proof.States[pin.ID] {
 			return ErrSourceUnavailable
 		}

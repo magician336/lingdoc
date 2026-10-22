@@ -73,12 +73,12 @@ func (s *Service) GetChapterReview(ctx context.Context, actor Actor, pid, cid st
 			return nil
 		}
 		result.ChapterVersionID = *chapter.CurrentVersionID
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
 		var saved ChapterReviewState
-		_, err = store.G5Get(pid, "chapter_review", cid, &saved)
+		_, err = store.GetProjectRecord(pid, "chapter_review", cid, &saved)
 		if err != nil && err != ErrNotFound {
 			return err
 		}
@@ -124,12 +124,12 @@ func (s *Service) ChangeChapterReview(ctx context.Context, actor Actor, pid, cid
 		if c.CurrentVersionID == nil || *c.CurrentVersionID != input.ChapterVersionID {
 			return operationResult[ChapterReviewState]{}, ErrVersionConflict
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return operationResult[ChapterReviewState]{}, ErrInvalidState
 		}
 		var old ChapterReviewState
-		version, err := store.G5Get(pid, "chapter_review", cid, &old)
+		version, err := store.GetProjectRecord(pid, "chapter_review", cid, &old)
 		if err != nil && err != ErrNotFound {
 			return operationResult[ChapterReviewState]{}, err
 		}
@@ -147,10 +147,10 @@ func (s *Service) ChangeChapterReview(ctx context.Context, actor Actor, pid, cid
 			status = "DRAFT"
 		}
 		next := ChapterReviewState{ChapterID: cid, ChapterVersionID: input.ChapterVersionID, ContextRevision: p.CurrentContextRevision, SpecRevision: p.SpecRevision, Version: version + 1, Status: status, ActorID: actor.UserID, Reason: input.Reason, UpdatedAt: time.Now().UTC()}
-		if err := store.G5Put(pid, "chapter_review", cid, version, next); err != nil {
+		if err := store.PutProjectRecord(pid, "chapter_review", cid, version, next); err != nil {
 			return operationResult[ChapterReviewState]{}, err
 		}
-		if err := g5Audit(tx, actor, pid, "chapter."+input.Action, cid, input.Reason); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, pid, "chapter."+input.Action, cid, input.Reason); err != nil {
 			return operationResult[ChapterReviewState]{}, err
 		}
 		return operationResult[ChapterReviewState]{Value: next, Status: operationStatusOK}, nil
@@ -193,14 +193,14 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 		if version.BodyMarkdown != historical.BodyMarkdown {
 			return operationResult[ChapterComment]{}, ErrVersionConflict
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return operationResult[ChapterComment]{}, ErrInvalidState
 		}
 		now := time.Now().UTC()
 		comment := ChapterComment{ID: uuid.NewString(), ChapterID: cid, ChapterVersionID: input.ChapterVersionID, ContextRevision: p.CurrentContextRevision, Version: 1, ActorID: actor.UserID, Body: input.Body, Selection: input.Selection, CreatedAt: now, UpdatedAt: now}
 		if input.ID != "" {
-			_, err = store.G5Get(pid, "chapter_comment", input.ID, &comment)
+			_, err = store.GetProjectRecord(pid, "chapter_comment", input.ID, &comment)
 			if err != nil {
 				return operationResult[ChapterComment]{}, err
 			}
@@ -219,10 +219,10 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 				comment.Selection = input.Selection
 			}
 		}
-		if err := store.G5Put(pid, "chapter_comment", comment.ID, input.ExpectedVersion, comment); err != nil {
+		if err := store.PutProjectRecord(pid, "chapter_comment", comment.ID, input.ExpectedVersion, comment); err != nil {
 			return operationResult[ChapterComment]{}, err
 		}
-		if err := g5Audit(tx, actor, pid, "chapter.comment", comment.ID, ""); err != nil {
+		if err := recordProjectAuditEvent(tx, actor, pid, "chapter.comment", comment.ID, ""); err != nil {
 			return operationResult[ChapterComment]{}, err
 		}
 		return operationResult[ChapterComment]{Value: comment, Status: operationStatusCreated}, nil
@@ -238,11 +238,11 @@ func (s *Service) ListChapterComments(ctx context.Context, actor Actor, pid, cid
 		if _, err := tx.Chapter(pid, cid); err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G5List(pid, "chapter_comment")
+		rows, err := store.ListProjectRecords(pid, "chapter_comment")
 		if err != nil {
 			return err
 		}

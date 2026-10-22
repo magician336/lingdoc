@@ -17,10 +17,10 @@ import (
 	"strings"
 )
 
-func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
-	out := make([]core.G2VersionRef, 0, len(refs))
+func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.VersionRef {
+	out := make([]core.VersionRef, 0, len(refs))
 	for _, ref := range refs {
-		out = append(out, core.G2VersionRef{Kind: "EvidenceCard", ID: ref.ID, Version: ref.Version})
+		out = append(out, core.VersionRef{Kind: "EvidenceCard", ID: ref.ID, Version: ref.Version})
 	}
 	return out
 }
@@ -35,9 +35,9 @@ func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 // hand back any operation the interface happened to name. The port is now an
 // explicit nullable parameter, and a nil port fails the same way the failed
 // assertion did.
-func g2SelectFormal(ctx context.Context, selector core.EvidenceSelectionApplication, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
+func g2SelectFormal(ctx context.Context, selector core.EvidenceSelectionApplication, actor Actor, projectID, chapterID string, refs []core.VersionRef) (core.EvidenceSelection, error) {
 	if selector == nil {
-		return core.G2EvidenceSelection{}, generation.ErrDependencyUnavailable
+		return core.EvidenceSelection{}, generation.ErrDependencyUnavailable
 	}
 	selected, err := selector.SelectGenerationEvidence(ctx, actor, projectID, chapterID, refs, true)
 	if err != nil {
@@ -293,7 +293,7 @@ func (s *SelectedRewriteService) checkRowTemplate(ctx context.Context, actor Act
 	return nil
 }
 
-func g2EvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.EvidenceCardRef) ([]generation.EvidenceConstraint, error) {
+func g2EvidenceConstraints(selected core.EvidenceSelection, refs []generation.EvidenceCardRef) ([]generation.EvidenceConstraint, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}

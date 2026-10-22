@@ -15,13 +15,13 @@ func TestPR150ReassessMissingAuditRollsBackAndRecoversSameKey(t *testing.T) {
 		Fields:             map[string]ChangeFieldInput{"research_goal": {OldValue: p.Spec["research_goal"], NewValue: "ordinary proposed goal"}},
 		AffectedChapterIDs: []string{source.Impacts[0].ChapterID},
 	})
-	proposal := g2Decode[ChangeSet](t, raw, err)
+	proposal := decodeAgentJSON[ChangeSet](t, raw, err)
 	raw, _, _, err = s.CreateChangeSet(ctx, a, p.ID, "pr150-audit-intervening", CreateChangeSetInput{
 		ExpectedContextRevision: p.CurrentContextRevision, Reason: "independent subject revision",
 		Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: p.Spec["research_subject"], NewValue: "independent subject"}},
 		AffectedChapterIDs: []string{source.Impacts[0].ChapterID},
 	})
-	other := g2Decode[ChangeSet](t, raw, err)
+	other := decodeAgentJSON[ChangeSet](t, raw, err)
 	if _, status, _, err := s.ApplyChangeSet(ctx, a, p.ID, other.ID, "pr150-audit-intervening-apply"); err != nil || status != 200 {
 		t.Fatalf("intervening apply: status=%d err=%v", status, err)
 	}
@@ -39,7 +39,7 @@ func TestPR150ReassessMissingAuditRollsBackAndRecoversSameKey(t *testing.T) {
 	counts := func() [4]int64 {
 		t.Helper()
 		var result [4]int64
-		for i, model := range []any{&changeSetRow{}, &operationRow{}, &g5RecordRow{}} {
+		for i, model := range []any{&changeSetRow{}, &operationRow{}, &projectRecordRow{}} {
 			if err := s.testDB().Model(model).Count(&result[i]).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -52,7 +52,7 @@ func TestPR150ReassessMissingAuditRollsBackAndRecoversSameKey(t *testing.T) {
 	beforeState, beforeCounts := state(), counts()
 	key := "pr150-ordinary-reassess-no-audit"
 	withoutAudit := *s
-	withoutAudit.repository = g4AuditlessRepository{inner: s.repository}
+	withoutAudit.repository = auditlessRepository{inner: s.repository}
 	raw, status, replayed, err := withoutAudit.ReassessChangeSet(ctx, a, p.ID, proposal.ID, key)
 	if !errors.Is(err, ErrInvalidState) || raw != nil || status != 0 || replayed {
 		t.Fatalf("missing audit capability was accepted: status=%d replay=%v body=%s err=%v", status, replayed, raw, err)
@@ -64,7 +64,7 @@ func TestPR150ReassessMissingAuditRollsBackAndRecoversSameKey(t *testing.T) {
 	if err != nil || status != 201 || replayed {
 		t.Fatalf("audit recovery consumed key or source: status=%d replay=%v err=%v", status, replayed, err)
 	}
-	reassessed := g2Decode[ChangeSet](t, first, err)
+	reassessed := decodeAgentJSON[ChangeSet](t, first, err)
 	if reassessed.Status != "assessed" || reassessed.ReassessedFromID != proposal.ID || reassessed.ReversesChangeSetID != "" {
 		t.Fatalf("ordinary assessed recovery changed semantics: %+v", reassessed)
 	}

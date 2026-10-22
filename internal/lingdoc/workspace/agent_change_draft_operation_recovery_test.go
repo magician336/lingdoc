@@ -250,7 +250,7 @@ func TestR26AgentProposalCreationRetryAfterOtherAuthorSaveUsesStoredReceipt(t *t
 			require.NoError(t, err)
 			payload, err := json.Marshal(input)
 			require.NoError(t, err)
-			request := core.CreateActionProposalInput{G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "只准备候选变更草稿"}
+			request := core.CreateActionProposalInput{VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "只准备候选变更草稿"}
 			path, key := "/api/projects/"+p.ID+"/action-proposals", "r26-create-proposal-retry"
 			first, original := r26OperationHTTP(t, f, http.MethodPost, path, key, request)
 			require.Equal(t, http.StatusCreated, first.Code, first.Body.String())

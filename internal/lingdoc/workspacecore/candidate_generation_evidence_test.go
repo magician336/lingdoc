@@ -10,15 +10,15 @@ import (
 )
 
 func TestCandidateSelectorReadsUncommittedClaimChange(t *testing.T) {
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	seedCandidateProofFoundation(t, f)
 	anchor := f.anchor(t, "source-1", "candidate-tx-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "candidate-tx-card", "supports")
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "candidate-tx-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对合成原文和适用范围"})
-	card = g2Decode[EvidenceCard](t, raw, err)
-	refs := []G2VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "candidate-tx-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对合成原文和适用范围"})
+	card = decodeAgentJSON[EvidenceCard](t, raw, err)
+	refs := []VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
 	ctx := types.WithExecutionTenant(types.WithCaller(context.Background(), types.Caller{TenantID: f.owner.TenantID, UserID: f.owner.UserID, Role: f.owner.Role}), f.owner.TenantID)
 	prepared, _, err := f.svc.PrepareCandidateGenerationEvidence(ctx, f.owner, f.project.ID, f.chapter.ID, refs, []string{"source-1"})
 	if err != nil {
@@ -33,16 +33,16 @@ func TestCandidateSelectorReadsUncommittedClaimChange(t *testing.T) {
 		if len(selected.Cards) != 1 {
 			t.Fatal("no genuine current card selected")
 		}
-		current, old, e := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		current, old, e := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
 		current.Version++
 		current.Scope = "已经改变的合成范围"
-		if e = g2Store(tx, old, f.project.ID, G2ClaimKind, current.ID, current.Version, current); e != nil {
+		if e = storeStoredObject(tx, old, f.project.ID, ResearchClaimKind, current.ID, current.Version, current); e != nil {
 			return e
 		}
-		if _, e = f.svc.SelectGenerationEvidenceInTransaction(prepared, tx, f.owner, f.project.ID, f.chapter.ID, refs, true, []string{"source-1"}); !errors.Is(e, ErrG2EvidenceIncomplete) {
+		if _, e = f.svc.SelectGenerationEvidenceInTransaction(prepared, tx, f.owner, f.project.ID, f.chapter.ID, refs, true, []string{"source-1"}); !errors.Is(e, ErrEvidenceIncomplete) {
 			t.Fatalf("selector missed actual uncommitted claim revision: %v", e)
 		}
 		return abort
@@ -51,7 +51,7 @@ func TestCandidateSelectorReadsUncommittedClaimChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		actual, _, e := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		actual, _, e := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
@@ -72,7 +72,7 @@ func TestCandidateSelectorReadsUncommittedClaimChange(t *testing.T) {
 func TestClaimReviewRecordsDisputeOrRetirement(t *testing.T) {
 	for _, status := range []string{"disputed", "superseded"} {
 		t.Run(status, func(t *testing.T) {
-			f := newG2Fixture(t, false)
+			f := newAgentFixture(t, false)
 			claim := f.claim(t)
 			c := semanticDraft(t, f.svc, f.owner, f.project, "claim-status-draft", SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: claim.Text, Scope: claim.Scope, Status: status, Explanation: "用户明确记录争议或退役", Confirmed: true}})
 			semanticApply(t, f.svc, f.owner, f.project, c, "claim-status")
@@ -94,10 +94,10 @@ func TestClaimReviewRecordsDisputeOrRetirement(t *testing.T) {
 				t.Fatal("no actual claim review task")
 			}
 			raw, _, _, err := f.svc.ActOnImpactTask(context.Background(), f.owner, p.ID, task.ID, "claim-review-assign", ImpactTaskActionInput{ExpectedVersion: task.Version, TargetRevision: p.CurrentContextRevision, Action: "assign", AssigneeID: f.owner.UserID, Reason: "指定本人复核"})
-			task = g2Decode[ImpactTask](t, raw, err)
+			task = decodeAgentJSON[ImpactTask](t, raw, err)
 			ref := ObjectVersionRef{Kind: "ResearchClaim", ID: claim.ID, Version: strconv.FormatInt(claim.Version+1, 10)}
 			raw, _, _, err = f.svc.ActOnImpactTask(context.Background(), f.owner, p.ID, task.ID, "claim-review-complete", ImpactTaskActionInput{ExpectedVersion: task.Version, TargetRevision: p.CurrentContextRevision, Action: "complete", HumanDecision: "reviewed", ClosureEvidence: []ObjectVersionRef{ref}, Reason: "已核对当前争议状态，未声称主张获证"})
-			task = g2Decode[ImpactTask](t, raw, err)
+			task = decodeAgentJSON[ImpactTask](t, raw, err)
 			if task.Status != "DONE" || task.HumanDecision != "reviewed" {
 				t.Fatal("explicit current claim review could not close")
 			}
@@ -117,7 +117,7 @@ func TestClaimReviewRecordsDisputeOrRetirement(t *testing.T) {
 	}
 }
 
-func seedCandidateProofFoundation(t *testing.T, f g2Fixture) {
+func seedCandidateProofFoundation(t *testing.T, f agentFixture) {
 	t.Helper()
 	db := f.svc.testDB()
 	for _, table := range []string{"knowledges", "chunks"} {
@@ -147,7 +147,7 @@ func seedCandidateProofFoundation(t *testing.T, f g2Fixture) {
 		t.Fatal(err)
 	}
 	if err = f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		return tx.(G2Transaction).InsertG2Object(G2StoredObject{ProjectID: f.project.ID, Kind: G2AssetPolicyKind, ID: policy.ID, Version: 1, Payload: raw})
+		return tx.(ObjectStore).InsertObject(StoredObject{ProjectID: f.project.ID, Kind: AssetPolicyKind, ID: policy.ID, Version: 1, Payload: raw})
 	}); err != nil {
 		t.Fatal(err)
 	}

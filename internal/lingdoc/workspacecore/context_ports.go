@@ -15,7 +15,7 @@ import (
 //
 // 契约：每个方法的方法签名与语义，逐字取自迁移前聚合体上的同名方法。
 // 收窄只发生在「哪些方法被分到哪个口」，不发生在方法本身。
-// 这一点由 internal/lingdoc/workspacecore/seg3_context_ports_test.go 的
+// 这一点由 internal/lingdoc/workspacecore/context_ports_test.go 的
 // 结构断言守住。
 
 // compile-time proof that the aggregate still satisfies every narrow port.
@@ -117,7 +117,7 @@ type RoadmapApplication interface {
 type ResearchTaskApplication interface {
 	SaveResearchTask(ctx context.Context, actor Actor, projectID, key string, input SaveResearchTaskInput) (json.RawMessage, int, bool, error)
 	ListResearchTasks(ctx context.Context, actor Actor, projectID string) ([]ResearchTask, error)
-	ApproveResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	ApproveResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	ControlResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input ControlResearchTaskInput) (json.RawMessage, int, bool, error)
 	RunResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input RunResearchTaskInput) (json.RawMessage, int, bool, error)
 	GetResearchRun(ctx context.Context, actor Actor, projectID, runID string) (ResearchRun, error)
@@ -129,8 +129,8 @@ type ResearchTaskApplication interface {
 // 消费方：G2 路由。
 type ImportCandidateApplication interface {
 	CreateImportCandidate(ctx context.Context, actor Actor, projectID, key string, input CreateImportCandidateInput) (json.RawMessage, int, bool, error)
-	ConfirmImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
-	RejectImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	ConfirmImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
+	RejectImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	RefreshImportCandidate(ctx context.Context, actor Actor, projectID, candidateID string) (ImportCandidate, error)
 	ListImportCandidates(ctx context.Context, actor Actor, projectID string) ([]ImportCandidate, error)
 }
@@ -139,7 +139,7 @@ type ImportCandidateApplication interface {
 // 消费方：G2 路由、智能体上下文。
 type EvidenceCardApplication interface {
 	SaveEvidenceCard(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error)
-	ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	ReviewEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input ReviewEvidenceCardInput) (json.RawMessage, int, bool, error)
 	ListEvidenceCards(ctx context.Context, actor Actor, projectID string) ([]EvidenceCard, error)
 }
@@ -161,7 +161,7 @@ type SourceAnchorApplication interface {
 // AgentSessionApplication 是智能体会话：开会话、读会话、读轮次、发一轮。
 // 消费方：G2 路由。
 type AgentSessionApplication interface {
-	CreateAgentSession(ctx context.Context, actor Actor, projectID, agent, key string, input G2Expectation) (json.RawMessage, int, bool, error)
+	CreateAgentSession(ctx context.Context, actor Actor, projectID, agent, key string, input VersionExpectation) (json.RawMessage, int, bool, error)
 	ListAgentSessions(ctx context.Context, actor Actor, projectID, agent string) ([]AgentSession, error)
 	GetAgentTurns(ctx context.Context, actor Actor, projectID, sessionID string) ([]AgentTurn, error)
 	SendAgentTurn(ctx context.Context, actor Actor, projectID, sessionID, key string, input AgentTurnInput) (json.RawMessage, int, bool, error)
@@ -171,8 +171,8 @@ type AgentSessionApplication interface {
 // 消费方：G2 路由。
 type ActionProposalApplication interface {
 	CreateActionProposal(ctx context.Context, actor Actor, projectID, key string, input CreateActionProposalInput) (json.RawMessage, int, bool, error)
-	ConfirmActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
-	RejectActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	ConfirmActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
+	RejectActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	ListActionProposals(ctx context.Context, actor Actor, projectID string) ([]ActionProposal, error)
 }
 
@@ -229,7 +229,7 @@ type RuntimeGuardApplication interface {
 type AgentActionApplication interface {
 	SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error)
 	SaveEvidenceCard(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error)
-	ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	CreateChangeDraft(ctx context.Context, actor Actor, projectID, key string, input ExtendedChangeSetInput) (json.RawMessage, int, bool, error)
 	PrepareAgentChangeDraft(ctx context.Context, actor Actor, proposal ActionProposal, input AgentChangeDraftInput) (context.Context, error)
 	ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error)
@@ -242,7 +242,7 @@ type AgentActionApplication interface {
 // 守卫要不再持有聚合体具体类型，这三个装配操作就得有一个窄口承载——
 // 装配关系本身也是一种能力，它属于运行时组合这一门语言。
 type RuntimeCompositionApplication interface {
-	SetG2ActionExecutor(executor G2ActionExecutor)
+	SetActionExecutor(executor ActionExecutor)
 	SetImpactPreflightChecker(checker ImpactPreflightChecker)
 	SetRuntimeRecoveryChecker(checker RuntimeRecoveryChecker)
 }
@@ -259,19 +259,19 @@ type ProjectProvenanceApplication interface {
 // EvidenceSelectionApplication 是「选一条生成证据」这一项能力。
 // 消费方：生成输入解析、生成证据校验器、选区改写。
 type EvidenceSelectionApplication interface {
-	SelectGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, cardRefs []G2VersionRef, formal bool) (G2EvidenceSelection, error)
+	SelectGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, cardRefs []VersionRef, formal bool) (EvidenceSelection, error)
 }
 
 // EvidenceSelectionTransactionApplication 是同一个选择在事务里的形态。
 // 消费方：候选采纳的来源策略。
 type EvidenceSelectionTransactionApplication interface {
-	SelectGenerationEvidenceInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, chapterID string, refs []G2VersionRef, formal bool, usedSourceIDs []string) (G2EvidenceSelection, error)
+	SelectGenerationEvidenceInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, chapterID string, refs []VersionRef, formal bool, usedSourceIDs []string) (EvidenceSelection, error)
 }
 
 // EvidenceProofPreparationApplication 是「为候选准备生成证据证明」这一项能力。
 // 消费方：候选采纳的来源策略。
 type EvidenceProofPreparationApplication interface {
-	PrepareCandidateGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, refs []G2VersionRef, usedSourceIDs []string) (context.Context, G2EvidenceSelection, error)
+	PrepareCandidateGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, refs []VersionRef, usedSourceIDs []string) (context.Context, EvidenceSelection, error)
 }
 
 var (

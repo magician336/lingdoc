@@ -40,7 +40,7 @@ func g1NativeProvenanceFixture(t *testing.T) g1NativeFixture {
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil), Actions: NewG2ActionExecutor(projects, runtime, nil)})
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil), Actions: NewG2ActionExecutor(projects, runtime, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)
@@ -251,7 +251,7 @@ func TestG1ActualSourceIdentityVersionAndModelScopeFailClosed(t *testing.T) {
 	_, err = f.projects.GetProject(mismatch, f.actor, p.ID)
 	require.ErrorIs(t, err, core.ErrNotFound)
 	// Only the persisted model-use decision changes; human read stays permitted.
-	require.NoError(t, f.db.Exec(`UPDATE lingdoc_g2_objects SET payload_json=json_set(payload_json,'$.model_use_allowed',json('false')) WHERE project_id=? AND kind=? AND id=?`, p.ID, core.G2ImportKind, "consent-runtime").Error)
+	require.NoError(t, f.db.Exec(`UPDATE lingdoc_g2_objects SET payload_json=json_set(payload_json,'$.model_use_allowed',json('false')) WHERE project_id=? AND kind=? AND id=?`, p.ID, core.ImportCandidateKind, "consent-runtime").Error)
 	current, err := f.projects.GetProject(f.ctx, f.actor, p.ID)
 	require.NoError(t, err)
 	require.NotEmpty(t, current.Spec["research_subject"])
@@ -319,13 +319,13 @@ func TestG1ActualActionResultReplayRechecksHistoricalSource(t *testing.T) {
 	require.NoError(t, err)
 	var change core.ChangeSet
 	require.NoError(t, json.Unmarshal(raw, &change))
-	expectation := core.G2Expectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision}
-	raw, _, _, err = f.projects.CreateActionProposal(f.ctx, f.actor, p.ID, "g1-action-source-proposal", core.CreateActionProposalInput{G2Expectation: expectation, Action: "apply_change_set", TargetID: change.ID, Input: json.RawMessage(`{}`), ExpectedEffect: "合成实际领域变更"})
+	expectation := core.VersionExpectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision}
+	raw, _, _, err = f.projects.CreateActionProposal(f.ctx, f.actor, p.ID, "g1-action-source-proposal", core.CreateActionProposalInput{VersionExpectation: expectation, Action: "apply_change_set", TargetID: change.ID, Input: json.RawMessage(`{}`), ExpectedEffect: "合成实际领域变更"})
 	require.NoError(t, err)
 	var proposal core.ActionProposal
 	require.NoError(t, json.Unmarshal(raw, &proposal))
 	expectation.ExpectedVersion = proposal.Version
-	confirm := core.G2ConfirmedInput{G2Expectation: expectation, Confirmed: true, Reason: "合成账号确认实际 apply"}
+	confirm := core.ConfirmationInput{VersionExpectation: expectation, Confirmed: true, Reason: "合成账号确认实际 apply"}
 	raw, _, _, err = f.projects.ConfirmActionProposal(f.ctx, f.actor, p.ID, proposal.ID, "g1-action-source-confirm", confirm)
 	require.NoError(t, err)
 	require.Contains(t, string(raw), input.Fields["research_subject"])
@@ -340,7 +340,7 @@ func TestG1ActualActionResultReplayRechecksHistoricalSource(t *testing.T) {
 	require.True(t, replayed)
 	require.NotContains(t, string(replay), input.Fields["research_subject"])
 	var row struct{ PayloadJSON string }
-	require.NoError(t, f.db.Table("lingdoc_g2_objects").Select("payload_json").Where("project_id=? AND kind=? AND id=?", p.ID, core.G2ActionKind, proposal.ID).Take(&row).Error)
+	require.NoError(t, f.db.Table("lingdoc_g2_objects").Select("payload_json").Where("project_id=? AND kind=? AND id=?", p.ID, core.ActionProposalKind, proposal.ID).Take(&row).Error)
 	require.Contains(t, row.PayloadJSON, input.Fields["research_subject"])
 }
 

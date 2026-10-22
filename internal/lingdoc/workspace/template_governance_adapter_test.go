@@ -113,7 +113,7 @@ func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *co
 	connectAggregateCapabilities(sourceRuntime, projects)
 	sourceRuntime.EnableFullWorkflowPolicy()
 	research := NewG2ResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)
-	projects.ConfigureG2(core.G2Runtime{Sources: research})
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: research})
 	runtime, err := NewTemplateGovernanceRuntime(db, projects, sourceRuntime, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func g4AdapterSource(t *testing.T, r *TemplateGovernanceRuntime, db *gorm.DB, p 
 	}
 	importRecord := core.ImportCandidate{ID: "consent-runtime", Version: 1, ProjectID: p.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Scope: "project", Purpose: "仅检验合成软件输入的规则建议", CreatedBy: actor.UserID, Status: "imported", ModelUseAllowed: true, CreatedAt: processed}
 	raw, _ := json.Marshal(importRecord)
-	if err := db.Exec("INSERT INTO lingdoc_g2_objects(project_id,kind,id,version,payload_json) VALUES(?,?,?,?,?)", p.ID, core.G2ImportKind, importRecord.ID, 1, string(raw)).Error; err != nil {
+	if err := db.Exec("INSERT INTO lingdoc_g2_objects(project_id,kind,id,version,payload_json) VALUES(?,?,?,?,?)", p.ID, core.ImportCandidateKind, importRecord.ID, 1, string(raw)).Error; err != nil {
 		t.Fatal(err)
 	}
 	return asset, governance.SourceRef{ID: "source-runtime", Version: "1"}
@@ -309,7 +309,7 @@ func TestTemplateGovernanceRuntimeUsesCurrentHumanAssetScopeInParentTransaction(
 				if err != nil {
 					return err
 				}
-				if err := core.NewTransactionAdapter(tx).(core.G2Transaction).InsertG2Object(core.G2StoredObject{ProjectID: p.ID, Kind: core.G2AssetPolicyKind, ID: asset.ID, Version: 1, Payload: raw}); err != nil {
+				if err := core.NewTransactionAdapter(tx).(core.ObjectStore).InsertObject(core.StoredObject{ProjectID: p.ID, Kind: core.AssetPolicyKind, ID: asset.ID, Version: 1, Payload: raw}); err != nil {
 					return err
 				}
 				// This row is uncommitted, so a main-pool read would miss it or
@@ -635,13 +635,13 @@ func TestTemplateGovernanceRuntimeRejectsUnknownIncompleteReplayAndAdvicelessRec
 
 type g4BridgeModel struct {
 	calls   int
-	request core.G2ModelRequest
+	request core.ModelRequest
 }
 
-func (m *g4BridgeModel) Reply(_ context.Context, _ core.Actor, request core.G2ModelRequest) (core.G2ModelReply, error) {
+func (m *g4BridgeModel) Reply(_ context.Context, _ core.Actor, request core.ModelRequest) (core.ModelReply, error) {
 	m.calls++
 	m.request = request
-	return core.G2ModelReply{StructuredOutput: json.RawMessage(`{"proposals":[],"explanation":"synthetic fixture only"}`), ModelID: "synthetic-fixture", RunMode: "real_api_fake_model", InputTokens: 12, OutputTokens: 5}, nil
+	return core.ModelReply{StructuredOutput: json.RawMessage(`{"proposals":[],"explanation":"synthetic fixture only"}`), ModelID: "synthetic-fixture", RunMode: "real_api_fake_model", InputTokens: 12, OutputTokens: 5}, nil
 }
 func TestTemplateGovernanceRuntimeModelUsesActualG2ContextOnce(t *testing.T) {
 	r, db, actor, p, ctx := g4AdapterFixture(t)

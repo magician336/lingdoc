@@ -7,7 +7,7 @@ import (
 	"slices"
 )
 
-type g1ChangeProvenance struct {
+type changeProvenance struct {
 	Snapshot           ProjectProvenanceSnapshot    `json:"snapshot"`
 	Spec               map[string]string            `json:"spec"`
 	InheritedChangeIDs []string                     `json:"inherited_change_ids,omitempty"`
@@ -15,19 +15,19 @@ type g1ChangeProvenance struct {
 	ProposedFields     map[string]SpecProvenanceRef `json:"proposed_fields,omitempty"`
 	ProposedOrigins    map[string]string            `json:"proposed_origins,omitempty"`
 }
-type g1ReverseSourceKey struct{}
+type reverseSourceKey struct{}
 
-func g1PersistSnapshot(tx Transaction, p Project) (ProjectProvenanceSnapshot, error) {
-	snapshot, err := g1StorageSnapshot(tx, p)
+func persistProvenanceSnapshot(tx Transaction, p Project) (ProjectProvenanceSnapshot, error) {
+	snapshot, err := provenanceStorageSnapshot(tx, p)
 	if err != nil {
 		return snapshot, err
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return snapshot, ErrInvalidState
 	}
 	var previous ProjectProvenanceSnapshot
-	_, err = store.G5Get(p.ID, "g1_snapshot", snapshot.Digest, &previous)
+	_, err = store.GetProjectRecord(p.ID, "g1_snapshot", snapshot.Digest, &previous)
 	if err == nil {
 		if hashImpactValue(previous) != hashImpactValue(snapshot) {
 			return snapshot, ErrVersionConflict
@@ -37,14 +37,14 @@ func g1PersistSnapshot(tx Transaction, p Project) (ProjectProvenanceSnapshot, er
 	if !errors.Is(err, ErrNotFound) {
 		return snapshot, err
 	}
-	return snapshot, store.G5Put(p.ID, "g1_snapshot", snapshot.Digest, 0, snapshot)
+	return snapshot, store.PutProjectRecord(p.ID, "g1_snapshot", snapshot.Digest, 0, snapshot)
 }
 
-func g1RecordChangeProvenance(t gormTransaction, change ChangeSet) error {
+func recordChangeProvenance(t gormTransaction, change ChangeSet) error {
 	// This sidecar binds every old-value/preview reference to the baseline which
 	// actually existed when the proposal was written. It never changes on apply.
-	var old g1ChangeProvenance
-	if _, err := t.G5Get(change.ProjectID, "g1_change_provenance", change.ID, &old); err == nil {
+	var old changeProvenance
+	if _, err := t.GetProjectRecord(change.ProjectID, "g1_change_provenance", change.ID, &old); err == nil {
 		return nil
 	} else if !errors.Is(err, ErrNotFound) {
 		return err
@@ -60,16 +60,16 @@ func g1RecordChangeProvenance(t gormTransaction, change ChangeSet) error {
 	if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
 		return ErrVersionConflict
 	}
-	snapshot, err := g1PersistSnapshot(t, p)
+	snapshot, err := persistProvenanceSnapshot(t, p)
 	if err != nil {
 		return err
 	}
-	history := g1ChangeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)}
+	history := changeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)}
 	// Reassessment creates a new ChangeSet. Preserve only unchanged proposed
 	// new-value identities; a new baseline never converts AI text into human text.
 	if change.ReassessedFromID != "" {
-		var prior g1ChangeProvenance
-		if _, err := t.G5Get(p.ID, "g1_change_provenance", change.ReassessedFromID, &prior); err != nil {
+		var prior changeProvenance
+		if _, err := t.GetProjectRecord(p.ID, "g1_change_provenance", change.ReassessedFromID, &prior); err != nil {
 			return err
 		}
 		for _, field := range change.Fields {
@@ -85,14 +85,14 @@ func g1RecordChangeProvenance(t gormTransaction, change ChangeSet) error {
 			}
 		}
 	}
-	return t.G5Put(p.ID, "g1_change_provenance", change.ID, 0, history)
+	return t.PutProjectRecord(p.ID, "g1_change_provenance", change.ID, 0, history)
 }
 
 func (s *Service) AssertChangeProvenance(ctx context.Context, actor Actor, change ChangeSet) error {
-	_, err := s.g1PrepareChangeProvenance(ctx, actor, change, map[string]bool{})
+	_, err := s.prepareChangeProvenance(ctx, actor, change, map[string]bool{})
 	return err
 }
-func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, change ChangeSet, seen map[string]bool) (context.Context, error) {
+func (s *Service) prepareChangeProvenance(ctx context.Context, actor Actor, change ChangeSet, seen map[string]bool) (context.Context, error) {
 	if len(change.Fields) == 0 && change.TemplateUpgrade == nil {
 		return ctx, nil
 	}
@@ -100,16 +100,16 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 		return ctx, ErrSourceUnavailable
 	}
 	seen[change.ID] = true
-	var history g1ChangeProvenance
+	var history changeProvenance
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, change.ProjectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
-		store, ok := tx.(g5Transaction)
+		store, ok := tx.(projectRecordTransaction)
 		if !ok {
 			return ErrSourceUnavailable
 		}
-		_, err := store.G5Get(change.ProjectID, "g1_change_provenance", change.ID, &history)
+		_, err := store.GetProjectRecord(change.ProjectID, "g1_change_provenance", change.ID, &history)
 		return err
 	})
 	if err != nil {
@@ -118,11 +118,11 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 		}
 		return ctx, err
 	}
-	return s.g1PrepareChangeProvenanceHistory(ctx, actor, change, history, seen)
+	return s.prepareChangeProvenanceHistory(ctx, actor, change, history, seen)
 }
 
 // Shared validation for both current ChangeSet history and an immutable operation receipt.
-func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Actor, change ChangeSet, history g1ChangeProvenance, seen map[string]bool) (context.Context, error) {
+func (s *Service) prepareChangeProvenanceHistory(ctx context.Context, actor Actor, change ChangeSet, history changeProvenance, seen map[string]bool) (context.Context, error) {
 	if history.Snapshot.SpecRevision != change.BaseSpecRevision || history.Snapshot.ContextRevision != change.BaseContextRevision {
 		return ctx, ErrSourceUnavailable
 	}
@@ -141,7 +141,7 @@ func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Ac
 	if err != nil {
 		return ctx, err
 	}
-	proof := prepared.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
+	proof := prepared.Value(provenanceProofKey{}).(*provenanceProof)
 	for _, id := range history.InheritedChangeIDs {
 		var previous ChangeSet
 		err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -156,12 +156,12 @@ func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Ac
 		if err != nil {
 			return ctx, err
 		}
-		inherited, err := s.g1PrepareChangeProvenance(ctx, actor, previous, seen)
+		inherited, err := s.prepareChangeProvenance(ctx, actor, previous, seen)
 		if err != nil {
 			return ctx, err
 		}
-		if other, ok := inherited.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof); ok {
-			if g1ProjectHash(other.Project) != g1ProjectHash(proof.Project) {
+		if other, ok := inherited.Value(provenanceProofKey{}).(*provenanceProof); ok {
+			if provenanceProjectHash(other.Project) != provenanceProjectHash(proof.Project) {
 				return ctx, ErrVersionConflict
 			}
 			for pinID, pin := range other.Pins {
@@ -173,8 +173,8 @@ func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Ac
 	}
 	return prepared, nil
 }
-func g1StoreReverseSources(ctx context.Context, tx Transaction, value any) error {
-	original, ok := ctx.Value(g1ReverseSourceKey{}).(string)
+func storeReverseSources(ctx context.Context, tx Transaction, value any) error {
+	original, ok := ctx.Value(reverseSourceKey{}).(string)
 	if !ok || original == "" {
 		return nil
 	}
@@ -185,18 +185,18 @@ func g1StoreReverseSources(ctx context.Context, tx Transaction, value any) error
 	if original == change.ID {
 		return ErrInvalidState
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
-	var record g1ChangeProvenance
-	version, err := store.G5Get(change.ProjectID, "g1_change_provenance", change.ID, &record)
+	var record changeProvenance
+	version, err := store.GetProjectRecord(change.ProjectID, "g1_change_provenance", change.ID, &record)
 	if err != nil {
 		return err
 	}
 	record.InheritedChangeIDs = []string{original}
-	var source g1ChangeProvenance
-	if _, err := store.G5Get(change.ProjectID, "g1_change_provenance", original, &source); err != nil {
+	var source changeProvenance
+	if _, err := store.GetProjectRecord(change.ProjectID, "g1_change_provenance", original, &source); err != nil {
 		return err
 	}
 	record.InheritedFields = map[string]SpecProvenanceRef{}
@@ -215,10 +215,10 @@ func g1StoreReverseSources(ctx context.Context, tx Transaction, value any) error
 			record.InheritedFields[ref.FieldKey] = ref
 		}
 	}
-	return store.G5Put(change.ProjectID, "g1_change_provenance", change.ID, version, record)
+	return store.PutProjectRecord(change.ProjectID, "g1_change_provenance", change.ID, version, record)
 }
 
-func (s *Service) g1ChangeProjection(ctx context.Context, actor Actor, change ChangeSet) (ChangeSet, error) {
+func (s *Service) changeProvenanceProjection(ctx context.Context, actor Actor, change ChangeSet) (ChangeSet, error) {
 	err := s.AssertChangeProvenance(ctx, actor, change)
 	if err == nil {
 		return change, nil
@@ -245,7 +245,7 @@ func (s *Service) g1ChangeProjection(ctx context.Context, actor Actor, change Ch
 	return change, nil
 }
 
-func (s *Service) g1PreviewProjection(ctx context.Context, actor Actor, preview TemplateMigrationPreview) (TemplateMigrationPreview, error) {
+func (s *Service) previewProvenanceProjection(ctx context.Context, actor Actor, preview TemplateMigrationPreview) (TemplateMigrationPreview, error) {
 	p, err := s.GetProject(ctx, actor, preview.ProjectID)
 	if err != nil {
 		return preview, err

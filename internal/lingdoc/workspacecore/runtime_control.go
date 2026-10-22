@@ -92,7 +92,7 @@ type RuntimeMetrics struct {
 	QueueDepth int64          `json:"queue_depth"`
 	Missing    []string       `json:"missing"`
 }
-type g6RecordRow struct {
+type runtimeRecordRow struct {
 	ID                         string
 	TenantID                   uint64
 	ProjectID, Kind, RecordKey string
@@ -101,45 +101,45 @@ type g6RecordRow struct {
 	CreatedAt, UpdatedAt       time.Time
 }
 
-func (g6RecordRow) TableName() string { return "lingdoc_g6_records" }
+func (runtimeRecordRow) TableName() string { return "lingdoc_g6_records" }
 
 type runtimeTransaction interface {
-	G6Read(uint64, string, string, string, any) (int64, error)
-	G6Insert(uint64, string, string, string, int64, any) error
-	G6CAS(uint64, string, string, string, int64, any) error
-	G6List(uint64, string, string) ([]g6RecordRow, error)
+	ReadRuntimeRecord(uint64, string, string, string, any) (int64, error)
+	InsertRuntimeRecord(uint64, string, string, string, int64, any) error
+	CompareAndSwapRuntimeRecord(uint64, string, string, string, int64, any) error
+	ListRuntimeRecords(uint64, string, string) ([]runtimeRecordRow, error)
 	RuntimeControls(uint64) ([]RuntimeControl, error)
 }
 
-func (t gormTransaction) G6Read(tenant uint64, project, kind, key string, value any) (int64, error) {
-	var row g6RecordRow
+func (t gormTransaction) ReadRuntimeRecord(tenant uint64, project, kind, key string, value any) (int64, error) {
+	var row runtimeRecordRow
 	if err := t.db.Where("tenant_id = ? AND project_id = ? AND kind = ? AND record_key = ?", tenant, project, kind, key).First(&row).Error; err != nil {
 		return 0, storageError(err)
 	}
 	return row.Version, json.Unmarshal([]byte(row.BodyJSON), value)
 }
-func (t gormTransaction) G6Insert(tenant uint64, project, kind, key string, version int64, value any) error {
+func (t gormTransaction) InsertRuntimeRecord(tenant uint64, project, kind, key string, version int64, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	return t.db.Create(&g6RecordRow{ID: uuid.NewString(), TenantID: tenant, ProjectID: project, Kind: kind, RecordKey: key, Version: version, BodyJSON: string(raw), CreatedAt: now, UpdatedAt: now}).Error
+	return t.db.Create(&runtimeRecordRow{ID: uuid.NewString(), TenantID: tenant, ProjectID: project, Kind: kind, RecordKey: key, Version: version, BodyJSON: string(raw), CreatedAt: now, UpdatedAt: now}).Error
 }
-func (t gormTransaction) G6CAS(tenant uint64, project, kind, key string, version int64, value any) error {
+func (t gormTransaction) CompareAndSwapRuntimeRecord(tenant uint64, project, kind, key string, version int64, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&g6RecordRow{}).Where("tenant_id = ? AND project_id = ? AND kind = ? AND record_key = ? AND version = ?", tenant, project, kind, key, version).Updates(map[string]any{"version": version + 1, "body_json": string(raw), "updated_at": time.Now().UTC()}))
+	return affected(t.db.Model(&runtimeRecordRow{}).Where("tenant_id = ? AND project_id = ? AND kind = ? AND record_key = ? AND version = ?", tenant, project, kind, key, version).Updates(map[string]any{"version": version + 1, "body_json": string(raw), "updated_at": time.Now().UTC()}))
 }
-func (t gormTransaction) G6List(tenant uint64, project, kind string) ([]g6RecordRow, error) {
-	var rows []g6RecordRow
+func (t gormTransaction) ListRuntimeRecords(tenant uint64, project, kind string) ([]runtimeRecordRow, error) {
+	var rows []runtimeRecordRow
 	err := t.db.Where("tenant_id = ? AND project_id = ? AND kind = ?", tenant, project, kind).Order("created_at,id").Find(&rows).Error
 	return rows, err
 }
 func (t gormTransaction) RuntimeControls(tenant uint64) ([]RuntimeControl, error) {
-	var rows []g6RecordRow
+	var rows []runtimeRecordRow
 	if err := t.db.Where("tenant_id = ? AND kind = ?", tenant, "control").Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			recordProject = ""
 		}
 		var previous RuntimeControl
-		version, err := store.G6Read(actor.TenantID, recordProject, "control", recordKey, &previous)
+		version, err := store.ReadRuntimeRecord(actor.TenantID, recordProject, "control", recordKey, &previous)
 		if err != nil && err != ErrNotFound {
 			return operationResult[RuntimeControl]{}, err
 		}
@@ -293,9 +293,9 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			next.ExportID = input.ExportID
 		}
 		if version == 0 {
-			err = store.G6Insert(actor.TenantID, recordProject, "control", recordKey, 1, next)
+			err = store.InsertRuntimeRecord(actor.TenantID, recordProject, "control", recordKey, 1, next)
 		} else {
-			err = store.G6CAS(actor.TenantID, recordProject, "control", recordKey, version, next)
+			err = store.CompareAndSwapRuntimeRecord(actor.TenantID, recordProject, "control", recordKey, version, next)
 		}
 		if err != nil {
 			return operationResult[RuntimeControl]{}, err
@@ -353,7 +353,7 @@ func RecordRuntimeOperation(tx Transaction, actor Actor, p Project, operation, s
 		return ErrInvalidState
 	}
 	event := RuntimeEvent{ID: uuid.NewString(), Origin: "runtime", TenantAlias: "tenant." + hashImpactValue(actor.TenantID)[:16], ProjectAlias: "project." + hashImpactValue(p.ID)[:16], CorrelationID: uuid.NewString(), Category: "request", Status: status, RuntimeMode: "real_api_fake_model", ContextRevision: p.CurrentContextRevision, TemplateVersion: p.TemplateVersion, DurationMS: durationMS, CreatedAt: time.Now().UTC()}
-	return store.G6Insert(actor.TenantID, p.ID, "event", event.ID, 1, event)
+	return store.InsertRuntimeRecord(actor.TenantID, p.ID, "event", event.ID, 1, event)
 }
 func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID, key string, input RuntimeEvent) (json.RawMessage, int, bool, error) {
 	if !validRuntimeEvent(input) {
@@ -372,7 +372,7 @@ func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID
 		event.CreatedAt = time.Now().UTC()
 		event.ContextRevision = p.CurrentContextRevision
 		event.RuntimeMode = effectiveRuntimeMode(s.runtimeMode)
-		if err := store.G6Insert(actor.TenantID, projectID, "event", event.ID, 1, event); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, projectID, "event", event.ID, 1, event); err != nil {
 			return operationResult[RuntimeEvent]{}, err
 		}
 		return operationResult[RuntimeEvent]{Value: event, Status: operationStatusCreated}, nil
@@ -388,7 +388,7 @@ func (s *Service) ListRuntimeEvents(ctx context.Context, actor Actor, projectID,
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G6List(actor.TenantID, projectID, "event")
+		rows, err := store.ListRuntimeRecords(actor.TenantID, projectID, "event")
 		if err != nil {
 			return err
 		}
@@ -459,7 +459,7 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, p.ID, AuthorizationManage, "")); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
-		if err := store.G6Insert(actor.TenantID, p.ID, "alert_rule", input.ID, 1, input); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "alert_rule", input.ID, 1, input); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
 		if err := recordAuditEvent(tx, actor, p.ID, "runtime.alert_rule", input.ID, map[string]any{"signal": input.Signal, "action": input.Action}); err != nil {
@@ -470,7 +470,7 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 }
 func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEvent) error {
 	store := tx.(runtimeTransaction)
-	rows, err := store.G6List(actor.TenantID, p.ID, "alert_rule")
+	rows, err := store.ListRuntimeRecords(actor.TenantID, p.ID, "alert_rule")
 	if err != nil {
 		return err
 	}
@@ -486,23 +486,23 @@ func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEve
 		if rule.Action == "pause" || rule.Action == "block_export" {
 			control := RuntimeControl{ID: uuid.NewString(), ProjectID: p.ID, Scope: RuntimeScope{Kind: "project", Value: p.ID}, Status: "PAUSED", Version: 1, ActorID: actor.UserID, Reason: "alert:" + rule.ID, UpdatedAt: time.Now().UTC()}
 			var old RuntimeControl
-			version, err := store.G6Read(actor.TenantID, p.ID, "control", "project/"+p.ID, &old)
+			version, err := store.ReadRuntimeRecord(actor.TenantID, p.ID, "control", "project/"+p.ID, &old)
 			switch err {
 			case ErrNotFound:
-				err = store.G6Insert(actor.TenantID, p.ID, "control", "project/"+p.ID, 1, control)
+				err = store.InsertRuntimeRecord(actor.TenantID, p.ID, "control", "project/"+p.ID, 1, control)
 			case nil:
 				control.Version = version + 1
-				err = store.G6CAS(actor.TenantID, p.ID, "control", "project/"+p.ID, version, control)
+				err = store.CompareAndSwapRuntimeRecord(actor.TenantID, p.ID, "control", "project/"+p.ID, version, control)
 			}
 			if err != nil {
 				return err
 			}
 			alert.Status = "APPLIED"
 		}
-		if err := store.G6Insert(actor.TenantID, p.ID, "alert", rule.ID+"/"+event.ID, 1, alert); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "alert", rule.ID+"/"+event.ID, 1, alert); err != nil {
 			return err
 		}
-		if err := store.G6Insert(actor.TenantID, p.ID, "alert_action", alert.ID, 1, map[string]any{"action": rule.Action, "responsible_id": rule.ResponsibleID, "status": alert.Status}); err != nil {
+		if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "alert_action", alert.ID, 1, map[string]any{"action": rule.Action, "responsible_id": rule.ResponsibleID, "status": alert.Status}); err != nil {
 			return err
 		}
 	}
@@ -518,7 +518,7 @@ func (s *Service) ListRuntimeAlerts(ctx context.Context, actor Actor, projectID 
 		if !ok {
 			return ErrInvalidState
 		}
-		rows, err := store.G6List(actor.TenantID, projectID, "alert")
+		rows, err := store.ListRuntimeRecords(actor.TenantID, projectID, "alert")
 		if err != nil {
 			return err
 		}
