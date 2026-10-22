@@ -36,7 +36,7 @@
 | 37-Spec G2 证据失效传播、复核与生成接入 | #138 | open | #128, #132, #137 | 主链已落地 | — |
 | 41-Spec G4 模板升级与 G3 稳定化交接 | #142 | open | #131, #132, #137, #139, #140 | 部分落地 | — |
 | 45-Spec G6 运行观测、告警与暂停回退 | #145 | open | #126, #128, #130, #131, #132, #137, #140 | 部分落地 | — |
-| 33-Spec G7 章节 AI 辅助写作 | #134 | open | #124, #128, #133, #137, #140 | 部分落地 | — |
+| 33-Spec G7 章节 AI 辅助写作 | #134 | closed | #124, #128, #133, #137, #140 | 已完成 | — |
 | 46-Spec G6 真实试用窗口、指标与扩大决策 | #146 | open | #128, #137, #140, #145 | 部分落地 | — |
 
 ## 分层路径图
@@ -87,7 +87,7 @@ graph TD
     S45["45-Spec G6 运行观测、告警与暂停回退<br/>#145 · 部分落地"]
   end
   subgraph L10["第 10 层"]
-    S33["33-Spec G7 章节 AI 辅助写作<br/>#134 · 部分落地"]
+    S33["33-Spec G7 章节 AI 辅助写作<br/>#134 · 已完成"]
     S46["46-Spec G6 真实试用窗口、指标与扩大决策<br/>#146 · 部分落地"]
   end
 
@@ -232,10 +232,10 @@ graph TD
 
 | 档位 | 票 | 代码 | 本图实例 |
 |---|---|---|---|
-| **已完成** | closed | 在 main | #131 #132 #140 |
+| **已完成** | closed | 在 main | #131 #132 #140 #134 |
 | **主链已落地·收尾在飞** | open | 主链在 main，收尾在未合并 PR | #129 |
 | **主链已落地** | open | 四要素齐备 | #126 #128 #133 #136 #137 #138 #141 #143 |
-| **部分落地** | open | 部分验收点缺 | #123 #124 #125 #127 #130 #134 #135 #142 #145 #146 |
+| **部分落地** | open | 部分验收点缺 | #123 #124 #125 #127 #130 #135 #142 #145 #146 |
 | **未开工** | open | main 无对应落点 | 本图无实例（保留为守护档） |
 | **已关未落地** | closed | **不在 main** | 本图无实例（见下） |
 
@@ -261,13 +261,13 @@ graph TD
 | 票 | 面 | 交付（Spec） | 文件所有权 | 零阻塞理由 |
 |---|---|---|---|---|
 | [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/views/lingdoc/ImpactOpsPanel.vue`、`runtimeMetrics.ts`、`runtimeMetrics.test.ts`、`frontend/src/api/lingdoc/mainlineChanges.test.js`、`frontend/src/views/lingdoc/ImpactOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上（`internal/lingdoc/workspace/impact_routes.go:135-182`、`api/lingdoc/mainlineChanges.ts:112-127`）；本面只补服务端已给但界面未呈现的运行指标，并给前端补契约保护 |
-| [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | `internal/lingdoc/generation/{service,application,http,store}.go`、`internal/lingdoc/workspace/{selected_rewrite,selected_rewrite_model,http}.go`、`internal/lingdoc/candidateadoption/{candidate_adoption,candidate_adoption_store,candidate_basis,candidate_adoption_http,confirmation}.go`、`internal/lingdoc/workspacecore/human_decision.go`、`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`、`frontend/src/views/lingdoc/generationAttempt.ts` | 证据那半边用 #138 已落地的生成接入，不必等 #137/#133 |
+| [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | **路径集以登记处为准**（本面 2026-10-22 补齐到 **56** 条：新增 `internal/lingdoc/writingaction/`、`internal/lingdoc/candidateadoption/`、`internal/lingdoc/generation/`，`internal/lingdoc/workspace/` 下的选段改写与评审执行方，`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`，前端动作面板 / 评审报告面板 / 动作表客户端等） | **已于 2026-10-22 完成**：十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭；残留票 #385 / #386 保持开放 |
 | [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/runtime_control.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
 | [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
 | [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/agent_action_service.go`、`agent_research_model.go` | 上下文包后端已在 `agent_research_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
 
-六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领**：PF-2 仍在施工，**PF-1 已于 2026-10-22 完成**（登记处 `status` 为 `done`）。其余四张未被认领。
+六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领并完成**（登记处 `status` 均为 `done`；完成态不保留 `claimed_by`，认领与完成的人记在 `summary` 里）：PF-1 于 2026-10-22 完成，**PF-2 同日完成**——十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭，#326 及下面 17 张票全部关闭。两张残留票保持开放：[#385](https://github.com/magician336/lingdoc/issues/385)（动作表按目标范围给动作、执行按管道分）、[#386](https://github.com/magician336/lingdoc/issues/386)（两处手抄迁移子集夹具）。其余四张（PF-3…PF-6）在登记处仍是 `available`，未被认领——**认领状态以登记处为准**。
 
 > **PF-1 的路径集在 2026-10-22 改过**：初次登记时列的是三个**新建**文件（`g6Runtime.ts` / `g6Trial.ts` / `G6OpsPanel.vue`），前提是「G6 前端为零」。施工时核实发现该前提已过时——16 个 G6 端点客户端与两个 tab 的界面早已在 main 上，重复新建会造成两套并行实现。于是本面缩为「补真实缺口」：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。**G6 前端的独立化与 Workspace 集成不在本面**，另开 [#384](https://github.com/magician336/lingdoc/issues/384)。路径集与边界以登记处 `scripts/lingdoc_parallel_surfaces.py` 为准，本表只是它的说明副本。
 
@@ -314,7 +314,7 @@ graph TD
 ### ④ 前端与动作族
 
 - **G6 前端已接线，但仍寄生在 G3 面板里**：16 个 G6 端点客户端与运行/试用两个 tab 早已在 main 上（`api/lingdoc/mainlineChanges.ts:112-127`、`ImpactOpsPanel.vue:55-83`），不是「零文件」。PF-1（#325）已于 2026-10-22 补上运行指标视图与前端契约保护。**未完成的是独立化与 Workspace 集成**：G6 仍寄居在「变更与运行质量」面板里，值班人员要先进入该面板再切 tab。归属 [#384](https://github.com/magician336/lingdoc/issues/384)。
-- **#134 动作族缺失**：`generation/service.go:124` 只有自由文本 `Instruction`，无 outline / continue / compress / expand / translate 的动作与各自约束（仅 rewrite 有专门服务）；「人工 / AI / AI 辅助」来源标注也未见。
+- **#134 动作族已落地**（PF-2，2026-10-22 完成）：八类动作（提纲 / 生成 / 续写 / 改写 / 压缩 / 扩展 / 转写 / 语言评审）由 `internal/lingdoc/writingaction` **独占拥有**，产出参数是闭合取值集，采纳必须带**显式确认载荷**（动作 × 采纳目标 × 目标范围 × 确认时刻 × 确认人 × 来源，六项缺一在服务层被拒），「人工 / AI 生成 / AI 辅助」来源标注随候选走。**未裁决的遗留**：续写是「替换选区」还是「插入其后」（#342）、提纲是「替换整篇工作副本」还是「与已有正文并存」（#347）——两者都要词汇包先声明「插入 vs 替换」语义。
 
 ### 缺口簇与施工并行面的对应
 
