@@ -8,6 +8,11 @@ const ts = require('typescript'), sfc = require('@vue/compiler-sfc')
 const filename = new URL('./ImpactOpsPanel.vue', import.meta.url)
 const parsed = sfc.parse(fs.readFileSync(filename, 'utf8'), { filename: filename.pathname })
 const compiled = sfc.compileScript(parsed.descriptor, { id: 'test-impact-ops' })
+// The grouping table is a plain module with no imports, so it is loaded the
+// same way the api client test loads its subject: transpile, then hand the
+// exports to the component instead of a stub.
+const runtimeMetricsExports = {}
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('./runtimeMetrics.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: runtimeMetricsExports, require })
 test('actual operator template compiles with the component binding metadata',()=>{
  const result=sfc.compileTemplate({id:'test-impact-ops',filename:filename.pathname,source:parsed.descriptor.template.content,compilerOptions:{bindingMetadata:compiled.bindings}})
  assert.equal(result.errors.length,0)
@@ -19,7 +24,7 @@ function setup(readonly, options = {}) {
   const vue = { defineComponent: value => value, ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), watch() {} }
   const api = new Proxy({}, { get: (_, method) => async (...args) => { calls.push({ method, args });if(options.handlers?.[method])return options.handlers[method](...args); if(method==='getImpactComputationReceipt')return {data:options.receipts?.[args[1]] || null};return { data: [] } } })
   const js = ts.transpileModule(compiled.content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-  vm.runInNewContext(js, { exports, require(name) { if (name === 'vue') return vue;if(name==='@/stores/auth')return {useAuthStore:()=>auth}; return api }, crypto: { randomUUID: () => `test-key-${++keySequence}` }, console })
+  vm.runInNewContext(js, { exports, require(name) { if (name === 'vue') return vue;if(name==='@/stores/auth')return {useAuthStore:()=>auth};if(name==='./runtimeMetrics')return runtimeMetricsExports; return api }, crypto: { randomUUID: () => `test-key-${++keySequence}` }, console })
   const props = { project: { id: 'synthetic.project', name: 'Synthetic',status:'active',project_version:3,template_version:'1',template_copy:{version:1,ruleset_hash:'actual.rules'}, spec_revision: 1, current_context_revision: 1, spec: {}, members: [{ user_id: 'owner', role: 'owner' }] }, readonly, currentUserId: 'owner', preflightReceiptId: options.preflightReceiptId || '' }
   const state = exports.default.setup(props, { expose() {}, emit(...args) { emitted.push(args) } })
   return { state, calls, emitted, props,auth }
@@ -410,4 +415,36 @@ test('evidence JSON cannot smuggle confirmation or source authority through the 
  const {state}=setup(false);state.semanticKind.value='EvidenceCard';state.semanticTarget.value='formal-card';state.semanticVersion.value=4;state.cardConsent.value=true
  state.cardEditor.value=JSON.stringify({claim_ref:{id:'claim',version:1},anchor_refs:[{id:'anchor',version:1}],support_type:'supports',scope:'scope',scope_chapter_ids:['chapter'],status:'CONFIRMED'})
  state.addSemanticDelta();assert.equal(state.semanticDraft.value.length,0);assert.match(state.error.value,/合法证据关系/)
+})
+
+test('the runtime tab groups the server counts and keeps unmeasured metrics unobserved', () => {
+  const { state } = setup(false)
+  state.metrics.value = { event_count: 5, counts: { 'task/failed': 3, 'download/rejected': 1 }, p95_ms: null, p99_ms: 12, queue_depth: 2, missing: ['latency_p95_p99'] }
+  const byKey = new Map(state.runtimeMetricItems.value.map(item => [item.key, item]))
+  assert.equal(byKey.get('async_failed').total, 3)
+  assert.equal(byKey.get('stale').total, null)
+  assert.equal(byKey.get('permission_rejected').total, 1)
+  assert.equal(byKey.get('download_reauth').total, 1)
+  assert.equal(byKey.get('permission_decisions').total, null)
+  assert.match(String(byKey.get('permission_decisions').unavailableReason), /未提供/)
+  // The rows come from a vm realm, so compare the joined keys instead of
+  // deep-comparing an array against one from this realm.
+  assert.equal(state.runtimeCountRows.value.map(row => row.key).join(','), 'download/rejected,task/failed')
+})
+
+test('the runtime and trial tabs stay reachable for on-call and trial operators', () => {
+  const { state } = setup(false)
+  const ids = state.tabs.map(entry => entry.id)
+  assert.equal(ids.includes('runtime'), true)
+  assert.equal(ids.includes('trial'), true)
+  assert.equal(ids.includes('changes'), true)
+  assert.equal(ids.includes('impacts'), true)
+})
+
+test('the runtime and trial sections stay in the rendered panel', () => {
+  const source = fs.readFileSync(new URL('./ImpactOpsPanel.vue', import.meta.url), 'utf8')
+  assert.match(source, /tab === 'runtime'/)
+  assert.match(source, /tab === 'trial'/)
+  assert.match(source, /runtimeMetricItems/)
+  assert.match(source, /runtimeCountRows/)
 })

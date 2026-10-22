@@ -91,3 +91,73 @@ test('stale reassessment reuses the existing endpoint with encoded segments and 
   assert.equal(result.data.decision_by, 'actual-owner')
   assert.equal(result.meta.replayed, true)
 })
+
+// The server publishes no OpenAPI path for the G6 runtime and trial routes, so
+// these sixteen calls are the only machine-checked record of where they live.
+// A path or segment that drifts here fails before a panel asks for a resource
+// the server never serves.
+test('every G6 runtime and trial endpoint keeps its exact path and encoding', async () => {
+  const { api, calls } = harness()
+  const project = 'project/other'
+  const projectPath = '/api/v1/lingdoc/projects/project%2Fother'
+  await api.listRuntimeControls(project)
+  await api.controlRuntime(project, { expected_version: 1, scope: { kind: 'project', value: 'p' }, action: 'pause', reason: 'synthetic.pause' }, 'key-controls')
+  await api.listRuntimeEvents(project, 'corr?other')
+  await api.getRuntimeMetrics(project)
+  await api.listRuntimeAlerts(project)
+  await api.saveRuntimeAlertRule(project, { signal: 'dependency/failed', severity: 'P1', action: 'pause', responsible_id: 'owner' }, 'key-alert-rule')
+  await api.listTrialWindows(project)
+  await api.createTrialWindow(project, { starts_at: 'synthetic.start', ends_at: 'synthetic.end' }, 'key-window')
+  await api.actOnTrialWindow(project, 'window/one', { expected_version: 1, action: 'lock', reason: 'synthetic.lock' }, 'key-window-action')
+  await api.listTrialSamples(project, 'window/one')
+  await api.recordTrialSample(project, 'window/one', { sample_version: 'synthetic.v1' }, 'key-sample')
+  await api.reviewTrialSample(project, 'window/one', 'sample/one', { expected_version: 1, quality_result: 'PASS', human_decision: 'accept', reason: 'synthetic.review', word_roundtrip_evidence: 'synthetic.word' }, 'key-review')
+  await api.getTrialReport(project, 'window/one')
+  await api.listTrialDecisions(project, 'window/one')
+  await api.createTrialDecision(project, 'window/one', { decision: 'expand', reason: 'synthetic.decision', report_hash: 'synthetic.hash' }, 'key-decision')
+  await api.signTrialDecision(project, 'decision/one', { expected_version: 1, responsibility: 'product', reason: 'synthetic.sign' }, 'key-sign')
+  assert.deepEqual(calls.map(call => call.url), [
+    `${projectPath}/runtime/controls`,
+    `${projectPath}/runtime/controls`,
+    `${projectPath}/runtime/events?correlation_id=corr%3Fother`,
+    `${projectPath}/runtime/metrics`,
+    `${projectPath}/runtime/alerts`,
+    `${projectPath}/runtime/alert-rules`,
+    `${projectPath}/trial-windows`,
+    `${projectPath}/trial-windows`,
+    `${projectPath}/trial-windows/window%2Fone/actions`,
+    `${projectPath}/trial-windows/window%2Fone/samples`,
+    `${projectPath}/trial-windows/window%2Fone/samples`,
+    `${projectPath}/trial-windows/window%2Fone/samples/sample%2Fone/review`,
+    `${projectPath}/trial-windows/window%2Fone/report`,
+    `${projectPath}/trial-windows/window%2Fone/decisions`,
+    `${projectPath}/trial-windows/window%2Fone/decisions`,
+    `${projectPath}/trial-decisions/decision%2Fone/sign`,
+  ])
+})
+
+test('G6 writes carry an idempotency key and G6 reads carry no request body', async () => {
+  const { api, calls } = harness()
+  await api.listRuntimeControls('p')
+  await api.controlRuntime('p', { expected_version: 1, scope: { kind: 'project', value: 'p' }, action: 'pause', reason: 'synthetic.pause' }, 'key-controls')
+  await api.listRuntimeEvents('p')
+  await api.saveRuntimeAlertRule('p', { signal: 'dependency/failed', severity: 'P1', action: 'pause', responsible_id: 'owner' }, 'key-alert-rule')
+  await api.signTrialDecision('p', 'd', { expected_version: 1, responsibility: 'qa', reason: 'synthetic.sign' }, 'key-sign')
+  const reads = calls.filter(call => call.method === 'get')
+  const writes = calls.filter(call => call.method === 'post')
+  assert.equal(reads.length, 2)
+  for (const call of reads) assert.equal(call.input, undefined)
+  assert.equal(writes.length, 3)
+  for (const call of writes) assert.match(String(call.options.headers['Idempotency-Key']), /^key-/)
+})
+
+test('the G6 client passes the server envelope through untouched', async () => {
+  const response = { data: [{ id: 'control-1', status: 'PAUSED', scope: { kind: 'project', value: 'p' } }], request_id: 'actual.request', meta: { replayed: false, refresh_required: false } }
+  const { api } = harness(response)
+  const result = await api.listRuntimeControls('p')
+  assert.equal(result, response)
+  assert.equal(result.data[0].status, 'PAUSED')
+  assert.equal(result.data[0].scope.kind, 'project')
+  assert.equal(result.request_id, 'actual.request')
+  assert.equal(result.meta.replayed, false)
+})

@@ -54,6 +54,9 @@
     </template>
     <template v-if="tab === 'runtime'">
       <div v-if="metrics" class="grid metrics"><article><strong>{{ metrics.event_count }}</strong>已记录事件</article><article><strong>{{ metrics.p95_ms ?? '缺样本' }}</strong>P95 毫秒</article><article><strong>{{ metrics.p99_ms ?? '缺样本' }}</strong>P99 毫秒</article><article><strong>{{ metrics.queue_depth }}</strong>观测队列深度</article></div>
+      <div v-if="metrics" class="grid metrics" aria-label="运行指标"><article v-for="item in runtimeMetricItems" :key="item.key"><strong>{{ item.unavailableReason ? '后端未提供' : item.total === null ? '无观测' : item.total }}</strong>{{ item.label }}<small v-if="item.unavailableReason">{{ item.unavailableReason }}</small><small v-else-if="item.note">{{ item.note }}</small></article></div>
+      <p v-if="metrics && metrics.missing && metrics.missing.length" class="muted">服务端标注缺失的观测：{{ metrics.missing.join('、') }}。</p>
+      <details v-if="metrics && runtimeCountRows.length"><summary>服务端运行计数明细（权威视图）</summary><table><thead><tr><th>资源类别</th><th>状态</th><th>计数</th><th>原始键</th></tr></thead><tbody><tr v-for="row in runtimeCountRows" :key="row.key"><td>{{ row.categoryLabel }}</td><td>{{ row.statusLabel }}</td><td>{{ row.count }}</td><td><small>{{ row.key }}</small></td></tr></tbody></table></details>
       <form v-if="canManage" @submit.prevent="pauseRuntime"><h3>暂停运行范围</h3><label>作用范围<select :disabled="busy" v-model="runtimeScopeKind"><option value="project">当前课题</option><option value="tenant" :disabled="!auth.effectiveTenantId">当前租户</option><option value="template_version" :disabled="!project.template_version">当前模板版本</option><option value="ruleset_hash" :disabled="!project.template_copy?.ruleset_hash">当前规则摘要</option><option value="runtime_mode">指定运行模式</option></select></label><label v-if="runtimeScopeKind==='runtime_mode'">模式<select :disabled="busy" v-model="runtimeModeScope" required><option value="">选择实际范围</option><option value="mock">mock</option><option value="real_api_fake_model">real_api_fake_model</option><option value="real">real</option></select></label><p>实际范围：{{ runtimeScope.kind }} / {{ runtimeScope.value || '尚未选择' }}。租户、版本、摘要和模式范围可影响当前租户内其他匹配课题；服务端核对租户管理权限。</p><button :disabled="busy || !runtimeReadReady || !runtimeScope.value || selectedRuntimeControl?.status === 'PAUSED' || !reason.trim()">请求暂停此范围的新写入、生成和交付</button></form>
       <p v-if="evidenceReadError" role="alert" class="error">{{ evidenceReadError }}</p>
       <article v-for="control in controls" :key="control.id"><h3>{{ control.status === 'PAUSED' ? '已暂停' : '已恢复' }} · {{ control.scope.kind }}/{{ control.scope.value }}</h3><p>{{ control.reason }} · {{ control.actor_id }} · {{ control.updated_at }}</p><p v-if="control.recovery_verified">已记录服务端权限、当前性和下载复验。</p><form v-if="canManage && control.status === 'PAUSED'" @submit.prevent="resumeRuntime(control)"><label>已有复验快照<select :disabled="busy || evidenceLoading" v-model="recoverySnapshot" required><option value="">选择快照，提交时重新读取当前性</option><option v-for="snapshot in releaseOptions" :key="snapshot.id" :value="snapshot.id">{{ snapshot.id }} · {{ snapshot.check.status }} · {{ snapshot.created_at }}</option></select></label><label>该快照的已有导出<select :disabled="busy || evidenceLoading" v-model="recoveryExport" required><option value="">选择已验证文件</option><option v-for="artifact in recoveryExports" :key="artifact.id" :value="artifact.id">{{ artifact.id }} · {{ artifact.status }}</option></select></label><button :disabled="busy || !runtimeReadReady || !reason.trim() || !recoverySnapshot || !recoveryExport">完成服务端复验后恢复</button></form></article>
@@ -89,6 +92,7 @@ import { listResearchClaims, listEvidenceCards, type ResearchClaim, type Evidenc
 import { listAssets, type Asset } from '@/api/lingdoc/workspace'
 import { useAuthStore } from '@/stores/auth'
 import DependencyCandidatePanel from './DependencyCandidatePanel.vue'
+import { projectRuntimeMetrics, expandRuntimeCounts } from './runtimeMetrics'
 const props = withDefaults(defineProps<{ project: Project; readonly?: boolean; currentUserId?: string; preflightReceiptId?: string }>(), { readonly: true, currentUserId: '', preflightReceiptId: '' })
 const emit = defineEmits<{ close: []; changed: []; dirty: [boolean] }>()
 const auth = useAuthStore()
@@ -104,6 +108,12 @@ const definiteImpacts = computed(() => (assessment.value?.impacts || []).filter(
 const possibleImpacts = computed(() => (assessment.value?.impacts || []).filter(impact => impact.certainty !== 'definite'))
 const edges = ref<api.DependencyEdge[]>([]), tasks = ref<api.ImpactTask[]>([]), closingTask = ref<api.ImpactTask | null>(null), closureVersion = ref(''), closureReceipt = ref(''), closureDecision = ref(''), assignees = ref<Record<string, string>>({})
 const controls = ref<api.RuntimeControl[]>([]), metrics = ref<api.RuntimeMetrics | null>(null), events = ref<api.RuntimeEvent[]>([]), alerts = ref<api.RuntimeAlert[]>([])
+// The server reports raw counts keyed by resource category and status; the
+// on-call view needs them grouped by the G6 minimum metric set.  The grouping
+// lives in runtimeMetrics.ts so the wording has a single owner, and a metric
+// the server never measures reads as "not observed" instead of zero.
+const runtimeMetricItems = computed(() => projectRuntimeMetrics(metrics.value?.counts))
+const runtimeCountRows = computed(() => expandRuntimeCounts(metrics.value?.counts))
 const windows = ref<api.TrialWindow[]>([]), selectedWindow = ref<api.TrialWindow | null>(null), samples = ref<api.TrialSample[]>([]), trialReport = ref<api.TrialReport | null>(null), decisions = ref<api.TrialDecision[]>([]), reviewingSample = ref<api.TrialSample | null>(null)
 const activeMembers = computed(() => props.project.members.filter(member => !member.status || member.status === 'active'))
 const ownMember = computed(() => activeMembers.value.find(member => member.user_id === props.currentUserId))
