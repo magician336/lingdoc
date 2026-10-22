@@ -136,26 +136,28 @@ task_card: {
 
 | 验收项 | 用户可见入口 | 领域不变量 / 事务边界 | 成功 | 失败 / 权限 / 恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 |---|---|---|---|---|---|---|---|
-| A1 形状只有一份拥有者 | 服务端契约模块 | 不变量 1 | 契约模块是形状的唯一声明处 | 形状出现在别处 ⇒ 守护红 | 无 | 守护测试（AST 扫提示词不另写形状） | TODO |
-| A2 提示词按契约渲染 | 调研智能体回答 | 不变量 1 | 提示词里的字段名与契约逐字一致 | 提示词与契约不一致 ⇒ 红 | 无 | 守护测试 + 适配器用例 | TODO |
+| A1 形状只有一份拥有者 | 服务端契约模块 | 不变量 1 | 契约模块是形状的唯一声明处 | 形状出现在别处 ⇒ 守护红 | 无 | 守护测试（AST 扫提示词不另写形状） | PASS：契约模块 internal/lingdoc/workspacecore/research_proposal.go 是唯一定义处（ResearchProposal 与 ResearchProposalFields）；守护用例 TestResearchProposalShapeHasOneOwner 用 AST 扫 internal/lingdoc 全树找同形状结构体、并扫适配器提示词的字面量；变异验证：把形状写回提示词、另建一份同形状结构体，守护两次都红，复原后 PASS；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
+| A2 提示词按契约渲染 | 调研智能体回答 | 不变量 1 | 提示词里的字段名与契约逐字一致 | 提示词与契约不一致 ⇒ 红 | 无 | 守护测试 + 适配器用例 | PASS：适配器 internal/lingdoc/workspace/agent_model.go 的助手与调研两处提示词都按 core.ResearchProposalKey 与 core.ResearchProposalShapeText() 渲染，不再自带形状（键名、字段名与「至少两条查询、同义词并入其中」的规则只有一处声明）；守护用例 TestResearchProposalShapeHasOneOwner 同时断言渲染调用不少于 2 次；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
 | A3 purpose 由服务端派生 | 既有 turn 端点 | 不变量 2、6 | 调研智能体的一轮产出提案 | 客户端无法要求别的组合 | 请求形状不变 ⇒ 幂等摘要不变 | turn 端点用例（HTTP 层） | TODO |
-| A4 合法提案随 turn 送达 | 既有 turn 端点 | 不变量 1、3 | 提案带来源 / 理由 / 缺口出现在该轮建议里 | —— | 提案进 `suggestions`，与既有键同处 | turn 端点用例 | TODO |
+| A4 合法提案随 turn 送达 | 既有 turn 端点 | 不变量 1、3 | 提案带来源 / 理由 / 缺口出现在该轮建议里 | —— | 提案进 `suggestions`，与既有键同处 | turn 端点用例 | PASS (follow-up #402/#403)：#401 交付合法提案随既有 turn 端点送达（形状与服务端契约逐字一致；不新增端点，请求形状与幂等摘要不变）；该行的来源 / 理由 / 缺口三列随 #402/#403 交付；实现 internal/lingdoc/workspacecore/agent_action_service.go 的 SendAgentTurn 调用 researchProposalError 校验；用例 TestResearchProposalReachesTheTurnAndCreatesNothing；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
 | A5 缺提案不打断对话 | 既有 turn 端点 | 不变量 5 | 没有提案时自然语言回复仍在，该轮没有提案 | —— | 同上 | turn 端点用例 | TODO |
 | A6 非法提案响亮失败 | 既有 turn 端点 | 不变量 5、7 | —— | 非法提案 ⇒ 读得懂的失败，提案不送达，零写入 | 失败路径零写入 | turn 端点用例 + 解码器用例 | TODO |
 | A7 候选来源可追溯 | 既有 turn 端点 | 不变量 3 | 提案引用的来源都在该轮上下文里 | 引用上下文外的 id ⇒ 拒绝 | 零写入 | turn 端点用例（撤权 / 跨项目各一） | TODO |
 | A8 无权与跨项目资料不进上下文 | 既有 turn 端点 | 不变量 3 | 上下文里没有它们，模型看不到 | 撤权后旧轮次的来源不可用 | 既有上下文构造路径 | 上下文构造用例 | TODO |
-| A9 提案不自动成为调研任务 | 调研任务列表 | 不变量 4 | 提案送达后任务列表仍为空 | —— | 用户显式保存才建任务 | turn 端点用例（断言列表为空） | TODO |
-| A10 提案不自动成为导入候选 / 证据卡 / 研究主张 | 各列表 | 不变量 4 | 四个列表都不因提案而变 | —— | 既有确认门禁不变 | turn 端点用例 + 既有门禁回归 | TODO |
-| A11 查询词至少两条 | 既有 turn 端点 | 不变量 5 | 两条以上被接受 | 一条 ⇒ 拒绝 | 零写入 | 解码器用例 | TODO |
-| A12 同义词并入查询词 | 提案形状 | 不变量 1 | 同义词作为额外查询词 | —— | 无 | 解码器用例 + 契约文件 | TODO |
-| A13 前端分列展示 | 调研面板 | 不变量 1 | 来源 / 理由 / 缺口在可编辑草案旁可见 | 被拒的提案不出现 | —— | 前端组件用例 | TODO |
-| A14 前端吃的是校验过的草案 | 调研面板采纳路径 | 不变量 1、3 | 采纳路径灌入的是服务端校验过的形状 | —— | —— | 前端组件用例 | TODO |
-| A15 出处可读 | 既有 turn 端点 | 不变量 4 | 提案带着模型与运行模式 | —— | 复用 turn 既有字段 | turn 端点用例 | TODO |
+| A9 提案不自动成为调研任务 | 调研任务列表 | 不变量 4 | 提案送达后任务列表仍为空 | —— | 用户显式保存才建任务 | turn 端点用例（断言列表为空） | PASS：用例 TestResearchProposalReachesTheTurnAndCreatesNothing 在提案送达后断言 ListResearchTasks 为空（提案只是候选）；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
+| A10 提案不自动成为导入候选 / 证据卡 / 研究主张 | 各列表 | 不变量 4 | 四个列表都不因提案而变 | —— | 既有确认门禁不变 | turn 端点用例 + 既有门禁回归 | PASS：用例 TestResearchProposalReachesTheTurnAndCreatesNothing 与 TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything 逐个断言调研任务、导入候选、证据卡、研究主张四个列表都不因提案而变；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
+| A11 查询词至少两条 | 既有 turn 端点 | 不变量 5 | 两条以上被接受 | 一条 ⇒ 拒绝 | 零写入 | 解码器用例 | PASS：硬要求落在服务端——DecodeResearchProposal 拒绝少于两条、空查询词与超长载荷；用例 TestResearchProposalRefusesFewerThanTwoQueries 与 TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything（少一条查询词 ⇒ 这一轮失败且零写入）；go test ./internal/lingdoc/workspacecore/ -run ResearchProposal -count=1 PASS |
+| A12 同义词并入查询词 | 提案形状 | 不变量 1 | 同义词作为额外查询词 | —— | 无 | 解码器用例 + 契约文件 | PASS：同义词并入 queries、不新增字段——契约的形状渲染写明「同义词并入其中」；用例 TestResearchProposalAcceptsLegalShapeAndKeepsSynonymAsExtraQuery 与 TestResearchProposalReachesTheTurnAndCreatesNothing 断言同义词作为第三条查询词原样到达；契约正例见 openapi.json 的 synthetic_research_proposal 与 g7-writing-contract.json 的 research-proposal-valid；两个契约校验器 PASS |
+| A13 前端分列展示 | 调研面板 | 不变量 1 | 来源 / 理由 / 缺口在可编辑草案旁可见 | 被拒的提案不出现 | —— | 前端组件用例 | PASS (follow-up #402/#403)：#401 交付提案本体在可编辑草案旁逐项可见（目标、问题类型、范围、排除项、查询词、预期产物）并标出模型与运行模式，被拒的提案不出现；候选来源 / 理由 / 缺口三列随 #402/#403 交付；前端用例 服务端校验过的提案放进可编辑表单… 与 被服务端拒绝的提案不进入表单…（frontend/src/views/lingdoc/ResearchPanel.test.js）；cd frontend && npm test PASS |
+| A14 前端吃的是校验过的草案 | 调研面板采纳路径 | 不变量 1、3 | 采纳路径灌入的是服务端校验过的形状 | —— | —— | 前端组件用例 | PASS：frontend/src/api/lingdoc/agentApi.ts 的 task_card 类型改为 ResearchProposal（服务端契约的镜像），采纳路径灌入的是校验过的草案，被拒的提案不进入表单；前端用例 服务端校验过的提案放进可编辑表单… 与 被服务端拒绝的提案不进入表单…；cd frontend && npm test PASS |
+| A15 出处可读 | 既有 turn 端点 | 不变量 4 | 提案带着模型与运行模式 | —— | 复用 turn 既有字段 | turn 端点用例 | PASS：提案复用 turn 既有的 model_id 与 run_mode（不新增字段），面板在提案块里显示二者，演示不冒充真实证据；用例 TestResearchProposalReachesTheTurnAndCreatesNothing 断言 turn.ModelID 与 turn.RunMode，前端用例 服务端校验过的提案放进可编辑表单…；go test 与 cd frontend && npm test 均 PASS |
 | A16 助手侧行为不变 | 既有 turn 端点 | 不变量 1 | 助手的对话、影响说明、变更草稿逐字不变 | —— | 同上 | 既有守护全绿 | TODO |
-| A17 契约文件同步 | OpenAPI / 场景 / G7 契约 | 不变量 1 | 三份契约含提案形状与反例 | 校验器红 | —— | 两个契约校验脚本 | TODO |
+| A17 契约文件同步 | OpenAPI / 场景 / G7 契约 | 不变量 1 | 三份契约含提案形状与反例 | 校验器红 | —— | 两个契约校验脚本 | PASS (follow-up #404)：本票补三份契约的正例——openapi.json 增 ResearchProposal 形状与 POST/GET turns 的 synthetic_research_proposal，scenarios.json 增场景 G2-RP-01，g7-writing-contract.json 增 ResearchProposal 形状与 research-proposal-valid；python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py --source-root . PASS，python -X utf8 docs/08-本轮实施方案/contracts/validate_g7_contract.py PASS；契约反例随 #404 补齐 |
 | A18 守护：词汇归一 | 服务端 | 不变量 2 | 适配器引用常量 | 适配器出现裸字符串比较 ⇒ 红 | 无 | 守护测试 | TODO |
 
 **矩阵状态说明**：全部 `TODO`，施工票逐行把它们改成指向该 PR 的证据。矩阵在**当前范围内**不得出现 `TODO` / `NOT RUN` / `BLOCKED` 才放行合并；`N/A`、`WARNING` 与已链接验收票的 `PASS (follow-up)` 不阻塞。
+
+**#401 已落的行**：A1、A2、A4、A9、A10、A11、A12、A13、A14、A15、A17。其余行仍为 `TODO`，归后续票：A7、A8 归 #402（候选来源可追溯），A13 的来源 / 理由 / 缺口三列与 A4 的同三列归 #402/#403，A3、A5、A6、A16、A18 归 #404（缺提案不打断对话、用途由服务端派生、词汇归一）。
 
 ## 6. 交付切片与 PR 序列
 

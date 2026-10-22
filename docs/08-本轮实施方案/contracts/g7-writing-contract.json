@@ -1243,6 +1243,48 @@
         "review_decisions"
       ],
       "additionalProperties": false
+    },
+    "ResearchProposal": {
+      "type": "object",
+      "description": "服务端按唯一一份契约解码过的调研提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。它永远是候选。",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question_type": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expected_output": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "goal",
+        "scope",
+        "queries",
+        "expected_output"
+      ],
+      "additionalProperties": false
     }
   },
   "examples": [
@@ -1616,6 +1658,25 @@
             "disposition": "resolved"
           }
         ]
+      }
+    },
+    {
+      "id": "research-proposal-valid",
+      "schema": "ResearchProposal",
+      "accepted": true,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例",
+          "synthetic material definition"
+        ],
+        "expected_output": "候选资料、反例与证据缺口"
       }
     }
   ],
