@@ -570,49 +570,49 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 
 | # | 验收项 | 用户可见入口 | 领域不变量 | 成功 | 失败 / 权限 / 恢复 | 持久化与并发 | 证据 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A1 | 八类动作各有枚举与各自产出参数 | 动作表端点 + 动作面板 | I-1, I-11 | 8 条规格可读，每条声明范围/产出参数/产出/许可 | 未知动作 → `invalid_request` 且不产生 run | 无 | `writingaction` 单测 + HTTP 测试 | TODO |
-| A2 | 动作与产出参数在执行前可见 | `GenerationActionPanel.vue` | I-1, I-2 | 面板显示动作、允许范围、可用产出参数、产出形状、许可 | 产出参数不合法 → 面板不发请求 | 无 | 前端组件测试 | TODO |
-| A3 | 动作封闭：不回退自由文本 | 采纳/生成请求 | I-1 | `action=rewrite` 必填 | 缺 `action` → 400；`action=unknown` → 400 | 无 | HTTP 测试 | TODO |
-| A4 | `transform` 两个子模式 | 动作面板 + 请求 | I-1, D11 | `mode=translate` 需 `target_language`；`mode=explain` 需 `audience` | 缺子参数 → 400；混用 → 400 | 无 | 单测 | TODO |
-| A5 | 选中范围生成 | rewrite 端点 | I-2 | 选段改写按 `rewrite` 执行，产出候选带 `selection` | 选区越界/代理对 → `invalid_request` | 选区以 UTF-16 偏移记录 | `selected_rewrite` 测试 | TODO |
-| A6 | 上下文显示 | 候选预览 | I-8 | 候选带项目、章节、Context Revision、模板/规则版本 | 撤权后受限内容不显示 | 无 | 前端测试 | TODO |
-| A7 | 候选预览（正文/来源/待核分列） | 候选预览 + 采纳对话框 | I-9 | 三类内容分开展示 | 不支持的引用 → 待核事项 | 无 | 前端测试 + 后端单测 | TODO |
-| A8 | 部分采纳写工作副本 | 采纳请求 `working_copy_partial` | I-5, I-10 | 指定范围写入工作副本，四元 CAS 生效 | 基线变化 → `version_conflict`；重试不重复写 | 四元 CAS（base 版本 + spec revision + 工作副本修订号）+ 幂等管道；并发写语义见 **A41** | `working_copy` + `candidateadoption` 测试 | TODO |
-| A9 | 整段采纳展示替换范围与 diff | 采纳对话框 | I-12, D13 | 展示替换范围 + 行级 diff | — | — | 前端组件测试 | TODO |
-| A10 | outline 整段采纳只写工作副本 | 采纳请求 | I-10, I-12 | 写工作副本，**不建正式版本** | dirty 工作副本 → `working_copy_dirty`；无快照不得覆盖 | 正式版本指针不变（`current_version_id` 不动）；工作副本并发写语义见 **A41** | 断言测试 + dirty/快照测试 | TODO |
-| A11 | 采纳需显式确认 | 采纳请求 | I-5 | 载荷含动作/目标/范围 | 缺载荷 → 400；机器身份 → 拒绝 | 载荷在**事务内**校验（与授权同一事务）；并发采纳见 **A40** | HTTP + 单测 | TODO |
-| A12 | AI 不得直接写正式 ChapterVersion | 全部 AI 路径 | I-3 | AI 路径无正式版本写入口 | 断言：AI 路径触达不到建版本代码 | 无 | 断言测试 | TODO |
-| A13 | AI 不得建确认 / 应用 ChangeSet / 导出 | 全部 AI 路径 | I-3 | 断言三者不可达 | — | 无 | 断言测试 | TODO |
-| A14 | 不得编造授权来源 | 候选来源校验 | I-7 | 正文标记集合 == 授权来源集合 | 模型编造来源 → 拒绝或转待核 | 无 | 现有 `validateSourceReferences` 测试 | TODO |
-| A15 | 撤权 → `not_authorized` 且不可采纳 | 候选读取 | I-4, I-8 | 候选状态 `not_authorized` | 采纳 → 拒绝并提示恢复授权后重新运行 | 不可逆；授权恢复不得自动恢复为 `fresh` | `candidate_basis` 测试 | TODO |
-| A16 | 版本变化 / Context Revision 变化 → `stale` | 候选读取 | I-4 | 状态 `stale` | 采纳 → 拒绝并指向重新运行 | 不可逆 | 现有 `validateNewBasis` 测试 | TODO |
-| A17 | 模板/规则变化 → `stale` | 候选读取 | I-4 | 状态 `stale` | 同上 | 不可逆 | 同上 | TODO |
-| A18 | 来源缺失 → 不可采纳 | 候选读取 | I-4 | 状态 `stale` 或 `not_authorized` | 采纳 → 拒绝 | 不可逆 | 同上 | TODO |
-| A19 | 撤权四个时机都阻断 | 执行前/运行中/读候选前/采纳前 | I-7 | 四个注入点各自阻断 | 每点单独用例 | 无 | 四个注入测试 | TODO |
-| A20 | 「人工/AI/AI 辅助」来源可见 | 候选 + 采纳对话框 | D8 | 候选带 `origin`，采纳后写入确认载荷与审计 | — | 无 | 单测 + 前端测试 | TODO |
-| A21 | 失败与取消保留 run 输入、状态、原因 | run 读取 | I-8 | `Run` 可读回输入摘要、状态、原因 | 失败 → `error{code,message,retryable}` | `generation_runs.InputJSON` 不清空 | `generation` 单测 | TODO |
-| A22 | 重试用新幂等键 | 重试 | I-6 | 新键 → 新 run；不重复写工作副本 | 旧键 → `idempotency_key_expired` | 幂等表 + 摘要版本列；跨 actor 同键见 **A43** | `candidateadoption` + `generation` 测试 | TODO |
-| A23 | 幂等摘要版本化 | 采纳请求 | I-6, D9 | 同版本同键 → 重放；旧版键 → 新错误 | 两处比对点一致 | 摘要版本列；**回放路径 `:397` 与写事务内 `:430` 必须同时版本感知** | 单测 + 迁移测试 | TODO |
-| A24 | 拒绝与取消不改动工作副本 | 拒绝/取消 | I-3 | 工作副本读回不变 | — | — | 现有 `working_copy` 测试 + 新增 | TODO |
-| A25 | 超时与格式错误 | 运行 | I-8 | 保留状态与原因 | 超时 → `interrupted`；格式错误 → 失败且不产生候选 | — | 现有测试 + 动作化后复跑 | TODO |
-| A26 | 不受支持的引用 | 候选 | I-9, I-7 | 转待核事项 | 编造来源 → 拒绝 | — | 现有 `source_marker_charset_test` 扩展 | TODO |
-| A27 | 运行模式分离 | 候选 | I-8 | 候选带 `run_mode`（`real`/`mock`/`real_api_fake_model`） | mock 不冒充真实证据 | — | 单测 | TODO |
-| A28 | 两条管道共用同一词汇 | 两个管道 | I-11, I-16, D4 | 两边请求同一 `writing_action` 值，走同一 `PlanFor` | 两条 host adapter 的语义差异消失，只剩脚手架差异 | — | 守护测试（AST 扫描禁止第二处枚举、禁止语义分支） | TODO |
-| A29 | 许可位而非分支 | 采纳端 | I-10 | 采纳端无动作名分支 | 变更许可位不需要改采纳端代码 | — | 守护测试（AST 扫描） | TODO |
-| A30 | 路由面与清单同步 | 路由 | — | 新端点已注册 | `lingdoc_routes_test.go` 的 **70 条路由**计数同步更新 | — | 路由测试 | TODO |
-| A31 | 产出参数不进入安全边界 | 动作请求 → 上下文包 | I-13 | 客户端参数只进 `OutputParams`；`OutputConstraints` 仍是服务端那四条 | 尝试把参数写进 `OutputConstraints` → 守护测试红 | — | AST 守护测试 + 服务端单测 | TODO |
-| A32 | 摘要规则只有一个拥有者 | 采纳请求 | I-14 | `candidateadoption` 的摘要走 `operationcore.RequestHash` | 两步式自算摘要 → 守护测试红（**含两步式**，不只是内联式） | 历史摘要值不变（算法等价） | 变异验证 + 迁移测试 | TODO |
-| A33 | 执行方不自建动作语义 | 两条管道的输入组装与指令拼接 | I-15, I-16 | 两边只组装 `Plan.Context` 声明且经授权解析的项、只拼 `Plan.Instruction` | 在 host adapter 里追加未声明项或自写动作指令 → 守护测试红 | — | AST 守护测试 + 变异验证 | TODO |
-| A34 | 动作标识符不撞名 | 候选与确认载荷 | D14 | 字段为 `WritingAction`（JSON `writing_action`）；`Origin` 与 `SpecField.Origin` 同取值 | 出现 `Candidate.Action` 或第二套 origin 取值表 → 守护测试红 | — | AST 守护测试 | TODO |
-| A35 | 语言评审的落地通道 | 动作面板 → 评审报告 → 工作副本 | D16, I-5 | 先生成 `ReviewReport`，用户确认后由 `ApplyReview` 应用 findings | 取消/拒绝报告不改工作副本；基线变化 → `version_conflict` | 报告版本 + 工作副本 CAS + 幂等键 + 事务内授权复核 | 后端 + 前端测试 | TODO |
-| A36 | 产出参数取值集固定 | 动作面板 | D17 | 长度/语气/语言/读者层次/比例各取 D17 枚举 | 越界取值 → 400 | — | 单测 + 前端测试 | TODO |
-| A37 | 用户可选的上下文集合（#134 US5） | 动作面板 + 上下文包 | I-15, I-16 | 用户只能在 `Plan.Context.Optional` 中增删资料、证据卡、主张、来源；服务端按当前授权取交集后组装 | 撤权或越过策略的 ID 不进入模型请求 | 具体 ID 的授权解析与动作计划同一请求绑定 | 复用 `Request.AssetIDs`/`EvidenceCardRefs` 与 `AgentContextPackage`（`g2_model.go:351-370`）；前端消费归 PF-6 #330 | TODO |
-| A38 | 失效/阻断原因对用户可读（#134 US16） | 候选读取与采纳 | I-8 | 区分「输入变了→重新运行」与「授权没了→恢复授权后重新运行」，并给出下一步动作 | 越权 → 拒绝并指向有权限的人 | — | `EffectivePermission.ReasonCode`（`g5_policy.go:189`）+ 新错误形态；文案与 G6 事件接线归 PF-3 #327 与 #145 | TODO |
-| A39 | 候选形态唯一的守护测试（#326 验收第 11 条第三条） | 仓内守护 | I-9 | 候选层待核事项只有 `candidateadoption.ReviewItem`；`workspacecore.ReviewItem` 只在工作副本侧存在，转换点在 `workspace` 包内 | 出现第三种待核事项类型 → 守护测试红 | — | AST/grep 守护测试 + 变异验证 | TODO |
-| A40 | **双人同时采纳同一候选** | 采纳请求（两个不同 actor / 不同幂等键） | I-4, I-6 | 只有第一个成功 | 第二个 → `ErrVersionConflict`（`current_version_id` CAS 不再匹配），**不产生第二个正式版本** | `candidate_adoption_store.go:547-557`：`WHERE current_version_id = <读到的 oldVersionID>`，`RowsAffected != 1` → `ErrVersionConflict`；`project_version` 同款 CAS（`:558-562`）；版本链 `ParentVersionID: oldVersionID`（`:535`） | 并发测试：两事务同时采纳同一候选，断言只建一个版本 | TODO |
-| A41 | **工作副本并发写** | 部分采纳 / 整段采纳 | I-4 | 第二个写被版本条件挡住 | 基线或修订号不符 → `ErrVersionConflict`，工作副本**不出现半写** | `workspacecore/working_copy.go:159-164`（`SaveWorkingCopy` 四元 CAS：base 版本 + spec revision + 工作副本修订号）、`:235-239`（`ApplyRewrite` 同款）；两者都走 `runOperation` 的幂等管道 | 并发测试：两个动作同时写同一工作副本，断言一个成功一个 `version_conflict` | TODO |
-| A42 | **采纳事务中途撤权** | 采纳请求 | I-4, I-7 | 事务内撤权 → 写前被拒，**零写入** | 提交后撤权 → 写已落地，返回 `candidate acceptance committed; current access recheck failed` | 写前：`candidate_adoption_store.go:424` `authorizeCandidateInTransaction` + `:501` `validateEvidenceInTransaction`（同事务内）；写后：`candidate_adoption.go:311-313` `recheckCandidateAcceptance`——**注意这一路径不是「零写入拒绝」，是「已提交 + 明确告知」** | 注入撤权测试：分别在事务内与提交后撤权，断言前者零写入、后者错误消息含 `committed` | TODO |
-| A43 | **同一幂等键跨 actor 复用** | 采纳请求 | I-6 | 两个 actor 用同一键 → 视为**两个独立操作**，各自成功 | 同一 actor 同键异内容 → `idempotency_conflict` | 幂等行唯一键 `(project_id, chapter_id, actor_id, idempotency_key)`（`candidate_adoption_store.go:111-120`）——**`actor_id` 在键内**，跨 actor 不冲突 | 单测：跨 actor 同键各自建版本；同 actor 同键异内容 → 冲突 | TODO |
+| A1 | 八类动作各有枚举与各自产出参数 | 动作表端点 + 动作面板 | I-1, I-11 | 8 条规格可读，每条声明范围/产出参数/产出/许可 | 未知动作 → `invalid_request` 且不产生 run | 无 | `writingaction` 单测 + HTTP 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A2 | 动作与产出参数在执行前可见 | `GenerationActionPanel.vue` | I-1, I-2 | 面板显示动作、允许范围、可用产出参数、产出形状、许可 | 产出参数不合法 → 面板不发请求 | 无 | 前端组件测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A3 | 动作封闭：不回退自由文本 | 采纳/生成请求 | I-1 | `action=rewrite` 必填 | 缺 `action` → 400；`action=unknown` → 400 | 无 | HTTP 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A4 | `transform` 两个子模式 | 动作面板 + 请求 | I-1, D11 | `mode=translate` 需 `target_language`；`mode=explain` 需 `audience` | 缺子参数 → 400；混用 → 400 | 无 | 单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A5 | 选中范围生成 | rewrite 端点 | I-2 | 选段改写按 `rewrite` 执行，产出候选带 `selection` | 选区越界/代理对 → `invalid_request` | 选区以 UTF-16 偏移记录 | `selected_rewrite` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A6 | 上下文显示 | 候选预览 | I-8 | 候选带项目、章节、Context Revision、模板/规则版本 | 撤权后受限内容不显示 | 无 | 前端测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A7 | 候选预览（正文/来源/待核分列） | 候选预览 + 采纳对话框 | I-9 | 三类内容分开展示 | 不支持的引用 → 待核事项 | 无 | 前端测试 + 后端单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A8 | 部分采纳写工作副本 | 采纳请求 `working_copy_partial` | I-5, I-10 | 指定范围写入工作副本，四元 CAS 生效 | 基线变化 → `version_conflict`；重试不重复写 | 四元 CAS（base 版本 + spec revision + 工作副本修订号）+ 幂等管道；并发写语义见 **A41** | `working_copy` + `candidateadoption` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A9 | 整段采纳展示替换范围与 diff | 采纳对话框 | I-12, D13 | 展示替换范围 + 行级 diff | — | — | 前端组件测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A10 | outline 整段采纳只写工作副本 | 采纳请求 | I-10, I-12 | 写工作副本，**不建正式版本** | dirty 工作副本 → `working_copy_dirty`；无快照不得覆盖 | 正式版本指针不变（`current_version_id` 不动）；工作副本并发写语义见 **A41** | 断言测试 + dirty/快照测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A11 | 采纳需显式确认 | 采纳请求 | I-5 | 载荷含动作/目标/范围 | 缺载荷 → 400；机器身份 → 拒绝 | 载荷在**事务内**校验（与授权同一事务）；并发采纳见 **A40** | HTTP + 单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A12 | AI 不得直接写正式 ChapterVersion | 全部 AI 路径 | I-3 | AI 路径无正式版本写入口 | 断言：AI 路径触达不到建版本代码 | 无 | 断言测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A13 | AI 不得建确认 / 应用 ChangeSet / 导出 | 全部 AI 路径 | I-3 | 断言三者不可达 | — | 无 | 断言测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A14 | 不得编造授权来源 | 候选来源校验 | I-7 | 正文标记集合 == 授权来源集合 | 模型编造来源 → 拒绝或转待核 | 无 | 现有 `validateSourceReferences` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A15 | 撤权 → `not_authorized` 且不可采纳 | 候选读取 | I-4, I-8 | 候选状态 `not_authorized` | 采纳 → 拒绝并提示恢复授权后重新运行 | 不可逆；授权恢复不得自动恢复为 `fresh` | `candidate_basis` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A16 | 版本变化 / Context Revision 变化 → `stale` | 候选读取 | I-4 | 状态 `stale` | 采纳 → 拒绝并指向重新运行 | 不可逆 | 现有 `validateNewBasis` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A17 | 模板/规则变化 → `stale` | 候选读取 | I-4 | 状态 `stale` | 同上 | 不可逆 | 同上 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A18 | 来源缺失 → 不可采纳 | 候选读取 | I-4 | 状态 `stale` 或 `not_authorized` | 采纳 → 拒绝 | 不可逆 | 同上 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A19 | 撤权四个时机都阻断 | 执行前/运行中/读候选前/采纳前 | I-7 | 四个注入点各自阻断 | 每点单独用例 | 无 | 四个注入测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A20 | 「人工/AI/AI 辅助」来源可见 | 候选 + 采纳对话框 | D8 | 候选带 `origin`，采纳后写入确认载荷与审计 | — | 无 | 单测 + 前端测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A21 | 失败与取消保留 run 输入、状态、原因 | run 读取 | I-8 | `Run` 可读回输入摘要、状态、原因 | 失败 → `error{code,message,retryable}` | `generation_runs.InputJSON` 不清空 | `generation` 单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A22 | 重试用新幂等键 | 重试 | I-6 | 新键 → 新 run；不重复写工作副本 | 旧键 → `idempotency_key_expired` | 幂等表 + 摘要版本列；跨 actor 同键见 **A43** | `candidateadoption` + `generation` 测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A23 | 幂等摘要版本化 | 采纳请求 | I-6, D9 | 同版本同键 → 重放；旧版键 → 新错误 | 两处比对点一致 | 摘要版本列；**回放路径 `:397` 与写事务内 `:430` 必须同时版本感知** | 单测 + 迁移测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A24 | 拒绝与取消不改动工作副本 | 拒绝/取消 | I-3 | 工作副本读回不变 | — | — | 现有 `working_copy` 测试 + 新增 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A25 | 超时与格式错误 | 运行 | I-8 | 保留状态与原因 | 超时 → `interrupted`；格式错误 → 失败且不产生候选 | — | 现有测试 + 动作化后复跑 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A26 | 不受支持的引用 | 候选 | I-9, I-7 | 转待核事项 | 编造来源 → 拒绝 | — | 现有 `source_marker_charset_test` 扩展 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A27 | 运行模式分离 | 候选 | I-8 | 候选带 `run_mode`（`real`/`mock`/`real_api_fake_model`） | mock 不冒充真实证据 | — | 单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A28 | 两条管道共用同一词汇 | 两个管道 | I-11, I-16, D4 | 两边请求同一 `writing_action` 值，走同一 `PlanFor` | 两条 host adapter 的语义差异消失，只剩脚手架差异 | — | 守护测试（AST 扫描禁止第二处枚举、禁止语义分支） | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A29 | 许可位而非分支 | 采纳端 | I-10 | 采纳端无动作名分支 | 变更许可位不需要改采纳端代码 | — | 守护测试（AST 扫描） | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A30 | 路由面与清单同步 | 路由 | — | 新端点已注册 | `lingdoc_routes_test.go` 的 **70 条路由**计数同步更新 | — | 路由测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A31 | 产出参数不进入安全边界 | 动作请求 → 上下文包 | I-13 | 客户端参数只进 `OutputParams`；`OutputConstraints` 仍是服务端那四条 | 尝试把参数写进 `OutputConstraints` → 守护测试红 | — | AST 守护测试 + 服务端单测 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A32 | 摘要规则只有一个拥有者 | 采纳请求 | I-14 | `candidateadoption` 的摘要走 `operationcore.RequestHash` | 两步式自算摘要 → 守护测试红（**含两步式**，不只是内联式） | 历史摘要值不变（算法等价） | 变异验证 + 迁移测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A33 | 执行方不自建动作语义 | 两条管道的输入组装与指令拼接 | I-15, I-16 | 两边只组装 `Plan.Context` 声明且经授权解析的项、只拼 `Plan.Instruction` | 在 host adapter 里追加未声明项或自写动作指令 → 守护测试红 | — | AST 守护测试 + 变异验证 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A34 | 动作标识符不撞名 | 候选与确认载荷 | D14 | 字段为 `WritingAction`（JSON `writing_action`）；`Origin` 与 `SpecField.Origin` 同取值 | 出现 `Candidate.Action` 或第二套 origin 取值表 → 守护测试红 | — | AST 守护测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A35 | 语言评审的落地通道 | 动作面板 → 评审报告 → 工作副本 | D16, I-5 | 先生成 `ReviewReport`，用户确认后由 `ApplyReview` 应用 findings | 取消/拒绝报告不改工作副本；基线变化 → `version_conflict` | 报告版本 + 工作副本 CAS + 幂等键 + 事务内授权复核 | 后端 + 前端测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A36 | 产出参数取值集固定 | 动作面板 | D17 | 长度/语气/语言/读者层次/比例各取 D17 枚举 | 越界取值 → 400 | — | 单测 + 前端测试 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A37 | 用户可选的上下文集合（#134 US5） | 动作面板 + 上下文包 | I-15, I-16 | 用户只能在 `Plan.Context.Optional` 中增删资料、证据卡、主张、来源；服务端按当前授权取交集后组装 | 撤权或越过策略的 ID 不进入模型请求 | 具体 ID 的授权解析与动作计划同一请求绑定 | 复用 `Request.AssetIDs`/`EvidenceCardRefs` 与 `AgentContextPackage`（`g2_model.go:351-370`）；前端消费归 PF-6 #330 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A38 | 失效/阻断原因对用户可读（#134 US16） | 候选读取与采纳 | I-8 | 区分「输入变了→重新运行」与「授权没了→恢复授权后重新运行」，并给出下一步动作 | 越权 → 拒绝并指向有权限的人 | — | `EffectivePermission.ReasonCode`（`g5_policy.go:189`）+ 新错误形态；文案与 G6 事件接线归 PF-3 #327 与 #145 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A39 | 候选形态唯一的守护测试（#326 验收第 11 条第三条） | 仓内守护 | I-9 | 候选层待核事项只有 `candidateadoption.ReviewItem`；`workspacecore.ReviewItem` 只在工作副本侧存在，转换点在 `workspace` 包内 | 出现第三种待核事项类型 → 守护测试红 | — | AST/grep 守护测试 + 变异验证 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A40 | **双人同时采纳同一候选** | 采纳请求（两个不同 actor / 不同幂等键） | I-4, I-6 | 只有第一个成功 | 第二个 → `ErrVersionConflict`（`current_version_id` CAS 不再匹配），**不产生第二个正式版本** | `candidate_adoption_store.go:547-557`：`WHERE current_version_id = <读到的 oldVersionID>`，`RowsAffected != 1` → `ErrVersionConflict`；`project_version` 同款 CAS（`:558-562`）；版本链 `ParentVersionID: oldVersionID`（`:535`） | 并发测试：两事务同时采纳同一候选，断言只建一个版本 | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A41 | **工作副本并发写** | 部分采纳 / 整段采纳 | I-4 | 第二个写被版本条件挡住 | 基线或修订号不符 → `ErrVersionConflict`，工作副本**不出现半写** | `workspacecore/working_copy.go:159-164`（`SaveWorkingCopy` 四元 CAS：base 版本 + spec revision + 工作副本修订号）、`:235-239`（`ApplyRewrite` 同款）；两者都走 `runOperation` 的幂等管道 | 并发测试：两个动作同时写同一工作副本，断言一个成功一个 `version_conflict` | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A42 | **采纳事务中途撤权** | 采纳请求 | I-4, I-7 | 事务内撤权 → 写前被拒，**零写入** | 提交后撤权 → 写已落地，返回 `candidate acceptance committed; current access recheck failed` | 写前：`candidate_adoption_store.go:424` `authorizeCandidateInTransaction` + `:501` `validateEvidenceInTransaction`（同事务内）；写后：`candidate_adoption.go:311-313` `recheckCandidateAcceptance`——**注意这一路径不是「零写入拒绝」，是「已提交 + 明确告知」** | 注入撤权测试：分别在事务内与提交后撤权，断言前者零写入、后者错误消息含 `committed` | ✅ 见 PR #357 的 A1–A43 对照表 |
+| A43 | **同一幂等键跨 actor 复用** | 采纳请求 | I-6 | 两个 actor 用同一键 → 视为**两个独立操作**，各自成功 | 同一 actor 同键异内容 → `idempotency_conflict` | 幂等行唯一键 `(project_id, chapter_id, actor_id, idempotency_key)`（`candidate_adoption_store.go:111-120`）——**`actor_id` 在键内**，跨 actor 不冲突 | 单测：跨 actor 同键各自建版本；同 actor 同键异内容 → 冲突 | ✅ 见 PR #357 的 A1–A43 对照表 |
 
 **覆盖对照**：
 
