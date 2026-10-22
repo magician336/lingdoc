@@ -36033,6 +36033,1252 @@
         "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
+    },
+    "/projects/{projectId}/writing-actions": {
+      "get": {
+        "operationId": "listWritingActions",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "读取动作表",
+        "description": "动作表归动作词汇包所有：界面读它，而不是自己留一份动作与产出参数。scope 缺省是选段，未知的 scope 被拒而不是悄悄答一张空表。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "chapter",
+                "section"
+              ]
+            },
+            "description": "目标范围；缺省是选段。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "该目标范围下可用的动作描述",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritingActionListResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": [
+                        {
+                          "action": "rewrite",
+                          "label": "改写",
+                          "scopes": [
+                            "section"
+                          ],
+                          "output_params": [
+                            {
+                              "name": "length",
+                              "values": [
+                                "short",
+                                "medium",
+                                "long"
+                              ],
+                              "min": 0,
+                              "max": 0
+                            },
+                            {
+                              "name": "tone",
+                              "values": [
+                                "neutral",
+                                "formal",
+                                "academic",
+                                "plain"
+                              ],
+                              "min": 0,
+                              "max": 0
+                            }
+                          ],
+                          "produce": "prose",
+                          "targets": [
+                            "working_copy_partial",
+                            "working_copy_whole",
+                            "formal_version_whole"
+                          ]
+                        },
+                        {
+                          "action": "review",
+                          "label": "语言评审",
+                          "scopes": [
+                            "chapter",
+                            "section"
+                          ],
+                          "output_params": [],
+                          "produce": "findings",
+                          "targets": []
+                        }
+                      ],
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段不合法，或目标范围不被允许",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/rewrite-candidates/{candidateId}": {
+      "get": {
+        "operationId": "getSelectedRewrite",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "读回一条选段改写候选",
+        "description": "读回候选本身。失效判据在 validity，生命周期阶段在 status。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "选段改写候选",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewriteCandidateResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "candidate_id": "candidate-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "evidence_card_refs": [],
+                        "validity": "fresh",
+                        "status": "ready",
+                        "run_mode": "mock",
+                        "base_chapter_version_id": "cv-question-1",
+                        "spec_revision": 1,
+                        "working_copy_revision": 1,
+                        "selection": {
+                          "start_utf16": 0,
+                          "end_utf16": 4,
+                          "selected_text": "研究问题"
+                        },
+                        "replacement_markdown": "研究问题是什么？",
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "authorized_sources": [
+                          {
+                            "source_id": "s-demo",
+                            "asset_id": "a-demo",
+                            "asset_revision": 1,
+                            "locator": "p.1",
+                            "quoted_text_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "authorized_at": "2026-10-22T00:00:00Z"
+                          }
+                        ],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "合成记录不能证明真实研究结论。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "error_code": "",
+                        "created_at": "2026-10-22T00:00:00Z",
+                        "writing_action": "rewrite",
+                        "origin": "ai_generated"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/rewrite-candidates": {
+      "post": {
+        "operationId": "createSelectedRewrite",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "发起一次选段改写",
+        "description": "四个动作字段全部缺省即旧路径（自由文本说明驱动）。动作路径下动作与产出参数必齐，缺一即拒。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectedRewriteRequest"
+              },
+              "example": {
+                "base_chapter_version_id": "cv-question-1",
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 1,
+                "selection": {
+                  "start_utf16": 0,
+                  "end_utf16": 5,
+                  "selected_text": "研究问题"
+                },
+                "instruction": "把这一段改得更具体。",
+                "source_ids": [
+                  "s-demo"
+                ],
+                "writing_action": "rewrite",
+                "output_params": {
+                  "length": "short",
+                  "tone": "neutral"
+                },
+                "scope": "section",
+                "context": {
+                  "include": {
+                    "assets": [
+                      {
+                        "id": "a-demo"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "选段改写候选",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewriteCandidateResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "candidate_id": "candidate-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "evidence_card_refs": [],
+                        "validity": "fresh",
+                        "status": "ready",
+                        "run_mode": "mock",
+                        "base_chapter_version_id": "cv-question-1",
+                        "spec_revision": 1,
+                        "working_copy_revision": 1,
+                        "selection": {
+                          "start_utf16": 0,
+                          "end_utf16": 4,
+                          "selected_text": "研究问题"
+                        },
+                        "replacement_markdown": "研究问题是什么？",
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "authorized_sources": [
+                          {
+                            "source_id": "s-demo",
+                            "asset_id": "a-demo",
+                            "asset_revision": 1,
+                            "locator": "p.1",
+                            "quoted_text_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "authorized_at": "2026-10-22T00:00:00Z"
+                          }
+                        ],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "合成记录不能证明真实研究结论。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "error_code": "",
+                        "created_at": "2026-10-22T00:00:00Z",
+                        "writing_action": "rewrite",
+                        "origin": "ai_generated"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段不合法，或产出参数越界",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "产出参数越界或缺失。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "选区或工作副本已变化，或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "改写模型暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/rewrite-candidates/{candidateId}/apply": {
+      "post": {
+        "operationId": "applySelectedRewrite",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "采纳一条选段改写候选",
+        "description": "动作化候选必须携带确认载荷：动作、采纳目标与目标范围。载荷缺了，服务层拒。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplySelectedRewriteRequest"
+              },
+              "example": {
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 1,
+                "base_chapter_version_id": "cv-question-1",
+                "confirmation": {
+                  "writing_action": "rewrite",
+                  "adoption_target": "working_copy_whole",
+                  "confirmed_at": "2026-10-22T00:00:00Z",
+                  "confirmed_by": "u-owner",
+                  "origin": "ai_generated"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "写入后的工作副本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-1",
+                        "spec_revision": 1,
+                        "working_copy_revision": 2,
+                        "body_markdown": "研究问题是什么？演示材料有100条虚构记录 [[source:s-demo]]。",
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "citation_usages": [
+                          {
+                            "source_id": "s-demo",
+                            "purpose": "支持流程说明",
+                            "limitation": "仅作演示"
+                          }
+                        ],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "合成记录不能证明真实研究结论。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "updated_at": "2026-10-22T00:00:00Z"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段不合法，或缺少确认载荷",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "候选已失效、工作副本已变化，或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/review-reports": {
+      "post": {
+        "operationId": "createReviewReport",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "发起一次语言评审",
+        "description": "评审的产出是一份报告，不是一份候选：它不进候选表，也进不了采纳那条路。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewReportRequest"
+              },
+              "example": {
+                "scope": "chapter",
+                "selection": {
+                  "start_utf16": 0,
+                  "end_utf16": 5,
+                  "selected_text": "研究问题"
+                },
+                "context": {
+                  "include": {},
+                  "exclude": {}
+                },
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 1,
+                "base_chapter_version_id": "cv-question-1",
+                "instruction": "只看表达。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "语言评审报告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewReportResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "report_id": "report-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "findings": [
+                          {
+                            "id": "finding-1",
+                            "statement": "这句话有两处重复。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "authorized_sources": [
+                          {
+                            "source_id": "s-demo",
+                            "asset_id": "a-demo",
+                            "asset_revision": 1,
+                            "locator": "p.1",
+                            "quoted_text_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "authorized_at": "2026-10-22T00:00:00Z"
+                          }
+                        ],
+                        "baseline": {
+                          "working_copy_revision": 1,
+                          "base_chapter_version_id": "cv-question-1",
+                          "spec_revision": 1,
+                          "body_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                        },
+                        "report_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "authorization_state": "fresh",
+                        "run_mode": "mock",
+                        "writing_action": "review",
+                        "origin": "ai_generated",
+                        "state": "ready",
+                        "review_decisions": [],
+                        "error_code": "",
+                        "scope": "chapter",
+                        "selection": {
+                          "start_utf16": 0,
+                          "end_utf16": 4,
+                          "selected_text": "研究问题"
+                        },
+                        "created_at": "2026-10-22T00:00:00Z"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "正文或基线已变化，或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "评审模型暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/review-reports/{reportId}": {
+      "get": {
+        "operationId": "getReviewReport",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "预览一份语言评审报告",
+        "description": "读回报告本身，不改工作副本一个字符。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "语言评审报告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewReportResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "report_id": "report-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "findings": [
+                          {
+                            "id": "finding-1",
+                            "statement": "这句话有两处重复。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "authorized_sources": [
+                          {
+                            "source_id": "s-demo",
+                            "asset_id": "a-demo",
+                            "asset_revision": 1,
+                            "locator": "p.1",
+                            "quoted_text_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "authorized_at": "2026-10-22T00:00:00Z"
+                          }
+                        ],
+                        "baseline": {
+                          "working_copy_revision": 1,
+                          "base_chapter_version_id": "cv-question-1",
+                          "spec_revision": 1,
+                          "body_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                        },
+                        "report_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "authorization_state": "fresh",
+                        "run_mode": "mock",
+                        "writing_action": "review",
+                        "origin": "ai_generated",
+                        "state": "ready",
+                        "review_decisions": [],
+                        "error_code": "",
+                        "scope": "chapter",
+                        "selection": {
+                          "start_utf16": 0,
+                          "end_utf16": 4,
+                          "selected_text": "研究问题"
+                        },
+                        "created_at": "2026-10-22T00:00:00Z"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/review-reports/{reportId}/reject": {
+      "post": {
+        "operationId": "rejectReviewReport",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "拒绝一份语言评审报告",
+        "description": "工作副本一个字符都不动。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "被拒绝的语言评审报告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewReportResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "报告状态已变化，或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/review-reports/{reportId}/apply": {
+      "post": {
+        "operationId": "applyReviewReport",
+        "tags": [
+          "workspace"
+        ],
+        "x-delivery-phase": "core",
+        "summary": "把一份语言评审报告显式应用到工作副本",
+        "description": "逐条处置必填：每一条评审意见都要有处置与理由。基线变了则报告作废，不覆盖。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyReviewRequest"
+              },
+              "example": {
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 1,
+                "base_chapter_version_id": "cv-question-1",
+                "review_decisions": [
+                  {
+                    "review_item_id": "review-1",
+                    "disposition": "resolved",
+                    "reason": "已按意见改写。"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "写入后的工作副本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-1",
+                        "spec_revision": 1,
+                        "working_copy_revision": 2,
+                        "body_markdown": "研究问题是什么？演示材料有100条虚构记录 [[source:s-demo]]。",
+                        "source_ids": [
+                          "s-demo"
+                        ],
+                        "citation_usages": [
+                          {
+                            "source_id": "s-demo",
+                            "purpose": "支持流程说明",
+                            "limitation": "仅作演示"
+                          }
+                        ],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "合成记录不能证明真实研究结论。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "updated_at": "2026-10-22T00:00:00Z"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段不合法，或逐条处置缺理由",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或访问权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问该资源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "报告已应用、基线已变化，或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -37987,6 +39233,13 @@
           },
           "error": {
             "$ref": "#/components/schemas/Error"
+          },
+          "dropped_context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DroppedContextEntry"
+            },
+            "description": "用户选了、但没有进入模型请求的可选上下文条目。丢弃是可见的。"
           }
         },
         "required": [
@@ -39018,6 +40271,24 @@
           "replace_existing": {
             "type": "boolean",
             "description": "已有正文版本时必须明确确认整章替换并传true；空章传false。"
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "用户看到的是哪一份工作副本；与服务端当前修订号对不上即拒。"
+          },
+          "expected_body_hash": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "用户看到的正文摘要（UTF-8 字节的 SHA-256）。"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "带快照的替换：服务端先把当前正文与替换范围记进审计详情，再允许继续。"
+          },
+          "confirmation": {
+            "$ref": "#/components/schemas/AdoptionConfirmation"
           }
         },
         "required": [
@@ -39139,6 +40410,34 @@
               ],
               "additionalProperties": false
             }
+          },
+          "writing_action": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "generate",
+              "continue",
+              "rewrite",
+              "compress",
+              "expand",
+              "transform",
+              "review"
+            ],
+            "description": "按动作发起时的动作标识；缺省是旧路径（自由文本说明驱动）。"
+          },
+          "output_params": {
+            "$ref": "#/components/schemas/OutputParams"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "section"
+            ],
+            "description": "目标范围；缺省是整章。"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextSelection"
           }
         },
         "required": [
@@ -50418,6 +51717,917 @@
           "data",
           "request_id",
           "meta"
+        ],
+        "additionalProperties": false
+      },
+      "WritingActionDescription": {
+        "type": "object",
+        "description": "动作表的一条描述：动作、允许范围、可用产出参数、产出形状与允许的采纳目标。",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "generate",
+              "continue",
+              "rewrite",
+              "compress",
+              "expand",
+              "transform",
+              "review"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "chapter",
+                "section"
+              ]
+            }
+          },
+          "output_params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min": {
+                  "type": "integer"
+                },
+                "max": {
+                  "type": "integer"
+                },
+                "applies_to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "values",
+                "min",
+                "max"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "produce": {
+            "type": "string",
+            "enum": [
+              "prose",
+              "outline",
+              "findings"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "working_copy_partial",
+                "working_copy_whole",
+                "formal_version_whole"
+              ]
+            }
+          }
+        },
+        "required": [
+          "action",
+          "label",
+          "scopes",
+          "output_params",
+          "produce",
+          "targets"
+        ],
+        "additionalProperties": false
+      },
+      "WritingActionDescriptionList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/WritingActionDescription"
+        }
+      },
+      "WritingActionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WritingActionDescriptionList"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "ContextEntry": {
+        "type": "object",
+        "description": "一个上下文条目。证据卡必须带版本——没有版本的证据卡无从复核。",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ContextSelection": {
+        "type": "object",
+        "description": "用户对这次执行要纳入的可选上下文的选择：类别 => 条目。类别必须落在动作声明的可选上下文里。",
+        "properties": {
+          "include": {
+            "type": "object",
+            "description": "用户要纳入的条目，按上下文类别分列。",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ContextEntry"
+              }
+            }
+          },
+          "exclude": {
+            "type": "object",
+            "description": "用户要剔除的条目，按上下文类别分列。",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ContextEntry"
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DroppedContextEntry": {
+        "type": "object",
+        "description": "一个没有进入模型请求的可选上下文条目。丢弃是可见的，不是静默的。",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "id",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "OutputParams": {
+        "type": "object",
+        "description": "产出参数：动作自己声明用哪几个维度，没用的维度必须没给。",
+        "properties": {
+          "length": {
+            "type": "string",
+            "enum": [
+              "short",
+              "medium",
+              "long"
+            ]
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "neutral",
+              "formal",
+              "academic",
+              "plain"
+            ]
+          },
+          "ratio": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 90
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "translate",
+                  "explain"
+                ]
+              },
+              "target_language": {
+                "type": "string",
+                "enum": [
+                  "zh",
+                  "en",
+                  "ja",
+                  "de",
+                  "fr"
+                ]
+              },
+              "audience": {
+                "type": "string",
+                "enum": [
+                  "peer",
+                  "reviewer",
+                  "novice"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "RewriteSelection": {
+        "type": "object",
+        "description": "选段范围下的选区，坐标是 UTF-16 码元。",
+        "properties": {
+          "start_utf16": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_utf16": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "selected_text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_utf16",
+          "end_utf16",
+          "selected_text"
+        ],
+        "additionalProperties": false
+      },
+      "AuthorizedSourceSnapshot": {
+        "type": "object",
+        "description": "生成这次产出时的授权快照。",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "asset_revision": {
+            "type": "integer"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "quoted_text_hash": {
+            "type": "string"
+          },
+          "authorized_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "source_id",
+          "asset_id",
+          "asset_revision",
+          "locator",
+          "quoted_text_hash",
+          "authorized_at"
+        ],
+        "additionalProperties": false
+      },
+      "AdoptionScope": {
+        "type": "object",
+        "description": "部分采纳写入工作副本的范围（UTF-16 偏移，与选区一致）。",
+        "properties": {
+          "start_utf16": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_utf16": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "start_utf16",
+          "end_utf16"
+        ],
+        "additionalProperties": false
+      },
+      "AdoptionConfirmation": {
+        "type": "object",
+        "description": "采纳的显式确认载荷：确认采纳的是哪个动作的结果、写到哪里、确认人与来源。六项缺任何一项，服务层拒。",
+        "properties": {
+          "writing_action": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "generate",
+              "continue",
+              "rewrite",
+              "compress",
+              "expand",
+              "transform",
+              "review"
+            ]
+          },
+          "adoption_target": {
+            "type": "string",
+            "enum": [
+              "working_copy_partial",
+              "working_copy_whole",
+              "formal_version_whole"
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AdoptionScope"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmed_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai_generated",
+              "ai_assisted_human"
+            ]
+          }
+        },
+        "required": [
+          "writing_action",
+          "adoption_target",
+          "confirmed_at",
+          "confirmed_by",
+          "origin"
+        ],
+        "additionalProperties": false
+      },
+      "RewriteCandidate": {
+        "type": "object",
+        "description": "一条选段改写候选。status 是生命周期阶段，validity 是失效判据。",
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chapter_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_card_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "validity": {
+            "type": "string",
+            "enum": [
+              "",
+              "fresh",
+              "stale",
+              "not_authorized"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "ready",
+              "applying",
+              "failed",
+              "stale"
+            ],
+            "description": "生命周期阶段。失效判据只有 validity 一个拥有者。"
+          },
+          "run_mode": {
+            "type": "string",
+            "enum": [
+              "real",
+              "mock",
+              "real_api_fake_model"
+            ]
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "selection": {
+            "$ref": "#/components/schemas/RewriteSelection"
+          },
+          "replacement_markdown": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorized_sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedSourceSnapshot"
+            }
+          },
+          "review_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            }
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "writing_action": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "generate",
+              "continue",
+              "rewrite",
+              "compress",
+              "expand",
+              "transform",
+              "review"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai_generated",
+              "ai_assisted_human"
+            ]
+          },
+          "dropped_context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DroppedContextEntry"
+            }
+          }
+        },
+        "required": [
+          "candidate_id",
+          "project_id",
+          "chapter_id",
+          "validity",
+          "status",
+          "run_mode",
+          "base_chapter_version_id",
+          "spec_revision",
+          "working_copy_revision",
+          "selection",
+          "replacement_markdown",
+          "source_ids",
+          "authorized_sources",
+          "review_items",
+          "error_code",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "RewriteCandidateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RewriteCandidate"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "SelectedRewriteRequest": {
+        "type": "object",
+        "description": "发起一次选段改写。四个动作字段全部缺省即旧路径（自由文本说明驱动）。",
+        "properties": {
+          "evidence_card_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "selection": {
+            "$ref": "#/components/schemas/RewriteSelection"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "writing_action": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "generate",
+              "continue",
+              "rewrite",
+              "compress",
+              "expand",
+              "transform",
+              "review"
+            ],
+            "description": "按动作发起时的动作标识；缺省是旧路径（自由文本说明驱动）。"
+          },
+          "output_params": {
+            "$ref": "#/components/schemas/OutputParams"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "section"
+            ],
+            "description": "目标范围；缺省是选段。"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextSelection"
+          }
+        },
+        "required": [
+          "base_chapter_version_id",
+          "expected_spec_revision",
+          "expected_working_copy_revision",
+          "selection",
+          "source_ids"
+        ],
+        "additionalProperties": false
+      },
+      "ApplySelectedRewriteRequest": {
+        "type": "object",
+        "description": "采纳一条选段候选。动作化候选必须携带确认载荷。",
+        "properties": {
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "confirmation": {
+            "$ref": "#/components/schemas/AdoptionConfirmation"
+          }
+        },
+        "required": [
+          "expected_spec_revision",
+          "expected_working_copy_revision",
+          "base_chapter_version_id"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewBaseline": {
+        "type": "object",
+        "description": "应用报告时要复核的那个基线：用户当时看到的是哪一份。",
+        "properties": {
+          "working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "body_hash": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "working_copy_revision",
+          "base_chapter_version_id",
+          "spec_revision",
+          "body_hash"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewReport": {
+        "type": "object",
+        "description": "一份语言评审报告：评审意见、来源、基线版本、报告版本与撤权状态。",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chapter_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            }
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorized_sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedSourceSnapshot"
+            }
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/ReviewBaseline"
+          },
+          "report_version": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "authorization_state": {
+            "type": "string",
+            "enum": [
+              "",
+              "fresh",
+              "stale",
+              "not_authorized"
+            ]
+          },
+          "run_mode": {
+            "type": "string",
+            "enum": [
+              "real",
+              "mock",
+              "real_api_fake_model"
+            ]
+          },
+          "writing_action": {
+            "type": "string",
+            "enum": [
+              "review"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "ai_generated"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "applied",
+              "rejected"
+            ]
+          },
+          "review_decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewDecision"
+            }
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "section"
+            ]
+          },
+          "selection": {
+            "$ref": "#/components/schemas/RewriteSelection"
+          },
+          "dropped_context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DroppedContextEntry"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "report_id",
+          "project_id",
+          "chapter_id",
+          "findings",
+          "source_ids",
+          "authorized_sources",
+          "baseline",
+          "report_version",
+          "authorization_state",
+          "run_mode",
+          "state",
+          "review_decisions",
+          "scope",
+          "selection",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewReportResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReviewReport"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewReportRequest": {
+        "type": "object",
+        "description": "发起一次语言评审。",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "section"
+            ]
+          },
+          "selection": {
+            "$ref": "#/components/schemas/RewriteSelection"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextSelection"
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "expected_spec_revision",
+          "expected_working_copy_revision"
+        ],
+        "additionalProperties": false
+      },
+      "ApplyReviewRequest": {
+        "type": "object",
+        "description": "应用一份评审报告：逐条处置必填，基线必填。",
+        "properties": {
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewDecision"
+            }
+          }
+        },
+        "required": [
+          "expected_spec_revision",
+          "expected_working_copy_revision",
+          "review_decisions"
         ],
         "additionalProperties": false
       }
