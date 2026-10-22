@@ -1927,10 +1927,12 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 	// The research agent's proposal is checked against the one contract that
 	// owns its shape before it can become a suggestion. A proposal that does
 	// not decode is refused here, so the interface only ever sees a proposal
-	// the server stood behind.
+	// the server stood behind. The contract also holds the proposal to the
+	// authorization of this turn: a candidate source the model was not given
+	// is refused with the rest of the proposal, not quietly dropped.
 	proposalErr := error(nil)
 	if modelErr == nil {
-		proposalErr = researchProposalError(started.Agent, reply.StructuredOutput)
+		proposalErr = researchProposalError(started.Agent, reply.StructuredOutput, pack)
 	}
 	currentPack, currentErr := s.BuildAgentContext(context.WithoutCancel(ctx), actor, projectID, input.AgentContextInput)
 	if currentErr == nil && (!sameAgentContextBasis(pack, currentPack)) {
