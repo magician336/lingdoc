@@ -2512,7 +2512,7 @@
               "candidateId": "{{candidate.id}}"
             }
           },
-          "assertion": "读回的是候选本身：失效判据在 validity，生命周期阶段在 status。",
+          "assertion": "读回的是候选本身：失效判据在 validity，「正在应用」在 apply_pending。",
           "response_example": "success",
           "checks": [
             {
@@ -2521,9 +2521,9 @@
               "intent": "失效判据只有 validity 一个拥有者，fresh 表示还能被采纳"
             },
             {
-              "path": "/data/status",
-              "equals": "ready",
-              "intent": "status 承载的是生命周期阶段，不是第二套失效判据"
+              "path": "/data/apply_pending",
+              "equals": false,
+              "intent": "apply_pending 说的是这次采纳此刻正被写进工作副本，不是第二套失效判据"
             },
             {
               "path": "/data/writing_action",

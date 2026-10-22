@@ -36217,7 +36217,6 @@
                         "chapter_id": "ch-question",
                         "evidence_card_refs": [],
                         "validity": "fresh",
-                        "status": "ready",
                         "run_mode": "mock",
                         "base_chapter_version_id": "cv-question-1",
                         "spec_revision": 1,
@@ -36251,7 +36250,8 @@
                         "error_code": "",
                         "created_at": "2026-10-22T00:00:00Z",
                         "writing_action": "rewrite",
-                        "origin": "ai_generated"
+                        "origin": "ai_generated",
+                        "apply_pending": false
                       },
                       "request_id": "req-demo",
                       "meta": {
@@ -36393,7 +36393,6 @@
                         "chapter_id": "ch-question",
                         "evidence_card_refs": [],
                         "validity": "fresh",
-                        "status": "ready",
                         "run_mode": "mock",
                         "base_chapter_version_id": "cv-question-1",
                         "spec_revision": 1,
@@ -36427,7 +36426,8 @@
                         "error_code": "",
                         "created_at": "2026-10-22T00:00:00Z",
                         "writing_action": "rewrite",
-                        "origin": "ai_generated"
+                        "origin": "ai_generated",
+                        "apply_pending": false
                       },
                       "request_id": "req-demo",
                       "meta": {
@@ -52098,7 +52098,7 @@
       },
       "RewriteCandidate": {
         "type": "object",
-        "description": "一条选段改写候选。status 是生命周期阶段，validity 是失效判据。",
+        "description": "一条选段改写候选。validity 是失效判据，apply_pending 说这次采纳此刻正被写进工作副本。",
         "properties": {
           "candidate_id": {
             "type": "string",
@@ -52139,16 +52139,9 @@
               "not_authorized"
             ]
           },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "ready",
-              "applying",
-              "failed",
-              "stale"
-            ],
-            "description": "生命周期阶段。失效判据只有 validity 一个拥有者。"
+          "apply_pending": {
+            "type": "boolean",
+            "description": "这次采纳此刻正被写进工作副本。它是一个事实，不是一段状态词：失效判据仍然只有 validity 一个拥有者。"
           },
           "run_mode": {
             "type": "string",
@@ -52234,7 +52227,7 @@
           "project_id",
           "chapter_id",
           "validity",
-          "status",
+          "apply_pending",
           "run_mode",
           "base_chapter_version_id",
           "spec_revision",

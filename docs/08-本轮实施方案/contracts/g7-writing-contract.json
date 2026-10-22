@@ -664,6 +664,10 @@
           ],
           "description": "这个候选还能不能被采纳：与候选层同一份词表。空值表示这次运行没有交出可采纳的产出。"
         },
+        "apply_pending": {
+          "type": "boolean",
+          "description": "这次采纳此刻正被写进工作副本。它是一个事实，不是一段状态词：失效判据仍然只有 validity 一个拥有者。"
+        },
         "writing_action": {
           "type": "string",
           "enum": [
@@ -704,7 +708,8 @@
         "review_items",
         "error_code",
         "created_at",
-        "validity"
+        "validity",
+        "apply_pending"
       ],
       "additionalProperties": false
     },
@@ -1383,6 +1388,7 @@
         "error_code": "",
         "created_at": "2026-10-03T09:00:00Z",
         "validity": "fresh",
+        "apply_pending": false,
         "writing_action": "rewrite",
         "origin": "ai_generated"
       }
