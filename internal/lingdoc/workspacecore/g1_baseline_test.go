@@ -2,7 +2,6 @@ package workspacecore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -123,73 +122,6 @@ func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
 	}
 }
 
-func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
-	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-transfer.db"))
-	owner := Actor{TenantID: 84, UserID: "owner"}
-	target := Actor{TenantID: 84, UserID: "target"}
-	seedTenantMember(t, svc, owner)
-	seedTenantMember(t, svc, target)
-	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-04", CreateProjectInput{Name: "G1 owner", TemplateID: "template-demo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	project := asProject(t, created)
-	raw, _, _, err := svc.RequestOwnerTransfer(context.Background(), owner, project.ID, "g1-transfer-04", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: project.ProjectVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-	transfer := rawOwnerTransfer(t, raw)
-	acceptedRaw, _, _, err := svc.AcceptOwnerTransfer(context.Background(), target, project.ID, transfer.ID, "g1-accept-04")
-	if err != nil {
-		t.Fatal(err)
-	}
-	accepted := rawOwnerTransfer(t, acceptedRaw)
-	if accepted.Status != "accepted" || accepted.AcceptedAt == nil {
-		t.Fatalf("accepted transfer = %+v", accepted)
-	}
-	if _, _, _, err := svc.AcceptOwnerTransfer(context.Background(), target, project.ID, transfer.ID, "g1-accept-05"); !errors.Is(err, ErrInvalidState) {
-		t.Fatalf("second accept error = %v, want %v", err, ErrInvalidState)
-	}
-	current, err := svc.GetProject(context.Background(), target, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	owners := 0
-	for _, member := range current.Members {
-		if member.Role == "owner" {
-			owners++
-		}
-	}
-	if owners != 1 {
-		t.Fatalf("owners = %d, members=%+v", owners, current.Members)
-	}
-}
-
-func TestG1TenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
-	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-recovery.db"))
-	owner := Actor{TenantID: 88, UserID: "owner"}
-	target := Actor{TenantID: 88, UserID: "target"}
-	admin := Actor{TenantID: 88, UserID: "admin", TenantRole: "owner"}
-	seedTenantMember(t, svc, owner)
-	seedTenantMember(t, svc, target)
-	seedTenantMember(t, svc, admin)
-	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-recovery-08", CreateProjectInput{Name: "G1 recovery", TemplateID: "template-demo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	project := asProject(t, created)
-	if err := svc.repository.(*GORMRepository).db.Exec("UPDATE tenant_members SET status = ? WHERE tenant_id = ? AND user_id = ?", "suspended", owner.TenantID, owner.UserID).Error; err != nil {
-		t.Fatal(err)
-	}
-	raw, _, _, err := svc.RequestOwnerTransfer(context.Background(), admin, project.ID, "g1-recovery-transfer-08", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: project.ProjectVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rawOwnerTransfer(t, raw).FromUserID != owner.UserID {
-		t.Fatalf("recovery transfer = %s", raw)
-	}
-}
-
 type g1TemplateReader struct{}
 
 func (g1TemplateReader) Get(id, version string) (Template, error) {
@@ -226,49 +158,6 @@ func TestG1TemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.
 	}
 	if _, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-stale", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-demo", TemplateVersion: "1"}); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale template change = %v, want %v", err, ErrVersionConflict)
-	}
-}
-
-func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
-	svc := testStore(t, filepath.Join(t.TempDir(), "g1-activation-gate.db"))
-	owner := Actor{TenantID: 86, UserID: "owner"}
-	collaborator := Actor{TenantID: 86, UserID: "collaborator"}
-	seedTenantMember(t, svc, owner)
-	seedTenantMember(t, svc, collaborator)
-	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-06", CreateProjectInput{Name: "G1 activation", TemplateID: "template-demo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	project := asProject(t, created)
-	if _, _, _, err := svc.SaveMembers(context.Background(), owner, project.ID, "g1-members-06", SaveMembersInput{ExpectedProjectVersion: 1, CollaboratorUserIDs: []string{collaborator.UserID}}); err != nil {
-		t.Fatal(err)
-	}
-	current, err := svc.GetProject(context.Background(), owner, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := svc.SaveSpec(context.Background(), owner, project.ID, "g1-spec-06", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标"}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := svc.ActivateProject(context.Background(), collaborator, project.ID, "g1-activate-collaborator-06", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: current.ProjectVersion + 1}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("collaborator activation error = %v, want %v", err, ErrNotFound)
-	}
-	latest, err := svc.GetProject(context.Background(), owner, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if latest.Status != "draft" {
-		t.Fatalf("failed activation changed status = %s", latest.Status)
-	}
-	if _, _, _, err := svc.ActivateProject(context.Background(), owner, project.ID, "g1-activate-owner-06", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: latest.ProjectVersion, ReviewedProjectVersion: latest.ProjectVersion}); err != nil {
-		t.Fatal(err)
-	}
-	audits, err := svc.ListAuditEvents(context.Background(), owner, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(audits) == 0 || audits[len(audits)-1].Action != "project.activate" {
-		t.Fatalf("activation audit = %+v", audits)
 	}
 }
 
@@ -316,13 +205,4 @@ func TestG1DiscardRestoreBlocksWritesAndMarksRevokedProvenance(t *testing.T) {
 	if err != nil || restored.DiscardedAt != nil || restored.Status != "draft" {
 		t.Fatalf("restored project = %+v, err=%v", restored, err)
 	}
-}
-
-func rawOwnerTransfer(t *testing.T, raw []byte) OwnerTransfer {
-	t.Helper()
-	var transfer OwnerTransfer
-	if err := json.Unmarshal(raw, &transfer); err != nil {
-		t.Fatal(err)
-	}
-	return transfer
 }

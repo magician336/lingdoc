@@ -822,6 +822,19 @@ func TestInstallSkillSkipsWhenReadyWithTheSameArchive(t *testing.T) {
 
 func TestInstallSkillRetriesAFailedSkillWithTheSameArchive(t *testing.T) {
 	fx := newInstallFixture(t)
+	// InstallSkill starts the retry asynchronously. Hold the fake installer at
+	// its execution boundary so this assertion observes the accepted/installing
+	// state instead of racing the fast fake all the way to ready.
+	installStarted := make(chan struct{})
+	releaseInstall := make(chan struct{})
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseInstall) }) }
+	t.Cleanup(release)
+	fx.beforeExecute = func() {
+		startedOnce.Do(func() { close(installStarted) })
+		<-releaseInstall
+	}
 	archive := zipBundle(t, map[string]string{
 		"SKILL.md":           validSkillMD,
 		"scripts/extract.py": "print('hi')\n",
@@ -838,10 +851,20 @@ func TestInstallSkillRetriesAFailedSkillWithTheSameArchive(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id)
+	select {
+	case <-installStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background retry did not reach its execution boundary")
+	}
 	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
 	require.NoError(t, getErr)
 	require.Equal(t, types.SkillStatusInstalling, skill.Status,
 		"a failed skill is a retry even when the archive digest is unchanged")
+	release()
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		return err == nil && skill != nil && skill.Status == types.SkillStatusReady
+	}, time.Second, time.Millisecond)
 }
 
 // Most failed installs fail for a reason the archive cannot fix, so the retry
@@ -1198,9 +1221,13 @@ func TestInstallSkillDoesNotSkipARemovalOfTheSameArchive(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id)
-	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
-	require.NoError(t, getErr)
-	require.Equal(t, types.SkillStatusInstalling, skill.Status,
+	// The install outlives the request, so the row may already be past
+	// "installing" by the time it is read. What this test is about is that the
+	// removal was not skipped, so the status must no longer be "removing".
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		return err == nil && skill.Status != types.SkillStatusRemoving
+	}, 2*time.Second, time.Millisecond,
 		"re-uploading during a removal is how the upload cancels it")
 }
 
