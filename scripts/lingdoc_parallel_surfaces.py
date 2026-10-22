@@ -271,16 +271,41 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-3 审计告警接线与 AuditEvent 字段",
         "issue": 327,
         "issues": (130,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/service.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("internal/lingdoc/workspacecore/operation_pipeline.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_alert_rule.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_alert_rule_test.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_observation.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_observation_test.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_rollback_test.go", "file"),
+            ("internal/lingdoc/workspace/impact_routes.go", "file"),
+            ("internal/lingdoc/operationcore/operationcore.go", "file"),
+            ("internal/container/lingdoc.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("docs/08-本轮实施方案/G6-运行控制后端补齐-20261023.md", "file"),
         ),
         "resolves": (),
         "summary": (
-            "fail-open 语义已实现，但审计失败没有接到告警源，"
-            "AuditEvent 也没有 target_version / project_revision 字段。"
+            "本面一次交付三张票（#382 告警规则与授权判定可观测、"
+            "#327 审计告警接线与 AuditEvent 字段、#383 运行控制回退端点）。"
+            "#382：告警规则可读回（GET runtime/alert-rules）与可停用/可更新"
+            "（POST runtime/alert-rules/:ruleId/actions），停用后的规则不再产生告警；"
+            "授权拒绝落成 permission/deny 运行事件。"
+            "#327：审计写失败落成 audit/failed 运行事件并接上告警规则，"
+            "AuditEvent 增加 target_version / project_revision（走 details_json，零迁移），"
+            "生产组合根的审计 sink 不再吞掉失败。"
+            "#383：运行控制新增 rollback 动作，回退经既有 reverseChangeSet 领域入口执行，"
+            "停止新写入并记录回退目标；「切回已验证配置」这一半不在本面范围。"
             "本面独占 model.go，PF-4 因此不得声明它。"
         ),
     },
