@@ -43,7 +43,7 @@ const aggregateMethodCount = 279
 //
 // Every entry is a surface that has not been migrated yet. The list must
 // shrink to nothing: #274 (full workflow), #267 (impact centre and roadmap)
-// and #275 (G2) remove their entries, and #269 retires the alias layer that
+// and #275 (agent) remove their entries, and #269 retires the alias layer that
 // is the last one. A file that stops naming the aggregate must lose its
 // entry in the same change, otherwise the assertion reports a stale entry.
 //

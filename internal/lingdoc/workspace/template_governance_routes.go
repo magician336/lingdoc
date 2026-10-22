@@ -9,13 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterG4FullRoutes uses the already authenticated LingDoc group. It adds
+// RegisterTemplateGovernanceRoutes uses the already authenticated LingDoc group. It adds
 // no authentication middleware and never accepts caller identity from JSON.
-func RegisterG4FullRoutes(group *gin.RouterGroup, runtime *TemplateGovernanceRuntime) {
+func RegisterTemplateGovernanceRoutes(group *gin.RouterGroup, runtime *TemplateGovernanceRuntime) {
 	if group == nil {
 		return
 	}
-	h := g4FullHTTP{runtime: runtime}
+	h := governanceRoutesHandler{runtime: runtime}
 	catalog := group.Group("/template-catalog")
 	catalog.GET("/replay-fixtures", h.listReplayFixtures)
 	catalog.GET("/profiles", h.listProfiles)
@@ -40,70 +40,70 @@ func RegisterG4FullRoutes(group *gin.RouterGroup, runtime *TemplateGovernanceRun
 	suggestions.POST("/:runId/reject", h.rejectSuggestion)
 }
 
-type g4FullHTTP struct{ runtime *TemplateGovernanceRuntime }
+type governanceRoutesHandler struct{ runtime *TemplateGovernanceRuntime }
 
-// ErrG4HumanDecisionRequired is a governance decision that has to be made by a
+// ErrGovernanceHumanDecisionRequired is a governance decision that has to be made by a
 // human account. It states its own outward form.
-var ErrG4HumanDecisionRequired = clienterror.New(clienterror.Form{Status: 403, Code: "human_decision_required", Message: "请使用当前人工账号复核并提交。", Retryable: false}, "template_governance_human_decision_required")
+var ErrGovernanceHumanDecisionRequired = clienterror.New(clienterror.Form{Status: 403, Code: "human_decision_required", Message: "请使用当前人工账号复核并提交。", Retryable: false}, "template_governance_human_decision_required")
 
-func (h g4FullHTTP) actor(c *gin.Context, human bool) (governance.Actor, bool) {
+func (h governanceRoutesHandler) actor(c *gin.Context, human bool) (governance.Actor, bool) {
 	actor, ok := caller(c)
 	if !ok {
 		sendError(c, ErrNotFound)
 		return governance.Actor{}, false
 	}
 	if h.runtime == nil || h.runtime.Service() == nil {
-		sendG4Error(c, governance.ErrUnavailable)
+		sendGovernanceError(c, governance.ErrUnavailable)
 		return governance.Actor{}, false
 	}
 	if human {
 		if _, machine := types.TenantAPIKeyScopeFromContext(c.Request.Context()); machine {
-			sendG4Error(c, ErrG4HumanDecisionRequired)
+			sendGovernanceError(c, ErrGovernanceHumanDecisionRequired)
 			return governance.Actor{}, false
 		}
 		if principal, exists := types.PrincipalFromContext(c.Request.Context()); exists {
 			switch principal.Type {
 			case types.PrincipalAPITenant, types.PrincipalAPIPlatform, types.PrincipalAPIExternalUser, types.PrincipalEmbedChannel, types.PrincipalEmbedSession, types.PrincipalEmbedVisitor:
-				sendG4Error(c, ErrG4HumanDecisionRequired)
+				sendGovernanceError(c, ErrGovernanceHumanDecisionRequired)
 				return governance.Actor{}, false
 			}
 		}
 	}
 	c.Request = c.Request.WithContext(governance.ObserveOperationReplay(c.Request.Context(), func() { c.Set("g4_operation_replayed", true) }))
-	return g4GovActor(actor), true
+	return governanceActor(actor), true
 }
-func g4PathBody(c *gin.Context, id, version string) bool {
+func matchesPathBody(c *gin.Context, id, version string) bool {
 	if id != c.Param("templateId") || version != c.Param("version") {
 		sendError(c, ErrInvalidRequest)
 		return false
 	}
 	return true
 }
-func (h g4FullHTTP) listReplayFixtures(c *gin.Context) {
+func (h governanceRoutesHandler) listReplayFixtures(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.ListReplayFixtures(actor)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) listProfiles(c *gin.Context) {
+func (h governanceRoutesHandler) listProfiles(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().ListProfiles(c.Request.Context(), actor, governance.CatalogFilter{Scope: c.Query("scope"), State: template.RuleSetState(c.Query("state"))})
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) createProfile(c *gin.Context) {
+func (h governanceRoutesHandler) createProfile(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
@@ -118,36 +118,36 @@ func (h g4FullHTTP) createProfile(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().CreateProfile(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 201, out, false)
+	sendGovernanceOK(c, 201, out, false)
 }
-func (h g4FullHTTP) listVersions(c *gin.Context) {
+func (h governanceRoutesHandler) listVersions(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().ListVersions(c.Request.Context(), actor, c.Param("templateId"))
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) getVersion(c *gin.Context) {
+func (h governanceRoutesHandler) getVersion(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().GetVersion(c.Request.Context(), actor, c.Param("templateId"), c.Param("version"))
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) saveDraft(c *gin.Context) {
+func (h governanceRoutesHandler) saveDraft(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
@@ -166,18 +166,18 @@ func (h g4FullHTTP) saveDraft(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().SaveDraft(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) publish(c *gin.Context) {
+func (h governanceRoutesHandler) publish(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
 	}
 	var input governance.PublishInput
-	if !decodeBody(c, &input) || !g4PathBody(c, input.TemplateID, input.Version) {
+	if !decodeBody(c, &input) || !matchesPathBody(c, input.TemplateID, input.Version) {
 		return
 	}
 	key, ok := idempotencyKey(c)
@@ -186,18 +186,18 @@ func (h g4FullHTTP) publish(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().Publish(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) withdraw(c *gin.Context) {
+func (h governanceRoutesHandler) withdraw(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
 	}
 	var input governance.GovernanceInput
-	if !decodeBody(c, &input) || !g4PathBody(c, input.TemplateID, input.Version) {
+	if !decodeBody(c, &input) || !matchesPathBody(c, input.TemplateID, input.Version) {
 		return
 	}
 	key, ok := idempotencyKey(c)
@@ -206,18 +206,18 @@ func (h g4FullHTTP) withdraw(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().Withdraw(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) recall(c *gin.Context) {
+func (h governanceRoutesHandler) recall(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
 	}
 	var input governance.RecallInput
-	if !decodeBody(c, &input) || !g4PathBody(c, input.TemplateID, input.Version) {
+	if !decodeBody(c, &input) || !matchesPathBody(c, input.TemplateID, input.Version) {
 		return
 	}
 	key, ok := idempotencyKey(c)
@@ -226,12 +226,12 @@ func (h g4FullHTTP) recall(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().Recall(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) ruleDefinitions(c *gin.Context) {
+func (h governanceRoutesHandler) ruleDefinitions(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
@@ -240,24 +240,24 @@ func (h g4FullHTTP) ruleDefinitions(c *gin.Context) {
 		return h.runtime.AuthorizeTemplate(c.Request.Context(), tx, actor, governance.ActionRead, "")
 	})
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, template.RuleDefinitions(), false)
+	sendGovernanceOK(c, 200, template.RuleDefinitions(), false)
 }
-func (h g4FullHTTP) listRuleSets(c *gin.Context) {
+func (h governanceRoutesHandler) listRuleSets(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().ListRuleSetVersions(c.Request.Context(), actor, c.Param("rulesetId"))
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) createRuleSet(c *gin.Context) {
+func (h governanceRoutesHandler) createRuleSet(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
@@ -276,12 +276,12 @@ func (h g4FullHTTP) createRuleSet(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().CreateRuleSetDraft(c.Request.Context(), actor, key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 201, out, false)
+	sendGovernanceOK(c, 201, out, false)
 }
-func (h g4FullHTTP) ruleTransition(action string) gin.HandlerFunc {
+func (h governanceRoutesHandler) ruleTransition(action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		actor, ok := h.actor(c, true)
 		if !ok {
@@ -309,37 +309,37 @@ func (h g4FullHTTP) ruleTransition(action string) gin.HandlerFunc {
 			err = ErrInvalidRequest
 		}
 		if err != nil {
-			sendG4Error(c, err)
+			sendGovernanceError(c, err)
 			return
 		}
-		sendG4OK(c, 200, out, false)
+		sendGovernanceOK(c, 200, out, false)
 	}
 }
-func (h g4FullHTTP) listSuggestions(c *gin.Context) {
+func (h governanceRoutesHandler) listSuggestions(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().ListRuleSuggestions(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) getSuggestion(c *gin.Context) {
+func (h governanceRoutesHandler) getSuggestion(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
 	}
 	out, err := h.runtime.Service().GetRuleSuggestion(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) requestSuggestion(c *gin.Context) {
+func (h governanceRoutesHandler) requestSuggestion(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {
 		return
@@ -358,12 +358,12 @@ func (h g4FullHTTP) requestSuggestion(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().RequestRuleSuggestion(c.Request.Context(), actor, key, scope)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) acceptSuggestion(c *gin.Context) {
+func (h governanceRoutesHandler) acceptSuggestion(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
@@ -378,12 +378,12 @@ func (h g4FullHTTP) acceptSuggestion(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().AcceptRuleSuggestion(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"), key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
-func (h g4FullHTTP) rejectSuggestion(c *gin.Context) {
+func (h governanceRoutesHandler) rejectSuggestion(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
@@ -398,13 +398,13 @@ func (h g4FullHTTP) rejectSuggestion(c *gin.Context) {
 	}
 	out, err := h.runtime.Service().RejectRuleSuggestion(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"), key, input)
 	if err != nil {
-		sendG4Error(c, err)
+		sendGovernanceError(c, err)
 		return
 	}
-	sendG4OK(c, 200, out, false)
+	sendGovernanceOK(c, 200, out, false)
 }
 
-// sendG4Error renders a business failure of the rule governance surface.
+// sendGovernanceError renders a business failure of the rule governance surface.
 //
 // The outward shape of a failure is declared by the error itself, at the place
 // where that fact is known. This mapper therefore holds no table of business
@@ -413,7 +413,7 @@ func (h g4FullHTTP) rejectSuggestion(c *gin.Context) {
 //
 // A failure that carries no form of its own keeps the shared workspace
 // answers, including the denied asset list.
-func sendG4Error(c *gin.Context, err error) {
+func sendGovernanceError(c *gin.Context, err error) {
 	if form, ok := clienterror.FormOf(err); ok {
 		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
 			"retryable": form.Retryable}, "request_id": requestID(c)})
@@ -426,7 +426,7 @@ func sendG4Error(c *gin.Context, err error) {
 	c.JSON(500, gin.H{"error": gin.H{"code": "internal_error", "message": "操作失败，请稍后再试。",
 		"retryable": true}, "request_id": requestID(c)})
 }
-func sendG4OK(c *gin.Context, status int, data any, _ bool) {
+func sendGovernanceOK(c *gin.Context, status int, data any, _ bool) {
 	replayed, _ := c.Get("g4_operation_replayed")
 	sendOK(c, status, data, replayed == true)
 }

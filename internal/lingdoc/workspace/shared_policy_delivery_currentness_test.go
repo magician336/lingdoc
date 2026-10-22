@@ -30,9 +30,9 @@ func TestSharedDeliveryCurrentnessMappingsRetainFrozenBasis(t *testing.T) {
 	require.Equal(t, 9, frozen.AssetVersions[0].Revision, "policy DTO must not mutate frozen asset revisions")
 	current := &mergeDeliveryCurrentness{}
 	policy := &accessPolicy{
-		authorizer: &g2GenerationCurrentWorkspace{},
-		projects:   &g2GenerationCurrentWorkspace{},
-		context:    &g2GenerationCurrentWorkspace{},
+		authorizer: &generationContextWorkspaceStub{},
+		projects:   &generationContextWorkspaceStub{},
+		context:    &generationContextWorkspaceStub{},
 		reader: mergeDeliveryReader{input: candidateadoption.WorkspaceDeliveryInput{
 			ProjectID: "project", ProjectVersion: 5, SpecRevision: 2, ContextRevision: 7,
 			TemplateID: "template", TemplateVersion: "version", TemplateCopyID: "copy",

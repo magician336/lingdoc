@@ -212,7 +212,7 @@ class LingDocRouteParity(unittest.TestCase):
 
     def test_removed_backend_route_leaves_a_detectable_documented_orphan(self):
         bad = dict(self.routes)
-        file = "internal/lingdoc/workspace/g2_full_http.go"
+        file = "internal/lingdoc/workspace/agent_routes.go"
         text = bad[file]
         start = text.index('group.GET("/projects/:projectId/research-tasks"')
         opening = text.index("(", start)
@@ -223,7 +223,7 @@ class LingDocRouteParity(unittest.TestCase):
 
     def test_dynamic_backend_path_cannot_disappear_from_inventory(self):
         bad = dict(self.routes)
-        file = "internal/lingdoc/workspace/g2_full_http.go"
+        file = "internal/lingdoc/workspace/agent_routes.go"
         bad[file] = bad[file].replace('group.GET("/projects/:projectId/research-tasks",', 'group.GET(dynamicPath,', 1)
         with self.assertRaisesRegex(parity.ContractParityError, "nonliteral/unrecognized"):
             self.check(routes=bad)
@@ -232,7 +232,7 @@ class LingDocRouteParity(unittest.TestCase):
     def test_read_method_extraction_survives_a_narrow_port_receiver(self):
         """A read route that returns (any, error) has one shape source: the method it calls.
 
-        The G2 read routes are declared as ``g2FullRead(func(...) (any, error))``,
+        The agent read routes are declared as ``agentRead(func(...) (any, error))``,
         so the response shape is taken from the method the route calls, not from
         the closure's return type. That extraction used to pin the receiver
         name, and a transport that holds a narrow context port instead of the
@@ -246,11 +246,11 @@ class LingDocRouteParity(unittest.TestCase):
         must still be caught. It then moves the call onto a third receiver name
         to prove the extraction is not tied to any particular spelling.
         """
-        file = "internal/lingdoc/workspace/g2_full_http.go"
+        file = "internal/lingdoc/workspace/agent_routes.go"
         source = self.routes[file]
         original = "return ports.Research.ListResearchTasks("
         self.assertIn(original, source,
-                      "the G2 research task read route must call the read method through a narrow port")
+                      "the agent research task read route must call the read method through a narrow port")
         table = parity.read_routes({file: source})
         extracted = [route.get("read_method") for route in table.values()]
         self.assertIn("ListResearchTasks", extracted,
@@ -290,7 +290,7 @@ class LingDocRouteParity(unittest.TestCase):
         This test requires that a read route whose shape source cannot be
         resolved is reported instead of skipped.
         """
-        file = "internal/lingdoc/workspace/g2_full_http.go"
+        file = "internal/lingdoc/workspace/agent_routes.go"
         source = self.routes[file]
         original = "return ports.Research.ListResearchTasks("
         self.assertIn(original, source)

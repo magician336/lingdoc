@@ -33,7 +33,7 @@ func r26OperationHTTP(t *testing.T, f deliveryGuardFixture, method, path, key st
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), g2PortsFor(f.projects))
+	RegisterAgentRoutes(engine.Group("/api"), agentRoutePortsFor(f.projects))
 	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(f.projects))
 	body, err := json.Marshal(input)
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ type r26OperationMutationSnapshot struct {
 		CurrentContextRevision int64
 		SpecJSON               string
 	}
-	Operations, Audits, Changes, G2Objects, Pins, ChapterVersions int64
+	Operations, Audits, Changes, Objects, Pins, ChapterVersions int64
 }
 
 func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26OperationMutationSnapshot {
@@ -101,7 +101,7 @@ func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26Oper
 		{"lingdoc_operations", &snapshot.Operations},
 		{"lingdoc_project_audits", &snapshot.Audits},
 		{"lingdoc_change_sets", &snapshot.Changes},
-		{"lingdoc_g2_objects", &snapshot.G2Objects},
+		{"lingdoc_g2_objects", &snapshot.Objects},
 		{"lingdoc_chapter_versions", &snapshot.ChapterVersions},
 	} {
 		require.NoError(t, f.db.Table(count.Table).Count(count.Value).Error)
@@ -115,7 +115,7 @@ func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26Oper
 // second, unrelated current-baseline source check.
 func r26AgentDraftWithIndependentSource(t *testing.T, f deliveryGuardFixture) (core.AgentChangeDraftInput, string) {
 	t.Helper()
-	_, source := g4AdapterSource(t, f.governance, f.db, f.project, f.actor)
+	_, source := adapterSourceFixture(t, f.governance, f.db, f.project, f.actor)
 	turn, input, _ := agentDraftModelTurn(t, f, source.ID)
 	found := false
 	for _, ref := range turn.Context.SourceRefs {

@@ -26,15 +26,15 @@ import (
 // Sharing is the only external boundary in this fixture. The existing native
 // permission service authorizes same-tenant reads; foreign sharing grants are
 // unavailable, rather than supplied by a blanket allow stub.
-type g4AdapterShares struct{ interfaces.KBShareService }
+type adapterSharesStub struct{ interfaces.KBShareService }
 
-func (g4AdapterShares) CheckTenantKBPermission(context.Context, string, uint64, types.TenantRole) (types.OrgMemberRole, bool, error) {
+func (adapterSharesStub) CheckTenantKBPermission(context.Context, string, uint64, types.TenantRole) (types.OrgMemberRole, bool, error) {
 	return "", false, nil
 }
 
-type g4AdapterChapterAuthorizer struct{ projects *core.Service }
+type adapterChapterAuthorizerStub struct{ projects *core.Service }
 
-func (a g4AdapterChapterAuthorizer) Authorize(ctx context.Context, userID, projectID, capability string) error {
+func (a adapterChapterAuthorizerStub) Authorize(ctx context.Context, userID, projectID, capability string) error {
 	if err := core.RequireHumanDecision(ctx); err != nil {
 		return err
 	}
@@ -45,17 +45,17 @@ func (a g4AdapterChapterAuthorizer) Authorize(ctx context.Context, userID, proje
 	return a.projects.Authorize(ctx, core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, projectID, capability)
 }
 
-func g4AdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.Actor, core.Project, context.Context) {
+func governanceAdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.Actor, core.Project, context.Context) {
 	t.Helper()
-	runtime, _, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
+	runtime, _, db, actor, p, ctx := governanceAdapterFixtureWithProjects(t)
 	return runtime, db, actor, p, ctx
 }
 
-// g4AdapterFixtureWithProjects also hands back the aggregate the fixture
+// governanceAdapterFixtureWithProjects also hands back the aggregate the fixture
 // assembled. The governance runtime deliberately no longer holds the aggregate,
 // so the helpers that drive the human baseline lifecycle receive it explicitly
 // instead of reaching through the runtime.
-func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *core.Service, *gorm.DB, core.Actor, core.Project, context.Context) {
+func governanceAdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *core.Service, *gorm.DB, core.Actor, core.Project, context.Context) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "governance.db") + "?_pragma=busy_timeout(5000)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -97,7 +97,7 @@ func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *co
 		t.Fatal(err)
 	}
 	projects := core.NewService(core.NewGORMRepository(db))
-	ctx := g4CallerContext(context.Background(), actor)
+	ctx := governanceCallerContext(context.Background(), actor)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 	raw, _, _, err := projects.CreateProject(ctx, actor, "runtime-project", core.CreateProjectInput{Name: "合成规则验收", TemplateID: template.DemoTemplateID})
@@ -108,11 +108,11 @@ func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *co
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	shares := g4AdapterShares{}
+	shares := adapterSharesStub{}
 	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, shares, nil, delivery.NewFixedTemplateReader())
 	connectAggregateCapabilities(sourceRuntime, projects)
 	sourceRuntime.EnableFullWorkflowPolicy()
-	research := NewG2ResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)
+	research := NewResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: research})
 	runtime, err := NewTemplateGovernanceRuntime(db, projects, sourceRuntime, nil)
 	if err != nil {
@@ -123,7 +123,7 @@ func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *co
 
 // Exercise the actual human baseline lifecycle. A draft correctly has no
 // formal chapters and cannot be read as a delivery input.
-func g4ActivateProject(t *testing.T, projects *core.Service, actor core.Actor, p core.Project, ctx context.Context) core.Project {
+func activateProjectFixture(t *testing.T, projects *core.Service, actor core.Actor, p core.Project, ctx context.Context) core.Project {
 	t.Helper()
 	projects.RequireActivationRead(true)
 	raw, _, _, err := projects.SaveSpec(ctx, actor, p.ID, "g4-human-spec", core.SaveSpecInput{ExpectedSpecRevision: p.SpecRevision, Fields: map[string]string{"research_subject": "合成软件验收对象", "research_goal": "合成软件验收目标"}})
@@ -152,7 +152,7 @@ func g4ActivateProject(t *testing.T, projects *core.Service, actor core.Actor, p
 
 // These are synthetic software inputs. A scoped human confirmation is recorded
 // through its real service; it is not a real research trial or scientific proof.
-func g4WriteConfirmedChapters(t *testing.T, projects *core.Service, db *gorm.DB, actor core.Actor, p core.Project, ctx context.Context) []core.Chapter {
+func writeConfirmedChaptersFixture(t *testing.T, projects *core.Service, db *gorm.DB, actor core.Actor, p core.Project, ctx context.Context) []core.Chapter {
 	t.Helper()
 	chapters, err := projects.ListChapters(ctx, actor, p.ID)
 	if err != nil {
@@ -162,7 +162,7 @@ func g4WriteConfirmedChapters(t *testing.T, projects *core.Service, db *gorm.DB,
 		t.Fatal("actual activation did not create the required formal chapters")
 	}
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	confirmations := candidateadoption.NewConfirmationService(store, nil, g4AdapterChapterAuthorizer{projects})
+	confirmations := candidateadoption.NewConfirmationService(store, nil, adapterChapterAuthorizerStub{projects})
 	for _, chapter := range chapters {
 		raw, _, _, err := projects.SaveChapter(ctx, actor, p.ID, chapter.ID, "g4-body-"+chapter.ID, core.SaveChapterInput{ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: p.SpecRevision, BodyMarkdown: "合成正文仅检验软件流程，不构成研究结论。", SourceIDs: []string{}})
 		if err != nil {
@@ -184,7 +184,7 @@ func g4WriteConfirmedChapters(t *testing.T, projects *core.Service, db *gorm.DB,
 	return chapters
 }
 
-func g4AdapterSource(t *testing.T, r *TemplateGovernanceRuntime, db *gorm.DB, p core.Project, actor core.Actor) (evidence.Asset, governance.SourceRef) {
+func adapterSourceFixture(t *testing.T, r *TemplateGovernanceRuntime, db *gorm.DB, p core.Project, actor core.Actor) (evidence.Asset, governance.SourceRef) {
 	t.Helper()
 	processed := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
 	quote := "合成已授权来源，仅检验软件行为。"
@@ -212,8 +212,8 @@ func g4AdapterSource(t *testing.T, r *TemplateGovernanceRuntime, db *gorm.DB, p 
 	return asset, governance.SourceRef{ID: "source-runtime", Version: "1"}
 }
 func TestTemplateGovernanceRuntimeCurrentRoleAndParentRollback(t *testing.T) {
-	r, db, actor, _, ctx := g4AdapterFixture(t)
-	govActor := g4GovActor(actor)
+	r, db, actor, _, ctx := governanceAdapterFixture(t)
+	govActor := governanceActor(actor)
 	rollback := errors.New("rollback-fixture")
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := r.AuthorizeTemplate(ctx, tx, govActor, governance.ActionPublish, ""); err != nil {
@@ -244,9 +244,9 @@ func TestTemplateGovernanceRuntimeCurrentRoleAndParentRollback(t *testing.T) {
 	}
 }
 func TestTemplateGovernanceRuntimeSourceConsentRevisionAndRevocationInOnePool(t *testing.T) {
-	r, db, actor, p, ctx := g4AdapterFixture(t)
-	_, ref := g4AdapterSource(t, r, db, p, actor)
-	if err := r.VerifyTemplateSources(ctx, g4GovActor(actor), []governance.SourceRef{ref}); err != nil {
+	r, db, actor, p, ctx := governanceAdapterFixture(t)
+	_, ref := adapterSourceFixture(t, r, db, p, actor)
+	if err := r.VerifyTemplateSources(ctx, governanceActor(actor), []governance.SourceRef{ref}); err != nil {
 		t.Fatal(err)
 	}
 	rollback := errors.New("rollback-source")
@@ -274,7 +274,7 @@ func TestTemplateGovernanceRuntimeSourceConsentRevisionAndRevocationInOnePool(t 
 		if err := tx.Exec("UPDATE knowledges SET file_hash='reparsed' WHERE id='knowledge-runtime'").Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := r.VerifyTemplateSourcesInTransaction(ctx, tx, g4GovActor(actor), []governance.SourceRef{ref}); err == nil {
+		if err := r.VerifyTemplateSourcesInTransaction(ctx, tx, governanceActor(actor), []governance.SourceRef{ref}); err == nil {
 			t.Fatal("reparse retained stale pinned asset fingerprint")
 		}
 		return rollback
@@ -286,7 +286,7 @@ func TestTemplateGovernanceRuntimeSourceConsentRevisionAndRevocationInOnePool(t 
 		t.Fatal(err)
 	}
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return r.VerifyTemplateSourcesInTransaction(ctx, tx, g4GovActor(actor), []governance.SourceRef{ref})
+		return r.VerifyTemplateSourcesInTransaction(ctx, tx, governanceActor(actor), []governance.SourceRef{ref})
 	}); err == nil {
 		t.Fatal("deleted KB retained source permission")
 	}
@@ -298,9 +298,9 @@ func TestTemplateGovernanceRuntimeUsesCurrentHumanAssetScopeInParentTransaction(
 		allowedUserIDs         []string
 	}{{"personal", "personal", "another-author", []string{}}, {"explicit-users", "project", "curator", []string{"another-author"}}} {
 		t.Run(restricted.name, func(t *testing.T) {
-			r, db, actor, p, ctx := g4AdapterFixture(t)
-			asset, ref := g4AdapterSource(t, r, db, p, actor)
-			if err := r.VerifyTemplateSources(ctx, g4GovActor(actor), []governance.SourceRef{ref}); err != nil {
+			r, db, actor, p, ctx := governanceAdapterFixture(t)
+			asset, ref := adapterSourceFixture(t, r, db, p, actor)
+			if err := r.VerifyTemplateSources(ctx, governanceActor(actor), []governance.SourceRef{ref}); err != nil {
 				t.Fatal(err)
 			}
 			err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -324,7 +324,7 @@ func TestTemplateGovernanceRuntimeUsesCurrentHumanAssetScopeInParentTransaction(
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := r.VerifyTemplateSources(ctx, g4GovActor(actor), []governance.SourceRef{ref}); err == nil || errors.Is(err, context.DeadlineExceeded) {
+			if err := r.VerifyTemplateSources(ctx, governanceActor(actor), []governance.SourceRef{ref}); err == nil || errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("public native source policy ignored restricted scope: %v", err)
 			}
 		})
@@ -332,14 +332,14 @@ func TestTemplateGovernanceRuntimeUsesCurrentHumanAssetScopeInParentTransaction(
 }
 
 func TestTemplateGovernanceRuntimeNativeSourceKeepsTenantAndAPIKeyBoundary(t *testing.T) {
-	r, db, actor, p, ctx := g4AdapterFixture(t)
-	_, ref := g4AdapterSource(t, r, db, p, actor)
+	r, db, actor, p, ctx := governanceAdapterFixture(t)
+	_, ref := adapterSourceFixture(t, r, db, p, actor)
 	rollback := errors.New("rollback-tenant-fixture")
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("UPDATE knowledges SET tenant_id=8 WHERE id='knowledge-runtime'").Error; err != nil {
 			return err
 		}
-		if _, err := r.sourceInTransaction(ctx, tx, actor, p.ID, ref, false); !errors.Is(err, ErrG4CrossTenantSourceUnsupported) {
+		if _, err := r.sourceInTransaction(ctx, tx, actor, p.ID, ref, false); !errors.Is(err, ErrCrossTenantSourceUnsupported) {
 			t.Fatalf("foreign native source admitted without a transaction-safe grant: %v", err)
 		}
 		return rollback
@@ -348,7 +348,7 @@ func TestTemplateGovernanceRuntimeNativeSourceKeepsTenantAndAPIKeyBoundary(t *te
 	}
 	blocked := types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{KeyID: 91, KnowledgeBaseIDs: types.StringArray{"kb-excluded"}, Capabilities: types.StringArray{"retrieve"}})
 	if err := db.WithContext(blocked).Transaction(func(tx *gorm.DB) error {
-		allowed, err := (g4TenantKBReader{db: tx, actor: actor}).CanReadKB(blocked, evidenceActor(actor), "kb-runtime", actor.TenantID)
+		allowed, err := (tenantKBReader{db: tx, actor: actor}).CanReadKB(blocked, evidenceActor(actor), "kb-runtime", actor.TenantID)
 		if allowed || err == nil {
 			t.Fatal("matching tenant caller erased the original API key KB scope")
 		}
@@ -358,7 +358,7 @@ func TestTemplateGovernanceRuntimeNativeSourceKeepsTenantAndAPIKeyBoundary(t *te
 	}
 }
 
-func g4RuntimeDemoVersion(t *testing.T) governance.TemplateVersion {
+func runtimeDemoVersionFixture(t *testing.T) governance.TemplateVersion {
 	t.Helper()
 	set, err := TemplateGovernanceDemoRuleSet()
 	if err != nil {
@@ -380,16 +380,16 @@ func g4RuntimeDemoVersion(t *testing.T) governance.TemplateVersion {
 	return governance.TemplateVersion{TemplateID: def.ID, Version: def.Version, Revision: 1, State: template.RuleSetDraft, Definition: def, RuleSet: governance.RuleSetRef{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, RuleSetSnapshot: set, ContentHash: def.ContentHash, RulesetHash: set.RulesetHash, PolicyHash: policyHash}
 }
 func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testing.T) {
-	r, _, actor, _, ctx := g4AdapterFixture(t)
-	version := g4RuntimeDemoVersion(t)
+	r, _, actor, _, ctx := governanceAdapterFixture(t)
+	version := runtimeDemoVersionFixture(t)
 	ids := []string{}
 	for _, record := range BuiltinTemplateGovernanceFixtures() {
 		ids = append(ids, record.Fixture.ID)
 	}
-	if err := r.Verify(ctx, g4GovActor(actor), version, ids); err != nil {
+	if err := r.Verify(ctx, governanceActor(actor), version, ids); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Verify(ctx, g4GovActor(actor), version, append(ids, "client-pass")); err == nil {
+	if err := r.Verify(ctx, governanceActor(actor), version, append(ids, "client-pass")); err == nil {
 		t.Fatal("client fixture PASS was accepted")
 	}
 	tampered := version
@@ -397,21 +397,21 @@ func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testi
 	tampered.Definition.RequiredFields = append(append([]string{}, version.Definition.RequiredFields...), "unreviewed")
 	tampered.Definition, _ = template.WithHashes(tampered.Definition)
 	tampered.ContentHash = tampered.Definition.ContentHash
-	if err := r.Verify(ctx, g4GovActor(actor), tampered, ids); err == nil {
+	if err := r.Verify(ctx, governanceActor(actor), tampered, ids); err == nil {
 		t.Fatal("fixture accepted unrelated template content")
 	}
 	record := r.fixtures[ids[1]]
 	record.Fixture.Input.Fields["research_goal"] = "now positive"
 	r.fixtures[ids[1]] = record
-	if err := r.Verify(ctx, g4GovActor(actor), version, ids); err == nil {
+	if err := r.Verify(ctx, governanceActor(actor), version, ids); err == nil {
 		t.Fatal("incorrect server fixture expected outcome escaped actual evaluation")
 	}
 }
 func TestTemplateGovernanceRuntimeRuleLifecycleCatalogUsageAndRetry(t *testing.T) {
-	r, _, actor, p, ctx := g4AdapterFixture(t)
+	r, _, actor, p, ctx := governanceAdapterFixture(t)
 	svc := r.Service()
-	govActor := g4GovActor(actor)
-	version := g4RuntimeDemoVersion(t)
+	govActor := governanceActor(actor)
+	version := runtimeDemoVersionFixture(t)
 	draft := version.RuleSetSnapshot
 	draft.State = template.RuleSetDraft
 	draft.RulesetHash = ""
@@ -483,14 +483,14 @@ func TestTemplateGovernanceRuntimeRuleLifecycleCatalogUsageAndRetry(t *testing.T
 	}
 }
 
-// g4SeedDemoRuleSet performs the first legal RuleSet publication: draft ->
+// seedDemoRuleSetFixture performs the first legal RuleSet publication: draft ->
 // real positive/negative replay -> published. It returns the published set and
 // the exact server-registered fixture IDs so callers never invent IDs.
-func g4SeedDemoRuleSet(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, ctx context.Context) (template.RuleSet, []string) {
+func seedDemoRuleSetFixture(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, ctx context.Context) (template.RuleSet, []string) {
 	t.Helper()
 	svc := r.Service()
-	govActor := g4GovActor(actor)
-	version := g4RuntimeDemoVersion(t)
+	govActor := governanceActor(actor)
+	version := runtimeDemoVersionFixture(t)
 	draft := version.RuleSetSnapshot
 	draft.State = template.RuleSetDraft
 	draft.RulesetHash = ""
@@ -510,32 +510,32 @@ func g4SeedDemoRuleSet(t *testing.T, r *TemplateGovernanceRuntime, actor core.Ac
 	return published, fixtures
 }
 
-// g4SaveDemoTemplateDraft saves the template-demo/1 catalog draft bound to the
+// saveDemoTemplateDraftFixture saves the template-demo/1 catalog draft bound to the
 // replayed demo RuleSet. The returned version is still a draft.
-func g4SaveDemoTemplateDraft(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, set template.RuleSet, ctx context.Context) governance.TemplateVersion {
+func saveDemoTemplateDraftFixture(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, set template.RuleSet, ctx context.Context) governance.TemplateVersion {
 	t.Helper()
 	def := template.DemoTemplate()
 	def.Rules = nil
 	def.ContentHash = ""
 	def.RulesetHash = ""
-	saved, err := r.Service().SaveDraft(ctx, g4GovActor(actor), "save-demo-template", governance.SaveDraftInput{TemplateID: def.ID, Version: def.Version, Definition: def, RuleSet: governance.RuleSetRef{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, SourceType: "lingdoc_builtin", Scope: "internal-demo", Curator: actor.UserID, Reason: "actual immutable copy"})
+	saved, err := r.Service().SaveDraft(ctx, governanceActor(actor), "save-demo-template", governance.SaveDraftInput{TemplateID: def.ID, Version: def.Version, Definition: def, RuleSet: governance.RuleSetRef{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, SourceType: "lingdoc_builtin", Scope: "internal-demo", Curator: actor.UserID, Reason: "actual immutable copy"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return saved
 }
 
-// g4PublishDemoCatalog performs the full legal first publication: replayed
+// publishDemoCatalogFixture performs the full legal first publication: replayed
 // RuleSet -> profile -> template draft -> replay publish. Each test runs
 // against its own SQLite database, so the fixed idempotency keys never collide.
-func g4PublishDemoCatalog(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, ctx context.Context) (governance.TemplateVersion, []string) {
+func publishDemoCatalogFixture(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, ctx context.Context) (governance.TemplateVersion, []string) {
 	t.Helper()
-	published, fixtures := g4SeedDemoRuleSet(t, r, actor, ctx)
-	if _, err := r.Service().CreateProfile(ctx, g4GovActor(actor), "create-demo-profile", governance.CreateProfileInput{ID: template.DemoTemplateID, Name: "内置审阅目录", Reason: "actual catalog registration"}); err != nil {
+	published, fixtures := seedDemoRuleSetFixture(t, r, actor, ctx)
+	if _, err := r.Service().CreateProfile(ctx, governanceActor(actor), "create-demo-profile", governance.CreateProfileInput{ID: template.DemoTemplateID, Name: "内置审阅目录", Reason: "actual catalog registration"}); err != nil {
 		t.Fatal(err)
 	}
-	saved := g4SaveDemoTemplateDraft(t, r, actor, published, ctx)
-	saved, err := r.Service().Publish(ctx, g4GovActor(actor), "publish-demo-template", governance.PublishInput{TemplateID: saved.TemplateID, Version: saved.Version, ExpectedRevision: saved.Revision, ReplayFixtureIDs: fixtures, Reason: "actual replay"})
+	saved := saveDemoTemplateDraftFixture(t, r, actor, published, ctx)
+	saved, err := r.Service().Publish(ctx, governanceActor(actor), "publish-demo-template", governance.PublishInput{TemplateID: saved.TemplateID, Version: saved.Version, ExpectedRevision: saved.Revision, ReplayFixtureIDs: fixtures, Reason: "actual replay"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,10 +543,10 @@ func g4PublishDemoCatalog(t *testing.T, r *TemplateGovernanceRuntime, actor core
 }
 
 func TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory(t *testing.T) {
-	r, db, actor, p, ctx := g4AdapterFixture(t)
+	r, db, actor, p, ctx := governanceAdapterFixture(t)
 	svc := r.Service()
-	govActor := g4GovActor(actor)
-	saved, _ := g4PublishDemoCatalog(t, r, actor, ctx)
+	govActor := governanceActor(actor)
+	saved, _ := publishDemoCatalogFixture(t, r, actor, ctx)
 	if p.TemplateCopy == nil {
 		t.Fatal("fixture project has no template copy to preserve")
 	}
@@ -591,14 +591,14 @@ func TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory(t *test
 }
 
 func TestTemplateGovernanceRuntimeRejectsUnknownIncompleteReplayAndAdvicelessRecall(t *testing.T) {
-	r, _, actor, _, ctx := g4AdapterFixture(t)
+	r, _, actor, _, ctx := governanceAdapterFixture(t)
 	svc := r.Service()
-	govActor := g4GovActor(actor)
-	published, fixtures := g4SeedDemoRuleSet(t, r, actor, ctx)
+	govActor := governanceActor(actor)
+	published, fixtures := seedDemoRuleSetFixture(t, r, actor, ctx)
 	if _, err := svc.CreateProfile(ctx, govActor, "create-demo-profile", governance.CreateProfileInput{ID: template.DemoTemplateID, Name: "内置审阅目录", Reason: "actual catalog registration"}); err != nil {
 		t.Fatal(err)
 	}
-	draft := g4SaveDemoTemplateDraft(t, r, actor, published, ctx)
+	draft := saveDemoTemplateDraftFixture(t, r, actor, published, ctx)
 	stillDraft := func() {
 		t.Helper()
 		current, err := svc.GetVersion(ctx, govActor, draft.TemplateID, draft.Version)
@@ -633,51 +633,51 @@ func TestTemplateGovernanceRuntimeRejectsUnknownIncompleteReplayAndAdvicelessRec
 	}
 }
 
-type g4BridgeModel struct {
+type bridgeModelStub struct {
 	calls   int
 	request core.ModelRequest
 }
 
-func (m *g4BridgeModel) Reply(_ context.Context, _ core.Actor, request core.ModelRequest) (core.ModelReply, error) {
+func (m *bridgeModelStub) Reply(_ context.Context, _ core.Actor, request core.ModelRequest) (core.ModelReply, error) {
 	m.calls++
 	m.request = request
 	return core.ModelReply{StructuredOutput: json.RawMessage(`{"proposals":[],"explanation":"synthetic fixture only"}`), ModelID: "synthetic-fixture", RunMode: "real_api_fake_model", InputTokens: 12, OutputTokens: 5}, nil
 }
-func TestTemplateGovernanceRuntimeModelUsesActualG2ContextOnce(t *testing.T) {
-	r, db, actor, p, ctx := g4AdapterFixture(t)
-	_, ref := g4AdapterSource(t, r, db, p, actor)
+func TestTemplateGovernanceRuntimeModelUsesActualAgentContextOnce(t *testing.T) {
+	r, db, actor, p, ctx := governanceAdapterFixture(t)
+	_, ref := adapterSourceFixture(t, r, db, p, actor)
 	var basis governance.VersionBasis
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		basis, err = r.CurrentProjectBasis(ctx, tx, g4GovActor(actor), p.ID)
+		basis, err = r.CurrentProjectBasis(ctx, tx, governanceActor(actor), p.ID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	scope := governance.SuggestionScope{ProjectID: p.ID, Basis: basis, TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, RuleSet: basis.RuleSet, Sources: []governance.SourceRef{ref}, TargetKind: "field", TargetID: "research_goal"}
-	authorized, err := r.Build(ctx, g4GovActor(actor), scope)
+	authorized, err := r.Build(ctx, governanceActor(actor), scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := &g4BridgeModel{}
+	model := &bridgeModelStub{}
 	r.model = model
-	output, err := r.Suggest(ctx, g4GovActor(actor), governance.RuleSuggestionRequest{Scope: scope, Template: p.TemplateCopy.Definition, Context: authorized, CorrelationID: "one-paid-boundary"})
+	output, err := r.Suggest(ctx, governanceActor(actor), governance.RuleSuggestionRequest{Scope: scope, Template: p.TemplateCopy.Definition, Context: authorized, CorrelationID: "one-paid-boundary"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model.calls != 1 || model.request.Purpose != "rule_suggestion" || model.request.Context.SourceRefs[0].QuotedTextHash != g4RuntimeHash(model.request.Context.SourceRefs[0].QuotedText) || output.RunMode != "real_api_fake_model" {
-		t.Fatal("shared G2 bridge identity/once-only contract broken")
+	if model.calls != 1 || model.request.Purpose != "rule_suggestion" || model.request.Context.SourceRefs[0].QuotedTextHash != governanceRuntimeHash(model.request.Context.SourceRefs[0].QuotedText) || output.RunMode != "real_api_fake_model" {
+		t.Fatal("shared agent bridge identity/once-only contract broken")
 	}
 	authorized.Sources[0].QuotedText = "client fake text"
-	authorized.Sources[0].QuotedTextHash = g4RuntimeHash(authorized.Sources[0].QuotedText)
-	if _, err := r.Suggest(ctx, g4GovActor(actor), governance.RuleSuggestionRequest{Scope: scope, Context: authorized}); err == nil || model.calls != 1 {
+	authorized.Sources[0].QuotedTextHash = governanceRuntimeHash(authorized.Sources[0].QuotedText)
+	if _, err := r.Suggest(ctx, governanceActor(actor), governance.RuleSuggestionRequest{Scope: scope, Context: authorized}); err == nil || model.calls != 1 {
 		t.Fatal("client-authorized quote reached model")
 	}
 }
 func TestTemplateGovernanceRuntimeCheckerUsesPersistedReviewDecisions(t *testing.T) {
-	r, projects, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
-	p = g4ActivateProject(t, projects, actor, p, ctx)
-	chapters := g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
+	r, projects, db, actor, p, ctx := governanceAdapterFixtureWithProjects(t)
+	p = activateProjectFixture(t, projects, actor, p, ctx)
+	chapters := writeConfirmedChaptersFixture(t, projects, db, actor, p, ctx)
 	check := func() []core.ImpactBlocker {
 		t.Helper()
 		var blockers []core.ImpactBlocker

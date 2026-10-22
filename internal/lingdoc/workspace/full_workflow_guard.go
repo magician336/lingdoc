@@ -242,7 +242,7 @@ type GuardedDeliveryExport struct {
 func GuardFullWorkflowExport(base *DeliveryExportService, g *FullWorkflowGuard) *GuardedDeliveryExport {
 	g.exports = base
 	wrapped := &GuardedDeliveryExport{base, g}
-	g.ports.Compose.SetActionExecutor(NewG2ActionExecutor(g.ports.Actions, g.Sources, wrapped))
+	g.ports.Compose.SetActionExecutor(NewAgentActionExecutor(g.ports.Actions, g.Sources, wrapped))
 	return wrapped
 }
 func (s *GuardedDeliveryExport) Start(ctx context.Context, user, pid, snapshot, key string) (out delivery.ExportArtifact, replay bool, err error) {

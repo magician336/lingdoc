@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type g5C1SaveSpecErrorStub struct {
+type saveSpecErrorStub struct {
 	ProjectApplication
 	err error
 }
@@ -20,7 +20,7 @@ type g5C1SaveSpecErrorStub struct {
 // The handler composes the five context ports by name. The legacy read/write
 // split is retired, so there is nothing left to infer: every port is handed
 // over explicitly and the handler keeps the one it was given.
-func TestG5C5HandlerComposesTheExplicitContextPorts(t *testing.T) {
+func TestHandlerComposesTheExplicitContextPorts(t *testing.T) {
 	projects := &focusedProjectPortStub{}
 	members := &focusedMembershipPortStub{}
 	chapters := &focusedChapterPortStub{}
@@ -43,14 +43,14 @@ func TestG5C5HandlerComposesTheExplicitContextPorts(t *testing.T) {
 	}
 }
 
-func (s *g5C1SaveSpecErrorStub) SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error) {
+func (s *saveSpecErrorStub) SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error) {
 	return SaveSpecResult{}, s.err
 }
 
-// TestG5C1RepresentativeHTTPSpecContract pins the transport half of the
+// TestRepresentativeHTTPSpecContract pins the transport half of the
 // characterization matrix. The handler consumes the focused write port and
 // maps typed application outcomes without asking the domain for an HTTP code.
-func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
+func TestRepresentativeHTTPSpecContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
@@ -91,7 +91,7 @@ func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
 	})
 
 	t.Run("version conflict remains a domain error mapping", func(t *testing.T) {
-		service := &g5C1SaveSpecErrorStub{err: ErrVersionConflict}
+		service := &saveSpecErrorStub{err: ErrVersionConflict}
 		handler, err := NewHandler(HandlerDependencies{
 			Projects:    service,
 			Members:     &focusedMembershipPortStub{},

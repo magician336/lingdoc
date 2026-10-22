@@ -40,7 +40,7 @@
  * 助手草稿」。所以本段把**产生**草稿的那条路径也接上：
  *
  * 1. **自然语言提出修改** → `POST /agents/task_assistant/sessions` + `POST .../turns`
- *    （真实模型轮次：服务端 `G2HostAgentModel.Reply`）；
+ *    （真实模型轮次：服务端 `HostAgentModel.Reply`）；
  * 2. **登记变更提案** → `POST /action-proposals`（动作 `create_change_set`，**只登记不执行**）；
  * 3. **人工确认** → `POST /action-proposals/{id}/confirm`（这一步才落草稿，步骤名是
  *    「创建变更草稿」——矩阵 AC-G3-14 的规则表按这个名字认「本轮跑到了没有」）；

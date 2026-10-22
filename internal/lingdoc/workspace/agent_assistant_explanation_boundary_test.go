@@ -37,10 +37,10 @@ func assistantBoundaryTurn(t *testing.T, f deliveryGuardFixture, payload map[str
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(encoded), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
 	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
-		Sources: NewG2ResearchAdapter(f.db, f.projects, f.runtime, g4AdapterShares{}, nil, nil),
-		Model:   host, Actions: NewG2ActionExecutor(f.projects, f.runtime, nil),
+		Sources: NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil),
+		Model:   host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
 	})
 	raw, _, _, err := f.projects.CreateAgentSession(f.ctx, f.actor, p.ID, "task_assistant", "agent-boundary-session-"+key, agentDraftExpectation(p, 0))
 	require.NoError(t, err)
@@ -207,14 +207,14 @@ func TestAssistantBoundaryRefusesUntraceableExplanation(t *testing.T) {
 // 模型边界本身（不经轮次）：缺两组说明的回包被接受，依据不可追溯的回包被拒。
 func TestAssistantBoundaryModelReplyKeepsDraftWithoutAffectedExplanation(t *testing.T) {
 	model := &acceptanceChatStub{response: &types.ChatResponse{Content: `{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"明确请求调整 research_goal","fields":{"research_goal":"` + assistantBoundarySyntheticValue + `"},"affected_chapter_ids":[]}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
-	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}}
+	reply, err := host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: testModelContext(), UserInput: "提出候选"})
 	require.NoError(t, err, "a reply without the two groups must not be refused as a whole")
 	require.Equal(t, "候选", reply.Content)
 	require.Contains(t, string(reply.StructuredOutput), "change_draft")
 
 	// 依据不可追溯的回包仍然被拒（既有语义不变）。
 	model.response = &types.ChatResponse{Content: `{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"明确请求调整 research_goal","fields":{"research_goal":"` + assistantBoundarySyntheticValue + `"},"affected_chapter_ids":[]},"affected_explanation":{"definite_affected":[{"object":{"kind":"ChapterVersion","id":"chapter-1","version":"v1"},"reason":"没有依据"}],"possible_affected":[]}}`, FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}
-	_, err = host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	_, err = host.Reply(context.Background(), core.Actor{TenantID: 7, UserID: "owner"}, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: testModelContext(), UserInput: "提出候选"})
 	require.Error(t, err, "an entry without a basis must still be refused")
 }

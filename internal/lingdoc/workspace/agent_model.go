@@ -14,20 +14,20 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// G2HostAgentModel shares the existing chat model registry and acceptance
+// HostAgentModel shares the existing chat model registry and acceptance
 // ledger with generation and selected rewrite. There is one Chat call and no
 // automatic retry after timeout, invalid output, or unknown usage.
-type G2HostAgentModel struct {
+type HostAgentModel struct {
 	models    interfaces.ModelService
 	budget    *generationAcceptanceBudget
 	configErr error
 }
 
-func NewG2HostAgentModel(models interfaces.ModelService) core.AgentModel {
+func NewHostAgentModel(models interfaces.ModelService) core.AgentModel {
 	budget, err := loadGenerationAcceptanceBudget()
-	return &G2HostAgentModel{models: models, budget: budget, configErr: err}
+	return &HostAgentModel{models: models, budget: budget, configErr: err}
 }
-func (m *G2HostAgentModel) Reply(ctx context.Context, actor core.Actor, request core.ModelRequest) (core.ModelReply, error) {
+func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request core.ModelRequest) (core.ModelReply, error) {
 	if m.configErr != nil {
 		return core.ModelReply{}, generation.ErrAcceptanceBudgetUnavailable
 	}
@@ -192,4 +192,4 @@ func (m *G2HostAgentModel) Reply(ctx context.Context, actor core.Actor, request 
 	return reply, nil
 }
 
-var _ core.AgentModel = (*G2HostAgentModel)(nil)
+var _ core.AgentModel = (*HostAgentModel)(nil)
