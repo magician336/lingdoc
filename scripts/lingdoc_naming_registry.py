@@ -874,7 +874,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "工具图标：工具与匹配类型的图标与显示名",
     },
     {
-        "path": "frontend/src/views/chat/components/deepThink.vue",
+        "path": "frontend/src/views/chat/components/DeepThink.vue",
         "ticket": 368,
         "batch": 5,
         "legacy": False,
@@ -883,7 +883,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "深度思考折叠块：展示模型思考过程与当前思考状态",
     },
     {
-        "path": "frontend/src/views/chat/components/docInfo.vue",
+        "path": "frontend/src/views/chat/components/DocInfo.vue",
         "ticket": 368,
         "batch": 5,
         "legacy": False,
@@ -892,7 +892,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "引用来源块：展示本轮回答引用的知识库来源与时间线模式",
     },
     {
-        "path": "frontend/src/views/chat/components/sendMsg.vue",
+        "path": "frontend/src/views/chat/components/SendMsg.vue",
         "ticket": 368,
         "batch": 5,
         "legacy": False,
@@ -901,7 +901,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "发送描述输入框：新建对话时填写问题描述",
     },
     {
-        "path": "frontend/src/views/creatChat/creatChat.vue",
+        "path": "frontend/src/views/creatChat/CreatChat.vue",
         "ticket": 368,
         "batch": 5,
         "legacy": False,

@@ -11,7 +11,7 @@ import (
 type FullWorkflowDependencies struct {
 	Governance *TemplateGovernanceRuntime
 	Impact     ImpactRoutePorts
-	Agent         AgentRoutePorts
+	Agent      AgentRoutePorts
 	Routes     FullWorkflowRoutePorts
 }
 

@@ -82,7 +82,7 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 		return SelectedRewriteOutput{}, err
 	}
 	input, err := json.Marshal(struct {
-		TemplateBasis rewriteTemplateBasis          `json:"template_basis,omitempty"`
+		TemplateBasis rewriteTemplateBasis            `json:"template_basis,omitempty"`
 		Selection     RewriteSelection                `json:"selection"`
 		Instruction   string                          `json:"instruction"`
 		ContextBefore string                          `json:"context_before"`

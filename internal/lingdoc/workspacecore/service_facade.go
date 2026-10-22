@@ -211,7 +211,7 @@ type Service struct {
 	audit           AuditSink
 	mode            AuthorizationMode
 	catalog         TemplateCatalogResolver
-	agentRuntime       AgentRuntime
+	agentRuntime    AgentRuntime
 	impactPreflight ImpactPreflightChecker
 	impactRules     ImpactRuleChecker
 	runtimeRecovery RuntimeRecoveryChecker
