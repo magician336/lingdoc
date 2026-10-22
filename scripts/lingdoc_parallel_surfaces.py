@@ -487,8 +487,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-5 Agent research purpose",
         "issue": 329,
         "issues": (135, 125, 393),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
@@ -544,6 +544,25 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（rule_suggestion 用途的两处 agent / purpose 比较）。这两个文件原先"
             "不被任何面拥有，所以没有所有权冲突；登记进来是为了让路径集与实际"
             "改动一致，路径图那一份副本同步改成 11 条。"
+            "2026-10-23 复审后再扩到 12 条：新增 frontend/src/api/lingdoc/agentApi.types.test.ts"
+            "（前端类型层用例，防止 task_card 被类型成一份更严的形状、从而对助手轮次谎报）；"
+            "路径图那一份副本同步改成 12 条。"
+            "2026-10-23 完成本面：四张纵切票 #401（一条最小研究提案纵切）、"
+            "#402（候选来源必须可追溯）、#403（理由与缺口）、#404（三态收口与用途派生）"
+            "随 PR #417 合入 main（合并提交 1b784a4f），Spec 票 #393 与四张施工票随之关闭，"
+            "面票 #329 也随交面 PR 关闭。"
+            "交付内容：研究提案的形状由一份服务端契约独占（提示词从它渲染，"
+            "助手那张同名卡片按另一张卡渲染）、候选来源必须对得上该轮授权上下文"
+            "（对不上即拒、不降级）、理由与缺口由结构强制、坏提案响亮失败但不连累那一轮的问答复、"
+            "用途由服务端按会话 agent 派生（客户端不新增请求字段，幂等摘要钉死不变）。"
+            "两轴 code-review（Spec 轴 / Standards 轴）都判 FAIL，12 条发现与 3 处记账全部修完，"
+            "按最终代码复审判 PASS（12 条中 11 已解决、1 条部分、3 处记账全解决、无新增 P0/P1），"
+            "复审后小修再修 5 条。"
+            "验收矩阵 18 行全 PASS，引用的 26 个 Go 用例名与 11 条前端用例标题逐条复核零缺失。"
+            "**本面不释放路径**：done 状态仍占用这 12 条路径，后续面不要重复声明。"
+            "保持开放的：Spec #135 与 #125——本面只交付 research 能力里的"
+            "「研究提案契约」这一部分，未关闭；#124（上下文包前端消费）归 PF-6，"
+            "其面票 #330 仍未认领；#385 / #386 是 PF-2 的残留票，与本面无关。"
         ),
     },
     {
