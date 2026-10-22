@@ -288,12 +288,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
         "issue": 328,
         "issues": (127,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
+            ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
+            ("internal/lingdoc/workspacecore/membership.go", "file"),
+            ("internal/lingdoc/membership/results.go", "file"),
+            ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
         ),
         "resolves": ((127, 143),),
         "summary": (
@@ -302,6 +306,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "只能用「再提名一次」代替。这是 66 条原生依赖里唯一一条"
             "「行为未稳定」级的实现依赖（#127 → #143），"
             "修完它就解开 G1 立项的一个验收点。状态串放独立新文件，避开 model.go。"
+            "路径集按 2026-10-22 实测修正：Spec-47 把转让的 Service 方法搬进了 "
+            "internal/lingdoc/membership/，workspacecore/membership.go 只剩 "
+            "TransferOwnerInput；冻结判定要收口的出口是 member_judgement.go 与 "
+            "delivery_export_guard.go。"
         ),
     },
     {
