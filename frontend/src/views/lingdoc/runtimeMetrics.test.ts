@@ -14,7 +14,7 @@ import {
 // server source so the front-end grouping table cannot drift away from it
 // unnoticed.  A change to the server vocabulary fails here instead of
 // silently turning metrics into empty panels.
-const serverSource = readFileSync(new URL('../../../../internal/lingdoc/workspacecore/g6_runtime.go', import.meta.url), 'utf8')
+const serverSource = readFileSync(new URL('../../../../internal/lingdoc/workspacecore/runtime_control.go', import.meta.url), 'utf8')
 
 function serverVocabulary() {
   const categories = serverSource.match(/slices\.Contains\(\[\]string\{([^}]*)\},\s*event\.Category\)/)

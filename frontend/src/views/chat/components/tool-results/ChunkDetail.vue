@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ChunkDetailData } from '@/types/tool-results';
+import type { ChunkDetailData } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 import { copyToClipboard as copyTextToClipboard } from '@/utils/clipboard';
 
@@ -51,7 +51,7 @@ const copyToClipboard = () => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .chunk-detail {
   display: flex;

@@ -139,7 +139,7 @@ func (s *Service) createChangeDraftMutation(ctx context.Context, actor Actor, pr
 		if !ok {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		sourceID, _ := ctx.Value(g1ReverseSourceKey{}).(string)
+		sourceID, _ := ctx.Value(reverseSourceKey{}).(string)
 		if sourceID != "" {
 			if _, err := validateInverseLineage(tx, p, actor, sourceID, ""); err != nil {
 				return operationResult[ChangeSet]{}, err

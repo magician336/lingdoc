@@ -44,7 +44,7 @@ func TestReceiptPinsBasisAndMetadata(t *testing.T) {
 		t.Fatalf("actual affected chapters: %v", err)
 	}
 	raw, _, _, err := s.CreateChangeSet(context.Background(), a, p.ID, "receipt-stale-change", CreateChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: "合成正式编辑", AffectedChapterIDs: []string{chapters[0].ID}, Fields: map[string]ChangeFieldInput{"research_goal": {OldValue: p.Spec["research_goal"], NewValue: "修改后的条件"}}})
-	change := g2Decode[ChangeSet](t, raw, err)
+	change := decodeAgentJSON[ChangeSet](t, raw, err)
 	if _, _, _, err := s.ApplyChangeSet(context.Background(), a, p.ID, change.ID, "receipt-stale-apply"); err != nil {
 		t.Fatal(err)
 	}
@@ -56,18 +56,18 @@ func TestReceiptPinsBasisAndMetadata(t *testing.T) {
 	}
 }
 func TestSemanticReassessmentRejectsMeaningConflict(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	claim := f.claim(t)
 	original := semanticDraft(t, f.svc, f.owner, f.project, "reassess-original", SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: "拟议语义", Scope: claim.Scope, Status: "active", Confirmed: true}})
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
 		// Append-only metadata updates may change the version without changing intent.
-		now, row, e := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		now, row, e := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
 		now.Version++
 		now.Reason = "metadata reviewed"
-		if e := g2Store(tx, row, f.project.ID, G2ClaimKind, claim.ID, now.Version, now); e != nil {
+		if e := storeStoredObject(tx, row, f.project.ID, ResearchClaimKind, claim.ID, now.Version, now); e != nil {
 			return e
 		}
 		plan, e := f.svc.ReassessSemanticPlan(context.Background(), tx, f.owner, f.project, "new-reassessment", original)
@@ -77,13 +77,13 @@ func TestSemanticReassessmentRejectsMeaningConflict(t *testing.T) {
 		if len(plan) != 1 || plan[0].ExpectedVersion != 2 || plan[0].ProposedClaim.Text != "拟议语义" {
 			t.Fatal("reassessment dropped or altered semantic intent")
 		}
-		now, row, e = g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		now, row, e = loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if e != nil {
 			return e
 		}
 		now.Version++
 		now.Scope = "另一次人工实际修改"
-		if e := g2Store(tx, row, f.project.ID, G2ClaimKind, claim.ID, now.Version, now); e != nil {
+		if e := storeStoredObject(tx, row, f.project.ID, ResearchClaimKind, claim.ID, now.Version, now); e != nil {
 			return e
 		}
 		if _, e := f.svc.ReassessSemanticPlan(context.Background(), tx, f.owner, f.project, "conflicted-reassessment", original); !errors.Is(e, ErrVersionConflict) {
@@ -96,7 +96,7 @@ func TestSemanticReassessmentRejectsMeaningConflict(t *testing.T) {
 }
 
 func TestSemanticGraphInvalidatesOnlyReferencedChapter(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	claim := f.claim(t)
 	chapter := extendedChapter(t, f.svc, f.owner, f.project)
 	if err := f.svc.testDB().Exec("UPDATE lingdoc_chapter_versions SET confirmation_valid = ? WHERE project_id = ? AND id = ?", true, f.project.ID, *chapter.CurrentVersionID).Error; err != nil {

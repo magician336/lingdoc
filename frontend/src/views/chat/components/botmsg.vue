@@ -104,13 +104,13 @@
 <script setup>
 import { onMounted, onBeforeUnmount, watch, computed, ref, reactive, nextTick, onUpdated } from 'vue';
 import 'katex/dist/katex.min.css';
-import docInfo from './docInfo.vue';
-import deepThink from './deepThink.vue';
+import docInfo from './DocInfo.vue';
+import deepThink from './DeepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import RagPipelineProgress from './RagPipelineProgress.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
-import picturePreview from '@/components/picture-preview.vue';
+import picturePreview from '@/components/PicturePreview.vue';
 import ChatArtifactsDrawer from './ChatArtifactsDrawer.vue';
 import { isCollectingSkillArtifacts } from '@/utils/skillArtifacts';
 import { useArtifactArriveMotion } from '@/composables/useArtifactArriveMotion';
@@ -449,9 +449,9 @@ onBeforeUnmount(() => {
 });
 </script>
 <style lang="less" scoped>
-@import '../../../components/css/chat-markdown.less';
-@import '../../../components/css/chat-message-shared.less';
-@import '../../../components/css/chat-citations.less';
+@import '../../../components/css/chatMarkdown.less';
+@import '../../../components/css/chatMessageShared.less';
+@import '../../../components/css/chatCitations.less';
 
 .bot_msg {
     &.is-embedded {
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
 }
 
 .markdown-content {
-    // Chat Markdown visual styles are centralized in chat-markdown.less.
+    // Chat Markdown visual styles are centralized in chatMarkdown.less.
     // Do not add element-level Markdown rules here; update the shared mixin.
     .chat-markdown-typography();
     .chat-citation-pills();

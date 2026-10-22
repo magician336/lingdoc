@@ -11,7 +11,7 @@ const iconSvg = computed(() => renderArtifactFileIcon(props.fileName))
 </script>
 
 <style scoped lang="less">
-@import '@/components/css/artifact-file-icon.less';
+@import '@/components/css/artifactFileIcon.less';
 
 .artifact-file-icon {
   display: inline-flex;

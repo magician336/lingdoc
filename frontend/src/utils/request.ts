@@ -2,7 +2,7 @@
 import axios from "axios";
 import { generateRandomString, MAX_FILE_SIZE_MB, MAX_SKILL_BUNDLE_SIZE_MB } from "./index";
 import i18n from '@/i18n'
-import { getApiBaseUrl } from './api-base';
+import { getApiBaseUrl } from './apiBase';
 import { isSkillBundleUploadUrl } from './uploadLimit';
 import {
   forceReloginRedirect,

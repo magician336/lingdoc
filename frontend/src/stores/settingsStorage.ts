@@ -1,5 +1,5 @@
 import { safeRemoveItem, safeSetItem } from "@/composables/preferenceStorage";
-import { reconcileBuiltinAgentMode } from "@/utils/agent-mode";
+import { reconcileBuiltinAgentMode } from "@/utils/agentMode";
 
 export const SETTINGS_STORAGE_KEY = "WeKnora_settings";
 

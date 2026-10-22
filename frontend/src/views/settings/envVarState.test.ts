@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import type { ConfigEnvGroup, EnvVarView, SkillEnvGroup } from '@/api/env-vars'
+import type { ConfigEnvGroup, EnvVarView, SkillEnvGroup } from '@/api/envVars'
 import {
   MAX_ENV_VALUE_BYTES,
   MAX_USER_ENV_VARS_PER_SCOPE,

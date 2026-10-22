@@ -486,7 +486,7 @@ import { copyWithToast } from '@/utils/clipboard'
 import OrganizationSettingsModal from './OrganizationSettingsModal.vue'
 import SpaceAvatar from '@/components/SpaceAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
-import { shouldShowOrgRelationTag } from '@/utils/card-list-badge'
+import { shouldShowOrgRelationTag } from '@/utils/cardListBadge'
 
 type OrgWithUI = Organization
 
@@ -1927,7 +1927,7 @@ onUnmounted(() => {
 </style>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 
 // 创建对话框样式优化
 .create-org-dialog,

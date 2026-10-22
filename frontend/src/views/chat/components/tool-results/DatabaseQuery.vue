@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import type { DatabaseQueryData } from '@/types/tool-results';
+import type { DatabaseQueryData } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 interface Props {

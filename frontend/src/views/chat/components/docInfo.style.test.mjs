@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const source = readFileSync(join(here, 'docInfo.vue'), 'utf8')
+const source = readFileSync(join(here, 'DocInfo.vue'), 'utf8')
 
 test('timeline references neutralize brand colors via local css variables', () => {
   assert.match(source, /&\.refer-timeline \{[\s\S]*--td-brand-color:\s*var\(--td-text-color-placeholder\)/)

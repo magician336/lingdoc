@@ -173,7 +173,7 @@ import { buildCommands, filterCommands } from './GlobalCommandPalette/commands'
 import ResultGroup from './GlobalCommandPalette/ResultGroup.vue'
 import ResultItem from './GlobalCommandPalette/ResultItem.vue'
 import RetrievalSettings from '@/views/settings/RetrievalSettings.vue'
-import type { MessageSearchGroupItem } from '@/api/chat-history'
+import type { MessageSearchGroupItem } from '@/api/chatHistory'
 
 const { t } = useI18n()
 const route = useRoute()

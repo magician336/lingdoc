@@ -190,9 +190,9 @@ func (s *agentService) stageSessionAttachments(
 // resolveSessionAttachmentURLs fills in the storage handle for attachments
 // whose URL was not persisted on the message row. MessageAttachment.URL is
 // deliberately excluded from DB serialization (json:"-") so a cross-session
-// downloadable reference cannot leak; the temporary-document row keyed by
+// downloadable reference cannot leak; the chat-attachment row keyed by
 // attachment.ID is the authoritative source of the storage reference.
-// Attachments that already carry a URL, or that have no temporary-document ID,
+// Attachments that already carry a URL, or that have no chat-attachment ID,
 // pass through unchanged so callers with other attachment sources keep working.
 func (s *agentService) resolveSessionAttachmentURLs(
 	ctx context.Context,
@@ -203,7 +203,7 @@ func (s *agentService) resolveSessionAttachmentURLs(
 	if len(attachments) == 0 || s == nil || s.db == nil {
 		return attachments, nil
 	}
-	repo := repository.NewTemporaryDocumentRepository(s.db)
+	repo := repository.NewChatAttachmentRepository(s.db)
 	out := make(types.MessageAttachments, 0, len(attachments))
 	for _, attachment := range attachments {
 		if strings.TrimSpace(attachment.URL) != "" || strings.TrimSpace(attachment.ID) == "" {
@@ -215,7 +215,7 @@ func (s *agentService) resolveSessionAttachmentURLs(
 			return nil, fmt.Errorf("resolve attachment %q storage reference: %w", attachment.FileName, err)
 		}
 		if document == nil || strings.TrimSpace(document.ResourceRef) == "" {
-			// Expired or already-deleted temporary document: leave the URL
+			// Expired or already-deleted chat attachment: leave the URL
 			// empty so deduplicateSessionAttachments skips it instead of
 			// failing the whole staging pass.
 			continue

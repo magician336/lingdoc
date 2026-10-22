@@ -796,7 +796,7 @@ import KbWikiBadge from './components/KbWikiBadge.vue'
 import ShareKnowledgeBaseDialog from '@/components/ShareKnowledgeBaseDialog.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
 import ResourceOriginBadge from '@/components/ResourceOriginBadge.vue'
-import { shouldShowResourceOriginBadge } from '@/utils/card-list-badge'
+import { shouldShowResourceOriginBadge } from '@/utils/cardListBadge'
 import ContextualGuide from '@/components/ContextualGuide.vue'
 import { isContextualGuideDone, markContextualGuideDone } from '@/config/contextualGuides'
 import { useTenantModelReadiness } from '@/composables/useTenantModelReadiness'
@@ -2925,7 +2925,7 @@ const handleUploadFinishedEvent = (event: Event) => {
 </style>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 
 // 共享知识库卡片：详情触发（替代三点，用「查看详情」链接样式）
 .shared-detail-trigger {

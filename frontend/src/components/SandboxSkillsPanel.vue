@@ -631,7 +631,7 @@ import {
   type ConfigSkillInstallEvent,
   type SandboxConfigRecord,
 } from '@/api/system'
-import { getApiBaseUrl } from '@/utils/api-base'
+import { getApiBaseUrl } from '@/utils/apiBase'
 import { generateRandomString, MAX_SKILL_BUNDLE_SIZE_BYTES, MAX_SKILL_BUNDLE_SIZE_MB } from '@/utils/index'
 import i18n from '@/i18n'
 import {

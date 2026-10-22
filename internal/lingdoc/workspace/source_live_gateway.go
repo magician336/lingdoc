@@ -19,14 +19,14 @@ type liveGORMSourceGateway struct {
 
 func (g liveGORMSourceGateway) ResolveAllowed(ctx context.Context, pid string, actor evidence.Actor, ids []string) (*evidence.ResolveResult, error) {
 	if g.db == nil || g.base == nil {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
 	result, err := g.base.ResolveAllowed(ctx, pid, actor, ids)
 	if err != nil {
 		return nil, err
 	}
 	if result == nil {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
 	out := &evidence.ResolveResult{Requested: slices.Clone(result.Requested), Denied: slices.Clone(result.Denied), Allowed: []evidence.Asset{}}
 	var projects int64

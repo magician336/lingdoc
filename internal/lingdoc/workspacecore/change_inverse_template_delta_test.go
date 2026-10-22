@@ -211,11 +211,11 @@ func TestR26TemplateInverseRejectsUntrustedTargetHistory(t *testing.T) {
 							ref.ValueHash = hashImpactValue(revision.Spec[ref.FieldKey])
 						}
 					}
-					revision.SpecProvenance.Digest = g1SnapshotDigest(revision.SpecProvenance)
+					revision.SpecProvenance.Digest = provenanceSnapshotDigest(revision.SpecProvenance)
 					if err := ValidateFrozenProvenanceInput(revision.Spec, revision.SpecProvenance); err != nil {
 						return err
 					}
-					if err := store.G5Put(target.ID, "g1_snapshot", revision.SpecProvenance.Digest, 0, revision.SpecProvenance); err != nil {
+					if err := store.PutProjectRecord(target.ID, "g1_snapshot", revision.SpecProvenance.Digest, 0, revision.SpecProvenance); err != nil {
 						return err
 					}
 				}

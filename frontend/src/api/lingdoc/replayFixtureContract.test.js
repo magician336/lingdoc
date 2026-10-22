@@ -12,7 +12,7 @@ test('read-only fixture catalog path publishes metadata and the standard error e
  assert.equal(operation.operationId,'listReplayFixtures');assert.equal(operation.requestBody,undefined)
  assert.ok(operation.responses['401']);assert.ok(operation.responses['403']);assert.ok(operation.responses['503'])
  assert.deepEqual(spec.security,[{bearerAuth:[]}])
- const http=fs.readFileSync(path.join(root,'internal/lingdoc/workspace/g4_full_http.go'),'utf8')
+ const http=fs.readFileSync(path.join(root,'internal/lingdoc/workspace/template_governance_routes.go'),'utf8')
  assert.ok(http.includes('catalog.GET("/replay-fixtures", h.listReplayFixtures)'))
 })
 test('metadata envelope accepts exact pins and an explicitly empty catalog',()=>{

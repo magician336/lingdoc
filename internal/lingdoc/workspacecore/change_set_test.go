@@ -13,52 +13,52 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// g4AuditlessRepository masks the optional audit capability while keeping the
+// auditlessRepository masks the optional audit capability while keeping the
 // normal workspace and ChangeSet persistence ports available to the service.
-type g4AuditlessRepository struct{ inner Repository }
+type auditlessRepository struct{ inner Repository }
 
-func (r g4AuditlessRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
+func (r auditlessRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
 	return r.inner.Transaction(ctx, options, func(tx Transaction) error {
 		changes, ok := tx.(changeSetTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		ports, ok := tx.(g4AuditlessSourcePorts)
+		ports, ok := tx.(auditlessSourcePorts)
 		if !ok {
 			return ErrInvalidState
 		}
-		return fn(g4AuditlessTransaction{Transaction: tx, changes: changes, g4AuditlessSourcePorts: ports})
+		return fn(auditlessTransaction{Transaction: tx, changes: changes, auditlessSourcePorts: ports})
 	})
 }
 
 // Preserve the real source/history/impact readers in the same transaction.
 // Only audit capability is deliberately absent in this failure fixture.
-type g4AuditlessSourcePorts interface {
-	g5Transaction
+type auditlessSourcePorts interface {
+	projectRecordTransaction
 	impactSourceReadTransaction
 	impactTransaction
 	semanticTransaction
 }
 
-type g4AuditlessTransaction struct {
+type auditlessTransaction struct {
 	Transaction
-	g4AuditlessSourcePorts
+	auditlessSourcePorts
 	changes changeSetTransaction
 }
 
-func (tx g4AuditlessTransaction) InsertChangeSet(change ChangeSet) error {
+func (tx auditlessTransaction) InsertChangeSet(change ChangeSet) error {
 	return tx.changes.InsertChangeSet(change)
 }
-func (tx g4AuditlessTransaction) ChangeSet(projectID, changeSetID string) (ChangeSet, error) {
+func (tx auditlessTransaction) ChangeSet(projectID, changeSetID string) (ChangeSet, error) {
 	return tx.changes.ChangeSet(projectID, changeSetID)
 }
-func (tx g4AuditlessTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
+func (tx auditlessTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
 	return tx.changes.ChangeSets(projectID)
 }
-func (tx g4AuditlessTransaction) UpdateChangeSet(previous, next ChangeSet) error {
+func (tx auditlessTransaction) UpdateChangeSet(previous, next ChangeSet) error {
 	return tx.changes.UpdateChangeSet(previous, next)
 }
-func (tx g4AuditlessTransaction) InvalidateChapterConfirmations(projectID string, chapterIDs []string) error {
+func (tx auditlessTransaction) InvalidateChapterConfirmations(projectID string, chapterIDs []string) error {
 	return tx.changes.InvalidateChapterConfirmations(projectID, chapterIDs)
 }
 
@@ -364,7 +364,7 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	originalRepository := svc.repository
-	svc.repository = g4AuditlessRepository{inner: originalRepository}
+	svc.repository = auditlessRepository{inner: originalRepository}
 	_, _, noAuditReplay, noAuditErr := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, noAuditKey)
 	svc.repository = originalRepository
 	if !errors.Is(noAuditErr, ErrInvalidState) || noAuditReplay {

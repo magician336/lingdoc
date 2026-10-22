@@ -13,7 +13,7 @@ test('rag pipeline uses agent-style timeline structure', () => {
   assert.match(source, /getAgentToolIconName/)
   assert.match(source, /name="check-circle"/)
   assert.match(source, /streaming-loading-node/)
-  assert.match(source, /@import ['"]@\/components\/css\/chat-timeline-loading\.less['"]/)
+  assert.match(source, /@import ['"]@\/components\/css\/chatTimelineLoading\.less['"]/)
   assert.match(source, /search-results-summary-fixed/)
 })
 

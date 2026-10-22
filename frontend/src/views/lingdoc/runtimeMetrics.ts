@@ -8,7 +8,7 @@
 //   1. 本表**不复制**服务端完整的 category / status 白名单，只声明「哪些语义
 //      组合归到哪一项」。运行时按服务端返回的 counts 键逐个判定。
 //   2. 本文件出现的每个 category / status 都必须在服务端白名单内
-//      —— runtimeMetrics.test.ts 读 internal/lingdoc/workspacecore/g6_runtime.go
+//      —— runtimeMetrics.test.ts 读 internal/lingdoc/workspacecore/runtime_control.go
 //      核对。服务端改了白名单而本表没改，测试会红。
 //   3. 服务端若将来提供专用指标字段，改用服务端的，不要继续往本表加口径。
 

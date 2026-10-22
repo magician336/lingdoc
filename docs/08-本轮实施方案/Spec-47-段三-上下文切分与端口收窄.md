@@ -85,7 +85,7 @@
 | `internal/lingdoc/workspace/research_adapter.go` | 2 | G2 调研适配器持有 |
 | `internal/lingdoc/workspace/lingdoc.go` | 1 | 组合根对外字段 `Projects workspace.ApplicationService` |
 | `internal/lingdoc/workspace/delivery_input.go` | 1 | 交付输入装配持有 |
-| `internal/lingdoc/workspace/g2_generation_evidence.go` | 1 | `g2GenerationEvidenceValidator{workspace ApplicationService}` |
+| `internal/lingdoc/workspace/generation_evidence.go` | 1 | `g2GenerationEvidenceValidator{workspace ApplicationService}` |
 | `internal/lingdoc/workspace/source_policy.go` | 1 | 来源策略持有 |
 | `internal/lingdoc/workspace/http.go` | 4 | 遗留推断路径（`legacyApplicationAdapter` + 运行时断言） |
 
@@ -179,7 +179,7 @@ Spec 决策 32 的原文是「该上下文的**端口、实现与不变量**一�
 窄口若逐个注入，组合根的依赖数会从今天的 8 涨到几十——依赖数量是复杂性的成本项。按 Ousterhout「深模块 / 复杂性预算」，**每条面用一个按面组织的端口束**（struct of narrow ports），它不拓宽任何一个口，但把组合根的依赖数控制在每面一个：
 
 > **落地后的实际数字（合并 head `6250ba67` 实算）**：上下文窄口共 **36 个 / 165 个方法**——
-> `workspacecore` **34 个口 / 150 个方法**（`seg3_context_ports.go` 26 个新声明 + `seg3_migrated_ports.go`
+> `workspacecore` **34 个口 / 150 个方法**（`context_ports.go` 26 个新声明 + `migrated_context_ports.go`
 > 8 个迁入，登记表 `narrowPortMethods` 逐条钉住）+ `internal/lingdoc/membership` **2 个口 / 15 个方法**。
 > 上面的 24 是**计划期估算**，实施时因「一个上下文一个窄口」的粒度与 B-1 后门修复的升格而增加。
 > 组合根因此仍按**每面一个端口束**注入，没有出现 36 个独立依赖。
@@ -288,7 +288,7 @@ type Service struct { /* 协作者集合 */ }
 
 ### 已知耦合：选区改写与宽口之间有一条隐藏通路
 
-`internal/lingdoc/workspace/g2_generation_evidence.go` 是 37 方法宽口 `ApplicationService` 的**隐藏持有者**：
+`internal/lingdoc/workspace/generation_evidence.go` 是 37 方法宽口 `ApplicationService` 的**隐藏持有者**：
 
 - `g2SelectFormal(ctx, workspace ApplicationService, ...)`（`:31`）——参数是宽口，函数体第一件事却是把它断言成 1 方法的窄口 `g2EvidenceSelector`（`:20`、`:32`），断言失败返回 `generation.ErrDependencyUnavailable`。
 - `g2GenerationEvidenceValidator{workspace ApplicationService}`（`:51`）——结构体字段直接是宽口。
@@ -358,8 +358,8 @@ go test -p 1 -count=1 ./internal/lingdoc/... ./internal/router/ ./internal/conta
 
 | 文件 | 内容 |
 | --- | --- |
-| `internal/lingdoc/workspacecore/seg3_context_ports.go` | 20 个窄口的声明（`GovernanceReviewApplication` `AgentContextApplication` `ChangeSetDraftApplication` `ImpactApplication` `DependencyApplication` `RuntimeApplication` `TrialApplication` `RoadmapApplication` `ResearchTaskApplication` `ImportCandidateApplication` `EvidenceCardApplication` `ResearchClaimApplication` `SourceAnchorApplication` `AgentSessionApplication` `ActionProposalApplication` `ChapterReviewApplication` `DeliveryGuardApplication` `SourceProvenanceApplication` `ImpactGuardApplication` `RuntimeGuardApplication`） |
-| `internal/lingdoc/workspacecore/seg3_context_ports_test.go` | 结构断言：窄口方法集 = 登记表；窄口方法签名**逐字**等于聚合体同名方法；没有窄口是「改了名的宽口」 |
+| `internal/lingdoc/workspacecore/context_ports.go` | 20 个窄口的声明（`GovernanceReviewApplication` `AgentContextApplication` `ChangeSetDraftApplication` `ImpactApplication` `DependencyApplication` `RuntimeApplication` `TrialApplication` `RoadmapApplication` `ResearchTaskApplication` `ImportCandidateApplication` `EvidenceCardApplication` `ResearchClaimApplication` `SourceAnchorApplication` `AgentSessionApplication` `ActionProposalApplication` `ChapterReviewApplication` `DeliveryGuardApplication` `SourceProvenanceApplication` `ImpactGuardApplication` `RuntimeGuardApplication`） |
+| `internal/lingdoc/workspacecore/context_ports_test.go` | 结构断言：窄口方法集 = 登记表；窄口方法签名**逐字**等于聚合体同名方法；没有窄口是「改了名的宽口」 |
 
 **生成方式**：窄口签名不是手抄的。脚本从 `workspacecore` 全包解析出 `func (s *Service) X(...)` 的原始文本，按上下文分桶后生成声明文件；人只负责分桶与注释。脚本见 `.scratch/lingdoc-arch-20261021/seg3/gen_context_ports.py`（不入库）。
 
@@ -431,8 +431,8 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 
 | # | 站点 | 改什么 |
 | --- | --- | --- |
-| 1 | `internal/lingdoc/workspacecore/seg3_context_ports.go` | `GovernanceReviewApplication` 补 `TenantPermissionInTransaction(ctx context.Context, tx Transaction, actor Actor, required types.TenantRole) (bool, error)` |
-| 2 | `internal/lingdoc/workspacecore/seg3_context_ports_test.go` | 登记表里补 `"TenantPermissionInTransaction"` |
+| 1 | `internal/lingdoc/workspacecore/context_ports.go` | `GovernanceReviewApplication` 补 `TenantPermissionInTransaction(ctx context.Context, tx Transaction, actor Actor, required types.TenantRole) (bool, error)` |
+| 2 | `internal/lingdoc/workspacecore/context_ports_test.go` | 登记表里补 `"TenantPermissionInTransaction"` |
 
 **两处曾被推演存在、实测不成立的地方**（省下 #248 的人力）：
 
@@ -465,7 +465,7 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 | `afterOperationWrite` / `observeOperationFailure` / `ObserveRuntime` | 私有方法（写后与失败观察） |
 
 而 `runOperation` 在 `workspacecore` 里有 **57 个调用点**，分布在 15 个文件
-（`service_facade.go` 19 个、`g6_trial.go` 6、`roadmap_service.go` 5、`working_copy.go` 4…）。
+（`service_facade.go` 19 个、`trial_window.go` 6、`roadmap_service.go` 5、`working_copy.go` 4…）。
 
 ⇒ **要解耦就得给管道一个协作口，而这个口会是 13 个方法——比我们要消灭的宽口还宽。**
 所以「先解耦管道」这件事本身就该是**收窄**（拆成几个窄的协作口），不是「换个宽口」。
@@ -507,7 +507,7 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 
 | # | 问题 | 处置 |
 | --- | --- | --- |
-| B-1 | 传输层用**运行期类型断言**把窄口变回宽能力。实测传输层共 14 处断言，其中 **4 个目标是真后门**（`deliveryProvenanceCore` / `g2EvidenceSelector` / `candidateEvidenceTransactionSelector` / `candidateEvidenceProofPreparer`），6 处站点、6 个方法**不在任何窄口里** | **已修**（`43a7721b`）：把「断言成功/失败」换成「可 nil 的显式窄口字段」——4 个能力升格为 `workspacecore` 的正式窄口，传输层不再做断言。断言失败 ⇒ 端口为 nil ⇒ 走**同一个**错误/跳过分支，行为逐字不变。新增守护断言 `seg3_no_backdoor_test.go` + 阴性验证 |
+| B-1 | 传输层用**运行期类型断言**把窄口变回宽能力。实测传输层共 14 处断言，其中 **4 个目标是真后门**（`deliveryProvenanceCore` / `g2EvidenceSelector` / `candidateEvidenceTransactionSelector` / `candidateEvidenceProofPreparer`），6 处站点、6 个方法**不在任何窄口里** | **已修**（`43a7721b`）：把「断言成功/失败」换成「可 nil 的显式窄口字段」——4 个能力升格为 `workspacecore` 的正式窄口，传输层不再做断言。断言失败 ⇒ 端口为 nil ⇒ 走**同一个**错误/跳过分支，行为逐字不变。新增守护断言 `transport_backdoor_test.go` + 阴性验证 |
 | B-2 | 结构断言有三条绕过路径：函数体内的局部变量、局部结构体嵌入、跨包类型别名——**断言全绿** | **已修**（`be7e4183`）：断言改成一遍走完整个文件（类型位置一律看），并新增 `TestNoPackageOutsideTheAggregateAliasesIt` 扫全仓拒绝跨包别名。阴性验证：三条绕过路径逐一注入，全部被抓住 |
 | B-3 | 契约脚本的 `read_method` 提取把 `return err.Error()` 也当成读方法 ⇒ 形状校验被**静默跳过** | **已修**（`be7e4183`）：提取结果与 `read_types` 交叉验证；读路由的形状来源必须能解析出来，解析不出来就报失败（唯一例外写进 `SHAPE_SOURCE_EXEMPTIONS` 并说明理由）。新增两条守护用例 |
 
@@ -544,7 +544,7 @@ PR 的 CI 检出的是**新 main + 我的头**的合并结果，而新 main 带�
 
 | 切片 | 状态 | head | 证据 |
 | --- | --- | --- | --- |
-| 切片 0：20 个窄口契约 | **PASS** | `9944441` | `seg3_context_ports.go` + `seg3_context_ports_test.go`；5 种扰动阴性验证 |
+| 切片 0：20 个窄口契约 | **PASS** | `9944441` | `context_ports.go` + `context_ports_test.go`；5 种扰动阴性验证 |
 | 契约脚本泛化 | **PASS** | `d226090` | `read_method` 承重 14 条；守护用例 + 阴性验证 |
 | 方案与基线记录 | **PASS** | `c9a8a87` | 迁移前基线全绿（base 633ba34） |
 | #266（47.11 直连收口①） | **PASS** | `0604f5a` | `T266-验证报告.json` |

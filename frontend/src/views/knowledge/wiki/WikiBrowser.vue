@@ -801,7 +801,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { hydrateProtectedFileImages, sanitizeMarkdownHTML } from '@/utils/security'
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess'
-import picturePreview from '@/components/picture-preview.vue'
+import picturePreview from '@/components/PicturePreview.vue'
 import WikiFolderActions from './WikiFolderActions.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import {
@@ -5790,7 +5790,7 @@ onUnmounted(() => {
 }
 
 // Wiki reader styles are for the knowledge-base document surface only.
-// Chat answer Markdown styles are centralized in components/css/chat-markdown.less.
+// Chat answer Markdown styles are centralized in components/css/chatMarkdown.less.
 .wiki-reader-body {
   line-height: 1.6;
   font-size: 14px;

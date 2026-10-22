@@ -69,10 +69,10 @@ const AgentStreamDisplay = defineAsyncComponent(
   () => import('@/views/chat/components/AgentStreamDisplay.vue'),
 )
 const DocInfo = defineAsyncComponent(
-  () => import('@/views/chat/components/docInfo.vue'),
+  () => import('@/views/chat/components/DocInfo.vue'),
 )
 const DeepThink = defineAsyncComponent(
-  () => import('@/views/chat/components/deepThink.vue'),
+  () => import('@/views/chat/components/DeepThink.vue'),
 )
 
 ensureMermaidInitialized()
@@ -211,8 +211,8 @@ onMounted(() => {
 </script>
 
 <style scoped lang="less">
-@import '../../components/css/chat-markdown.less';
-@import '../../components/css/chat-citations.less';
+@import '../../components/css/chatMarkdown.less';
+@import '../../components/css/chatCitations.less';
 
 .embed-bot-msg {
   border-radius: 4px;
@@ -242,7 +242,7 @@ onMounted(() => {
 }
 
 .markdown-content {
-  // Chat Markdown visual styles are centralized in chat-markdown.less.
+  // Chat Markdown visual styles are centralized in chatMarkdown.less.
   // Do not add element-level Markdown rules here; update the shared mixin.
   .chat-markdown-typography();
   .chat-citation-pills();

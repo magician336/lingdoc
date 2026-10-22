@@ -336,7 +336,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { listAuditLog, type AuditLog, type AuditOutcome } from '@/api/tenant/audit-log'
+import { listAuditLog, type AuditLog, type AuditOutcome } from '@/api/tenant/auditLog'
 import { getAccessStatus, listProjects, type AccessStatus, type Project } from '@/api/lingdoc/workspace'
 import {
   PERMISSION_EVIDENCE_ROWS,

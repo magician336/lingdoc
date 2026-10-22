@@ -91,7 +91,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { getMCPToolApprovals, setMCPToolApproval, setMCPToolEnabled, type MCPTool, type MCPToolApprovalRow } from '@/api/mcp-service'
+import { getMCPToolApprovals, setMCPToolApproval, setMCPToolEnabled, type MCPTool, type MCPToolApprovalRow } from '@/api/mcpService'
 import { mcpSchemaParameters } from '@/utils/mcpToolDisplay'
 
 const props = defineProps<{ tools: MCPTool[]; serviceId?: string }>()

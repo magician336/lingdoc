@@ -262,9 +262,9 @@ graph TD
 |---|---|---|---|---|
 | [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/views/lingdoc/ImpactOpsPanel.vue`、`runtimeMetrics.ts`、`runtimeMetrics.test.ts`、`frontend/src/api/lingdoc/mainlineChanges.test.js`、`frontend/src/views/lingdoc/ImpactOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上（`internal/lingdoc/workspace/impact_routes.go:135-182`、`api/lingdoc/mainlineChanges.ts:112-127`）；本面只补服务端已给但界面未呈现的运行指标，并给前端补契约保护 |
 | [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | `internal/lingdoc/generation/{service,application,http,store}.go`、`internal/lingdoc/workspace/{selected_rewrite,selected_rewrite_model,http}.go`、`internal/lingdoc/candidateadoption/{candidate_adoption,candidate_adoption_store,candidate_basis,candidate_adoption_http,confirmation}.go`、`internal/lingdoc/workspacecore/human_decision.go`、`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`、`frontend/src/views/lingdoc/generationAttempt.ts` | 证据那半边用 #138 已落地的生成接入，不必等 #137/#133 |
-| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/g6_runtime.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
-| [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`g5_owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
-| [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/g2_service.go`、`g2_model.go` | 上下文包后端已在 `g2_model.go` 落地，不必等 #124 的前端消费 |
+| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/runtime_control.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
+| [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
+| [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/agent_action_service.go`、`agent_research_model.go` | 上下文包后端已在 `agent_research_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
 
 六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领**：PF-2 仍在施工，**PF-1 已于 2026-10-22 完成**（登记处 `status` 为 `done`）。其余四张未被认领。
@@ -301,7 +301,7 @@ graph TD
 
 ### ② 审计失败不告警
 
-29-Spec 的 fail-open 语义已实现（普通读审计失败继续读并记录），但**没有接到告警**：`g6_runtime.go` 的告警源里没有审计事件。`AuditEvent` 也没有 `target_version` / `project_revision` 字段。
+29-Spec 的 fail-open 语义已实现（普通读审计失败继续读并记录），但**没有接到告警**：`runtime_control.go` 的告警源里没有审计事件。`AuditEvent` 也没有 `target_version` / `project_revision` 字段。
 
 **卡住**：#130 → #145（29-Spec 自述「the observability boundary consumed by G6」）→ **卡 G6 整条**。
 

@@ -540,7 +540,7 @@ import {
   type AuditLog,
   type AuditAction,
   type AuditOutcome,
-} from '@/api/tenant/audit-log'
+} from '@/api/tenant/auditLog'
 
 const { t, tm, locale } = useI18n()
 const authStore = useAuthStore()

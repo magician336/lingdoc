@@ -30,7 +30,7 @@ async function fixture(update: () => Promise<void> = async () => {}, admin = tru
       if (name === '@/stores/auth') return { useAuthStore: () => ({ hasRole: () => admin }) }
       if (name === '@/components/settings/useConfirmDelete') return { useConfirmDelete: () => (data: unknown) => deletes.push(data) }
       if (name === 'tdesign-vue-next') return { MessagePlugin: { success() {}, error: (message: string) => errors.push(message) } }
-      if (name === '@/api/mcp-service') return {
+      if (name === '@/api/mcpService') return {
         listMCPServices: async () => [service],
         updateMCPService: async (id: string, data: unknown) => { calls.push({ id, data }); await update() },
       }

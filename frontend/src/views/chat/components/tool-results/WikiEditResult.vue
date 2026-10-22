@@ -101,7 +101,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { WikiEditData } from '@/types/tool-results';
+import type { WikiEditData } from '@/types/toolResults';
 
 const props = defineProps<{
   data: WikiEditData;
@@ -155,7 +155,7 @@ const headerTitle = computed(() => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .wiki-edit-result {
   display: flex;

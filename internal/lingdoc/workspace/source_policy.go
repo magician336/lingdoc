@@ -596,14 +596,14 @@ func candidateEvidenceActor(ctx context.Context, actorID string) (context.Contex
 	return checked, workspacecore.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, nil
 }
 
-func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.VersionRef, sourceIDs []string) (workspacecore.EvidenceSelection, error) {
 	checked, actor, err := candidateEvidenceActor(ctx, actorID)
 	if err != nil {
-		return workspacecore.G2EvidenceSelection{}, err
+		return workspacecore.EvidenceSelection{}, err
 	}
 	port := p.selector
 	if port == nil {
-		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+		return workspacecore.EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
 	}
 	selected, err := port.SelectGenerationEvidence(checked, actor, projectID, chapterID, refs, true)
 	if err != nil {
@@ -615,14 +615,14 @@ func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidence(ctx context.Co
 	return selected, nil
 }
 
-func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidenceInTransaction(ctx context.Context, tx *gorm.DB, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidenceInTransaction(ctx context.Context, tx *gorm.DB, projectID, chapterID, actorID string, refs []workspacecore.VersionRef, sourceIDs []string) (workspacecore.EvidenceSelection, error) {
 	checked, actor, err := candidateEvidenceActor(ctx, actorID)
 	if err != nil {
-		return workspacecore.G2EvidenceSelection{}, err
+		return workspacecore.EvidenceSelection{}, err
 	}
 	port := p.selectorInTransaction
 	if port == nil || tx == nil {
-		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+		return workspacecore.EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
 	}
 	selected, err := port.SelectGenerationEvidenceInTransaction(checked, workspacecore.NewTransactionAdapter(tx), actor, projectID, chapterID, refs, true, sourceIDs)
 	if err != nil {
@@ -631,14 +631,14 @@ func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidenceInTransaction(c
 	return selected, nil
 }
 
-func (p *candidateAdoptionSourcePolicy) PrepareCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (context.Context, workspacecore.G2EvidenceSelection, error) {
+func (p *candidateAdoptionSourcePolicy) PrepareCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.VersionRef, sourceIDs []string) (context.Context, workspacecore.EvidenceSelection, error) {
 	checked, actor, err := candidateEvidenceActor(ctx, actorID)
 	if err != nil {
-		return ctx, workspacecore.G2EvidenceSelection{}, err
+		return ctx, workspacecore.EvidenceSelection{}, err
 	}
 	port := p.proofPreparer
 	if port == nil {
-		return ctx, workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+		return ctx, workspacecore.EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
 	}
 	prepared, selected, err := port.PrepareCandidateGenerationEvidence(checked, actor, projectID, chapterID, refs, sourceIDs)
 	if err != nil {

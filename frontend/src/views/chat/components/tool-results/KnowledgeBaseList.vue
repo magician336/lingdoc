@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import type { KnowledgeBaseListData } from '@/types/tool-results';
+import type { KnowledgeBaseListData } from '@/types/toolResults';
 
 const props = defineProps<{
   data: KnowledgeBaseListData;
@@ -43,7 +43,7 @@ const props = defineProps<{
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .knowledge-base-list {
   display: flex;

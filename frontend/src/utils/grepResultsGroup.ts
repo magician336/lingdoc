@@ -1,4 +1,4 @@
-import type { GrepChunkResult, GrepKnowledgeResult } from '@/types/tool-results'
+import type { GrepChunkResult, GrepKnowledgeResult } from '@/types/toolResults'
 
 export type GrepGroupedRow = {
   key: string

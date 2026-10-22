@@ -515,10 +515,10 @@ watch(customInput, () => {
 </script>
 
 <style lang="less" scoped>
-@import '../../components/css/chat-markdown.less';
-@import '../../components/css/chat-citations.less';
-@import '../../components/css/chat-message-shared.less';
-@import '../../components/css/chat-timeline-loading.less';
+@import '../../components/css/chatMarkdown.less';
+@import '../../components/css/chatCitations.less';
+@import '../../components/css/chatMessageShared.less';
+@import '../../components/css/chatTimelineLoading.less';
 
 .markdown-test-page {
   max-width: 860px;
@@ -649,7 +649,7 @@ watch(customInput, () => {
 // Chat answer markdown — shared with botmsg / AgentStreamDisplay / embed
 .markdown-content {
   // Dev page intentionally uses the same chat Markdown mixin as runtime chat.
-  // Keep visual changes in chat-markdown.less so this page remains a regression target.
+  // Keep visual changes in chatMarkdown.less so this page remains a regression target.
   .chat-markdown-typography();
   .chat-citation-pills();
 }

@@ -233,8 +233,8 @@ func (s *auditSinkStub) Record(_ context.Context, event core.AuditEvent) error {
 	return nil
 }
 
-// g2Decode decodes one operation's answer into the type the test expects.
-func g2Decode[T any](t *testing.T, raw json.RawMessage, err error) T {
+// decodeAgentJSON decodes one operation's answer into the type the test expects.
+func decodeAgentJSON[T any](t *testing.T, raw json.RawMessage, err error) T {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)

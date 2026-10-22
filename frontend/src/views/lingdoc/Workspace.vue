@@ -719,7 +719,7 @@
     <div v-if="project && fullPanel" ref="fullDrawerRef" class="full-workflow-backdrop" @mousedown.self="closeFullPanel">
       <section class="full-workflow-dialog" role="dialog" aria-modal="true" :aria-label="fullPanelLabel" tabindex="-1">
         <header class="full-workflow-head"><strong>{{ fullPanelLabel }}</strong><button type="button" :disabled="fullPanelBusy" @click="closeFullPanel">返回文稿 ×</button></header>
-        <G2ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
+        <ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
         <ImpactOpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
         <ProjectCollaborationPanel v-if="fullPanel === 'members'" ref="collaborationPanelRef" :project="project" :chapters="chapters" :assets="assets" :current-user-id="auth.currentUserId ?? ''" :readonly="restricted" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
@@ -755,7 +755,7 @@ import {
 } from '@/api/lingdoc/generation'
 import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
-import G2ResearchPanel from './G2ResearchPanel.vue'
+import ResearchPanel from './ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
 import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
@@ -768,8 +768,8 @@ import { invitationAssignment, invitationScopeDetail, invitationStatusLabel, inv
 import { listTemplateProfiles, listTemplateVersions, type TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
 import ChapterReviewPanel from './ChapterReviewPanel.vue'
 import type { CommentSelection } from '@/api/lingdoc/chapterReview'
-import type { G2VersionRef } from '@/api/lingdoc/g2'
-import { getActivationDiff, recordActivationRead, listDiscardedProjects, discardDraftProject, restoreDraftProject, type ActivationDiff, type ActivationReadReceipt } from '@/api/lingdoc/g1Initialization'
+import type { VersionRef } from '@/api/lingdoc/agentApi'
+import { getActivationDiff, recordActivationRead, listDiscardedProjects, discardDraftProject, restoreDraftProject, type ActivationDiff, type ActivationReadReceipt } from '@/api/lingdoc/projectInitialization'
 import LingDocCandidateAdoptionDialog from '@/components/LingDocCandidateAdoptionDialog.vue'
 import SelectedEvidenceContext from './SelectedEvidenceContext.vue'
 import { RESTRICTED_NOTICE, isRestricted, recoveryActionsOf } from './accessStatus'
@@ -806,13 +806,13 @@ const memberDraftDirty = ref(false)
 
 type FullPanel = 'research' | 'changes' | 'governance' | 'members' | 'review'
 const fullPanel=ref<FullPanel|null>(null),fullPanelDirty=ref(false),fullDrawerRef=ref<HTMLElement|null>(null)
-const researchPanelRef=ref<InstanceType<typeof G2ResearchPanel>|null>(null)
+const researchPanelRef=ref<InstanceType<typeof ResearchPanel>|null>(null)
 const opsPanelRef=ref<InstanceType<typeof ImpactOpsPanel>|null>(null),governancePanelRef=ref<InstanceType<typeof TemplateGovernancePanel>|null>(null),collaborationPanelRef=ref<InstanceType<typeof ProjectCollaborationPanel>|null>(null),chapterReviewPanelRef=ref<InstanceType<typeof ChapterReviewPanel>|null>(null)
 const fullPanelBusy=computed(()=>!!researchPanelRef.value?.operationBusy||!!opsPanelRef.value?.busy||!!governancePanelRef.value?.busy||!!collaborationPanelRef.value?.busy||!!chapterReviewPanelRef.value?.busy)
 const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注'}[fullPanel.value??'research']))
 const fullReadonly=computed(()=>{const m=project.value?.members.find(x=>x.user_id===auth.currentUserId);return restricted.value||!m||m.status!==undefined&&m.status!==''&&m.status!=='active'||m.role!=='owner'&&m.governance_role!=='admin'&&!(m.function_roles??[]).some(x=>x!=='observer')})
 const commentSelection=ref<CommentSelection|undefined>(undefined)
-const generationEvidenceRefs=ref<G2VersionRef[]>([])
+const generationEvidenceRefs=ref<VersionRef[]>([])
 const chapterWritePermissions=ref<Record<string,boolean>>({}),chapterConfirmPermissions=ref<Record<string,boolean>>({}),chapterPermissionReasons=ref<Record<string,string>>({})
 const editorWritePermissions=computed(()=>restricted.value?{}:chapterWritePermissions.value)
 let permissionEpoch=0
@@ -833,12 +833,12 @@ let fullReturnFocus:HTMLElement|null=null
 function closeFullPanel(){if(fullPanelBusy.value)return;if(fullPanelDirty.value&&!window.confirm('此面板有未提交输入。返回文稿会放弃这些输入，是否继续？'))return;fullPanel.value=null;fullPanelDirty.value=false;nextTick(()=>fullReturnFocus?.isConnected&&fullReturnFocus.focus())}
 function openFullPanel(panel:FullPanel){if(!project.value)return;if(fullPanel.value&&fullPanel.value!==panel){closeFullPanel();if(fullPanel.value)return}fullReturnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;if(panel==='review'){const selected=editorRef.value?.selectionToUtf16();commentSelection.value=selected?.ok&&selected.chapterId===chapter.value?.id&&!workingCopyDiffersFromFormal.value&&!chapterChanged.value?{start_utf16:selected.start_utf16,end_utf16:selected.end_utf16,quote_markdown:selected.quote}:undefined}fullPanel.value=panel}
 async function refreshFullWorkflowProject(){const id=project.value?.id,session=editorSessionEpoch;if(!id)return;try{const [result,formal]=await Promise.all([getProject(id),project.value?.status==='active'?listChapters(id):Promise.resolve(null)]);if(project.value?.id!==id||editorSessionEpoch!==session)return;if(result.data.project_version<project.value.project_version)return;project.value=result.data;if(formal){chapters.value=formal.data;const active=formal.data.find(x=>x.id===chapter.value?.id);if(active)chapter.value=active}void loadAccessStatus(id);void loadChapterPermissions(id,result.data.project_version,chapters.value,session)}catch(e){if(project.value?.id===id&&editorSessionEpoch===session)failure(e)}}
-function removeGenerationEvidence(ref:G2VersionRef) {
+function removeGenerationEvidence(ref:VersionRef) {
  if (busy.value || generationPending.value || rewriteBusy.value) return
  generationEvidenceRefs.value = generationEvidenceRefs.value.filter(item=>item.id!==ref.id || item.version!==ref.version)
  if (!generationEvidenceRefs.value.length) rewriteUseEvidence.value=false
 }
-async function openSelectedEvidence(ref:G2VersionRef) {
+async function openSelectedEvidence(ref:VersionRef) {
  if (!project.value || busy.value || fullPanelBusy.value || !generationEvidenceRefs.value.some(item=>item.id===ref.id&&item.version===ref.version)) return
  const projectId=project.value.id, userId=auth.currentUserId
  openFullPanel('research')
@@ -846,7 +846,7 @@ async function openSelectedEvidence(ref:G2VersionRef) {
  if (project.value?.id!==projectId || auth.currentUserId!==userId || fullPanel.value!=='research' || !generationEvidenceRefs.value.some(item=>item.id===ref.id&&item.version===ref.version)) return
  await researchPanelRef.value?.showEvidenceCard(ref)
 }
-function useGenerationEvidence(refs:G2VersionRef[]){generationEvidenceRefs.value=toggleEvidenceSelection(generationEvidenceRefs.value,refs);bindingNoticeText.value=`已选择 ${generationEvidenceRefs.value.length} 张证据卡；目标章为 ${chapter.value?.title??'尚未选择'}。整章生成使用此集合，选段改写须另行明确勾选。服务端会核对版本、适用章节与当前授权。`}
+function useGenerationEvidence(refs:VersionRef[]){generationEvidenceRefs.value=toggleEvidenceSelection(generationEvidenceRefs.value,refs);bindingNoticeText.value=`已选择 ${generationEvidenceRefs.value.length} 张证据卡；目标章为 ${chapter.value?.title??'尚未选择'}。整章生成使用此集合，选段改写须另行明确勾选。服务端会核对版本、适用章节与当前授权。`}
 function locateComment(selection:CommentSelection){const id=chapter.value?.id;if(!id)return;const ok=editorRef.value?.locateMarkdownRange(id,selection.start_utf16,selection.end_utf16,selection.quote_markdown);if(!ok){errorMessage.value='正文已变化，当前无法安全定位该历史批注；没有猜测关联。';return}closeFullPanel()}
 function closeActivationReview(){if(busy.value)return;activationOpen.value=false;activationAcknowledged.value=false;activationReceipt.value=null;nextTick(()=>fullReturnFocus?.isConnected&&fullReturnFocus.focus())}
 async function confirmActivationReview(){if(!project.value||!activationDiff.value||!activationAcknowledged.value||busy.value)return;const p=project.value,id=p.id,session=editorSessionEpoch,review=activationDiff.value;if(p.project_version!==review.current_project_version){errorMessage.value='课题已变化，请重新查看立项条件。';return}busy.value=true;errorMessage.value='';try{if(!activationReceipt.value)activationReceipt.value=(await recordActivationRead(id,review.current_project_version)).data;if(project.value?.id!==id||session!==editorSessionEpoch)return;const receipt=activationReceipt.value,input={expected_spec_revision:review.current_spec_revision,expected_project_version:review.current_project_version,activation_read_id:receipt.id};await activateProject(id,review.current_spec_revision,operationKey(`activate:${id}`,input),review.current_project_version,receipt.id);if(project.value?.id!==id||session!==editorSessionEpoch)return;attempts.delete(`activate:${id}`);activationOpen.value=false;activationAcknowledged.value=false;activationReceipt.value=null;await loadProjects();await selectProject(id)}catch(e){if(project.value?.id===id&&session===editorSessionEpoch)failure(e)}finally{if(session===editorSessionEpoch)busy.value=false}}

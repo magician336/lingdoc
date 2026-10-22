@@ -187,7 +187,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "available",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspacecore/g6_runtime.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
         ),
         "resolves": (),
@@ -205,7 +205,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/workspacecore/g5_owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
         ),
         "resolves": ((127, 143),),
@@ -225,8 +225,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
-            ("internal/lingdoc/workspacecore/g2_service.go", "file"),
-            ("internal/lingdoc/workspacecore/g2_model.go", "file"),
+            ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
+            ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
         ),
         "resolves": (),
         "summary": (

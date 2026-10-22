@@ -1088,7 +1088,7 @@ const toggleEnabled = async (ch: EmbedChannel, enabled: boolean) => {
 </script>
 
 <style scoped lang="less">
-@import './css/channel-panel-list.less';
+@import './css/channelPanelList.less';
 
 .embed-panel {
   display: flex;

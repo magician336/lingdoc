@@ -58,7 +58,7 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 			create.AffectedChapterIDs = append(create.AffectedChapterIDs, impact.ChapterID)
 		}
 		mutationCtx := context.WithValue(ctx, controlledInverseKey{}, source.ID)
-		mutationCtx = context.WithValue(mutationCtx, g1ReverseSourceKey{}, source.ID)
+		mutationCtx = context.WithValue(mutationCtx, reverseSourceKey{}, source.ID)
 		if source.TemplateUpgrade != nil {
 			baseline, oldCopy, err := inverseTemplateBaseline(tx, actor, p.ID, source)
 			if err != nil {
@@ -240,12 +240,12 @@ func validateInverseTemplateRevision(tx Transaction, revision ContextRevisionRec
 		snapshot.TemplateCopyVersion != revision.TemplateCopyVersion || len(snapshot.Fields) != len(revision.Spec) || ValidateFrozenProvenanceInput(revision.Spec, snapshot) != nil {
 		return ErrInvalidState
 	}
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
 	var persisted ProjectProvenanceSnapshot
-	if _, err := store.G5Get(revision.ProjectID, "g1_snapshot", snapshot.Digest, &persisted); err != nil {
+	if _, err := store.GetProjectRecord(revision.ProjectID, "g1_snapshot", snapshot.Digest, &persisted); err != nil {
 		return err
 	}
 	if hashImpactValue(persisted) != hashImpactValue(snapshot) {
@@ -254,7 +254,7 @@ func validateInverseTemplateRevision(tx Transaction, revision ContextRevisionRec
 	return nil
 }
 
-// Called from g1PrepareOperation after its short current-project read, and
+// Called from prepareProvenanceOperation after its short current-project read, and
 // before the existing preparation for reassess/apply/etc. All source-policy IO
 // remains outside the final write transaction. This key only records ancestry.
 func (s *Service) prepareInverseOperationProvenance(ctx context.Context, actor Actor, op, target, projectID string, body any) (context.Context, error) {
@@ -309,7 +309,7 @@ func (s *Service) prepareInverseOperationProvenance(ctx context.Context, actor A
 	if err := RequireHumanDecision(ctx); err != nil {
 		return ctx, err
 	}
-	prepared, err := s.g1PrepareChangeProvenance(ctx, actor, source, map[string]bool{})
+	prepared, err := s.prepareChangeProvenance(ctx, actor, source, map[string]bool{})
 	if err != nil {
 		return ctx, err
 	}
@@ -318,7 +318,7 @@ func (s *Service) prepareInverseOperationProvenance(ctx context.Context, actor A
 			return ctx, err
 		}
 	}
-	return context.WithValue(prepared, g1ReverseSourceKey{}, source.ID), nil
+	return context.WithValue(prepared, reverseSourceKey{}, source.ID), nil
 }
 
 // Applying a template inverse restores the policy basis of the historical

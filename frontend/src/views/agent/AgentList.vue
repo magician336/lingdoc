@@ -834,7 +834,7 @@ import { useUIStore } from '@/stores/ui'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
 import ResourceOriginBadge from '@/components/ResourceOriginBadge.vue'
-import { shouldShowResourceOriginBadge } from '@/utils/card-list-badge'
+import { shouldShowResourceOriginBadge } from '@/utils/cardListBadge'
 import { useAuthStore } from '@/stores/auth'
 import { useListUrlState } from '@/composables/useListUrlState'
 import { useResourcePins } from '@/composables/useResourcePins'
@@ -2544,7 +2544,7 @@ defineExpose({
 </style>
 
 <style lang="less">
-/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
+/* 下拉菜单样式已统一至 @/assets/dropdownMenu.less */
 
 // 共享智能体详情侧边栏
 .shared-detail-drawer-overlay {

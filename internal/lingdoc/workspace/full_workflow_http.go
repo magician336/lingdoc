@@ -11,7 +11,7 @@ import (
 type FullWorkflowDependencies struct {
 	Governance *TemplateGovernanceRuntime
 	Impact     ImpactRoutePorts
-	G2         G2RoutePorts
+	Agent      AgentRoutePorts
 	Routes     FullWorkflowRoutePorts
 }
 
@@ -19,10 +19,10 @@ func (h *Handler) RegisterFullRoutes(group *gin.RouterGroup) {
 	if h.full == nil || group == nil || !h.full.Routes.wired() {
 		return
 	}
-	RegisterG2FullRoutes(group, h.full.G2)
+	RegisterAgentRoutes(group, h.full.Agent)
 	RegisterImpactRoutes(group, h.full.Impact)
 	RegisterRoadmapRoutes(group, h.full.Impact)
-	RegisterG4FullRoutes(group, h.full.Governance)
+	RegisterTemplateGovernanceRoutes(group, h.full.Governance)
 	registerG5G7FullRoutes(group, h.full.Routes, h.full.Impact)
 }
 

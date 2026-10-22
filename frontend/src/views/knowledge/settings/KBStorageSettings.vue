@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { listStorageBackends, type StorageBackend } from '@/api/storage-backend'
+import { listStorageBackends, type StorageBackend } from '@/api/storageBackend'
 import { useUIStore } from '@/stores/ui'
 
 const props = defineProps<{ storageBackendId?: string; storageProvider?: string; hasFiles?: boolean }>()

@@ -93,8 +93,8 @@ func (r *SourceRuntime) ConnectOptionalCapabilities(capabilities OptionalCapabil
 	r.evidenceProofPreparer = capabilities.EvidenceProofPreparation
 }
 func (r *SourceRuntime) EnableFullWorkflowPolicy() {
-	r.gateway = NewG2ProjectAssetPolicyGateway(r.db, liveGORMSourceGateway{db: r.db, base: r.gateway})
-	r.modelGateway = NewG2ModelAssetPolicyGateway(r.db, r.gateway)
+	r.gateway = NewProjectAssetPolicyGateway(r.db, liveGORMSourceGateway{db: r.db, base: r.gateway})
+	r.modelGateway = NewModelAssetPolicyGateway(r.db, r.gateway)
 }
 func (r *SourceRuntime) generationGateway() evidence.AssetGateway {
 	if r.modelGateway != nil {

@@ -27,12 +27,12 @@ func newDeliveryGuardFixtureOverDB(t *testing.T, f deliveryGuardFixture) deliver
 	ctx := f.requestContext(f.actor.UserID, f.actor.Role, "gate-restart")
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	t.Cleanup(cancel)
-	runtime := NewGORMSourceRuntime(f.db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(f.db, ProjectPorts{}, adapterSharesStub{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(f.db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(f.db, projects, runtime, g4AdapterShares{}, nil, nil)})
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewResearchAdapter(f.db, projects, runtime, adapterSharesStub{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(f.db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)
@@ -78,7 +78,7 @@ func repairGateObligations(t *testing.T, f deliveryGuardFixture, changeID string
 	// A real Chapter edit invalidates the affected chapters' confirmation;
 	// re-confirming is the actual human repair the rules checker demands.
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
-	confirm := candidateadoption.NewConfirmationService(store, f.runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), g4AdapterChapterAuthorizer{f.projects})
+	confirm := candidateadoption.NewConfirmationService(store, f.runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), adapterChapterAuthorizerStub{f.projects})
 	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
 	require.NoError(t, err)
 	confirmAll := func(round int) {

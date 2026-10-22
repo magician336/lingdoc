@@ -65,7 +65,7 @@ test('streaming tool log uses the same timeline structure', () => {
   assert.match(source, /'is-streaming-timeline': showStreamingTimeline/)
   assert.match(source, /'tree-child': isStreamingTimelineEvent\(event\)/)
   assert.match(source, /class="tree-child tree-child-last streaming-loading-node"/)
-  assert.match(source, /chat-timeline-loading\.less/)
+  assert.match(source, /chatTimelineLoading\.less/)
   assert.match(source, /lastStreamingTimelineEventIndex\s*=\s*computed/)
 })
 
@@ -148,5 +148,5 @@ test('agent mode shows a native placeholder before answer whenever nothing is pe
   assert.match(source, /event\.type === 'tool_approval_required' \|\| event\.type === 'mcp_oauth_required'/)
   assert.match(source, /class="action-card action-pending"/)
   assert.match(source, /t\('chat\.thinkingAlt'\)/)
-  assert.match(source, /chat-timeline-loading\.less/)
+  assert.match(source, /chatTimelineLoading\.less/)
 })

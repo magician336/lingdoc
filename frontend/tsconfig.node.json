@@ -7,7 +7,7 @@
     "nightwatch.conf.*",
     "playwright.config.*",
     "eslint.config.*",
-    "scripts/g3demo/**/*"
+    "scripts/impactChains/**/*"
   ],
   "compilerOptions": {
     "noEmit": true,
