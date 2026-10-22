@@ -146,9 +146,28 @@ func TestResearchProposalRefusesBrokenCandidateSource(t *testing.T) {
 		"no reason":       `{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o","candidate_sources":[{"source_id":"source-1","reason":"  "}]}`,
 		"no source id":    `{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o","candidate_sources":[{"source_id":"","reason":"它相关"}]}`,
 		"unknown field":   `{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o","candidate_sources":[{"source_id":"source-1","reason":"它相关","locator":"编造的定位"}]}`,
+		// The retrieval levels grade what a search found. A candidate
+		// source is a reference, not a graded product, so it cannot carry
+		// one: the two vocabularies do not meet here.
+		"retrieval level": `{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o","candidate_sources":[{"source_id":"source-1","reason":"它相关","level":"candidate_evidence"}]}`,
 	} {
 		if _, err := DecodeResearchProposal(json.RawMessage(raw), authorizedContext("source-1")); err == nil {
 			t.Fatalf("a broken candidate source was accepted: %s", name)
+		}
+	}
+}
+
+// The retrieval levels (候选证据 / 背景线索 / 发现入口 / 未读检索摘要) belong
+// to the search path: they grade what a search produced. The candidate
+// sources of a proposal are references, checked against the authorization of
+// the turn. Keeping the two vocabularies apart is what stops a reference
+// from looking like evidence the user can trust.
+func TestResearchProposalDoesNotBorrowTheRetrievalLevelVocabulary(t *testing.T) {
+	for _, literal := range stringLiterals(t, "research_proposal.go") {
+		for _, level := range []string{"candidate_evidence", "background_lead", "discovery_entry", "unread_search_summary"} {
+			if strings.Contains(literal, level) {
+				t.Fatalf("the proposal contract speaks the retrieval level vocabulary %s: %s", level, literal)
+			}
 		}
 	}
 }
