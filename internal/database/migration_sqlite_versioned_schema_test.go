@@ -95,8 +95,9 @@ var versionedSQLiteColumns = map[string][]string{
 }
 
 // 000046 rebuilds lingdoc_project_audits in place to bound its action
-// category column (#276). It adds no table, so the table set is unchanged.
-const expectedSQLiteMigrationVersion = 51
+// category column (#276). 000052 adds the two audit version columns (#327).
+// Neither adds a table, so the table set is unchanged.
+const expectedSQLiteMigrationVersion = 52
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
