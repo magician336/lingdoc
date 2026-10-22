@@ -1,0 +1,77 @@
+{
+  "mode": "static-and-suite",
+  "note": "#48 代码命名规范收口：把「编号在代码层是 0 比特信息」这件事变成机械可判的规则。核心机制是三件套——登记表（文件 → 拥有的知识 / 是否遗留 / 归属票）、守护测试（拿登记表和活树逐条对账）、棘轮（遗留清单只减不增）。本轮把棘轮从 211/54/205 收到 0/0/0：代码区不再有任何以项目号 / 任务号 / 段号命名的文件，也不再有任何以工作号开头的标识符（验收台自己的词汇除外）。改名是「按知识重新命名」，不是「去掉数字」——同一批文件在 Go 侧叫 agent_routes.go / membership_grants.go，在前端叫 agentApi.ts / impactCenterAcceptance/，前后端镜像类型统一为 VersionBasis / VersionExpectation / ConfirmationInput / VersionRef。",
+  "head": "80ed06ab",
+  "base": "058637c4",
+  "passed": [
+    {
+      "id": "AC-48-01 新增代码文件不得以 g<数字> / t<数字> / seg<数字> 开头",
+      "status": "passed",
+      "evidence": "scripts/lingdoc_naming_registry.py 的 scanner 与守护测试同源：NUMBERED_NAME（^g/G/t/T + 数字）、SEGMENT_NAME（^seg + 数字）、TICKET_NUMBER（issue/spec/ac + 数字）、TASK_NUMBER（任意位置的 t/T + 数字）四条规则都作用于**路径的每一段**，目录名同样计入。构造式阴性用例：scripts/ci/test_lingdoc_naming_registry.py 的 ScannerTests 在一次性目录里写 internal/lingdoc/g9_new.go、internal/lingdoc/seg3_new.go、internal/evidence/verify_t11_test.go，断言它们出现在 undeclared_files 里（即守护会拒绝）。全量 `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` → Ran 322 tests / OK（98.8s）。"
+    },
+    {
+      "id": "AC-48-02 导出标识符不得以 G<数字> / T<数字> / Seg<数字> 开头",
+      "status": "passed",
+      "evidence": "标识符计数按**定义处**而不是出现次数：扫描器读 Go 的包级 func/type/var/const、TS 的 export/const/class、Python 的模块级 def/class。一个导出名在五十个文件里被引用仍是一个标识符。构造式阴性用例：ScannerTests 在 internal/lingdoc/permission.go 里写 `func G9DoThing() {}`，断言该文件被 undeclared_files 收走。活树自检 `python scripts/lingdoc_naming_registry.py` → exit 0，「210 code files, 251 numbered identifiers, 0 legacy files against a baseline of 0/0/0」——251 个声明的编号标识符全部是验收台词汇（harness=True，legacy=False），不计入棘轮。"
+    },
+    {
+      "id": "AC-48-03 文件名不得含工单号 / 规格号 / 验收标准号 / 任务号",
+      "status": "passed",
+      "evidence": "TICKET_NUMBER 与 TASK_NUMBER 都用「任意位置」口径（`(?<![A-Za-z0-9])(?:issue|spec|ac)\\d+` 与 `(?<![A-Za-z0-9])[tT]\\d+`），所以 x_issue196_y.go、verify_t11_test.go 都被收。构造式阴性用例同上。本轮实际收口：internal/evidence/verify_t09_test.go → verify_asset_service_test.go、internal/container/g4_issue196_legacy_e2e_test.go → lingdoc_ruleset_template_compatibility_e2e_test.go、scripts/acceptance/issue196_g4_real_http.py → governance_real_http.py。"
+    },
+    {
+      "id": "AC-48-04 遗留清单只减不增（棘轮）",
+      "status": "passed",
+      "evidence": "棘轮基线从 Spec 开工时的 211/54/205 降到 **0/0/0**。loader 的规则是基线必须**恰好**等于遗留段：超过即报「legacy segment grew」，不等于即报「baseline does not match the registry」——所以基线既不能虚报也不能少报。守护测试 test_the_ratchet_only_goes_down 断言只减不增。活树自检 exit 0。"
+    },
+    {
+      "id": "AC-48-05 一个知识只被一个文件声明",
+      "status": "passed",
+      "evidence": "登记表 loader 对 knowledge 做唯一性校验：两条同知识声明直接 NamingRegistryError。守护测试 test_one_piece_of_knowledge_has_one_owner_file 逐条遍历 210 个文件条目断言无重复。实测 210 个文件条目、210 份互不相同的知识陈述。"
+    },
+    {
+      "id": "AC-48-06 每个代码文件都在登记表中声明（含文件名干净但内部带编号标识符的文件）",
+      "status": "passed",
+      "evidence": "check_repository 对账三条：活树里破规则但没声明 → 抱怨；声明了 legacy 却不再破规则 → 抱怨；声明了却不存在 → 抱怨。当前 head 自检零抱怨（exit 0）。声明完整性的阴性用例改落在标识符侧（棘轮归零后，真实树里已无「破规则却未声明」的文件，那条规则由 ScannerTests 在一次性目录里覆盖）：test_a_registry_that_forgets_a_declaration_is_rejected 抽掉一条标识符声明，断言 guard 报「is a numbered identifier that the registry does not declare」。"
+    },
+    {
+      "id": "AC-48-07 前端文件名符合单一约定",
+      "status": "passed",
+      "evidence": "本轮把 `.less` 纳入登记表的 CODE_EXTENSIONS：样式表也是源文件，它的文件名和引用它的组件遵守同一条规则。此前 `.less` 不在白名单里，造成 `chatCitations.test.mjs` 测 `chat-citations.less` 的不对称。17 个 kebab 样式资源改名（dropdown-menu.less → dropdownMenu.less 等），50 个文件的引用同步（含正则字面量里的转义写法 chat-timeline-loading\\.less）。规则侧：frontend_kebab 对 `.less` 生效，frontend_camel / frontend_vue_case 仍只管 ts/js/vue。活树自检 exit 0，棘轮仍 0/0/0。"
+    },
+    {
+      "id": "AC-48-08 对外契约零变化",
+      "status": "passed",
+      "evidence": "逐叶比对 openapi.json（origin/main ↔ 当前 head）：**20817 个叶子节点，两边同数**；变化叶子 **125 个，全部是来源指针**（x-lingdoc-route-source / x-go-source）；非指针变化 **0 个**；只在一侧存在的叶子 **0 个**。也就是说端点、操作、参数、schema、状态码、文案逐字节未动，变的只有「这个操作当年住在哪个文件」这一条指针——它随改名刷新才有意义（125 处里 34 处是 g2_full_http.go → agent_routes.go，91 处是 workspacecore 内被改名的文件）。契约校验 `python docs/08-本轮实施方案/contracts/validate_artifacts.py` → exit 0；路由与前端双向核对 `python scripts/ci/check_lingdoc_routes.py` → exit 0。#363 在门禁里加的过渡映射 RENAMED_ROUTE_FILES 随之删除：契约既然已经指向真实文件，映射就是死代码。"
+    },
+    {
+      "id": "AC-48-09 功能未破坏",
+      "status": "passed",
+      "evidence": "前端：`npm run type-check` exit 0、`npm test` exit 0（全量通过，含 17 个样式资源改名后的断言）。后端：`go test ./...` 有 11 处失败，**全部是既有环境失败**：在 origin/main（bd0ef9ab）上开一次性 worktree 逐条复现，失败的测试函数名与当前 head **完全相同**——internal/agent/tools 5 处（缺 /bin/bash、Windows 路径当 JSON Schema $ref 不合法、Windows 临时目录文件锁）、internal/application/service 6 处（Windows 文件锁导致 TempDir 清理失败、POSIX 路径假设）。本次改名没有新增任何失败；internal/router 的编译错误（FullWorkflowDependencies 的 agent 字段在跨包不可见）已在本轮修为导出字段 Agent。"
+    },
+    {
+      "id": "AC-48-10 批次 N 的偿还完成且遗留清单下降",
+      "status": "passed",
+      "evidence": "10 张执行票 #361–#370 全部落地：#361 登记表与守护测试（含两轮覆盖补齐：25 个「文件名干净但内部有编号标识符」的文件、seg3_ 段号、t<数字> 任务号），#362 workspacecore，#363 workspace，#364 generation，#365 影响中心验收台目录，#366 验收脚本，#367 mock 脚本，#368 前端文件名风格与镜像类型名，#369 弱语义名与临时名，#370 收口对账。遗留清单 211 文件 / 54 导出标识符 / 205 私有标识符 → **0 / 0 / 0**；登记表最终声明 210 个文件（历史债务的归属记录，legacy 全部翻为 False）与 251 个编号标识符（全部是验收台词汇，不计入棘轮）。"
+    },
+    {
+      "id": "main 引入的新编号债务也一并收口（棘轮只许下降）",
+      "status": "passed",
+      "evidence": "合并基线时发现 main 的 Spec-47 拆出了新包 internal/lingdoc/membership/，并新建了 7 个带编号的测试文件（g1_activation_test.go、g1_g7_closed_loop_test.go、g1_owner_transfer_test.go、g4_issue_disposition_test.go、g5_auth_review_test.go、g5_firstpass_test.go、g5_machine_read_test.go）与 2 个残留编号标识符（workspacecore/member_records.go 的 G5Record、membership/fixture_test.go 的 g2Decode）。棘轮不许上升，所以这 9 个文件与 2 个标识符必须一并改名，否则基线只能上调、违反「只减不增」。实际改名：7 个测试文件按其测试内容命名（activation_test.go、first_pass_review_loop_test.go、owner_transfer_test.go、issue_disposition_test.go、auth_review_test.go、first_pass_membership_test.go、machine_read_grant_test.go），G5Record → ProjectRecord（与 projectRecordRow / projectRecordTransaction 同族词），g2Decode → decodeAgentJSON。"
+    },
+    {
+      "id": "文档层：旧名是「问题示例」的地方必须留旧名",
+      "status": "passed",
+      "evidence": "批量刷新文档引用时踩到一处：Spec-48 的 Problem Statement 与「编号的三种形态」表格里，g5_policy.go / verify_t09_test.go / seg3_context_ports.go 是**用来展示缺陷形态的例子**，把它们替换成新名会让句子变成「permission_policy.go 的名字里没有 G5」——论据自毁。已把这 9 处恢复成旧名，只有活配置值（ACCEPTANCE_RIG_DIRS 的 impactCenterAcceptance/、批次 3 的目录）刷新。其余 22 份 md 的指针引用按新名刷新；43 份历史证据 JSON 不改（那是某次运行的快照，改了等于伪造历史）。"
+    }
+  ],
+  "not_run": [
+    "真实服务与真实模型下的端到端验收（本轮是纯改名与静态检查，没有启动服务）",
+    "PostgreSQL 方言下的集成测试（本机只跑 SQLite；Spec-48 不改 SQL 与迁移）",
+    "前端构建产物（npm run build）未在本轮执行，只跑了 type-check 与全量测试"
+  ],
+  "known_limits": [
+    "本机为 Windows：11 处 Go 用例因缺 /bin/bash、Windows 路径与文件锁而失败，已在 origin/main 基线上逐条复现，属既有环境失败",
+    "验收台（impactCenterAcceptance/、frontend/scripts/、scripts/acceptance/、scripts/lingdoc_mock/）内部的 G3*/T15* 词汇按 2026-10-22 裁决保持不变，它们仍需在登记表中声明，但不计入棘轮"
+  ]
+}
