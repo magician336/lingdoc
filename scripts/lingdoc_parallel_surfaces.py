@@ -360,7 +360,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
             ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
             ("internal/lingdoc/workspacecore/change_draft_edit.go", "file"),
@@ -424,7 +423,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
             "**路径集按 2026-10-23 实测补齐**（实现合入前，PR 未开时）："
             "owner_transfer_proof.go 已随 #406 删除，判定内核改由 owner_unavailable.go 承担，"
-            "原条目换成它。补进来的还有：判定内核周边（change_draft_edit.go、chapter_review.go、"
+            "原条目换成它；member_lifecycle_state.go 从未存在（路径图曾把它写成「新增」），"
+            "一并从登记处删掉 —— 登记处只登记真实存在的路径。"
+            "补进来的还有：判定内核周边（change_draft_edit.go、chapter_review.go、"
             "context_revision.go、member_records.go）、归档能力（project_archive.go、"
             "human_decision.go、migrated_context_ports.go、context_ports_test.go）、"
             "错误层的可选 details（internal/clienterror/clienterror.go）、"
