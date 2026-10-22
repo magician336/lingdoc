@@ -62,9 +62,9 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	// same capability set, so the surface did not change. The older 68 came
 	// from a handler assembled with no ports at all, which never had the
 	// machine read endpoints - the production composition root always had
-	// them.
-	if got := len(engine.Routes()); got != 78 {
-		t.Fatalf("registered %d LingDoc routes, want 78", got)
+	// them. The project archive entry adds one route of its own.
+	if got := len(engine.Routes()); got != 79 {
+		t.Fatalf("registered %d LingDoc routes, want 79", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)

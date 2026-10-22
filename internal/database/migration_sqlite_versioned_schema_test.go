@@ -22,8 +22,8 @@ import (
 // candidates, 000125 audit action bounds, 000126 candidate storage shape and
 // idempotency digest version, 000127 selected rewrite action shape,
 // 000128 generation run digest version, 000129 selected rewrite validity,
-// 000130 review reports;
-// SQLite counterparts are 000036, 000037, and 000039-000051.
+// 000130 review reports, 000131 audit version fields, 000132 project archive;
+// SQLite counterparts are 000036, 000037, and 000039-000053.
 // 000122 is not listed: it renames lingdoc_change_sets in place, so it ends
 // up under the name the table already had.
 var versionedSQLiteTables = []string{
@@ -96,8 +96,10 @@ var versionedSQLiteColumns = map[string][]string{
 
 // 000046 rebuilds lingdoc_project_audits in place to bound its action
 // category column (#276). 000052 adds the two audit version columns (#327).
-// Neither adds a table, so the table set is unchanged.
-const expectedSQLiteMigrationVersion = 52
+// 000053 rebuilds lingdoc_projects in place to widen its status vocabulary
+// (the archived terminal state). None of them adds a table, so the table set
+// is unchanged.
+const expectedSQLiteMigrationVersion = 53
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

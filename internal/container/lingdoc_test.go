@@ -70,6 +70,11 @@ func TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed(t *testing.T)
 // composition, so making the optional capabilities explicit did not add or
 // remove an endpoint. The optional routes are named here so that a future
 // change that quietly drops one of them is reported by name.
+//
+// The project archive entry adds one route of its own (PF-4, Spec 49). It is
+// named here for the same reason the others are: an endpoint that appears
+// without being declared is reported by name, and an endpoint that is dropped
+// is reported by name too. The routes that were already there are unchanged.
 func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
 	templates := NewLingDocTemplateCatalog()
 	composed, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil, nil, templates)
@@ -97,13 +102,14 @@ func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
 		"GET /api/projects/:projectId/review-reports/:reportId",
 		"POST /api/projects/:projectId/review-reports/:reportId/reject",
 		"POST /api/projects/:projectId/chapters/:chapterId/review-reports/:reportId/apply",
+		"POST /api/projects/:projectId/archive",
 	} {
 		if !routes[path] {
 			t.Errorf("the production composition does not serve %s although the capability is declared", path)
 		}
 	}
-	if got := len(engine.Routes()); got != 53 {
-		t.Fatalf("the production composition registered %d routes, want 53", got)
+	if got := len(engine.Routes()); got != 54 {
+		t.Fatalf("the production composition registered %d routes, want 54", got)
 	}
 }
 

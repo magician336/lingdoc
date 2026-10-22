@@ -2073,6 +2073,9 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
+	}
 	if err := s.Authorize(ctx, actor, projectID, "manage"); err != nil {
 		return nil, 0, false, err
 	}
@@ -2091,8 +2094,8 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		if !projectOwner(p, actor.UserID) {
-			return operationResult[ChangeSet]{}, ErrNotFound
+		if err := ownerDecisionInTransaction(featureTx, p, actor); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
@@ -2499,12 +2502,19 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
+	}
 	return runOperation(s, ctx, actor, ownerDecisionOperation(operationInput(operationRejectChangeSet, projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, ""))), mutationPort[ChangeSetMutationTransaction], func(tx ChangeSetMutationTransaction, p Project) (operationResult[ChangeSet], error) {
+		featureTx, featureErr := extendedTransaction(tx)
+		if featureErr != nil {
+			return operationResult[ChangeSet]{}, featureErr
+		}
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		if !projectOwner(p, actor.UserID) {
-			return operationResult[ChangeSet]{}, ErrNotFound
+		if err := ownerDecisionInTransaction(featureTx, p, actor); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
@@ -3016,21 +3026,29 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 	if input.ExpectedSpecRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	// The activation is the Owner's decision, so it freezes while the Owner's
+	// tenant identity has lapsed: a project that nobody can carry the
+	// responsibility for must not go live. The refusal carries its reason, so
+	// the caller can tell the freeze from "you are not the Owner".
+	//
+	// The gate runs before the ordinary authorization, because the ordinary
+	// authorization answers a lapsed Owner with a plain "not found" -- and
+	// that is exactly the answer the caller cannot act on.
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
+	}
 	return runOperation(s, ctx, actor, operationInput(operationActivateProject, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[ChapterMutationTransaction], func(tx ChapterMutationTransaction, p Project) (operationResult[Project], error) {
 		featureTx, featureErr := extendedTransaction(tx)
 		if featureErr != nil {
 			return operationResult[Project]{}, featureErr
 		}
 
-		owner := false
-		for _, member := range p.Members {
-			if member.UserID == actor.UserID && member.Role == "owner" {
-				owner = true
-				break
-			}
-		}
-		if !owner {
-			return operationResult[Project]{}, ErrNotFound
+		// The decision taken inside the write transaction is the authoritative
+		// one: it is taken against the project the write lands on. It replaces
+		// the hand-written Owner check, so the activation and the change set
+		// decisions are judged by the same rule.
+		if err := ownerDecisionInTransaction(featureTx, p, actor); err != nil {
+			return operationResult[Project]{}, err
 		}
 		if s.requireActivationRead {
 			if input.ActivationReadID == "" {

@@ -36,6 +36,7 @@ var expectedPorts = map[string][]string{
 		"ListMyProjectInvitations",
 		"ListOwnerTransfers",
 		"ListProjectInvitations",
+		"OwnerAvailability",
 		"ProjectMemberDirectory",
 		"RejectOwnerTransfer",
 		"SaveProjectAPIKeyGrant",

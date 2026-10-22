@@ -117,6 +117,7 @@ function fixture() {
       if (id === '@/utils/request') return request
       if (id.endsWith('.vue')) return { __esModule: true, default: { render: () => null } }
       if (['@/api/lingdoc/workspace', '@/api/lingdoc/permissions', '@/api/lingdoc/projectInitialization'].includes(id)) return local(path.join(frontend, 'src', id.slice(2) + '.ts'))
+      if (id === '@/composables/useOwnerAvailability') return local(path.join(frontend, 'src', 'composables', 'useOwnerAvailability.ts'))
       if (id.startsWith('@/api/')) return ports
       if (id.startsWith('.')) return local(path.resolve(path.dirname(filename), id + (path.extname(id) ? '' : '.ts')))
       return require(id)
