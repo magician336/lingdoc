@@ -1,4 +1,4 @@
-import { get, post, put } from '@/utils/request'
+import { get, post, postNoBody, put } from '@/utils/request'
 import type { AdoptionConfirmation } from './candidateAdoption'
 
 export type ProjectFunctionRole = 'author' | 'researcher' | 'reviewer' | 'observer'
@@ -334,6 +334,88 @@ export interface SelectedRewriteCandidate {
   dropped_context?: Array<{ category: string; id: string; reason: string }>
 }
 
+/**
+ * 一份语言评审报告的基线：这份报告是针对哪一份正文写的。
+ *
+ * 基线变了 ⇒ 报告作废，不覆盖：评审意见挂在具体的措辞上，正文变了，那些意
+ * 见说的已经不是同一句话了。
+ */
+export interface ReviewBaseline {
+  working_copy_revision: number
+  base_chapter_version_id: string | null
+  spec_revision: number
+  body_hash: string
+}
+
+/**
+ * 语言评审报告。
+ *
+ * 报告不是候选：它没有可采纳物，产出是一份待用户逐条处置的意见清单。用户预
+ * 览之后显式确认，才由一个独立的应用入口把它写进工作副本的待核事项。
+ */
+export interface ReviewReport {
+  report_id: string
+  project_id: string
+  chapter_id: string
+  /** 评审意见：待核事项与问题清单。每一条最后都要落进工作副本的待核事项。 */
+  findings: ReviewItem[]
+  source_ids: string[]
+  authorized_sources: Array<{
+    source_id: string
+    asset_id: string
+    asset_revision: number
+    locator: string
+    quoted_text_hash: string
+    authorized_at: string
+  }>
+  baseline: ReviewBaseline
+  /** 报告自身的版本标识：它由报告的内容算出，因此可复算。 */
+  report_version: string
+  /** 生成报告时的授权状态。应用时按**当前**授权复核一遍。 */
+  authorization_state: '' | 'fresh' | 'stale' | 'not_authorized'
+  run_mode: 'real' | 'mock' | 'real_api_fake_model'
+  writing_action: string
+  origin: 'human' | 'ai_generated' | 'ai_assisted_human'
+  state: 'ready' | 'applied' | 'rejected'
+  review_decisions: ReviewDecision[]
+  error_code: string
+  scope: 'chapter' | 'section'
+  selection: { start_utf16: number; end_utf16: number; selected_text: string }
+  dropped_context?: Array<{ category: string; id: string; reason: string }>
+  created_at: string
+}
+
+/**
+ * 发起一次语言评审的请求。
+ *
+ * `selection` 只在选段范围下带；整章范围评审的是整份正文。
+ */
+export interface ReviewReportRequest {
+  scope: 'chapter' | 'section'
+  selection?: { start_utf16: number; end_utf16: number; selected_text: string }
+  context?: {
+    include?: Record<string, Array<{ id: string; version?: number }>>
+    exclude?: Record<string, Array<{ id: string; version?: number }>>
+  }
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  base_chapter_version_id: string | null
+  /** 补充说明：它不参与动作判定。 */
+  instruction: string
+}
+
+/**
+ * 应用一份评审报告的请求。
+ *
+ * 逐条处置是必填的：每一条评审意见都要有处置与理由，缺一即拒。
+ */
+export interface ApplyReviewRequest {
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  base_chapter_version_id: string | null
+  review_decisions: ReviewDecision[]
+}
+
 export interface Asset {
   id: string
   project_id: string
@@ -514,6 +596,28 @@ export const applySelectedRewrite = (projectId: string, chapterId: string, candi
 }, key: string) => post<Result<WorkingCopy>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates/${segment(candidateId)}/apply`, input, keyHeader(key),
 )
+/**
+ * 发起一次语言评审：产出是一份报告，不写工作副本。
+ *
+ * 写操作带幂等键：同键同请求是重放，同键不同请求是冲突。
+ */
+export const createReviewReport = (projectId: string, chapterId: string, input: ReviewReportRequest, key: string) =>
+  post<Result<ReviewReport>>(
+    `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/review-reports`, input, keyHeader(key),
+  )
+/** 读回一份评审报告（预览）。 */
+export const getReviewReport = (projectId: string, reportId: string) =>
+  get<Result<ReviewReport>>(`${base}/${segment(projectId)}/review-reports/${segment(reportId)}`)
+/** 拒绝一份评审报告：工作副本一个字符都不动。 */
+export const rejectReviewReport = (projectId: string, reportId: string, key: string) =>
+  postNoBody<Result<ReviewReport>>(
+    `${base}/${segment(projectId)}/review-reports/${segment(reportId)}/reject`, keyHeader(key),
+  )
+/** 把一份评审报告显式应用到工作副本：逐条处置必填。 */
+export const applyReviewReport = (projectId: string, chapterId: string, reportId: string, input: ApplyReviewRequest, key: string) =>
+  post<Result<WorkingCopy>>(
+    `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/review-reports/${segment(reportId)}/apply`, input, keyHeader(key),
+  )
 export const getAccessStatus = (id: string) => get<Result<AccessStatus>>(`${base}/${segment(id)}/access-status`)
 export const listChangeSets = (id: string) => get<Result<ChangeSet[]>>(`${base}/${segment(id)}/change-sets`)
 export const getChangeSet = (projectId: string, changeSetId: string) =>

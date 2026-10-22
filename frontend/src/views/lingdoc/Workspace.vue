@@ -481,6 +481,14 @@
                 </template>
               </section>
             </section>
+            <LingDocReviewReportPanel
+              v-if="project && chapter && workingCopy"
+              :project-id="project.id" :chapter-id="chapter.id"
+              scope="section" :resolve-selection="resolveRewriteSelection"
+              :expected-spec-revision="project.spec_revision"
+              :expected-working-copy-revision="workingCopy.working_copy_revision"
+              :base-chapter-version-id="workingCopy.base_chapter_version_id"
+              @applied="onReviewReportApplied" />
           <h3>生成候选稿</h3>
           <fieldset class="generation-assets" :disabled="generationPending || busy">
             <legend>本次允许使用的资料</legend>
@@ -758,6 +766,7 @@ import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
 import G2ResearchPanel from './G2ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
+import LingDocReviewReportPanel from './LingDocReviewReportPanel.vue'
 import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
 import GenerationActionPanel from './GenerationActionPanel.vue'
@@ -1185,6 +1194,17 @@ const sourceLabels = computed(() => {
   }))
 })
 function onSelectionContext() { selectionContextVersion.value++ }
+// 当前选区（UTF-16）。它是一个**取数函数**，不是一个渲染期算好的值：
+// 选区的映射要经编辑器的 UTF-16 映射与三重验证，渲染页面上顺手算一次太贵
+// （每次击键都要重新序列化整篇正文）。页面只在用户点「发起语言评审」的那一刻
+// 问一次。
+function resolveRewriteSelection() {
+  const editor = editorRef.value
+  if (!editor || typeof editor.selectionToUtf16 !== 'function') return undefined
+  const mapped = editor.selectionToUtf16()
+  if (!mapped || !mapped.ok || mapped.chapterId !== chapter.value?.id) return undefined
+  return { start_utf16: mapped.start_utf16, end_utf16: mapped.end_utf16, selected_text: mapped.quote }
+}
 async function openNativeSource(id: string) {
   inspOpen.value = true; inspTab.value = 'sources'
   const pid = project.value?.id
@@ -2698,6 +2718,20 @@ async function applyRewriteCandidate() {
 
 function rejectRewriteCandidate() {
   clearRewriteCandidate()
+}
+
+// 评审报告已应用：工作副本多了一份待核事项，正文随之更新。
+//
+// 报告不是候选，所以这里没有「候选被采纳」那套清场动作：改写候选还在原地，
+// 它与这份报告是两条独立的线。
+async function onReviewReportApplied(copy: WorkingCopy) {
+  if (!project.value || chapter.value?.id !== copy.chapter_id) return
+  workingCopy.value = copy
+  hydrateCitationUsages(copy)
+  bodyDraft.value = copy.body_markdown
+  workingCopyStatus.value = 'saved'
+  editorDocs.value[copy.chapter_id] = snapshotOf(copy)
+  await synchronizeCleanDocument()
 }
 
 const pendingChapterCommit = ref<ChapterCommitBasis | null>(null)
