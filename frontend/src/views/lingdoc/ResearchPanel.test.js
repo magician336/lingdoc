@@ -259,3 +259,271 @@ test('助手两组说明各自带对象、原因与依据，且不混用影响�
  assert.equal(JSON.stringify(groups).includes('certainty'),false)
  f.close()
 })
+
+function researchProposalTurn(){return {id:'proposal-turn',project_id:'project',session_id:'session',version:2,created_by:'owner',status:'completed',agent:'research_agent',reply:'我整理了一条检索计划。',run_mode:'real_api_fake_model',model_id:'synthetic-model',user_input:'帮我找合成材料的资料',context:{project_version:7,spec_revision:3,context_revision:4,source_refs:[]},suggestions:{task_card:{goal:'弄清合成材料的定义',question_type:'定义',scope:'只查项目资料',exclusions:['不含二手综述'],queries:['合成材料 定义','合成材料 反例','synthetic material definition'],expected_output:'候选资料与反例'}}}}
+
+// 服务端拒掉提案时的那一轮：拒的是提案，不是整轮的问答复——这一轮照样完成，
+// 答复照样在，只有那份建议被摘掉，并留下一个读得懂的失败码。
+function refusedProposalTurn(){const base=researchProposalTurn();return {...base,status:'completed',failure_code:'invalid_proposal',suggestions:{reply:base.reply}}}
+
+test('服务端校验过的提案放进可编辑表单，同义词留在查询词里，保存前不创建任何东西',async()=>{
+ const f=fixture({api:{saveResearchTask:(project,input)=>{f.calls.push({method:'saveResearchTask',args:[project,input]});return Promise.resolve({data:{...task(),goal:input.goal,question_type:input.question_type,scope:input.scope,exclusions:input.exclusions,queries:input.queries,expected_output:input.expected_output}})}}});await tick()
+ const turn=researchProposalTurn();f.state.turns.value=[turn];await tick()
+ f.state.adoptTaskSuggestion(turn);await tick()
+ assert.equal(f.state.taskForm.goal,'弄清合成材料的定义')
+ assert.equal(f.state.taskForm.queries,'合成材料 定义\n合成材料 反例\nsynthetic material definition')
+ assert.equal(f.state.taskForm.type,'定义')
+ assert.equal(f.state.taskForm.scope,'只查项目资料')
+ assert.equal(f.state.taskForm.exclusions,'不含二手综述')
+ assert.equal(f.state.taskForm.output,'候选资料与反例')
+ assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+ f.state.taskForm.assets=['asset']
+ await f.state.saveTask();await tick()
+ const saved=f.calls.find(call=>call.method==='saveResearchTask')
+ assert.ok(saved)
+ assert.deepEqual([...saved.args[1].queries],['合成材料 定义','合成材料 反例','synthetic material definition'])
+ assert.equal(saved.args[1].goal,'弄清合成材料的定义')
+ assert.deepEqual([...saved.args[1].exclusions],['不含二手综述'])
+ f.close()
+})
+
+test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',async()=>{
+ const f=fixture();await tick()
+ const turn=refusedProposalTurn()
+ f.state.turns.value=[turn];await tick()
+ f.state.adoptTaskSuggestion(turn);await tick()
+ assert.equal(f.state.taskForm.goal,'')
+ assert.equal(f.state.taskForm.queries,'')
+ assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+ assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
+ f.close()
+})
+
+// A custom host renderer: the actual compiled template is rendered, so the
+// panel's own markup decides what the user sees. No browser, no network.
+const host=Vue.createRenderer({
+ createElement:type=>({type,tagName:type.toUpperCase(),children:[],props:{},listeners:{},parent:null,value:'',checked:false,multiple:false,selectedIndex:-1,get options(){return this.children.filter(n=>n.type==='option')},getRootNode(){return global.document},getAttribute(k){return this.props[k]},addEventListener(k,h){this.listeners[k]=h},removeEventListener(k){delete this.listeners[k]},showModal(){},close(){},querySelector(){return null},focus(){}}),
+ createText:text=>({type:'#text',text,children:[],parent:null}),createComment:text=>({type:'#comment',text,children:[],parent:null}),
+ setElementText(n,t){n.text=t},setText(n,t){n.text=t},patchProp(n,k,_old,v){n.props[k]=v;if(['value','checked','selected','multiple','disabled','type'].includes(k))n[k]=v;if(k==='value')n._value=v},
+ insert(n,p,a=null){if(n.parent)n.parent.children.splice(n.parent.children.indexOf(n),1);const at=a?p.children.indexOf(a):-1;p.children.splice(at<0?p.children.length:at,0,n);n.parent=p},
+ remove(n){if(n.parent)n.parent.children.splice(n.parent.children.indexOf(n),1)},parentNode:n=>n.parent,
+ nextSibling:n=>n.parent?.children[n.parent.children.indexOf(n)+1]||null,
+})
+const nodeText=n=>n.type==='#comment'?'':(n.text||'')+(n.children||[]).map(nodeText).join('')
+const allNodes=n=>[n,...(n.children||[]).flatMap(allNodes)]
+const byClass=(root,name)=>allNodes(root).filter(n=>n.props&&n.props.class===name)
+
+function renderedFixture(options={}){
+ const calls=[],cleanup=[],emitted=[],project={id:'project',name:'合成测试',status:'active',project_version:7,spec_revision:3,current_context_revision:4,spec:{topic:'合成主题'},template_id:'template',template_version:'1',members:[{user_id:'owner',role:'owner'}]}
+ const props=Vue.reactive({project,readonly:false,currentUserId:'owner',...options.props})
+ const defaultAPI=new Proxy({}, {get:(_,method)=>(...args)=>{calls.push({method,args});if(method==='listReleases')return Promise.resolve({data:{items:[]}});return Promise.resolve({data:[]})}})
+ const g2=new Proxy(options.api||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
+ const workspace=new Proxy(options.workspace||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
+ global.document={activeElement:null};global.HTMLElement=class {};global.Document=class {};global.ShadowRoot=class {}
+ const raw=fs.readFileSync(new URL('./ResearchPanel.vue',import.meta.url),'utf8'),parsed=parse(raw)
+ assert.equal(parsed.errors.length,0)
+ const script=compileScript(parsed.descriptor,{id:'g2-render-test'})
+ const template=compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g2-render-test',compilerOptions:{bindingMetadata:script.bindings}})
+ assert.equal(template.errors.length,0)
+ const helperSource=fs.readFileSync(new URL('./researchUiState.ts',import.meta.url),'utf8'),helpers={}
+ vm.runInNewContext(ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:helpers,URL,crypto:{randomUUID:()=>String(calls.length)}})
+ const affectedSource=fs.readFileSync(new URL('./assistantAffectedGroups.ts',import.meta.url),'utf8'),affected={}
+ vm.runInNewContext(ts.transpileModule(affectedSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:affected,URL})
+ const require_=id=>{
+  if(id==='vue')return {...Vue,onBeforeUnmount:callback=>cleanup.push(callback)}
+  if(id==='@/stores/auth')return {useAuthStore:()=>({currentUserId:props.currentUserId,effectiveTenantId:'fixture-tenant'})}
+  if(id==='@/api/lingdoc/permissions')return {getEffectivePermission:()=>Promise.resolve({data:{allowed:false,capability:'manage',project_version:props.project.project_version,reason_code:'fixture-denied'}})}
+  if(id==='@/api/lingdoc/agentApi')return g2
+  if(id==='@/api/lingdoc/workspace')return workspace
+  if(id==='./researchUiState')return helpers
+  if(id==='./assistantAffectedGroups')return affected
+  if(['@/api/lingdoc/delivery','@/api/webSearchProvider','@/api/knowledge-base'].includes(id))return defaultAPI
+  throw new Error('unexpected dependency '+id)
+ }
+ const scriptBox={exports:{}}
+ vm.runInNewContext(ts.transpileModule(script.content,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:scriptBox.exports,console,document:{activeElement:null},setTimeout,clearTimeout,require:require_})
+ const renderBox={exports:{}}
+ vm.runInNewContext(ts.transpileModule(template.code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:renderBox.exports,console,document:{activeElement:null},setTimeout,clearTimeout,require:require_})
+ const component=scriptBox.exports.default
+ let state
+ const wrapped={...component,render:renderBox.exports.render,setup(p,ctx){state=component.setup(p,{expose:()=>{},emit:(...args)=>emitted.push(args)});return state}}
+ const container={children:[]}
+ const app=host.createApp({render:()=>Vue.h(wrapped,{...props,onChanged:()=>{},onDirty:()=>{}})})
+ app.mount(container)
+ return {state,props,calls,emitted,container,ui:()=>nodeText(container),close:()=>app.unmount()}
+}
+
+test('提案的候选来源与各自理由在面板上分列展示，来源与理由不是一段话',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const turn={...base,suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,candidate_sources:[{source_id:'source-1',reason:'它写明了合成材料的定义'},{source_id:'source-2',reason:'它给出了反例'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[turn]
+ await tick()
+ const ids=byClass(f.container,'proposal-source-id').map(nodeText)
+ const reasons=byClass(f.container,'proposal-source-reason').map(nodeText)
+ assert.deepEqual(ids,['source-1','source-2'])
+ assert.deepEqual(reasons,['它写明了合成材料的定义','它给出了反例'])
+ // 分列：来源与理由各自在自己的格子里，没有被揉成一段话
+ for(const node of byClass(f.container,'proposal-source-id'))assert.doesNotMatch(nodeText(node),/它写明了|它给出了/)
+ for(const node of byClass(f.container,'proposal-source-reason'))assert.doesNotMatch(nodeText(node),/source-\d/)
+ assert.match(f.ui(),/候选来源/)
+ f.close()
+})
+
+test('被服务端拒绝的提案在面板上不出现任何候选来源',async()=>{
+ const f=renderedFixture();await tick()
+ const refused=refusedProposalTurn()
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ assert.equal(byClass(f.container,'proposal-source-reason').length,0)
+ assert.doesNotMatch(f.ui(),/source-1/)
+ f.close()
+})
+
+// A13: 理由与缺口在提案块里分列展示：理由一条一行，缺口分「缺什么」与
+// 「期望补什么」两列，都不与候选来源揉成一段话。
+test('提案的理由与缺口在面板上分列展示，缺口分缺什么与期望补什么',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const turn={...base,suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,reasons:['目标定成「定义」是因为用户问的就是这个词本身','范围只划到项目资料是因为公开综述尚未授权'],gaps:[{description:'缺一篇给出反例的对照研究',expected_evidence:'一篇标注了反例的同行评议文章'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[turn]
+ await tick()
+ const reasons=byClass(f.container,'proposal-reason').map(nodeText)
+ assert.deepEqual(reasons,['目标定成「定义」是因为用户问的就是这个词本身','范围只划到项目资料是因为公开综述尚未授权'])
+ const missing=byClass(f.container,'proposal-gap-description').map(nodeText)
+ const expected=byClass(f.container,'proposal-gap-evidence').map(nodeText)
+ assert.deepEqual(missing,['缺一篇给出反例的对照研究'])
+ assert.deepEqual(expected,['一篇标注了反例的同行评议文章'])
+ // 分列：理由、缺什么、补什么各自在自己的格子里，没有被揉成一段话
+ for(const node of byClass(f.container,'proposal-reason'))assert.doesNotMatch(nodeText(node),/缺一篇给出反例|一篇标注了反例/)
+ for(const node of byClass(f.container,'proposal-gap-description'))assert.doesNotMatch(nodeText(node),/一篇标注了反例/)
+ for(const node of byClass(f.container,'proposal-gap-evidence'))assert.doesNotMatch(nodeText(node),/缺一篇给出反例/)
+ assert.match(f.ui(),/建议理由/)
+ assert.match(f.ui(),/还缺什么/)
+ f.close()
+})
+
+// A13: 服务端拒掉的提案，理由与缺口都不到界面上。
+test('被服务端拒绝的提案在面板上不出现理由与缺口',async()=>{
+ const f=renderedFixture();await tick()
+ const refused=refusedProposalTurn()
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.equal(byClass(f.container,'proposal-reason').length,0)
+ assert.equal(byClass(f.container,'proposal-gap-description').length,0)
+ assert.equal(byClass(f.container,'proposal-gap-evidence').length,0)
+ assert.doesNotMatch(f.ui(),/缺一篇给出反例/)
+ f.close()
+})
+
+// A5/A6: 坏建议不连累用户那一轮的问答复。这一轮照样完成、答复照样在，
+// 面板上读得到「本轮的建议未通过服务端校验」，但看不到那份建议，也看不到
+// 它的候选来源、理由与缺口。
+test('坏提案不连累那一轮的问答复：答复仍在，面板上没有建议',async()=>{
+ const f=renderedFixture();await tick()
+ const refused=refusedProposalTurn()
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.match(f.ui(),/我整理了一条检索计划。/)
+ assert.match(f.ui(),/未通过服务端校验/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ assert.equal(byClass(f.container,'proposal-reason').length,0)
+ f.close()
+})
+
+// A5: 没有提案的那一轮照样有答复，这一轮没有提案，也不算失败。
+test('没有提案的那一轮照样有答复，面板上没有建议',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const absent={...base,suggestions:{reply:base.reply}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[absent]
+ await tick()
+ assert.match(f.ui(),/我整理了一条检索计划。/)
+ assert.doesNotMatch(f.ui(),/未通过服务端校验/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
+ f.close()
+})
+
+// A2: 助手那张同名卡片没有经过提案契约的校验，界面不得把它标成「服务端
+// 校验过的研究提案」，也不得宣称候选来源「服务端已逐条核对本轮授权」——
+// 那是替服务端宣称一件没有发生过的事，助手编一个来源 id 就会被界面背书。
+test('助手轮次的卡片不被标成服务端校验过的研究提案',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const assistantTurn={...base,agent:'task_assistant',suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,candidate_sources:[{source_id:'source-1',reason:'它写明了合成材料的定义'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[assistantTurn]
+ await tick()
+ assert.doesNotMatch(f.ui(),/服务端校验过的研究提案/)
+ assert.doesNotMatch(f.ui(),/服务端已逐条核对本轮授权/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ f.close()
+})
+
+// A2 的另一半：调研智能体那一轮的提案仍标着「服务端校验过的」——它确实
+// 经过提案契约的校验。
+test('调研智能体轮次的提案仍标为服务端校验过的',async()=>{
+ const f=renderedFixture();await tick()
+ f.state.tab.value='agents'
+ f.state.turns.value=[researchProposalTurn()]
+ await tick()
+ assert.match(f.ui(),/服务端校验过的研究提案/)
+ assert.equal(byClass(f.container,'research-proposal').length,1)
+ f.close()
+})
+
+// N5: 失败码有自己的词表。'outcome_unknown' 出现在状态词表里（那是回执上
+// 的状态）：拿状态词表当失败码词表，会把「原样显示代码」变成「结果待核对」。
+// 失败码词表里没有的码原样显示；'invalid_proposal' 仍有一句读得懂的话。
+test('未登记的失败码原样显示，不被状态词表翻译',async()=>{
+  const f=renderedFixture();await tick()
+  const base=researchProposalTurn()
+  f.state.tab.value='agents'
+  f.state.turns.value=[{...base,failure_code:'outcome_unknown'}]
+  await tick()
+  assert.match(f.ui(),/outcome_unknown/)
+  assert.doesNotMatch(f.ui(),/结果待核对/)
+  assert.equal(f.state.failureLabel('outcome_unknown'),'outcome_unknown')
+  assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
+  f.close()
+})
+
+// A14: 助手轮次那张同名卡片没有经过提案契约的校验，面板因此不把它显示成
+// 「服务端校验过的研究提案」——但采纳路径对助手轮次仍然开着，这是 #401
+// 之前就有的行为，本票不收它。这条用例守住它：采纳按钮仍在，采纳后那份
+// 建议进了可编辑表单（缺的那些字段就是缺，不渲染出 undefined），而调研
+// 任务尚未创建——采纳只把建议放进草稿，保存才建任务。
+test('助手轮次的卡片仍可被采纳：按钮在、表单被填好、调研任务尚未创建',async()=>{
+  const f=renderedFixture();await tick()
+  const base=researchProposalTurn()
+  const assistantTurn={...base,agent:'task_assistant',suggestions:{...base.suggestions,task_card:{goal:'弄清合成材料的定义',queries:['合成材料 定义'],scope:'只查项目资料'}}}
+  f.state.tab.value='agents'
+  f.state.turns.value=[assistantTurn]
+  await tick()
+  // 提案块仍不渲染给助手轮次，但采纳按钮在
+  assert.equal(byClass(f.container,'research-proposal').length,0)
+  const adopt=allNodes(f.container).find(node=>node.type==='button'&&nodeText(node).trim()==='放入可编辑任务草稿')
+  assert.ok(adopt,'助手轮次仍然有采纳按钮')
+  await adopt.props.onClick({type:'click',preventDefault(){},stopPropagation(){}})
+  await tick()
+  // 那一轮的建议进了可编辑表单；它没写的字段就是空，不渲染出 undefined
+  assert.equal(f.state.taskForm.goal,'弄清合成材料的定义')
+  assert.equal(f.state.taskForm.queries,'合成材料 定义')
+  assert.equal(f.state.taskForm.scope,'只查项目资料')
+  assert.equal(f.state.taskForm.type,'')
+  assert.equal(f.state.taskForm.exclusions,'')
+  assert.equal(f.state.taskForm.output,'')
+  assert.doesNotMatch(f.ui(),/undefined/)
+  // 采纳只填草稿：调研任务尚未创建
+  assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+  f.close()
+})

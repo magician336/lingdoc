@@ -506,8 +506,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # the proposal's 候选来源, 理由 and 缺口 beside that draft.
             ("frontend/src/api/lingdoc/agentApi.ts", "file"),
             ("frontend/src/api/lingdoc/agentApi.test.js", "file"),
+            # 类型层用例：助手那张更松的卡片必须能被 task_card 的类型接受。
+            # 它是 .ts，所以 vue-tsc 会真的检查它（.js 用例不在类型检查里）。
+            ("frontend/src/api/lingdoc/agentApi.types.test.ts", "file"),
             ("frontend/src/views/lingdoc/ResearchPanel.vue", "file"),
             ("frontend/src/views/lingdoc/ResearchPanel.test.js", "file"),
+            # #404 的词汇归一（agent / purpose 常量）顺手改到了这两个文件：
+            # 它们把裸字符串换成服务端常量。它们不被任何面拥有，所以没有
+            # 所有权冲突；登记进来是为了让路径集与实际改动一致。
+            ("internal/lingdoc/workspacecore/change_draft_action.go", "file"),
+            ("internal/lingdoc/workspace/template_governance_runtime.go", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -530,6 +538,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "提案永远是候选（不自动成为调研任务、导入候选、证据卡或研究主张）。"
             "路径集同日从 3 条扩到 9 条（新增研究提案契约模块与前端四处），"
             "因为该 Spec 的答案要真正被看到。"
+            "2026-10-23 再扩到 11 条：#404 的词汇归一把两个文件里的裸字符串"
+            "换成了服务端常量——internal/lingdoc/workspacecore/change_draft_action.go"
+            "（助手草稿校验的两处 agent 比较）与 internal/lingdoc/workspace/template_governance_runtime.go"
+            "（rule_suggestion 用途的两处 agent / purpose 比较）。这两个文件原先"
+            "不被任何面拥有，所以没有所有权冲突；登记进来是为了让路径集与实际"
+            "改动一致，路径图那一份副本同步改成 11 条。"
         ),
     },
     {

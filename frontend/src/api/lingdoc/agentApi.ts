@@ -69,9 +69,38 @@ export interface AgentContextPackage {
 export interface AgentContextInput extends VersionExpectation { chapter_id?: string; task_id?: string; source_ids: string[]; card_refs: VersionRef[]; sensitive_context_confirmed: boolean }
 export type LingDocAgent = 'task_assistant' | 'research_agent'
 export interface AgentSession { id: string; project_id: string; version: number; agent: LingDocAgent; created_by: string; created_at: string }
+// 研究提案的形状由服务端契约拥有（internal/lingdoc/workspacecore/research_proposal.go）：
+// 调研智能体的提案由服务端按那一份契约解码，解不开就拒绝，所以到达这里的形状已经是校验过的。
+// 字段名沿用调研任务自己的一套，保存时不必改名。
+// 候选来源是引用，不是检索产物的等级：每一份都指回这一轮授权上下文里的资料，
+// 服务端逐条比对过，对不上的整份提案被拒，所以这里看不到编造的出处。
+// 理由说清整份提案为什么这么定；缺口分「缺什么」与「期望补什么」两半，
+// 缺了任何一半的缺口会被服务端连同整份提案一起拒绝。
+export interface ResearchProposalCandidateSource { source_id: string; reason: string }
+export interface ResearchProposalGap { description: string; expected_evidence: string }
+export interface ResearchProposal {
+  goal: string; question_type?: string; scope: string
+  exclusions?: string[]; queries: string[]; expected_output: string
+  candidate_sources?: ResearchProposalCandidateSource[]
+  reasons?: string[]
+  gaps?: ResearchProposalGap[]
+}
+// 助手侧那张同名卡片：助手自己的可编辑调研任务建议。服务端不按研究提案
+// 契约校验它——查询词条数、字段集、来源引用都不检查——所以这里不写条数与
+// 长度约束，字段也都可以缺：契约不能承诺运行时不做的事。
+export interface AssistantTaskSuggestion {
+  goal?: string; question_type?: string; scope?: string
+  exclusions?: string[]; queries?: string[]; expected_output?: string
+}
+// task_card 有两个来源、两种强度：调研智能体那一轮是服务端按唯一一份契约
+// 解码过的形状（ResearchProposal），任务助手那一轮是助手自己的建议
+// （AssistantTaskSuggestion），不经那份契约校验。这一份声明是两者的并集，
+// 与 openapi.json 的 AgentSuggestions.task_card 一致。把助手那张卡片写成
+// ResearchProposal，就是让类型替服务端宣称一件没有发生过的事。
+export type AgentTaskCard = ResearchProposal | AssistantTaskSuggestion
 export interface AgentTurn {
   id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string
-  suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput>; change_draft?: AgentChangeDraftSuggestion; affected_explanation?: AssistantAffectedExplanation }
+  suggestions?: { reply?: string; task_card?: AgentTaskCard; change_draft?: AgentChangeDraftSuggestion; affected_explanation?: AssistantAffectedExplanation }
   context: AgentContextPackage; status: string; failure_code?: string; model_id?: string; run_mode: string; input_tokens: number; output_tokens: number; created_by: string; created_at: string
 }
 // Only a real completed server turn can supply this provenance. No client grant flags.

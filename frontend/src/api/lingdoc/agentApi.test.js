@@ -59,6 +59,16 @@ test('原文检查、会话和长请求路径遵从同一真实资源编号', as
  assert.equal(calls[1].args[2].headers['Idempotency-Key'], 'turn-key')
 })
 
+test('发一轮只发用户输入与上下文，不附带提案字段，也不替用户写调研任务',async()=>{
+ const {api,calls}=fixture()
+ const input={user_input:'帮我找合成材料的资料',source_ids:[],card_refs:[],sensitive_context_confirmed:false,expected_project_version:1,expected_context_revision:1,expected_version:0}
+ await api.sendAgentTurn('p','session/1',input,'turn-key')
+ assert.equal(calls.length,1)
+ assert.equal(calls[0].args[1],input)
+ assert.equal(JSON.stringify(calls[0].args[1]).includes('task_card'),false)
+ assert.equal(calls.some(call=>call.method==='saveResearchTask'),false)
+})
+
 test('资产范围调整只起草治理变更，保留原生资料版本且不生成 KB grant',async()=>{
  const {api,calls}=fixture()
  const input={expected_project_version:8,expected_context_revision:5,expected_version:2,confirmed:true,reason:'人工范围决定',policy:{scope:'personal',purpose:'原文复核',allowed_user_ids:[],model_use_allowed:false}}

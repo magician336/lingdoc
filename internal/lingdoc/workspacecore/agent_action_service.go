@@ -254,11 +254,11 @@ func validAgentMode(mode string) bool {
 }
 
 func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, key string, input SaveResearchTaskInput) (json.RawMessage, int, bool, error) {
-	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > 6000 || len(input.Queries) < 2 || len(input.Queries) > 8 || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 {
+	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > researchTaskMaximumTextLength || len(input.Queries) < researchTaskMinimumQueries || len(input.Queries) > researchTaskMaximumQueries || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	for _, query := range input.Queries {
-		if strings.TrimSpace(query) == "" || len(query) > 1000 {
+		if strings.TrimSpace(query) == "" || len(query) > researchTaskMaximumQueryLength {
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
@@ -1650,7 +1650,7 @@ func (s *Service) SelectGenerationEvidence(ctx context.Context, actor Actor, pro
 }
 
 func (s *Service) CreateAgentSession(ctx context.Context, actor Actor, projectID, agent, key string, input VersionExpectation) (json.RawMessage, int, bool, error) {
-	if agent != "task_assistant" && agent != "research_agent" {
+	if agent != AgentTaskAssistant && agent != AgentResearch {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.runAgentOperation(ctx, actor, projectID, "agent", "createAgentSession", projectID+"/"+agent, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
@@ -1923,7 +1923,25 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		}
 		return nil, 0, true, ErrNotFound
 	}
-	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: "conversation", Context: pack, History: safeHistory, UserInput: input.UserInput})
+	// The purpose of the turn is the server's to decide: the session
+	// declares its agent, and the answer shape follows from it. The client
+	// states no purpose, so the request shape - and with it the idempotency
+	// digest - does not move.
+	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: AgentPurposeForAgent(started.Agent), Context: pack, History: safeHistory, UserInput: input.UserInput})
+	// The research agent's proposal is checked against the one contract that
+	// owns its shape before it can become a suggestion. A proposal that does
+	// not decode is refused here, so the interface only ever sees a proposal
+	// the server stood behind. The contract also holds the proposal to the
+	// authorization of this turn: a candidate source the model was not given
+	// is refused with the rest of the proposal, not quietly dropped.
+	//
+	// What is refused is the proposal, not the answer: the reply the model
+	// wrote stays, and only the proposal is taken out of the suggestions.
+	proposalState := researchProposalStateAbsent
+	suggestions := reply.StructuredOutput
+	if modelErr == nil {
+		proposalState, suggestions = researchProposalJudgement(started.Agent, reply.StructuredOutput, pack)
+	}
 	currentPack, currentErr := s.BuildAgentContext(context.WithoutCancel(ctx), actor, projectID, input.AgentContextInput)
 	if currentErr == nil && (!sameAgentContextBasis(pack, currentPack)) {
 		currentErr = ErrVersionConflict
@@ -1942,7 +1960,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		}
 		turn.Version++
 		turn.Reply = reply.Content
-		turn.Suggestions = reply.StructuredOutput
+		turn.Suggestions = suggestions
 		turn.ModelID = reply.ModelID
 		turn.RunMode = reply.RunMode
 		turn.InputTokens = reply.InputTokens
@@ -1964,6 +1982,13 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 			turn.FailureCode = "incomplete_response"
 			turn.Reply = ""
 			turn.Suggestions = nil
+		case proposalState == researchProposalStateInvalid:
+			// The model stated a proposal the contract does not accept.
+			// The proposal is refused and never reaches the interface; the
+			// turn says so in a code the reader can act on. The reply stays:
+			// a broken suggestion must not cost the user their answer.
+			turn.FailureCode = ResearchProposalFailureCode
+			turn.Suggestions = suggestions
 		}
 		if err = storeStoredObject(tx, old, projectID, AgentTurnKind, turn.ID, turn.Version, turn); err != nil {
 			return err

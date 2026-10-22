@@ -1243,6 +1243,196 @@
         "review_decisions"
       ],
       "additionalProperties": false
+    },
+    "ResearchProposal": {
+      "type": "object",
+      "description": "服务端按唯一一份契约解码过的研究提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级，每一份都指回这一轮授权上下文里的资料。reasons 是整份提案为什么这么定；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选。三态是关于这一轮答案的事实，不是判决：有提案（present，形状逐字照上）；没给提案（absent，形状见 ResearchProposalAbsentTurn）；给了但不可信（invalid，整份拒绝、提案不送达，形状见 ResearchProposalRefusedTurn——那一轮的自然语言回复留着，坏建议不该连累用户的答案）。整份载荷另有上限（服务端解码时判定），这一份声明写不出来。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，不受本契约约束——这是有意保留的残留，另票收紧。",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question_type": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expected_output": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "source_id",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 10
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "expected_evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "description",
+              "expected_evidence"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 10
+        }
+      },
+      "required": [
+        "goal",
+        "scope",
+        "queries",
+        "expected_output"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalAbsentTurn": {
+      "type": "object",
+      "description": "这一轮没有提案的那一轮（absent）：模型的回答里没有提案块，只有自然语言回复。缺建议不是失败——这一轮照样完成、答复照样在，这一轮没有提案。三态是关于这一轮答案的事实，不是判决。",
+      "properties": {
+        "reply": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "reply"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalRefusedTurn": {
+      "type": "object",
+      "description": "提案不可信的那一轮（invalid）：模型给了但不可信的提案被整份拒绝，绝不落进建议；那一轮的自然语言回复留着（坏建议不该连累用户的答案），失败码读得懂地说明「本轮的建议未通过服务端校验」。这里写的是这一轮的形状，不是那份被拒的提案——那份提案一个字段都不留。",
+      "properties": {
+        "reply": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_code": {
+          "type": "string",
+          "enum": [
+            "invalid_proposal"
+          ]
+        }
+      },
+      "required": [
+        "reply",
+        "failure_code"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalWithinTurnContext": {
+      "type": "object",
+      "description": "同一份提案形状在某一轮授权上下文之内的写法：候选来源的 source_id 只能取该轮给出的资料。这是「引用上下文外的资料被拒」这条规则的静态写法——动态的判定由服务端持有（internal/lingdoc/workspacecore/research_proposal.go），它把每一份候选来源逐条对过这一轮的授权来源，对不上就整份拒绝，不降级、不悄悄丢掉那一条。形状本身仍然只有一份（ResearchProposal），这里只多一条上下文约束。",
+      "properties": {
+        "goal": {
+          "$ref": "#/schemas/ResearchProposal/properties/goal"
+        },
+        "question_type": {
+          "$ref": "#/schemas/ResearchProposal/properties/question_type"
+        },
+        "scope": {
+          "$ref": "#/schemas/ResearchProposal/properties/scope"
+        },
+        "exclusions": {
+          "$ref": "#/schemas/ResearchProposal/properties/exclusions"
+        },
+        "queries": {
+          "$ref": "#/schemas/ResearchProposal/properties/queries"
+        },
+        "expected_output": {
+          "$ref": "#/schemas/ResearchProposal/properties/expected_output"
+        },
+        "candidate_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "enum": [
+                  "src-synthetic-1"
+                ]
+              },
+              "reason": {
+                "$ref": "#/schemas/ResearchProposal/properties/candidate_sources/items/properties/reason"
+              }
+            },
+            "required": [
+              "source_id",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "reasons": {
+          "$ref": "#/schemas/ResearchProposal/properties/reasons"
+        },
+        "gaps": {
+          "$ref": "#/schemas/ResearchProposal/properties/gaps"
+        }
+      },
+      "required": [
+        "goal",
+        "scope",
+        "queries",
+        "expected_output"
+      ],
+      "additionalProperties": false
     }
   },
   "examples": [
@@ -1616,6 +1806,192 @@
             "disposition": "resolved"
           }
         ]
+      }
+    },
+    {
+      "id": "research-proposal-valid",
+      "schema": "ResearchProposal",
+      "accepted": true,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例",
+          "synthetic material definition"
+        ],
+        "expected_output": "候选资料、反例与证据缺口"
+      }
+    },
+    {
+      "id": "research-proposal-with-candidate-sources-valid",
+      "schema": "ResearchProposal",
+      "accepted": true,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "candidate_sources": [
+          {
+            "source_id": "src-synthetic-1",
+            "reason": "它写明了合成材料的定义"
+          }
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-with-reasons-and-gaps-valid",
+      "schema": "ResearchProposal",
+      "accepted": true,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "candidate_sources": [
+          {
+            "source_id": "src-synthetic-1",
+            "reason": "它写明了合成材料的定义"
+          }
+        ],
+        "reasons": [
+          "目标定成「定义」是因为用户问的就是这个词本身",
+          "范围只划到项目资料是因为公开综述尚未授权"
+        ],
+        "gaps": [
+          {
+            "description": "缺一篇给出反例的对照研究",
+            "expected_evidence": "一篇标注了反例的同行评议文章"
+          }
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-oversized-reason-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "reasons": [
+          "这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长这条理由太长"
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-gap-without-what-would-fill-it-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "gaps": [
+          {
+            "description": "没有来源"
+          }
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-out-of-context-source-rejected",
+      "schema": "ResearchProposalWithinTurnContext",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "candidate_sources": [
+          {
+            "source_id": "src-other-project",
+            "reason": "它在另一个课题里，看起来相关"
+          }
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-absent-turn",
+      "schema": "ResearchProposalAbsentTurn",
+      "accepted": true,
+      "value": {
+        "reply": "授权的资料里还没有合成材料的定义，我按你给的范围说明了缺口。"
+      }
+    },
+    {
+      "id": "research-proposal-refused-turn",
+      "schema": "ResearchProposalRefusedTurn",
+      "accepted": true,
+      "value": {
+        "reply": "我整理了一条检索计划。",
+        "failure_code": "invalid_proposal"
+      }
+    },
+    {
+      "id": "research-proposal-unknown-field-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "confidence": 0.9
+      }
+    },
+    {
+      "id": "research-proposal-missing-required-field-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口"
       }
     }
   ],

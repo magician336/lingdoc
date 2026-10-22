@@ -111,7 +111,7 @@ func agentChangeDraftSourcesAtBasis(tx Transaction, actor Actor, p Project, inpu
 		if err != nil {
 			return nil, err
 		}
-		if turn.ID != record.SourceID || turn.ProjectID != p.ID || turn.Version != stored.Version || !provenanceVersionMatches(record.SourceVersion, turn.Version) || turn.CreatedBy != actor.UserID || turn.Status != "completed" || turn.Agent != "task_assistant" || session.ID != turn.SessionID || session.Agent != "task_assistant" || session.ProjectID != p.ID || session.CreatedBy != actor.UserID || session.Version != sessionRow.Version || requireCurrentBasis && (turn.Context.ProjectVersion != p.ProjectVersion || turn.Context.SpecRevision != p.SpecRevision || turn.Context.ContextRevision != p.CurrentContextRevision) {
+		if turn.ID != record.SourceID || turn.ProjectID != p.ID || turn.Version != stored.Version || !provenanceVersionMatches(record.SourceVersion, turn.Version) || turn.CreatedBy != actor.UserID || turn.Status != "completed" || turn.Agent != AgentTaskAssistant || session.ID != turn.SessionID || session.Agent != AgentTaskAssistant || session.ProjectID != p.ID || session.CreatedBy != actor.UserID || session.Version != sessionRow.Version || requireCurrentBasis && (turn.Context.ProjectVersion != p.ProjectVersion || turn.Context.SpecRevision != p.SpecRevision || turn.Context.ContextRevision != p.CurrentContextRevision) {
 			return nil, ErrVersionConflict
 		}
 		var output struct {
