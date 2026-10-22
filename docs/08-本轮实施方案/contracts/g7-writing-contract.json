@@ -747,7 +747,7 @@
                 "review"
               ]
             },
-            "target": {
+            "adoption_target": {
               "type": "string",
               "enum": [
                 "working_copy_partial",
@@ -784,7 +784,6 @@
             "origin": {
               "type": "string",
               "enum": [
-                "",
                 "human",
                 "ai_generated",
                 "ai_assisted_human"
@@ -793,7 +792,7 @@
           },
           "required": [
             "writing_action",
-            "target",
+            "adoption_target",
             "confirmed_at",
             "confirmed_by",
             "origin"
@@ -1401,6 +1400,43 @@
         "expected_spec_revision": 1,
         "expected_working_copy_revision": 1,
         "base_chapter_version_id": null
+      }
+    },
+    {
+      "id": "apply-selected-rewrite-with-confirmation-valid",
+      "schema": "ApplySelectedRewriteRequest",
+      "accepted": true,
+      "value": {
+        "expected_spec_revision": 1,
+        "expected_working_copy_revision": 1,
+        "base_chapter_version_id": null,
+        "confirmation": {
+          "writing_action": "rewrite",
+          "adoption_target": "working_copy_partial",
+          "scope": {
+            "start_utf16": 0,
+            "end_utf16": 12
+          },
+          "confirmed_at": "2026-10-03T09:00:00Z",
+          "confirmed_by": "user-synthetic-1",
+          "origin": "ai_generated"
+        }
+      }
+    },
+    {
+      "id": "apply-selected-rewrite-without-adoption-target-invalid",
+      "schema": "ApplySelectedRewriteRequest",
+      "accepted": false,
+      "value": {
+        "expected_spec_revision": 1,
+        "expected_working_copy_revision": 1,
+        "base_chapter_version_id": null,
+        "confirmation": {
+          "writing_action": "rewrite",
+          "confirmed_at": "2026-10-03T09:00:00Z",
+          "confirmed_by": "user-synthetic-1",
+          "origin": "ai_generated"
+        }
       }
     },
     {

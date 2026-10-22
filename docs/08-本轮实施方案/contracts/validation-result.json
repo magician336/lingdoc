@@ -1774,7 +1774,10 @@
     "scenario_declares_an_unknown_starting_state",
     "white_box_observation_is_restricted_to_f02",
     "scenario_uses_a_capture_before_it_is_produced",
-    "scenario_capture_points_outside_the_published_response"
+    "scenario_capture_points_outside_the_published_response",
+    "g7_contract_confirmation_declares_a_different_field",
+    "g7_contract_confirmation_requires_a_different_field",
+    "g7_contract_confirmation_widens_the_accepted_values"
   ],
   "not_run": [
     "real provider/database/model tests",

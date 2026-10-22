@@ -585,6 +585,40 @@ for label,action in [
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
 assert scenario_totals['checks_tied']>=1,'no check was tied back to a published response example'
 
+# 采纳确认载荷有两份副本：OpenAPI 的 AdoptionConfirmation 与 G7 契约档里内联的
+# 确认块。两份各写各的就会漂移，而漂移的后果是客户端照着契约写出一个服务端根本
+# 不认的字段名——契约说 target、服务端只认 adoption_target，这道请求会被静默丢字段。
+# 这里逐字比对字段名、必填集与取值集，并留一个反例证明这条比对真的拦得住。
+G7_CONTRACT=ROOT/'g7-writing-contract.json'
+assert G7_CONTRACT.is_file(),'g7-writing-contract.json is missing from the contract directory'
+g7=json.loads(G7_CONTRACT.read_text(encoding='utf-8'))
+openapi_confirmation=spec['components']['schemas']['AdoptionConfirmation']
+g7_confirmation=g7['schemas']['ApplySelectedRewriteRequest']['properties']['confirmation']
+def check_confirmation_shape(openapi_schema,contract_schema):
+    assert set(contract_schema['properties'])==set(openapi_schema['properties']),\
+        'the confirmation payload declares different fields: '+str(sorted(set(contract_schema['properties'])^set(openapi_schema['properties'])))
+    assert set(contract_schema['required'])==set(openapi_schema['required']),\
+        'the confirmation payload requires different fields: '+str(sorted(set(contract_schema['required'])^set(openapi_schema['required'])))
+    for name,schema in openapi_schema['properties'].items():
+        if 'enum' not in schema: continue
+        assert contract_schema['properties'][name].get('enum')==schema['enum'],\
+            'the confirmation payload disagrees on the accepted values of '+name
+check_confirmation_shape(openapi_confirmation,g7_confirmation)
+must_reject('g7_contract_confirmation_declares_a_different_field',
+            lambda:check_confirmation_shape(openapi_confirmation,
+                {**g7_confirmation,
+                 'properties':{**g7_confirmation['properties'],
+                               'target':g7_confirmation['properties']['adoption_target']}}))
+must_reject('g7_contract_confirmation_requires_a_different_field',
+            lambda:check_confirmation_shape(openapi_confirmation,
+                {**g7_confirmation,'required':[name for name in g7_confirmation['required'] if name!='adoption_target']}))
+must_reject('g7_contract_confirmation_widens_the_accepted_values',
+            lambda:check_confirmation_shape(openapi_confirmation,
+                {**g7_confirmation,
+                 'properties':{**g7_confirmation['properties'],
+                               'origin':{**g7_confirmation['properties']['origin'],
+                                         'enum':g7_confirmation['properties']['origin']['enum']+['']}}}))
+
 report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','route_parity':route_parity,'paths':len(spec['paths']),
  'operations':len(ops),'core_operations':sum(o['x-delivery-phase']=='core' for o in ops.values()),
  'schemas':len(spec['components']['schemas']),'local_refs':refs,'shape_checks':checks,
