@@ -180,4 +180,21 @@ test('the workspace gives the operations panel an entrance of its own', () => {
   assert.match(source, /type FullPanel = [^\n]*'operations'/)
   assert.match(source, /openFullPanel\('operations'\)/)
   assert.match(source, /fullPanelBusy=computed\(\(\)=>[^\n]*runtimeOpsPanelRef\.value\?\.busy/)
+  // The panel must receive the same props the old combined panel received.
+  // Dropping `readonly` would let a read-only operator submit writes, and
+  // nothing else in the suite would notice.
+  assert.match(source, /:readonly="fullReadonly"/)
+  assert.match(source, /:current-user-id="auth\.currentUserId \?\? ''"/)
+  // The entrance needs a label and the same availability rule as the old
+  // path, otherwise the panel becomes reachable in states it was not.
+  assert.match(source, /operations:'运行观测与真实试用'/)
+  assert.match(source, /运行观测与试用/)
+  assert.match(source, /project\.status !== 'active'/)
+})
+
+test('an edited sample version counts as an unsaved change', () => {
+  const { state } = setup(false)
+  assert.equal(state.hasUnsavedChanges.value, false)
+  state.sampleForm.value.sampleVersion = 'sample.v2'
+  assert.equal(state.hasUnsavedChanges.value, true)
 })

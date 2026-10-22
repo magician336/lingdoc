@@ -435,6 +435,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # （PF-3 / #382），改动在本面（PF-7）里做。
             ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
             ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
+            ("docs/08-本轮实施方案/G6-运维面板独立化-20261023.md", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -448,11 +449,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "运行事件链、告警与告警规则、试用窗口生命周期、样本记录与人工裁定、三方签署、"
             "epoch 与身份过期守卫、mutate() 幂等键复用、只读默认，逐项照旧。"
             "本面同时认领 mainlineChanges.ts——PF-1 留下的「无主路径」缺口由本面合上。"
-            "PF-1 仍登记着 ImpactOpsPanel.vue、runtimeMetrics.ts、runtimeMetrics.test.ts、"
-            "mainlineChanges.test.js、ImpactOpsPanel.test.js 五个路径；本面也要改其中三个"
-            "（ImpactOpsPanel.vue 与两个测试文件），但登记处不允许两面包同一路径，"
-            "且本轮不得改动已完成面的记录，故这五个路径仍记在 PF-1 名下——"
-            "这五个路径的所有权转移由维护者另行处理。"
+            "2026-10-23 经维护者裁决，PF-1 名下的 ImpactOpsPanel.vue、runtimeMetrics.ts、"
+            "runtimeMetrics.test.ts、mainlineChanges.test.js、ImpactOpsPanel.test.js "
+            "五个路径已全部转到本面（PF-1 已交面，只保留自己的方案档）。"
         ),
     },
 )

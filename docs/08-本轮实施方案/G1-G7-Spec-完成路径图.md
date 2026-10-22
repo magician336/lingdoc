@@ -260,17 +260,17 @@ graph TD
 
 | 票 | 面 | 交付（Spec） | 文件所有权 | 零阻塞理由 |
 |---|---|---|---|---|
-| [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/views/lingdoc/ImpactOpsPanel.vue`、`runtimeMetrics.ts`、`runtimeMetrics.test.ts`、`frontend/src/api/lingdoc/mainlineChanges.test.js`、`frontend/src/views/lingdoc/ImpactOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上（`internal/lingdoc/workspace/impact_routes.go:135-182`、`api/lingdoc/mainlineChanges.ts:112-127`）；本面只补服务端已给但界面未呈现的运行指标，并给前端补契约保护 |
+| [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | **路径集以登记处为准**（本面已于 2026-10-22 交付运行指标视图与前端契约保护，2026-10-23 G6 前端独立化时把 `ImpactOpsPanel.vue`、`mainlineChanges.test.js`、`ImpactOpsPanel.test.js` 与口径表 `runtimeMetrics.ts` / `runtimeMetrics.test.ts` 交给 PF-7；本面已交面，只保留自己的方案档 `docs/08-本轮实施方案/G6-运维前端-指标视图与契约-20261022.md`） | **已于 2026-10-22 完成**：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。前端独立化与 Workspace 集成由 PF-7（#384）承接 |
 | [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | **路径集以登记处为准**（本面 2026-10-22 补齐到 **56** 条：新增 `internal/lingdoc/writingaction/`、`internal/lingdoc/candidateadoption/`、`internal/lingdoc/generation/`，`internal/lingdoc/workspace/` 下的选段改写与评审执行方，`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`，前端动作面板 / 评审报告面板 / 动作表客户端等） | **已于 2026-10-22 完成**：十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭；残留票 #385 / #386 保持开放 |
-| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/runtime_control.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
+| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | **路径集以登记处为准**（本面 2026-10-23 一次交付 #382 / #327 / #383 三张后端票，扩到 19 条：`workspacecore/runtime_control.go`、`runtime_alert_rule.go`、`runtime_observation.go` 与三个测试、`permission_policy.go`、`service_facade.go`、`service.go`、`model.go`、`typed_contracts.go`、`context_ports.go` + 测试、`operation_pipeline.go`、`workspace/impact_routes.go`、`operationcore/operationcore.go`、`container/lingdoc.go`、`contracts/openapi.json` 与本面方案档） | **2026-10-23 已认领并实现**：告警规则可读回与可停用、授权拒绝落成 `permission/deny` 运行事件、审计写失败落成 `audit/failed` 并接告警规则、`AuditEvent` 两字段走 `details_json`（零迁移）、运行控制新增 `rollback`（经既有 `reverseChangeSet` 领域入口）。三张票的票面见 #382 / #383 |
 | [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | **路径集以登记处为准**（本面 2026-10-22 补齐到 **17** 条：判定与冻结出口 `workspacecore/member_lifecycle_state.go`（新增）、`member_judgement.go`、`owner_transfer_proof.go`、`delivery_export_guard.go`、`service_facade.go`、`typed_contracts.go`、`membership.go`，转让与权限出口 `membership/results.go`、`membership/policy.go`，契约与路由 `router/routes_lingdoc.go`、`contracts/openapi.json`，前端 `api/lingdoc/permissions.ts` 与新建的 `composables/useOwnerAvailability.ts`、`views/lingdoc/OwnerUnavailableNotice.vue`） | **2026-10-22 已认领**（登记处 `status=claimed`、认领人 magician336；票 #328 指派同一人）。实现契约见 Spec [#391](https://github.com/magician336/lingdoc/issues/391)（仓内副本 `docs/06-灵档产品开发规划/49-Spec-owner_unavailable派生状态与Owner-only冻结.md`）。修完即解除 ② 档那条实现依赖（#127 → #143） |
 | [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/agent_action_service.go`、`agent_research_model.go` | 上下文包后端已在 `agent_research_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
-| [#384](https://github.com/magician336/lingdoc/issues/384) | **PF-7** G6 运维面板独立化与 Workspace 集成 | #145 #146 | `frontend/src/api/lingdoc/mainlineChanges.ts`、`runtimeControl.ts`、`runtimeControl.test.ts`、`trialWindow.ts`、`trialWindow.test.ts`、`frontend/src/views/lingdoc/RuntimeOpsPanel.vue`、`RuntimeOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上；本面把 G6 前端从 G3 面板里拆出来，并给它自己的入口位。**保留路径** `Workspace.vue` 由维护者授权本轮改动 |
+| [#384](https://github.com/magician336/lingdoc/issues/384) | **PF-7** G6 运维面板独立化与 Workspace 集成 | #145 #146 | **路径集以登记处为准**（本面 2026-10-23 从 PF-1 接手 `ImpactOpsPanel.vue`、`mainlineChanges.test.js`、`ImpactOpsPanel.test.js`、口径表 `runtimeMetrics.ts` / `runtimeMetrics.test.ts`，并认领 PF-1 留下的无主路径 `mainlineChanges.ts`；新建 `api/lingdoc/runtimeControl.ts` + 测试、`trialWindow.ts` + 测试、`views/lingdoc/RuntimeOpsPanel.vue` + 测试） | **2026-10-23 已认领并实现**：把 G6 前端从 G3 面板里拆出来，并在 Workspace 抽屉里给它自己的入口位（`FullPanel` 新增 `'operations'`）。**保留路径** `Workspace.vue` 由维护者显式授权本轮改动，任何面都不得声明它 |
 
 七张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领并完成**（登记处 `status` 均为 `done`；完成态不保留 `claimed_by`，认领与完成的人记在 `summary` 里）：PF-1 于 2026-10-22 完成，**PF-2 同日完成**——十四张施工票 + 集成步已随 PR #357 合入 `main`（合并提交 `c4c9ac93`），Spec #134 随之关闭，#326 及下面 17 张票全部关闭。两张残留票保持开放：[#385](https://github.com/magician336/lingdoc/issues/385)（动作表按目标范围给动作、执行按管道分）、[#386](https://github.com/magician336/lingdoc/issues/386)（两处手抄迁移子集夹具）。**#328（PF-4）也已被 magician336 认领**（登记处 `status=claimed`，认领人填 `claimed_by`；票 #328 同一人指派，两处同步）。**#329（PF-5）同样已被认领**（登记处 `status=claimed`；PR #390 合入 main）。**#327（PF-3）与 #384（PF-7）于 2026-10-23 由 magician336 认领**（登记处 `status` 均为 `claimed`；PF-3 一次交付 #382 / #327 / #383 三张后端票，PF-7 交付 #384 的前端独立化）。其余一张（PF-6）在登记处仍是 `available`，未被认领——**认领状态以登记处为准**。
 
-> **PF-7 的路径集有两处需要读者知道**：一是 `mainlineChanges.ts`——PF-1 留下的「无主路径」缺口，由本面认领（G6 客户端从这里搬出去，文件本身留下 G3 的变更集与影响任务）；二是 PF-1 名下的 `ImpactOpsPanel.vue`、`mainlineChanges.test.js`、`ImpactOpsPanel.test.js` 三个文件本面也要改（把 G6 段搬走），但登记处不允许两面包同一路径，且本轮不得改动已完成面的记录，故这三个路径**仍记在 PF-1 名下**——所有权转移留给维护者处理。
+> **PF-7 的路径集有两处需要读者知道**：一是 `mainlineChanges.ts`——PF-1 留下的「无主路径」缺口，由本面认领（G6 客户端从这里搬出去，文件本身留下 G3 的变更集与影响任务）；二是 PF-1 名下的 `ImpactOpsPanel.vue`、`mainlineChanges.test.js`、`ImpactOpsPanel.test.js` 与口径表 `runtimeMetrics.ts` / `runtimeMetrics.test.ts`，本面也要改（把 G6 段搬走、口径表接上后端补的 `permission/deny` 观测），而登记处不允许两面包同一路径。**2026-10-23 经维护者裁决，这五个路径已由 PF-1 转移到 PF-7**（PF-1 已交面，只保留自己的方案档）；转移前的状态记在登记处 PF-1 的 `summary` 里。
 >
 > **PF-1 的路径集在 2026-10-22 改过**：初次登记时列的是三个**新建**文件（`g6Runtime.ts` / `g6Trial.ts` / `G6OpsPanel.vue`），前提是「G6 前端为零」。施工时核实发现该前提已过时——16 个 G6 端点客户端与两个 tab 的界面早已在 main 上，重复新建会造成两套并行实现。于是本面缩为「补真实缺口」：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。**G6 前端的独立化与 Workspace 集成不在本面**，另开 [#384](https://github.com/magician336/lingdoc/issues/384)。路径集与边界以登记处 `scripts/lingdoc_parallel_surfaces.py` 为准，本表只是它的说明副本。
 
@@ -282,9 +282,10 @@ graph TD
 
 **两处已知的归属约定**：
 
-- PF-1 与 PF-6 同属前端目录 → **不得改对方文件**。注意 PF-1 已不再「只新增文件」：它在既有文件 `ImpactOpsPanel.vue` 上改指标视图，PF-6 仍只新增 `g2Context.ts` 与 `ContextPackagePanel.vue`；两面的路径集零重叠。
+- PF-7 与 PF-6 同属前端目录 → **不得改对方文件**。PF-7 认领了 PF-1 交来的既有文件并新建 `runtimeControl.ts` / `trialWindow.ts` / `RuntimeOpsPanel.vue`；PF-6 仍只新增 `g2Context.ts` 与 `ContextPackagePanel.vue`；两面的路径集零重叠。
 - PF-3 与 PF-4 都需要 workspacecore 里的类型 → PF-3 独占 `model.go`（AuditEvent 是既有 struct，加字段必须改原处），PF-4 把 `owner_unavailable` 状态串放**独立新文件**，避开 `model.go`。PF-4 的 `owner_unavailable` 是**读时派生**的事实，不进领域 `Project` 结构体，也不落库。
-- **PF-4 的前端有两处是集成步骤而不是面拥有**：`frontend/src/views/lingdoc/Workspace.vue` 是所有前端面的集成点（保留路径，任一面都不得独占），`frontend/src/views/lingdoc/ImpactOpsPanel.vue` 属 PF-1 已交面的文件。这两处的改动在 PR 里显式标注，不记成面拥有。
+- **PF-3 与 PF-4 的路径重叠已由维护者裁决**：2026-10-23 PF-3 先走，`service_facade.go`、`typed_contracts.go`、`contracts/openapi.json` 由 PF-4 让给 PF-3，待 PF-3 合入 main 后归还；届时两边改动点都在授权判定附近，需人工解一次冲突。
+- **PF-4 的前端有两处是集成步骤而不是面拥有**：`frontend/src/views/lingdoc/Workspace.vue` 是所有前端面的集成点（保留路径，任一面都不得独占），`frontend/src/views/lingdoc/ImpactOpsPanel.vue` 属 PF-7（PF-1 已交面时转来）。这两处的改动在 PR 里显式标注，不记成面拥有。
 
 ### 怎么领面
 
@@ -327,7 +328,7 @@ graph TD
 | ① Owner 不可用 | **PF-4** |
 | ② 审计失败不告警 | **PF-3** |
 | ③ Agent 缺 research 用途 | **PF-5**（后端）+ **PF-6**（上下文包前端消费） |
-| ④ 前端与动作族 | **PF-1**（G6 前端）+ **PF-2**（#134 动作族） |
+| ④ 前端与动作族 | **PF-7**（G6 前端独立化与 Workspace 集成）+ **PF-2**（#134 动作族） |
 
 四个簇与六个面是一一覆盖的，且六个面的文件集互不重叠——**这四簇缺口可以同时开，不需要排队。**
 
