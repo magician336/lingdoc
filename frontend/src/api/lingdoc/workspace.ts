@@ -297,11 +297,12 @@ export interface SelectedRewriteCandidate {
    */
   validity: '' | 'fresh' | 'stale' | 'not_authorized'
   /**
-   * 旧字段名的兼容渲染。
+   * 这个候选走到了哪一步——生命周期阶段，不是失效判据。
    *
-   * @deprecated 状态只有一个拥有者：validity。这个字段是它的渲染结果，
-   * 只为还没改读 validity 的消费者而存在（保留路径 Workspace.vue 还在读它）；
-   * 那些消费者改完之后它就删掉了。
+   * @deprecated 失效判据只有一个拥有者：validity。这个字段是生命周期阶段的
+   * 渲染（queued / ready / applying / failed / stale），只为还没改读 validity
+   * 的消费者而存在（保留路径 Workspace.vue 还在读它）；那些消费者改完之后
+   * 它就删掉了。
    */
   status: 'queued' | 'ready' | 'applying' | 'failed' | 'stale'
   run_mode: 'real' | 'mock' | 'real_api_fake_model'

@@ -116,13 +116,18 @@ type SelectedRewriteCandidate struct {
 	// 不再各说各的（开发计划 §3.4 的归一）。空值表示「这次运行没有交出可采纳的
 	// 产出」——运行中是这样，一次失败也是这样；失败的原因在 ErrorCode 里。
 	Validity candidateadoption.Validity `json:"validity"`
-	// Status 是给还没改读 validity 的消费者看的**兼容渲染**。
+	// LifecycleStage 是这个候选走到了哪一步。
 	//
-	// 状态只有一个拥有者：上面那个枚举。这个字段是它的渲染结果，不是第二套
-	// 状态机——它由 rewriteStatusProjection 从枚举算出。保留路径
-	// （frontend/src/views/lingdoc/Workspace.vue）还在读它；那些消费者改读
+	// 它是**生命周期阶段**（queued / ready / applying / failed / stale），不是
+	// 失效判据：失效判据只有 Validity 一个拥有者（fresh / stale /
+	// not_authorized）。两者回答的不是同一个问题——「走到哪一步」是时间上的
+	// 位置，「还能不能被采纳」是此刻的可用性。
+	//
+	// JSON 键仍是 `status`：保留路径（frontend/src/views/lingdoc/Workspace.vue）
+	// 还在读它，线上形状逐字不变。这个字段是 LifecycleStage 的渲染结果，不是
+	// 第二套状态机——它由 rewriteLifecycleStage 算出。那些消费者改读
 	// validity 之后，这个字段与那段代码一起删掉。
-	Status               string                         `json:"status"`
+	LifecycleStage       string                         `json:"status"`
 	RunMode              candidateadoption.RunMode      `json:"run_mode"`
 	BaseChapterVersionID *string                        `json:"base_chapter_version_id"`
 	SpecRevision         int64                          `json:"spec_revision"`
@@ -904,7 +909,7 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		}
 	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
-		Validity: candidateadoption.Validity(row.Validity), Status: rewriteStatusProjection(row), RunMode: row.RunMode,
+		Validity: candidateadoption.Validity(row.Validity), LifecycleStage: rewriteLifecycleStage(row), RunMode: row.RunMode,
 		BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision:         row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
@@ -914,13 +919,16 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		DroppedContext: dropped}, nil
 }
 
-// rewriteStatusProjection 把统一的状态渲染成旧字段的取值。
+// rewriteLifecycleStage 算出这个候选走到了哪一步。
 //
-// 它是**渲染**，不是第二套状态：状态只有一个拥有者（候选层的 Validity 枚举）。
-// 这个投影只为还没改读 validity 的消费者而存在（保留路径
-// frontend/src/views/lingdoc/Workspace.vue 还在读它）；那些消费者改完之后，
-// 这个函数与那个字段一起删掉。
-func rewriteStatusProjection(row selectedRewriteRow) string {
+// 它是**生命周期阶段**（queued / ready / applying / failed / stale），不是失效
+// 判据：失效判据只有 `Validity` 一个拥有者。两者回答的不是同一个问题——
+// 「走到哪一步」是时间上的位置，「还能不能被采纳」是此刻的可用性。
+//
+// 它是 Validity 的**渲染**，不是第二套状态机：取值由 Validity 枚举与行上的
+// 应用进度派生。保留路径（frontend/src/views/lingdoc/Workspace.vue）还在读
+// 这个字段；那些消费者改读 validity 之后，这个函数与那个字段一起删掉。
+func rewriteLifecycleStage(row selectedRewriteRow) string {
 	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
 		return "applying"
 	}
