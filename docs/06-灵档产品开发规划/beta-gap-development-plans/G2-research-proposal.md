@@ -1,7 +1,7 @@
 # G2 调研智能体的研究提案：开发计划
 
 > **Spec**：[#393](https://github.com/magician336/lingdoc/issues/393)（仓内节点 [`50-Spec-调研智能体研究提案.md`](../50-Spec-调研智能体研究提案.md)）
-> **施工并行面**：PF-5（[#329](https://github.com/magician336/lingdoc/issues/329)，登记处 `status=claimed`、`claimed_by=magician336`）
+> **施工并行面**：PF-5（[#329](https://github.com/magician336/lingdoc/issues/329)，登记处 `status=done`——2026-10-23 随 PR #417 合入 `main`，合并提交 `1b784a4f`）
 > **阶段**：代码前门（验收矩阵已定，施工票已拆）
 > **同时服务**：Spec [#135](https://github.com/magician336/lingdoc/issues/135)（调研任务与调研智能体）、[#125](https://github.com/magician336/lingdoc/issues/125)（调研智能体首轮闭环）——两者的关系按路径图「已知矛盾与待裁决」处理，本计划不合并也不裁剪它们。
 
