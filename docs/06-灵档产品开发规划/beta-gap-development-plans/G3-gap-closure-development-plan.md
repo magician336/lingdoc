@@ -31,15 +31,15 @@
 | # | 事实 | 证据 |
 | --- | --- | --- |
 | F1 | 缺口清单共 11 条，其中 3 条与当前 head 的描述已经不一致 | 见下表 |
-| F2 | 验收台**已经**渲染 `assessment.objects`、`certainty` 两分组、`causes[].source` | `frontend/src/views/lingdoc/g3demo/G3Demo.vue:286-314`、`:409-473`；分组计算 `runner/dependencies.ts:283-309` |
+| F2 | 验收台**已经**渲染 `assessment.objects`、`certainty` 两分组、`causes[].source` | `frontend/src/views/lingdoc/impactCenterAcceptance/AcceptanceConsole.vue:286-314`、`:409-473`；分组计算 `runner/dependencies.ts:283-309` |
 | F3 | RouteNode 模型离 Spec §9.1 差一大截：只有 `ID/ProjectID/Version/Name/Inputs/Required/Status/ContextRevision/ActorID/Reason/UpdatedAt` | `internal/lingdoc/workspacecore/semantic_delta.go:31-43` |
 | F4 | `RouteEdge` 全库零命中；没有「冻结 / 未冻结」概念；没有版本序列读端点 | 全库检索 |
 | F5 | RouteNode 可经变更集语义增量写入（`SemanticDelta.ProposedRoute`），因此并非「完全不可写」 | `semantic_delta.go:29`、`:476-497` |
 | F6 | 路线图侧只有只读端点 `GET /projects/{projectId}/route-nodes` | `internal/lingdoc/workspace/impact_routes.go:113-115` |
-| F7 | 助手产出里没有两组说明结构：`AgentTurn.Suggestions` 是不透明 `json.RawMessage` | `internal/lingdoc/workspacecore/g2_model.go:368-386`、`:416-433` |
+| F7 | 助手产出里没有两组说明结构：`AgentTurn.Suggestions` 是不透明 `json.RawMessage` | `internal/lingdoc/workspacecore/agent_research_model.go:368-386`、`:416-433` |
 | F8 | `impacts[].certainty` 是**影响解析结果**，与助手草稿解释分组不是同一件事 | `impact_model.go:70`、`impact_service.go:492-534` |
 | F9 | 依赖只有单边登记与三态决策；无批量提出端点与候选模型 | `impact_routes.go:116-124`、`impact_model.go:41-50` |
-| F10 | 阻断级 dismiss 与 resolve 的**唯一**代码差异是授权动作；单纯授权拒绝被映射为 404，500 只能来自未被映射的原始错误 | `service_facade.go:2876-2879`、`g5_policy.go:175-182`、`http.go:382`、`:410-411` |
+| F10 | 阻断级 dismiss 与 resolve 的**唯一**代码差异是授权动作；单纯授权拒绝被映射为 404，500 只能来自未被映射的原始错误 | `service_facade.go:2876-2879`、`permission_policy.go:175-182`、`http.go:382`、`:410-411` |
 | F10a | **（2026-10-20 更新）** F10 的根因已定位：授权审计行把复合 capability（动作 + 资源 ID）写进了有界的 action 分类列，阻断级 dismiss 的 action 长 73 字符 > PostgreSQL 的 `varchar(64)` → `SQLSTATE 22001` → 事务回滚 → 未映射错误变 500。resolve 的 action 恰好 64 字符压线通过。**SQLite 把该列声明为无界 `TEXT`，缺陷只在 PostgreSQL 暴露** | `service_facade.go:407-454`、`model.go:509-517`、`migrations/versioned/000106_*.up.sql:18-26`、`migrations/sqlite/000027_*.up.sql`、`service.go:21-28` |
 | F11 | 人工处置当前**不改求值结论**，且有测试**主动断言**这一点 | `internal/lingdoc/delivery/rule_snapshot.go:193-200`、`internal/lingdoc/workspace/delivery_http_test.go:205-207` |
 | F12 | `closure_stale` 分支**存在**且有字面量断言；问题是 HTTP 链路在到达该分支前就 409 | `stabilization_conditions.go:285-306`、`stabilization_guard_test.go:318/688/733`、`impact_service.go:1184-1186` |
@@ -58,7 +58,7 @@
 ### 本次必须
 
 - 补齐 8 条能力缺口（G3-GAP-01…05、09…11）并让对应验收行可实跑。
-- 事实校正（#249）：#246 正文与 `frontend/src/views/lingdoc/g3demo/g3Gaps.ts` 同源且与当前 head 一致。
+- 事实校正（#249）：#246 正文与 `frontend/src/views/lingdoc/impactCenterAcceptance/implementationGaps.ts` 同源且与当前 head 一致。
 - 一份当前 head 的整链证据（#257）。
 
 ### 明确不做
@@ -195,8 +195,8 @@
 
 | 级别 | 适用 | 要求 | 验收行状态 |
 | --- | --- | --- | --- |
-| **L1 实现完成线** | #249–#256、#258 | ① 证据落 `docs/08-本轮实施方案/T*-验证报告.json` 与 `T*-S*-证据.json`；② 关键行为经**真实 application/HTTP seam** 验证（只调 store 或内部函数的测试不计入）；③ 涉持久化时覆盖 SQLite/PostgreSQL 的迁移、重启读回、失败回滚、并发与幂等；④ 更新 #246 对应缺口状态与 `g3Gaps.ts`；⑤ 不要求 `/demo/g3` 页面实跑 | 只能 `PASS (follow-up)` 或保持 `NOT RUN` / `BLOCKED`，**不得判 `PASS`** |
-| **L2 页面落证完成线** | #257 | `/demo/g3` 页面实跑 + 证据绑定当前 head + `g3Gaps.ts` 与 #246 同步 + 逐条合取判据核对 | 满足的才升 `PASS`；只成立一半的记 `PASS (follow-up)` 并留跟进 Issue |
+| **L1 实现完成线** | #249–#256、#258 | ① 证据落 `docs/08-本轮实施方案/T*-验证报告.json` 与 `T*-S*-证据.json`；② 关键行为经**真实 application/HTTP seam** 验证（只调 store 或内部函数的测试不计入）；③ 涉持久化时覆盖 SQLite/PostgreSQL 的迁移、重启读回、失败回滚、并发与幂等；④ 更新 #246 对应缺口状态与 `implementationGaps.ts`；⑤ 不要求 `/demo/g3` 页面实跑 | 只能 `PASS (follow-up)` 或保持 `NOT RUN` / `BLOCKED`，**不得判 `PASS`** |
+| **L2 页面落证完成线** | #257 | `/demo/g3` 页面实跑 + 证据绑定当前 head + `implementationGaps.ts` 与 #246 同步 + 逐条合取判据核对 | 满足的才升 `PASS`；只成立一半的记 `PASS (follow-up)` 并留跟进 Issue |
 
 **旧 head（`7f5fd8c`）的证据不得复用。**
 
@@ -214,10 +214,10 @@
 计划落地后交付：
 
 - [x] 本计划文档 + 10 张子票（#249–#258）+ GitHub 原生阻塞依赖边
-- [x] #246 正文与 `g3Gaps.ts` 事实校正完成并互相链接
+- [x] #246 正文与 `implementationGaps.ts` 事实校正完成并互相链接
 - [x] 缺口→子票→验收行的可追踪链（每条缺口有归属票，每张票有归属验收行）
 - [x] `lingdoc-health-scoring` 一次（记录高风险维度、拟采取措施、未验证证据）—— 评分为 2026-10-20 的 Spec 阶段：`H_L 52.0` / `F_R 56.6`（评级 B，脆弱）。评分文件已随历史文档清理删除，数字追溯在总结文档第五节
-- [x] 每张子票的验收矩阵初稿（状态全部 `TODO`，不得预填 `PASS`）—— 矩阵最终落在 `frontend/src/views/lingdoc/g3demo/g3Matrix.ts`，状态由实跑落证填定
+- [x] 每张子票的验收矩阵初稿（状态全部 `TODO`，不得预填 `PASS`）—— 矩阵最终落在 `frontend/src/views/lingdoc/impactCenterAcceptance/impactMatrix.ts`，状态由实跑落证填定
 
 **输入分类**（`development-rules.md:52-61`）
 

@@ -207,7 +207,7 @@ export async function debugModel(
 }
 
 // ----------------------------------------------------------------------------
-// Model credential subresource. See mcp-service.ts for the matching MCP API
+// Model credential subresource. See mcpService.ts for the matching MCP API
 // shape and the design notes in internal/handler/dto/mcp.go.
 // ----------------------------------------------------------------------------
 

@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { hydrateProtectedFileImages } from '@/utils/security'
-import picturePreview from '@/components/picture-preview.vue'
+import picturePreview from '@/components/PicturePreview.vue'
 
 type EmbedImage = { url?: string; data?: string }
 type EmbedAttachment = { file_name: string; file_size?: number }

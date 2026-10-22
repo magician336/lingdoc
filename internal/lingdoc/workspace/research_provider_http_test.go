@@ -17,7 +17,7 @@ import (
 // research-task 指定不存在的 provider_id 必须在真实 HTTP 面上得到可读的 4xx
 // （#306）。
 //
-// 这里走的是生产组合：真实路由、真实 core service、真实 G2ResearchAdapter、
+// 这里走的是生产组合：真实路由、真实 core service、真实 ResearchAdapter、
 // 真实 SQLite 库。缺陷的原样是 provider 行查不到时 gorm 的 ErrRecordNotFound
 // 直接漏出，共享错误映射表不命中，于是落到 500 internal_error。
 
@@ -59,13 +59,13 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
-	adapter := NewG2ResearchAdapter(db, projects, runtime, nil, nil, nil)
+	adapter := NewResearchAdapter(db, projects, runtime, nil, nil, nil)
 	// 生产组合根把同一个适配器同时装成 Sources 与 Research；只有 Research
-	// 走的是目录版本这条路径（core.G2Runtime.Research 的 G2ResearchCatalog）。
-	projects.ConfigureG2(core.G2Runtime{Sources: adapter, Research: adapter})
+	// 走的是目录版本这条路径（core.AgentRuntime.Research 的 ResearchCatalog）。
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter, Research: adapter})
 
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), G2RoutePorts{
+	RegisterAgentRoutes(engine.Group("/api"), AgentRoutePorts{
 		Research:      projects,
 		Imports:       projects,
 		EvidenceCards: projects,

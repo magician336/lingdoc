@@ -108,7 +108,7 @@ import type {
   ListSandboxFilesData,
   WriteSandboxFileData,
   ReadSkillData
-} from '@/types/tool-results';
+} from '@/types/toolResults';
 
 import SearchResults from './tool-results/SearchResults.vue';
 import ChunkDetail from './tool-results/ChunkDetail.vue';

@@ -40,5 +40,5 @@ withDefaults(
 </script>
 
 <style lang="less">
-@import './integration-landing.less';
+@import './integrationLanding.less';
 </style>

@@ -8,7 +8,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ThinkingData } from '@/types/tool-results';
+import type { ThinkingData } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
@@ -19,7 +19,7 @@ useI18n(); // ensure component reacts to locale changes if needed
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .thinking-display {
   padding: 0;

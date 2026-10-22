@@ -1,7 +1,7 @@
 import { applyFinalArtifactContent } from '@/utils/finalArtifactContent'
 import { markRaw, nextTick, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ensureRagPipelineHistoryStream } from '@/utils/rag-pipeline-history'
+import { ensureRagPipelineHistoryStream } from '@/utils/ragPipelineHistory'
 import { applyMessageCreatedAt, bindServerTurnTimestamps, ensureMessageCreatedAt } from '@/utils/messageTimestamp'
 import { expandSteerForksInHistory, forkAfterInjectedUser, steerStepEvents, resetSteerTurnForReplay } from '@/utils/steerStreamFork'
 

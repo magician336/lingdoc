@@ -1,4 +1,4 @@
-import type { WebSearchProviderEntity } from '@/api/web-search-provider';
+import type { WebSearchProviderEntity } from '@/api/webSearchProvider';
 
 export type AgentWebSearchConfig = {
   web_search_enabled?: boolean;

@@ -31,7 +31,7 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped lang="less">
-@import './css/chat-timeline-loading.less';
+@import './css/chatTimelineLoading.less';
 
 .sandbox-command {
   min-width: 0;

@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ShellExecData } from '@/types/tool-results'
+import type { ShellExecData } from '@/types/toolResults'
 import { buildShellExecView } from '@/utils/shellExecResult'
 
 const props = defineProps<{

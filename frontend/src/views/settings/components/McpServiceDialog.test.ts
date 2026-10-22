@@ -27,7 +27,7 @@ function fixture(generate: () => Promise<string> = async () => 'Query logs by mo
       if (name === 'vue') return require('vue')
       if (name === 'vue-i18n') return { useI18n: () => ({ t: (key: string) => key, locale: ref('zh-CN') }) }
       if (name === 'tdesign-vue-next') return { MessagePlugin: { warning: (text: string) => warnings.push(text), success() {}, error() {} } }
-      if (name === '@/api/mcp-service') return {
+      if (name === '@/api/mcpService') return {
         generateMCPUsageInstructions: generate,
         updateMCPService: async (id: string, data: Record<string, unknown>) => {
           updates.push({ id, data })

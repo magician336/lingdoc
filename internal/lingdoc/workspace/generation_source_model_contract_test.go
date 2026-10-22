@@ -89,7 +89,7 @@ func TestGenerationHostKeepsBoundTemplateEvidenceAndAuthenticatedContext(t *test
 			if calls != 3 {
 				t.Fatalf("context checks=%d want=3", calls)
 			}
-			if len(model.messages) != 2 || !strings.HasSuffix(model.messages[0].Content, g2EvidenceModelInstructions) {
+			if len(model.messages) != 2 || !strings.HasSuffix(model.messages[0].Content, evidenceModelInstructions) {
 				t.Fatal("generation omitted the evidence-card instructions")
 			}
 			var payload struct {

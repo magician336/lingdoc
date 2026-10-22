@@ -1897,7 +1897,7 @@ const drawerConfirmText = computed(() => {
 </template>
 
 <style scoped lang="less">
-@import './datasource-surface.less';
+@import './datasourceSurface.less';
 .ds-steps {
   display: flex;
   gap: 8px;

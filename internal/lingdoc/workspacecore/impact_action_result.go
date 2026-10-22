@@ -156,7 +156,7 @@ func readImpactComputation(tx Transaction, p Project, id string) (ImpactComputat
 		return ImpactComputationReceipt{}, err
 	}
 	var receipt ImpactComputationReceipt
-	version, err := store.G6Read(tenant, p.ID, "preflight_check", id, &receipt)
+	version, err := store.ReadRuntimeRecord(tenant, p.ID, "preflight_check", id, &receipt)
 	if err != nil {
 		return receipt, err
 	}
@@ -169,13 +169,13 @@ func currentImpactResultObject(tx Transaction, p Project, ref ObjectVersionRef) 
 	state := ImpactObjectState{Ref: ref, State: "CURRENT", SourceIDs: []string{}, ContextRevision: p.CurrentContextRevision}
 	switch ref.Kind {
 	case "ResearchRun":
-		run, _, err := g2Load[ResearchRun](tx, p.ID, G2ResearchRunKind, ref.ID)
+		run, _, err := loadStoredObject[ResearchRun](tx, p.ID, ResearchRunKind, ref.ID)
 		if err != nil {
 			return state, err
 		}
 		state.Ref.Version = strconv.FormatInt(run.Version, 10)
 		state.ContextRevision = run.Basis.ContextRevision
-		state.Confirmed = run.Status == "completed" && g2BasisCurrent(p, run.Basis)
+		state.Confirmed = run.Status == "completed" && versionBasisCurrent(p, run.Basis)
 		for _, result := range run.Results {
 			if result.SourceID != "" {
 				state.SourceIDs = append(state.SourceIDs, result.SourceID)
@@ -216,21 +216,21 @@ func (t gormTransaction) VerifyImpactActionResult(p Project, task ImpactTask, re
 		if ref.Kind != "ResearchRun" {
 			return ErrInvalidState
 		}
-		run, _, err := g2Load[ResearchRun](t, p.ID, G2ResearchRunKind, ref.ID)
+		run, _, err := loadStoredObject[ResearchRun](t, p.ID, ResearchRunKind, ref.ID)
 		if err != nil {
 			return err
 		}
-		if ref.Version != strconv.FormatInt(run.Version, 10) || run.Status != "completed" || run.FinishedAt == nil || run.CorrelationID == "" || run.CreatedBy == "" || len(run.Rounds) < 2 || !g2BasisCurrent(p, run.Basis) {
+		if ref.Version != strconv.FormatInt(run.Version, 10) || run.Status != "completed" || run.FinishedAt == nil || run.CorrelationID == "" || run.CreatedBy == "" || len(run.Rounds) < 2 || !versionBasisCurrent(p, run.Basis) {
 			return ErrInvalidState
 		}
-		research, _, err := g2Load[ResearchTask](t, p.ID, G2ResearchTaskKind, run.TaskID)
+		research, _, err := loadStoredObject[ResearchTask](t, p.ID, ResearchTaskKind, run.TaskID)
 		if err != nil {
 			return err
 		}
-		if research.Scope != "impact:"+task.ID || research.LatestRunID != run.ID || research.Status != "completed" || research.Paused || !g2BasisCurrent(p, research.Basis) {
+		if research.Scope != "impact:"+task.ID || research.LatestRunID != run.ID || research.Status != "completed" || research.Paused || !versionBasisCurrent(p, research.Basis) {
 			return ErrInvalidState
 		}
-		approvedRow, err := t.G2ObjectVersion(p.ID, G2ResearchTaskKind, research.ID, run.TaskVersion)
+		approvedRow, err := t.ObjectVersion(p.ID, ResearchTaskKind, research.ID, run.TaskVersion)
 		if err != nil {
 			return err
 		}
@@ -247,7 +247,7 @@ func (t gormTransaction) VerifyImpactActionResult(p Project, task ImpactTask, re
 			}
 		}
 		for _, asset := range run.Basis.AssetVersions {
-			truth, e := t.G2AssetTruth(p, asset.AssetID)
+			truth, e := t.AssetTruth(p, asset.AssetID)
 			if e != nil {
 				return e
 			}
@@ -332,7 +332,7 @@ func (t gormTransaction) VerifyImpactActionResult(p Project, task ImpactTask, re
 // policy is still checked for stale or failed receipt references.
 func impactResultSourceIDs(tx Transaction, p Project, ref ObjectVersionRef) ([]string, error) {
 	if ref.Kind == "ResearchRun" {
-		run, _, err := g2Load[ResearchRun](tx, p.ID, G2ResearchRunKind, ref.ID)
+		run, _, err := loadStoredObject[ResearchRun](tx, p.ID, ResearchRunKind, ref.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -340,12 +340,12 @@ func impactResultSourceIDs(tx Transaction, p Project, ref ObjectVersionRef) ([]s
 		for _, r := range run.Results {
 			ids = append(ids, r.SourceID)
 		}
-		assetReader, ok := tx.(g2AssetPolicyTransaction)
+		assetReader, ok := tx.(assetPolicyTransaction)
 		if !ok {
 			return nil, ErrInvalidState
 		}
 		for _, asset := range run.Basis.AssetVersions {
-			truth, e := assetReader.G2AssetTruth(p, asset.AssetID)
+			truth, e := assetReader.AssetTruth(p, asset.AssetID)
 			if e != nil {
 				return nil, e
 			}

@@ -80,12 +80,12 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 	// Prepare outside runOperation as well so the mutation closure captures
 	// the exact prepared context needed by its native sidecar update.
 	id := OperationIdentity{Actor: actor, Operation: string(operationEditChangeDraft), Target: projectID + "/" + changeID, Key: key}
-	prepared, cached, err := s.g1PrepareCachedChangeOperation(ctx, actor, authorizationRequest(actor, projectID, AuthorizationWrite, ""), id, input)
+	prepared, cached, err := s.prepareCachedChangeOperation(ctx, actor, authorizationRequest(actor, projectID, AuthorizationWrite, ""), id, input)
 	if err != nil {
 		return nil, 0, isReplayPayloadDecodeError(err), err
 	}
 	if !cached {
-		prepared, err = s.g1PrepareOperation(ctx, actor, string(operationEditChangeDraft), projectID+"/"+changeID, projectID, input)
+		prepared, err = s.prepareProvenanceOperation(ctx, actor, string(operationEditChangeDraft), projectID+"/"+changeID, projectID, input)
 		if err != nil {
 			return nil, 0, false, err
 		}
@@ -171,7 +171,7 @@ func recordContextRevisionSnapshot(t gormTransaction, p Project, change ChangeSe
 	if err != ErrNotFound {
 		return err
 	}
-	snapshot, err := g1PersistSnapshot(t, p)
+	snapshot, err := persistProvenanceSnapshot(t, p)
 	if err != nil {
 		return err
 	}

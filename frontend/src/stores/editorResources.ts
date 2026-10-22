@@ -11,7 +11,7 @@ import {
   type ParserEngineInfo,
   type SystemInfo,
 } from '@/api/system'
-import { listMCPServices, type MCPService } from '@/api/mcp-service'
+import { listMCPServices, type MCPService } from '@/api/mcpService'
 import { listSkillCatalog, listSkills, type SkillCatalogItem, type SkillInfo } from '@/api/skill'
 import { getAgentTypePresets, getPlaceholders, type AgentTypePreset, type PlaceholdersResponse } from '@/api/agent'
 import { getTenantRetrievalConfig } from '@/api/retrieval'

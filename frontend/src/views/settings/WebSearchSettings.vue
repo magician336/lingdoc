@@ -325,7 +325,7 @@ import {
   type WebSearchProviderEntity,
   type WebSearchProviderTypeInfo,
   type WebSearchCredentialField,
-} from '@/api/web-search-provider'
+} from '@/api/webSearchProvider'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import CredentialResource, {
   type CredentialFieldDef,

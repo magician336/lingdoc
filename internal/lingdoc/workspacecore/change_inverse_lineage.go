@@ -30,12 +30,12 @@ func inverseLineageSource(tx Transaction, projectID string, change ChangeSet, se
 		return "", ErrInvalidState
 	}
 	seen[change.ID] = true
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return "", ErrInvalidState
 	}
-	var history g1ChangeProvenance
-	_, err := store.G5Get(projectID, "g1_change_provenance", change.ID, &history)
+	var history changeProvenance
+	_, err := store.GetProjectRecord(projectID, "g1_change_provenance", change.ID, &history)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return "", err
 	}

@@ -328,9 +328,9 @@ watch(() => props.kbId, async (newKbId) => {
 </script>
 
 <style scoped lang="less">
-@import '@/components/share-to-space-panel.less';
+@import '@/components/shareToSpacePanel.less';
 </style>
 
 <style lang="less">
-@import '@/components/share-to-space-panel.overlay.less';
+@import '@/components/shareToSpacePanel.overlay.less';
 </style>

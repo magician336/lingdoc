@@ -32,7 +32,7 @@ type MemberDirectoryReader interface {
 type MemberRecords interface {
 	Get(ctx context.Context, tx Transaction, projectID, kind, id string, dst any) (int64, error)
 	Put(ctx context.Context, tx Transaction, projectID, kind, id string, expected int64, value any) error
-	ListRecords(ctx context.Context, tx Transaction, projectID, kind string) ([]G5Record, error)
+	ListRecords(ctx context.Context, tx Transaction, projectID, kind string) ([]ProjectRecord, error)
 	ListTenantInvitations(
 		ctx context.Context,
 		tx Transaction,
@@ -41,11 +41,11 @@ type MemberRecords interface {
 	) ([]MemberInvitation, error)
 }
 
-// G5Record is one stored record: its identity, its version, and its payload.
+// ProjectRecord is one stored record: its identity, its version, and its payload.
 //
 // The payload stays raw because the kinds differ: the caller decodes the one
 // it knows.
-type G5Record struct {
+type ProjectRecord struct {
 	ID      string
 	Version int64
 	Payload json.RawMessage
@@ -116,38 +116,38 @@ func (s *Service) listActiveTenantMembers(tx Transaction, tenantID uint64) ([]Me
 // The record's storage shape stays here: the caller receives the decoded
 // payload and the version.
 func (s *Service) getMemberRecord(tx Transaction, projectID, kind, id string, dst any) (int64, error) {
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return 0, ErrInvalidState
 	}
-	return store.G5Get(projectID, kind, id, dst)
+	return store.GetProjectRecord(projectID, kind, id, dst)
 }
 
 // putMemberRecord writes one general record, refusing a stale version.
 func (s *Service) putMemberRecord(tx Transaction, projectID, kind, id string, expected int64, value any) error {
-	store, ok := tx.(g5Transaction)
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return ErrInvalidState
 	}
-	return store.G5Put(projectID, kind, id, expected, value)
+	return store.PutProjectRecord(projectID, kind, id, expected, value)
 }
 
 // listMemberRecords reads the records of one kind in a project.
 //
 // The row shape stays here: the caller receives each record's identity, its
 // version and its payload.
-func (s *Service) listMemberRecords(tx Transaction, projectID, kind string) ([]G5Record, error) {
-	store, ok := tx.(g5Transaction)
+func (s *Service) listMemberRecords(tx Transaction, projectID, kind string) ([]ProjectRecord, error) {
+	store, ok := tx.(projectRecordTransaction)
 	if !ok {
 		return nil, ErrInvalidState
 	}
-	rows, err := store.G5List(projectID, kind)
+	rows, err := store.ListProjectRecords(projectID, kind)
 	if err != nil {
 		return nil, err
 	}
-	records := make([]G5Record, 0, len(rows))
+	records := make([]ProjectRecord, 0, len(rows))
 	for _, row := range rows {
-		records = append(records, G5Record{
+		records = append(records, ProjectRecord{
 			ID:      row.ID,
 			Version: row.Version,
 			Payload: json.RawMessage(row.PayloadJSON),
@@ -165,7 +165,7 @@ func (s *Service) listTenantInvitations(tx Transaction, tenantID uint64, userID 
 	if err != nil {
 		return result, err
 	}
-	var rows []g5RecordRow
+	var rows []projectRecordRow
 	if err := db.Table("lingdoc_g5_records AS g").
 		Select("g.*").
 		Joins("JOIN lingdoc_projects p ON p.id=g.project_id").
@@ -322,7 +322,7 @@ func (r *MemberStorage) Put(
 // ListRecords reads the records of one kind in a project.
 //
 // The caller decodes the payload it knows: the kinds differ.
-func (r *MemberStorage) ListRecords(_ context.Context, tx Transaction, projectID, kind string) ([]G5Record, error) {
+func (r *MemberStorage) ListRecords(_ context.Context, tx Transaction, projectID, kind string) ([]ProjectRecord, error) {
 	return r.service.listMemberRecords(tx, projectID, kind)
 }
 

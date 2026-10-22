@@ -88,11 +88,11 @@ func makeCatalogTemplateCopy(actor Actor, pid string, version int64, value Catal
 	return copy, nil
 }
 func hydrateTemplateBinding(db *gorm.DB, copy *ProjectTemplateCopy) error {
-	if copy == nil || !db.Migrator().HasTable(&g5RecordRow{}) {
+	if copy == nil || !db.Migrator().HasTable(&projectRecordRow{}) {
 		return nil
 	}
 	var value ProjectTemplateCopy
-	_, err := (gormTransaction{db}).G5Get(copy.ProjectID, "template_binding", copy.ID, &value)
+	_, err := (gormTransaction{db}).GetProjectRecord(copy.ProjectID, "template_binding", copy.ID, &value)
 	if err == ErrNotFound {
 		return nil
 	}
@@ -111,7 +111,7 @@ func saveTemplateBinding(tx gormTransaction, copy ProjectTemplateCopy) error {
 	if copy.RuleSetSnapshot == nil && copy.SourcePolicyHash == "" {
 		return nil
 	}
-	return tx.G5Put(copy.ProjectID, "template_binding", copy.ID, 0, ProjectTemplateCopy{BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash})
+	return tx.PutProjectRecord(copy.ProjectID, "template_binding", copy.ID, 0, ProjectTemplateCopy{BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash})
 }
 func sanitizedSpecAudit(fields map[string]SpecField) map[string]any {
 	out := map[string]any{}
@@ -145,4 +145,4 @@ func requiresGenericCriticalAudit(op string) bool {
 	return false
 }
 
-func (s *Service) SetG2ActionExecutor(executor G2ActionExecutor) { s.g2Runtime.Actions = executor }
+func (s *Service) SetActionExecutor(executor ActionExecutor) { s.agentRuntime.Actions = executor }

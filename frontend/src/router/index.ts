@@ -56,7 +56,7 @@ const router = createRouter({
       component: () => import("../views/auth/Login.vue"),
       meta: { requiresAuth: false, requiresInit: false }
     },
-    // Embed chat is a separate entry (embed.html + embed-main.ts), not this SPA.
+    // Embed chat is a separate entry (embed.html + embedMain.ts), not this SPA.
     {
       path: "/register",
       name: "registerByInvite",
@@ -77,7 +77,7 @@ const router = createRouter({
     {
       path: "/demo/g3",
       name: "lingdocG3AcceptanceDemo",
-      component: () => import("../views/lingdoc/g3demo/G3Demo.vue"),
+      component: () => import("../views/lingdoc/impactCenterAcceptance/AcceptanceConsole.vue"),
       meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
     },
     {
@@ -183,13 +183,13 @@ const router = createRouter({
         {
           path: "creatChat",
           name: "globalCreatChat",
-          component: () => import("../views/creatChat/creatChat.vue"),
+          component: () => import("../views/creatChat/CreatChat.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
           path: "knowledge-bases/:kbId/creatChat",
           name: "kbCreatChat",
-          component: () => import("../views/creatChat/creatChat.vue"),
+          component: () => import("../views/creatChat/CreatChat.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {

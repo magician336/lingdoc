@@ -122,7 +122,7 @@ func (t gormTransaction) ProjectBindingPolicies(p Project) ([]governance.Binding
 		BindingPolicies  []governance.BindingPolicy `json:"binding_policies"`
 		SourcePolicyHash string                     `json:"source_policy_hash"`
 	}
-	if _, err := t.G5Get(p.ID, "template_binding", p.TemplateCopy.ID, &value); err != nil {
+	if _, err := t.GetProjectRecord(p.ID, "template_binding", p.TemplateCopy.ID, &value); err != nil {
 		return nil, err
 	}
 	hash, err := governance.HashBindingPolicies(value.BindingPolicies)
@@ -190,29 +190,29 @@ func currentSemanticValue(tx Transaction, p Project, delta SemanticDelta) (Seman
 	var value any
 	switch delta.Kind {
 	case "EvidenceCard":
-		card, _, err := g2Load[EvidenceCard](tx, p.ID, G2CardKind, delta.TargetID)
+		card, _, err := loadStoredObject[EvidenceCard](tx, p.ID, EvidenceCardKind, delta.TargetID)
 		if err != nil {
 			return out, err
 		}
 		out.Ref.Version = strconv.FormatInt(card.Version, 10)
 		out.SourceIDs = slices.Clone(card.SourceIDs)
 		out.ProvenanceHash = hashImpactValue(struct {
-			Basis        G2Basis
+			Basis        VersionBasis
 			Confirmation *EvidenceConfirmation
 		}{card.Basis, card.Confirmation})
 		value = card
 	case "ResearchClaim":
-		claim, _, err := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, delta.TargetID)
+		claim, _, err := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, delta.TargetID)
 		if err != nil {
 			return out, err
 		}
 		out.Ref.Version = strconv.FormatInt(claim.Version, 10)
 		value = claim
-		port, err := g2Storage(tx)
+		port, err := agentObjectStore(tx)
 		if err != nil {
 			return out, err
 		}
-		cards, err := port.G2Objects(p.ID, G2CardKind)
+		cards, err := port.Objects(p.ID, EvidenceCardKind)
 		if err != nil {
 			return out, err
 		}
@@ -325,7 +325,7 @@ func validateSemanticProposal(tx Transaction, p Project, delta SemanticDelta) er
 	case "ResearchClaim":
 		input := delta.ProposedClaim
 		if !input.Confirmed {
-			return ErrG2ConsentRequired
+			return ErrConsentRequired
 		}
 		if strings.TrimSpace(input.Text) == "" || strings.TrimSpace(input.Scope) == "" || len(input.Text) > 10000 || !slices.Contains([]string{"active", "disputed", "superseded"}, input.Status) {
 			return ErrInvalidRequest
@@ -885,10 +885,10 @@ func validateExtendedChangeInput(input ExtendedChangeSetInput) error {
 	}
 	for _, delta := range input.SemanticDeltas {
 		if delta.ProposedCard != nil && !delta.ProposedCard.Confirmed {
-			return ErrG2ConsentRequired
+			return ErrConsentRequired
 		}
 		if delta.ProposedClaim != nil && !delta.ProposedClaim.Confirmed {
-			return ErrG2ConsentRequired
+			return ErrConsentRequired
 		}
 		if !validSemanticDelta(delta) {
 			return ErrInvalidRequest

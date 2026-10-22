@@ -68,7 +68,7 @@ import {
   getChatHistoryKBStats,
   type ChatHistoryConfig,
   type ChatHistoryKBStats,
-} from '@/api/chat-history'
+} from '@/api/chatHistory'
 
 const { t } = useI18n()
 

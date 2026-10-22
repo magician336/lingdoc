@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, shallowRef } from 'vue'
-import DocumentPreview from './document-preview.vue'
+import DocumentPreview from './DocumentPreview.vue'
 import { RESOURCE_PREVIEW_EVENT, type LoadedProtectedFile } from '@/utils/protectedResource'
 
 const file = shallowRef<LoadedProtectedFile | null>(null)

@@ -1,4 +1,4 @@
-import type { ConfigEnvGroup, EnvVarSource, EnvVarView, SkillEnvGroup } from '@/api/env-vars'
+import type { ConfigEnvGroup, EnvVarSource, EnvVarView, SkillEnvGroup } from '@/api/envVars'
 
 /**
  * Pure state helpers for the environment variable UIs.

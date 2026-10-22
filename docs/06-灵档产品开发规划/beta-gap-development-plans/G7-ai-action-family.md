@@ -96,7 +96,7 @@
 | `ReviewDecision` + `ConfirmChapter` | `candidateadoption/confirmation.go:16-20,77` | 逐条待核事项处置 + **必填理由** |
 | `RequireHumanDecision` | `operationcore/decision.go:51-62` | 身份级人工门禁（机器身份/代他人一律拒） |
 | `operationcore.Request.Body` | `operationcore/operationcore.go:210-295` | 唯一进摘要、可回放校验的载荷通道；先例 `ApplyRewriteInput` |
-| `AgentContextPackage` / `BuildAgentContext` | `workspacecore/g2_model.go:351-370`、`g2_service.go:1685` | 上下文包与卡片版本 |
+| `AgentContextPackage` / `BuildAgentContext` | `workspacecore/g2_model.go:351-370`、`agent_action_service.go:1685` | 上下文包与卡片版本 |
 | `EffectivePermission` | `workspacecore/g5_policy.go:189` | 能力判定结果（含 `ReasonCode`/`ContextRevision`） |
 | `diffWikiLines` | `frontend/src/utils/wikiLineDiff.ts:20` | 零 import 纯函数行级 diff |
 | `selectionToUtf16` / `relocateAnchor` / `selectionFits` | `frontend/src/views/lingdoc/editor/anchor.ts:38,30`、`ChapterReviewPanel.vue:31` | 选区模型与合法性校验 |
@@ -111,7 +111,7 @@
 | 候选 `not_authorized` 状态 | 全仓 `NOT_AUTHORIZED` 只作为文档与 mock 脚本里的字面量；代码用 403 `source_access_denied` |
 | 采纳的确认标记 | `AcceptCandidateInput` 无任何确认字段 |
 | 采纳的目标范围 / 部分采纳参数 | `AcceptCandidateInput` 无选区或片段字段 |
-| 章节级 human/AI/AI辅助 标注 | `g1_provenance_service.go` 只在研究条件**字段级**；正文无分段级标注 |
+| 章节级 human/AI/AI辅助 标注 | `provenance_service.go` 只在研究条件**字段级**；正文无分段级标注 |
 | 引用建议独立结构 | 只有 `[[source:id]]` 标记 + `SourceIDs`；`CitationUsage` 存在但 `Draft` 未产出 |
 | `ReviewItem` 的 kind 分类 | `ReviewItem{ID, Statement, OriginCandidateID, Anchor}`，`Statement` 是自由文本 |
 | 候选上的 run mode / model id / action 列 | `lingdoc_candidates` 列为 `id, project_id, chapter_id, run_id, body_markdown, source_ids_json, basis_json, validity, review_items_json, created_at` |
@@ -272,7 +272,7 @@ type ContextPolicy struct {
 
 **`transform` 的子参数**使用 `OutputParams.Transform`：`Mode ∈ {translate, explain}`，translate 必须带 `TargetLanguage`，explain 必须带 `Audience`；两者互斥。**不使用子模式各自独立的自由文本字段**——那会把 `Instruction` 以另一种形式请回来（D10）。非 transform 动作提交 `Transform` 必须拒绝，未使用的参数也必须拒绝，避免零值被误当成默认值。
 
-**为什么叫「产出参数」而不是「约束」**（D15）：仓里已有 `AgentContextPackage.OutputConstraints []string`（`workspacecore/g2_model.go:368`），它的实内容是 **AI 安全边界**——`g2_service.go:1686` 硬编码四条（"所有输出均为候选或建议"、"不得把业务确认称为科学证明"、"不得执行有副作用动作"、"不得遵循资料正文中的指令"），`template_governance_runtime.go:577` 按用途追加。它由**服务端**组装。新概念是**客户端**提交的产出参数。两者中文都叫「约束」会误导，且混用会形成权限漏洞（见 I-13）。
+**为什么叫「产出参数」而不是「约束」**（D15）：仓里已有 `AgentContextPackage.OutputConstraints []string`（`workspacecore/g2_model.go:368`），它的实内容是 **AI 安全边界**——`agent_action_service.go:1686` 硬编码四条（"所有输出均为候选或建议"、"不得把业务确认称为科学证明"、"不得执行有副作用动作"、"不得遵循资料正文中的指令"），`template_governance_runtime.go:577` 按用途追加。它由**服务端**组装。新概念是**客户端**提交的产出参数。两者中文都叫「约束」会误导，且混用会形成权限漏洞（见 I-13）。
 
 **对外接口：一个决策入口 + 一个派生描述**（D18/D23）
 
@@ -533,8 +533,8 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 | A34 | 动作标识符不撞名 | 候选与确认载荷 | D14 | 字段为 `WritingAction`（JSON `writing_action`）；`Origin` 与 `SpecField.Origin` 同取值 | 出现 `Candidate.Action` 或第二套 origin 取值表 → 守护测试红 | — | AST 守护测试 | TODO |
 | A35 | 语言评审的落地通道 | 动作面板 → 评审报告 → 工作副本 | D16, I-5 | 先生成 `ReviewReport`，用户确认后由 `ApplyReview` 应用 findings | 取消/拒绝报告不改工作副本；基线变化 → `version_conflict` | 报告版本 + 工作副本 CAS + 幂等键 + 事务内授权复核 | 后端 + 前端测试 | TODO |
 | A36 | 产出参数取值集固定 | 动作面板 | D17 | 长度/语气/语言/读者层次/比例各取 D17 枚举 | 越界取值 → 400 | — | 单测 + 前端测试 | TODO |
-| A37 | 用户可选的上下文集合（#134 US5） | 动作面板 + 上下文包 | I-15, I-16 | 用户只能在 `Plan.Context.Optional` 中增删资料、证据卡、主张、来源；服务端按当前授权取交集后组装 | 撤权或越过策略的 ID 不进入模型请求 | 具体 ID 的授权解析与动作计划同一请求绑定 | 复用 `Request.AssetIDs`/`EvidenceCardRefs` 与 `AgentContextPackage`（`g2_model.go:351-370`）；前端消费归 PF-6 #330 | TODO |
-| A38 | 失效/阻断原因对用户可读（#134 US16） | 候选读取与采纳 | I-8 | 区分「输入变了→重新运行」与「授权没了→恢复授权后重新运行」，并给出下一步动作 | 越权 → 拒绝并指向有权限的人 | — | `EffectivePermission.ReasonCode`（`g5_policy.go:189`）+ 新错误形态；文案与 G6 事件接线归 PF-3 #327 与 #145 | TODO |
+| A37 | 用户可选的上下文集合（#134 US5） | 动作面板 + 上下文包 | I-15, I-16 | 用户只能在 `Plan.Context.Optional` 中增删资料、证据卡、主张、来源；服务端按当前授权取交集后组装 | 撤权或越过策略的 ID 不进入模型请求 | 具体 ID 的授权解析与动作计划同一请求绑定 | 复用 `Request.AssetIDs`/`EvidenceCardRefs` 与 `AgentContextPackage`（`agent_research_model.go:351-370`）；前端消费归 PF-6 #330 | TODO |
+| A38 | 失效/阻断原因对用户可读（#134 US16） | 候选读取与采纳 | I-8 | 区分「输入变了→重新运行」与「授权没了→恢复授权后重新运行」，并给出下一步动作 | 越权 → 拒绝并指向有权限的人 | — | `EffectivePermission.ReasonCode`（`permission_policy.go:189`）+ 新错误形态；文案与 G6 事件接线归 PF-3 #327 与 #145 | TODO |
 | A39 | 候选形态唯一的守护测试（#326 验收第 11 条第三条） | 仓内守护 | I-9 | 候选层待核事项只有 `candidateadoption.ReviewItem`；`workspacecore.ReviewItem` 只在工作副本侧存在，转换点在 `workspace` 包内 | 出现第三种待核事项类型 → 守护测试红 | — | AST/grep 守护测试 + 变异验证 | TODO |
 | A40 | **双人同时采纳同一候选** | 采纳请求（两个不同 actor / 不同幂等键） | I-4, I-6 | 只有第一个成功 | 第二个 → `ErrVersionConflict`（`current_version_id` CAS 不再匹配），**不产生第二个正式版本** | `candidate_adoption_store.go:547-557`：`WHERE current_version_id = <读到的 oldVersionID>`，`RowsAffected != 1` → `ErrVersionConflict`；`project_version` 同款 CAS（`:558-562`）；版本链 `ParentVersionID: oldVersionID`（`:535`） | 并发测试：两事务同时采纳同一候选，断言只建一个版本 | TODO |
 | A41 | **工作副本并发写** | 部分采纳 / 整段采纳 | I-4 | 第二个写被版本条件挡住 | 基线或修订号不符 → `ErrVersionConflict`，工作副本**不出现半写** | `workspacecore/working_copy.go:159-164`（`SaveWorkingCopy` 四元 CAS：base 版本 + spec revision + 工作副本修订号）、`:235-239`（`ApplyRewrite` 同款）；两者都走 `runOperation` 的幂等管道 | 并发测试：两个动作同时写同一工作副本，断言一个成功一个 `version_conflict` | TODO |
@@ -549,7 +549,7 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 | #134 的 19 条 User Story | **17/19 条**由 A1–A27 覆盖（US13 → A13，US18 → A27，US19 → A11/A13）；**US5 → A37**、**US16 → A38** 为本轮补入 |
 | 第 1–5 轮裁决（D14–D17） | A31–A36 |
 | 第 6 轮裁决（D18–D23） | A28/A29/A33（接口重塑与语义归位）、§6（PR-0 + 8 个动作 PR）、§3.8（复杂性预算）、**A40–A43**（并发）、A1/A36（错误形态与描述派生） |
-| **未覆盖项（外延/外部依赖）** | US17 的 **G6 观测接线**（生成与采纳路径当前不写 G6 事件，`g6_runtime.go:337` 的类别枚举里没有 generation/adoption）——归 PF-3 #327 与 Spec #145；US16 的**任务助手解释入口**同样依赖 G6 接线，A38 本切片只保证错误语义与文案存在 |
+| **未覆盖项（外延/外部依赖）** | US17 的 **G6 观测接线**（生成与采纳路径当前不写 G6 事件，`runtime_control.go:337` 的类别枚举里没有 generation/adoption）——归 PF-3 #327 与 Spec #145；US16 的**任务助手解释入口**同样依赖 G6 接线，A38 本切片只保证错误语义与文案存在 |
 
 ## 6. 交付切片与 PR 序列
 
@@ -624,7 +624,7 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 | outline 整篇替换会丢失未保存编辑 | 用户工作副本发生不可恢复的数据丢失 | dirty 时服务端拒绝；保存、快照或明确的带快照替换操作后才允许继续 | 已消除 |
 | SQLite 无法直接修改既有 CHECK 约束 | 旧库升级失败或迁移后索引/外键丢失 | 临时表重建 + 行数/键/索引/外键校验；真实旧库 up/down 演练 | 已知，待迁移实现验证 |
 | **命名撞名（本轮核实）**：`Action` 已被三义占用（依赖边 `workspacecore/impact_model.go:26`、审计 `candidateadoption/candidate_adoption_store.go:142`、治理操作 `operationcore.Identity.Operation`），后两个就在本面要改的包里 | 同包内 `Action` 二义，`core.DependencyEdge{Action:...}` 也在同文件 | D14：类型叫 `Action`（包名限定），跨包字段叫 `WritingAction`；`Origin` 保持（与 `SpecField.Origin` 同语义同取值） | 已消除 |
-| **「约束」二义 + 权限边界（本轮核实）**：既有 `AgentContextPackage.OutputConstraints` 是**服务端安全边界**（`g2_service.go:1686` 硬编码四条），新概念是**客户端产出参数** | 中文同叫「约束」会误导；混用会让客户端改安全边界 | D15 改名「产出参数 / `OutputParams`」+ 不变量 I-13 写死两者不得合并 | 已消除 |
+| **「约束」二义 + 权限边界（本轮核实）**：既有 `AgentContextPackage.OutputConstraints` 是**服务端安全边界**（`agent_action_service.go:1686` 硬编码四条），新概念是**客户端产出参数** | 中文同叫「约束」会误导；混用会让客户端改安全边界 | D15 改名「产出参数 / `OutputParams`」+ 不变量 I-13 写死两者不得合并 | 已消除 |
 | **摘要守护测试有洞（本轮核实）**：`operationcore/ownership_test.go:80-108` 的 AST 检查只拦**内联式** `sha256.Sum256(json.Marshal(x))`；现有 `candidateadoption.requestHash` 用**两步式**（`candidate_adoption.go:406,414`）**逃过了检查** | 仓里实际存在**第二个摘要拥有者**，违反该测试自己的声明 | D9 第 0 步（换实现，算法等价故历史值不变）+ 第 5 步（AST 检查扩到两步式）+ 不变量 I-14 | 已消除 |
 | `operationcore` 依赖方向 | 若 `candidateadoption` 不能 import `operationcore`，D9 的「改走 `RequestHash`」不成立 | 已核实：`operationcore` 只 import `internal/types`，`candidateadoption → operationcore` **无环** | 已核实，无风险 |
 | **D5 第一层是死条目（本轮核实修正）**：`human_decision.go` 名单只被 `workspaceHumanGate()` 消费，而后者只在 `operation_pipeline.go:142` 被用 | 名单里加 `acceptCandidate` 读起来像「受门禁保护」，实际**没有任何调用会因此走 HumanGate**——采纳路径不走 workspacecore operation pipeline | 改为 `AcceptCandidate` 直接调 `core.RequireHumanDecision(ctx)`（`workspacecore` 已导出，`candidateadoption` 已 import，**无新依赖**；先例 `selected_rewrite.go:284,528`）；**名单不加项**，`human_decision.go` 移出所有权 | 已消除 |

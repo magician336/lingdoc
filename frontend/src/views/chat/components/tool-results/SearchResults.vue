@@ -25,8 +25,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { SearchResultsData, SearchResultItem, RelevanceLevel } from '@/types/tool-results';
-import { getMatchTypeIcon } from '@/utils/tool-icons';
+import type { SearchResultsData, SearchResultItem, RelevanceLevel } from '@/types/toolResults';
+import { getMatchTypeIcon } from '@/utils/toolIcons';
 import ResultRow from './ResultRow.vue';
 import { useI18n } from 'vue-i18n';
 
@@ -153,7 +153,7 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .search-results {
   display: flex;

@@ -30,7 +30,7 @@ func applySyntheticChangeForGate(t *testing.T, s *Service, a Actor, p Project, k
 	if err != nil {
 		t.Fatal(err)
 	}
-	change := g2Decode[ChangeSet](t, raw, err)
+	change := decodeAgentJSON[ChangeSet](t, raw, err)
 	if _, _, _, err := s.ApplyChangeSet(context.Background(), a, p.ID, change.ID, key+"-apply"); err != nil {
 		t.Fatal(err)
 	}

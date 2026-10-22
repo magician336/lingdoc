@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import type { PlanData } from '@/types/tool-results';
+import type { PlanData } from '@/types/toolResults';
 
 interface Props {
   data: PlanData;

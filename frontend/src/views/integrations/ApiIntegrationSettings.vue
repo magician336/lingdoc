@@ -692,7 +692,7 @@ import {
   type TenantAPIKeyCapability,
 } from '@/api/tenant'
 import { listKnowledgeBases } from '@/api/knowledge-base'
-import { getApiBaseUrl } from '@/utils/api-base'
+import { getApiBaseUrl } from '@/utils/apiBase'
 import {
   DEFAULT_TENANT_API_KEY_CAPABILITIES,
   KB_SCOPED_API_KEY_CAPABILITIES,

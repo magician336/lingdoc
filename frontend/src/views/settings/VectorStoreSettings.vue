@@ -363,7 +363,7 @@ import {
   testVectorStoreRaw,
   type VectorStoreEntity,
   type VectorStoreTypeInfo,
-} from '@/api/vector-store'
+} from '@/api/vectorStore'
 import { useAuthStore } from '@/stores/auth'
 import { providerLogo } from './providerLogos'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'

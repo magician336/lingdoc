@@ -70,17 +70,17 @@ func assistantGroupsModelTurnWithKey(t *testing.T, f deliveryGuardFixture, expla
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
-	f.projects.ConfigureG2(core.G2Runtime{
-		Sources: NewG2ResearchAdapter(f.db, f.projects, f.runtime, g4AdapterShares{}, nil, nil),
-		Model:   host, Actions: NewG2ActionExecutor(f.projects, f.runtime, nil),
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
+		Sources: NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil),
+		Model:   host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
 	})
 	raw, _, _, err := f.projects.CreateAgentSession(f.ctx, f.actor, p.ID, "task_assistant", "agent-groups-session-"+key, agentDraftExpectation(p, 0))
 	require.NoError(t, err)
 	var session core.AgentSession
 	require.NoError(t, json.Unmarshal(raw, &session))
 	raw, _, _, err = f.projects.SendAgentTurn(f.ctx, f.actor, p.ID, session.ID, "agent-groups-turn-"+key, core.AgentTurnInput{
-		AgentContextInput: core.AgentContextInput{G2Expectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.G2VersionRef{}, SensitiveContextConfirmed: false},
+		AgentContextInput: core.AgentContextInput{VersionExpectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.VersionRef{}, SensitiveContextConfirmed: false},
 		UserInput:         "请将 research_goal 改为：" + agentGroupsSyntheticValue + "。只提出草稿。",
 	})
 	require.NoError(t, err)
@@ -116,7 +116,7 @@ func assistantGroupsProposeWithKey(t *testing.T, f deliveryGuardFixture, input c
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
 	raw, _, _, err := f.projects.CreateActionProposal(f.ctx, f.actor, p.ID, "agent-groups-proposal-"+key, core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
+		VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "仅创建待评估变更草稿，正式版本不变",
 	})
 	require.NoError(t, err)
 	var proposal core.ActionProposal
@@ -134,14 +134,14 @@ func assistantGroupsTamperTurn(t *testing.T, f deliveryGuardFixture, turn core.A
 		PayloadJSON string
 	}
 	require.NoError(t, f.db.Table("lingdoc_g2_objects").Select("payload_json").
-		Where("project_id=? AND kind=? AND id=?", f.project.ID, core.G2TurnKind, turn.ID).Take(&row).Error)
+		Where("project_id=? AND kind=? AND id=?", f.project.ID, core.AgentTurnKind, turn.ID).Take(&row).Error)
 	var payload map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal([]byte(row.PayloadJSON), &payload))
 	payload["suggestions"] = json.RawMessage(suggestions)
 	encoded, err := json.Marshal(payload)
 	require.NoError(t, err)
 	require.NoError(t, f.db.Table("lingdoc_g2_objects").
-		Where("project_id=? AND kind=? AND id=?", f.project.ID, core.G2TurnKind, turn.ID).
+		Where("project_id=? AND kind=? AND id=?", f.project.ID, core.AgentTurnKind, turn.ID).
 		Update("payload_json", string(encoded)).Error)
 }
 
@@ -154,7 +154,7 @@ func TestAssistantAffectedGroupsReachTheDraftWithoutTouchingFormalState(t *testi
 	turn, input := assistantGroupsModelTurn(t, f, assistantGroupsExplanation(t, f.chapters[0].ID))
 	require.Equal(t, "completed", turn.Status)
 	proposal := assistantGroupsPropose(t, f, input)
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
 	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-groups-confirmed", decision)
 	require.NoError(t, err)
 	var completed core.ActionProposal
@@ -215,7 +215,7 @@ func TestAssistantAffectedGroupsAndResolverCertaintyAreSeparate(t *testing.T) {
 	f := newDeliveryGuardFixture(t, false)
 	_, input := assistantGroupsModelTurn(t, f, assistantGroupsExplanation(t, f.chapters[0].ID))
 	proposal := assistantGroupsPropose(t, f, input)
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
 	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-groups-separate", decision)
 	require.NoError(t, err)
 	var completed core.ActionProposal
@@ -279,7 +279,7 @@ func TestAssistantAffectedGroupsRefuseEntriesWithoutBasis(t *testing.T) {
 	assistantGroupsTamperTurn(t, f, turn, string(tampered))
 
 	proposal := assistantGroupsPropose(t, f, input)
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"}
 	raw, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-groups-no-basis", decision)
 	require.NoError(t, err)
 	var completed core.ActionProposal
@@ -303,7 +303,7 @@ func TestAssistantAffectedGroupsRefuseEntriesWithoutBasis(t *testing.T) {
 	// same flow with a traceable explanation writes the draft.
 	_, inputOK := assistantGroupsModelTurnWithKey(t, f, assistantGroupsExplanation(t, f.chapters[0].ID), "traceable")
 	proposalOK := assistantGroupsProposeWithKey(t, f, inputOK, "traceable")
-	rawOK, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposalOK.ID, "agent-groups-traceable", core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposalOK.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"})
+	rawOK, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposalOK.ID, "agent-groups-traceable", core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposalOK.Version), Confirmed: true, Reason: "本人复核后仅确认建草稿"})
 	require.NoError(t, err)
 	var completedOK core.ActionProposal
 	require.NoError(t, json.Unmarshal(rawOK, &completedOK))
@@ -336,7 +336,7 @@ func TestAssistantAffectedGroupsIgnoreClientSuppliedExplanation(t *testing.T) {
 	payload, err := json.Marshal(forged)
 	require.NoError(t, err)
 	raw, _, _, err := f.projects.CreateActionProposal(f.ctx, f.actor, f.project.ID, "agent-groups-forged", core.CreateActionProposalInput{
-		G2Expectation: agentDraftExpectation(f.project, 0), Action: "create_change_set", TargetID: f.project.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "客户端自称的影响说明",
+		VersionExpectation: agentDraftExpectation(f.project, 0), Action: "create_change_set", TargetID: f.project.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "客户端自称的影响说明",
 	})
 	require.Error(t, err, "a client-supplied explanation must not be accepted")
 	require.Empty(t, raw)
@@ -354,7 +354,7 @@ func TestAssistantAffectedGroupsNeedHumanConfirmationBeforeAnyAssessment(t *test
 	require.Zero(t, drafts, "a pending proposal is not a draft")
 
 	// Unconfirmed: nothing is written.
-	decision := core.G2ConfirmedInput{G2Expectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: false, Reason: "尚未确认"}
+	decision := core.ConfirmationInput{VersionExpectation: agentDraftExpectation(f.project, proposal.Version), Confirmed: false, Reason: "尚未确认"}
 	_, _, _, err := f.projects.ConfirmActionProposal(f.ctx, f.actor, f.project.ID, proposal.ID, "agent-groups-unconfirmed", decision)
 	require.Error(t, err)
 	require.NoError(t, f.db.Table("lingdoc_change_sets").Where("project_id=?", f.project.ID).Count(&drafts).Error)
@@ -421,7 +421,7 @@ func TestAssistantAffectedGroupsStayOutOfTheResolverVocabulary(t *testing.T) {
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
-	_, err = host.Reply(f.ctx, f.actor, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	_, err = host.Reply(f.ctx, f.actor, core.ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: testModelContext(), UserInput: "提出候选"})
 	require.Error(t, err, "the assistant side must not carry a certainty field")
 }

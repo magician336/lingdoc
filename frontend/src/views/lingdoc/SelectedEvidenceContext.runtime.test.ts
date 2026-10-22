@@ -6,7 +6,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createRenderer, h, reactive } from 'vue'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { transformSync } from 'esbuild'
-import type { EvidenceCard, G2VersionRef, ResearchClaim } from '@/api/lingdoc/g2'
+import type { EvidenceCard, VersionRef, ResearchClaim } from '@/api/lingdoc/agentApi'
 
 // Runtime lifecycle tests against the real component, mounted with Vue's actual
 // client renderer on a minimal in-memory host. This gives genuine reactivity:
@@ -26,7 +26,7 @@ export const listEvidenceCards = (projectId) => { impl.cardCalls += 1; impl.proj
 export const listResearchClaims = () => new Promise((resolve, reject) => impl.claimWaits.push({ resolve, reject }))
 `)
 const withoutTypeImports = compiled.content.split('\n').filter(line => !line.startsWith('import type ')).join('\n')
-const rewritten = withoutTypeImports.replace(/from '@\/api\/lingdoc\/g2'/g, `from './${stubName}'`)
+const rewritten = withoutTypeImports.replace(/from '@\/api\/lingdoc\/agentApi'/g, `from './${stubName}'`)
 const runnable = transformSync(rewritten, { loader: 'ts', format: 'esm' }).code
 
 const tmpFile = join(here, `.selected-evidence-runtime.compiled.${process.pid}.mjs`)
@@ -138,7 +138,7 @@ const CLAIM_B = 'B 的主张'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
-function mount(initial: { project: typeof project; currentUserId: string; selected: G2VersionRef[]; onRemove?: (ref: G2VersionRef) => void; onOpen?: (ref: G2VersionRef) => void }) {
+function mount(initial: { project: typeof project; currentUserId: string; selected: VersionRef[]; onRemove?: (ref: VersionRef) => void; onOpen?: (ref: VersionRef) => void }) {
   const holder = reactive({ ...initial })
   const root = createFakeElement('root')
   const app = renderer.createApp({ name: 'wrap', setup: () => () => h(SelectedEvidenceContext as never, holder as never) })
@@ -303,12 +303,12 @@ test('读取失败（source_access_denied）清除旧可读内容并提示受限
 })
 
 test('按钮事件：单独移除与回看各自发出原始 ref，组件不自行修改 selected', async () => {
-  const removed: G2VersionRef[] = []
-  const opened: G2VersionRef[] = []
+  const removed: VersionRef[] = []
+  const opened: VersionRef[] = []
   const { holder, root } = mount({
     project, currentUserId: 'u1', selected: [{ id: 'card-a', version: 2 }],
-    onRemove: (ref: G2VersionRef) => removed.push(ref),
-    onOpen: (ref: G2VersionRef) => opened.push(ref),
+    onRemove: (ref: VersionRef) => removed.push(ref),
+    onOpen: (ref: VersionRef) => opened.push(ref),
   })
   await settleNext([card()], [claim()])
 

@@ -111,8 +111,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import type { MCPTestResult, MCPTool } from '@/api/mcp-service'
-import { getMCPToolApprovals, setMCPToolApproval, setMCPToolEnabled } from '@/api/mcp-service'
+import type { MCPTestResult, MCPTool } from '@/api/mcpService'
+import { getMCPToolApprovals, setMCPToolApproval, setMCPToolEnabled } from '@/api/mcpService'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 

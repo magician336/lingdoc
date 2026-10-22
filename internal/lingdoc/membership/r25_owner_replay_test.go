@@ -35,12 +35,12 @@ func r25InverseFieldFixture(t *testing.T) (*testWorkspace, core.Actor, core.Proj
 			AffectedChapterIDs: []string{chapters[0].ID},
 		},
 	)
-	source := g2Decode[core.ChangeSet](t, raw, err)
+	source := decodeAgentJSON[core.ChangeSet](t, raw, err)
 	raw, status, replayed, err := w.svc.ApplyChangeSet(context.Background(), a, p.ID, source.ID, "r25-original-apply")
 	if err != nil || status != 200 || replayed {
 		t.Fatalf("apply original: status=%d replay=%v err=%v", status, replayed, err)
 	}
-	source = g2Decode[core.ChangeSet](t, raw, err)
+	source = decodeAgentJSON[core.ChangeSet](t, raw, err)
 	p, err = w.svc.GetProject(context.Background(), a, p.ID)
 	if err != nil {
 		t.Fatal(err)
