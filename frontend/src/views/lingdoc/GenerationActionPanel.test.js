@@ -25,7 +25,10 @@ const panel=compile(source,script.content,id=>id==='@/api/lingdoc/writingAction'
 // takes the same two output parameters.  Compress also runs on a selection but
 // takes a ratio (a continuous dimension: min/max, no value list) and a tone.
 // Expand runs on a selection as well and takes the same ratio and tone as
-// compress — only the direction of the ratio differs.
+// compress — only the direction of the ratio differs.  Transform runs on a
+// selection or on a whole chapter and takes a length plus a sub mode: the
+// target language belongs to translate and the audience to explain, so each of
+// the two says which sub mode it applies to.
 function actionTable(){
  return [{
   action:'rewrite',label:'改写',scopes:['section'],
@@ -59,14 +62,25 @@ function actionTable(){
   ],
   produce:'prose',
   targets:['working_copy_partial','working_copy_whole','formal_version_whole'],
+ },{
+  action:'transform',label:'转写',scopes:['chapter','section'],
+  output_params:[
+   {name:'length',values:['short','medium','long'],min:0,max:0},
+   {name:'transform_mode',values:['translate','explain'],min:0,max:0},
+   {name:'target_language',values:['zh','en','ja','de','fr'],min:0,max:0,applies_to:'translate'},
+   {name:'audience',values:['peer','reviewer','novice'],min:0,max:0,applies_to:'explain'},
+  ],
+  produce:'prose',
+  targets:['working_copy_partial','working_copy_whole','formal_version_whole'],
  }]
 }
 async function render(overrides){
  const props=vue.reactive({projectId:'p1',scope:'section',action:'rewrite',actionTable:actionTable(),...overrides})
  const events=[];let controller
  const component={...panel,setup(input,context){controller=panel.setup(input,context);return controller}}
- const html=await renderToString(vue.createSSRApp(component,{...props,onSubmit:payload=>events.push(payload)}))
- return {html,events,controller,props}
+ const app=vue.createSSRApp(component,{...props,onSubmit:payload=>events.push(payload)})
+ const html=await renderToString(app)
+ return {html,events,controller,props,rerender:async()=>renderToString(app)}
 }
 
 test('the panel shows the action, the allowed scope, the output parameters, the produce shape and the adoption targets before the run',async()=>{
@@ -174,4 +188,73 @@ test('the panel sends no request while the expand ratio is outside the closed in
  controller.chosen.value={tone:'formal'}
  controller.submit()
  assert.equal(events.length,0)
+})
+
+test('the panel shows the transform action with its sub mode before the run',async()=>{
+ const {html}=await render({action:'transform'})
+ assert.match(html,/转写/);assert.match(html,/transform/)
+ assert.match(html,/transform_mode/);assert.match(html,/translate/);assert.match(html,/explain/)
+ assert.match(html,/可用的产出参数/);assert.match(html,/length/)
+ // 子模式还没选：两个互斥的子参数都还不算数，面板不摆它们。
+ assert(!html.includes('target_language'))
+ assert(!html.includes('audience'))
+})
+
+test('the panel shows the target language once the translate mode is chosen',async()=>{
+ const {controller}=await render({action:'transform'})
+ controller.chosen.value={length:'short',transform_mode:'translate'}
+ // 面板摆出来的维度就是模板渲染的那几个：互斥的子参数只摆当前子模式的那一个。
+ assert.deepEqual(controller.applicableOptions.value.map(option=>option.name),
+  ['length','transform_mode','target_language'])
+})
+
+test('the panel shows the audience once the explain mode is chosen',async()=>{
+ const {controller}=await render({action:'transform'})
+ controller.chosen.value={length:'short',transform_mode:'explain'}
+ assert.deepEqual(controller.applicableOptions.value.map(option=>option.name),
+  ['length','transform_mode','audience'])
+})
+
+test('the panel emits the translate sub mode with its target language only',async()=>{
+ const {events,controller}=await render({action:'transform'})
+ controller.chosen.value={length:'short',transform_mode:'translate',target_language:'zh'}
+ controller.submit()
+ assert.equal(events.length,1)
+ assert.equal(events[0].action,'transform')
+ assert.deepEqual(events[0].output_params,{length:'short',transform:{mode:'translate',target_language:'zh'}})
+})
+
+test('the panel emits the explain sub mode with its audience only',async()=>{
+ const {events,controller}=await render({action:'transform'})
+ controller.chosen.value={length:'short',transform_mode:'explain',audience:'novice'}
+ controller.submit()
+ assert.equal(events.length,1)
+ assert.equal(events[0].action,'transform')
+ assert.deepEqual(events[0].output_params,{length:'short',transform:{mode:'explain',audience:'novice'}})
+})
+
+test('the panel sends no request while the sub parameter of the chosen mode is missing',async()=>{
+ const {events,controller}=await render({action:'transform'})
+ controller.chosen.value={length:'short',transform_mode:'translate'}
+ controller.submit()
+ assert.equal(events.length,0)
+})
+
+test('the panel sends no request while the two exclusive sub parameters are mixed',async()=>{
+ const {events,controller}=await render({action:'transform'})
+ // 用户先在解释模式下选了读者层次，再切回翻译模式：读者层次不属于翻译模式，
+ // 面板不把它发出去——发出去的产出参数因此永远是合法的那一份。
+ controller.chosen.value={length:'short',transform_mode:'translate',target_language:'zh',audience:'peer'}
+ controller.submit()
+ assert.equal(events.length,1)
+ assert.deepEqual(events[0].output_params,{length:'short',transform:{mode:'translate',target_language:'zh'}})
+})
+
+test('the output parameter check refuses a payload that mixes the two exclusive sub parameters',()=>{
+ const description=actionTable().find(item=>item.action==='transform')
+ assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'translate',target_language:'zh'}}),true)
+ assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'explain',audience:'novice'}}),true)
+ assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'translate'}}),false)
+ assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'explain'}}),false)
+ assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'translate',target_language:'zh',audience:'peer'}}),false)
 })

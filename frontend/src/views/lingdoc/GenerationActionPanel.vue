@@ -6,6 +6,7 @@ import {
   type WritingActionAdoptionTarget,
   type WritingActionDescription,
   type WritingActionOutputParams,
+  type WritingActionParamOption,
   type WritingActionProduce,
   type WritingActionScope,
 } from '@/api/lingdoc/writingAction'
@@ -63,9 +64,20 @@ const current = computed<WritingActionDescription | null>(() =>
   descriptions.value.find(item => item.action === selectedAction.value) ?? null,
 )
 
+/**
+ * 当前子模式下算数的那几个产出参数维度。
+ *
+ * 转写的目标语言只属于翻译，读者层次只属于解释：面板只摆当前子模式的那一个，
+ * 用户因此不会看见两个互斥的子参数，也不会把它们一起发出去。
+ */
+const applicableOptions = computed<WritingActionParamOption[]>(() =>
+  (current.value?.output_params ?? []).filter(option =>
+    option.applies_to === undefined || option.applies_to === chosen.value['transform_mode']),
+)
+
 const params = computed<WritingActionOutputParams>(() => {
   const value: WritingActionOutputParams = {}
-  for (const option of current.value?.output_params ?? []) {
+  for (const option of applicableOptions.value) {
     if (option.name === 'ratio') {
       if (ratio.value !== undefined) value.ratio = ratio.value
       continue
@@ -134,7 +146,7 @@ function submit() {
 
     <h3 class="action-panel__heading">可用的产出参数</h3>
     <ul class="action-panel__params">
-      <li v-for="option in current?.output_params ?? []" :key="option.name">
+      <li v-for="option in applicableOptions" :key="option.name">
         <span class="action-panel__param-name">{{ option.name }}</span>
         <select v-if="option.values.length" v-model="chosen[option.name]" :data-param="option.name">
           <option value="">未选择</option>

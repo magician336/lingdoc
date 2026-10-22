@@ -79,6 +79,17 @@ export const fetchWritingActions = (projectId: string, scope: WritingActionScope
   )
 
 /**
+ * 一个产出参数维度在这次选择下算不算数。
+ *
+ * 带 `applies_to` 的维度只在那个子模式下算数：转写的目标语言只属于翻译，读者
+ * 层次只属于解释，两者互斥。两个都要求就永远填不齐——面板于是永远发不出请求。
+ */
+const optionApplies = (
+  option: WritingActionParamOption,
+  params: WritingActionOutputParams,
+): boolean => option.applies_to === undefined || option.applies_to === params.transform?.mode
+
+/**
  * 判断一份产出参数是否落在动作声明的取值集内。
  *
  * 面板在发请求之前用它拦下非法参数：取值不合法就不发请求，而不是让服务端
@@ -103,6 +114,11 @@ export const outputParamsFit = (
           : option.name === 'target_language'
             ? params.transform?.target_language
             : params.transform?.audience
+    if (!optionApplies(option, params)) {
+      // 不适用的维度必须没给：给了就是混用两个互斥的子参数。
+      if (given !== undefined) return false
+      continue
+    }
     if (given === undefined) return false
     if (option.values.length > 0 && !option.values.includes(given)) return false
   }
