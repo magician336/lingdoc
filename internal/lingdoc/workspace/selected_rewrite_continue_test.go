@@ -166,10 +166,12 @@ func TestSelectedRewriteContinueRefusesIllegalDeclarations(t *testing.T) {
 				Tone: writingaction.ToneFormal, Ratio: 50}
 		}, writingaction.ErrInvalidOutputParams},
 		{"这个管道不做的动作", func(r *SelectedRewriteRequest) {
-			// 扩展是这条管道还没做的动作（#344）：拿它当「管道不做这个动作」
-			// 的样本。压缩曾经也当过这个样本——它现在是这条管道做的动作之一。
-			r.WritingAction = actionPointer(writingaction.ActionExpand)
-			r.OutputParams = &writingaction.OutputParams{Ratio: 50, Tone: writingaction.ToneFormal}
+			// 转写是这条管道还没做的动作（#345）：拿它当「管道不做这个动作」
+			// 的样本。扩展曾经也当过这个样本——它现在是这条管道做的动作之一。
+			r.WritingAction = actionPointer(writingaction.ActionTransform)
+			r.OutputParams = &writingaction.OutputParams{Length: writingaction.LengthShort,
+				Transform: &writingaction.TransformParams{Mode: writingaction.TransformTranslate,
+					TargetLanguage: actionPointer(writingaction.LangZH)}}
 		}, ErrRewriteInvalidRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

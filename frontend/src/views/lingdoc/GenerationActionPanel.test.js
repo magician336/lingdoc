@@ -24,6 +24,8 @@ const panel=compile(source,script.content,id=>id==='@/api/lingdoc/writingAction'
 // may be adopted at the three targets.  Continue runs on a selection too and
 // takes the same two output parameters.  Compress also runs on a selection but
 // takes a ratio (a continuous dimension: min/max, no value list) and a tone.
+// Expand runs on a selection as well and takes the same ratio and tone as
+// compress — only the direction of the ratio differs.
 function actionTable(){
  return [{
   action:'rewrite',label:'改写',scopes:['section'],
@@ -43,6 +45,14 @@ function actionTable(){
   targets:['working_copy_partial','working_copy_whole','formal_version_whole'],
  },{
   action:'compress',label:'压缩',scopes:['section'],
+  output_params:[
+   {name:'ratio',values:[],min:10,max:90},
+   {name:'tone',values:['neutral','formal','academic','plain'],min:0,max:0},
+  ],
+  produce:'prose',
+  targets:['working_copy_partial','working_copy_whole','formal_version_whole'],
+ },{
+  action:'expand',label:'扩展',scopes:['section'],
   output_params:[
    {name:'ratio',values:[],min:10,max:90},
    {name:'tone',values:['neutral','formal','academic','plain'],min:0,max:0},
@@ -138,6 +148,29 @@ test('the panel sends no request while the ratio is outside the closed interval'
 
 test('the panel sends no request while the ratio is still missing',async()=>{
  const {events,controller}=await render({action:'compress'})
+ controller.chosen.value={tone:'formal'}
+ controller.submit()
+ assert.equal(events.length,0)
+})
+
+test('the panel shows the expand action with its ratio interval and tone before the run',async()=>{
+ const {html,events,controller}=await render({action:'expand'})
+ assert.match(html,/扩展/);assert.match(html,/expand/)
+ assert.match(html,/选段/);assert.match(html,/候选正文/)
+ assert.match(html,/ratio/);assert.match(html,/tone/)
+ // The ratio is a continuous dimension: the interval is visible before the run.
+ assert.match(html,/min="10"/);assert.match(html,/max="90"/)
+ controller.ratio.value=40
+ controller.chosen.value={tone:'formal'}
+ controller.submit()
+ assert.equal(events.length,1)
+ assert.equal(events[0].action,'expand')
+ assert.deepEqual(events[0].output_params,{ratio:40,tone:'formal'})
+})
+
+test('the panel sends no request while the expand ratio is outside the closed interval',async()=>{
+ const {events,controller}=await render({action:'expand'})
+ controller.ratio.value=95
  controller.chosen.value={tone:'formal'}
  controller.submit()
  assert.equal(events.length,0)
