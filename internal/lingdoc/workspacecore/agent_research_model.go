@@ -49,6 +49,23 @@ const (
 	AgentPurposeResearch       = "research_proposal"
 )
 
+// AgentPurposeForAgent derives the purpose of a turn from the agent its
+// session declares.
+//
+// The purpose is the shape of the answer, and the shape is the server's to
+// decide: the client states no purpose, so the request shape - and with it
+// the idempotency digest - does not move, and a key issued before this
+// derivation existed still replays.
+//
+// The research agent answers with a research proposal; every other session
+// keeps the conversation shape it has always had.
+func AgentPurposeForAgent(agent string) string {
+	if agent == AgentResearch {
+		return AgentPurposeResearch
+	}
+	return AgentPurposeConversation
+}
+
 type VersionRef struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`

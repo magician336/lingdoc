@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 )
 
 // The research proposal contract is the seam the whole path reads: the model
@@ -848,4 +852,236 @@ func (r *projectScopedSources) ReadResearchSource(ctx context.Context, actor Act
 
 func (r *projectScopedSources) CheckAssetScope(ctx context.Context, actor Actor, projectID string, ids []string) ([]ProjectAssetVersion, error) {
 	return r.inner.CheckAssetScope(ctx, actor, projectID, ids)
+}
+
+// A3: the purpose of a turn is the server's to decide. The session declares
+// its agent, and the shape of the answer follows from it: the research agent
+// asks for a research proposal, the task assistant keeps the conversation it
+// has always had. The client states no purpose, so it cannot ask for another
+// shape.
+func TestAgentPurposeIsDerivedFromTheSessionAgent(t *testing.T) {
+	f := newAgentFixture(t, false)
+	research := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
+	proposalTurn(t, f, AgentResearch, "pf5-purpose-research", research)
+	if len(research.purposes) != 1 || research.purposes[0] != AgentPurposeResearch {
+		t.Fatalf("the research agent's turn did not ask for a research proposal: %v", research.purposes)
+	}
+	if len(research.agents) != 1 || research.agents[0] != AgentResearch {
+		t.Fatalf("the turn did not carry the session's agent: %v", research.agents)
+	}
+	assistant := &proposalModelStub{structured: json.RawMessage(`{"reply":"当前没有阻断。"}`), reply: "当前没有阻断。"}
+	proposalTurn(t, f, AgentTaskAssistant, "pf5-purpose-assistant", assistant)
+	if len(assistant.purposes) != 1 || assistant.purposes[0] != AgentPurposeConversation {
+		t.Fatalf("the assistant's turn did not keep the conversation shape: %v", assistant.purposes)
+	}
+}
+
+// A3: the request shape does not move, so the idempotency digest does not
+// move either. A key issued before the purpose was derived still replays, and
+// the replay does not ask the model again.
+func TestAgentTurnRequestDigestIsUnchangedAndAnIssuedKeyStillReplays(t *testing.T) {
+	input := AgentTurnInput{
+		AgentContextInput: AgentContextInput{
+			VersionExpectation:        VersionExpectation{ExpectedProjectVersion: 1, ExpectedContextRevision: 1, ExpectedVersion: 1},
+			SourceIDs:                 []string{"source-1"},
+			CardRefs:                  []VersionRef{},
+			SensitiveContextConfirmed: true,
+		},
+		UserInput: "帮我找合成材料的资料",
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The client states no purpose and no agent: the request shape is the
+	// one the digest was computed over before the purpose was derived.
+	if strings.Contains(string(encoded), "purpose") || strings.Contains(string(encoded), "agent") {
+		t.Fatalf("the turn request grew a field: %s", encoded)
+	}
+	digest, err := operationcore.RequestHash(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The digest is pinned to the value the request had before the purpose
+	// was derived: the struct the pipeline hashes is byte for byte the one
+	// it hashed then, so a key issued under the old rule still matches.
+	if digest != "481e6ee77587dbd8885b26da068a1bc0eb42d6b0602880a020b1f9465c0c930f" {
+		t.Fatalf("the turn request digest moved: %s", digest)
+	}
+
+	f := newAgentFixture(t, false)
+	stub := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
+	f.svc.agentRuntime.Model = stub
+	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, AgentResearch, "pf5-replay-session", f.expectation(0))
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	turnInput := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我找合成材料的资料"}
+	first, _, _, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "pf5-replay-turn", turnInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, replay, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "pf5-replay-turn", turnInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay {
+		t.Fatal("an issued key did not replay")
+	}
+	firstTurn := decodeAgentJSON[AgentTurn](t, first, nil)
+	secondTurn := decodeAgentJSON[AgentTurn](t, second, nil)
+	if firstTurn.ID != secondTurn.ID || firstTurn.Version != secondTurn.Version {
+		t.Fatalf("the replay is not the same turn: %+v %+v", firstTurn, secondTurn)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("the model was asked again on a replay: %d calls", stub.calls)
+	}
+	turns, err := f.svc.GetAgentTurns(context.Background(), f.owner, f.project.ID, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 {
+		t.Fatalf("the replay wrote a second turn: %d turns", len(turns))
+	}
+}
+
+// The words the server owns: the agent a session declares and the shape an
+// answer takes. They live in the server's constants, and nothing else spells
+// them when it decides what an answer is.
+var agentVocabularyWords = []string{
+	AgentTaskAssistant,
+	AgentResearch,
+	AgentConstraint,
+	AgentPurposeConversation,
+	AgentPurposeRuleSuggestion,
+	AgentPurposeResearch,
+}
+
+// A18: the agent and purpose vocabulary has one owner. The adapter and the
+// service refer to the server's constants instead of comparing loose
+// strings: a prompt that branches on a misspelled word loses its
+// instructions without anybody noticing.
+//
+// The scan is narrow on purpose. It looks at comparisons and at assignments
+// to an agent or a purpose, so a word that is common elsewhere - the import
+// candidate's own "conversation" selection type, the provenance source type
+// - is not mistaken for the vocabulary.
+func TestAgentVocabularyHasOneOwner(t *testing.T) {
+	for _, path := range vocabularyFiles(t) {
+		for _, hit := range vocabularyComparisons(t, path) {
+			t.Fatalf("the vocabulary is decided by a loose string: %s", hit)
+		}
+	}
+}
+
+// vocabularyFiles lists the server's own Go files. Test files are left out:
+// a case may name the words it is about.
+func vocabularyFiles(t *testing.T) []string {
+	t.Helper()
+	files := []string{}
+	err := filepath.WalkDir("..", func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// vocabularyComparisons finds every place the server decides an agent or a
+// purpose by comparing it against a loose string.
+func vocabularyComparisons(t *testing.T, path string) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits := []string{}
+	report := func(place string, other ast.Expr) {
+		hits = append(hits, fmt.Sprintf("%s: %s %s", path, place, expressionName(other)))
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.BinaryExpr:
+			if typed.Op != token.EQL && typed.Op != token.NEQ {
+				return true
+			}
+			if vocabularyLiteral(typed.X) && mentionsAgentOrPurpose(typed.Y) {
+				report("compares", typed.Y)
+			}
+			if vocabularyLiteral(typed.Y) && mentionsAgentOrPurpose(typed.X) {
+				report("compares", typed.X)
+			}
+		case *ast.KeyValueExpr:
+			if vocabularyLiteral(typed.Value) && mentionsAgentOrPurpose(typed.Key) {
+				report("assigns", typed.Key)
+			}
+		case *ast.SwitchStmt:
+			if !mentionsAgentOrPurpose(typed.Tag) {
+				return true
+			}
+			for _, statement := range typed.Body.List {
+				clause, ok := statement.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				for _, option := range clause.List {
+					if vocabularyLiteral(option) {
+						report("switches on", typed.Tag)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return hits
+}
+
+// vocabularyLiteral reports whether an expression is one of the vocabulary
+// words.
+func vocabularyLiteral(node ast.Expr) bool {
+	literal, ok := node.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	if err != nil {
+		return false
+	}
+	for _, word := range agentVocabularyWords {
+		if value == word {
+			return true
+		}
+	}
+	return false
+}
+
+// mentionsAgentOrPurpose reports whether an expression names an agent or a
+// purpose. The name is what the reader sees - the field or the variable.
+func mentionsAgentOrPurpose(node ast.Expr) bool {
+	name := strings.ToLower(expressionName(node))
+	return strings.Contains(name, "agent") || strings.Contains(name, "purpose")
+}
+
+// expressionName names an expression the way a reader would: the identifier
+// or the field it ends in.
+func expressionName(node ast.Expr) string {
+	switch typed := node.(type) {
+	case *ast.Ident:
+		return typed.Name
+	case *ast.SelectorExpr:
+		return typed.Sel.Name
+	case *ast.CallExpr:
+		return expressionName(typed.Fun)
+	case *ast.IndexExpr:
+		return expressionName(typed.X)
+	case *ast.ParenExpr:
+		return expressionName(typed.X)
+	}
+	return ""
 }

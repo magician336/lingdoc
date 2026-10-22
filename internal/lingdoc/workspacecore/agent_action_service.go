@@ -1923,7 +1923,11 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		}
 		return nil, 0, true, ErrNotFound
 	}
-	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: "conversation", Context: pack, History: safeHistory, UserInput: input.UserInput})
+	// The purpose of the turn is the server's to decide: the session
+	// declares its agent, and the answer shape follows from it. The client
+	// states no purpose, so the request shape - and with it the idempotency
+	// digest - does not move.
+	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: AgentPurposeForAgent(started.Agent), Context: pack, History: safeHistory, UserInput: input.UserInput})
 	// The research agent's proposal is checked against the one contract that
 	// owns its shape before it can become a suggestion. A proposal that does
 	// not decode is refused here, so the interface only ever sees a proposal
