@@ -75,11 +75,16 @@ export interface AgentSession { id: string; project_id: string; version: number;
 // 字段名沿用调研任务自己的一套，保存时不必改名。
 // 候选来源是引用，不是检索产物的等级：每一份都指回这一轮授权上下文里的资料，
 // 服务端逐条比对过，对不上的整份提案被拒，所以这里看不到编造的出处。
+// 理由说清整份提案为什么这么定；缺口分「缺什么」与「期望补什么」两半，
+// 缺了任何一半的缺口会被服务端连同整份提案一起拒绝。
 export interface ResearchProposalCandidateSource { source_id: string; reason: string }
+export interface ResearchProposalGap { description: string; expected_evidence: string }
 export interface ResearchProposal {
   goal: string; question_type?: string; scope: string
   exclusions?: string[]; queries: string[]; expected_output: string
   candidate_sources?: ResearchProposalCandidateSource[]
+  reasons?: string[]
+  gaps?: ResearchProposalGap[]
 }
 export interface AgentTurn {
   id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string
