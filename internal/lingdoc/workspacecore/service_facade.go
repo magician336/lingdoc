@@ -2066,6 +2066,30 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 	return s.changeProvenanceProjection(ctx, actor, result)
 }
 
+// ownerFreezeRefusal refuses an Owner-only action while the project's Owner
+// may not act.
+//
+// The refusal is the one the action has always answered with: it wraps
+// ErrNotFound, so every caller that asks "is this the resource I cannot
+// reach?" keeps its answer, and it names the freeze in the optional details,
+// so a caller can also tell "the Owner's tenant identity lapsed" from "you
+// are not the Owner".
+//
+// It stays silent when the action is not frozen: the ordinary authorization
+// then answers with its own reason.
+func ownerFreezeRefusal(tx Transaction, actor Actor, projectID string) error {
+	p, err := tx.Project(actor.TenantID, projectID)
+	if err != nil {
+		// A project that is not there is the ordinary authorization's answer;
+		// this gate has nothing to say about it.
+		return nil
+	}
+	if JudgeOwnerAction(tx, p, actor).ReasonCode != ReasonOwnerUnavailable {
+		return nil
+	}
+	return ErrOwnerUnavailable
+}
+
 // requireOwnerDecision refuses an Owner-only decision while the project's
 // Owner may not take it.
 //
@@ -2078,16 +2102,7 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 // freeze is not their reason for being refused.
 func (s *Service) requireOwnerDecision(ctx context.Context, actor Actor, projectID string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := tx.Project(actor.TenantID, projectID)
-		if err != nil {
-			// A project that is not there is the ordinary authorization's
-			// answer; this gate has nothing to say about it.
-			return nil
-		}
-		if JudgeOwnerAction(tx, p, actor).ReasonCode != ReasonOwnerUnavailable {
-			return nil
-		}
-		return ErrOwnerUnavailable
+		return ownerFreezeRefusal(tx, actor, projectID)
 	})
 }
 
