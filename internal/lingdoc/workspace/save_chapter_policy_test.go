@@ -142,6 +142,7 @@ func runLingdocMigrations(t *testing.T, db *gorm.DB) {
 		"000036_lingdoc_rule_sets.up.sql",
 		"000037_lingdoc_full_workflow.up.sql",
 		"000041_lingdoc_template_version_ruleset_ref.up.sql",
+		"000052_lingdoc_audit_version_fields.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {
