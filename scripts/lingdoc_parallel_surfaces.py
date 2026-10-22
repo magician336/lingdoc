@@ -275,8 +275,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-3 审计告警接线与 AuditEvent 字段",
         "issue": 327,
         "issues": (130,),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
@@ -332,6 +332,21 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "PF-4 之后动这两个文件时冲突会显式报出来，不会静默覆盖。"
             "本面独占 model.go 与 runtime_control.go，PF-4 因此不得声明 model.go。"
             "本面产出文档：docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md 与 T327-验证报告.json。"
+            "**本面已完成**（2026-10-23，认领与完成的人是 magician336）："
+            "PR #389 已合入 main（合并提交 5c31fc9b），票 #327 随之关闭。"
+            "交付两件事：读类审计写入失败接到 G6 告警源"
+            "（EmitAuditFailureAlert 发 Category=audit 的运行事件并被告警规则命中），"
+            "以及 AuditEvent 补 target_version / project_revision 两个一等字段并真正落库"
+            "（sqlite/000052 与 versioned/000131）。"
+            "验收 AC-327-01 至 AC-327-17 全部 passed，证据见 T327-验证报告.json；"
+            "合并前健康度复评 H_L 64.4 / F_R 65.0（置信度 B，无独立维度阻断项）。"
+            "**本面不释放路径**：done 状态仍占用这 18 条路径，后续面不要重复声明。"
+            "**残留票保持开放**：#387（PostgreSQL 上普通读的 fail-open 不成立）、"
+            "#414（平台事务外通道的审计写失败恒返回 nil）、"
+            "#415（AuditEvent 声明字段与落库列不一致）、"
+            "#416（测试夹具自持一份生产 schema 形状的机制治理）。"
+            "Spec #130 保持开放：本面只交付了其中的告警接线与两个版本字段，"
+            "角色过滤查询等其余验收点未交付（见 #415）。"
         ),
     },
     {
