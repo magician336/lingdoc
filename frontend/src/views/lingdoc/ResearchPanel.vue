@@ -74,7 +74,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import * as api from '@/api/lingdoc/g2'
+import * as api from '@/api/lingdoc/agentApi'
 import { getSource, getWorkingCopy, listAssets, listChapters, listChangeSets } from '@/api/lingdoc/workspace'
 import { useAuthStore } from '@/stores/auth'
 import { getEffectivePermission } from '@/api/lingdoc/permissions'
@@ -82,21 +82,21 @@ import type { EffectivePermission } from '@/api/lingdoc/permissions'
 import type { Asset, Chapter, ChangeSet, Project, Source } from '@/api/lingdoc/workspace'
 import { getRelease, listReleases } from '@/api/lingdoc/delivery'
 import type { ReleaseSnapshot } from '@/api/lingdoc/delivery'
-import { listWebSearchProviders } from '@/api/web-search-provider'
+import { listWebSearchProviders } from '@/api/webSearchProvider'
 import { listKnowledgeBases } from '@/api/knowledge-base'
-import { G2OperationKeys, G2ResponseEpoch, acceptedAgentSpecCandidate, agentSpecCandidateBasisCurrent, buildAgentSpecCandidateInput, agentSpecRunModeLabel, eligibleAgentSpecTurn, pinAgentSpecCandidateBasis, nonemptyResearchQueries, safeResearchUrl, selectedRuneRange } from './g2UiState'
+import { IdempotencyKeyCache, ResponseEpoch, acceptedAgentSpecCandidate, agentSpecCandidateBasisCurrent, buildAgentSpecCandidateInput, agentSpecRunModeLabel, eligibleAgentSpecTurn, pinAgentSpecCandidateBasis, nonemptyResearchQueries, safeResearchUrl, selectedRuneRange } from './researchUiState'
 import { assistantAffectedBasisLabel, assistantAffectedGroups, assistantAffectedObjectLabel } from './assistantAffectedGroups'
-import type { AgentSpecCandidateBasis } from './g2UiState'
+import type { AgentSpecCandidateBasis } from './researchUiState'
 const auth=useAuthStore()
-const props=withDefaults(defineProps<{project:Project;readonly?:boolean;currentUserId?:string;selectedEvidence?:api.G2VersionRef[]}>(),{readonly:true,currentUserId:'',selectedEvidence:()=>[]})
-const emit=defineEmits<{close:[];changed:[];dirty:[value:boolean];useEvidence:[refs:api.G2VersionRef[]]}>()
+const props=withDefaults(defineProps<{project:Project;readonly?:boolean;currentUserId?:string;selectedEvidence?:api.VersionRef[]}>(),{readonly:true,currentUserId:'',selectedEvidence:()=>[]})
+const emit=defineEmits<{close:[];changed:[];dirty:[value:boolean];useEvidence:[refs:api.VersionRef[]]}>()
 const tabs=[{id:'tasks',label:'1 调研'},{id:'sources',label:'2 摘录'},{id:'evidence',label:'3 证据'},{id:'agents',label:'助手与动作'}]
 const tab=ref('tasks'),error=ref(''),message=ref(''),loading=ref(false)
 const tasks=ref<api.ResearchTask[]>([]),runs=ref<api.ResearchRun[]>([]),anchors=ref<api.SourceAnchor[]>([]),claims=ref<api.ResearchClaim[]>([]),cards=ref<api.EvidenceCard[]>([]),imports=ref<api.ImportCandidate[]>([]),proposals=ref<api.ActionProposal[]>([])
 const chapters=ref<Chapter[]>([]),assets=ref<Asset[]>([]),changes=ref<ChangeSet[]>([]),releases=ref<ReleaseSnapshot[]>([])
 const providers=ref<Array<{id:string;name:string}>>([]),knowledgeBases=ref<Array<{id:string;name:string}>>([])
 const selectedRun=ref<api.ResearchRun|null>(null),source=ref<Source|null>(null),sourceId=ref(''),sourceText=ref<HTMLElement|null>(null),selection=ref<{start:number;end:number;text:string}|null>(null)
-const epoch=new G2ResponseEpoch(),keys=new G2OperationKeys(),pending=reactive(new Set<string>()),unknown=reactive(new Set<string>())
+const epoch=new ResponseEpoch(),keys=new IdempotencyKeyCache(),pending=reactive(new Set<string>()),unknown=reactive(new Set<string>())
 const unknownTurnIDs=new Map<string,Set<string>>()
 const ownMember=computed(()=>props.project.members.find(member=>member.user_id===props.currentUserId&&(!member.status||member.status==='active')))
 const owner=computed(()=>ownMember.value?.role==='owner')
@@ -105,7 +105,7 @@ const canResearch=computed(()=>!props.readonly&&(owner.value||functional('resear
 const canEvidence=computed(()=>!props.readonly&&(owner.value||functional('researcher')))
 const canAgent=computed(()=>!props.readonly&&(owner.value||functional('researcher')||functional('author')||functional('reviewer')))
 const busy=(slot:string)=>pending.has(slot)
-const expectation=(version=0):api.G2Expectation=>({expected_project_version:props.project.project_version,expected_context_revision:props.project.current_context_revision,expected_version:version})
+const expectation=(version=0):api.VersionExpectation=>({expected_project_version:props.project.project_version,expected_context_revision:props.project.current_context_revision,expected_version:version})
 const taskForm=reactive({id:'',version:0,goal:'',queries:'',assets:[] as string[],provider:'',chapter:'',type:'',scope:'当前课题研究范围',exclusions:'',output:'候选资料、反例与证据缺口'})
 const anchorForm=reactive({id:'',version:0,page:'' as number|'',section:'',paragraph:'' as number|'',extraction:'native_text' as api.SourceAnchor['extraction_type'],confidence:0,checked:false,corrected:'',correction:''})
 const claimForm=reactive({id:'',version:0,text:'',scope:'',status:'active' as api.SaveResearchClaimInput['status'],explanation:''})
@@ -253,14 +253,14 @@ function invalidateRestrictedCopies(rows:readonly api.AgentTurn[],session:string
  }
  if(cleared)error.value='该会话来源已不可用，相关 AI 派生输入已清除；独立人工输入保留。保存结果未知时请读取服务端状态，不会自动重试。'
 }
-async function readCurrentTurns(session:string,token:ReturnType<G2ResponseEpoch['capture']>){
+async function readCurrentTurns(session:string,token:ReturnType<ResponseEpoch['capture']>){
  const id=props.project.id,sequence=(turnReadSequences.get(session)||0)+1;turnReadSequences.set(session,sequence)
  const result=await api.getAgentTurns(id,session)
  if(!epoch.accepts(token)||props.project.id!==id||turnReadSequences.get(session)!==sequence)return null
  invalidateRestrictedCopies(result.data,session)
  return result.data
 }
-async function refreshTurnCopies(token:ReturnType<G2ResponseEpoch['capture']>){
+async function refreshTurnCopies(token:ReturnType<ResponseEpoch['capture']>){
  const sessionsToRead=new Set([sessionId.value,taskDraftSource.value?.session_id,changeDraftTurn.value?.session_id,specCandidate.value?.turn.session_id].filter((id):id is string=>!!id))
  for(const selected of sessionsToRead){
   if(!epoch.accepts(token))return
@@ -415,7 +415,7 @@ watch([()=>auth.effectiveTenantId,()=>auth.currentUserId],()=>{epoch.next();clea
 watch(()=>[!!specCandidate.value,!!actionForm.changeDraft,changeDraftChapterIDs.value.length>0,JSON.stringify(taskForm)!==taskSaved.value,JSON.stringify(claimForm)!==claimSaved.value,JSON.stringify(cardForm)!==cardSaved.value,!!userInput.value,!!selection.value,!!importResult.value&&!!importForm.purpose],values=>emit('dirty',values.some(Boolean)))
 // 只读定位：切到“3 证据”、等当前读取完成后按精确 id+version 找当前卡并滚动到条目。
 // 不修改任何表单、不确认、不选择；找不到时明确提示，不回退旧卡。
-async function showEvidenceCard(ref:api.G2VersionRef){
+async function showEvidenceCard(ref:api.VersionRef){
   tab.value='evidence'
   await refresh()
   const card=cards.value.find(item=>item.id===ref.id&&item.version===ref.version)

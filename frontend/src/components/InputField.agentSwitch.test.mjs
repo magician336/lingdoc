@@ -6,7 +6,7 @@ import ts from 'typescript'
 import { computed, reactive, ref } from 'vue'
 import { chatSubmitShortcut } from '../utils/chatSubmitShortcut.ts'
 
-const inputField = readFileSync(new URL('./Input-field.vue', import.meta.url), 'utf8')
+const inputField = readFileSync(new URL('./InputField.vue', import.meta.url), 'utf8')
 const settingsStore = readFileSync(new URL('../stores/settings.ts', import.meta.url), 'utf8')
 
 test('composer shortcuts queue Enter, inject drafts, and promote the first queued message when empty', () => {

@@ -69,10 +69,10 @@ const AgentStreamDisplay = defineAsyncComponent(
   () => import('@/views/chat/components/AgentStreamDisplay.vue'),
 )
 const DocInfo = defineAsyncComponent(
-  () => import('@/views/chat/components/docInfo.vue'),
+  () => import('@/views/chat/components/DocInfo.vue'),
 )
 const DeepThink = defineAsyncComponent(
-  () => import('@/views/chat/components/deepThink.vue'),
+  () => import('@/views/chat/components/DeepThink.vue'),
 )
 
 ensureMermaidInitialized()

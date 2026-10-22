@@ -6,7 +6,7 @@ const referenceDrawer = readFileSync(
   new URL('../../../components/ChatReferencesDrawer.vue', import.meta.url),
   'utf8',
 )
-const legacyReferences = readFileSync(new URL('./docInfo.vue', import.meta.url), 'utf8')
+const legacyReferences = readFileSync(new URL('./DocInfo.vue', import.meta.url), 'utf8')
 const agentStream = readFileSync(new URL('./AgentStreamDisplay.vue', import.meta.url), 'utf8')
 const chatView = readFileSync(new URL('../index.vue', import.meta.url), 'utf8')
 

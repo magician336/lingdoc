@@ -5,7 +5,7 @@ import {
   hasRagPipelineToolEvents,
   RAG_TIMELINE_TOOL_NAMES,
   synthesizeRagPipelineToolEvents,
-} from './rag-pipeline-history.ts'
+} from './ragPipelineHistory.ts'
 
 test('synthesizeRagPipelineToolEvents builds completed retrieval steps', () => {
   const events = synthesizeRagPipelineToolEvents({

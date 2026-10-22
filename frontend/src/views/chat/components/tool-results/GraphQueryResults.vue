@@ -54,7 +54,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { GraphQueryResultsData, RelevanceLevel } from '@/types/tool-results';
+import type { GraphQueryResultsData, RelevanceLevel } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{

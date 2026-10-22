@@ -16,8 +16,8 @@ import "vue-virtual-scroller/dist/vue-virtual-scroller.css";
 import i18n from "./i18n";
 import { initTheme } from "@/composables/useTheme";
 import { initFont } from "@/composables/useFont";
-import { installTDesignIconOfflineGuard } from "@/utils/tdesign-icon-offline";
-import { installAutofillGuard } from "@/utils/disable-autofill";
+import { installTDesignIconOfflineGuard } from "@/utils/tdesignIconOffline";
+import { installAutofillGuard } from "@/utils/disableAutofill";
 import { useAuthStore } from "@/stores/auth";
 
 // 必须在 Vue 组件挂载之前执行，避免 tdesign-icons 运行时请求 tdesign.gtimg.com

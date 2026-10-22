@@ -30,7 +30,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MessageSuggestionItem, MessageSuggestionSet } from '@/api/message-suggestion'
+import type { MessageSuggestionItem, MessageSuggestionSet } from '@/api/messageSuggestion'
 
 const props = defineProps<{
   suggestionSet?: MessageSuggestionSet | null

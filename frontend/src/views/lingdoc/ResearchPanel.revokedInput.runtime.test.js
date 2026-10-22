@@ -9,7 +9,7 @@ function taskTurn(){return {id:'turn',session_id:'session',project_id:'p',versio
 function fixture(status='active'){
  let restricted=false;const queuedTurnReads=[]
  const source=taskTurn(),p=project('p',status)
- const f=mountPanel('G2ResearchPanel',{props:{project:p},transport(call){
+ const f=mountPanel('ResearchPanel',{props:{project:p},transport(call){
   if(call.url.endsWith('/agents/task_assistant/sessions'))return response([{id:'session',project_id:'p',version:1,agent:'task_assistant',created_by:'u',created_at:'2026-10-18T00:00:00Z'}])
   if(call.url.endsWith('/agent-sessions/session/turns')){
    if(queuedTurnReads.length)return queuedTurnReads.shift().promise

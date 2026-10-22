@@ -20,7 +20,7 @@ import {
   addFavorite,
   removeFavorite,
   type FavoriteResourceType,
-} from '@/api/user-favorites'
+} from '@/api/userFavorites'
 import { safeGetItem, safeSetItem, readUserId } from './preferenceStorage'
 import { useAuthStore } from '@/stores/auth'
 

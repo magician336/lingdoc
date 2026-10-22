@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { G2OperationKeys, G2ResponseEpoch, agentSpecCandidateBasisCurrent, acceptedAgentSpecCandidate, buildAgentSpecCandidateInput, eligibleAgentSpecTurn, pinAgentSpecCandidateBasis, agentSpecRunModeLabel, nonemptyResearchQueries, safeResearchUrl, selectedRuneRange } from './g2UiState'
+import { IdempotencyKeyCache, ResponseEpoch, agentSpecCandidateBasisCurrent, acceptedAgentSpecCandidate, buildAgentSpecCandidateInput, eligibleAgentSpecTurn, pinAgentSpecCandidateBasis, agentSpecRunModeLabel, nonemptyResearchQueries, safeResearchUrl, selectedRuneRange } from './researchUiState'
 
 test('选文坐标使用 Unicode 字符而非 UTF-16 单元，并保留重复片段的实际位置', () => {
   assert.deepEqual(selectedRuneRange('😀甲乙甲乙', '😀甲乙', '甲乙'), { start: 3, end: 5, text: '甲乙' })
@@ -18,7 +18,7 @@ test('外部来源链接拒绝脚本、凭据和无效 URL', () => {
 })
 test('不确定请求复用相同幂等键，用户改变实际版本或范围才产生新键', () => {
   let sequence = 0
-  const keys = new G2OperationKeys(() => 'operation-' + ++sequence)
+  const keys = new IdempotencyKeyCache(() => 'operation-' + ++sequence)
   const input = { expected_version: 2, model_use_allowed: false, source_ids: ['source'] }
   assert.equal(keys.forRequest('turn', input), 'operation-1')
   assert.equal(keys.forRequest('turn', { ...input }), 'operation-1')
@@ -29,7 +29,7 @@ test('不确定请求复用相同幂等键，用户改变实际版本或范围�
   assert.equal(keys.forRequest('turn', input), 'operation-4')
 })
 test('项目或调用者变更使旧异步响应失效', () => {
-  const scope = new G2ResponseEpoch(), original = scope.capture()
+  const scope = new ResponseEpoch(), original = scope.capture()
   assert.equal(scope.accepts(original), true)
   scope.next()
   assert.equal(scope.accepts(original), false)
@@ -37,7 +37,7 @@ test('项目或调用者变更使旧异步响应失效', () => {
 })
 
 const specProject=()=>({id:'p',status:'draft',project_version:7,spec_revision:3,current_context_revision:4,spec:{topic:'当前值',goal:'保留',extra:'保留孤立项'},template_id:'t',template_version:'1',template_copy_version:1,template_copy:{id:'copy',version:1,content_hash:'hash',definition:{fields:[{field_id:'topic',label:'主题',type:'string',required:true}]}}}) as unknown as import('../../api/lingdoc/workspace').Project
-const specTurn=()=>({id:'turn',project_id:'p',session_id:'session',version:2,status:'completed',reply:'原样值',created_by:'u'}) as import('../../api/lingdoc/g2').AgentTurn
+const specTurn=()=>({id:'turn',project_id:'p',session_id:'session',version:2,status:'completed',reply:'原样值',created_by:'u'}) as import('../../api/lingdoc/agentApi').AgentTurn
 test('研究条件候选全字段 merge，只绑定所选当前字段的真实轮次来源，无客户端许可 flags',()=>{
  const p=specProject(),t=specTurn(),input=buildAgentSpecCandidateInput(p,t,'topic',' 原样值 ')
  assert.deepEqual(input.fields,{topic:'原样值',goal:'保留',extra:'保留孤立项'})
@@ -58,7 +58,7 @@ test('研究条件候选固定 PV/Spec/模板/调用者/tenant，普通同值对
  assert.equal(agentSpecCandidateBasisCurrent(basis,p,'other','1'),false);assert.equal(agentSpecCandidateBasisCurrent(basis,p,'u','2'),false)
 })
 test('来源入口匹配真实当前 turn/session 作者与正版本；完整/no-op 回执核验相同来源和状态',()=>{
- const p=specProject(),t=specTurn(),session={id:'session',project_id:'p',version:1,created_by:'u'} as import('../../api/lingdoc/g2').AgentSession
+ const p=specProject(),t=specTurn(),session={id:'session',project_id:'p',version:1,created_by:'u'} as import('../../api/lingdoc/agentApi').AgentSession
  assert.equal(eligibleAgentSpecTurn(t,session,p,'u'),true)
  assert.equal(eligibleAgentSpecTurn(t,{...session,created_by:'other'},p,'u'),false)
  assert.equal(eligibleAgentSpecTurn({...t,reply:''},session,p,'u'),false)

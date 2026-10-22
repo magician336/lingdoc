@@ -116,7 +116,7 @@ function fixture() {
       if (id === '@/stores/auth') return { useAuthStore: () => auth }
       if (id === '@/utils/request') return request
       if (id.endsWith('.vue')) return { __esModule: true, default: { render: () => null } }
-      if (['@/api/lingdoc/workspace', '@/api/lingdoc/permissions', '@/api/lingdoc/g1Initialization'].includes(id)) return local(path.join(frontend, 'src', id.slice(2) + '.ts'))
+      if (['@/api/lingdoc/workspace', '@/api/lingdoc/permissions', '@/api/lingdoc/projectInitialization'].includes(id)) return local(path.join(frontend, 'src', id.slice(2) + '.ts'))
       if (id.startsWith('@/api/')) return ports
       if (id.startsWith('.')) return local(path.resolve(path.dirname(filename), id + (path.extname(id) ? '' : '.ts')))
       return require(id)
@@ -291,7 +291,7 @@ test('G2 same-project refresh preserves agent/task input and asset-policy purpos
     const f = fixture()
     try {
       const props = vue.reactive({ project: { ...project(), status: 'active', current_context_revision: 1 }, currentUserId: 'u', readonly: false, selectedEvidence: [] })
-      const h = f.mount('G2ResearchPanel.vue', props, mutation); await quiet()
+      const h = f.mount('ResearchPanel.vue', props, mutation); await quiet()
       h.state.taskForm.goal = 'draft research goal'; h.state.userInput.value = 'draft agent prompt'; h.state.policyForm.purpose = 'draft asset purpose'
       props.project = { ...props.project, project_version: 2 }; await quiet()
       assert.equal(h.state.taskForm.goal, 'draft research goal'); assert.equal(h.state.userInput.value, 'draft agent prompt')

@@ -2,21 +2,21 @@
      只读：不自行修改 selected、不写库、不调用模型；移除/回看都发事件给父组件处理。 -->
 <script setup lang="ts">
 import { onBeforeUnmount, onServerPrefetch, ref, watch } from 'vue'
-import { listEvidenceCards, listResearchClaims } from '@/api/lingdoc/g2'
-import type { G2VersionRef } from '@/api/lingdoc/g2'
+import { listEvidenceCards, listResearchClaims } from '@/api/lingdoc/agentApi'
+import type { VersionRef } from '@/api/lingdoc/agentApi'
 import type { Project } from '@/api/lingdoc/workspace'
 import type { SelectedEvidenceRow } from './selectedEvidenceContextState'
 import { createRequestEpoch, isAccessDenied, matchSelectedRows, relationLabel, rowProblemText } from './selectedEvidenceContextState'
 
-const props = withDefaults(defineProps<{ project: Project; currentUserId: string; selected: G2VersionRef[]; readonly?: boolean }>(), { readonly: false })
-const emit = defineEmits<{ remove: [ref: G2VersionRef]; open: [ref: G2VersionRef] }>()
+const props = withDefaults(defineProps<{ project: Project; currentUserId: string; selected: VersionRef[]; readonly?: boolean }>(), { readonly: false })
+const emit = defineEmits<{ remove: [ref: VersionRef]; open: [ref: VersionRef] }>()
 
 const epoch = createRequestEpoch()
 const rows = ref<SelectedEvidenceRow[]>([])
 const loading = ref(false)
 const fatalError = ref('')
 
-const refKey = (ref: G2VersionRef) => `${ref.id}@${ref.version}`
+const refKey = (ref: VersionRef) => `${ref.id}@${ref.version}`
 
 // 当前在途读取，SSR 预取与 watch 触发共享，避免 setup 期 immediate watch
 // 与 serverPrefetch 各自发起一次读取。

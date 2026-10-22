@@ -1,5 +1,5 @@
 import type { Project } from '@/api/lingdoc/workspace'
-import type { AgentSession, AgentTurn, SaveAgentSpecCandidateInput } from '@/api/lingdoc/g2'
+import type { AgentSession, AgentTurn, SaveAgentSpecCandidateInput } from '@/api/lingdoc/agentApi'
 
 export function nonemptyResearchQueries(value: string): string[] {
   return value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
@@ -16,7 +16,7 @@ export function safeResearchUrl(value?: string): string | null {
     return url.href
   } catch { return null }
 }
-export class G2OperationKeys {
+export class IdempotencyKeyCache {
   private entries = new Map<string, { payload: string; key: string }>()
   constructor(private createKey: () => string = () => 'lingdoc-g2-' + crypto.randomUUID()) {}
   forRequest(slot: string, payload: unknown): string {
@@ -30,7 +30,7 @@ export class G2OperationKeys {
   accepted(slot: string) { this.entries.delete(slot) }
   clear() { this.entries.clear() }
 }
-export class G2ResponseEpoch {
+export class ResponseEpoch {
   private epoch = 0
   next() { return ++this.epoch }
   capture() { return this.epoch }

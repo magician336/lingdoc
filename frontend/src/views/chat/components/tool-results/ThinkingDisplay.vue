@@ -8,7 +8,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ThinkingData } from '@/types/tool-results';
+import type { ThinkingData } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{

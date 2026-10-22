@@ -10,7 +10,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getKnowledgeChunksSummaryHtml } from '@/utils/knowledgeChunksDisplay';
-import type { KnowledgeChunksListData } from '@/types/tool-results';
+import type { KnowledgeChunksListData } from '@/types/toolResults';
 
 const props = defineProps<{
   data: KnowledgeChunksListData;

@@ -54,7 +54,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { WebSearchResultsData, WebSearchResultItem } from '@/types/tool-results';
+import type { WebSearchResultsData, WebSearchResultItem } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 interface Props {

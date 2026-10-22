@@ -12,13 +12,13 @@ function fixture(options={}){
  const defaultAPI=new Proxy({}, {get:(_,method)=>(...args)=>{calls.push({method,args});if(method==='listReleases')return Promise.resolve({data:{items:[]}});return Promise.resolve({data:[]})}})
  const g2=new Proxy(options.api||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
  const workspace=new Proxy(options.workspace||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
- const raw=fs.readFileSync(new URL('./G2ResearchPanel.vue',import.meta.url),'utf8'),parsed=parse(raw)
+ const raw=fs.readFileSync(new URL('./ResearchPanel.vue',import.meta.url),'utf8'),parsed=parse(raw)
  assert.equal(parsed.errors.length,0)
  const script=compileScript(parsed.descriptor,{id:'g2-test'})
- const template=compileTemplate({source:parsed.descriptor.template.content,filename:'G2ResearchPanel.vue',id:'g2-test',compilerOptions:{bindingMetadata:script.bindings}})
+ const template=compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g2-test',compilerOptions:{bindingMetadata:script.bindings}})
  assert.equal(template.errors.length,0)
  const exports={}
- const helperSource=fs.readFileSync(new URL('./g2UiState.ts',import.meta.url),'utf8'),helpers={}
+ const helperSource=fs.readFileSync(new URL('./researchUiState.ts',import.meta.url),'utf8'),helpers={}
  vm.runInNewContext(ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:helpers,URL,crypto:{randomUUID:()=>String(calls.length)}})
  const affectedSource=fs.readFileSync(new URL('./assistantAffectedGroups.ts',import.meta.url),'utf8'),affected={}
  vm.runInNewContext(ts.transpileModule(affectedSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:affected,URL})
@@ -28,11 +28,11 @@ function fixture(options={}){
   if(id==='vue')return {...Vue,onBeforeUnmount:callback=>cleanup.push(callback)}
   if(id==='@/stores/auth')return {useAuthStore:()=>({currentUserId:props.currentUserId,effectiveTenantId:'fixture-tenant'})}
   if(id==='@/api/lingdoc/permissions')return {getEffectivePermission:()=>Promise.resolve({data:{allowed:false,capability:'manage',project_version:props.project.project_version,reason_code:'fixture-denied'}})}
-  if(id==='@/api/lingdoc/g2')return g2
+  if(id==='@/api/lingdoc/agentApi')return g2
   if(id==='@/api/lingdoc/workspace')return workspace
-  if(id==='./g2UiState')return helpers
+  if(id==='./researchUiState')return helpers
   if(id==='./assistantAffectedGroups')return affected
-  if(['@/api/lingdoc/delivery','@/api/web-search-provider','@/api/knowledge-base'].includes(id))return defaultAPI
+  if(['@/api/lingdoc/delivery','@/api/webSearchProvider','@/api/knowledge-base'].includes(id))return defaultAPI
   throw new Error('unexpected dependency '+id)
  }})
  const state=exports.default.setup(props,{expose:()=>{},emit:(...args)=>emitted.push(args)})

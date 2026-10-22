@@ -1,6 +1,6 @@
 import { get, post, postNoBody, put } from '@/utils/request'
 import type { ChangeSet, Result } from './workspace'
-import type { ResearchRun, G2VersionRef } from './g2'
+import type { ResearchRun, VersionRef } from './agentApi'
 import type { GenerationRun, GenerationCandidateSummary } from './generation'
 import type { Candidate } from './candidateAdoption'
 import type { ReleaseSnapshot, ExportArtifact } from './delivery'
@@ -60,7 +60,7 @@ export interface ImpactComputationReceipt { id: string; version: number; project
 export interface ContextRevisionRecord { project_id: string; revision: number; change_set_id: string; spec_revision: number; template_copy_version: number; spec: Record<string, string>; created_at: string }
 export interface RuleBindingOverride { rule_id: string; enabled?: boolean; target_kind?: string; target_id?: string; severity?: string; parameters?: Record<string, unknown>; remove_parameter_keys?: string[] }
 export interface RouteNode { id: string; project_id: string; version: number; name: string; inputs: ObjectVersionRef[]; required: boolean; status: 'planned' | 'ready' | 'blocked' | 'retired'; context_revision: number }
-export interface EvidenceCardSemanticInput { claim_ref: G2VersionRef; anchor_refs: G2VersionRef[]; support_type: 'supports' | 'refutes' | 'qualifies' | 'background'; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean }
+export interface EvidenceCardSemanticInput { claim_ref: VersionRef; anchor_refs: VersionRef[]; support_type: 'supports' | 'refutes' | 'qualifies' | 'background'; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean }
 export interface SemanticDelta { kind: 'EvidenceCard' | 'ResearchClaim' | 'ProjectAssetScope' | 'RuleBinding' | 'RouteNode'; target_id: string; expected_version: number; before_hash?: string; before?: Record<string, unknown>; source_ids?: string[]; proposed_card?: EvidenceCardSemanticInput; proposed_claim?: { text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; confirmed: boolean; reason?: string }; proposed_asset_policy?: { asset_id?: string; scope: 'personal' | 'project' | 'team'; purpose: string; allowed_user_ids: string[]; model_use_allowed: boolean }; proposed_binding?: RuleBindingOverride; proposed_route?: Pick<RouteNode, 'name' | 'inputs' | 'required' | 'status'> }
 export interface ProjectBindingView { rule_set_snapshot?: { bindings: Array<{ rule_id: string; target_kind: string; target_id: string; severity: string; enabled: boolean; parameters?: Record<string, unknown> }> }; binding_policies?: Array<{ rule_id: string; may_disable: boolean; allowed_severities?: string[]; allowed_parameter_keys?: string[] }>; source_policy_hash?: string }
 export interface ChangeDraftInput { semantic_deltas?: SemanticDelta[]; expected_context_revision: number; reason: string; fields: Record<string, { old_value: string; new_value: string }>; affected_chapter_ids: string[] }

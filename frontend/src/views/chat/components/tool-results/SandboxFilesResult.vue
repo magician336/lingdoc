@@ -25,7 +25,7 @@ import {
   sandboxFileListItems,
   type SkillFileListItem,
 } from '@/utils/skillToolDisplay'
-import type { ListSandboxFilesData } from '@/types/tool-results'
+import type { ListSandboxFilesData } from '@/types/toolResults'
 import ResultRow from './ResultRow.vue'
 
 const props = defineProps<{

@@ -256,7 +256,7 @@ import {
   createStorageBackend, deleteStorageBackend, listStorageBackends, listStorageBackendTypes,
   setDefaultStorageBackend, testStorageBackend, testStorageBackendByID, updateStorageBackend,
   type StorageBackend, type StorageBackendConfig,
-} from '@/api/storage-backend'
+} from '@/api/storageBackend'
 
 const { t } = useI18n()
 const authStore = useAuthStore()

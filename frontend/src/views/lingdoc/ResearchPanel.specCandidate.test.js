@@ -30,9 +30,9 @@ const host=Vue.createRenderer({
 })
 const text=n=>n.type==='#comment'?'':(n.text||'')+(n.children||[]).map(text).join('')
 function nodes(n){return [n,...(n.children||[]).flatMap(nodes)]}
-const actual=fs.readFileSync(path.join(__dirname,'G2ResearchPanel.vue'),'utf8'),parsed=SFC.parse(actual,{filename:'G2ResearchPanel.vue'})
+const actual=fs.readFileSync(path.join(__dirname,'ResearchPanel.vue'),'utf8'),parsed=SFC.parse(actual,{filename:'ResearchPanel.vue'})
 assert.deepEqual(parsed.errors,[])
-const script=SFC.compileScript(parsed.descriptor,{id:'g1-spec-source-test'}),template=SFC.compileTemplate({source:parsed.descriptor.template.content,filename:'G2ResearchPanel.vue',id:'g1-spec-source-test',compilerOptions:{bindingMetadata:script.bindings}})
+const script=SFC.compileScript(parsed.descriptor,{id:'g1-spec-source-test'}),template=SFC.compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g1-spec-source-test',compilerOptions:{bindingMetadata:script.bindings}})
 assert.deepEqual(template.errors,[])
 const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText
 function fixture(options={}){
@@ -65,16 +65,16 @@ function fixture(options={}){
    if(id==='vue')return Vue
    if(id==='@/stores/auth')return {useAuthStore:()=>auth}
    if(id==='@/utils/request')return request
-   if(['@/api/lingdoc/g2','@/api/lingdoc/workspace','@/api/lingdoc/permissions'].includes(id))return local(path.join(frontend,'src',id.slice(2)+'.ts'))
+   if(['@/api/lingdoc/agentApi','@/api/lingdoc/workspace','@/api/lingdoc/permissions'].includes(id))return local(path.join(frontend,'src',id.slice(2)+'.ts'))
    if(id.startsWith('@/api/'))return ports
-   if(id==='./g2UiState')return local(path.join(__dirname,'g2UiState.ts'))
+   if(id==='./researchUiState')return local(path.join(__dirname,'researchUiState.ts'))
    return require(id)
   }
   new Function('require','module','exports',compile(source))(load,box,box.exports);return box.exports
  }
  function local(file){if(!cache.has(file))cache.set(file,evaluate(fs.readFileSync(file,'utf8'),file));return cache.get(file)}
- const component=evaluate(script.content,'G2ResearchPanel.vue').default
- const rendered=evaluate(template.code,'G2ResearchPanel.render.js').render
+ const component=evaluate(script.content,'ResearchPanel.vue').default
+ const rendered=evaluate(template.code,'ResearchPanel.render.js').render
  let state
  const wrapped={...component,render:rendered,setup(p,ctx){state=component.setup(p,ctx);return state}}
  const container={children:[]},app=host.createApp({render:()=>Vue.h(wrapped,{...props,onChanged:()=>events.push(['changed']),onDirty:value=>events.push(['dirty',value])})})

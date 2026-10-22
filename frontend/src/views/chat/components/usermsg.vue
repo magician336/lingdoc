@@ -54,7 +54,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, nextTick } from "vue";
 import { hydrateProtectedFileImages } from '@/utils/security';
-import picturePreview from '@/components/picture-preview.vue';
+import picturePreview from '@/components/PicturePreview.vue';
 import { useI18n } from 'vue-i18n';
 import { useChatAttachmentPreviewDrawer } from '@/composables/useChatAttachmentPreviewDrawer';
 import { isPreviewableAttachment, resolveAttachmentFileType } from '@/utils/attachmentPreview';

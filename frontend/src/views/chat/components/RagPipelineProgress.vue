@@ -252,21 +252,21 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChatMemoryStep from './ChatMemoryStep.vue'
 import { useChatMemoryRow } from '@/composables/useChatMemoryRow'
-import { getAgentToolIconName } from '@/utils/agent-tool-icons'
+import { getAgentToolIconName } from '@/utils/agentToolIcons'
 import {
   getKnowledgeSearchSummaryHtml,
   getRagPipelineStepTitle,
   getRetrievalSearchSource,
-} from '@/utils/agent-tool-display'
+} from '@/utils/agentToolDisplay'
 import { getAttachmentParsingSummaryHtml } from '@/utils/attachmentParsingDisplay'
-import { RAG_RETRIEVAL_TOOL_NAMES, RAG_TIMELINE_TOOL_NAMES } from '@/utils/rag-pipeline-history'
+import { RAG_RETRIEVAL_TOOL_NAMES, RAG_TIMELINE_TOOL_NAMES } from '@/utils/ragPipelineHistory'
 import { useChatReferencesDrawer } from '@/composables/useChatReferencesDrawer'
 import { buildReferenceSections } from '@/utils/referenceSources'
 import {
   createRagWaitController,
   getRagPipelineWaitKind,
   type RagWaitView,
-} from '@/utils/rag-pipeline-state'
+} from '@/utils/ragPipelineState'
 
 const props = defineProps<{
   session?: {

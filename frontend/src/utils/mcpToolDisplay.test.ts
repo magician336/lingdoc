@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ComposerTranslation } from 'vue-i18n'
 import { getMcpToolDisplayType, getMcpToolTitle, mcpDescriptionLead, mcpDescriptionNeedsExpand, mcpDiscoveryRows, mcpSchemaParameters, parseMcpDiscovery, mcpToolResultOutput } from './mcpToolDisplay'
-import { getAgentToolIconName } from './agent-tool-icons'
+import { getAgentToolIconName } from './agentToolIcons'
 
 const t = ((key: string, params?: Record<string, unknown>) => `${key}${params?.name ? ` ${params.name}` : ''}`) as ComposerTranslation
 

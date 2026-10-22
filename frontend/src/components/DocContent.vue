@@ -21,8 +21,8 @@ import { openMermaidFullscreen } from '@/utils/mermaidViewer';
 import { diffWikiLines, type WikiDiffLine } from '@/utils/wikiLineDiff';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
-import DocumentPreview from '@/components/document-preview.vue';
-import KnowledgeProcessingTimeline from '@/components/knowledge-processing-timeline.vue';
+import DocumentPreview from '@/components/DocumentPreview.vue';
+import KnowledgeProcessingTimeline from '@/components/KnowledgeProcessingTimeline.vue';
 import { resolveKnowledgeDownloadFileName } from '@/views/knowledge/knowledgeDownloadFileName';
 import { isKnownPreviewableExt, resolveFilePreviewExt } from '@/utils/filePreview';
 

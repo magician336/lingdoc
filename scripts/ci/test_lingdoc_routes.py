@@ -187,7 +187,7 @@ class LingDocRouteParity(unittest.TestCase):
 
     def test_frontend_changed_method_is_rejected(self):
         bad = dict(self.clients)
-        file = "frontend/src/api/lingdoc/g2.ts"
+        file = "frontend/src/api/lingdoc/agentApi.ts"
         before = "=> get<Result<ResearchTask[]>>(project(p) + '/research-tasks')"
         self.assertIn(before, bad[file])
         bad[file] = bad[file].replace(before, before.replace("get<", "put<"), 1)
@@ -196,7 +196,7 @@ class LingDocRouteParity(unittest.TestCase):
 
     def test_frontend_changed_path_is_rejected(self):
         bad = dict(self.clients)
-        file = "frontend/src/api/lingdoc/g2.ts"
+        file = "frontend/src/api/lingdoc/agentApi.ts"
         before = "project(p) + '/research-tasks')"
         self.assertIn(before, bad[file])
         bad[file] = bad[file].replace(before, "project(p) + '/research-tasks-typo')", 1)
@@ -205,7 +205,7 @@ class LingDocRouteParity(unittest.TestCase):
 
     def test_unrecognized_frontend_url_fails_visibly(self):
         bad = dict(self.clients)
-        file = "frontend/src/api/lingdoc/g2.ts"
+        file = "frontend/src/api/lingdoc/agentApi.ts"
         bad[file] = bad[file].replace("project(p) + '/research-tasks')", "unknownUrl(p))", 1)
         with self.assertRaisesRegex(parity.ContractParityError, "unknown frontend URL helper"):
             self.check(clients=bad)

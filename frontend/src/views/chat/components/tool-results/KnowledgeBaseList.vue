@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import type { KnowledgeBaseListData } from '@/types/tool-results';
+import type { KnowledgeBaseListData } from '@/types/toolResults';
 
 const props = defineProps<{
   data: KnowledgeBaseListData;

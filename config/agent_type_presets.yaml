@@ -21,7 +21,7 @@
 #
 # NOTE: In the default "tool-driven" mode, the frontend DERIVES the any_of
 # predicate from `config.allowed_tools` via `deriveKbFilterFromTools` (see
-# `frontend/src/utils/tool-capabilities.ts`). You only need to write an
+# `frontend/src/utils/toolCapabilities.ts`). You only need to write an
 # explicit `kb_filter` here when the preset requires a business rule that
 # can't be inferred from the tools alone (e.g. `none_of: [faq]` on
 # data-analysis). Keeping the map lean avoids the "two sources of truth"

@@ -22,7 +22,7 @@ ROUTE_FILES = tuple("internal/lingdoc/workspace/" + name for name in
 #: stop covering those operations.
 RENAMED_ROUTE_FILES = {"g2_full_http.go": "agent_routes.go"}
 CLIENT_FILES = tuple("frontend/src/api/lingdoc/" + name for name in
-                     ("g2.ts", "mainlineChanges.ts", "collaboration.ts", "chapterReview.ts"))
+                     ("agentApi.ts", "mainlineChanges.ts", "collaboration.ts", "chapterReview.ts"))
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
 TICK = chr(96)
 
