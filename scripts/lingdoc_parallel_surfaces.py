@@ -358,8 +358,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
         "issue": 328,
         "issues": (127, 391),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
             ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
@@ -459,6 +459,28 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "迁移清单补上 PF-3 的 000052 审计版本列迁移 —— 清单停在 000041 时，"
             "夹具建不出 target_version / project_revision，任何带审计的写入都以 500 结束，"
             "被测的冻结拒绝根本没机会发生。"
+            "**本面已完成**（2026-10-23，认领与完成的人是 magician336）："
+            "PR #419 已合入 main（合并提交 2b1b098c），票 #406–#410 与 Spec 票 #391 随之关闭。"
+            "交付三件事：① Owner 可用性收口到一处（internal/lingdoc/workspacecore/owner_unavailable.go，"
+            "判定与门面同处，并有 AST 守护测试拒绝第二份内联判定）；"
+            "② 派生的 owner_unavailable 读时算出、不落库，五项 Owner 专属动作"
+            "（立项确认、模板升级、ChangeSet 应用、正式导出、归档）统一走这道闸门，"
+            "拒绝可归因（既有 404 与 not_found 不变，原因只进可选 details.reason_code）；"
+            "③ 归档能力落地（#127 冻结清单里原本不存在的一项，sqlite/000053 与 versioned/000132）。"
+            "验收 AC-49-01 至 AC-49-10 全部 passed，证据见 T49-验证报告.json。"
+            "**本面经过一次双轴独立评审**（Standards 轴 + Spec 轴），"
+            "评审发现并修掉的问题：权限读出口曾对任何被拒能力都报 owner_unavailable"
+            "（把「你无权」误标成「Owner 失效」，吞掉既有 capability_or_scope_denied 语义）、"
+            "判定与门面分处两个文件、缺「散落写法被守护检查拒绝」这一条验收的守护、"
+            "新领域词没进 GLOSSARY.md、登记处登记了一条从未存在的路径。"
+            "**PR 的第一轮 CI 是红的**：internal/container 的路由表面快照被新增的归档端点打破，"
+            "本地没抓到是因为验证范围只跑了四个相关包 —— 教训与修法记在实施档的「已踩坑清单」。"
+            "**残留票保持开放**：#420（权限读出口按能力聚合）、"
+            "#421（写侧冻结归因只在部分路径可得）。"
+            "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
+            "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
+            "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
+            "**本面不释放路径**：done 状态仍占用这 48 条路径，后续面不要重复声明。"
         ),
     },
     {
