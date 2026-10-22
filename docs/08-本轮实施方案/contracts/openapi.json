@@ -44706,7 +44706,37 @@
         ],
         "x-go-type": "core.ResearchProposal",
         "x-go-source": "internal/lingdoc/workspacecore/research_proposal.go",
-        "description": "调研智能体的调研提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级：每一份都指回这一轮授权上下文里的资料（source_id 必须在该轮 context.source_refs 里且 model_use_allowed 为真），服务端逐条比对，对不上就整份拒绝，不降级、不悄悄丢掉那一条。reasons 是整份提案为什么这么定（目标为什么是这个目标、范围为什么划到这里）；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选：用户自己保存才成为调研任务。三态是关于这一轮答案的事实，不是判决：有提案（present，形状逐字照上）；没给提案（absent，这一轮照样有自然语言回复，没有提案，也不是失败）；给了但不可信（invalid，整份拒绝、提案不送达、零写入，而那一轮的自然语言回复留着——坏建议不该连累用户的答案）。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，不受本契约约束，另票收紧。"
+        "description": "调研智能体的研究提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级：每一份都指回这一轮授权上下文里的资料（source_id 必须在该轮 context.source_refs 里且 model_use_allowed 为真），服务端逐条比对，对不上就整份拒绝，不降级、不悄悄丢掉那一条。reasons 是整份提案为什么这么定（目标为什么是这个目标、范围为什么划到这里）；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选：用户自己保存才成为调研任务。三态是关于这一轮答案的事实，不是判决：有提案（present，形状逐字照上）；没给提案（absent，这一轮照样有自然语言回复，没有提案，也不是失败）；给了但不可信（invalid，整份拒绝、提案不送达、零写入，而那一轮的自然语言回复留着——坏建议不该连累用户的答案）。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，不受本契约约束，另票收紧。"
+      },
+      "AssistantTaskSuggestion": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "question_type": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_output": {
+            "type": "string"
+          }
+        },
+        "description": "任务助手那张同名卡片：助手自己的可编辑调研任务建议。服务端不按研究提案契约校验它——查询词条数、字段集、来源引用都不检查——所以这里不写条数与长度约束，也不禁止额外字段：契约不能承诺运行时不做的事。助手自己的提示词要求至少两条查询词，但服务端不强制，所以这一份声明也不能强制。"
       },
       "AgentSuggestions": {
         "type": "object",
@@ -44715,7 +44745,15 @@
             "type": "string"
           },
           "task_card": {
-            "$ref": "#/components/schemas/ResearchProposal"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchProposal"
+              },
+              {
+                "$ref": "#/components/schemas/AssistantTaskSuggestion"
+              }
+            ],
+            "description": "两个来源，两种强度。调研智能体那一轮：ResearchProposal——服务端按唯一一份契约解码过，查询词少于两条即整份拒绝，候选来源逐条对过该轮授权上下文。任务助手那一轮：AssistantTaskSuggestion——助手自己的可编辑调研任务建议，不经这份契约校验。这一份声明是两者的并集：「按来源收紧」这条规则只能由服务端保证，schema 表达不了。"
           },
           "change_draft": {
             "$ref": "#/components/schemas/AgentChangeDraftSuggestion"
@@ -47508,7 +47546,7 @@
         ],
         "x-go-type": "core.AgentTurn",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
-        "description": "一轮问答。status=completed 表示这一轮有答案：reply 是模型写的自然语言答复，suggestions 是这一轮可采纳的候选建议。调研提案有三态，这是关于这一轮答案的事实而不是判决：present（有合法提案，提案在 suggestions.task_card 里）；absent（模型这一轮没给建议——reply 照样在，这一轮没有提案，也不是失败）；invalid（模型给了但不可信——整份提案被拒、绝不落进 suggestions，这一轮仍 completed、reply 仍在，failure_code=invalid_proposal 读得懂地说明「本轮的建议未通过服务端校验」）。failure_code 记的是这一轮出了什么事，不是这一轮成没成：它可以与 status=completed 同时出现，那时它说的正是「答复在，建议没有」。需求由服务端按会话的 agent 派生，客户端不声明，请求形状与幂等摘要因此不变。"
+        "description": "一轮问答。status=completed 表示这一轮有答案：reply 是模型写的自然语言答复，suggestions 是这一轮可采纳的候选建议。研究提案有三态，这是关于这一轮答案的事实而不是判决：present（有合法提案，提案在 suggestions.task_card 里）；absent（模型这一轮没给建议——reply 照样在，这一轮没有提案，也不是失败）；invalid（模型给了但不可信——整份提案被拒、绝不落进 suggestions，这一轮仍 completed、reply 仍在，failure_code=invalid_proposal 读得懂地说明「本轮的建议未通过服务端校验」）。failure_code 记的是这一轮出了什么事，不是这一轮成没成：它可以与 status=completed 同时出现，那时它说的正是「答复在，建议没有」。需求由服务端按会话的 agent 派生，客户端不声明，请求形状与幂等摘要因此不变。"
       },
       "FullAgentTurnListResponse": {
         "type": "object",

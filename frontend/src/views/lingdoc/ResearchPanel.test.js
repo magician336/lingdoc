@@ -451,3 +451,32 @@ test('没有提案的那一轮照样有答复，面板上没有建议',async()=>
  assert.equal(byClass(f.container,'research-proposal').length,0)
  f.close()
 })
+
+// A2: 助手那张同名卡片没有经过提案契约的校验，界面不得把它标成「服务端
+// 校验过的研究提案」，也不得宣称候选来源「服务端已逐条核对本轮授权」——
+// 那是替服务端宣称一件没有发生过的事，助手编一个来源 id 就会被界面背书。
+test('助手轮次的卡片不被标成服务端校验过的研究提案',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const assistantTurn={...base,agent:'task_assistant',suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,candidate_sources:[{source_id:'source-1',reason:'它写明了合成材料的定义'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[assistantTurn]
+ await tick()
+ assert.doesNotMatch(f.ui(),/服务端校验过的研究提案/)
+ assert.doesNotMatch(f.ui(),/服务端已逐条核对本轮授权/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ f.close()
+})
+
+// A2 的另一半：调研智能体那一轮的提案仍标着「服务端校验过的」——它确实
+// 经过提案契约的校验。
+test('调研智能体轮次的提案仍标为服务端校验过的',async()=>{
+ const f=renderedFixture();await tick()
+ f.state.tab.value='agents'
+ f.state.turns.value=[researchProposalTurn()]
+ await tick()
+ assert.match(f.ui(),/服务端校验过的研究提案/)
+ assert.equal(byClass(f.container,'research-proposal').length,1)
+ f.close()
+})
