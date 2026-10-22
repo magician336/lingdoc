@@ -264,17 +264,37 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-3 审计告警接线与 AuditEvent 字段",
         "issue": 327,
         "issues": (130,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/machine_read_grant.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/service.go", "file"),
+            ("internal/lingdoc/workspacecore/audit_failure_alert_test.go", "file"),
+            ("internal/lingdoc/workspacecore/audit_event_version_fields_test.go", "file"),
+            ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
+            ("internal/lingdoc/membership/fixture_test.go", "file"),
+            ("migrations/sqlite/000052_lingdoc_audit_version_fields.up.sql", "file"),
+            ("migrations/sqlite/000052_lingdoc_audit_version_fields.down.sql", "file"),
+            ("migrations/versioned/000131_lingdoc_audit_version_fields.up.sql", "file"),
+            ("migrations/versioned/000131_lingdoc_audit_version_fields.down.sql", "file"),
         ),
         "resolves": (),
         "summary": (
-            "fail-open 语义已实现，但审计失败没有接到告警源，"
-            "AuditEvent 也没有 target_version / project_revision 字段。"
-            "本面独占 model.go，PF-4 因此不得声明它。"
+            "读类 fail-open 落点共 6 处，普通读只占授权审计与机器读取；"
+            "平台事务外通道（internal/container/lingdoc.go）写失败返回 nil，"
+            "失败连错误都不产生，那条通道本轮不接。"
+            "审计事实归 AuditEvent 与 lingdoc_project_audits 表——"
+            "该表现只有 7 列，TargetVersion / ProjectRevision 需要独立列加两套迁移，"
+            "不是只改 model.go 的字段声明。"
+            "路径集按 #327 认领后的实测清单补齐（先例：PF-1 与 PF-2 同样在认领后补齐）。"
+            "pr150_migration_history_test.go 是实测补进来的：它演练一个停在 000043 之前的旧库，"
+            "当前代码写审计版本列时那个旧库缺列，种数据前必须先把审计表带到当前形状。"
+            "本面独占 model.go 与 runtime_control.go，PF-4 因此不得声明 model.go。"
+            "本面产出文档：docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md 与 T327-验证报告.json。"
         ),
     },
     {

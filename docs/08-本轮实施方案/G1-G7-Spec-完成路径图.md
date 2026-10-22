@@ -262,18 +262,24 @@ graph TD
 |---|---|---|---|---|
 | [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/views/lingdoc/ImpactOpsPanel.vue`、`runtimeMetrics.ts`、`runtimeMetrics.test.ts`、`frontend/src/api/lingdoc/mainlineChanges.test.js`、`frontend/src/views/lingdoc/ImpactOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上（`internal/lingdoc/workspace/impact_routes.go:135-182`、`api/lingdoc/mainlineChanges.ts:112-127`）；本面只补服务端已给但界面未呈现的运行指标，并给前端补契约保护 |
 | [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | `internal/lingdoc/generation/{service,application,http,store}.go`、`internal/lingdoc/workspace/{selected_rewrite,selected_rewrite_model,http}.go`、`internal/lingdoc/candidateadoption/{candidate_adoption,candidate_adoption_store,candidate_basis,candidate_adoption_http,confirmation}.go`、`internal/lingdoc/workspacecore/human_decision.go`、`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`、`frontend/src/views/lingdoc/generationAttempt.ts` | 证据那半边用 #138 已落地的生成接入，不必等 #137/#133 |
-| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/runtime_control.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
+| [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/{runtime_control,model,service_facade,machine_read_grant,typed_contracts,service}.go`、`audit_failure_alert_test.go`、`audit_event_version_fields_test.go`、`internal/lingdoc/membership/fixture_test.go`、`migrations/sqlite/000052_lingdoc_audit_version_fields.*`、`migrations/versioned/000131_lingdoc_audit_version_fields.*` | 读类 fail-open 落点已存在（授权审计与机器读取），G6 运行事件与告警管线已齐，`"audit"` 已在事件类别白名单里；PostgreSQL 上普通读是否真 fail-open **已实测（不成立，缺口转 [#387](https://github.com/magician336/lingdoc/issues/387)）**，见 PF-3 开发计划 §5 B1 |
 | [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
 | [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/agent_action_service.go`、`agent_research_model.go` | 上下文包后端已在 `agent_research_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
 
-六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领**：PF-2 仍在施工，**PF-1 已于 2026-10-22 完成**（登记处 `status` 为 `done`）。其余四张未被认领。
+六张票都标 `ready-for-agent`。**#326（PF-2）、#325（PF-1）与 #327（PF-3）已被 magician336 认领**：PF-2 仍在施工，**PF-1 已于 2026-10-22 完成**（登记处 `status` 为 `done`），**PF-3 于 2026-10-22 认领**（登记处 `status` 为 `claimed`）。其余三张未被认领。
 
 > **PF-1 的路径集在 2026-10-22 改过**：初次登记时列的是三个**新建**文件（`g6Runtime.ts` / `g6Trial.ts` / `G6OpsPanel.vue`），前提是「G6 前端为零」。施工时核实发现该前提已过时——16 个 G6 端点客户端与两个 tab 的界面早已在 main 上，重复新建会造成两套并行实现。于是本面缩为「补真实缺口」：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。**G6 前端的独立化与 Workspace 集成不在本面**，另开 [#384](https://github.com/magician336/lingdoc/issues/384)。路径集与边界以登记处 `scripts/lingdoc_parallel_surfaces.py` 为准，本表只是它的说明副本。
 
 **PF-2 的路径集是按票面实测补齐的**：初次登记时只列了 6 个文件，#326 认领后实测发现它还要改 `candidateadoption/*`、`generation/store.go`、`workspace/http.go`、`workspacecore/human_decision.go`、`clienterror/catalog.go`、`router/lingdoc_routes_test.go` —— 这些**不被任何面拥有**，即两个面会碰同一文件的撞车风险。补齐后与其余五面仍然零重叠（PF-3 独占 `workspacecore/model.go`、PF-5 独占 `workspacecore/g2_*.go`，都没冲突）。
 
 > 这条记录本身就是登记处存在的理由：**如果只有票面文字、没有机器可校验的登记处，这次的路径集缺口不会被发现**。
+
+**PF-3 的路径集同样在认领后按实测补齐**：初次登记只列 `workspacecore/runtime_control.go` 与 `model.go` 两个文件，#327 认领后实测发现告警接线还要动 `service_facade.go`（读类 fail-open 落点）、`machine_read_grant.go`（机器读取的 fail-open 落点）、`typed_contracts.go`（`AuthorizeRequest` 的落点），而两个新字段要真正落库还要动 `service.go`（写入与读回）、两套 `migrations/`（新增两列）与 `internal/lingdoc/membership/fixture_test.go`（镜像行模型）。补齐后与其余五面仍然零重叠。
+
+同时**修正了一处被当成事实的断言**：PF-3 原先记的「fail-open 语义已实现」经实测只部分成立——`ListProjects` 的两处审计在 GORM 生产路径上因 `projectID` 为空**根本不写**（`service_facade.go:458-462`），平台事务外通道写失败则**恒返回 nil**（`internal/container/lingdoc.go:256`）。真实需要接线的读类落点是 **4 个**（`Authorize`、`GetProject`、`AuthorizeRequest`、`machine.read`），不是 6 个。
+
+> 2026-10-22 另有一处**实测修正**并入本表：读类落点上的 fail-open **只在 SQLite 上成立**。隔离 PostgreSQL 17.11 上审计 INSERT 失败会让整个事务 aborted，`GetProject` / `Authorize` 都返回 `commit unexpectedly resulted in rollback` —— 即「普通读 fail-open」在**生产数据库上不成立**。该缺口已单开 [#387](https://github.com/magician336/lingdoc/issues/387)；PF-3 只交付告警接线（告警捕获的是原始错误，两种方言上都会触发）。
 
 **保留路径**：`frontend/src/views/lingdoc/Workspace.vue` 归集成点所有，**任何面都不得声明**——所有前端面在最后单独做一次集成，不由谁独占。
 
