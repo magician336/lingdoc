@@ -44379,7 +44379,7 @@
         ],
         "x-go-type": "core.ResearchProposal",
         "x-go-source": "internal/lingdoc/workspacecore/research_proposal.go",
-        "description": "服务端按唯一一份契约解码过的调研提案；同义词作为额外查询词并入 queries，不另立字段。它永远是候选：用户自己保存才成为调研任务。"
+        "description": "调研智能体的调研提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。它永远是候选：用户自己保存才成为调研任务。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，另票收紧。"
       },
       "AgentSuggestions": {
         "type": "object",

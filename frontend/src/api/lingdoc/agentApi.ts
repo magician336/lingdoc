@@ -70,7 +70,8 @@ export interface AgentContextInput extends VersionExpectation { chapter_id?: str
 export type LingDocAgent = 'task_assistant' | 'research_agent'
 export interface AgentSession { id: string; project_id: string; version: number; agent: LingDocAgent; created_by: string; created_at: string }
 // 研究提案的形状由服务端契约拥有（internal/lingdoc/workspacecore/research_proposal.go）：
-// 服务端按那一份契约解码模型的提案，解不开就拒绝，所以到达这里的形状已经是校验过的。
+// 调研智能体的提案由服务端按那一份契约解码，解不开就拒绝，所以到达这里的形状已经是校验过的。
+// 助手侧那张同名卡片另有自己的规则，尚未经这份契约校验（后续票收紧）。
 // 字段名沿用调研任务自己的一套，保存时不必改名。
 export interface ResearchProposal {
   goal: string; question_type?: string; scope: string
