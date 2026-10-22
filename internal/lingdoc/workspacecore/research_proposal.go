@@ -397,10 +397,15 @@ func validateResearchProposalCandidateSources(proposal ResearchProposal, pack Ag
 // it refused one. There is no second reading of a stored turn - a client
 // cannot say which state a proposal is in, and only the server that judged
 // it knows.
+//
+// So these three names stay inside this package: they are how this module
+// talks to itself about one judgement, not a vocabulary any other package
+// reads. The wire says the same thing in other words - the proposal is
+// there or it is not, and a refusal is the failure code on the turn.
 const (
-	ResearchProposalStatePresent = "present"
-	ResearchProposalStateAbsent  = "absent"
-	ResearchProposalStateInvalid = "invalid"
+	researchProposalStatePresent = "present"
+	researchProposalStateAbsent  = "absent"
+	researchProposalStateInvalid = "invalid"
 )
 
 // researchProposalFromSuggestions reads the proposal out of a turn's
@@ -439,25 +444,25 @@ func researchProposalJudgement(agent string, structured json.RawMessage, pack Ag
 		// Only the research agent's answers are a proposal. The assistant's
 		// editable task suggestion is a different card with its own rules,
 		// so this contract does not judge it and does not touch it.
-		return ResearchProposalStateAbsent, structured
+		return researchProposalStateAbsent, structured
 	}
 	raw, err := researchProposalFromSuggestions(structured)
 	if err != nil {
 		// The answer is not even a JSON object: none of it can be kept, and
 		// none of it can be a proposal.
-		return ResearchProposalStateInvalid, nil
+		return researchProposalStateInvalid, nil
 	}
 	if ResearchProposalAbsent(raw) {
-		return ResearchProposalStateAbsent, structured
+		return researchProposalStateAbsent, structured
 	}
 	if _, err = DecodeResearchProposal(raw, pack); err != nil {
 		cleaned, stripErr := researchProposalWithoutProposal(structured)
 		if stripErr != nil {
-			return ResearchProposalStateInvalid, nil
+			return researchProposalStateInvalid, nil
 		}
-		return ResearchProposalStateInvalid, cleaned
+		return researchProposalStateInvalid, cleaned
 	}
-	return ResearchProposalStatePresent, structured
+	return researchProposalStatePresent, structured
 }
 
 // researchProposalWithoutProposal takes the refused proposal out of a model

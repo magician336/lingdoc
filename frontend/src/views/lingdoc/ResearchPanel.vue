@@ -47,7 +47,7 @@
  <label>原文定位<select v-model="contextForm.anchors" multiple><option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id" :disabled="anchor.status!=='CURRENT'">{{ anchor.locator }}</option></select></label><label>证据卡<select v-model="contextForm.cards" multiple><option v-for="card in cards" :key="card.id" :value="card.id" :disabled="card.status!=='CONFIRMED'">{{ claimText(card) }}</option></select></label><button type="button" @click="previewContext">预览当前上下文</button>
  <section v-if="contextPreview" class="notice"><p>{{ contextPreview.authorization_state }} · 基线 {{ contextPreview.context_revision }}</p><ul><li v-for="ref in contextPreview.source_refs" :key="ref.source_id">{{ ref.locator }} · v{{ ref.asset_revision }} · 模型使用 {{ ref.model_use_allowed?'已许可':'未许可' }}</li><li v-for="constraint in contextPreview.output_constraints" :key="constraint">{{ constraint }}</li></ul></section>
  <label class="check"><input v-model="contextForm.consent" type="checkbox" />我已核对本轮敏感内容，确认发送选定上下文</label><label>本轮问题<textarea v-model="userInput" required /></label><button :disabled="busy('turn-'+sessionId)||unknown.has('turn-'+sessionId)||!contextForm.consent">发送一次</button></form>
- <article v-for="turn in turns" :key="turn.id"><p>{{ label(turn.status) }} · {{ turn.run_mode }} · 基线 {{ turn.context.context_revision }}</p><h4>{{ turn.user_input||'当前来源权限受限，原内容已隐藏' }}</h4><p class="reply">{{ turn.reply }}</p><p v-if="turn.failure_code" class="error">{{ label(turn.failure_code) }}</p><section v-if="assistantAffectedGroups(turn.suggestions?.affected_explanation).length" class="assistant-affected" :aria-label="'助手影响说明 '+turn.id"><p v-for="group in assistantAffectedGroups(turn.suggestions?.affected_explanation)" :key="group.group" class="assistant-affected-group"><strong>{{group.title}}</strong><ul><li v-for="(entry,index) in group.entries" :key="group.group+'-'+index">{{assistantAffectedObjectLabel(entry)}} · {{entry.reason}} · 依据 {{assistantAffectedBasisLabel(entry)}}</li></ul></p></section><section v-if="isResearchProposalTurn(turn)&&turn.suggestions?.task_card" class="research-proposal" :aria-label="'研究提案 '+turn.id"><p class="notice">服务端校验过的研究提案 · 模型 {{turn.model_id||'未标注'}} · 运行模式 {{turn.run_mode}} · 仍是候选，保存后才成为调研任务</p><p>目标：{{turn.suggestions.task_card.goal}}</p><p>问题类型：{{turn.suggestions.task_card.question_type||'未标注'}}</p><p>范围：{{turn.suggestions.task_card.scope}}</p><p>排除：{{(turn.suggestions.task_card.exclusions||[]).join('；')||'未设置'}}</p><ol><li v-for="(query,index) in turn.suggestions.task_card.queries" :key="index+'-'+query">{{query}}</li></ol><p>预期产物：{{turn.suggestions.task_card.expected_output}}</p><div v-if="proposalCandidateSources(turn).length" class="proposal-sources"><p>候选来源（服务端已逐条核对本轮授权）：</p><ul><li v-for="source in proposalCandidateSources(turn)" :key="source.source_id"><span class="proposal-source-id">{{source.source_id}}</span><span class="proposal-source-reason">{{source.reason||'未说明理由'}}</span></li></ul></div><div v-if="proposalReasons(turn).length" class="proposal-reasons"><p>建议理由（这份方案为什么这样定）：</p><ul><li v-for="(reason,index) in proposalReasons(turn)" :key="index+'-'+reason" class="proposal-reason">{{reason}}</li></ul></div><div v-if="proposalGaps(turn).length" class="proposal-gaps"><p>还缺什么（缺什么 · 期望补什么）：</p><ul><li v-for="(gap,index) in proposalGaps(turn)" :key="index+'-'+gap.description" class="proposal-gap"><span class="proposal-gap-description">{{gap.description}}</span><span class="proposal-gap-evidence">{{gap.expected_evidence}}</span></li></ul></div></section><button v-if="canAgent&&project.status==='active'&&turn.suggestions?.change_draft" @click="prepareAgentChangeDraft(turn)">编辑为变更草稿提案</button><button v-if="canResearch&&turn.suggestions?.task_card" @click="adoptTaskSuggestion(turn)">放入可编辑任务草稿</button><button v-if="canResearch&&turn.status==='completed'" @click="saveConversationCandidate(turn)">另存为 AI 候选</button><button v-if="canUseSpecCandidate&&eligibleSpecTurn(turn)" :disabled="!!specCandidate || busy('agent-spec-save')" @click="prepareSpecCandidate(turn)">用于研究条件候选</button></article>
+ <article v-for="turn in turns" :key="turn.id"><p>{{ label(turn.status) }} · {{ turn.run_mode }} · 基线 {{ turn.context.context_revision }}</p><h4>{{ turn.user_input||'当前来源权限受限，原内容已隐藏' }}</h4><p class="reply">{{ turn.reply }}</p><p v-if="turn.failure_code" class="error">{{ failureLabel(turn.failure_code) }}</p><section v-if="assistantAffectedGroups(turn.suggestions?.affected_explanation).length" class="assistant-affected" :aria-label="'助手影响说明 '+turn.id"><p v-for="group in assistantAffectedGroups(turn.suggestions?.affected_explanation)" :key="group.group" class="assistant-affected-group"><strong>{{group.title}}</strong><ul><li v-for="(entry,index) in group.entries" :key="group.group+'-'+index">{{assistantAffectedObjectLabel(entry)}} · {{entry.reason}} · 依据 {{assistantAffectedBasisLabel(entry)}}</li></ul></p></section><section v-if="isResearchProposalTurn(turn)&&turn.suggestions?.task_card" class="research-proposal" :aria-label="'研究提案 '+turn.id"><p class="notice">服务端校验过的研究提案 · 模型 {{turn.model_id||'未标注'}} · 运行模式 {{turn.run_mode}} · 仍是候选，保存后才成为调研任务</p><p>目标：{{cardGoal(turn)}}</p><p>问题类型：{{cardQuestionType(turn)||'未标注'}}</p><p>范围：{{cardScope(turn)}}</p><p>排除：{{cardExclusions(turn).join('；')||'未设置'}}</p><ol><li v-for="(query,index) in cardQueries(turn)" :key="index+'-'+query">{{query}}</li></ol><p>预期产物：{{cardExpectedOutput(turn)}}</p><div v-if="proposalCandidateSources(turn).length" class="proposal-sources"><p>候选来源（服务端已逐条核对本轮授权）：</p><ul><li v-for="source in proposalCandidateSources(turn)" :key="source.source_id"><span class="proposal-source-id">{{source.source_id}}</span><span class="proposal-source-reason">{{source.reason||'未说明理由'}}</span></li></ul></div><div v-if="proposalReasons(turn).length" class="proposal-reasons"><p>建议理由（这份方案为什么这样定）：</p><ul><li v-for="(reason,index) in proposalReasons(turn)" :key="index+'-'+reason" class="proposal-reason">{{reason}}</li></ul></div><div v-if="proposalGaps(turn).length" class="proposal-gaps"><p>还缺什么（缺什么 · 期望补什么）：</p><ul><li v-for="(gap,index) in proposalGaps(turn)" :key="index+'-'+gap.description" class="proposal-gap"><span class="proposal-gap-description">{{gap.description}}</span><span class="proposal-gap-evidence">{{gap.expected_evidence}}</span></li></ul></div></section><button v-if="canAgent&&project.status==='active'&&turn.suggestions?.change_draft" @click="prepareAgentChangeDraft(turn)">编辑为变更草稿提案</button><button v-if="canResearch&&turn.suggestions?.task_card" @click="adoptTaskSuggestion(turn)">放入可编辑任务草稿</button><button v-if="canResearch&&turn.status==='completed'" @click="saveConversationCandidate(turn)">另存为 AI 候选</button><button v-if="canUseSpecCandidate&&eligibleSpecTurn(turn)" :disabled="!!specCandidate || busy('agent-spec-save')" @click="prepareSpecCandidate(turn)">用于研究条件候选</button></article>
  <section v-if="specCandidate" class="agent-spec-candidate" aria-labelledby="agent-spec-candidate-title">
   <h3 id="agent-spec-candidate-title">会话回复 → 待确认研究条件</h3>
   <p>真实会话 {{specCandidate.turn.session_id}} · 轮次 {{specCandidate.turn.id}} / v{{specCandidate.turn.version}} · {{agentSpecRunModeLabel(specCandidate.turn.run_mode)}}<br>本轮来源 {{(specCandidate.turn.context.source_refs||[]).length}} 份；服务端保存时重新核对当前来源许可。</p>
@@ -135,23 +135,49 @@ const policyForm=reactive({scope:'personal' as api.ProjectAssetPolicy['scope'],p
 type Confirmation={title:string;summary:string;execute:(reason:string)=>Promise<void>;sourceTurn?:TurnCopySource}
 const confirming=ref<Confirmation|null>(null),confirmDialog=ref<HTMLDialogElement|null>(null),confirmReason=ref(''),confirmChecked=ref(false),confirmingBusy=ref(false)
 let oldFocus:HTMLElement|null=null,poll:ReturnType<typeof setTimeout>|undefined
-const labels:Record<string,string>={draft:'草稿',approved:'已批准',running:'运行中',completed:'已完成',failed:'失败',cancelled:'已终止',stale:'历史结果，基线已变',ready:'已就绪',pending:'等待处理',awaiting_consent:'等待明确确认',importing:'处理中',imported:'已保存',processing:'处理中',available:'可读',unavailable:'不可读',inspected_original:'已读取网页原文',CURRENT:'当前定位',CANDIDATE:'候选证据',CONFIRMED:'已人工确认适用范围',NEEDS_REVIEW:'需复核',INSUFFICIENT:'证据不足',SUPERSEDED:'已替代',active:'当前',disputed:'有争议',superseded:'已替代',proposed:'待确认提案',confirmed:'已执行',rejected:'已拒绝',outcome_unknown:'结果待核对',invalid_proposal:'研究提案未通过服务端校验，本轮没有建议'}
+const labels:Record<string,string>={draft:'草稿',approved:'已批准',running:'运行中',completed:'已完成',failed:'失败',cancelled:'已终止',stale:'历史结果，基线已变',ready:'已就绪',pending:'等待处理',awaiting_consent:'等待明确确认',importing:'处理中',imported:'已保存',processing:'处理中',available:'可读',unavailable:'不可读',inspected_original:'已读取网页原文',CURRENT:'当前定位',CANDIDATE:'候选证据',CONFIRMED:'已人工确认适用范围',NEEDS_REVIEW:'需复核',INSUFFICIENT:'证据不足',SUPERSEDED:'已替代',active:'当前',disputed:'有争议',superseded:'已替代',proposed:'待确认提案',confirmed:'已执行',rejected:'已拒绝',outcome_unknown:'结果待核对'}
+// 失败码有自己的词表。'outcome_unknown' 出现在状态词表里（那是回执上的状
+// 态）：拿状态词表当失败码词表，会把「原样显示代码」变成「结果待核对」。
+// 失败码词表里没有的码原样显示——提案契约之前就是这样；'invalid_proposal'
+// 仍有一句读得懂的话。
+const failureLabels:Record<string,string>={invalid_proposal:'研究提案未通过服务端校验，本轮没有建议'}
 const levels:Record<string,string>={candidate_evidence:'待核证据候选',background_lead:'背景线索',discovery_entry:'发现入口',unread_search_summary:'未读原文的搜索摘要',AI_GENERATED_CANDIDATE:'AI 生成候选，不能直接确认'}
 const supports:Record<string,string>={supports:'支持',refutes:'反驳',qualifies:'限定条件',background:'背景'}
 const actions:Record<string,string>={create_change_set:'创建待评估变更草稿',save_spec:'保存研究条件',bind_asset:'绑定已有资料',create_evidence_card:'保存候选证据卡',confirm_evidence_card:'人工确认证据卡',apply_change_set:'应用已评估变更',commit_working_copy:'提交工作副本',export:'导出冻结快照'}
-const label=(value:string)=>labels[value]||value,levelLabel=(value:string)=>levels[value]||value,supportLabel=(value:string)=>supports[value]||value,actionLabel=(value:string)=>actions[value]||value
+const label=(value:string)=>labels[value]||value,failureLabel=(value:string)=>failureLabels[value]||value,levelLabel=(value:string)=>levels[value]||value,supportLabel=(value:string)=>supports[value]||value,actionLabel=(value:string)=>actions[value]||value
 // 提案块只对调研智能体那一轮渲染：助手那张同名卡片没有经过提案契约的
 // 校验，界面替它宣称「服务端校验过」、宣称候选来源「已逐条核对」，
 // 就是替服务端说了一句没有发生的话。助手那条轮次因此不显示提案块
 // （提案契约之前，面板本来也不展示它）。
 const isResearchProposalTurn=(turn:api.AgentTurn):boolean=>turn.agent==='research_agent'
+// task_card 有两个来源、两种强度：调研智能体那一轮是服务端按契约解码过
+// 的形状，助手那一轮更松（字段可缺、查询词可只有一条）。面板只读它真
+// 有的字段：取值一律走下面这几个函数，缺的就落到空串或空数组——助手那张
+// 卡片缺字段时不会渲染成 undefined。
+const taskCardOf=(turn:api.AgentTurn):api.AgentTaskCard|undefined=>turn.suggestions?.task_card
+const cardGoal=(turn:api.AgentTurn):string=>taskCardOf(turn)?.goal||''
+const cardQuestionType=(turn:api.AgentTurn):string=>taskCardOf(turn)?.question_type||''
+const cardScope=(turn:api.AgentTurn):string=>taskCardOf(turn)?.scope||''
+const cardExclusions=(turn:api.AgentTurn):string[]=>taskCardOf(turn)?.exclusions||[]
+const cardQueries=(turn:api.AgentTurn):string[]=>taskCardOf(turn)?.queries||[]
+const cardExpectedOutput=(turn:api.AgentTurn):string=>taskCardOf(turn)?.expected_output||''
 // 提案的候选来源与服务端校验过的形状同行到达：这里只负责分列展示，
-// 读到的每一条都已经是对过这一轮授权上下文的引用。
-const proposalCandidateSources=(turn:api.AgentTurn):api.ResearchProposalCandidateSource[]=>turn.suggestions?.task_card?.candidate_sources||[]
+// 读到的每一条都已经是对过这一轮授权上下文的引用。这一列只在服务端校验
+// 过的那份形状上有，助手那张更松的卡片不带它，所以先按形状收窄。
+const proposalCandidateSources=(turn:api.AgentTurn):api.ResearchProposalCandidateSource[]=>{
+ const card=taskCardOf(turn)
+ return card&&'candidate_sources' in card?card.candidate_sources||[]:[]
+}
 // 理由与缺口同样只来自服务端校验过的那份形状：理由一条一行，缺口分
 // 「缺什么」与「期望补什么」两列，缺了任何一半的缺口到不了这里。
-const proposalReasons=(turn:api.AgentTurn):string[]=>turn.suggestions?.task_card?.reasons||[]
-const proposalGaps=(turn:api.AgentTurn):api.ResearchProposalGap[]=>turn.suggestions?.task_card?.gaps||[]
+const proposalReasons=(turn:api.AgentTurn):string[]=>{
+ const card=taskCardOf(turn)
+ return card&&'reasons' in card?card.reasons||[]:[]
+}
+const proposalGaps=(turn:api.AgentTurn):api.ResearchProposalGap[]=>{
+ const card=taskCardOf(turn)
+ return card&&'gaps' in card?card.gaps||[]:[]
+}
 const evidenceSelected=(card:api.EvidenceCard)=>props.selectedEvidence.some(ref=>ref.id===card.id&&ref.version===card.version)
 const claimText=(card:api.EvidenceCard)=>claims.value.find(claim=>claim.id===card.claim_ref?.id)?.text||'尚未关联主张'
 const anchorName=(id:string)=>anchors.value.find(anchor=>anchor.id===id)?.locator||'原文定位'
@@ -312,7 +338,7 @@ function prepareAgentChangeDraft(turn:api.AgentTurn){
  Object.assign(actionForm,{action:'create_change_set',target:props.project.id,effect:'仅创建待评估草稿：'+draft.reason,changeDraft:JSON.stringify({expected_context_revision:draft.expected_context_revision,reason:draft.reason,fields},null,2)})
  tab.value='agents';message.value='候选已放入下方动作提案表单。请核对并勾选至少一章作为建议复核范围，再编辑新值和原因；登记不执行，仍需单独明确确认。'
 }
-function adoptTaskSuggestion(turn:api.AgentTurn){const draft=turn.suggestions?.task_card;if(!draft)return;resetTask();taskDraftSource.value={id:turn.id,project_id:turn.project_id,session_id:turn.session_id,version:turn.version};Object.assign(taskForm,{goal:draft.goal||'',queries:(draft.queries||[]).join('\n'),scope:draft.scope||'',type:draft.question_type||'',exclusions:(draft.exclusions||[]).join('\n'),output:draft.expected_output||''});tab.value='tasks';message.value='建议已放入可编辑草稿，请自行选择资料与搜索渠道后保存。'}
+function adoptTaskSuggestion(turn:api.AgentTurn){if(!taskCardOf(turn))return;resetTask();taskDraftSource.value={id:turn.id,project_id:turn.project_id,session_id:turn.session_id,version:turn.version};Object.assign(taskForm,{goal:cardGoal(turn),queries:cardQueries(turn).join('\n'),scope:cardScope(turn),type:cardQuestionType(turn),exclusions:cardExclusions(turn).join('\n'),output:cardExpectedOutput(turn)});tab.value='tasks';message.value='建议已放入可编辑草稿，请自行选择资料与搜索渠道后保存。'}
 function saveConversationCandidate(turn:api.AgentTurn){requestConfirmation('保存 AI 生成候选','只保存本轮对话候选，不产生正式定位或证据卡。',async reason=>{const input:api.CreateImportCandidateInput={...expectation(),conversation_session_id:turn.session_id,conversation_turn_ids:[turn.id],title:'助手对话候选',purpose:reason,save_mode:'metadata_only',scope:'personal',model_use_allowed:false,license:'AI 生成内容，来源与正确性尚待核实'};await write('conversation-'+turn.id,input,key=>api.createImportCandidate(props.project.id,input,key))})}
 function eligibleSpecTurn(turn:api.AgentTurn){
  const current=turns.value.find(item=>item.id===turn.id&&item.version===turn.version&&item.reply===turn.reply&&item.status==='completed')

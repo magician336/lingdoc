@@ -295,7 +295,7 @@ test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',
  assert.equal(f.state.taskForm.goal,'')
  assert.equal(f.state.taskForm.queries,'')
  assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
- assert.match(f.state.label('invalid_proposal'),/未通过服务端校验/)
+ assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
  f.close()
 })
 
@@ -479,4 +479,51 @@ test('调研智能体轮次的提案仍标为服务端校验过的',async()=>{
  assert.match(f.ui(),/服务端校验过的研究提案/)
  assert.equal(byClass(f.container,'research-proposal').length,1)
  f.close()
+})
+
+// N5: 失败码有自己的词表。'outcome_unknown' 出现在状态词表里（那是回执上
+// 的状态）：拿状态词表当失败码词表，会把「原样显示代码」变成「结果待核对」。
+// 失败码词表里没有的码原样显示；'invalid_proposal' 仍有一句读得懂的话。
+test('未登记的失败码原样显示，不被状态词表翻译',async()=>{
+  const f=renderedFixture();await tick()
+  const base=researchProposalTurn()
+  f.state.tab.value='agents'
+  f.state.turns.value=[{...base,failure_code:'outcome_unknown'}]
+  await tick()
+  assert.match(f.ui(),/outcome_unknown/)
+  assert.doesNotMatch(f.ui(),/结果待核对/)
+  assert.equal(f.state.failureLabel('outcome_unknown'),'outcome_unknown')
+  assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
+  f.close()
+})
+
+// A14: 助手轮次那张同名卡片没有经过提案契约的校验，面板因此不把它显示成
+// 「服务端校验过的研究提案」——但采纳路径对助手轮次仍然开着，这是 #401
+// 之前就有的行为，本票不收它。这条用例守住它：采纳按钮仍在，采纳后那份
+// 建议进了可编辑表单（缺的那些字段就是缺，不渲染出 undefined），而调研
+// 任务尚未创建——采纳只把建议放进草稿，保存才建任务。
+test('助手轮次的卡片仍可被采纳：按钮在、表单被填好、调研任务尚未创建',async()=>{
+  const f=renderedFixture();await tick()
+  const base=researchProposalTurn()
+  const assistantTurn={...base,agent:'task_assistant',suggestions:{...base.suggestions,task_card:{goal:'弄清合成材料的定义',queries:['合成材料 定义'],scope:'只查项目资料'}}}
+  f.state.tab.value='agents'
+  f.state.turns.value=[assistantTurn]
+  await tick()
+  // 提案块仍不渲染给助手轮次，但采纳按钮在
+  assert.equal(byClass(f.container,'research-proposal').length,0)
+  const adopt=allNodes(f.container).find(node=>node.type==='button'&&nodeText(node).trim()==='放入可编辑任务草稿')
+  assert.ok(adopt,'助手轮次仍然有采纳按钮')
+  await adopt.props.onClick({type:'click',preventDefault(){},stopPropagation(){}})
+  await tick()
+  // 那一轮的建议进了可编辑表单；它没写的字段就是空，不渲染出 undefined
+  assert.equal(f.state.taskForm.goal,'弄清合成材料的定义')
+  assert.equal(f.state.taskForm.queries,'合成材料 定义')
+  assert.equal(f.state.taskForm.scope,'只查项目资料')
+  assert.equal(f.state.taskForm.type,'')
+  assert.equal(f.state.taskForm.exclusions,'')
+  assert.equal(f.state.taskForm.output,'')
+  assert.doesNotMatch(f.ui(),/undefined/)
+  // 采纳只填草稿：调研任务尚未创建
+  assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+  f.close()
 })
