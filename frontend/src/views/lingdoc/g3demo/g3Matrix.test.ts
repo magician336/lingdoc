@@ -31,6 +31,9 @@ const BASELINE_ABS = resolve(
 )
 const BASELINE_AVAILABLE = existsSync(BASELINE_ABS)
 
+/** 仓库根目录（本文件上溯 5 级）。 */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../..')
+
 test('每条判据原文都逐字出现在主基准文档中', (t) => {
   if (!BASELINE_AVAILABLE) {
     t.skip(`读不到主基准文档（${BASELINE_ABS}），跳过逐字核对`)
@@ -307,14 +310,49 @@ test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准�
   assert.equal(spec.anchor.start, 38)
 
   // 首版最小变更复核：五态，小写，且没有 draft / stabilized。
+  // 来源文档已随历史文档清理删除，读法记录在收口总结第七节，锚点指向那一节。
   const review = G3_LIFECYCLE_READINGS.find((reading) => reading.source.includes('首版最小变更复核'))
   assert.ok(review)
   assert.deepEqual([...review.states], ['assessed', 'applied', 'rejected', 'stale', 'satisfied'])
-  assert.equal(review.anchor.start, 48)
+  assert.equal(review.anchor.path, 'docs/08-本轮实施方案/G3-缺口收口-总结.md')
+  assert.equal(review.anchor.start, 79)
 
   for (const reading of G3_LIFECYCLE_READINGS) {
     assert.ok(reading.note.length > 0, `${reading.source} 缺说明`)
     assert.ok(parseAnchor(formatAnchor(reading.anchor)), `${reading.source} 的锚点不合法`)
+  }
+})
+
+/**
+ * 页面上的每一处锚点都必须指向**仓内真实存在的文件**。
+ *
+ * 为什么要有这条：文档被清理时，页面上的锚点会静默指向已不存在的文件 ——
+ * 读者点过去才发现，而那时没人会回来修。锚点存在性是可以在提交前机械核对的。
+ */
+test('状态集合与 SATISFIED 读法的每一处锚点都指向仓内真实存在的文件', (t) => {
+  if (!BASELINE_AVAILABLE) {
+    t.skip('读不到仓库根的文档目录（前端单独 checkout），跳过锚点存在性核对')
+    return
+  }
+  const anchors = [
+    ...G3_LIFECYCLE_READINGS.map((reading) => ({
+      label: reading.source,
+      path: reading.anchor.path,
+    })),
+    {
+      label: 'SATISFIED 主读法',
+      path: G3_SATISFIED_READING.primary.anchor.path,
+    },
+    {
+      label: 'SATISFIED 另一读法',
+      path: G3_SATISFIED_READING.alternative.anchor.path,
+    },
+  ]
+  for (const anchor of anchors) {
+    assert.ok(
+      existsSync(resolve(REPO_ROOT, anchor.path)),
+      `${anchor.label} 的锚点指向不存在的文件：${anchor.path}`,
+    )
   }
 })
 

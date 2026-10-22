@@ -9,6 +9,9 @@
  * 逐条比对编号、标题、对应验收行、当前状态与承接票）。改动这里的字段时，
  * 同一份事实要同步进那份镜像；两者不一致时以镜像为准。
  *
+ * **#246 已关闭**（2026-10-21）：镜像里那张复制票态的「承接票清单」表已退役，
+ * 票态的权威只有 GitHub 票面一处。每条缺口的承接票见镜像缺口清单表的「承接票」列。
+ *
  * **事实基线**：本轮（切片七行接实跑判定那一轮）在当前 head 重跑了影响中心那条链，
  * 所以下面凡引用落证的地方都指名**落证文件与判定卡**；
  * `a87459f` 那一轮（#257）是**页面渲染**那一半的落证，两处不混读。
@@ -29,7 +32,12 @@
 import { G3_MAIN_BASELINE_PATH, type SpecAnchor } from './g3Matrix'
 import type { G3Status } from './g3Status'
 
-/** 缺口清单 Issue（常驻跟踪票，缺口未补齐前保持 open）。 */
+/**
+ * 缺口清单 Issue（#246，2026-10-21 已关闭）。
+ *
+ * 编号保留：页面与导出体引用的是**这张清单的历史**——11 条缺口、
+ * 各自的状态与解除条件。票态的权威只有 GitHub 票面一处，本文件不复制。
+ */
 export const G3_GAP_LIST_ISSUE = 246
 
 /** 一条实现缺口。 */
@@ -466,8 +474,11 @@ export function limitingGapIdsForRow(rowId: string): string[] {
 }
 
 /**
- * #246 的硬规则：**缺口清单未关闭前，缺口对应的验收行一律不得判 `PASS`**
- * （`docs/agents/development-rules.md`）。
+ * **缺口对应的验收行一律不得判 `PASS`**（`docs/agents/development-rules.md`）。
+ *
+ * 这条规则最初写成「#246 未关闭前…」；#246 已于 2026-10-21 关闭，但
+ * **11 条缺口尚未逐条复核通过**（行状态仍是 `PASS (follow-up)` 与 `WARNING`），
+ * 所以降级依然成立——变的是理由，不是行为。
  *
  * 这条规则必须在**投影处**兜住，不能只靠静态声明：判定卡自己会带 `status`，
  * 判定成立时常常就是 `PASS`（AC-G3-03 的原子性判定、路线图判定、助手判定都是）。
@@ -488,52 +499,3 @@ export function downgradeGapPass(rowId: string, status: G3Status): G3Status {
   const hasGap = gapIdsForRow(rowId).length > 0 || limitingGapIdsForRow(rowId).length > 0
   return hasGap ? 'PASS (follow-up)' : status
 }
-
-/**
- * 承接票**登记表**（票号 → 该票承接的缺口编号）。
- *
- * 缺口清单镜像（`docs/08-本轮实施方案/G3-缺口清单-246-副本.md`）里那张
- * 「承接票清单」表是同一份事实的**文档形态**；这里是它的**代码形态**。
- * 两者必须逐条一致——`g3Gaps.test.ts` 的承接票守护按这张登记表核对镜像，
- * 防的是「票号写错」「重复登记」「漏登记解除条件票」。
- *
- * **这张表不证明票在 GitHub 上确实存在**：那件事由 PR 评审与逐票回写承担；
- * 自动化守护保证的只是「登记表内部自洽、无遗漏、无重复」。
- *
- * `kind` 的三种取值：
- * - `sub`：子票——`gaps` 里的每条缺口的承接票就是它；
- * - `unblock`：解除条件 / 派生缺陷票——它承接的是某条缺口的**解除条件**，
- *   缺口本身的承接票仍然是 `sub` 票；
- * - `maintenance`：本票（#249）自身的事实校正与同源守护，不承接任何缺口。
- */
-export interface G3GapTicketRegistryEntry {
-  /** 票号（GitHub Issue 号）。 */
-  ticket: number
-  /** 这张票在缺口体系里的角色。 */
-  kind: 'sub' | 'unblock' | 'maintenance'
-  /** 这张票承接的缺口编号。 */
-  gaps: readonly string[]
-}
-
-/** 承接票登记表（顺序与镜像的「承接票清单」表一致）。 */
-export const G3_GAP_TICKET_REGISTRY: readonly G3GapTicketRegistryEntry[] = Object.freeze([
-  { ticket: 249, kind: 'maintenance', gaps: [] },
-  { ticket: 250, kind: 'sub', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
-  { ticket: 251, kind: 'sub', gaps: ['G3-GAP-04'] },
-  { ticket: 252, kind: 'sub', gaps: ['G3-GAP-05'] },
-  { ticket: 253, kind: 'sub', gaps: ['G3-GAP-09'] },
-  { ticket: 254, kind: 'sub', gaps: ['G3-GAP-10'] },
-  { ticket: 255, kind: 'sub', gaps: ['G3-GAP-11'] },
-  { ticket: 256, kind: 'sub', gaps: ['G3-GAP-01'] },
-  { ticket: 257, kind: 'sub', gaps: ['G3-GAP-06', 'G3-GAP-07'] },
-  { ticket: 258, kind: 'sub', gaps: ['G3-GAP-08'] },
-  { ticket: 306, kind: 'unblock', gaps: ['G3-GAP-08'] },
-  { ticket: 310, kind: 'unblock', gaps: ['G3-GAP-01'] },
-  { ticket: 314, kind: 'unblock', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
-  { ticket: 315, kind: 'unblock', gaps: ['G3-GAP-04'] },
-  { ticket: 318, kind: 'unblock', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
-  { ticket: 319, kind: 'unblock', gaps: ['G3-GAP-02'] },
-  { ticket: 320, kind: 'unblock', gaps: ['G3-GAP-04'] },
-  { ticket: 321, kind: 'unblock', gaps: ['G3-GAP-05'] },
-  { ticket: 324, kind: 'unblock', gaps: ['G3-GAP-02'] },
-])
