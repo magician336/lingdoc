@@ -18,9 +18,9 @@ var ErrSemanticBatchStagingRequired = clienterror.Wrap(clienterror.Form{Status: 
 var ErrFormalChangeRequired = fmt.Errorf("%w: confirmed or formally used object requires a formal ChangeSet", ErrInvalidState)
 
 // This is a mutation-only guard. Cached operations still reauthorize through
-// g2Operation, but do not repeat a mutation against a later formal state.
+// runAgentOperation, but do not repeat a mutation against a later formal state.
 // A confirmed dependency edge alone does not make a collected candidate formal.
-func requireDraftG2Edit(tx Transaction, p Project, ref ObjectVersionRef) error {
+func requireDraftEdit(tx Transaction, p Project, ref ObjectVersionRef) error {
 	formal, err := formalG2Object(tx, p, ref)
 	if err != nil {
 		return err
@@ -60,11 +60,11 @@ func formalG2Object(tx Transaction, p Project, ref ObjectVersionRef) (bool, erro
 			}
 		}
 	}
-	port, err := g2Storage(tx)
+	port, err := agentObjectStore(tx)
 	if err != nil {
 		return false, err
 	}
-	cards, err := port.G2Objects(p.ID, G2CardKind)
+	cards, err := port.Objects(p.ID, EvidenceCardKind)
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +132,7 @@ func formalG2Object(tx Transaction, p Project, ref ObjectVersionRef) (bool, erro
 					return true, nil
 				}
 			case "EvidenceCard":
-				card, _, err := g2Load[EvidenceCard](tx, p.ID, G2CardKind, edge.Target.ID)
+				card, _, err := loadStoredObject[EvidenceCard](tx, p.ID, EvidenceCardKind, edge.Target.ID)
 				if err != nil {
 					return false, err
 				}
@@ -149,15 +149,15 @@ func formalG2Object(tx Transaction, p Project, ref ObjectVersionRef) (bool, erro
 // Only user-editable semantics. No version, author, source_ids, status or old
 // confirmation can be submitted as the new card's authority.
 type EvidenceCardSemanticInput struct {
-	ClaimRef               *G2VersionRef  `json:"claim_ref,omitempty"`
-	AnchorRefs             []G2VersionRef `json:"anchor_refs"`
-	SupportType            string         `json:"support_type"`
-	Scope                  string         `json:"scope"`
-	ScopeChapterIDs        []string       `json:"scope_chapter_ids"`
-	Limitations            string         `json:"limitations"`
-	Gaps                   string         `json:"gaps"`
-	AlternativeExplanation string         `json:"alternative_explanation"`
-	Confirmed              bool           `json:"confirmed"`
+	ClaimRef               *VersionRef  `json:"claim_ref,omitempty"`
+	AnchorRefs             []VersionRef `json:"anchor_refs"`
+	SupportType            string       `json:"support_type"`
+	Scope                  string       `json:"scope"`
+	ScopeChapterIDs        []string     `json:"scope_chapter_ids"`
+	Limitations            string       `json:"limitations"`
+	Gaps                   string       `json:"gaps"`
+	AlternativeExplanation string       `json:"alternative_explanation"`
+	Confirmed              bool         `json:"confirmed"`
 }
 
 func cardSemanticInput(card EvidenceCard) EvidenceCardSemanticInput {
@@ -166,29 +166,29 @@ func cardSemanticInput(card EvidenceCard) EvidenceCardSemanticInput {
 
 func evidenceSemanticSources(tx Transaction, p Project, input EvidenceCardSemanticInput) ([]string, error) {
 	if !input.Confirmed {
-		return nil, ErrG2ConsentRequired
+		return nil, ErrConsentRequired
 	}
 	if len(input.AnchorRefs) == 0 || len(input.AnchorRefs) > 20 || input.ClaimRef == nil || strings.TrimSpace(input.Scope) == "" || len(input.ScopeChapterIDs) == 0 {
-		return nil, ErrG2EvidenceIncomplete
+		return nil, ErrEvidenceIncomplete
 	}
 	if !slices.Contains([]string{"supports", "refutes", "qualifies", "background"}, input.SupportType) {
 		return nil, ErrInvalidRequest
 	}
-	claim, _, err := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, input.ClaimRef.ID)
+	claim, _, err := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, input.ClaimRef.ID)
 	if err != nil {
 		return nil, err
 	}
 	if claim.Version != input.ClaimRef.Version || claim.Status == "superseded" || claim.Basis.SpecRevision != p.SpecRevision {
 		return nil, ErrVersionConflict
 	}
-	local, ok := tx.(g2AssetPolicyTransaction)
+	local, ok := tx.(assetPolicyTransaction)
 	if !ok {
 		return nil, ErrImpactObjectUnavailable
 	}
 	ids := []string{}
 	seen := map[string]bool{}
 	for _, ref := range input.AnchorRefs {
-		anchor, _, err := g2Load[SourceAnchor](tx, p.ID, G2AnchorKind, ref.ID)
+		anchor, _, err := loadStoredObject[SourceAnchor](tx, p.ID, SourceAnchorKind, ref.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -196,12 +196,12 @@ func evidenceSemanticSources(tx Transaction, p Project, input EvidenceCardSemant
 			return nil, ErrVersionConflict
 		}
 		seen[ref.ID] = true
-		current, err := local.G2AnchorCurrent(anchor)
+		current, err := local.IsAnchorCurrent(anchor)
 		if err != nil {
 			return nil, err
 		}
 		if !current {
-			return nil, ErrG2EvidenceIncomplete
+			return nil, ErrEvidenceIncomplete
 		}
 		ids = append(ids, anchor.SourceID)
 	}
@@ -230,7 +230,7 @@ func (s *Service) applyEvidenceCardDelta(ctx context.Context, tx Transaction, ac
 	if _, err := evidenceSemanticSources(tx, before, input); err != nil {
 		return err
 	}
-	old, stored, err := g2Load[EvidenceCard](tx, before.ID, G2CardKind, delta.TargetID)
+	old, stored, err := loadStoredObject[EvidenceCard](tx, before.ID, EvidenceCardKind, delta.TargetID)
 	if err != nil {
 		return err
 	}
@@ -239,25 +239,25 @@ func (s *Service) applyEvidenceCardDelta(ctx context.Context, tx Transaction, ac
 	}
 	sourceIDs := []string{}
 	for _, ref := range input.AnchorRefs {
-		anchor, _, err := g2Load[SourceAnchor](tx, before.ID, G2AnchorKind, ref.ID)
+		anchor, _, err := loadStoredObject[SourceAnchor](tx, before.ID, SourceAnchorKind, ref.ID)
 		if err != nil {
 			return err
 		}
 		sourceIDs = append(sourceIDs, anchor.SourceID)
 	}
-	card := EvidenceCard{ID: old.ID, ProjectID: before.ID, Version: old.Version + 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), SourceIDs: sortedImpactSourceIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: g2IDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: g2BasisFor(next, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
-	if err := g2Store(tx, stored, before.ID, G2CardKind, card.ID, card.Version, card); err != nil {
+	card := EvidenceCard{ID: old.ID, ProjectID: before.ID, Version: old.Version + 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), SourceIDs: sortedImpactSourceIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: sortedUniqueIDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: versionBasisFor(next, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
+	if err := storeStoredObject(tx, stored, before.ID, EvidenceCardKind, card.ID, card.Version, card); err != nil {
 		return err
 	}
-	if err := g2PublishCardDependencies(tx, actor, next, card); err != nil {
+	if err := publishCardDependencies(tx, actor, next, card); err != nil {
 		return err
 	}
-	return g2Audit(tx, actor, before.ID, "g2.evidence.semantic_delta", card.ID, reason, map[string]any{"previous_version": old.Version, "version": card.Version, "context_revision": next.CurrentContextRevision})
+	return recordAgentAuditEvent(tx, actor, before.ID, "g2.evidence.semantic_delta", card.ID, reason, map[string]any{"previous_version": old.Version, "version": card.Version, "context_revision": next.CurrentContextRevision})
 }
 
 func sameCardSemanticInput(a, b EvidenceCardSemanticInput) bool {
 	a.Confirmed, b.Confirmed = false, false
-	a.ScopeChapterIDs, b.ScopeChapterIDs = g2IDs(a.ScopeChapterIDs), g2IDs(b.ScopeChapterIDs)
+	a.ScopeChapterIDs, b.ScopeChapterIDs = sortedUniqueIDs(a.ScopeChapterIDs), sortedUniqueIDs(b.ScopeChapterIDs)
 	return reflect.DeepEqual(a, b)
 }
 
@@ -295,7 +295,7 @@ func validateCurrentCardClaimBatch(tx Transaction, p Project, deltas []SemanticD
 		if delta.Kind != "EvidenceCard" {
 			continue
 		}
-		card, _, err := g2Load[EvidenceCard](tx, p.ID, G2CardKind, delta.TargetID)
+		card, _, err := loadStoredObject[EvidenceCard](tx, p.ID, EvidenceCardKind, delta.TargetID)
 		if err != nil {
 			return err
 		}

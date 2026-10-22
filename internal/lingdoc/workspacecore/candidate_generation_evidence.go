@@ -47,14 +47,14 @@ func candidateFormalBasisHash(p Project) string {
 		CopyID, Content, Rules     string
 	}{p.ID, p.SpecRevision, p.CurrentContextRevision, p.TemplateCopyVersion, copyID, content, rules})
 }
-func candidateRefsHash(refs []G2VersionRef) string {
+func candidateRefsHash(refs []VersionRef) string {
 	refs = slices.Clone(refs)
 	for i := range refs {
 		if refs[i].Kind == "" {
 			refs[i].Kind = "EvidenceCard"
 		}
 	}
-	slices.SortFunc(refs, func(a, b G2VersionRef) int {
+	slices.SortFunc(refs, func(a, b VersionRef) int {
 		if a.ID < b.ID {
 			return -1
 		}
@@ -68,8 +68,8 @@ func candidateRefsHash(refs []G2VersionRef) string {
 
 // PrepareCandidateGenerationEvidence performs all real source/origin/KB IO
 // before the adoption tx takes SQLite's single pooled connection.
-func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, refs []G2VersionRef, usedSourceIDs []string) (context.Context, G2EvidenceSelection, error) {
-	selected := G2EvidenceSelection{Cards: []EvidenceCard{}, Sources: []AgentSourceRef{}, Pending: []G2VersionRef{}}
+func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, refs []VersionRef, usedSourceIDs []string) (context.Context, EvidenceSelection, error) {
+	selected := EvidenceSelection{Cards: []EvidenceCard{}, Sources: []AgentSourceRef{}, Pending: []VersionRef{}}
 	if s == nil {
 		return ctx, selected, ErrInvalidState
 	}
@@ -93,11 +93,11 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 			return ctx, selected, err
 		}
 	} else {
-		if len(usedSourceIDs) > 0 && s.g2Runtime.Sources == nil {
-			return ctx, selected, ErrG2Unavailable
+		if len(usedSourceIDs) > 0 && s.agentRuntime.Sources == nil {
+			return ctx, selected, ErrDependencyUnavailable
 		}
 		for _, id := range sortedImpactSourceIDs(usedSourceIDs) {
-			source, e := s.g2Runtime.Sources.ReadG2Source(ctx, actor, projectID, id)
+			source, e := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, id)
 			if e != nil {
 				return ctx, selected, e
 			}
@@ -116,7 +116,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 	}
 	for _, id := range usedSourceIDs {
 		if !slices.Contains(allIDs, id) {
-			return ctx, selected, ErrG2EvidenceIncomplete
+			return ctx, selected, ErrEvidenceIncomplete
 		}
 	}
 	raw, err := json.Marshal(selected)
@@ -161,7 +161,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 	return context.WithValue(ctx, candidateEvidenceProofKey{}, proof), selected, nil
 }
 
-func validateNativeCandidateCards(tx Transaction, p Project, refs []G2VersionRef) error {
+func validateNativeCandidateCards(tx Transaction, p Project, refs []VersionRef) error {
 	reader, ok := tx.(interface {
 		CurrentEvidenceObject(string, string, string) (ImpactObjectState, error)
 	})
@@ -171,7 +171,7 @@ func validateNativeCandidateCards(tx Transaction, p Project, refs []G2VersionRef
 	for _, ref := range refs {
 		current, err := reader.CurrentEvidenceObject(p.ID, "EvidenceCard", ref.ID)
 		if err != nil || !current.Confirmed || current.Ref.Version != fmt.Sprint(ref.Version) {
-			return ErrG2EvidenceIncomplete
+			return ErrEvidenceIncomplete
 		}
 	}
 	return nil
@@ -221,7 +221,7 @@ func candidateNativePolicyDigest(ctx context.Context, tx Transaction, actor Acto
 			return "", e
 		}
 		if !policy.ModelUseAllowed || policy.AssetRevision != int64(source.AssetRevision) {
-			return "", ErrG2ConsentRequired
+			return "", ErrConsentRequired
 		}
 		values = append(values, struct {
 			SourceID, KBID, Provenance string
@@ -232,9 +232,9 @@ func candidateNativePolicyDigest(ctx context.Context, tx Transaction, actor Acto
 }
 
 // All work here uses the supplied tx. In particular this method never calls
-// ReadG2Source, SourceRuntime, a main-pool repository or an external KB service.
-func (s *Service) SelectGenerationEvidenceInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, chapterID string, refs []G2VersionRef, formal bool, usedSourceIDs []string) (G2EvidenceSelection, error) {
-	selected := G2EvidenceSelection{}
+// ReadResearchSource, SourceRuntime, a main-pool repository or an external KB service.
+func (s *Service) SelectGenerationEvidenceInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, chapterID string, refs []VersionRef, formal bool, usedSourceIDs []string) (EvidenceSelection, error) {
+	selected := EvidenceSelection{}
 	if s == nil || tx == nil || !formal {
 		return selected, ErrInvalidState
 	}
@@ -247,7 +247,7 @@ func (s *Service) SelectGenerationEvidenceInTransaction(ctx context.Context, tx 
 	}
 	proof, ok := ctx.Value(candidateEvidenceProofKey{}).(candidateEvidenceProof)
 	if !ok || proof.actor != actor || proof.projectID != projectID || proof.chapterID != chapterID || proof.identityHash != candidateIdentityHash(ctx) || proof.refsHash != candidateRefsHash(refs) || proof.usedIDsHash != hashImpactValue(sortedImpactSourceIDs(usedSourceIDs)) {
-		return selected, ErrG2EvidenceIncomplete
+		return selected, ErrEvidenceIncomplete
 	}
 	if p.Status != "active" || proof.basisHash != candidateFormalBasisHash(p) {
 		return selected, ErrVersionConflict

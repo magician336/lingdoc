@@ -13,7 +13,7 @@
         "signature": "GET /discarded-projects",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/discarded-projects",
-        "line": 29,
+        "line": 36,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.Project, error)",
@@ -24,18 +24,18 @@
         "signature": "GET /project-invitations",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/project-invitations",
-        "line": 33,
+        "line": 40,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.MemberInvitation, error)",
-        "read_method": "ListMyProjectInvitations",
+        "read_method": null,
         "idempotent": false
       },
       {
         "signature": "GET /projects/{}/action-proposals",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/action-proposals",
-        "line": 113,
+        "line": 119,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -44,9 +44,9 @@
       },
       {
         "signature": "GET /projects/{}/agent-sessions/{}/turns",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/agent-sessions/:sessionID/turns",
-        "line": 110,
+        "line": 116,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -55,9 +55,9 @@
       },
       {
         "signature": "GET /projects/{}/agents/{}/sessions",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/agents/:agent/sessions",
-        "line": 107,
+        "line": 113,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -66,9 +66,9 @@
       },
       {
         "signature": "GET /projects/{}/assets/{}/policy",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/assets/:assetID/policy",
-        "line": 116,
+        "line": 122,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -90,7 +90,7 @@
         "signature": "GET /projects/{}/chapters/{}/comments",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/chapters/:chapterId/comments",
-        "line": 90,
+        "line": 97,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.ChapterComment, error)",
@@ -101,7 +101,7 @@
         "signature": "GET /projects/{}/chapters/{}/review",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/chapters/:chapterId/review",
-        "line": 84,
+        "line": 91,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") (core.ChapterReviewState, error)",
@@ -143,9 +143,9 @@
       },
       {
         "signature": "GET /projects/{}/evidence-cards",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/evidence-cards",
-        "line": 104,
+        "line": 110,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -154,9 +154,9 @@
       },
       {
         "signature": "GET /projects/{}/evidence-cards/{}",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/evidence-cards/:cardID",
-        "line": 187,
+        "line": 193,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -176,9 +176,9 @@
       },
       {
         "signature": "GET /projects/{}/import-candidates",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/import-candidates",
-        "line": 95,
+        "line": 101,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -189,51 +189,51 @@
         "signature": "GET /projects/{}/invitations",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/invitations",
-        "line": 48,
+        "line": 55,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.MemberInvitation, error)",
-        "read_method": "ListProjectInvitations",
+        "read_method": null,
         "idempotent": false
       },
       {
         "signature": "GET /projects/{}/members/directory",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/members/directory",
-        "line": 45,
+        "line": 52,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.MemberDirectoryEntry, error)",
-        "read_method": "ProjectMemberDirectory",
+        "read_method": null,
         "idempotent": false
       },
       {
         "signature": "GET /projects/{}/owner-transfers",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/owner-transfers",
-        "line": 36,
+        "line": 43,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") ([]core.OwnerTransfer, error)",
-        "read_method": "ListOwnerTransfers",
+        "read_method": null,
         "idempotent": false
       },
       {
         "signature": "GET /projects/{}/permissions",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/permissions",
-        "line": 42,
+        "line": 49,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": ") (core.EffectivePermission, error)",
-        "read_method": "EffectivePermission",
+        "read_method": null,
         "idempotent": false
       },
       {
         "signature": "GET /projects/{}/research-claims",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-claims",
-        "line": 101,
+        "line": 107,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -242,9 +242,9 @@
       },
       {
         "signature": "GET /projects/{}/research-runs",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-runs",
-        "line": 89,
+        "line": 95,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -253,9 +253,9 @@
       },
       {
         "signature": "GET /projects/{}/research-runs/{}",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-runs/:runID",
-        "line": 92,
+        "line": 98,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -264,9 +264,9 @@
       },
       {
         "signature": "GET /projects/{}/research-tasks",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks",
-        "line": 86,
+        "line": 92,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -407,9 +407,9 @@
       },
       {
         "signature": "GET /projects/{}/source-anchors",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/source-anchors",
-        "line": 98,
+        "line": 104,
         "request_type": null,
         "fixed_success": "200",
         "typed_response": null,
@@ -462,42 +462,42 @@
       },
       {
         "signature": "POST /projects/{}/action-proposals",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/action-proposals",
-        "line": 168,
+        "line": 174,
         "request_type": "core.CreateActionProposalInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateActionProposal",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/action-proposals/{}/confirm",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/action-proposals/:proposalID/confirm",
-        "line": 171,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 177,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ConfirmActionProposal",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/action-proposals/{}/reject",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/action-proposals/:proposalID/reject",
-        "line": 174,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 180,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "RejectActionProposal",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/activation-read",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/activation-read",
-        "line": 66,
+        "line": 73,
         "request_type": "{\n\t\t\tExpectedProjectVersion int64 `json:\"expected_project_version\"`\n\t\t}",
         "fixed_success": "201",
         "typed_response": null,
@@ -506,9 +506,9 @@
       },
       {
         "signature": "POST /projects/{}/agent-context",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/agent-context",
-        "line": 184,
+        "line": 190,
         "request_type": "core.AgentContextInput",
         "fixed_success": "200",
         "typed_response": null,
@@ -517,35 +517,35 @@
       },
       {
         "signature": "POST /projects/{}/agent-sessions/{}/turns",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/agent-sessions/:sessionID/turns",
-        "line": 165,
+        "line": 171,
         "request_type": "core.AgentTurnInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SendAgentTurn",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/agents/{}/sessions",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/agents/:agent/sessions",
-        "line": 162,
-        "request_type": "core.G2Expectation",
+        "line": 168,
+        "request_type": "core.VersionExpectation",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateAgentSession",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/assets/{}/policy/proposals",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/assets/:assetID/policy/proposals",
-        "line": 199,
-        "request_type": "g2PolicyProposalInput",
+        "line": 205,
+        "request_type": "assetPolicyProposalInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateChangeDraft",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -556,7 +556,7 @@
         "request_type": "core.ExtendedChangeSetInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateChangeDraft",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -567,7 +567,7 @@
         "request_type": "{}",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "AssessChangeSet",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -578,7 +578,7 @@
         "request_type": "{\n\t\tProofID string `json:\"proof_id\"`\n\t}",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "AcknowledgeImpactPreflight",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -589,7 +589,7 @@
         "request_type": "{}",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ReverseChangeSet",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -600,29 +600,29 @@
         "request_type": "{}",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "StabilizeRevision",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/chapters/{}/comments",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/chapters/:chapterId/comments",
-        "line": 93,
+        "line": 100,
         "request_type": "core.ChapterCommentInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveChapterComment",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/chapters/{}/review",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/chapters/:chapterId/review",
-        "line": 87,
+        "line": 94,
         "request_type": "core.ChapterReviewInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ChangeChapterReview",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -633,7 +633,7 @@
         "request_type": "core.DependencyEdgeInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateDependencyEdge",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -644,40 +644,40 @@
         "request_type": "core.DependencyDecisionInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "DecideDependencyEdge",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/evidence-cards",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/evidence-cards",
-        "line": 153,
+        "line": 159,
         "request_type": "core.SaveEvidenceCardInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveEvidenceCard",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/evidence-cards/{}/confirm",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/evidence-cards/:cardID/confirm",
-        "line": 156,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 162,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ConfirmEvidenceCard",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/evidence-cards/{}/review",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/evidence-cards/:cardID/review",
-        "line": 159,
+        "line": 165,
         "request_type": "core.ReviewEvidenceCardInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ReviewEvidenceCard",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -688,36 +688,36 @@
         "request_type": "core.ImpactTaskActionInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ActOnImpactTask",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/import-candidates",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/import-candidates",
-        "line": 138,
+        "line": 144,
         "request_type": "core.CreateImportCandidateInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateImportCandidate",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/import-candidates/{}/confirm",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/import-candidates/:candidateID/confirm",
-        "line": 141,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 147,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ConfirmImportCandidate",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/import-candidates/{}/refresh",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/import-candidates/:candidateID/refresh",
-        "line": 181,
+        "line": 187,
         "request_type": "{}",
         "fixed_success": "200",
         "typed_response": null,
@@ -726,75 +726,75 @@
       },
       {
         "signature": "POST /projects/{}/import-candidates/{}/reject",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/import-candidates/:candidateID/reject",
-        "line": 144,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 150,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "RejectImportCandidate",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/invitations",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/invitations",
-        "line": 51,
+        "line": 58,
         "request_type": "core.InviteMemberInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "InviteProjectMember",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/invitations/{}/accept",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/invitations/:invitationId/accept",
-        "line": 54,
+        "line": 61,
         "request_type": "core.AcceptMemberInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "AcceptProjectInvitation",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/members/{}/state",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/members/:userId/state",
-        "line": 60,
+        "line": 67,
         "request_type": "core.MemberLifecycleInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ChangeMemberState",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/owner-transfer/{}/reject",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/owner-transfer/:transferId/reject",
-        "line": 39,
+        "line": 46,
         "request_type": "core.OwnerTransferDecisionInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "RejectOwnerTransfer",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/research-claims",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-claims",
-        "line": 150,
+        "line": 156,
         "request_type": "core.SaveResearchClaimInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveResearchClaim",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/research-runs/{}/results/{}/inspect",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-runs/:runID/results/:resultID/inspect",
-        "line": 178,
+        "line": 184,
         "request_type": "{}",
         "fixed_success": "200",
         "typed_response": null,
@@ -803,46 +803,46 @@
       },
       {
         "signature": "POST /projects/{}/research-tasks",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks",
-        "line": 119,
+        "line": 125,
         "request_type": "core.SaveResearchTaskInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveResearchTask",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/research-tasks/{}/approve",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks/:taskID/approve",
-        "line": 129,
-        "request_type": "core.G2ConfirmedInput",
+        "line": 135,
+        "request_type": "core.ConfirmationInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ApproveResearchTask",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/research-tasks/{}/control",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks/:taskID/control",
-        "line": 135,
+        "line": 141,
         "request_type": "core.ControlResearchTaskInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ControlResearchTask",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/research-tasks/{}/run",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks/:taskID/run",
-        "line": 132,
+        "line": 138,
         "request_type": "core.RunResearchTaskInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "RunResearchTask",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -853,7 +853,7 @@
         "request_type": "core.RoadmapEditBeginInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "BeginRoadmapEdit",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -864,7 +864,7 @@
         "request_type": "core.RoadmapCancelInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CancelRoadmapEdit",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -875,7 +875,7 @@
         "request_type": "core.RoadmapCommitInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CommitRoadmapEdit",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -886,7 +886,7 @@
         "request_type": "core.RoadmapEdgeProposalInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ProposeRoadmapEdge",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -897,7 +897,7 @@
         "request_type": "core.RoadmapNodeProposalInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ProposeRoadmapNode",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -908,7 +908,7 @@
         "request_type": "core.RuntimeAlertRule",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveRuntimeAlertRule",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -919,18 +919,18 @@
         "request_type": "core.RuntimeControlInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ControlRuntime",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "POST /projects/{}/source-anchors",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/source-anchors",
-        "line": 147,
+        "line": 153,
         "request_type": "core.SaveSourceAnchorInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveSourceAnchor",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -941,7 +941,7 @@
         "request_type": "core.TrialDecisionSignInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SignTrialDecision",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -952,7 +952,7 @@
         "request_type": "core.TrialWindow",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateTrialWindow",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -963,7 +963,7 @@
         "request_type": "core.TrialWindowActionInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ActOnTrialWindow",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -974,7 +974,7 @@
         "request_type": "core.TrialDecisionInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "CreateTrialDecision",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -985,7 +985,7 @@
         "request_type": "core.TrialSample",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "RecordTrialSample",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -996,18 +996,18 @@
         "request_type": "core.TrialReviewInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "ReviewTrialSample",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "PUT /projects/{}/api-key-grants",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/api-key-grants",
-        "line": 63,
+        "line": 70,
         "request_type": "core.ProjectAPIKeyGrant",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveProjectAPIKeyGrant",
+        "read_method": null,
         "idempotent": true
       },
       {
@@ -1018,273 +1018,273 @@
         "request_type": "core.ExtendedChangeSetInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "EditChangeDraft",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "PUT /projects/{}/members/{}/assignment",
         "file": "internal/lingdoc/workspace/full_workflow_http.go",
         "path": "/projects/:projectId/members/:userId/assignment",
-        "line": 57,
+        "line": 64,
         "request_type": "core.MemberAssignmentInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SetMemberAssignment",
+        "read_method": null,
         "idempotent": true
       },
       {
         "signature": "PUT /projects/{}/research-tasks/{}",
-        "file": "internal/lingdoc/workspace/g2_full_http.go",
+        "file": "internal/lingdoc/workspace/agent_routes.go",
         "path": "/projects/:projectId/research-tasks/:taskID",
-        "line": 122,
+        "line": 128,
         "request_type": "core.SaveResearchTaskInput",
         "fixed_success": null,
         "typed_response": null,
-        "read_method": "SaveResearchTask",
+        "read_method": null,
         "idempotent": true
       }
     ],
     "consumers": [
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getAgentSpecCandidateProject",
         "line": 98,
         "body_mode": "none",
         "signature": "GET /projects/{}"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveAgentSpecCandidate",
         "line": 99,
         "body_mode": "json",
         "signature": "PUT /projects/{}/spec"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchTasks",
         "line": 101,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-tasks"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchTask",
         "line": 103,
         "body_mode": "json",
         "signature": "PUT /projects/{}/research-tasks/{}"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchTask",
         "line": 104,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "approveResearchTask",
         "line": 105,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/approve"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "runResearchTask",
         "line": 106,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/run"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "controlResearchTask",
         "line": 107,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/control"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchRuns",
         "line": 108,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-runs"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getResearchRun",
         "line": 109,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-runs/{}"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "inspectResearchResult",
         "line": 110,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-runs/{}/results/{}/inspect"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listImportCandidates",
         "line": 111,
         "body_mode": "none",
         "signature": "GET /projects/{}/import-candidates"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createImportCandidate",
         "line": 112,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmImportCandidate",
         "line": 113,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/confirm"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "rejectImportCandidate",
         "line": 114,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/reject"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "refreshImportCandidate",
         "line": 115,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/refresh"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listSourceAnchors",
         "line": 116,
         "body_mode": "none",
         "signature": "GET /projects/{}/source-anchors"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveSourceAnchor",
         "line": 117,
         "body_mode": "json",
         "signature": "POST /projects/{}/source-anchors"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchClaims",
         "line": 118,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-claims"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchClaim",
         "line": 119,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-claims"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listEvidenceCards",
         "line": 120,
         "body_mode": "none",
         "signature": "GET /projects/{}/evidence-cards"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveEvidenceCard",
         "line": 121,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmEvidenceCard",
         "line": 122,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards/{}/confirm"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "reviewEvidenceCard",
         "line": 123,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards/{}/review"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listAgentSessions",
         "line": 124,
         "body_mode": "none",
         "signature": "GET /projects/{}/agents/{}/sessions"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createAgentSession",
         "line": 125,
         "body_mode": "json",
         "signature": "POST /projects/{}/agents/{}/sessions"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getAgentTurns",
         "line": 126,
         "body_mode": "none",
         "signature": "GET /projects/{}/agent-sessions/{}/turns"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "sendAgentTurn",
         "line": 127,
         "body_mode": "json",
         "signature": "POST /projects/{}/agent-sessions/{}/turns"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "previewAgentContext",
         "line": 128,
         "body_mode": "json",
         "signature": "POST /projects/{}/agent-context"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listActionProposals",
         "line": 129,
         "body_mode": "none",
         "signature": "GET /projects/{}/action-proposals"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createActionProposal",
         "line": 130,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmActionProposal",
         "line": 131,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals/{}/confirm"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "rejectActionProposal",
         "line": 132,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals/{}/reject"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getProjectAssetPolicy",
         "line": 142,
         "body_mode": "none",
         "signature": "GET /projects/{}/assets/{}/policy"
       },
       {
-        "file": "frontend/src/api/lingdoc/g2.ts",
+        "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "proposeProjectAssetPolicy",
         "line": 143,
         "body_mode": "json",

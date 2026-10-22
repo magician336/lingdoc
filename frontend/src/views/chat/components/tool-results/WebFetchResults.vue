@@ -114,7 +114,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { WebFetchResultsData, WebFetchResultItem } from '@/types/tool-results';
+import type { WebFetchResultsData, WebFetchResultItem } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 interface Props {
@@ -234,7 +234,7 @@ const indexKey = (index: number, item: WebFetchResultItem): string => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .web-fetch-results {
   display: flex;

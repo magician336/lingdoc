@@ -17,18 +17,28 @@ import (
 // input consumed by T13. Template rules and current source records are resolved
 // by their owning providers after this consistent read.
 type WorkspaceDeliveryInput struct {
-	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
-	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
-	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
-	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
-	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
-	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
-	ProjectID               string                     `json:"project_id"`
-	ProjectName             string                     `json:"project_name"`
-	ProjectVersion          int64                      `json:"project_version"`
-	SpecRevision            int                        `json:"spec_revision"`
-	ContextRevision         int64                      `json:"context_revision,omitempty"`
-	Spec                    map[string]string          `json:"spec"`
+	RuleSetSnapshot      *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	SourceRuleSetID      string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash    string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies      []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash     string                     `json:"source_policy_hash,omitempty"`
+	ProjectID            string                     `json:"project_id"`
+	ProjectName          string                     `json:"project_name"`
+	ProjectVersion       int64                      `json:"project_version"`
+	SpecRevision         int                        `json:"spec_revision"`
+	ContextRevision      int64                      `json:"context_revision,omitempty"`
+	// Spec 是**路线感知投影**，求值读它。
+	Spec map[string]string `json:"spec"`
+	// SpecSource 是**原始规格**：路线感知投影之前、库里存的那一份。溯源快照记的
+	// 就是它，所以溯源校验要比对的是这一份。
+	//
+	// 两个值各司其职，不能只留一个（#324）：
+	//   - 拿投影去比溯源，模板声明为必需的路线节点在投影里是空的，而快照记的是
+	//     规格里的占位值——值对不上，来源访问就被拒（403 source_access_denied）。
+	//   - 拿原始规格去求值，占位值会顶替「路线图还没给出的那个节点」，已声明但
+	//     缺失的路线节点就不再是缺失，#319 的语义就退了。
+	SpecSource              map[string]string          `json:"spec_source,omitempty"`
 	TemplateID              string                     `json:"template_id"`
 	TemplateVersion         string                     `json:"template_version"`
 	TemplateCopyID          string                     `json:"template_copy_id,omitempty"`
@@ -107,7 +117,7 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 		}
 		result = WorkspaceDeliveryInput{
 			ProjectID: project.ID, ProjectName: project.Name, ProjectVersion: project.ProjectVersion,
-			SpecRevision: int(project.SpecRevision), Spec: spec, ContextRevision: project.CurrentContextRevision,
+			SpecRevision: int(project.SpecRevision), Spec: spec, SpecSource: spec, ContextRevision: project.CurrentContextRevision,
 			TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion,
 			Chapters: []WorkspaceDeliveryChapter{},
 		}
@@ -162,6 +172,9 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 			if err != nil {
 				return err
 			}
+			// 投影**覆盖** Spec：模板声明为必需的路线节点在投影里是空的，而原始
+			// 规格里那个 id 存的是激活闸门逼出来的占位值。覆盖之前原始规格已经
+			// 留在 SpecSource 上了——溯源快照记的正是它（#324）。
 			result.Spec = fields
 		}
 		var rows []chapterRow

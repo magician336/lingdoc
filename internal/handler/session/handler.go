@@ -35,7 +35,7 @@ type Handler struct {
 	storageResolver      interfaces.StorageBackendResolver
 	modelService         interfaces.ModelService // Service for model management (VLM access)
 	attachmentProcessor  *AttachmentProcessor    // Processor for file attachments
-	temporaryDocuments   interfaces.TemporaryDocumentService
+	chatAttachments      interfaces.ChatAttachmentService
 	// artifactCollector drains skill-generated files from the session sandbox
 	// after an agent turn completes. May be nil when the sandbox backend does
 	// not support artifact collection; handlers must check before using.
@@ -76,7 +76,7 @@ func NewHandler(
 	modelService interfaces.ModelService,
 	documentReader interfaces.DocumentReader,
 	imageResolver *docparser.ImageResolver,
-	temporaryDocuments interfaces.TemporaryDocumentService,
+	chatAttachments interfaces.ChatAttachmentService,
 	artifactCollector *service.ArtifactCollector,
 	memoryService interfaces.MemoryService,
 	userService interfaces.UserService,
@@ -104,7 +104,7 @@ func NewHandler(
 		resourceCatalog:      resourceCatalog,
 		storageResolver:      storageResolver,
 		modelService:         modelService,
-		temporaryDocuments:   temporaryDocuments,
+		chatAttachments:      chatAttachments,
 		artifactCollector:    artifactCollector,
 		memoryService:        memoryService,
 		userService:          userService,

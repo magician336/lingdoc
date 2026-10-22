@@ -40,26 +40,26 @@ var ErrResearchProviderInvalid = clienterror.New(clienterror.Form{
 	Retryable: false,
 }, "lingdoc: research provider is not available for this tenant")
 
-type g2OriginalFetcher interface {
+type originalFetcher interface {
 	Fetch(context.Context, string) (string, error)
 }
 
-// G2ResearchAdapter delegates retrieval, URL processing, and source checks to
+// ResearchAdapter delegates retrieval, URL processing, and source checks to
 // the existing WeKnora services. It never creates a second RAG/index pipeline.
-type G2ResearchAdapter struct {
+type ResearchAdapter struct {
 	db        *gorm.DB
-	projects  ApplicationService
+	projects  core.CapabilityAuthorizer
 	sources   SourceApplicationService
 	shares    interfaces.KBShareService
 	knowledge interfaces.KnowledgeService
 	web       interfaces.WebSearchService
-	fetcher   g2OriginalFetcher
+	fetcher   originalFetcher
 }
 
-func NewG2ResearchAdapter(db *gorm.DB, projects ApplicationService, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *G2ResearchAdapter {
-	return &G2ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
+func NewResearchAdapter(db *gorm.DB, projects core.CapabilityAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *ResearchAdapter {
+	return &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
 }
-func g2CallerContext(ctx context.Context, actor core.Actor) context.Context {
+func researchCallerContext(ctx context.Context, actor core.Actor) context.Context {
 	caller := types.CallerFromContext(ctx)
 	// Keep authenticated caller AND all original context capabilities (including
 	// TenantAPIKeyScope/Principal). Execution scope is not an authorization grant.
@@ -74,22 +74,22 @@ func g2CallerContext(ctx context.Context, actor core.Actor) context.Context {
 	return ctx
 }
 
-func g2AdapterHash(text string) string {
+func researchTextHash(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
-func (r *G2ResearchAdapter) ReadG2Source(ctx context.Context, actor core.Actor, projectID, sourceID string) (core.G2Source, error) {
+func (r *ResearchAdapter) ReadResearchSource(ctx context.Context, actor core.Actor, projectID, sourceID string) (core.ResearchSource, error) {
 	if r.db == nil || r.sources == nil || r.projects == nil {
-		return core.G2Source{}, core.ErrG2Unavailable
+		return core.ResearchSource{}, core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	source, err := r.sources.GetSource(ctx, actor, projectID, sourceID)
 	if err != nil {
-		return core.G2Source{}, err
+		return core.ResearchSource{}, err
 	}
 	assets, err := r.sources.ListAssets(ctx, actor, projectID)
 	if err != nil {
-		return core.G2Source{}, err
+		return core.ResearchSource{}, err
 	}
 	var asset evidence.Asset
 	for _, item := range assets {
@@ -99,28 +99,28 @@ func (r *G2ResearchAdapter) ReadG2Source(ctx context.Context, actor core.Actor, 
 		}
 	}
 	if asset.ID == "" || asset.AssetRevision != source.AssetRevision {
-		return core.G2Source{}, core.ErrSourceUnavailable
+		return core.ResearchSource{}, core.ErrSourceUnavailable
 	}
 	var chunk types.Chunk
 	if err = r.db.WithContext(ctx).Where("id = ? AND knowledge_id = ?", sourceID, asset.KnowledgeID).First(&chunk).Error; err != nil {
-		return core.G2Source{}, err
+		return core.ResearchSource{}, err
 	}
 	stable := false
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
 		origins := NewGORMSourcePorts(r.db, r.shares).Origins
 		original, available, originErr := origins.OriginText(ctx, asset.KnowledgeID)
 		if originErr != nil {
-			return core.G2Source{}, originErr
+			return core.ResearchSource{}, originErr
 		}
 		stable = available && evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
 	}
 	allowed, err := r.modelUseAllowed(ctx, actor, projectID, asset.ID, asset.KnowledgeID)
 	if err != nil {
-		return core.G2Source{}, err
+		return core.ResearchSource{}, err
 	}
-	return core.G2Source{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: source.Locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed}, nil
+	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: source.Locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed}, nil
 }
-func (r *G2ResearchAdapter) modelUseAllowed(ctx context.Context, actor core.Actor, projectID, assetID, knowledgeID string) (bool, error) {
+func (r *ResearchAdapter) modelUseAllowed(ctx context.Context, actor core.Actor, projectID, assetID, knowledgeID string) (bool, error) {
 	policy, err := core.ReadProjectAssetPolicyFromDB(ctx, r.db, projectID, assetID)
 	if err != nil {
 		return false, err
@@ -132,11 +132,11 @@ func (r *G2ResearchAdapter) modelUseAllowed(ctx context.Context, actor core.Acto
 	return allowed && policy.ModelUseAllowed, nil
 }
 
-func (r *G2ResearchAdapter) CheckG2AssetScope(ctx context.Context, actor core.Actor, projectID string, assetIDs []string) ([]core.G2AssetVersion, error) {
+func (r *ResearchAdapter) CheckAssetScope(ctx context.Context, actor core.Actor, projectID string, assetIDs []string) ([]core.ProjectAssetVersion, error) {
 	if r.projects == nil || r.sources == nil {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	if err := r.projects.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return nil, err
 	}
@@ -151,21 +151,21 @@ func (r *G2ResearchAdapter) CheckG2AssetScope(ctx context.Context, actor core.Ac
 	sorted := slices.Clone(assetIDs)
 	sort.Strings(sorted)
 	sorted = slices.Compact(sorted)
-	out := make([]core.G2AssetVersion, 0, len(sorted))
+	out := make([]core.ProjectAssetVersion, 0, len(sorted))
 	for _, id := range sorted {
 		asset, ok := allowed[id]
 		if !ok || asset.ProcessingState != evidence.AssetStateReady {
 			return nil, core.ErrSourceUnavailable
 		}
-		out = append(out, core.G2AssetVersion{AssetID: id, AssetRevision: asset.AssetRevision})
+		out = append(out, core.ProjectAssetVersion{AssetID: id, AssetRevision: asset.AssetRevision})
 	}
 	return out, nil
 }
-func (r *G2ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, query string) ([]core.ResearchResult, string, error) {
+func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, query string) ([]core.ResearchResult, string, error) {
 	if r.projects == nil || r.sources == nil {
-		return nil, "real", core.ErrG2Unavailable
+		return nil, "real", core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	capability := "research"
 	if task.ChapterID != "" {
 		capability += ":" + task.ChapterID
@@ -180,7 +180,7 @@ func (r *G2ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor
 			return out, "real", err
 		}
 		for _, source := range sources {
-			current, err := r.ReadG2Source(ctx, actor, projectID, source.ID)
+			current, err := r.ReadResearchSource(ctx, actor, projectID, source.ID)
 			if err != nil {
 				return out, "real", err
 			}
@@ -188,16 +188,16 @@ func (r *G2ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor
 			if current.StableOriginal && current.Status == "available" {
 				level = "candidate_evidence"
 			}
-			out = append(out, core.ResearchResult{ID: g2AdapterHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
+			out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 		}
 	}
 	if task.ProviderID != "" {
 		if r.web == nil {
-			return out, "real", core.ErrG2Unavailable
+			return out, "real", core.ErrDependencyUnavailable
 		}
 		var tenant types.Tenant
 		if r.db == nil {
-			return out, "real", core.ErrG2Unavailable
+			return out, "real", core.ErrDependencyUnavailable
 		}
 		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
 			return out, "real", err
@@ -223,16 +223,16 @@ func (r *G2ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor
 			if result.PublishedAt != nil {
 				date = result.PublishedAt.Format(time.RFC3339)
 			}
-			out = append(out, core.ResearchResult{ID: g2AdapterHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
+			out = append(out, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
 		}
 	}
 	return out, "real", nil
 }
-func (r *G2ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, result core.ResearchResult) (core.ResearchResult, error) {
+func (r *ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, result core.ResearchResult) (core.ResearchResult, error) {
 	if r.projects == nil || r.fetcher == nil || task.ProviderID == "" || r.db == nil {
-		return result, core.ErrG2Unavailable
+		return result, core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	capability := "research"
 	if task.ChapterID != "" {
 		capability += ":" + task.ChapterID
@@ -253,10 +253,10 @@ func (r *G2ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor c
 		return result, err
 	}
 	if strings.TrimSpace(text) == "" {
-		return result, core.ErrG2EvidenceIncomplete
+		return result, core.ErrEvidenceIncomplete
 	}
 	result.Locator = fmt.Sprintf("原始页面读取快照 · 字符 0–%d", len([]rune(text)))
-	result.QuotedTextHash = g2AdapterHash(text)
+	result.QuotedTextHash = researchTextHash(text)
 	result.Level = "background_lead"
 	result.Status = "inspected_original"
 	result.Summary = text
@@ -265,9 +265,9 @@ func (r *G2ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor c
 	result.RetrievedAt = time.Now().UTC()
 	return result, nil
 }
-func (r *G2ResearchAdapter) importKB(ctx context.Context, actor core.Actor, requested string) (string, error) {
+func (r *ResearchAdapter) importKB(ctx context.Context, actor core.Actor, requested string) (string, error) {
 	if r.db == nil || r.shares == nil {
-		return "", core.ErrG2Unavailable
+		return "", core.ErrDependencyUnavailable
 	}
 	var bases []types.KnowledgeBase
 	query := r.db.WithContext(ctx)
@@ -294,28 +294,28 @@ func (r *G2ResearchAdapter) importKB(ctx context.Context, actor core.Actor, requ
 	}
 	return valid[0], nil
 }
-func (r *G2ResearchAdapter) ImportResearchCandidate(ctx context.Context, actor core.Actor, projectID, key string, candidate core.ImportCandidate) (core.G2ImportedAsset, error) {
+func (r *ResearchAdapter) ImportResearchCandidate(ctx context.Context, actor core.Actor, projectID, key string, candidate core.ImportCandidate) (core.ImportedAsset, error) {
 	if r.projects == nil || r.sources == nil {
-		return core.G2ImportedAsset{}, core.ErrG2Unavailable
+		return core.ImportedAsset{}, core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	if err := r.projects.Authorize(ctx, actor, projectID, "evidence-write"); err != nil {
-		return core.G2ImportedAsset{}, err
+		return core.ImportedAsset{}, err
 	}
 	knowledgeID := candidate.KnowledgeID
 	if knowledgeID == "" {
 		if r.knowledge == nil || candidate.SelectionType != "original_url" || candidate.URL == "" {
-			return core.G2ImportedAsset{}, core.ErrG2EvidenceIncomplete
+			return core.ImportedAsset{}, core.ErrEvidenceIncomplete
 		}
 		kbID, err := r.importKB(ctx, actor, candidate.KnowledgeBaseID)
 		if err != nil {
-			return core.G2ImportedAsset{}, err
+			return core.ImportedAsset{}, err
 		}
 		// The existing knowledge repository deduplicates the same imported source
 		// snapshot. Different purpose/scope receipts remain distinct candidates.
 		existing, findErr := r.knowledge.GetRepository().FindByMetadataKey(ctx, actor.TenantID, kbID, "lingdoc_import_dedup", candidate.DedupKey)
 		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return core.G2ImportedAsset{}, findErr
+			return core.ImportedAsset{}, findErr
 		}
 		if existing != nil {
 			knowledgeID = existing.ID
@@ -323,20 +323,20 @@ func (r *G2ResearchAdapter) ImportResearchCandidate(ctx context.Context, actor c
 			// Existing URL parsing/indexing can call configured remote models. A full import
 			// must therefore have explicit consent before any asynchronous worker starts.
 			if !candidate.ModelUseAllowed {
-				return core.G2ImportedAsset{}, core.ErrG2ConsentRequired
+				return core.ImportedAsset{}, core.ErrConsentRequired
 			}
 			knowledge, err := r.knowledge.CreateKnowledgeFromURL(ctx, kbID, candidate.URL, "", "", nil, candidate.Title, nil, "lingdoc_research", nil)
 			if err != nil {
-				return core.G2ImportedAsset{}, err
+				return core.ImportedAsset{}, err
 			}
 			if knowledge == nil {
-				return core.G2ImportedAsset{}, core.ErrG2OutcomeUnknown
+				return core.ImportedAsset{}, core.ErrOutcomeUnknown
 			}
 			knowledgeID = knowledge.ID
 			metadata := map[string]any{}
 			if len(knowledge.Metadata) > 0 {
 				if err = json.Unmarshal(knowledge.Metadata, &metadata); err != nil {
-					return core.G2ImportedAsset{}, core.ErrG2OutcomeUnknown
+					return core.ImportedAsset{}, core.ErrOutcomeUnknown
 				}
 			}
 			metadata["lingdoc_import_dedup"] = candidate.DedupKey
@@ -345,48 +345,48 @@ func (r *G2ResearchAdapter) ImportResearchCandidate(ctx context.Context, actor c
 			metadata["lingdoc_import_license"] = candidate.License
 			raw, err := json.Marshal(metadata)
 			if err != nil {
-				return core.G2ImportedAsset{}, core.ErrG2OutcomeUnknown
+				return core.ImportedAsset{}, core.ErrOutcomeUnknown
 			}
 			knowledge.Metadata = types.JSON(raw)
 			if err = r.knowledge.UpdateKnowledge(ctx, knowledge); err != nil {
-				return core.G2ImportedAsset{KnowledgeID: knowledgeID}, core.ErrG2OutcomeUnknown
+				return core.ImportedAsset{KnowledgeID: knowledgeID}, core.ErrOutcomeUnknown
 			}
 		}
 	}
 	asset, _, err := r.sources.BindAsset(ctx, actor, projectID, key, knowledgeID)
 	if err != nil {
-		return core.G2ImportedAsset{KnowledgeID: knowledgeID}, err
+		return core.ImportedAsset{KnowledgeID: knowledgeID}, err
 	}
-	return core.G2ImportedAsset{AssetID: asset.ID, AssetRevision: asset.AssetRevision, ProcessingState: string(asset.ProcessingState), KnowledgeID: knowledgeID}, nil
+	return core.ImportedAsset{AssetID: asset.ID, AssetRevision: asset.AssetRevision, ProcessingState: string(asset.ProcessingState), KnowledgeID: knowledgeID}, nil
 }
-func (r *G2ResearchAdapter) ResearchImportStatus(ctx context.Context, actor core.Actor, projectID string, candidate core.ImportCandidate) (core.G2ImportedAsset, error) {
+func (r *ResearchAdapter) ResearchImportStatus(ctx context.Context, actor core.Actor, projectID string, candidate core.ImportCandidate) (core.ImportedAsset, error) {
 	if r.knowledge == nil || r.sources == nil {
-		return core.G2ImportedAsset{}, core.ErrG2Unavailable
+		return core.ImportedAsset{}, core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	knowledge, err := r.knowledge.GetKnowledgeByID(ctx, candidate.KnowledgeID)
 	if err != nil {
-		return core.G2ImportedAsset{}, err
+		return core.ImportedAsset{}, err
 	}
 	if knowledge == nil {
-		return core.G2ImportedAsset{}, core.ErrSourceUnavailable
+		return core.ImportedAsset{}, core.ErrSourceUnavailable
 	}
 	asset, _, err := r.sources.BindAsset(ctx, actor, projectID, "g2-status-"+candidate.ID, knowledge.ID)
 	if err != nil {
-		return core.G2ImportedAsset{}, err
+		return core.ImportedAsset{}, err
 	}
-	return core.G2ImportedAsset{AssetID: asset.ID, AssetRevision: asset.AssetRevision, ProcessingState: string(asset.ProcessingState), KnowledgeID: knowledge.ID, FinalURL: knowledge.Source}, nil
+	return core.ImportedAsset{AssetID: asset.ID, AssetRevision: asset.AssetRevision, ProcessingState: string(asset.ProcessingState), KnowledgeID: knowledge.ID, FinalURL: knowledge.Source}, nil
 }
 
-var _ core.G2SourceReader = (*G2ResearchAdapter)(nil)
-var _ core.G2ResearchSearcher = (*G2ResearchAdapter)(nil)
-var _ core.G2ResearchInspector = (*G2ResearchAdapter)(nil)
-var _ core.G2ImportProcessor = (*G2ResearchAdapter)(nil)
+var _ core.SourceReader = (*ResearchAdapter)(nil)
+var _ core.ResearchSearcher = (*ResearchAdapter)(nil)
+var _ core.ResearchInspector = (*ResearchAdapter)(nil)
+var _ core.ImportProcessor = (*ResearchAdapter)(nil)
 
-func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask) (string, error) {
-	ctx = g2CallerContext(ctx, actor)
+func (r *ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask) (string, error) {
+	ctx = researchCallerContext(ctx, actor)
 	if r.projects == nil {
-		return "", core.ErrG2Unavailable
+		return "", core.ErrDependencyUnavailable
 	}
 	capability := "research"
 	if task.ChapterID != "" {
@@ -395,10 +395,10 @@ func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor co
 	if err := r.projects.Authorize(ctx, actor, projectID, capability); err != nil {
 		return "", err
 	}
-	scope := []core.G2AssetVersion{}
+	scope := []core.ProjectAssetVersion{}
 	if len(task.AssetIDs) > 0 {
 		var err error
-		scope, err = r.CheckG2AssetScope(ctx, actor, projectID, task.AssetIDs)
+		scope, err = r.CheckAssetScope(ctx, actor, projectID, task.AssetIDs)
 		if err != nil {
 			return "", err
 		}
@@ -406,7 +406,7 @@ func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor co
 	providerVersion := ""
 	if task.ProviderID != "" {
 		if r.db == nil {
-			return "", core.ErrG2Unavailable
+			return "", core.ErrDependencyUnavailable
 		}
 		var provider struct {
 			ID        string
@@ -427,7 +427,7 @@ func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor co
 		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
 			// 租户配置行缺失同样不是调用方的错：检索策略读不出来，能力不可用。
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", core.ErrG2Unavailable
+				return "", core.ErrDependencyUnavailable
 			}
 			return "", err
 		}
@@ -441,43 +441,43 @@ func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor co
 		providerVersion += "|" + string(policy)
 	}
 	raw, _ := json.Marshal(struct {
-		Assets   []core.G2AssetVersion
+		Assets   []core.ProjectAssetVersion
 		Provider string
 	}{scope, providerVersion})
-	return g2AdapterHash(string(raw)), nil
+	return researchTextHash(string(raw)), nil
 }
 
-var _ core.G2ResearchCatalog = (*G2ResearchAdapter)(nil)
+var _ core.ResearchCatalog = (*ResearchAdapter)(nil)
 
-// NewG2ProjectAssetPolicyGateway always asks the existing gateway first, then
-// only removes assets. A G2 scope change cannot grant underlying KB access.
-func NewG2ProjectAssetPolicyGateway(db *gorm.DB, base evidence.AssetGateway) evidence.AssetGateway {
-	return &g2PolicyGateway{db: db, base: base}
+// NewProjectAssetPolicyGateway always asks the existing gateway first, then
+// only removes assets. A agent scope change cannot grant underlying KB access.
+func NewProjectAssetPolicyGateway(db *gorm.DB, base evidence.AssetGateway) evidence.AssetGateway {
+	return &researchPolicyGateway{db: db, base: base}
 }
 
-// NewG2ModelAssetPolicyGateway adds explicit current-version model consent.
+// NewModelAssetPolicyGateway adds explicit current-version model consent.
 // Use it at generation/rewrite/model inputs; ordinary human source reads use
-// NewG2ProjectAssetPolicyGateway.
-func NewG2ModelAssetPolicyGateway(db *gorm.DB, base evidence.AssetGateway) evidence.AssetGateway {
-	return &g2PolicyGateway{db: db, base: base, forModel: true}
+// NewProjectAssetPolicyGateway.
+func NewModelAssetPolicyGateway(db *gorm.DB, base evidence.AssetGateway) evidence.AssetGateway {
+	return &researchPolicyGateway{db: db, base: base, forModel: true}
 }
 
-type g2PolicyGateway struct {
+type researchPolicyGateway struct {
 	db       *gorm.DB
 	base     evidence.AssetGateway
 	forModel bool
 }
 
-func (g *g2PolicyGateway) ResolveAllowed(ctx context.Context, projectID string, actor evidence.Actor, ids []string) (*evidence.ResolveResult, error) {
+func (g *researchPolicyGateway) ResolveAllowed(ctx context.Context, projectID string, actor evidence.Actor, ids []string) (*evidence.ResolveResult, error) {
 	if g.db == nil || g.base == nil {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
 	resolved, err := g.base.ResolveAllowed(ctx, projectID, actor, ids)
 	if err != nil {
 		return nil, err
 	}
 	if resolved == nil {
-		return nil, core.ErrG2Unavailable
+		return nil, core.ErrDependencyUnavailable
 	}
 	out := &evidence.ResolveResult{Requested: slices.Clone(resolved.Requested), Denied: slices.Clone(resolved.Denied), Allowed: []evidence.Asset{}}
 	for _, asset := range resolved.Allowed {
@@ -501,11 +501,11 @@ func (g *g2PolicyGateway) ResolveAllowed(ctx context.Context, projectID string, 
 	return out, nil
 }
 
-func (r *G2ResearchAdapter) ResearchRoundProvider(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask) (string, error) {
+func (r *ResearchAdapter) ResearchRoundProvider(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask) (string, error) {
 	if r.projects == nil {
-		return "", core.ErrG2Unavailable
+		return "", core.ErrDependencyUnavailable
 	}
-	ctx = g2CallerContext(ctx, actor)
+	ctx = researchCallerContext(ctx, actor)
 	capability := "research"
 	if task.ChapterID != "" {
 		capability += ":" + task.ChapterID
@@ -515,14 +515,14 @@ func (r *G2ResearchAdapter) ResearchRoundProvider(ctx context.Context, actor cor
 	}
 	providers := []string{}
 	if len(task.AssetIDs) > 0 {
-		if _, err := r.CheckG2AssetScope(ctx, actor, projectID, task.AssetIDs); err != nil {
+		if _, err := r.CheckAssetScope(ctx, actor, projectID, task.AssetIDs); err != nil {
 			return "", err
 		}
 		providers = append(providers, "weknora_hybrid")
 	}
 	if task.ProviderID != "" {
 		if r.db == nil || r.web == nil {
-			return "", core.ErrG2Unavailable
+			return "", core.ErrDependencyUnavailable
 		}
 		var row struct{ ID, Provider string }
 		if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&row).Error; err != nil {
@@ -536,4 +536,4 @@ func (r *G2ResearchAdapter) ResearchRoundProvider(ctx context.Context, actor cor
 	return strings.Join(providers, ";"), nil
 }
 
-var _ core.G2ResearchRoundIdentity = (*G2ResearchAdapter)(nil)
+var _ core.ResearchRoundIdentity = (*ResearchAdapter)(nil)

@@ -151,7 +151,7 @@ type SelectedRewriteCandidate struct {
 }
 
 type SelectedRewritePrompt struct {
-	TemplateBasis       g2RewriteTemplateBasis
+	TemplateBasis       rewriteTemplateBasis
 	EvidenceCardRefs    []generation.EvidenceCardRef
 	EvidenceConstraints []generation.EvidenceConstraint
 	Selection           RewriteSelection
@@ -188,6 +188,18 @@ type SelectedRewriteApplication interface {
 	Create(context.Context, Actor, string, string, string, SelectedRewriteRequest) (SelectedRewriteCandidate, error)
 	Get(context.Context, Actor, string, string) (SelectedRewriteCandidate, error)
 	Apply(context.Context, Actor, string, string, string, string, ApplySelectedRewriteInput) (core.WorkingCopy, bool, error)
+}
+
+// RewriteWorkspaceApplication 是选区改写这个用例需要的工作区能力。
+//
+// 它按用例收窄：授权一个能力、读项目、读工作副本、把改写结果写回工作副本。
+// 方法签名逐字取自聚合体的同名方法，收窄只发生在「哪些方法进这个口」。
+// 持有这个口的传输面因此看不到聚合体的其余方法。
+type RewriteWorkspaceApplication interface {
+	Authorize(ctx context.Context, actor Actor, projectID, capability string) error
+	GetProject(ctx context.Context, actor Actor, id string) (Project, error)
+	GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error)
+	ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput, reviewItems []core.ReviewItem) (WorkingCopyMutationResult, error)
 }
 
 type ApplySelectedRewriteInput struct {
@@ -345,19 +357,24 @@ func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedR
 
 type SelectedRewriteService struct {
 	store     *GORMSelectedRewriteStore
-	workspace ApplicationService
-	sources   SourceApplicationService
-	model     SelectedRewriteModel
-	audit     AuditSink
-	now       func() time.Time
+	workspace RewriteWorkspaceApplication
+	// selector is the optional formal-evidence capability. It is a port of its
+	// own: the rewrite workspace port does not name the selection, and
+	// discovering it by asserting that port would let the transport reach
+	// past what the port declares.
+	selector core.EvidenceSelectionApplication
+	sources  SourceApplicationService
+	model    SelectedRewriteModel
+	audit    AuditSink
+	now      func() time.Time
 }
 
-func NewSelectedRewriteService(db *gorm.DB, workspace ApplicationService, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
+func NewSelectedRewriteService(db *gorm.DB, workspace RewriteWorkspaceApplication, selector core.EvidenceSelectionApplication, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
+	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, selector: selector, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (s *SelectedRewriteService) recordAudit(ctx context.Context, actor Actor, projectID, capability, decision, reason string, details map[string]any) {
@@ -415,11 +432,11 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	}
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
-		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
+		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		evidenceConstraints, selectErr = g2EvidenceConstraints(selected, input.EvidenceCardRefs)
+		evidenceConstraints, selectErr = selectedEvidenceConstraints(selected, input.EvidenceCardRefs)
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
@@ -491,7 +508,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
-	if err := g2RewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
 	if err := s.checkEvidenceRefs(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, snapshots); err != nil {
@@ -513,7 +530,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		return SelectedRewriteCandidate{}, err
 	}
 	seed.DroppedContextJSON = encodeDroppedContext(droppedContext)
-	templateBasis, basisErr := g2RewriteProjectBasis(project)
+	templateBasis, basisErr := rewriteProjectBasis(project)
 	if basisErr != nil {
 		return SelectedRewriteCandidate{}, basisErr
 	}
@@ -1286,7 +1303,7 @@ func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, erro
 // rewritePrompt 按路径组装给模型的提示。
 //
 // 它自己不组装提示：两条路径各自组装，所以写给模型的指令只有一个来源。
-func rewritePrompt(input SelectedRewriteRequest, plan *writingaction.Plan, basis g2RewriteTemplateBasis,
+func rewritePrompt(input SelectedRewriteRequest, plan *writingaction.Plan, basis rewriteTemplateBasis,
 	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
 	if plan != nil {
 		return actionRewritePrompt(input, *plan, basis, constraints, before, after, sources)
@@ -1300,7 +1317,7 @@ func rewritePrompt(input SelectedRewriteRequest, plan *writingaction.Plan, basis
 // 出来的动作指令交给模型。它不按动作名分支，也不自己解释产出参数。
 //
 // 客户端的补充说明单独放一个字段：它不参与动作判定，也不与动作指令混成一段。
-func actionRewritePrompt(input SelectedRewriteRequest, plan writingaction.Plan, basis g2RewriteTemplateBasis,
+func actionRewritePrompt(input SelectedRewriteRequest, plan writingaction.Plan, basis rewriteTemplateBasis,
 	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
 	instruction, err := writingaction.RenderInstruction(plan, writingaction.RenderContext{
 		Section:  selectedRewriteSectionContext(input.Selection, before, after),
@@ -1319,7 +1336,7 @@ func actionRewritePrompt(input SelectedRewriteRequest, plan writingaction.Plan, 
 // legacyRewritePrompt 组装旧路径的提示。
 //
 // 客户端的自由文本说明原样作为指令：旧路径的行为逐字不变。
-func legacyRewritePrompt(input SelectedRewriteRequest, basis g2RewriteTemplateBasis,
+func legacyRewritePrompt(input SelectedRewriteRequest, basis rewriteTemplateBasis,
 	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) SelectedRewritePrompt {
 	return SelectedRewritePrompt{
 		TemplateBasis: basis, EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: constraints,
@@ -1340,7 +1357,7 @@ func selectedRewriteSectionContext(selection RewriteSelection, before, after str
 //
 // 「没有绑定模板」也是一个事实——它告诉模型这次改写不受项目模板约束——
 // 所以这一槽永远非空：否则「缺少必需上下文」与「没有模板」会分不开。
-func selectedRewriteTemplateContext(basis g2RewriteTemplateBasis) string {
+func selectedRewriteTemplateContext(basis rewriteTemplateBasis) string {
 	if basis.CopyID == "" {
 		return "本项目未绑定模板，改写不受项目模板约束。"
 	}

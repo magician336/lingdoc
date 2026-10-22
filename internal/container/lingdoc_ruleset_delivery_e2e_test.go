@@ -32,13 +32,13 @@ import (
 )
 
 const (
-	g4E2ETenantID = uint64(9142)
-	g4E2EActorID  = "g4-e2e-admin"
-	g4E2ERuleSet  = "g4-e2e-grant-rules"
-	g4E2EVersion  = "v1"
+	ruleSetTenantID = uint64(9142)
+	ruleSetActorID  = "g4-e2e-admin"
+	ruleSetID       = "g4-e2e-grant-rules"
+	ruleSetVersion  = "v1"
 )
 
-type g4E2EEnvelope struct {
+type ruleSetHTTPEnvelope struct {
 	Data json.RawMessage `json:"data"`
 	Meta struct {
 		Replayed bool `json:"replayed"`
@@ -48,9 +48,9 @@ type g4E2EEnvelope struct {
 func TestRuleSetProductionHTTPToExportPersistsAcrossRestartSQLite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dbPath := filepath.Join(t.TempDir(), "g4-e2e.sqlite")
-	db := openG4E2ESQLite(t, dbPath)
-	applyG4E2ESQLiteSchema(t, db)
-	runG4RuleSetDeliveryE2E(t, db, "sqlite", func() *gorm.DB { return openG4E2ESQLite(t, dbPath) })
+	db := openRuleSetSQLite(t, dbPath)
+	applyRuleSetSQLiteSchema(t, db)
+	runRuleSetDeliveryScenario(t, db, "sqlite", func() *gorm.DB { return openRuleSetSQLite(t, dbPath) })
 }
 
 func TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres(t *testing.T) {
@@ -77,7 +77,7 @@ func TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres(t *testing.T
 		}
 	}()
 	open := func() *gorm.DB {
-		db, err := gorm.Open(postgres.Open(g4E2EPostgresDSN(dsn, schema)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+		db, err := gorm.Open(postgres.Open(postgresDSNWithSchema(dsn, schema)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,11 +89,11 @@ func TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres(t *testing.T
 		return db
 	}
 	db := open()
-	applyG4E2EPostgresSchema(t, db)
-	runG4RuleSetDeliveryE2E(t, db, "postgres", open)
+	applyRuleSetPostgresSchema(t, db)
+	runRuleSetDeliveryScenario(t, db, "postgres", open)
 }
 
-func g4E2EPostgresDSN(dsn, schema string) string {
+func postgresDSNWithSchema(dsn, schema string) string {
 	parsed, err := url.Parse(dsn)
 	if err == nil && (parsed.Scheme == "postgres" || parsed.Scheme == "postgresql") {
 		query := parsed.Query()
@@ -104,7 +104,7 @@ func g4E2EPostgresDSN(dsn, schema string) string {
 	return dsn + " search_path=" + schema
 }
 
-func openG4E2ESQLite(t *testing.T, path string) *gorm.DB {
+func openRuleSetSQLite(t *testing.T, path string) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -119,7 +119,7 @@ func openG4E2ESQLite(t *testing.T, path string) *gorm.DB {
 	return db
 }
 
-func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
+func applyRuleSetSQLiteSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
 		"CREATE TABLE tenants (id INTEGER PRIMARY KEY)",
@@ -172,7 +172,7 @@ func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
+func applyRuleSetPostgresSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
 		"CREATE TABLE tenants (id BIGINT PRIMARY KEY)",
@@ -221,9 +221,9 @@ func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen func() *gorm.DB) {
+func runRuleSetDeliveryScenario(t *testing.T, db *gorm.DB, dialect string, reopen func() *gorm.DB) {
 	t.Helper()
-	first := buildG4E2EHTTP(t, db)
+	first := buildRuleSetHTTPFixture(t, db)
 	request := func(router *gin.Engine, method, path, body, key string, want int) *httptest.ResponseRecorder {
 		t.Helper()
 		var reader *strings.Reader
@@ -251,9 +251,9 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		}
 		return res
 	}
-	decode := func(res *httptest.ResponseRecorder, target any) g4E2EEnvelope {
+	decode := func(res *httptest.ResponseRecorder, target any) ruleSetHTTPEnvelope {
 		t.Helper()
-		var envelope g4E2EEnvelope
+		var envelope ruleSetHTTPEnvelope
 		if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
 			t.Fatalf("decode HTTP response %q: %v", res.Body.String(), err)
 		}
@@ -268,23 +268,23 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		return envelope
 	}
 
-	draftBody := `{"ruleset_id":"` + g4E2ERuleSet + `","version":"` + g4E2EVersion + `","bindings":[{"rule_id":"method-length","definition_id":"computed/word_count","definition_version":"1","origin":"organization","target_kind":"chapter","target_id":"method","parameters":{"minimum":10,"maximum":500},"severity":"warning","trigger_scenes":["preflight"],"enabled":true,"owner":"research-office"}]}`
+	draftBody := `{"ruleset_id":"` + ruleSetID + `","version":"` + ruleSetVersion + `","bindings":[{"rule_id":"method-length","definition_id":"computed/word_count","definition_version":"1","origin":"organization","target_kind":"chapter","target_id":"method","parameters":{"minimum":10,"maximum":500},"severity":"warning","trigger_scenes":["preflight"],"enabled":true,"owner":"research-office"}]}`
 	createdRuleSet := request(first.router, http.MethodPost, "/rule-sets", draftBody, "", http.StatusCreated)
 	var draft lingdoctemplate.RuleSet
 	decode(createdRuleSet, &draft)
-	if draft.ID != g4E2ERuleSet || draft.State != lingdoctemplate.RuleSetDraft {
+	if draft.ID != ruleSetID || draft.State != lingdoctemplate.RuleSetDraft {
 		t.Fatalf("created RuleSet = %+v", draft)
 	}
 	concurrentRuleSetID := "g4-e2e-concurrent-publish"
-	concurrentDraftBody := strings.Replace(draftBody, g4E2ERuleSet, concurrentRuleSetID, 1)
+	concurrentDraftBody := strings.Replace(draftBody, ruleSetID, concurrentRuleSetID, 1)
 	request(first.router, http.MethodPost, "/rule-sets", concurrentDraftBody, "", http.StatusCreated)
 	startPublish := make(chan struct{})
 	publishResults := make(chan error, 2)
-	actor := rulesetstore.Actor{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: "admin"}
+	actor := rulesetstore.Actor{TenantID: ruleSetTenantID, UserID: ruleSetActorID, Role: "admin"}
 	for range 2 {
 		go func() {
 			<-startPublish
-			_, err := first.ruleSetStore.Publish(context.Background(), actor, concurrentRuleSetID, g4E2EVersion)
+			_, err := first.ruleSetStore.Publish(context.Background(), actor, concurrentRuleSetID, ruleSetVersion)
 			publishResults <- err
 		}()
 	}
@@ -302,19 +302,19 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		t.Fatalf("concurrent publish successes = %d, want exactly one; errors=%v", publishSuccesses, publishErrors)
 	}
 	var concurrentPublishAudits int64
-	if err := db.Table("audit_logs").Where("tenant_id = ? AND scope_id = ? AND action = ?", g4E2ETenantID, concurrentRuleSetID, "lingdoc.ruleset.publish").Count(&concurrentPublishAudits).Error; err != nil || concurrentPublishAudits != 1 {
+	if err := db.Table("audit_logs").Where("tenant_id = ? AND scope_id = ? AND action = ?", ruleSetTenantID, concurrentRuleSetID, "lingdoc.ruleset.publish").Count(&concurrentPublishAudits).Error; err != nil || concurrentPublishAudits != 1 {
 		t.Fatalf("concurrent publish audit rows = %d, err=%v; want exactly one", concurrentPublishAudits, err)
 	}
-	setG4AuditFailureTrigger(t, db, dialect, "audit_logs", "lingdoc.ruleset.publish", "g4_fail_publish_audit", true)
-	request(first.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/"+g4E2EVersion+"/publish", `{}`, "", http.StatusInternalServerError)
-	setG4AuditFailureTrigger(t, db, dialect, "audit_logs", "lingdoc.ruleset.publish", "g4_fail_publish_audit", false)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "audit_logs", "lingdoc.ruleset.publish", "g4_fail_publish_audit", true)
+	request(first.router, http.MethodPost, "/rule-sets/"+ruleSetID+"/versions/"+ruleSetVersion+"/publish", `{}`, "", http.StatusInternalServerError)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "audit_logs", "lingdoc.ruleset.publish", "g4_fail_publish_audit", false)
 	var storedDraft lingdoctemplate.RuleSet
-	decode(request(first.router, http.MethodGet, "/rule-sets/"+g4E2ERuleSet+"/versions/"+g4E2EVersion, "", "", http.StatusOK), &storedDraft)
+	decode(request(first.router, http.MethodGet, "/rule-sets/"+ruleSetID+"/versions/"+ruleSetVersion, "", "", http.StatusOK), &storedDraft)
 	if storedDraft.State != lingdoctemplate.RuleSetDraft || storedDraft.RulesetHash != "" {
 		t.Fatalf("failed publish audit left partial RuleSet transition: %+v", storedDraft)
 	}
 	var published lingdoctemplate.RuleSet
-	decode(request(first.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/"+g4E2EVersion+"/publish", `{}`, "", http.StatusOK), &published)
+	decode(request(first.router, http.MethodPost, "/rule-sets/"+ruleSetID+"/versions/"+ruleSetVersion+"/publish", `{}`, "", http.StatusOK), &published)
 	if published.State != lingdoctemplate.RuleSetPublished || len(published.RulesetHash) != 64 {
 		t.Fatalf("published RuleSet = %+v", published)
 	}
@@ -325,7 +325,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		t.Fatalf("created project = %+v", project)
 	}
 	bindPath := "/projects/" + project.ID + "/template-copy/rule-set"
-	plainBind := `{"expected_project_version":1,"expected_template_copy_version":1,"ruleset_id":"` + g4E2ERuleSet + `","ruleset_version":"` + g4E2EVersion + `","overrides":[]}`
+	plainBind := `{"expected_project_version":1,"expected_template_copy_version":1,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[]}`
 	var firstBound workspacecore.Project
 	decode(request(first.router, http.MethodPut, bindPath, plainBind, "g4-bind-plain-01", http.StatusOK), &firstBound)
 	if firstBound.ProjectVersion != 2 || firstBound.TemplateCopyVersion != 2 {
@@ -334,17 +334,17 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if replay := decode(request(first.router, http.MethodPut, bindPath, plainBind, "g4-bind-plain-01", http.StatusOK), &firstBound); !replay.Meta.Replayed || firstBound.ProjectVersion != 2 || firstBound.TemplateCopyVersion != 2 {
 		t.Fatalf("plain binding retry was not idempotent: meta=%+v project=%+v", replay.Meta, firstBound)
 	}
-	badOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + g4E2ERuleSet + `","ruleset_version":"` + g4E2EVersion + `","overrides":[{"rule_id":"method-length","parameters":{"unreviewed_parameter":7}}]}`
+	badOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[{"rule_id":"method-length","parameters":{"unreviewed_parameter":7}}]}`
 	request(first.router, http.MethodPut, bindPath, badOverride, "g4-invalid-override", http.StatusBadRequest)
 	var unchanged workspacecore.Project
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &unchanged)
 	if unchanged.ProjectVersion != 2 || unchanged.TemplateCopyVersion != 2 {
 		t.Fatalf("rejected override partially updated project: version=%d copy=%d", unchanged.ProjectVersion, unchanged.TemplateCopyVersion)
 	}
-	validOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + g4E2ERuleSet + `","ruleset_version":"` + g4E2EVersion + `","overrides":[{"rule_id":"method-length","parameters":{"minimum":5}}]}`
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", true)
+	validOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[{"rule_id":"method-length","parameters":{"minimum":5}}]}`
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", true)
 	request(first.router, http.MethodPut, bindPath, validOverride, "g4-bind-override", http.StatusInternalServerError)
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", false)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", false)
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &unchanged)
 	if unchanged.ProjectVersion != 2 || unchanged.TemplateCopyVersion != 2 {
 		t.Fatalf("failed override audit left partial project/copy: version=%d copy=%d", unchanged.ProjectVersion, unchanged.TemplateCopyVersion)
@@ -407,16 +407,16 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	}
 	var current workspacecore.Project
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &current)
-	ctx := context.WithValue(context.Background(), types.UserIDContextKey, g4E2EActorID)
-	ctx = context.WithValue(ctx, types.TenantIDContextKey, g4E2ETenantID)
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, ruleSetActorID)
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, ruleSetTenantID)
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
-	ctx = types.WithCaller(ctx, types.Caller{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: types.TenantRoleAdmin})
-	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: g4E2EActorID})
+	ctx = types.WithCaller(ctx, types.Caller{TenantID: ruleSetTenantID, UserID: ruleSetActorID, Role: types.TenantRoleAdmin})
+	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: ruleSetActorID})
 	workspaceInput, err := first.reader.ReadDeliveryInput(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("read workspace input before Template Check: %v", err)
 	}
-	builtInput, err := first.builder.Build(ctx, g4E2EActorID, workspaceInput)
+	builtInput, err := first.builder.Build(ctx, ruleSetActorID, workspaceInput)
 	if err != nil {
 		t.Fatalf("build delivery input before Template Check: %v", err)
 	}
@@ -426,7 +426,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		t.Fatalf("delivery builder lost RuleSet/template-copy audit identity: ref=%+v effective_hash=%q template_copy=%s@%d want=%s@%d",
 			ref, builtInput.Template.RulesetHash, builtInput.TemplateCopyID, builtInput.TemplateCopyVersion, bound.TemplateCopy.ID, bound.TemplateCopyVersion)
 	}
-	directTemplateCheck, err := first.releases.TemplateCheck(ctx, g4E2EActorID, project.ID, current.ProjectVersion)
+	directTemplateCheck, err := first.releases.TemplateCheck(ctx, ruleSetActorID, project.ID, current.ProjectVersion)
 	if err != nil {
 		t.Fatalf("direct Template Check failed before HTTP: %v (delivery_invalid_request=%v candidate_invalid_request=%v)",
 			err, errors.Is(err, delivery.ErrInvalidRequest), errors.Is(err, candidateadoption.ErrInvalidRequest))
@@ -457,9 +457,9 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if !foundIssue || check.Status != delivery.CheckPassed {
 		t.Fatalf("expected a non-blocking method-length ValidationIssue and passing preflight, got status=%s issues=%+v", check.Status, check.Issues)
 	}
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "release_snapshot", "g4_fail_freeze_audit", true)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "release_snapshot", "g4_fail_freeze_audit", true)
 	request(first.router, http.MethodPost, "/projects/"+project.ID+"/releases", versionBody, "g4-freeze-001", http.StatusInternalServerError)
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "release_snapshot", "g4_fail_freeze_audit", false)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "release_snapshot", "g4_fail_freeze_audit", false)
 	var snapshotCount int64
 	if err := db.Table("lingdoc_release_snapshots").Where("project_id = ?", project.ID).Count(&snapshotCount).Error; err != nil || snapshotCount != 0 {
 		t.Fatalf("failed freeze audit left persisted snapshot count=%d err=%v", snapshotCount, err)
@@ -475,10 +475,10 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if replay := decode(request(first.router, http.MethodPost, "/projects/"+project.ID+"/releases", versionBody, "g4-freeze-001", http.StatusCreated), &snapshotReplay); !replay.Meta.Replayed || snapshotReplay.ID != snapshot.ID {
 		t.Fatalf("freeze retry not idempotent: replay=%+v first=%s again=%s", replay.Meta, snapshot.ID, snapshotReplay.ID)
 	}
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "export", "g4_fail_export_audit", true)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "export", "g4_fail_export_audit", true)
 	exportPath := "/projects/" + project.ID + "/releases/" + snapshot.ID + "/exports"
 	request(first.router, http.MethodPost, exportPath, `{"format":"docx"}`, "g4-export-001", http.StatusInternalServerError)
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "export", "g4_fail_export_audit", false)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_ruleset_use_audits", "export", "g4_fail_export_audit", false)
 	var exportCount int64
 	if err := db.Table("lingdoc_export_artifacts").Where("project_id = ?", project.ID).Count(&exportCount).Error; err != nil || exportCount != 0 {
 		t.Fatalf("failed export audit left artifact count=%d err=%v", exportCount, err)
@@ -500,9 +500,9 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		t.Fatalf("export retry not idempotent: replay=%+v first=%s again=%s", replay.Meta, artifact.ID, artifactReplay.ID)
 	}
 
-	closeG4E2EDatabase(t, db)
+	closeRuleSetDatabase(t, db)
 	db = reopen()
-	second := buildG4E2EHTTP(t, db)
+	second := buildRuleSetHTTPFixture(t, db)
 	var readBackCopy workspacecore.ProjectTemplateCopy
 	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/template-copies/3", "", "", http.StatusOK), &readBackCopy)
 	if readBackCopy.TemplateVersionRuleSetRef == nil || *readBackCopy.TemplateVersionRuleSetRef != *wantRef || readBackCopy.Definition.RuleSetRef == nil || *readBackCopy.Definition.RuleSetRef != *wantRef {
@@ -548,7 +548,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		Action  string `gorm:"column:action"`
 		Details []byte `gorm:"column:details"`
 	}
-	if err := db.Table("audit_logs").Select("action, details").Where("tenant_id = ? AND scope_id = ? AND action IN ?", g4E2ETenantID, g4E2ERuleSet, []string{"lingdoc.ruleset.create_draft", "lingdoc.ruleset.publish"}).Find(&lifecycleAudits).Error; err != nil {
+	if err := db.Table("audit_logs").Select("action, details").Where("tenant_id = ? AND scope_id = ? AND action IN ?", ruleSetTenantID, ruleSetID, []string{"lingdoc.ruleset.create_draft", "lingdoc.ruleset.publish"}).Find(&lifecycleAudits).Error; err != nil {
 		t.Fatalf("read %s RuleSet lifecycle audits: %v", dialect, err)
 	}
 	if len(lifecycleAudits) != 2 {
@@ -570,7 +570,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		}
 	}
 	var concurrentAuditCount int64
-	if err := db.Table("audit_logs").Where("tenant_id = ? AND scope_id = ? AND action = ?", g4E2ETenantID, concurrentRuleSetID, "lingdoc.ruleset.publish").Count(&concurrentAuditCount).Error; err != nil || concurrentAuditCount != 1 {
+	if err := db.Table("audit_logs").Where("tenant_id = ? AND scope_id = ? AND action = ?", ruleSetTenantID, concurrentRuleSetID, "lingdoc.ruleset.publish").Count(&concurrentAuditCount).Error; err != nil || concurrentAuditCount != 1 {
 		t.Fatalf("%s concurrent publish audit rows=%d err=%v, want 1 after restart", dialect, concurrentAuditCount, err)
 	}
 	type projectAuditRow struct {
@@ -604,11 +604,11 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	// Active projects migrate by assessing and applying a ChangeSet that pins
 	// the exact next immutable RuleSet version. Existing release/export history
 	// must continue to point at v1; a fresh evaluation must point at v2.
-	v2Body := strings.Replace(draftBody, `"version":"`+g4E2EVersion+`"`, `"version":"v2"`, 1)
+	v2Body := strings.Replace(draftBody, `"version":"`+ruleSetVersion+`"`, `"version":"v2"`, 1)
 	v2Body = strings.Replace(v2Body, `"maximum":500`, `"maximum":400`, 1)
 	request(second.router, http.MethodPost, "/rule-sets", v2Body, "", http.StatusCreated)
 	var publishedV2 lingdoctemplate.RuleSet
-	decode(request(second.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/v2/publish", `{}`, "", http.StatusOK), &publishedV2)
+	decode(request(second.router, http.MethodPost, "/rule-sets/"+ruleSetID+"/versions/v2/publish", `{}`, "", http.StatusOK), &publishedV2)
 	var currentProject workspacecore.Project
 	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &currentProject)
 	currentDefinition := currentProject.TemplateCopy.Definition
@@ -633,9 +633,9 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if assessed.Status != "assessed" || assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: publishedV2.ID, Version: publishedV2.Version, Hash: publishedV2.RulesetHash}) {
 		t.Fatalf("active migration did not assess an exact v2 RuleSet snapshot: %+v ref=%+v", assessed, assessedRef)
 	}
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", true)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", true)
 	request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets/"+assessed.ID+"/apply", `{}`, "g4-migrate-apply-v2", http.StatusInternalServerError)
-	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", false)
+	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", false)
 	var rolledBackMigration workspacecore.Project
 	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &rolledBackMigration)
 	if rolledBackMigration.ProjectVersion != currentProject.ProjectVersion || rolledBackMigration.TemplateCopyVersion != currentProject.TemplateCopyVersion {
@@ -699,11 +699,11 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	// Repeat the upgrade with an allowlisted project override. The project audit
 	// endpoint must independently expose exact source identity, override and
 	// effective hash, migration reason, and both copy versions after persistence.
-	v3Body := strings.Replace(draftBody, `"version":"`+g4E2EVersion+`"`, `"version":"v3"`, 1)
+	v3Body := strings.Replace(draftBody, `"version":"`+ruleSetVersion+`"`, `"version":"v3"`, 1)
 	v3Body = strings.Replace(v3Body, `"maximum":500`, `"maximum":350`, 1)
 	request(second.router, http.MethodPost, "/rule-sets", v3Body, "", http.StatusCreated)
 	var publishedV3 lingdoctemplate.RuleSet
-	decode(request(second.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/v3/publish", `{}`, "", http.StatusOK), &publishedV3)
+	decode(request(second.router, http.MethodPost, "/rule-sets/"+ruleSetID+"/versions/v3/publish", `{}`, "", http.StatusOK), &publishedV3)
 	var beforeV3 workspacecore.Project
 	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &beforeV3)
 	definitionV3 := beforeV3.TemplateCopy.Definition
@@ -780,7 +780,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	assertUpgradeAudit(assessedV3, lingdoctemplate.RuleSetReference{ID: publishedV3.ID, Version: publishedV3.Version, Hash: publishedV3.RulesetHash}, 4, 5, true)
 }
 
-func setG4AuditFailureTrigger(t *testing.T, db *gorm.DB, dialect, table, action, trigger string, enabled bool) {
+func setRuleSetAuditFailureTrigger(t *testing.T, db *gorm.DB, dialect, table, action, trigger string, enabled bool) {
 	t.Helper()
 	if dialect == "postgres" {
 		function := trigger + "_fn"
@@ -813,7 +813,7 @@ func setG4AuditFailureTrigger(t *testing.T, db *gorm.DB, dialect, table, action,
 	}
 }
 
-type g4E2EHTTP struct {
+type ruleSetHTTPFixture struct {
 	router       *gin.Engine
 	ruleSetStore *rulesetstore.Store
 	reader       *candidateadoption.SQLiteCandidateAdoptionStore
@@ -821,7 +821,7 @@ type g4E2EHTTP struct {
 	releases     *workspace.DeliveryReleaseService
 }
 
-func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
+func buildRuleSetHTTPFixture(t *testing.T, db *gorm.DB) ruleSetHTTPFixture {
 	t.Helper()
 	parts, err := NewLingDocWorkspaceHandler(db, nil, nil, nil, nil, nil, nil, NewLingDocTemplateCatalog())
 	if err != nil {
@@ -829,9 +829,9 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	}
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	adoptionStore := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Projects}
+	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Authorizer}
 	inputs := &candidateadoption.DeliveryInputService{Reader: adoptionStore, Authorizer: projectAuthorizer}
-	policy := workspace.NewAccessPolicy(parts.Projects, parts.Runtime, adoptionStore)
+	policy := workspace.NewAccessPolicy(workspace.ProjectPorts{Authorizer: parts.Authorizer, Projects: parts.Projects, Context: parts.GenerationContext}, parts.Runtime, adoptionStore)
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
 	releases := workspace.NewDeliveryReleaseServiceWithPolicy(inputs, parts.Integration.DeliveryInputBuilder(), snapshots, parts.Integration.CandidateAdoptionSourcePolicy(), policy, parts.Projects.(workspace.ValidationIssueDispositionApplication)).WithRuleSetUseAuditor(ruleSetStore)
 	exports := workspace.NewDeliveryExportServiceWithPolicy(snapshots, delivery.NewSQLiteExportStore(db), workspace.DeliveryDocument{}, workspace.DeliveryDocument{}, inputs, parts.Integration.WorkspaceSourcePolicy(), policy).
@@ -847,11 +847,11 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		ctx := c.Request.Context()
-		ctx = context.WithValue(ctx, types.UserIDContextKey, g4E2EActorID)
-		ctx = context.WithValue(ctx, types.TenantIDContextKey, g4E2ETenantID)
+		ctx = context.WithValue(ctx, types.UserIDContextKey, ruleSetActorID)
+		ctx = context.WithValue(ctx, types.TenantIDContextKey, ruleSetTenantID)
 		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
-		ctx = types.WithCaller(ctx, types.Caller{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: types.TenantRoleAdmin})
-		ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: g4E2EActorID})
+		ctx = types.WithCaller(ctx, types.Caller{TenantID: ruleSetTenantID, UserID: ruleSetActorID, Role: types.TenantRoleAdmin})
+		ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: ruleSetActorID})
 		c.Request = c.Request.WithContext(ctx)
 		c.Set("request_id", "g4-e2e")
 		c.Next()
@@ -863,10 +863,10 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	workspace.RegisterDeliveryRoutes(group, workspace.NewDeliveryHandler(workspace.GuardFullWorkflowRelease(releases, parts.Guard)))
 	workspace.RegisterDeliveryExportRoutes(group, workspace.NewDeliveryExportHandler(workspace.GuardFullWorkflowExport(exports, parts.Guard)))
 	candidateadoption.RegisterRoutes(group, confirmHandler)
-	return g4E2EHTTP{router: engine, ruleSetStore: ruleSetStore, reader: adoptionStore, builder: parts.Integration.DeliveryInputBuilder(), releases: releases}
+	return ruleSetHTTPFixture{router: engine, ruleSetStore: ruleSetStore, reader: adoptionStore, builder: parts.Integration.DeliveryInputBuilder(), releases: releases}
 }
 
-func closeG4E2EDatabase(t *testing.T, db *gorm.DB) {
+func closeRuleSetDatabase(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	sqlDB, err := db.DB()
 	if err != nil {

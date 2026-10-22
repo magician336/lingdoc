@@ -462,11 +462,11 @@ var canonicalOriginValues = map[string]bool{
 // （开发计划 D24）。例外按文件登记，与 operationcore 的摘要守护同一写法：
 // 一条具名例外对应一处已知重复；债还了就把这一条删掉，守护会自己发现。
 var knownOriginVocabularyExceptions = map[string]string{
-	"internal/lingdoc/workspacecore/g1_inherited_fields.go":    "继承字段的来源判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
-	"internal/lingdoc/workspacecore/g1_provenance_service.go":  "来源标注的产出（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
-	"internal/lingdoc/workspacecore/g2_change_draft_action.go": "变更草案的来源判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
-	"internal/lingdoc/workspacecore/g2_change_draft_edit.go":   "AI 建议来源的判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
-	"internal/lingdoc/workspacecore/service_facade.go":         "规格字段元数据的来源校验（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
+	"internal/lingdoc/workspacecore/inherited_fields.go":    "继承字段的来源判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
+	"internal/lingdoc/workspacecore/provenance_service.go":  "来源标注的产出（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
+	"internal/lingdoc/workspacecore/change_draft_action.go": "变更草案的来源判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
+	"internal/lingdoc/workspacecore/change_draft_edit.go":   "AI 建议来源的判定（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
+	"internal/lingdoc/workspacecore/service_facade.go":      "规格字段元数据的来源校验（SpecField.Origin）沿用既有三值词表，与词汇包同取值；收拢到 writingaction 属后续项，不在本面范围",
 }
 
 // TestCrossPackageWritingActionFieldUsesTheProperName 断言跨包落到字段上的

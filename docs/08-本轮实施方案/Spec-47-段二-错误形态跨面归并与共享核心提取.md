@@ -65,7 +65,7 @@ Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273
 信封：`{"error":{"code","message","retryable"},"request_id"}`——**无 `details` 键**。
 `retryable` 由 `writeError` 按 `status >= 500` 推导。
 
-### 面 2：`internal/lingdoc/workspace/g4_full_http.go` → `G4ErrorStatus`（治理面）
+### 面 2：`internal/lingdoc/workspace/template_governance_routes.go` → `G4ErrorStatus`（治理面）
 
 | 匹配的错误 | 状态 | 错误码 | 文案 |
 | --- | --- | --- | --- |
@@ -129,7 +129,7 @@ Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273
 
 信封：无 `details` 键。`retryable` 默认 false，只有 `ErrDependencyUnavailable` 显式为 true。
 
-### 面 5：`internal/lingdoc/workspace/g2_full_http.go` → `g2FullError`
+### 面 5：`internal/lingdoc/workspace/agent_routes.go` → `g2FullError`
 
 5 个分支（`ErrFormalChangeRequired` / `ErrG2ConsentRequired` / `ErrG2EvidenceIncomplete` /
 `ErrG2OutcomeUnknown` / `ErrG2Unavailable`），未命中者落到工作区主路由的 `sendError`。
@@ -167,6 +167,11 @@ Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273
 
 **DR-47-03 暂定口径**：「4xx 不可重试、5xx 可重试」。按此，治理面的 503 与候选采纳面的其余 5xx
 会从 false 变 true——这两处是**少数口径变更**，必须逐条列出。
+
+**DR-47-03 裁定（2026-10-22，见 D-47-05 与票 [#292](https://github.com/magician336/lingdoc/issues/292)）**：
+原则不变，但**尚未配置**类的 503 是例外——治理面的 503「目录或规则建议服务尚未配置」判为
+**不可重试**，因为服务不存在时重试也不会变好。⇒ 治理面从 false 变 true 的只剩 502
+`invalid_model_output` 一支；候选采纳面与工作区主路由的 5xx 不受影响。
 
 ### 502 孤例
 
@@ -244,7 +249,7 @@ Spec 决策 19：保留状态码与错误码，但必须**进入统一语义表*
 | 1 | `state_conflict` 拆入 409 `invalid_state` 与 409 `version_conflict` | 规则集存储路由 | DR-47-02 裁定：多数口径为准 |
 | 2 | 对外错误码 `state_conflict` 退役 | 规则集相关在途票 #187、#193 | DR-47-02 裁定 |
 | 3 | 规则集状态错误在工作区核心从 422 改为 409 `invalid_state` | 工作区核心 3 处翻译点 | DR-47-02 多数口径；需场景类型 |
-| 4 | 治理面 5xx 的 `retryable` 从 false 改为 true | 规则治理路由 | DR-47-03 暂定口径 |
+| 4 | 治理面 **502**（`ErrInvalidOutput`）的 `retryable` 从 false 改为 true；**503 不在内** | 规则治理路由 | DR-47-03 暂定口径；按 D-47-05 裁定（#292），**尚未配置**类的 503（`template_governance_unavailable`）**不可重试**，本项只覆盖 502 这一支 |
 | 5 | 候选采纳面除依赖不可用外的 5xx 的 `retryable` 从 false 改为 true | 候选采纳路由 | DR-47-03 暂定口径 |
 | 6 | 治理面错误信封去掉 `"details": null` | 规则治理路由 | 向契约靠拢（契约 `details` 的 type 是 object，且非必填） |
 | 7 | `ErrStaleInput` 在生成面从 409 + `internal_error` 改为 409 `stale_input` | 生成路由 | **未决**，见 D-47-04 |
@@ -276,16 +281,33 @@ Spec 决策 19：保留状态码与错误码，但必须**进入统一语义表*
 （候选采纳面与工作区主路由对同类错误都答 409 `stale_input`）。
 影响面：生成路由 409 响应的错误码与文案。已登记为「少数口径变更清单」第 7 项。
 
-### D-47-05（暂定待确认，已单独成票）：5xx 可重试口径
+### D-47-05（已裁定 2026-10-22）：5xx 可重试口径
 
-DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并逐条列出少数口径变更（清单第 4、5 项）。
-
-按 47.06 验收标准「DR-47-03 单独成子项」，该确认已单独开票：
+DR-47-03 曾暂定「4xx 不可重试、5xx 可重试」。本段按此执行并逐条列出少数口径变更
+（清单第 4、5 项）。按 47.06 验收标准「DR-47-03 单独成子项」，该确认已单独开票：
 [#292](https://github.com/magician336/lingdoc/issues/292)「47.03b 5xx 的『可重试』标记口径确认」，
-挂在 #259 下，标签 `needs-info`。票里附了三张面在 5xx 上的现状取证，并点名一个待裁定的细节：
-规则治理面的 503「目录或规则建议服务尚未配置」是**尚未配置**（重试也不会变好），
-与候选采纳面的「依赖尚未就绪」业务含义不同。**该票不阻塞 47.06 的其余部分**；
-若确认结论与暂定口径不同，只需改 `clienterror.Form.Retryable` 的取值规则。
+挂在 #259 下。
+
+**裁定**：原则仍是「4xx 不可重试、5xx 可重试」，但**尚未配置**类的 503 是例外——
+规则治理面的 503「目录或规则建议服务尚未配置」（`governance.ErrUnavailable`、
+`governance.ErrModelUnavailable`）判为**不可重试**。其余 5xx 仍可重试：治理面
+502 `invalid_model_output`、候选采纳面除依赖不可用外的 5xx、工作区主路由的兜底 500。
+
+**理由**：尚未配置与暂时不可用是两种失败。前者的成因是服务或模型**不存在**，
+调用方能做的动作是去配置，不是去重试；重试只会得到同一个答案。后者是暂时故障，
+重试有意义。候选采纳面的 503 `dependency_unavailable`（「候选采纳依赖尚未就绪」）
+属于后者，仍可重试——这也是它与治理面 503 分开判的原因。
+
+**影响面**：规则治理面两个 503 的 `retryable` 从 true 改回 false。状态码、错误码、
+文案、信封字段集一律不变，改动只落在一个布尔值上。清单第 4 项因此收窄到 502 一支
+（治理面 503 这一支被本裁定撤回）。迁移前后对照表 `47.06-错误形态对照表.md` 的
+对应两行的 **`retryable` 维度**由「变了」改为「未变」；这两条 503 仍因**信封维度**
+（清单第 6 项）与迁移前不同，所以**汇总数不变**（完全一致 33 / 有差异 34），
+变的是标「变了」的行数 42 → 40。
+
+**落地**：跨面契约测试 `internal/lingdoc/workspace/client_form_convergence_test.go`
+的治理面两条 503 断言同步改为 false；形态声明在
+`internal/lingdoc/templategovernance/model.go`。票 #292 随之关闭。
 
 ## 验收矩阵（段二当前范围）
 
@@ -294,7 +316,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 | 47.06 四条平表并入同一机制 | 规则治理 / 规则集存储 / 候选采纳 / 生成 四个 HTTP 面 | 形态由错误自己声明；传输层只渲染 | 四面都能渲染 `clienterror.Form` | 每面未命中形态仍落兜底 500 | 不涉及 | 迁移前后逐条对照脚本 + 各面 HTTP 测试 | PASS |
 | 47.06 规则集状态类归并（DR-47-02） | 规则集存储路由、规则治理路由、工作区核心 | 状态不允许该操作 → 409 `invalid_state`；版本或基线已变化 → 409 `version_conflict` | `state_conflict` 不再出现 | 三面同一错误答同一状态码与错误码 | 不涉及 | 跨面一致性测试 | PASS |
 | 47.06 502 进入统一语义表 | 规则治理路由 | 状态码与错误码保留 502 `invalid_model_output` | 502 不再是私有一支 | — | 不涉及 | 形态目录断言 | PASS |
-| 47.06 5xx 可重试口径（DR-47-03） | 四个面 | 4xx 不可重试、5xx 可重试 | 逐面 retryable 与状态码一致 | 少数口径变更逐条列出 | 不涉及 | 逐条对照表 | PASS |
+| 47.06 5xx 可重试口径（DR-47-03，D-47-05 裁定） | 四个面 | 4xx 不可重试；5xx 原则上可重试，**尚未配置**类的 503 不可重试 | 逐面 retryable 与状态码一致 | 少数口径变更逐条列出 | 不涉及 | 逐条对照表 + 跨面契约测试 | PASS |
 | 47.06 同码不同文不合并 | 四个面 + 工作区主路由 | 同码不同文的形态各自独立 | 资料未授权 3 种、依赖不可用 3 种、输入已变 2 种文案均保留 | — | 不涉及 | 形态目录快照 | PASS |
 | 47.07 旧平表删除，映射器只剩兜底 | 五个面的映射器 | 传输层不按业务错误逐个分支 | 映射器只认兜底 | 未映射错误仍 500 `internal_error` 且不泄漏内部机制 | 不涉及 | 结构断言（负例验证） | PASS |
 | 47.07 兜底不泄漏 | 五个面的兜底 | 响应里无原始数据库错误 / SQLSTATE / 包名 | 兜底只给通用文案 | — | 不涉及 | 兜底契约测试 | PASS |
@@ -316,7 +338,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 | 验收项 | 证据所在小节 |
 | --- | --- |
 | 47.06 四条平表并入同一机制 / 规则集状态类归并 / 502 入表 / 5xx 可重试口径 / 同码不同文不合并 | 「47.06 的实现结果」 |
-| 47.07 三行 | 「47.06 的实现结果 → 结构断言与阴性验证」；健康度 R2 复评见 `G3-缺口收口-健康度评分-20261020.md` |
+| 47.07 三行 | 「47.06 的实现结果 → 结构断言与阴性验证」；健康度 R2 复评见 `G3-缺口收口-总结.md` 第五节 |
 | 47.03 章节「已确认」单一谓词 | 「47.03 的实现结果与数据核查」 |
 | 47.08 共享核心成为独立深模块 | 「47.08 的第一片」与「47.08 的第二片」 |
 | 47.09 调研域并入主管道 | 「47.09 的第一片」 |
@@ -375,7 +397,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 2. 生成面 `ErrStaleInput` 的文案取候选采纳面措辞「候选稿或快照基于旧输入。」。
 3. 治理面与候选采纳面的**兜底 500** 也按第 4/5 项改为 `retryable: true`。
 4. 规则集存储面、候选采纳面、G2 面的同码不同文冲突，一律用具名场景值承载各面自己的措辞。
-5. `impact_routes.go` 与 `g5_machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
+5. `impact_routes.go` 与 `machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
 6. `ErrAdoptionServiceUnavailable`（503 + `invalid_state`）保留旧形态，以逐字节不变。
 
 ## 47.08 的第一片：共享核心模块与两条规则归一（2026-10-20）
@@ -541,7 +563,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 扫工作区核心源码，报告任何**在管道接缝之外写入幂等记录**的地方。
 
 断言范围经过收窄：只断言「写入」不断言「读取」。理由是读取有两类：
-管道通过 `Ledger` 接缝读一次（管道自己的），而 `g1_operation_provenance.go:66` 的
+管道通过 `Ledger` 接缝读一次（管道自己的），而 `operation_provenance.go:66` 的
 溯源证明校验还要读同一张表来确认「操作记录与已存证明仍然一致」——那是工作区自己的
 一致性规则，不是管道步骤。写入则是管道的独占职责：一条已存记录就是「这个操作发生过」
 的证明，只有管道能创建。
@@ -564,7 +586,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 
 ### 第二套管道没有了
 
-调研域原来有自己的管道：`g2Operation`（`g2_service.go`）自己实现幂等键检查、
+调研域原来有自己的管道：`g2Operation`（`agent_action_service.go`）自己实现幂等键检查、
 请求体摘要、只读复核、来源重查、授权、幂等记录读写、业务写入、投影。
 
 现在它走共享管道：`g2Operation` 只声明「做什么操作」，管道由
@@ -623,7 +645,7 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 **少数口径变更第 10 项**。
 
 **安全语义没有变**：机器身份仍然被拒绝，且仍然不触发任何外部效果。
-`TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag`
+`TestMachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag`
 的守门断言——「机器身份不得触发外部效果」「机器身份不得改写卡片真相」——**全部通过**，
 只有「必须是 `ErrHumanDecisionRequired`」这一条形态断言改成了「必须被拒绝」。
 
@@ -671,11 +693,11 @@ basis 比较与幂等检查的先后顺序与旧实现相反——「同键不�
 | 断言 | 注入的违规 | 报出 |
 | --- | --- | --- |
 | 共享核心不得持有门名单 | 在 `operationcore` 注入 `RequiresHumanDecision(operation)` | `zz_negative_probe.go: RequiresHumanDecision decides the gate from the operation name: the caller declares it` |
-| 每个调研域操作声明了哪个门 | 把 `approveResearchTask` 的声明从 `HumanGateRequired` 改成 `HumanGateNotRequired` | `g2_gate_declaration_test.go:103: approveResearchTask declares NotRequired, want Required (the baseline enforced Required)` |
+| 每个调研域操作声明了哪个门 | 把 `approveResearchTask` 的声明从 `HumanGateRequired` 改成 `HumanGateNotRequired` | `gate_declaration_test.go:103: approveResearchTask declares NotRequired, want Required (the baseline enforced Required)` |
 
 另外，门的状态用**机械扫描**核对过：从基线代码（`28a76a5`）读出每个方法自己是否调用
 `RequireHumanDecision`（以及是在什么条件下调用），与归一后的声明逐条比对，
-**19 个调用点的门要求全部一致**（`g2_service.go` 18 个 + `g2_action_proposal_replay.go` 1 个；
+**19 个调用点的门要求全部一致**（`agent_action_service.go` 18 个 + `action_proposal_replay.go` 1 个；
 此前本文档写成 18 个，是漏数，已更正）。归一后的分布是 **10 个必门 + 8 个不要门 + 1 个条件门**
 （`SendAgentTurn`：`g2AgentTurnGate(input)` 按 `input.SensitiveContextConfirmed` 决定，
 与基线里 `if input.SensitiveContextConfirmed { RequireHumanDecision(ctx) }` 同义）。

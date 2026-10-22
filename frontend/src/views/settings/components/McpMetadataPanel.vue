@@ -78,7 +78,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getMCPMetadata, refreshMCPMetadata, type MCPMetadata } from '@/api/mcp-service'
+import { getMCPMetadata, refreshMCPMetadata, type MCPMetadata } from '@/api/mcpService'
 import McpToolsList from './McpToolsList.vue'
 
 const props = defineProps<{ serviceId: string; disabled?: boolean }>()

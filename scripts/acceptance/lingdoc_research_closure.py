@@ -77,6 +77,26 @@ RESEARCH_QUERIES = [
     "合成资料提到哪些技术路线",
 ]
 
+# Optional external retrieval channel.
+#
+# Without these two environment variables the runner keeps the behaviour of
+# issue #258: the closure runs on the project-material path only, and the
+# report states the environment limit (no external provider, no index hit).
+#
+# With them the runner seeds a tenant-owned provider row and the research
+# task uses it, so the rounds search the **outside world** and the report
+# can carry a retrieval hit that is not synthetic material.  G3-GAP-08 asks
+# for exactly that: a run whose retrieval actually returned something.
+#
+# G3_WEB_SEARCH_PROVIDER   provider type, e.g. "searxng"
+# G3_WEB_SEARCH_PROVIDER_URL  the instance URL (self-hosted SearXNG, ...)
+#
+# The instance URL is validated by the server against the SSRF whitelist
+# (SSRF_WHITELIST / SSRF_WHITELIST_EXTRA), so a loopback instance has to be
+# listed there before the server will call it.
+EXTERNAL_PROVIDER_TYPE = os.environ.get("G3_WEB_SEARCH_PROVIDER", "").strip()
+EXTERNAL_PROVIDER_URL = os.environ.get("G3_WEB_SEARCH_PROVIDER_URL", "").strip()
+
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -130,6 +150,14 @@ def server_environment(data_dir: Path, port: int) -> dict[str, str]:
         "WEKNORA_AUTH_DEFAULT_TENANT_MODE": "create_personal",
         "WEKNORA_TENANT_ENABLE_RBAC": "true",
     })
+    if EXTERNAL_PROVIDER_TYPE and EXTERNAL_PROVIDER_URL:
+        # The external channel of this run points at a **loopback** instance
+        # (self-hosted SearXNG).  The server validates every provider URL
+        # against the SSRF whitelist, so the loopback host has to be listed
+        # before the server is allowed to call it.  The extra list is
+        # environment-only by design (the settings UI cannot widen it).
+        env["SSRF_WHITELIST_EXTRA"] = os.environ.get(
+            "G3_SSRF_WHITELIST_EXTRA", "127.0.0.1,localhost")
     return env
 
 
@@ -347,6 +375,21 @@ def seed_synthetic_asset(db_path: Path, tenant_id: int) -> dict[str, Any]:
     connection = sqlite3.connect(str(db_path), timeout=30)
     try:
         connection.execute("PRAGMA busy_timeout = 30000")
+        # G3_ENABLE_KEYWORD_PIPELINE=1 turns the **keyword** pipeline on.
+        # It is only safe when the server binary was built with the
+        # sqlite_fts5 build tag: without FTS5 the keyword search fails on a
+        # missing table, which is the same kind of failure as having no
+        # pipeline at all.  The vector pipeline stays off: it needs an
+        # embedding model credential, which this machine does not have.
+        #
+        # Why it matters beyond the hit count: the project-material path runs
+        # **before** the external provider path, and "no retrievable indexing
+        # pipeline" is an **error** there - the research round returns before
+        # the provider is ever called.  A keyword pipeline that runs and finds
+        # nothing keeps the material path error-free, so the external channel
+        # is reached.
+        keyword_enabled = "true" if os.environ.get(
+            "G3_ENABLE_KEYWORD_PIPELINE", "").strip() == "1" else "false"
         connection.execute(
             "INSERT INTO knowledge_bases (id, name, description, tenant_id, type, chunking_config,"
             " image_processing_config, embedding_model_id, summary_model_id, cos_config, vlm_config,"
@@ -373,8 +416,8 @@ def seed_synthetic_asset(db_path: Path, tenant_id: int) -> dict[str, Any]:
              # falls back to the default strategy (vector + keyword), which
              # would re-enable the keyword pipeline this machine cannot run.
              sqlite3.Binary(
-                 ('{"vector_enabled": false, "keyword_enabled": false, "wiki_enabled": true,'
-                  ' "graph_enabled": false}').encode("utf-8")), now, now))
+                ('{"vector_enabled": false, "keyword_enabled": ' + keyword_enabled +
+                 ', "wiki_enabled": true, "graph_enabled": false}').encode("utf-8")), now, now))
         connection.execute(
             "INSERT INTO knowledges (id, tenant_id, knowledge_base_id, type, title, description, source,"
             " parse_status, enable_status, file_name, file_type, file_size, file_path, file_hash,"
@@ -554,8 +597,34 @@ def create_impact_task(base_url: str, token: str, project_id: str,
 # ---------------------------------------------------------------------------
 # Research task + run
 # ---------------------------------------------------------------------------
+def seed_web_search_provider(db_path: Path, tenant_id: int) -> str:
+    """Insert the tenant-owned web search provider row and return its id.
+
+    The row is the one the product reads when a research task names a
+    ``provider_id``: the server checks that the provider belongs to the
+    tenant before it fetches with it.  The parameters carry the instance
+    URL; the server validates it against the SSRF whitelist.
+    """
+    provider_id = str(uuid.uuid4())
+    parameters = json.dumps({"base_url": EXTERNAL_PROVIDER_URL}, ensure_ascii=False)
+    connection = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute(
+            "INSERT INTO web_search_providers (id, tenant_id, name, provider, description,"
+            " parameters, is_default, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            (provider_id, tenant_id, "G3 验收台外部检索渠道", EXTERNAL_PROVIDER_TYPE,
+             "G3 验收台实跑用：自托管检索实例", parameters),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return provider_id
+
+
 def create_research_task(base_url: str, token: str, project_id: str, impact_task_id: str,
-                         asset_id: str) -> dict[str, Any]:
+                         asset_id: str, provider_id: str = "") -> dict[str, Any]:
     project = read_project(base_url, token, project_id)
     payload = {
         "expected_project_version": int(project.get("project_version", 0)),
@@ -568,6 +637,11 @@ def create_research_task(base_url: str, token: str, project_id: str, impact_task
         "asset_ids": [asset_id],
         "expected_output": "合成验收材料中的候选片段；不构成科学结论",
     }
+    if provider_id:
+        # The external channel is a **second** retrieval path: the project
+        # material stays in scope, and the rounds also search the provider the
+        # tenant owns.  The server keeps both result sets.
+        payload["provider_id"] = provider_id
     suffix = uuid.uuid4().hex[:8]
     _, created, _ = request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/research-tasks",
                             token=token, key="issue258-research-task-" + suffix, payload=payload, expected=200)
@@ -752,7 +826,8 @@ def close_impact_task(base_url: str, token: str, project_id: str, task: dict[str
 # Verdict
 # ---------------------------------------------------------------------------
 def judge(run: dict[str, Any], research_task: dict[str, Any], approved_task: dict[str, Any],
-          impact_task: dict[str, Any], closed_task: dict[str, Any]) -> dict[str, Any]:
+          impact_task: dict[str, Any], closed_task: dict[str, Any],
+          external_channel: bool = False) -> dict[str, Any]:
     """Check the server-side ``RETRIEVE_CANDIDATES`` verdict condition by
     condition and report the real values that were read back."""
     rounds = run.get("rounds") if isinstance(run.get("rounds"), list) else []
@@ -781,6 +856,12 @@ def judge(run: dict[str, Any], research_task: dict[str, Any], approved_task: dic
         "every_round_has_provider": all(bool(item.get("provider")) for item in round_rows) and bool(round_rows),
         "impact_task_closed": closed_task.get("status") == "DONE",
     }
+    if external_channel:
+        # With a reachable external channel the rounds must have returned
+        # something.  A run that finished with no result at all means the
+        # channel did not actually work, and the closure would be a hollow
+        # one - so this check belongs in the same verdict as the others.
+        checks["retrieval_hit_present"] = len(run.get("results") or []) > 0
     basis = run.get("basis") if isinstance(run.get("basis"), dict) else {}
     return {
         "checks": checks,
@@ -927,7 +1008,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                  "edge_id": redact(impact["edge_id"])}
         step("create_impact_task", PASS, report["impact_task"])
 
-        research_task = create_research_task(base_url, token, project_id, str(impact_task.get("id")), asset_id)
+        provider_id = ""
+        if EXTERNAL_PROVIDER_TYPE and EXTERNAL_PROVIDER_URL:
+            provider_id = seed_web_search_provider(Path(env["DB_PATH"]), tenant_id)
+            report["external_search_channel"] = {
+                "provider": EXTERNAL_PROVIDER_TYPE,
+                "provider_id": redact(provider_id),
+                "base_url": EXTERNAL_PROVIDER_URL,
+                "note": "外部检索渠道已配置：调研轮次会真的检索外部来源，报告里的命中数不再是 0。",
+            }
+            step("seed_web_search_provider", PASS, report["external_search_channel"])
+        else:
+            report["external_search_channel"] = {
+                "provider": "",
+                "base_url": "",
+                "note": "没有配置外部检索渠道（环境变量 G3_WEB_SEARCH_PROVIDER / G3_WEB_SEARCH_PROVIDER_URL 未设）："
+                        "本轮只走项目资料检索路径，命中数受限于本机检索管线。",
+            }
+            step("seed_web_search_provider", NOT_RUN, report["external_search_channel"])
+
+        research_task = create_research_task(base_url, token, project_id, str(impact_task.get("id")),
+                                             asset_id, provider_id)
         step("create_research_task", PASS,
              {"id": redact(str(research_task.get("id"))), "status": research_task.get("status"),
               "scope": research_task.get("scope"), "queries": research_task.get("queries"),
@@ -987,11 +1088,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "paused": research_task_current.get("paused"),
             "scope": research_task_current.get("scope"),
         }
-        verdict = judge(run_result, research_task_current, approved_task, impact_task, closed_task)
+        verdict = judge(run_result, research_task_current, approved_task, impact_task, closed_task,
+                        external_channel=bool(provider_id))
         report["verdict"] = verdict
+        report["retrieval_hit_count"] = len(run_result.get("results") or [])
+        report["keyword_pipeline_enabled"] = os.environ.get(
+            "G3_ENABLE_KEYWORD_PIPELINE", "").strip() == "1"
         step("close_impact_task", PASS if verdict["all_checks_passed"] else WARNING,
              {"status": closed_task.get("status"),
-              "closure_evidence": closed_task.get("closure_evidence")})
+              "closure_evidence": closed_task.get("closure_evidence"),
+              "retrieval_hit_count": report["retrieval_hit_count"]})
 
         report["status"] = PASS if verdict["all_checks_passed"] else WARNING
         return report
@@ -1012,11 +1118,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 tail = log_path.read_text(encoding="utf-8", errors="replace")
                 report["server_log_tail"] = tail[-4000:]
                 # Keep the lines that explain the retrieval path so a failure
-                # can be read without re-running the whole flow.
+                # can be read without re-running the whole flow.  The provider
+                # seam logs its own error (the URL it called, the reason it was
+                # refused), so those lines have to survive the filter too.
                 markers = ("Hybrid search", "No retrievable", "retriev", "Retriev", "sqlite",
-                           "SQLite", "engine", "Engine", "ERROR", "error", "Error", "g2.")
+                           "SQLite", "engine", "Engine", "ERROR", "error", "Error", "g2.",
+                           "provider", "Provider", "searxng", "SearXNG", "web_search",
+                           "web search", "WebSearch", "SSRF", "ssrf", "whitelist", "Whitelist")
                 interesting = [line for line in tail.splitlines() if any(m in line for m in markers)]
                 report["server_log_interesting"] = interesting[-60:]
+                # The whole log is kept next to the report: a provider failure
+                # is often explained by one line the filter above drops.
+                if args.output:
+                    keep = Path(args.output).with_suffix(".server.log")
+                    keep.write_text(tail, encoding="utf-8")
+                    report["server_log_file"] = str(keep)
             temporary.cleanup()
 
 
@@ -1044,6 +1160,14 @@ def main() -> int:
             "error": f"{type(error).__name__}: {error}",
         }
     text = json.dumps(report, ensure_ascii=False, indent=2)
+    # The console on a Chinese Windows host is GBK by default, and a real
+    # retrieval snippet can carry characters GBK cannot encode.  Printing the
+    # report must not be the thing that fails the run, so the stdout codec
+    # is switched to UTF-8 with replacement.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):  # pragma: no cover - non-reconfigurable stdout
+        pass
     print(text)
     if args.output:
         Path(args.output).write_text(text + "\n", encoding="utf-8")

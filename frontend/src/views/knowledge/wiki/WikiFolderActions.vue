@@ -163,7 +163,7 @@ function submitDelete() {
 </style>
 
 <style lang="less">
-// Menu chrome comes from card-more-popup + .popup-menu in dropdown-menu.less.
+// Menu chrome comes from card-more-popup + .popup-menu in dropdownMenu.less.
 .wiki-folder-action-overlay {
   .wiki-folder-menu {
     min-width: 188px;

@@ -28,7 +28,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { skillFileListItems } from '@/utils/skillToolDisplay'
-import type { ReadSkillData } from '@/types/tool-results'
+import type { ReadSkillData } from '@/types/toolResults'
 import ResultRow from './ResultRow.vue'
 
 const props = defineProps<{

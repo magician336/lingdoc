@@ -1108,7 +1108,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="less">
-@import './css/channel-panel-list.less';
+@import './css/channelPanelList.less';
 
 .im-panel {
   display: flex;

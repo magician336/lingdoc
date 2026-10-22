@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Project } from '@/api/lingdoc/workspace'
-import { createDraftCandidate, listDraftCandidates, type DraftCandidate } from '@/api/lingdoc/g1Initialization'
+import { createDraftCandidate, listDraftCandidates, type DraftCandidate } from '@/api/lingdoc/projectInitialization'
 const props=withDefaults(defineProps<{project:Project;readonly?:boolean;currentUserId?:string}>(),{readonly:true,currentUserId:''})
 const emit=defineEmits<{dirty:[value:boolean];'use-field':[fieldId:string,content:string]}>()
 const candidates=ref<DraftCandidate[]>([]),title=ref(''),content=ref(''),targetField=ref(''),loading=ref(false),saving=ref(false),loaded=ref(false),error=ref('')

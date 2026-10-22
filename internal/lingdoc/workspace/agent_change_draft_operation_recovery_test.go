@@ -33,8 +33,8 @@ func r26OperationHTTP(t *testing.T, f deliveryGuardFixture, method, path, key st
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), f.projects)
-	RegisterImpactRoutes(engine.Group("/api"), f.projects)
+	RegisterAgentRoutes(engine.Group("/api"), agentRoutePortsFor(f.projects))
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(f.projects))
 	body, err := json.Marshal(input)
 	require.NoError(t, err)
 	request := httptest.NewRequest(method, path, bytes.NewReader(body)).WithContext(f.ctx)
@@ -87,7 +87,7 @@ type r26OperationMutationSnapshot struct {
 		CurrentContextRevision int64
 		SpecJSON               string
 	}
-	Operations, Audits, Changes, G2Objects, Pins, ChapterVersions int64
+	Operations, Audits, Changes, Objects, Pins, ChapterVersions int64
 }
 
 func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26OperationMutationSnapshot {
@@ -101,7 +101,7 @@ func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26Oper
 		{"lingdoc_operations", &snapshot.Operations},
 		{"lingdoc_project_audits", &snapshot.Audits},
 		{"lingdoc_change_sets", &snapshot.Changes},
-		{"lingdoc_g2_objects", &snapshot.G2Objects},
+		{"lingdoc_g2_objects", &snapshot.Objects},
 		{"lingdoc_chapter_versions", &snapshot.ChapterVersions},
 	} {
 		require.NoError(t, f.db.Table(count.Table).Count(count.Value).Error)
@@ -115,7 +115,7 @@ func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26Oper
 // second, unrelated current-baseline source check.
 func r26AgentDraftWithIndependentSource(t *testing.T, f deliveryGuardFixture) (core.AgentChangeDraftInput, string) {
 	t.Helper()
-	_, source := g4AdapterSource(t, f.governance, f.db, f.project, f.actor)
+	_, source := adapterSourceFixture(t, f.governance, f.db, f.project, f.actor)
 	turn, input, _ := agentDraftModelTurn(t, f, source.ID)
 	found := false
 	for _, ref := range turn.Context.SourceRefs {
@@ -250,7 +250,7 @@ func TestR26AgentProposalCreationRetryAfterOtherAuthorSaveUsesStoredReceipt(t *t
 			require.NoError(t, err)
 			payload, err := json.Marshal(input)
 			require.NoError(t, err)
-			request := core.CreateActionProposalInput{G2Expectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "只准备候选变更草稿"}
+			request := core.CreateActionProposalInput{VersionExpectation: agentDraftExpectation(p, 0), Action: "create_change_set", TargetID: p.ID, Input: payload, SourceIDs: []string{}, ExpectedEffect: "只准备候选变更草稿"}
 			path, key := "/api/projects/"+p.ID+"/action-proposals", "r26-create-proposal-retry"
 			first, original := r26OperationHTTP(t, f, http.MethodPost, path, key, request)
 			require.Equal(t, http.StatusCreated, first.Code, first.Body.String())

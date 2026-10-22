@@ -67,8 +67,10 @@ func convergedFormContract() []struct {
 		{template.ErrRuleSetNotPublished, 409, "invalid_state", "当前版本状态不允许此操作。", false},
 
 		// 规则治理面。
-		{governance.ErrUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", true},
-		{governance.ErrModelUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", true},
+		// D-47-05（#292）：尚未配置不是暂时不可用 —— 服务不存在时重试也不会变好，
+		// 所以这两个 503 不可重试；治理面其余 5xx（502）仍可重试。
+		{governance.ErrUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
+		{governance.ErrModelUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
 		{governance.ErrUnauthorized, 403, "template_governance_authorization_unavailable", "目录治理授权不可用。", false},
 		{governance.ErrSourceUnavailable, 403, "source_access_denied", "来源已不可用或无当前授权。", false},
 		{governance.ErrNotFound, 404, "not_found", "资源不存在或不可访问。", false},
@@ -79,8 +81,8 @@ func convergedFormContract() []struct {
 		{governance.ErrInvalidState, 409, "invalid_state", "当前版本状态不允许此操作。", false},
 		{governance.ErrReplayRequired, 422, "template_replay_required", "须用服务器注册且绑定当前版本的正反例完成回放。", false},
 		{governance.ErrInvalidOutput, 502, "invalid_model_output", "模型输出不符合当前目标和规则约束。", true},
-		{ErrG4HumanDecisionRequired, 403, "human_decision_required", "请使用当前人工账号复核并提交。", false},
-		{ErrG4CrossTenantSourceUnsupported, 422, "cross_tenant_source_unsupported", "当前目录流程无法在同一事务复核跨租户共享授权。", false},
+		{ErrGovernanceHumanDecisionRequired, 403, "human_decision_required", "请使用当前人工账号复核并提交。", false},
+		{ErrCrossTenantSourceUnsupported, 422, "cross_tenant_source_unsupported", "当前目录流程无法在同一事务复核跨租户共享授权。", false},
 
 		// 生成面。
 		{generation.ErrInvalidRequest, 400, "invalid_request", "请求字段不符合约定。", false},
@@ -234,8 +236,8 @@ var transportMappers = []struct {
 	{"rulesetstore/http.go", "writeError"},
 	{"generation/http.go", "writeGenerationError"},
 	{"candidateadoption/candidate_adoption_http.go", "writeCandidateAdoptionError"},
-	{"workspace/g4_full_http.go", "sendG4Error"},
-	{"workspace/g2_full_http.go", "g2FullError"},
+	{"workspace/template_governance_routes.go", "sendGovernanceError"},
+	{"workspace/agent_routes.go", "sendAgentError"},
 }
 
 // transportFiles are the five files that used to branch per business error.
@@ -243,8 +245,8 @@ var transportFiles = []string{
 	"rulesetstore/http.go",
 	"generation/http.go",
 	"candidateadoption/candidate_adoption_http.go",
-	"workspace/g4_full_http.go",
-	"workspace/g2_full_http.go",
+	"workspace/template_governance_routes.go",
+	"workspace/agent_routes.go",
 }
 
 // TestTransportFilesHoldNoBusinessErrorBranch makes the retirement of the
@@ -426,10 +428,10 @@ func TestUnknownFailureFallsBackWithoutLeaking(t *testing.T) {
 			sendError(c, internal)
 		}, "操作失败，请稍后再试。"},
 		{"治理面", func(c *gin.Context) {
-			sendG4Error(c, internal)
+			sendGovernanceError(c, internal)
 		}, "操作失败，请稍后再试。"},
-		{"G2 面", func(c *gin.Context) {
-			g2FullError(c, internal)
+		{"agent 面", func(c *gin.Context) {
+			sendAgentError(c, internal)
 		}, "操作失败，请稍后再试。"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

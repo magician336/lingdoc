@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-func r25EvidenceCard(t *testing.T, f g2Fixture, id string) EvidenceCard {
+func r25EvidenceCard(t *testing.T, f agentFixture, id string) EvidenceCard {
 	t.Helper()
 	var card EvidenceCard
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var err error
-		card, _, err = g2Load[EvidenceCard](tx, f.project.ID, G2CardKind, id)
+		card, _, err = loadStoredObject[EvidenceCard](tx, f.project.ID, EvidenceCardKind, id)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func r25EvidenceCard(t *testing.T, f g2Fixture, id string) EvidenceCard {
 	return card
 }
 
-func r25SemanticCounts(t *testing.T, f g2Fixture) map[string]int64 {
+func r25SemanticCounts(t *testing.T, f agentFixture) map[string]int64 {
 	t.Helper()
 	out := map[string]int64{}
 	for _, table := range []string{"lingdoc_g2_objects", "lingdoc_g2_object_versions", "lingdoc_g3_records", "lingdoc_project_audits", "lingdoc_operations"} {
@@ -38,30 +38,30 @@ func r25SemanticCounts(t *testing.T, f g2Fixture) map[string]int64 {
 	return out
 }
 
-func r25ConfirmedEvidenceFixture(t *testing.T) (g2Fixture, ResearchClaim, EvidenceCard, SourceAnchor) {
+func r25ConfirmedEvidenceFixture(t *testing.T) (agentFixture, ResearchClaim, EvidenceCard, SourceAnchor) {
 	t.Helper()
-	f := newG2Fixture(t, false)
-	g2SeedNativeEvidence(t, f)
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
 	a := f.anchor(t, "source-1", "r25-original-anchor")
 	b := f.anchor(t, "source-2", "r25-replacement-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{a}, &claim, "r25-original-card", "supports")
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "r25-card-confirm", G2ConfirmedInput{G2Expectation: f.expectation(card.Version), Confirmed: true, Reason: "合成原文人工核对，非科学证明"})
-	return f, claim, g2Decode[EvidenceCard](t, raw, err), b
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "r25-card-confirm", ConfirmationInput{VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "合成原文人工核对，非科学证明"})
+	return f, claim, decodeAgentJSON[EvidenceCard](t, raw, err), b
 }
 
 func TestFormalGuardKeepsUnconfirmedCollectionEditable(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	a := f.anchor(t, "source-1", "r25-candidate-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{a}, &claim, "r25-candidate-card", "supports")
 	// Existing automatically confirmed dependency edges are deliberately present.
 	// They are not evidence that the collected card or its claim is confirmed.
-	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-edit-draft-claim", SaveResearchClaimInput{G2Expectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "普通收集阶段修订主张", Scope: claim.Scope, Status: "active", Reason: "尚未进入正式依据", Confirmed: true})
-	claim = g2Decode[ResearchClaim](t, raw, err)
+	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-edit-draft-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "普通收集阶段修订主张", Scope: claim.Scope, Status: "active", Reason: "尚未进入正式依据", Confirmed: true})
+	claim = decodeAgentJSON[ResearchClaim](t, raw, err)
 	card = r25EvidenceCard(t, f, card.ID)
-	raw, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "r25-edit-draft-card", SaveEvidenceCardInput{G2Expectation: f.expectation(card.Version), CardID: card.ID, ClaimRef: &G2VersionRef{ID: claim.ID, Version: claim.Version}, AnchorRefs: []G2VersionRef{{ID: a.ID, Version: a.Version}}, SupportType: "refutes", Scope: "未确认候选范围", ScopeChapterIDs: []string{f.chapter.ID}, Confirmed: true})
-	card = g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "r25-edit-draft-card", SaveEvidenceCardInput{VersionExpectation: f.expectation(card.Version), CardID: card.ID, ClaimRef: &VersionRef{ID: claim.ID, Version: claim.Version}, AnchorRefs: []VersionRef{{ID: a.ID, Version: a.Version}}, SupportType: "refutes", Scope: "未确认候选范围", ScopeChapterIDs: []string{f.chapter.ID}, Confirmed: true})
+	card = decodeAgentJSON[EvidenceCard](t, raw, err)
 	p, err := f.svc.GetProject(context.Background(), f.owner, f.project.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -74,11 +74,11 @@ func TestFormalGuardKeepsUnconfirmedCollectionEditable(t *testing.T) {
 func TestFormalClaimAndCardRejectDirectReplacement(t *testing.T) {
 	f, claim, card, anchor := r25ConfirmedEvidenceFixture(t)
 	before := r25SemanticCounts(t, f)
-	_, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-reject-formal-claim", SaveResearchClaimInput{G2Expectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "禁止绕过正式基线的主张替换", Scope: claim.Scope, Status: "active", Reason: "反例", Confirmed: true})
+	_, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-reject-formal-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "禁止绕过正式基线的主张替换", Scope: claim.Scope, Status: "active", Reason: "反例", Confirmed: true})
 	if !errors.Is(err, ErrInvalidState) || !strings.Contains(err.Error(), "ChangeSet") {
 		t.Fatalf("formal claim bypass: %v", err)
 	}
-	_, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "r25-reject-formal-card", SaveEvidenceCardInput{G2Expectation: f.expectation(card.Version), CardID: card.ID, ClaimRef: card.ClaimRef, AnchorRefs: []G2VersionRef{{ID: anchor.ID, Version: anchor.Version}}, SupportType: "refutes", Scope: card.Scope, ScopeChapterIDs: card.ScopeChapterIDs, Confirmed: true})
+	_, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "r25-reject-formal-card", SaveEvidenceCardInput{VersionExpectation: f.expectation(card.Version), CardID: card.ID, ClaimRef: card.ClaimRef, AnchorRefs: []VersionRef{{ID: anchor.ID, Version: anchor.Version}}, SupportType: "refutes", Scope: card.Scope, ScopeChapterIDs: card.ScopeChapterIDs, Confirmed: true})
 	if !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("formal card bypass: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestFormalClaimAndCardRejectDirectReplacement(t *testing.T) {
 		t.Fatal("direct rejection invalidated formal card")
 	}
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		got, _, err := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+		got, _, err := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 		if err == nil && (got.Version != claim.Version || got.Text != claim.Text) {
 			t.Fatal("direct rejection changed formal claim")
 		}
@@ -106,7 +106,7 @@ func TestFormalClaimAndCardRejectDirectReplacement(t *testing.T) {
 func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 	for _, consumer := range []string{"ready_route", "draft_route", "confirmed_chapter"} {
 		t.Run(consumer, func(t *testing.T) {
-			f := newG2Fixture(t, false)
+			f := newAgentFixture(t, false)
 			claim := f.claim(t)
 			ref := ObjectVersionRef{Kind: "ResearchClaim", ID: claim.ID, Version: strconv.FormatInt(claim.Version, 10)}
 			if consumer == "ready_route" || consumer == "draft_route" {
@@ -155,7 +155,7 @@ func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 				}
 				target := ObjectVersionRef{Kind: "ChapterVersion", ID: chapter.ID, Version: *chapter.CurrentVersionID}
 				raw, _, _, err := f.svc.CreateDependencyEdge(context.Background(), f.owner, f.project.ID, "r25-formal-chapter-link", DependencyEdgeInput{ExpectedContextRevision: f.project.CurrentContextRevision, Source: ref, Target: target, Action: "REVIEW_REQUIRED", Relation: "actual_claim_reference", Origin: "user", Reason: "合成已确认章节的真实依赖"})
-				edge := g2Decode[DependencyEdge](t, raw, err)
+				edge := decodeAgentJSON[DependencyEdge](t, raw, err)
 				if edge.Status != "confirmed" || edge.Source != ref || edge.Target != target {
 					t.Fatalf("fixture lacks an exact confirmed dependency: %+v", edge)
 				}
@@ -175,7 +175,7 @@ func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := r25SemanticCounts(t, f)
-			_, _, _, err = f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-formal-use-reject", SaveResearchClaimInput{G2Expectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "直接改已正式使用主张", Scope: claim.Scope, Status: "active", Reason: "反例", Confirmed: true})
+			_, _, _, err = f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-formal-use-reject", SaveResearchClaimInput{VersionExpectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "直接改已正式使用主张", Scope: claim.Scope, Status: "active", Reason: "反例", Confirmed: true})
 			if consumer == "draft_route" {
 				if err != nil {
 					t.Fatalf("unapplied route proposal blocked collection: %v", err)
@@ -188,7 +188,7 @@ func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 					t.Fatal("rejected formal edit left domain/history/audit/operation writes")
 				}
 				if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-					current, _, err := g2Load[ResearchClaim](tx, f.project.ID, G2ClaimKind, claim.ID)
+					current, _, err := loadStoredObject[ResearchClaim](tx, f.project.ID, ResearchClaimKind, claim.ID)
 					if err == nil && !reflect.DeepEqual(current, claim) {
 						t.Fatalf("rejected formal edit changed claim: %+v", current)
 					}
@@ -203,7 +203,7 @@ func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 
 func r25CardDelta(card EvidenceCard, anchor SourceAnchor) SemanticDelta {
 	input := cardSemanticInput(card)
-	input.AnchorRefs = []G2VersionRef{{ID: anchor.ID, Version: anchor.Version}}
+	input.AnchorRefs = []VersionRef{{ID: anchor.ID, Version: anchor.Version}}
 	input.SupportType, input.Scope, input.Limitations = "refutes", "变更后的证据范围", "新的限制，不能继承旧确认"
 	return SemanticDelta{Kind: "EvidenceCard", TargetID: card.ID, ExpectedVersion: card.Version, BeforeHash: "forged", SourceIDs: []string{"forged-source"}, ProposedCard: &input}
 }
@@ -275,7 +275,7 @@ func TestEvidenceCardDraftApplyAndInverseInvalidateChapter(t *testing.T) {
 	}
 	f.project = p
 	counts := r25SemanticCounts(t, f)
-	_, _, _, directErr := f.svc.SaveEvidenceCard(context.Background(), f.owner, p.ID, "r25-no-post-apply-bypass", SaveEvidenceCardInput{G2Expectation: f.expectation(got.Version), CardID: got.ID, ClaimRef: got.ClaimRef, AnchorRefs: got.AnchorRefs, SupportType: "supports", Scope: got.Scope, ScopeChapterIDs: got.ScopeChapterIDs, Confirmed: true})
+	_, _, _, directErr := f.svc.SaveEvidenceCard(context.Background(), f.owner, p.ID, "r25-no-post-apply-bypass", SaveEvidenceCardInput{VersionExpectation: f.expectation(got.Version), CardID: got.ID, ClaimRef: got.ClaimRef, AnchorRefs: got.AnchorRefs, SupportType: "supports", Scope: got.Scope, ScopeChapterIDs: got.ScopeChapterIDs, Confirmed: true})
 	if !errors.Is(directErr, ErrInvalidState) || !reflect.DeepEqual(counts, r25SemanticCounts(t, f)) {
 		t.Fatalf("applied CANDIDATE semantic identity lost its formal-change guard: %v", directErr)
 	}
@@ -289,8 +289,8 @@ func TestEvidenceCardDraftApplyAndInverseInvalidateChapter(t *testing.T) {
 		}
 	}
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		port, _ := g2Storage(tx)
-		row, err := port.G2ObjectVersion(p.ID, G2CardKind, card.ID, card.Version)
+		port, _ := agentObjectStore(tx)
+		row, err := port.ObjectVersion(p.ID, EvidenceCardKind, card.ID, card.Version)
 		if err != nil {
 			return err
 		}
@@ -307,13 +307,13 @@ func TestEvidenceCardDraftApplyAndInverseInvalidateChapter(t *testing.T) {
 	}
 	// Normal source confirmation adds a lifecycle version after semantic Apply.
 	// It must not make an unchanged relation impossible to reverse.
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, p.ID, got.ID, "r25-card-reconfirm", G2ConfirmedInput{G2Expectation: f.expectation(got.Version), Confirmed: true, Reason: "按修改后的关系与新原文重新核对"})
-	confirmed := g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, p.ID, got.ID, "r25-card-reconfirm", ConfirmationInput{VersionExpectation: f.expectation(got.Version), Confirmed: true, Reason: "按修改后的关系与新原文重新核对"})
+	confirmed := decodeAgentJSON[EvidenceCard](t, raw, err)
 	if confirmed.Version != got.Version+1 || confirmed.Status != "CONFIRMED" || confirmed.Confirmation == nil || confirmed.Confirmation.ContextRevision != p.CurrentContextRevision {
 		t.Fatal("normal post-apply card confirmation failed")
 	}
 	raw, _, _, err = f.svc.ReverseChangeSet(context.Background(), f.owner, p.ID, c.ID, "r25-card-inverse-draft")
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	if inverse.Status != "draft" || inverse.SemanticDeltas[0].ExpectedVersion != confirmed.Version || inverse.SemanticDeltas[0].ProposedCard.SupportType != "supports" {
 		t.Fatal("inverse did not propose original meaning")
 	}
@@ -394,7 +394,7 @@ func TestEvidenceCardProposalRequiresConsent(t *testing.T) {
 	delta.ProposedCard.Confirmed = false
 	before := r25SemanticCounts(t, f)
 	input := ExtendedChangeSetInput{ExpectedContextRevision: f.project.CurrentContextRevision, Reason: "合成关系修改", SemanticDeltas: []SemanticDelta{delta}}
-	if _, _, _, err := f.svc.CreateChangeDraft(context.Background(), f.owner, f.project.ID, "r25-no-evidence-consent", input); !errors.Is(err, ErrG2ConsentRequired) {
+	if _, _, _, err := f.svc.CreateChangeDraft(context.Background(), f.owner, f.project.ID, "r25-no-evidence-consent", input); !errors.Is(err, ErrConsentRequired) {
 		t.Fatalf("implicit evidence consent: %v", err)
 	}
 	delta.ProposedCard.Confirmed = true
@@ -418,8 +418,8 @@ func TestEvidenceCardInverseRejectsLaterChange(t *testing.T) {
 	}
 	f.project = p
 	now := r25EvidenceCard(t, f, card.ID)
-	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, p.ID, now.ID, "r25-confirm-before-other-change", G2ConfirmedInput{G2Expectation: f.expectation(now.Version), Confirmed: true, Reason: "独立核对当前合成原文"})
-	now = g2Decode[EvidenceCard](t, raw, err)
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, p.ID, now.ID, "r25-confirm-before-other-change", ConfirmationInput{VersionExpectation: f.expectation(now.Version), Confirmed: true, Reason: "独立核对当前合成原文"})
+	now = decodeAgentJSON[EvidenceCard](t, raw, err)
 	input := cardSemanticInput(now)
 	input.Limitations = "此后实际改变过的语义，不得被旧逆向操作覆盖"
 	next := semanticDraft(t, f.svc, f.owner, p, "r25-subsequent-card-change", SemanticDelta{Kind: "EvidenceCard", TargetID: now.ID, ExpectedVersion: now.Version, ProposedCard: &input})
@@ -436,17 +436,17 @@ func TestEvidenceCardInverseRejectsLaterChange(t *testing.T) {
 
 func TestAssociatedClaimAndCardMustBeStaged(t *testing.T) {
 	f, claim, card, replacement := r25ConfirmedEvidenceFixture(t)
-	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-independent-new-claim", SaveResearchClaimInput{G2Expectation: f.expectation(0), Text: "另一个未确认的合成主张", Scope: "合成范围", Status: "active", Reason: "普通收集", Confirmed: true})
-	other := g2Decode[ResearchClaim](t, raw, err)
+	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-independent-new-claim", SaveResearchClaimInput{VersionExpectation: f.expectation(0), Text: "另一个未确认的合成主张", Scope: "合成范围", Status: "active", Reason: "普通收集", Confirmed: true})
+	other := decodeAgentJSON[ResearchClaim](t, raw, err)
 	claimDelta := SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: "新主张含义", Scope: claim.Scope, Status: "active", Confirmed: true}}
 	delta := r25CardDelta(card, replacement)
 	for _, which := range []string{"proposed_claim", "previous_claim"} {
 		t.Run(which, func(t *testing.T) {
 			proposal := *delta.ProposedCard
 			if which == "proposed_claim" {
-				proposal.ClaimRef = &G2VersionRef{ID: claim.ID, Version: claim.Version + 1}
+				proposal.ClaimRef = &VersionRef{ID: claim.ID, Version: claim.Version + 1}
 			} else {
-				proposal.ClaimRef = &G2VersionRef{ID: other.ID, Version: other.Version}
+				proposal.ClaimRef = &VersionRef{ID: other.ID, Version: other.Version}
 			}
 			cardDelta := delta
 			cardDelta.ProposedCard = &proposal

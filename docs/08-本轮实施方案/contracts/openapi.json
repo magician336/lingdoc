@@ -18853,7 +18853,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 87,
         "x-lingdoc-service": "ListResearchTasks",
         "x-lingdoc-go-response": "[]ResearchTask",
@@ -19037,7 +19037,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 120,
         "x-lingdoc-service": "SaveResearchTask",
         "x-lingdoc-go-response": "ResearchTask",
@@ -19254,7 +19254,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 90,
         "x-lingdoc-service": "ListResearchRuns",
         "x-lingdoc-go-response": "[]ResearchRun",
@@ -19452,7 +19452,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 93,
         "x-lingdoc-service": "GetResearchRun",
         "x-lingdoc-go-response": "ResearchRun",
@@ -19623,7 +19623,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 96,
         "x-lingdoc-service": "ListImportCandidates",
         "x-lingdoc-go-response": "[]ImportCandidate",
@@ -19801,7 +19801,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 139,
         "x-lingdoc-service": "CreateImportCandidate",
         "x-lingdoc-go-response": "ImportCandidate",
@@ -19994,7 +19994,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 99,
         "x-lingdoc-service": "ListSourceAnchors",
         "x-lingdoc-go-response": "[]SourceAnchor",
@@ -20227,7 +20227,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 148,
         "x-lingdoc-service": "SaveSourceAnchor",
         "x-lingdoc-go-response": "SourceAnchor",
@@ -20414,7 +20414,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 102,
         "x-lingdoc-service": "ListResearchClaims",
         "x-lingdoc-go-response": "[]ResearchClaim",
@@ -20586,7 +20586,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 151,
         "x-lingdoc-service": "SaveResearchClaim",
         "x-lingdoc-go-response": "ResearchClaim",
@@ -20784,7 +20784,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 105,
         "x-lingdoc-service": "ListEvidenceCards",
         "x-lingdoc-go-response": "[]EvidenceCard",
@@ -20970,7 +20970,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 154,
         "x-lingdoc-service": "SaveEvidenceCard",
         "x-lingdoc-go-response": "EvidenceCard",
@@ -21159,7 +21159,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 108,
         "x-lingdoc-service": "ListAgentSessions",
         "x-lingdoc-go-response": "[]AgentSession",
@@ -21325,7 +21325,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 163,
         "x-lingdoc-service": "CreateAgentSession",
         "x-lingdoc-go-response": "AgentSession",
@@ -21537,7 +21537,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 111,
         "x-lingdoc-service": "GetAgentTurns",
         "x-lingdoc-go-response": "[]AgentTurn",
@@ -21811,7 +21811,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 166,
         "x-lingdoc-service": "SendAgentTurn",
         "x-lingdoc-go-response": "AgentTurn",
@@ -22056,7 +22056,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 114,
         "x-lingdoc-service": "ListActionProposals",
         "x-lingdoc-go-response": "[]ActionProposal",
@@ -22239,7 +22239,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 169,
         "x-lingdoc-service": "CreateActionProposal",
         "x-lingdoc-go-response": "ActionProposal",
@@ -22434,7 +22434,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 117,
         "x-lingdoc-service": "GetProjectAssetPolicy",
         "x-lingdoc-go-response": "ProjectAssetPolicy",
@@ -22629,7 +22629,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 123,
         "x-lingdoc-service": "SaveResearchTask",
         "x-lingdoc-go-response": "ResearchTask",
@@ -22851,7 +22851,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 130,
         "x-lingdoc-service": "ApproveResearchTask",
         "x-lingdoc-go-response": "ResearchTask",
@@ -23149,7 +23149,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 133,
         "x-lingdoc-service": "RunResearchTask",
         "x-lingdoc-go-response": "ResearchRun",
@@ -23359,7 +23359,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 136,
         "x-lingdoc-service": "ControlResearchTask",
         "x-lingdoc-go-response": "ResearchTask",
@@ -23565,7 +23565,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 142,
         "x-lingdoc-service": "ConfirmImportCandidate",
         "x-lingdoc-go-response": "ImportCandidate",
@@ -23772,7 +23772,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 145,
         "x-lingdoc-service": "RejectImportCandidate",
         "x-lingdoc-go-response": "ImportCandidate",
@@ -23985,7 +23985,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 157,
         "x-lingdoc-service": "ConfirmEvidenceCard",
         "x-lingdoc-go-response": "EvidenceCard",
@@ -24200,7 +24200,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 160,
         "x-lingdoc-service": "ReviewEvidenceCard",
         "x-lingdoc-go-response": "EvidenceCard",
@@ -24469,7 +24469,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 172,
         "x-lingdoc-service": "ConfirmActionProposal",
         "x-lingdoc-go-response": "ActionProposal",
@@ -24681,7 +24681,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 175,
         "x-lingdoc-service": "RejectActionProposal",
         "x-lingdoc-go-response": "ActionProposal",
@@ -24866,7 +24866,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 179,
         "x-lingdoc-service": "InspectResearchResult",
         "x-lingdoc-go-response": "ResearchResult",
@@ -25055,7 +25055,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 182,
         "x-lingdoc-service": "RefreshImportCandidate",
         "x-lingdoc-go-response": "ImportCandidate",
@@ -25238,7 +25238,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 185,
         "x-lingdoc-service": "BuildAgentContext",
         "x-lingdoc-go-response": "AgentContextPackage",
@@ -25448,7 +25448,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 188,
         "x-lingdoc-service": "ListEvidenceCards",
         "x-lingdoc-go-response": "EvidenceCard",
@@ -25643,7 +25643,7 @@
         },
         "x-domain": "workspace",
         "x-delivery-phase": "core",
-        "x-lingdoc-route-source": "g2_full_http.go",
+        "x-lingdoc-route-source": "agent_routes.go",
         "x-lingdoc-route-line": 200,
         "x-lingdoc-service": "CreateChangeDraft",
         "x-lingdoc-go-response": "ChangeSet",
@@ -37317,7 +37317,7 @@
           }
         },
         "x-go-type": "core.ImpactBlocker",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactCause": {
         "type": "object",
@@ -37341,7 +37341,7 @@
           }
         },
         "x-go-type": "core.ImpactCause",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ResolvedImpact": {
         "type": "object",
@@ -37387,7 +37387,7 @@
           }
         },
         "x-go-type": "core.ResolvedImpact",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactObjectState": {
         "type": "object",
@@ -37426,7 +37426,7 @@
           }
         },
         "x-go-type": "core.ImpactObjectState",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactAssessment": {
         "type": "object",
@@ -37499,7 +37499,7 @@
           }
         },
         "x-go-type": "core.ImpactAssessment",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactAssessmentResponse": {
         "type": "object",
@@ -37648,7 +37648,7 @@
           }
         },
         "x-go-type": "core.ImpactTask",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactTaskActionInput": {
         "type": "object",
@@ -37705,7 +37705,7 @@
           }
         },
         "x-go-type": "core.ImpactTaskActionInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "ImpactTaskListResponse": {
         "type": "object",
@@ -37877,7 +37877,7 @@
         },
         "description": "一次真实交付检查回执。任一版本或哈希落后于当前基线时服务端判定其过期，历史回执不能满足当前交付门禁。",
         "x-go-type": "core.ImpactComputationReceipt",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_action_results.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_action_result.go"
       },
       "StabilizationResult": {
         "type": "object",
@@ -37927,7 +37927,7 @@
           }
         },
         "x-go-type": "core.StabilizationResult",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "StabilizationResultResponse": {
         "type": "object",
@@ -40054,7 +40054,7 @@
         ],
         "additionalProperties": false,
         "x-go-type": "core.ActivationReadReceipt",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_lifecycle.go"
       },
       "ActivationDiff": {
         "type": "object",
@@ -42981,7 +42981,7 @@
         },
         "additionalProperties": false,
         "x-go-type": "core.ObjectVersionRef",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "DependencyEdge": {
         "type": "object",
@@ -43084,7 +43084,7 @@
         },
         "additionalProperties": false,
         "x-go-type": "core.DependencyEdge",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "DependencyEdgeInput": {
         "type": "object",
@@ -43147,7 +43147,7 @@
         },
         "additionalProperties": false,
         "x-go-type": "core.DependencyEdgeInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "DependencyDecisionInput": {
         "type": "object",
@@ -43203,7 +43203,7 @@
         "description": "confirm/reject 不得携带 relation/action/confidence；modify 至少要携带其中之一。",
         "additionalProperties": false,
         "x-go-type": "core.DependencyDecisionInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_impact_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/impact_model.go"
       },
       "EmptyJSONObject": {
         "type": "object",
@@ -43300,7 +43300,7 @@
           "expected_context_revision"
         ],
         "x-go-type": "core.G2Expectation",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "SaveResearchTaskInput": {
         "type": "object",
@@ -43379,7 +43379,7 @@
           "expected_output"
         ],
         "x-go-type": "core.SaveResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "G2ConfirmedInput": {
         "type": "object",
@@ -43416,7 +43416,7 @@
           "expected_version"
         ],
         "x-go-type": "core.G2ConfirmedInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "RunResearchTaskInput": {
         "type": "object",
@@ -43445,7 +43445,7 @@
           "expected_version"
         ],
         "x-go-type": "core.RunResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ControlResearchTaskInput": {
         "type": "object",
@@ -43484,7 +43484,7 @@
           "expected_version"
         ],
         "x-go-type": "core.ControlResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "CreateImportCandidateInput": {
         "type": "object",
@@ -43567,7 +43567,7 @@
           "license"
         ],
         "x-go-type": "core.CreateImportCandidateInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "SaveSourceAnchorInput": {
         "type": "object",
@@ -43658,7 +43658,7 @@
           "confirmed"
         ],
         "x-go-type": "core.SaveSourceAnchorInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "SaveResearchClaimInput": {
         "type": "object",
@@ -43716,7 +43716,7 @@
           "confirmed"
         ],
         "x-go-type": "core.SaveResearchClaimInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "G2VersionRef": {
         "type": "object",
@@ -43738,7 +43738,7 @@
           "version"
         ],
         "x-go-type": "core.G2VersionRef",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "SaveEvidenceCardInput": {
         "type": "object",
@@ -43825,7 +43825,7 @@
           "confirmed"
         ],
         "x-go-type": "core.SaveEvidenceCardInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ReviewEvidenceCardInput": {
         "type": "object",
@@ -43871,7 +43871,7 @@
           "expected_version"
         ],
         "x-go-type": "core.ReviewEvidenceCardInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "AgentContextInput": {
         "type": "object",
@@ -43921,7 +43921,7 @@
           "sensitive_context_confirmed"
         ],
         "x-go-type": "core.AgentContextInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "AgentTurnInput": {
         "type": "object",
@@ -43977,7 +43977,7 @@
           "expected_version"
         ],
         "x-go-type": "core.AgentTurnInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "AgentChangeDraftSuggestion": {
         "type": "object",
@@ -44012,7 +44012,7 @@
           "affected_chapter_ids"
         ],
         "x-go-type": "core.AgentChangeDraftSuggestion",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_change_draft_action.go"
+        "x-go-source": "internal/lingdoc/workspacecore/change_draft_action.go"
       },
       "ProvenanceRecord": {
         "type": "object",
@@ -44144,7 +44144,7 @@
           "field_metadata"
         ],
         "x-go-type": "core.AgentChangeDraftInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_change_draft_action.go",
+        "x-go-source": "internal/lingdoc/workspacecore/change_draft_action.go",
         "description": "Agent draft accepts fields only, not semantic deltas. The service enforces exactly matching fields/field_metadata keys, one current completed task-assistant turn/version, actual actor/project/baseline, source access and server-pinned provenance; JSON shape is not an authorization proof."
       },
       "SaveSpecInput": {
@@ -44262,7 +44262,7 @@
         },
         "additionalProperties": false,
         "x-go-type": "core.SaveResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
         "description": "Editable candidate task fields; not an execution or permission grant."
       },
       "AgentSuggestions": {
@@ -44324,7 +44324,7 @@
           "asset_revision"
         ],
         "x-go-type": "core.G2AssetVersion",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "G2Basis": {
         "type": "object",
@@ -44367,7 +44367,7 @@
           "source_catalog_version"
         ],
         "x-go-type": "core.G2Basis",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "EvidenceConfirmation": {
         "type": "object",
@@ -44424,7 +44424,7 @@
           "meaning"
         ],
         "x-go-type": "core.EvidenceConfirmation",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "EvidenceCard": {
         "type": "object",
@@ -44535,7 +44535,7 @@
           "created_at"
         ],
         "x-go-type": "core.EvidenceCard",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "CommittedChapterVersion": {
         "type": "object",
@@ -44711,7 +44711,7 @@
           "created_at"
         ],
         "x-go-type": "core.ActionProposal",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
         "oneOf": [
           {
             "type": "object",
@@ -45001,7 +45001,7 @@
           "expected_effect"
         ],
         "x-go-type": "core.CreateActionProposalInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
         "oneOf": [
           {
             "type": "object",
@@ -45247,7 +45247,7 @@
           "updated_at"
         ],
         "x-go-type": "core.ProjectAssetPolicy",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
         "description": "Complete native policy readback. Proposal bodies use ProjectAssetPolicyInput; readback identity/version/authorization facts are server-owned."
       },
       "ProjectAssetPolicyProposalInput": {
@@ -45289,7 +45289,7 @@
           "expected_version"
         ],
         "x-go-type": "workspace.g2PolicyProposalInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "TrialWindow": {
         "type": "object",
@@ -45433,7 +45433,7 @@
           "created_at"
         ],
         "x-go-type": "core.TrialWindow",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "MetricObservation": {
         "type": "object",
@@ -45467,7 +45467,7 @@
           "version"
         ],
         "x-go-type": "core.MetricObservation",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialSample": {
         "type": "object",
@@ -45625,7 +45625,7 @@
           "version"
         ],
         "x-go-type": "core.TrialSample",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "ProjectAPIKeyGrant": {
         "type": "object",
@@ -45672,7 +45672,7 @@
           "updated_at"
         ],
         "x-go-type": "core.ProjectAPIKeyGrant",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_extended.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_grants.go"
       },
       "RuntimeScope": {
         "type": "object",
@@ -45697,7 +45697,7 @@
           "value"
         ],
         "x-go-type": "core.RuntimeScope",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "RuntimeAlertRule": {
         "type": "object",
@@ -45732,7 +45732,7 @@
           "scope"
         ],
         "x-go-type": "core.RuntimeAlertRule",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "SpecField": {
         "type": "object",
@@ -45915,7 +45915,7 @@
           "updated_at"
         ],
         "x-go-type": "core.RouteNode",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_semantic.go"
+        "x-go-source": "internal/lingdoc/workspacecore/semantic_delta.go"
       },
       "GovernedRuleBindingOverride": {
         "type": "object",
@@ -46101,7 +46101,7 @@
           "updated_at"
         ],
         "x-go-type": "core.ResearchTask",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullResearchTaskListResponse": {
         "type": "object",
@@ -46171,7 +46171,7 @@
           "status"
         ],
         "x-go-type": "core.ResearchRound",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ResearchResult": {
         "type": "object",
@@ -46253,7 +46253,7 @@
           "status"
         ],
         "x-go-type": "core.ResearchResult",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ResearchRun": {
         "type": "object",
@@ -46334,7 +46334,7 @@
           "started_at"
         ],
         "x-go-type": "core.ResearchRun",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullResearchRunListResponse": {
         "type": "object",
@@ -46511,7 +46511,7 @@
           "created_at"
         ],
         "x-go-type": "core.ImportCandidate",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullImportCandidateListResponse": {
         "type": "object",
@@ -46656,7 +46656,7 @@
           "created_at"
         ],
         "x-go-type": "core.SourceAnchor",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullSourceAnchorListResponse": {
         "type": "object",
@@ -46735,7 +46735,7 @@
           "created_at"
         ],
         "x-go-type": "core.ResearchClaim",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullResearchClaimListResponse": {
         "type": "object",
@@ -46823,7 +46823,7 @@
           "created_at"
         ],
         "x-go-type": "core.AgentSession",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullAgentSessionListResponse": {
         "type": "object",
@@ -46885,7 +46885,7 @@
           "model_use_allowed"
         ],
         "x-go-type": "core.AgentSourceRef",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "AgentContextPackage": {
         "type": "object",
@@ -46981,7 +46981,7 @@
           "correlation_id"
         ],
         "x-go-type": "core.AgentContextPackage",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "AgentTurn": {
         "type": "object",
@@ -47064,7 +47064,7 @@
           "created_at"
         ],
         "x-go-type": "core.AgentTurn",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "FullAgentTurnListResponse": {
         "type": "object",
@@ -47508,7 +47508,7 @@
           "created_at"
         ],
         "x-go-type": "core.ContextRevisionRecord",
-        "x-go-source": "internal/lingdoc/workspacecore/g3_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/context_revision.go"
       },
       "FullContextRevisionRecordListResponse": {
         "type": "object",
@@ -47662,7 +47662,7 @@
           "updated_at"
         ],
         "x-go-type": "core.RuntimeControl",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "FullRuntimeControlListResponse": {
         "type": "object",
@@ -47723,7 +47723,7 @@
           "reason"
         ],
         "x-go-type": "core.RuntimeControlInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "RuntimeControlResponse": {
         "type": "object",
@@ -47839,7 +47839,7 @@
           "created_at"
         ],
         "x-go-type": "core.RuntimeEvent",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "FullRuntimeEventListResponse": {
         "type": "object",
@@ -47912,7 +47912,7 @@
           "missing"
         ],
         "x-go-type": "core.RuntimeMetrics",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "RuntimeMetricsResponse": {
         "type": "object",
@@ -47975,7 +47975,7 @@
           "created_at"
         ],
         "x-go-type": "core.RuntimeAlert",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "FullRuntimeAlertListResponse": {
         "type": "object",
@@ -48091,7 +48091,7 @@
           "reason"
         ],
         "x-go-type": "core.TrialWindowActionInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "FullTrialSampleListResponse": {
         "type": "object",
@@ -48186,7 +48186,7 @@
           "word_roundtrip_evidence"
         ],
         "x-go-type": "core.TrialReviewInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialMetricResult": {
         "type": "object",
@@ -48224,7 +48224,7 @@
           "missing_samples"
         ],
         "x-go-type": "core.TrialMetricResult",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialReport": {
         "type": "object",
@@ -48289,7 +48289,7 @@
           "input_hash"
         ],
         "x-go-type": "core.TrialReport",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialReportResponse": {
         "type": "object",
@@ -48366,7 +48366,7 @@
           "created_at"
         ],
         "x-go-type": "core.TrialDecisionRecord",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "FullTrialDecisionRecordListResponse": {
         "type": "object",
@@ -48417,7 +48417,7 @@
           "report_hash"
         ],
         "x-go-type": "core.TrialDecisionInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialDecisionRecordResponse": {
         "type": "object",
@@ -48465,7 +48465,7 @@
           "reason"
         ],
         "x-go-type": "core.TrialDecisionSignInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "FullProjectListResponse": {
         "type": "object",
@@ -48547,7 +48547,7 @@
           "created_at"
         ],
         "x-go-type": "core.MemberInvitation",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_lifecycle.go"
       },
       "FullMemberInvitationListResponse": {
         "type": "object",
@@ -48659,7 +48659,7 @@
           "reason"
         ],
         "x-go-type": "core.OwnerTransferDecisionInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_extended.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_grants.go"
       },
       "OwnerTransferResponse": {
         "type": "object",
@@ -48715,7 +48715,7 @@
           "context_revision"
         ],
         "x-go-type": "core.EffectivePermission",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_policy.go"
+        "x-go-source": "internal/lingdoc/workspacecore/permission_policy.go"
       },
       "EffectivePermissionResponse": {
         "type": "object",
@@ -48757,7 +48757,7 @@
           "tenant_role"
         ],
         "x-go-type": "core.MemberDirectoryEntry",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_extended.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_grants.go"
       },
       "FullMemberDirectoryEntryListResponse": {
         "type": "object",
@@ -48811,7 +48811,7 @@
           "reason"
         ],
         "x-go-type": "core.InviteMemberInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_lifecycle.go"
       },
       "MemberInvitationResponse": {
         "type": "object",
@@ -48846,7 +48846,7 @@
           "expected_invitation_version"
         ],
         "x-go-type": "core.AcceptMemberInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_lifecycle.go"
       },
       "MemberAssignmentInput": {
         "type": "object",
@@ -48869,7 +48869,7 @@
           "reason"
         ],
         "x-go-type": "core.MemberAssignmentInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_extended.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_grants.go"
       },
       "MemberLifecycleInput": {
         "type": "object",
@@ -48898,7 +48898,7 @@
           "reason"
         ],
         "x-go-type": "core.MemberLifecycleInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_lifecycle.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_lifecycle.go"
       },
       "ProjectAPIKeyGrantResponse": {
         "type": "object",
@@ -48994,7 +48994,7 @@
           "updated_at"
         ],
         "x-go-type": "core.ChapterReviewState",
-        "x-go-source": "internal/lingdoc/workspacecore/g7_review.go"
+        "x-go-source": "internal/lingdoc/workspacecore/chapter_review.go"
       },
       "ChapterReviewStateResponse": {
         "type": "object",
@@ -49055,7 +49055,7 @@
           "reason"
         ],
         "x-go-type": "core.ChapterReviewInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g7_review.go"
+        "x-go-source": "internal/lingdoc/workspacecore/chapter_review.go"
       },
       "CommentSelection": {
         "type": "object",
@@ -49141,7 +49141,7 @@
           "updated_at"
         ],
         "x-go-type": "core.ChapterComment",
-        "x-go-source": "internal/lingdoc/workspacecore/g7_review.go"
+        "x-go-source": "internal/lingdoc/workspacecore/chapter_review.go"
       },
       "FullChapterCommentListResponse": {
         "type": "object",
@@ -49213,7 +49213,7 @@
           "resolve"
         ],
         "x-go-type": "core.ChapterCommentInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g7_review.go"
+        "x-go-source": "internal/lingdoc/workspacecore/chapter_review.go"
       },
       "ChapterCommentResponse": {
         "type": "object",
@@ -49289,7 +49289,7 @@
           "reason"
         ],
         "x-go-type": "core.SaveResearchClaimInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ActionSaveEvidenceCardInput": {
         "type": "object",
@@ -49363,7 +49363,7 @@
           "alternative_explanation"
         ],
         "x-go-type": "core.SaveEvidenceCardInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ActionConfirmEvidenceCardInput": {
         "type": "object",
@@ -49394,7 +49394,7 @@
           "reason"
         ],
         "x-go-type": "core.G2ConfirmedInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "TrialWindowInput": {
         "type": "object",
@@ -49532,7 +49532,7 @@
           "exit_conditions"
         ],
         "x-go-type": "core.TrialWindow",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "TrialSampleInput": {
         "type": "object",
@@ -49684,7 +49684,7 @@
           "metrics"
         ],
         "x-go-type": "core.TrialSample",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_trial.go"
+        "x-go-source": "internal/lingdoc/workspacecore/trial_window.go"
       },
       "ProjectAPIKeyGrantInput": {
         "type": "object",
@@ -49729,7 +49729,7 @@
           "active"
         ],
         "x-go-type": "core.ProjectAPIKeyGrant",
-        "x-go-source": "internal/lingdoc/workspacecore/g5_extended.go"
+        "x-go-source": "internal/lingdoc/workspacecore/membership_grants.go"
       },
       "RuntimeAlertRuleInput": {
         "type": "object",
@@ -49776,7 +49776,7 @@
           "responsible_id"
         ],
         "x-go-type": "core.RuntimeAlertRule",
-        "x-go-source": "internal/lingdoc/workspacecore/g6_runtime.go"
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       },
       "ProjectAssetPolicyInput": {
         "type": "object",
@@ -49864,7 +49864,7 @@
           "model_use_allowed"
         ],
         "x-go-type": "core.ProjectAssetPolicy",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ProvenanceInput": {
         "type": "object",
@@ -50035,7 +50035,7 @@
           "expected_version"
         ],
         "x-go-type": "core.SaveResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go"
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "G2RejectionInput": {
         "type": "object",
@@ -50067,7 +50067,7 @@
           "expected_version"
         ],
         "x-go-type": "core.G2ConfirmedInput",
-        "x-go-source": "internal/lingdoc/workspacecore/g2_model.go",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
         "description": "Authenticated human rejection with current version expectations. The producer does not require a true confirmed flag or a nonempty reason for these two rejection methods."
       },
       "ChapterVersion": {

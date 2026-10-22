@@ -44,7 +44,7 @@ func revocationRewriteFixture(t *testing.T, model SelectedRewriteModel) (*Select
 	workspace := &inheritedRewriteWorkspace{copy: WorkingCopy{ProjectID: "project", ChapterID: "chapter", SpecRevision: 1,
 		WorkingCopyRevision: 1, BodyMarkdown: selected + " context [[source:outside]]", SourceIDs: []string{"existing", "outside"}}}
 	sources := &inheritedRewriteSources{}
-	service := NewSelectedRewriteService(db, workspace, sources, model)
+	service := NewSelectedRewriteService(db, workspace, nil, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	input := SelectedRewriteRequest{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
 		Selection:   RewriteSelection{EndUTF16: len(utf16.Encode([]rune(selected))), SelectedText: selected},

@@ -19,19 +19,19 @@ import (
 //   - POST /projects/{projectId}/dependency-candidates/{candidateId}/decision
 //     applies the human decision. It reuses the three states of the
 //     dependency edge decision: confirm, modify, reject.
-func RegisterDependencyCandidateRoutes(group *gin.RouterGroup, service *core.Service) {
+func RegisterDependencyCandidateRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 	if group == nil {
 		return
 	}
-	h := impactRoutesHandler{service}
+	h := impactRoutesHandler{ports: ports}
 	r := group.Group("/projects/:projectId")
 	r.POST("/dependency-candidates", impactRouteWrite(h, false, func(c *gin.Context, a core.Actor, k string, i core.DependencyCandidateBatchInput) (json.RawMessage, int, bool, error) {
-		return service.SubmitDependencyCandidateBatch(c.Request.Context(), a, c.Param("projectId"), k, i)
+		return ports.Dependency.SubmitDependencyCandidateBatch(c.Request.Context(), a, c.Param("projectId"), k, i)
 	}))
 	r.GET("/dependency-candidates", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.DependencyCandidateBatch, error) {
-		return service.ListDependencyCandidates(c.Request.Context(), a, c.Param("projectId"), c.Query("batch_id"))
+		return ports.Dependency.ListDependencyCandidates(c.Request.Context(), a, c.Param("projectId"), c.Query("batch_id"))
 	}))
 	r.POST("/dependency-candidates/:candidateId/decision", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.DependencyDecisionInput) (json.RawMessage, int, bool, error) {
-		return service.DecideDependencyCandidate(c.Request.Context(), a, c.Param("projectId"), c.Param("candidateId"), k, i)
+		return ports.Dependency.DecideDependencyCandidate(c.Request.Context(), a, c.Param("projectId"), c.Param("candidateId"), k, i)
 	}))
 }

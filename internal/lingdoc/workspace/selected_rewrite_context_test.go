@@ -71,7 +71,7 @@ func contextRewriteFixture(t *testing.T) (*SelectedRewriteService, *contextRewri
 			Locator: "page/2", QuotedTextHash: "hash-2", QuotedText: "another fact"},
 	}}
 	model := &contextRewriteModel{}
-	service := NewSelectedRewriteService(db, workspace, sources, model)
+	service := NewSelectedRewriteService(db, workspace, nil, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	input := SelectedRewriteRequest{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
 		Selection:   RewriteSelection{EndUTF16: len(utf16.Encode([]rune(selected))), SelectedText: selected},

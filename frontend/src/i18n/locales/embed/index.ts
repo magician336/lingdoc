@@ -1,7 +1,7 @@
 /**
  * Embed i18n entry point.
  *
- * - Visitor UI strings: `frontend/src/i18n/embed.ts` (loaded by embed-main.ts)
+ * - Visitor UI strings: `frontend/src/i18n/embed.ts` (loaded by embedMain.ts)
  * - Admin `embedPublish` strings: `frontend/src/i18n/locales/*.ts`
  *
  * Re-export locale helpers so feature code can import from one path.

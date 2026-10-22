@@ -339,7 +339,7 @@ def read_state(base_url: str, token: str, project_id: str) -> dict[str, Any]:
     audit_list = data(audit) or []
     # 业务审计（apply 的那条）单独计数：授权决定审计是在 apply 的**读事务**里写
     # 并提交的，它不属于失败的那一笔事务，不能算进回滚的比较里。口径与验收台
-    # （frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts）一致。
+    # （frontend/src/views/lingdoc/impactCenterAcceptance/chains/faultInjection.ts）一致。
     apply_audits = sum(1 for item in audit_list
                         if isinstance(item, dict) and item.get("action") == "project.change_set.apply")
     return {

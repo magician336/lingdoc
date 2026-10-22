@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
@@ -21,12 +22,18 @@ import (
 // NewLingDocWorkspaceHandler is the composition root for LingDoc workspace
 // application services and their production adapters. The HTTP handler itself
 // receives only application ports and has no knowledge of GORM construction.
+//
+// The project side is handed over as three narrow ports, one per context, and
+// all three carry the same project service: the composition root is the only
+// injection point for each capability (Spec #47 决策 37).
 type LingDocWorkspace struct {
 	dig.Out
 	Guard              *workspace.FullWorkflowGuard
 	Handler            *workspace.Handler
 	RuleSets           *rulesetstore.HTTPHandler
-	Projects           workspace.ApplicationService
+	Authorizer         workspacecore.CapabilityAuthorizer
+	Projects           workspacecore.ProjectApplication
+	GenerationContext  workspacecore.GenerationContextApplication
 	Integration        workspace.WorkspaceIntegration
 	Runtime            *workspace.SourceRuntime
 	Audit              workspacecore.AuditSink
@@ -47,7 +54,7 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, fmt.Errorf("lingdoc template catalog is required")
 	}
 	auditSink := workspaceAuditSink{service: audit}
-	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, templates, auditSink)
+	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, kbShares, knowledge, templates, auditSink)
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	// 受控故障注入只在环境变量显式点名注入点与演示租户时装配（#256）。未装配
 	// 时，下面的策略与写入端口与本票之前完全一致。
@@ -59,34 +66,93 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAuthorizationPolicy(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), authorizationPolicy, auditSink, workspacecore.AuthorizationModeEnforce)
 	projectService.InstallFaultInjection(fault)
 	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
-	runtime.ConnectProjects(projectService)
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Projects: projectService, Context: projectService})
+	// The four optional capabilities are the aggregate's own. They used to be
+	// found by the transport with a run-time type assertion on the project
+	// service, which was a back door: the assertion could hand back any
+	// operation of the aggregate, not only the ones the narrow port names.
+	// The composition root hands them over explicitly instead.
+	runtime.ConnectOptionalCapabilities(workspace.OptionalCapabilities{
+		Provenance:                     projectService,
+		EvidenceSelection:              projectService,
+		EvidenceSelectionInTransaction: projectService,
+		EvidenceProofPreparation:       projectService,
+	})
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)
 	projectService.SetRuntimeMode("real")
-	research := workspace.NewG2ResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
-	model := workspace.NewG2HostAgentModel(models)
-	projectService.ConfigureG2(workspacecore.G2Runtime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewG2ActionExecutor(projectService, runtime, nil)})
+	research := workspace.NewResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
+	model := workspace.NewHostAgentModel(models)
+	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
 		return LingDocWorkspace{}, err
 	}
 	projectService.SetTemplateCatalogResolver(governance)
 	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
-	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
+	// The member and owner context left the aggregate: it runs its writes
+	// through the shared pipeline and reads through narrow ports, and it never
+	// holds the aggregate itself. The composition root is where those ports
+	// are built, and it is the only place that knows the aggregate answers
+	// them (Spec #47 决策 33、37).
+	memberStorage := workspacecore.NewMemberStorage(projectService)
+	memberService := membership.NewService(membership.Ports{
+		Runner:     workspacecore.NewOperationRunner(projectService),
+		Authorizer: workspacecore.NewWorkspaceAuthorizer(projectService),
+		Policy:     workspacecore.NewWorkspacePolicy(projectService),
+		Repository: workspacecore.NewGORMRepository(db),
+		Records:    memberStorage,
+		Directory:  memberStorage,
+		Transfers:  memberStorage,
+		APIKeys:    memberStorage,
+		Resources:  memberStorage,
+	})
+	guard := workspace.NewFullWorkflowGuard(workspace.FullWorkflowGuardPorts{
+		Delivery:   projectService,
+		Provenance: projectService,
+		Impact:     projectService,
+		Runtime:    projectService,
+		Actions:    projectService,
+		Compose:    projectService,
+	}, runtime)
 	deps := workspace.HandlerDependencies{
-		FullWorkflow: &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
-		Projects:     projectService,
-		Members:      projectService,
-		Chapters:     projectService,
-		TemplateApp:  projectService,
-		ChangeSets:   projectService,
-		Read:         projectService,
-		Write:        projectService,
-		Sources:      runtime,
-		Integration:  runtime,
-		Templates:    templates,
+		FullWorkflow: &workspace.FullWorkflowDependencies{
+			Governance: governance,
+			Impact: workspace.ImpactRoutePorts{
+				ChangeSets: projectService,
+				Impact:     projectService,
+				Dependency: projectService,
+				Runtime:    projectService,
+				Trials:     projectService,
+				Roadmap:    projectService,
+			},
+			Agent: workspace.AgentRoutePorts{
+				Research:      projectService,
+				Imports:       projectService,
+				EvidenceCards: projectService,
+				Claims:        projectService,
+				Anchors:       projectService,
+				AgentSessions: projectService,
+				Proposals:     projectService,
+				Context:       projectService,
+				ChangeSets:    projectService,
+			},
+			Routes: workspace.FullWorkflowRoutePorts{
+				Members:   memberService,
+				Reviews:   projectService,
+				Lifecycle: projectService,
+			},
+		},
+		Projects:    projectService,
+		Members:     memberService,
+		Chapters:    projectService,
+		TemplateApp: projectService,
+		ChangeSets:  projectService,
+		Sources:     runtime,
+		Integration: runtime,
+		Templates:   templates,
 	}
-	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
+	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
 	// The machine read and the review anchor endpoints are capabilities the
 	// caller asks for by name. The project service provides them; saying so
 	// here keeps their presence a decision rather than an accident of which
@@ -98,7 +164,7 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, err
 	}
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }

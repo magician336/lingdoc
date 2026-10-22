@@ -84,7 +84,7 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 `service_facade.go:2244,2247,2464,2532,2570,2644,2647`、
 `change_inverse_lineage.go:87,124,139`、`impact_service.go:1184,1207,1209,1238`、
 `release_gate.go:229,230,375`、`evidence_card_delta.go:48`、`context_revision.go:140`、
-`g2_service.go:1188,1306,1374,2423`、`g2_storage.go:376` 等 9+ 个生产文件。
+`agent_action_service.go:1188,1306,1374,2423`、`agent_object_storage.go:376` 等 9+ 个生产文件。
 对照正确范例：`workspacecore/impact_model.go:144` `ImpactTaskStatuses`、`:148` `ImpactTaskClosedStatuses`。
 
 **已核实：契约并无缺口。** 四方已经一致地覆盖这 7 个取值：
@@ -97,7 +97,7 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 而不是「补契约」。**本条曾被初稿误记为「契约缺 `stale`/`satisfied`」，已更正。**
 
 附带观察（不在本 Spec 范围，供后续参考）：G3 演示台自己的状态口径与后端不同
-（`frontend/src/views/lingdoc/g3demo/g3Matrix.ts:468` 声明「五态，没有持久化 draft、没有 stabilized」），
+（`frontend/src/views/lingdoc/impactCenterAcceptance/impactMatrix.ts:468` 声明「五态，没有持久化 draft、没有 stabilized」），
 而后端确实可产出 `stabilized`。这属于演示台口径与生产口径的差异，不在本 Spec 的归位范围内。
 
 **2. 章节「已确认」判定** — 三套条件：
@@ -114,16 +114,16 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 | 映射器 | 位置 | 分支数 |
 | --- | --- | ---: |
 | 工作区主路由 | `internal/lingdoc/workspace/http.go:368-495` | 42 |
-| G4 治理路由 | `internal/lingdoc/workspace/g4_full_http.go:409-437` | 11 |
-| G2 路由 | `internal/lingdoc/workspace/g2_full_http.go:10-25` | 5（其余回落主表） |
+| G4 治理路由 | `internal/lingdoc/workspace/template_governance_routes.go:409-437` | 11 |
+| G2 路由 | `internal/lingdoc/workspace/agent_routes.go:10-25` | 5（其余回落主表） |
 | 规则集存储路由 | `internal/lingdoc/rulesetstore/http.go:310-331` | 7 |
 | 候选采纳 / 生成路由 | `internal/lingdoc/candidateadoption/candidate_adoption_http.go:213-257`、`internal/lingdoc/generation/http.go:196-260` | 各 1 组 |
 
 可复现的口径分歧：
 - `template.ErrRuleSetNotDraft` / `template.ErrRuleSetNotPublished`：
-  G4 路由 409 `invalid_state`（`g4_full_http.go:427-428`）vs 规则集路由 409 `state_conflict`（`rulesetstore/http.go:318-319`）
+  G4 路由 409 `invalid_state`（`template_governance_routes.go:427-428`）vs 规则集路由 409 `state_conflict`（`rulesetstore/http.go:318-319`）
 - `rulesetstore.ErrRuleSetVersionExists` / `ErrRuleSetStateConflict`：
-  G4 路由 409 `version_conflict`（`g4_full_http.go:425-426`）vs 规则集路由 409 `state_conflict`
+  G4 路由 409 `version_conflict`（`template_governance_routes.go:425-426`）vs 规则集路由 409 `state_conflict`
 - 5xx 可重试标记相反：`rulesetstore/http.go:334` 用 `status >= 500` 判可重试；
   `workspace/http.go:492-494` 只对 `request_in_progress`/`dependency_unavailable` 判可重试；
   `workspace/http.go:497-500` 的发送路径恒判不可重试 ⇒ G4 的 503 恒不可重试，与规则集面的 503 相反
@@ -154,7 +154,7 @@ Issue / Spec：#47 模块边界收口与知识归属归位
   `workspace/full_workflow_http.go:12`、`workspace/impact_routes.go:13`、
   `workspace/template_governance_runtime.go:32`；
   并以具体参数传入 5 处：`agent_context.go:54`、`full_workflow_http.go:26`、
-  `g2_full_http.go:83`、`impact_routes.go:78`、`template_governance_runtime.go:75`。
+  `agent_routes.go:83`、`impact_routes.go:78`、`template_governance_runtime.go:75`。
 - **一个实例被 8 个消费点持有**：`internal/container/lingdoc.go:52` 造出 `projectService`，
   交给 `NewHandler` 的六个依赖位（`:70-76`）、`NewG2ResearchAdapter`（`:58`）、
   `NewG2ActionExecutor`（`:60`）、`NewTemplateGovernanceRuntime`（`:61`）、
@@ -238,7 +238,7 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 段三（上下文切分与端口收窄）作为后续 PR，已发布为 #259 的子 Issue 并带原生阻塞边。
 
 **跨路由的错误口径归并不在本 PR**：47.05 让**工作区主路由**不再持有业务错误表，并让 45 个错误
-各自声明形态；其余 4 张表（`g4_full_http.go`、`g2_full_http.go`、`rulesetstore/http.go`、
+各自声明形态；其余 4 张表（`template_governance_routes.go`、`agent_routes.go`、`rulesetstore/http.go`、
 `candidate_adoption_http.go` + `generation/http.go`）原样保留，它们对 DR-47-02 的收拢
 （`state_conflict` 退役、502 入统一语义表、同码不同文案归一）属 47.06（#262）。
 
@@ -271,6 +271,11 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 
 - 段二：47.06–47.10（错误形态跨面归并与旧表删除、共享核心提取、调研域并入、组合根 fail-closed）
 - 段三：47.11–47.16（传输面直连收口 ×4、上下文切出第一例、遗留宽口退役）
+
+> **进展更新（2026-10-21）**：以上两段**均已交付**。段二 = PR #293（merge `633ba34`）；段三 = PR #331
+> （merge `a01b729b`）。段三的六张票里交付了五张（#266 / #267 / #274 / #275 / #269 已关闭），
+> **#268（47.15 成员与 Owner 上下文切出）是段三遗留项**，与段四一起做，父票 #259 保持 open。
+> 段三的方案与证据档：[`Spec-47-段三-上下文切分与端口收窄.md`](Spec-47-段三-上下文切分与端口收窄.md)。
 
 ## PR 合并前健康度评分（2026-10-20）
 
@@ -321,7 +326,7 @@ F_R = 14.0 + 14.8 + 10.5 + 11.4 + 10.8 + 9.5  = 71.0
 **最高优先级重构动作（按复杂性降低收益排序）**
 
 1. **段二 · 提取共享核心** —— 操作管道（身份/人工决策门、幂等键与请求体哈希、重放顺序、授权、审计、来源复核、事务边界）提成一个真深模块，上层用例依赖它。**消除** `g2Operation` 与主管道的双实现（变化放大半径 14 个文件）。回归门槛：幂等冲突、请求体哈希、重放顺序、来源重查、人类决策门**五处逐条等价**对照。
-2. **47.06 + 47.07 · 错误形态跨面归并与旧表删除** —— 消除剩余 5 张表里的 **84 个 `errors.Is` 分支**（`generation/http.go` 25、`g4_full_http.go` 22、`candidate_adoption_http.go` 18、`rulesetstore/http.go` 14、`g2_full_http.go` 5）。回归门槛：跨面一致性测试 + DR-47-02 少数口径清单逐条列出。
+2. **47.06 + 47.07 · 错误形态跨面归并与旧表删除** —— 消除剩余 5 张表里的 **84 个 `errors.Is` 分支**（`generation/http.go` 25、`template_governance_routes.go` 22、`candidate_adoption_http.go` 18、`rulesetstore/http.go` 14、`agent_routes.go` 5）。回归门槛：跨面一致性测试 + DR-47-02 少数口径清单逐条列出。
 3. **段三 · 端口收窄与上下文切出** —— 让 13 个窄端口背后不再是同一个 245 方法结构体，关闭「一个实例被 8 个消费点持有、任一面可调任一方法」的后门泄漏。回归门槛：结构断言（传输层无聚合体具体类型引用）。
 
 **未覆盖风险**
@@ -493,7 +498,7 @@ PR #285 提交后 `origin/main` 前进到 `e79f403`（PR #283 审计列宽修复
 
 ### 断裂三：staticcheck S1011（CI 红）
 
-`internal/lingdoc/workspacecore/g5_machine_read.go:210` 的逐个 append 循环被 staticcheck 判为
+`internal/lingdoc/workspacecore/machine_read_grant.go:210` 的逐个 append 循环被 staticcheck 判为
 可换成 append 展开。已改写为 `sourceIDs = append(sourceIDs, sourcemarker.IDs(...)...)`，行为不变。
 
 ### 断裂四：Go lint job 被新的「按 diff 分级门禁」整条跳过（门禁漏洞）

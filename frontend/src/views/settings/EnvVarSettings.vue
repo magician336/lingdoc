@@ -397,7 +397,7 @@ import {
   type EnvVarSource,
   type EnvVarView,
   type SkillEnvGroup,
-} from '@/api/env-vars'
+} from '@/api/envVars'
 import { SKILL_ICON } from '@/types/mention'
 import {
   MAX_ENV_VALUE_BYTES,

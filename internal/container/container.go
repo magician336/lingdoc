@@ -109,7 +109,7 @@ import (
 )
 
 type candidateAdoptionWorkspaceAuthorizer struct {
-	service workspace.ApplicationService
+	service workspacecore.CapabilityAuthorizer
 }
 
 func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, actorID, projectID, capability string) error {
@@ -318,7 +318,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewVectorStoreRepository))
 	must(container.Provide(repository.NewStorageBackendRepository))
 	must(container.Provide(repository.NewResourceRepository))
-	must(container.Provide(repository.NewTemporaryDocumentRepository))
+	must(container.Provide(repository.NewChatAttachmentRepository))
 	must(container.Provide(service.NewResourceCatalog))
 	// TenantStoreOwnership adapter used by the retriever factory functions
 	// to verify that a resolved VectorStore belongs to the caller's tenant.
@@ -425,8 +425,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		// worker pool against one provider, so install an in-process governor.
 		must(container.Invoke(registerLiteModelConcurrencyLimiter))
 	}
-	must(container.Provide(service.NewTemporaryDocumentService))
-	must(container.Invoke(startTemporaryDocumentCleanup))
+	must(container.Provide(service.NewChatAttachmentService))
+	must(container.Invoke(startChatAttachmentCleanup))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -515,7 +515,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(NewLingDocTemplateCatalog))
 	must(container.Provide(NewLingDocWorkspaceHandler))
-	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService, sourceIntegration workspace.WorkspaceIntegration) *candidateadoption.CandidateAdoptionHandler {
+	must(container.Provide(func(db *gorm.DB, projects workspacecore.CapabilityAuthorizer, sourceIntegration workspace.WorkspaceIntegration) *candidateadoption.CandidateAdoptionHandler {
 		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 		authorizer := candidateAdoptionWorkspaceAuthorizer{service: projects}
 		sources := sourceIntegration.CandidateAdoptionSourcePolicy()
@@ -549,7 +549,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	// 交付输入服务：T12 的读取侧 + 成员判定。两个交付服务共用同一份，授权口径分家
 	// 是迟早的事——同一份交付在一个入口放行、在另一个入口拦住，那时没人知道该信哪个。
-	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService) *candidateadoption.DeliveryInputService {
+	must(container.Provide(func(db *gorm.DB, projects workspacecore.CapabilityAuthorizer) *candidateadoption.DeliveryInputService {
 		return &candidateadoption.DeliveryInputService{
 			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
 			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: projects},
@@ -557,8 +557,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	// One application policy carries both project authorization and live
 	// currentness into generation and delivery.
-	must(container.Provide(func(projects workspace.ApplicationService, runtime *workspace.SourceRuntime, inputs *candidateadoption.DeliveryInputService) (lingdocaccess.Policy, error) {
-		policy := workspace.NewAccessPolicy(projects, runtime, inputs.Reader)
+	must(container.Provide(func(authorizer workspacecore.CapabilityAuthorizer, projects workspacecore.ProjectApplication, generationContext workspacecore.GenerationContextApplication, runtime *workspace.SourceRuntime, inputs *candidateadoption.DeliveryInputService) (lingdocaccess.Policy, error) {
+		policy := workspace.NewAccessPolicy(workspace.ProjectPorts{Authorizer: authorizer, Projects: projects, Context: generationContext}, runtime, inputs.Reader)
 		if policy == nil {
 			return nil, errors.New("lingdoc access policy: incomplete dependencies")
 		}
@@ -567,7 +567,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(db *gorm.DB, sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy, guard *workspace.FullWorkflowGuard) (workspace.ReleaseApplication, error) {
+	must(container.Provide(func(db *gorm.DB, sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspacecore.ProjectApplication, policy lingdocaccess.Policy, guard *workspace.FullWorkflowGuard) (workspace.ReleaseApplication, error) {
 		var dispositions workspace.ValidationIssueDispositionApplication
 		if application, ok := projects.(workspace.ValidationIssueDispositionApplication); ok {
 			dispositions = application
@@ -1968,10 +1968,10 @@ func startTenantSkillReaper(
 	})
 }
 
-// startTemporaryDocumentCleanup removes expired session attachments and their
+// startChatAttachmentCleanup removes expired session attachments and their
 // extracted images. The durable expiry timestamp is the source of truth; the
 // ticker only controls how quickly storage is reclaimed.
-func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, cleaner interfaces.ResourceCleaner) {
+func startChatAttachmentCleanup(svc interfaces.ChatAttachmentService, cleaner interfaces.ResourceCleaner) {
 	stop := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -1980,14 +1980,14 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 			select {
 			case <-ticker.C:
 				if err := svc.CleanupExpired(context.Background()); err != nil {
-					logger.Warnf(context.Background(), "[TemporaryDocument] cleanup failed: %v", err)
+					logger.Warnf(context.Background(), "[ChatAttachment] cleanup failed: %v", err)
 				}
 			case <-stop:
 				return
 			}
 		}
 	}()
-	cleaner.RegisterWithName("TemporaryDocumentCleanup", func() error {
+	cleaner.RegisterWithName("ChatAttachmentCleanup", func() error {
 		close(stop)
 		return nil
 	})

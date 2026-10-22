@@ -1849,9 +1849,9 @@ import {
   type KBCapabilities,
 } from '@/api/agent';
 import { type ModelConfig } from '@/api/model';
-import { type AgentNotReadyReasonKey, agentRequiresRerankModel } from '@/utils/agent-readiness';
+import { type AgentNotReadyReasonKey, agentRequiresRerankModel } from '@/utils/agentReadiness';
 import { installSkillCatalog, type SkillCatalogItem } from '@/api/skill';
-import { type WebSearchProviderEntity } from '@/api/web-search-provider';
+import { type WebSearchProviderEntity } from '@/api/webSearchProvider';
 import {
   isNamedSandboxBackend,
   type SandboxConfigRecord,
@@ -1880,7 +1880,7 @@ import {
   deriveKbFilterFromTools,
   type RequirementMissKind,
   type ScopeCapabilities,
-} from '@/utils/tool-capabilities';
+} from '@/utils/toolCapabilities';
 
 // File extensions offered in the agent-level chat attachment parsing policy.
 const CHAT_PARSER_EXTENSIONS = [
@@ -2377,7 +2377,7 @@ const mcpSelectionMode = ref<'all' | 'selected' | 'none'>('none');
 // 可用工具列表（与后台 internal/agent/tools/definitions.go 保持一致）
 // group 决定 UI 分组：base / rag / wiki_read / wiki_edit / wiki_issue / data
 // danger: 写类破坏性工具，UI 上给出显著提示
-// 工具的 KB 能力依赖关系统一在 `@/utils/tool-capabilities` 声明，
+// 工具的 KB 能力依赖关系统一在 `@/utils/toolCapabilities` 声明，
 // `availableTools` 通过 `evaluateToolRequirement` 读取，不在这里重复维护。
 const allTools = computed(() => [
   // 基础思考类
@@ -3192,7 +3192,7 @@ const presetKbMismatchReason = (preset: AgentTypePreset): string => {
 //
 // 这样 rag-qa / wiki-qa / hybrid 在 YAML 里彻底不写 `kb_filter`，
 // data-analysis 只需声明额外的 `none_of`，"工具→能力"的映射只在
-// `@/utils/tool-capabilities` 维护一份。
+// `@/utils/toolCapabilities` 维护一份。
 const effectiveKbFilter = (preset: AgentTypePreset | null): AgentTypeKBFilter | null => {
   if (!preset) return null;
   const derived = deriveKbFilterFromTools(preset.config?.allowed_tools || []);

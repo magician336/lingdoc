@@ -52,6 +52,7 @@ web/
 # `go build` appends the executable suffix on Windows, so the bare `/server`
 # rule above never matched the artifact produced there.
 /server.exe
+/desktop.exe
 frontend/.vite
 frontend/chrome-extension/
 WeKnora-Chrome-Extension

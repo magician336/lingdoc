@@ -351,17 +351,17 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 		auditDecision, auditReason = "deny", err.Error()
 		return ReviewReport{}, err
 	}
-	if err := g2RewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
 		return ReviewReport{}, err
 	}
 	var constraints []generation.EvidenceConstraint
 	if len(evidenceCards) > 0 {
-		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(evidenceCards))
+		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(evidenceCards))
 		if selectErr != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return ReviewReport{}, ErrRewriteSourceDenied
 		}
-		constraints, selectErr = g2EvidenceConstraints(selected, evidenceCards)
+		constraints, selectErr = selectedEvidenceConstraints(selected, evidenceCards)
 		if selectErr != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return ReviewReport{}, ErrRewriteSourceDenied
@@ -372,7 +372,7 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return ReviewReport{}, ErrRewriteUnavailable
 	}
-	templateBasis, err := g2RewriteProjectBasis(project)
+	templateBasis, err := rewriteProjectBasis(project)
 	if err != nil {
 		return ReviewReport{}, err
 	}
@@ -721,7 +721,7 @@ func reviewTarget(body string, scope writingaction.Scope, selection *RewriteSele
 //
 // 指令只来自执行计划：评审的上下文按计划声明的类别组装，渲染出来的动作指令
 // 交给模型。执行方不按动作名分支，也不自己写指令。
-func reviewPrompt(plan writingaction.Plan, target reviewTargetRange, basis g2RewriteTemplateBasis,
+func reviewPrompt(plan writingaction.Plan, target reviewTargetRange, basis rewriteTemplateBasis,
 	constraints []generation.EvidenceConstraint, cards []generation.EvidenceCardRef,
 	before, after string, sources []evidence.Source, note string) (SelectedRewritePrompt, error) {
 	var renderContext writingaction.RenderContext

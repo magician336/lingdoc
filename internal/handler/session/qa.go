@@ -325,18 +325,18 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// here (fast, available even while processing) to validate agent file-type
 	// limits and to record the attachments on the persisted user message. The
 	// heavy content selection happens after the SSE stream is up, so the send
-	// is not blocked while parsing finishes (see resolveTemporaryAttachments).
+	// is not blocked while parsing finishes (see resolveChatAttachments).
 	var attachmentIDs []string
 	var attachmentMetas types.MessageAttachments
 	if len(request.AttachmentIDs) > 0 {
-		normalizedIDs, normErr := normalizeTemporaryAttachmentIDs(request.AttachmentIDs)
+		normalizedIDs, normErr := normalizeChatAttachmentIDs(request.AttachmentIDs)
 		if normErr != nil {
 			return nil, nil, errors.NewBadRequestError(normErr.Error())
 		}
 		tenantID := session.TenantID
 		attachmentMetas = make(types.MessageAttachments, 0, len(normalizedIDs))
 		for _, id := range normalizedIDs {
-			doc, getErr := h.temporaryDocuments.Get(ctx, tenantID, sessionID, id)
+			doc, getErr := h.chatAttachments.Get(ctx, tenantID, sessionID, id)
 			if getErr != nil || doc == nil {
 				return nil, nil, errors.NewBadRequestError(
 					fmt.Sprintf("attachment %s was not found in this session", secutils.SanitizeForLog(id)))
@@ -1272,7 +1272,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 		// Resolve pre-uploaded attachments (may still be parsing): waits with a
 		// timeline step so the send is not blocked, then injects content/images.
-		h.resolveTemporaryAttachments(streamCtx, reqCtx)
+		h.resolveChatAttachments(streamCtx, reqCtx)
 
 		// Run VLM image analysis if applicable
 		h.runVLMAnalysisIfNeeded(streamCtx, reqCtx, mode)
@@ -1410,11 +1410,11 @@ func attachmentParseWaitTimeout() time.Duration {
 	return defaultAttachmentParseWaitTimeout
 }
 
-// resolveTemporaryAttachments selects prompt content for pre-uploaded documents
+// resolveChatAttachments selects prompt content for pre-uploaded documents
 // after the SSE stream is live. When any attachment is still parsing it emits a
 // "attachment_parsing" timeline step and waits (bounded); unfinished attachments
 // are skipped rather than blocking or failing the whole turn.
-func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCtx *qaRequestContext) {
+func (h *Handler) resolveChatAttachments(streamCtx *sseStreamContext, reqCtx *qaRequestContext) {
 	if len(reqCtx.attachmentIDs) == 0 {
 		return
 	}
@@ -1446,10 +1446,10 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 
 	readyIDs, skipped := h.partitionReadyAttachments(ctx, tenantID, sessionID, reqCtx.attachmentIDs)
 
-	var temporaryResult *types.TemporaryDocumentPromptResult
+	var attachmentResult *types.ChatAttachmentPromptResult
 	var resolveErr error
 	if len(readyIDs) > 0 {
-		temporaryResult, resolveErr = h.temporaryDocuments.ResolveForPrompt(ctx, tenantID, sessionID, readyIDs, reqCtx.query)
+		attachmentResult, resolveErr = h.chatAttachments.ResolveForPrompt(ctx, tenantID, sessionID, readyIDs, reqCtx.query)
 	}
 
 	if toolCallID != "" {
@@ -1479,14 +1479,14 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 			},
 		})
 	}
-	if resolveErr != nil || temporaryResult == nil {
+	if resolveErr != nil || attachmentResult == nil {
 		if resolveErr != nil {
-			logger.Warnf(ctx, "temporary attachment resolution failed for session %s: %v", sessionID, resolveErr)
+			logger.Warnf(ctx, "chat attachment resolution failed for session %s: %v", sessionID, resolveErr)
 		}
 		return
 	}
 
-	attachments := temporaryResult.Attachments
+	attachments := attachmentResult.Attachments
 	if reqCtx.customAgent != nil && len(reqCtx.customAgent.Config.SupportedFileTypes) > 0 {
 		filtered := attachments[:0]
 		for _, att := range attachments {
@@ -1505,7 +1505,7 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 	// sees empty attachments (see buildUserHistoryMessage in agent_history.go).
 	h.persistResolvedAttachmentContent(ctx, reqCtx, attachments)
 	if reqCtx.customAgent != nil && reqCtx.customAgent.Config.ImageUploadEnabled {
-		for _, imageURL := range temporaryResult.ImageURLs {
+		for _, imageURL := range attachmentResult.ImageURLs {
 			reqCtx.images = append(reqCtx.images, ImageAttachment{URL: imageURL})
 		}
 	}
@@ -1513,7 +1513,7 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 
 // persistResolvedAttachmentContent writes the parsed content of pre-uploaded
 // attachments back onto the stored user message so multi-turn history can
-// replay it. Entries are matched by their temporary-document ID; only those
+// replay it. Entries are matched by their chat-attachment ID; only those
 // present on the message are enriched. Failures are logged but never bubble up
 // — losing the write only degrades follow-up context, it must not fail the turn.
 func (h *Handler) persistResolvedAttachmentContent(
@@ -1558,11 +1558,11 @@ func (h *Handler) persistResolvedAttachmentContent(
 	}
 }
 
-// normalizeTemporaryAttachmentIDs rejects oversized ID lists before any DB
+// normalizeChatAttachmentIDs rejects oversized ID lists before any DB
 // lookup, then returns a deduplicated, order-preserving list of non-empty IDs.
-func normalizeTemporaryAttachmentIDs(ids []string) ([]string, error) {
-	if len(ids) > types.MaxTemporaryAttachmentsPerMessage {
-		return nil, fmt.Errorf("a message can use at most %d attachments", types.MaxTemporaryAttachmentsPerMessage)
+func normalizeChatAttachmentIDs(ids []string) ([]string, error) {
+	if len(ids) > types.MaxChatAttachmentsPerMessage {
+		return nil, fmt.Errorf("a message can use at most %d attachments", types.MaxChatAttachmentsPerMessage)
 	}
 	out := make([]string, 0, len(ids))
 	seen := make(map[string]struct{}, len(ids))
@@ -1584,12 +1584,12 @@ func normalizeTemporaryAttachmentIDs(ids []string) ([]string, error) {
 // uploading or being parsed.
 func (h *Handler) hasPendingAttachments(ctx context.Context, tenantID uint64, sessionID string, ids []string) bool {
 	for _, id := range ids {
-		doc, err := h.temporaryDocuments.Get(ctx, tenantID, sessionID, id)
+		doc, err := h.chatAttachments.Get(ctx, tenantID, sessionID, id)
 		if err != nil || doc == nil {
 			continue
 		}
-		if doc.Status == types.TemporaryDocumentStatusUploaded ||
-			doc.Status == types.TemporaryDocumentStatusProcessing {
+		if doc.Status == types.ChatAttachmentStatusUploaded ||
+			doc.Status == types.ChatAttachmentStatusProcessing {
 			return true
 		}
 	}
@@ -1618,8 +1618,8 @@ func (h *Handler) waitForAttachments(ctx context.Context, tenantID uint64, sessi
 // skipped (missing, failed, or still parsing after the wait).
 func (h *Handler) partitionReadyAttachments(ctx context.Context, tenantID uint64, sessionID string, ids []string) (ready []string, skipped int) {
 	for _, id := range ids {
-		doc, err := h.temporaryDocuments.Get(ctx, tenantID, sessionID, id)
-		if err != nil || doc == nil || doc.Status != types.TemporaryDocumentStatusReady {
+		doc, err := h.chatAttachments.Get(ctx, tenantID, sessionID, id)
+		if err != nil || doc == nil || doc.Status != types.ChatAttachmentStatusReady {
 			skipped++
 			continue
 		}

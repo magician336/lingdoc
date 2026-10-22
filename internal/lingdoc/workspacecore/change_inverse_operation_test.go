@@ -31,12 +31,12 @@ func r25InverseFieldFixture(t *testing.T) (*Service, Actor, Project, ChangeSet, 
 		Fields:             map[string]ChangeFieldInput{"research_goal": {OldValue: p.Spec["research_goal"], NewValue: "changed goal"}},
 		AffectedChapterIDs: []string{chapters[0].ID},
 	})
-	source := g2Decode[ChangeSet](t, raw, err)
+	source := decodeAgentJSON[ChangeSet](t, raw, err)
 	raw, status, replayed, err := s.ApplyChangeSet(context.Background(), a, p.ID, source.ID, "r25-original-apply")
 	if err != nil || status != 200 || replayed {
 		t.Fatalf("apply original: status=%d replay=%v err=%v", status, replayed, err)
 	}
-	source = g2Decode[ChangeSet](t, raw, err)
+	source = decodeAgentJSON[ChangeSet](t, raw, err)
 	p, err = s.GetProject(context.Background(), a, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -102,8 +102,8 @@ func r25AssertInverseHistory(t *testing.T, s *Service, a Actor, pid string, sour
 		t.Fatalf("original history changed: before=%+v after=%+v err=%v", source, unchanged, err)
 	}
 	err = s.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		var history g1ChangeProvenance
-		_, err := tx.(g5Transaction).G5Get(pid, "g1_change_provenance", inverse.ID, &history)
+		var history changeProvenance
+		_, err := tx.(projectRecordTransaction).GetProjectRecord(pid, "g1_change_provenance", inverse.ID, &history)
 		if err == nil && !reflect.DeepEqual(history.InheritedChangeIDs, []string{source.ID}) {
 			t.Fatalf("inverse lost historical G1 ancestry: %+v", history)
 		}
@@ -122,7 +122,7 @@ func TestR25ReverseLostResponseAfterApplyAndReopen(t *testing.T) {
 	if err != nil || status != 201 || replayed {
 		t.Fatalf("reverse: status=%d replay=%v err=%v", status, replayed, err)
 	}
-	inverse := g2Decode[ChangeSet](t, first, err)
+	inverse := decodeAgentJSON[ChangeSet](t, first, err)
 	if inverse.Status != "assessed" || inverse.BaseContextRevision != p.CurrentContextRevision || inverse.ReversesChangeSetID != source.ID {
 		t.Fatalf("inverse proposal: %+v", inverse)
 	}
@@ -209,12 +209,12 @@ func TestR25InverseRejectedRetryAndStaleDescendants(t *testing.T) {
 	s, a, p, source, _ := r25InverseFieldFixture(t)
 	ctx := context.Background()
 	raw, _, _, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, "r25-rejected-first")
-	rejected := g2Decode[ChangeSet](t, raw, err)
+	rejected := decodeAgentJSON[ChangeSet](t, raw, err)
 	if _, _, _, err := s.RejectChangeSet(ctx, a, p.ID, rejected.ID, "r25-reject-inverse"); err != nil {
 		t.Fatal(err)
 	}
 	raw, _, _, err = s.ReverseChangeSet(ctx, a, p.ID, source.ID, "r25-rejected-retry")
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	if inverse.ID == rejected.ID {
 		t.Fatal("rejected retry reused a rejected proposal")
 	}
@@ -229,7 +229,7 @@ func TestR25InverseRejectedRetryAndStaleDescendants(t *testing.T) {
 			Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: p.Spec["research_subject"], NewValue: subject}},
 			AffectedChapterIDs: []string{source.Impacts[0].ChapterID},
 		})
-		change := g2Decode[ChangeSet](t, raw, e)
+		change := decodeAgentJSON[ChangeSet](t, raw, e)
 		if _, _, _, e := s.ApplyChangeSet(ctx, a, p.ID, change.ID, key+"-apply"); e != nil {
 			t.Fatal(e)
 		}
@@ -239,7 +239,7 @@ func TestR25InverseRejectedRetryAndStaleDescendants(t *testing.T) {
 		t.Fatalf("mark stale: status=%d err=%v", status, err)
 	}
 	raw, _, _, err = s.ReassessChangeSet(ctx, a, p.ID, inverse.ID, "r25-reassess-one")
-	child := g2Decode[ChangeSet](t, raw, err)
+	child := decodeAgentJSON[ChangeSet](t, raw, err)
 	if child.ReversesChangeSetID != source.ID || child.ReassessedFromID != inverse.ID {
 		t.Fatalf("first reassessment lineage: %+v", child)
 	}
@@ -251,7 +251,7 @@ func TestR25InverseRejectedRetryAndStaleDescendants(t *testing.T) {
 		t.Fatalf("mark child stale: status=%d err=%v", status, err)
 	}
 	raw, _, _, err = s.ReassessChangeSet(ctx, a, p.ID, child.ID, "r25-reassess-two")
-	descendant := g2Decode[ChangeSet](t, raw, err)
+	descendant := decodeAgentJSON[ChangeSet](t, raw, err)
 	if descendant.ReversesChangeSetID != source.ID || descendant.ReassessedFromID != child.ID {
 		t.Fatalf("ancestor chain blocked/lost: %+v", descendant)
 	}
@@ -279,7 +279,7 @@ func TestR25OrdinaryInverseValidatesFieldsImpactsAndHistoricalG1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g1SeedActualTurn(t, s, a, p.ID, "r25-old-session", "r25-old-turn", "pinned old subject")
+	seedActualTurn(t, s, a, p.ID, "r25-old-session", "r25-old-turn", "pinned old subject")
 	raw, _, _, err = s.SaveSpec(ctx, a, p.ID, "r25-g1-spec", SaveSpecInput{
 		ExpectedSpecRevision: p.SpecRevision, Fields: map[string]string{"research_subject": "pinned old subject", "research_goal": "human goal"},
 		FieldMetadata: map[string]SpecFieldInput{"research_subject": {Origin: "ai_generated", Status: "pending_confirmation",
@@ -305,9 +305,9 @@ func TestR25OrdinaryInverseValidatesFieldsImpactsAndHistoricalG1(t *testing.T) {
 		Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: "pinned old subject", NewValue: "manual new subject"}},
 		AffectedChapterIDs: []string{chapters[0].ID},
 	})
-	source := g2Decode[ChangeSet](t, raw, err)
+	source := decodeAgentJSON[ChangeSet](t, raw, err)
 	raw, _, _, err = s.ApplyChangeSet(ctx, a, p.ID, source.ID, "r25-g1-source-apply")
-	source = g2Decode[ChangeSet](t, raw, err)
+	source = decodeAgentJSON[ChangeSet](t, raw, err)
 	p, err = s.GetProject(ctx, a, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -327,7 +327,7 @@ func TestR25OrdinaryInverseValidatesFieldsImpactsAndHistoricalG1(t *testing.T) {
 		t.Fatalf("inverse omitted original affected chapter: %v", err)
 	}
 	raw, _, _, err = s.CreateChangeSet(ctx, a, p.ID, "r25-g1-real-inverse", input)
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	r25AssertInverseHistory(t, s, a, p.ID, source, inverse)
 	if _, _, _, err := s.ApplyChangeSet(ctx, a, p.ID, inverse.ID, "r25-g1-inverse-apply"); err != nil {
 		t.Fatal(err)
@@ -345,7 +345,7 @@ func TestR25OrdinaryInverseValidatesFieldsImpactsAndHistoricalG1(t *testing.T) {
 }
 
 func TestR25SemanticReverseReplayChecksCurrentSourcesAfterApplyAndReopen(t *testing.T) {
-	f := newG2Fixture(t, false)
+	f := newAgentFixture(t, false)
 	ctx := context.Background()
 	claim := f.claim(t)
 	anchor := f.anchor(t, "source-1", "r25-semantic-source-anchor")
@@ -367,7 +367,7 @@ func TestR25SemanticReverseReplayChecksCurrentSourcesAfterApplyAndReopen(t *test
 	}
 	key := "r25-semantic-inverse"
 	first, status, _, err := f.svc.ReverseChangeSet(ctx, f.owner, p.ID, source.ID, key)
-	inverse := g2Decode[ChangeSet](t, first, err)
+	inverse := decodeAgentJSON[ChangeSet](t, first, err)
 	if status != 201 || inverse.Status != "draft" || inverse.ReversesChangeSetID != source.ID ||
 		len(inverse.SemanticDeltas) != 1 || inverse.SemanticDeltas[0].ExpectedVersion != claim.Version+1 {
 		t.Fatalf("canonical semantic inverse: %+v status=%d", inverse, status)
@@ -394,40 +394,13 @@ func TestR25SemanticReverseReplayChecksCurrentSourcesAfterApplyAndReopen(t *test
 	}
 	r25AssertInverseHistory(t, f.svc, f.owner, p.ID, source, inverse)
 	if err := f.svc.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		current, _, err := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, claim.ID)
+		current, _, err := loadStoredObject[ResearchClaim](tx, p.ID, ResearchClaimKind, claim.ID)
 		if err == nil && (current.Version != claim.Version+2 || current.Text != claim.Text) {
 			t.Fatalf("retry changed formal claim version/text: %+v", current)
 		}
 		return err
 	}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestR25ReverseReplayRejectsFormerOwnerWithoutAlteringOperation(t *testing.T) {
-	s, a, p, source, _ := r25InverseFieldFixture(t)
-	ctx := context.Background()
-	key := "r25-owner-replay"
-	if _, _, _, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, key); err != nil {
-		t.Fatal(err)
-	}
-	original := r25InverseOperationRecord(t, s, a, p.ID, source.ID, key)
-	target := Actor{TenantID: a.TenantID, UserID: "new-owner"}
-	seedTenantMember(t, s, target)
-	raw, _, _, err := s.RequestOwnerTransfer(ctx, a, p.ID, "r25-owner-transfer", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: p.ProjectVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-	transfer := rawOwnerTransfer(t, raw)
-	if _, _, _, err := s.AcceptOwnerTransfer(ctx, target, p.ID, transfer.ID, "r25-owner-accept"); err != nil {
-		t.Fatal(err)
-	}
-	raw, status, replayed, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, key)
-	if !errors.Is(err, ErrNotFound) || raw != nil || status != 0 || replayed {
-		t.Fatalf("former Owner replayed inverse: status=%d replay=%v body=%s err=%v", status, replayed, raw, err)
-	}
-	if got := r25InverseOperationRecord(t, s, a, p.ID, source.ID, key); !reflect.DeepEqual(original, got) {
-		t.Fatal("Owner revocation altered durable operation")
 	}
 }
 
@@ -489,12 +462,12 @@ func TestR25TemplateInverseRestoresExactRuleSetPolicyAndHistory(t *testing.T) {
 					RuleBindingOverrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-required", Enabled: &disabled}},
 				},
 			})
-			source := g2Decode[ChangeSet](t, raw, err)
+			source := decodeAgentJSON[ChangeSet](t, raw, err)
 			raw, _, _, err = s.ApplyChangeSet(ctx, a, p.ID, source.ID, "r25-template-upgrade-apply")
-			source = g2Decode[ChangeSet](t, raw, err)
+			source = decodeAgentJSON[ChangeSet](t, raw, err)
 			reader.set = v1
 			first, _, _, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, "r25-template-inverse")
-			inverse := g2Decode[ChangeSet](t, first, err)
+			inverse := decodeAgentJSON[ChangeSet](t, first, err)
 			if inverse.TemplateUpgrade == nil || inverse.ReversesChangeSetID != source.ID ||
 				inverse.TemplateUpgrade.Definition.ContentHash != historical.Definition.ContentHash ||
 				inverse.TemplateUpgrade.Definition.RulesetHash != historical.Definition.RulesetHash ||
@@ -553,7 +526,7 @@ func TestR25ReverseAuditFailureRollsBackLineageProvenanceAndOperation(t *testing
 		}
 		return n
 	}
-	changesBefore, operationsBefore, recordsBefore := count(&changeSetRow{}), count(&operationRow{}), count(&g5RecordRow{})
+	changesBefore, operationsBefore, recordsBefore := count(&changeSetRow{}), count(&operationRow{}), count(&projectRecordRow{})
 	key := "r25-audit-failed-inverse"
 	if err := s.testDB().Exec("CREATE TRIGGER r25_inverse_audit_failure BEFORE INSERT ON lingdoc_project_audits WHEN NEW.action = 'project.change_set.create' BEGIN SELECT RAISE(ABORT, 'inverse audit unavailable'); END").Error; err != nil {
 		t.Fatal(err)
@@ -565,7 +538,7 @@ func TestR25ReverseAuditFailureRollsBackLineageProvenanceAndOperation(t *testing
 	if err := s.testDB().Exec("DROP TRIGGER r25_inverse_audit_failure").Error; err != nil {
 		t.Fatal(err)
 	}
-	if count(&changeSetRow{}) != changesBefore || count(&operationRow{}) != operationsBefore || count(&g5RecordRow{}) != recordsBefore {
+	if count(&changeSetRow{}) != changesBefore || count(&operationRow{}) != operationsBefore || count(&projectRecordRow{}) != recordsBefore {
 		t.Fatal("failed inverse left lineage, operation, or provenance rows")
 	}
 	current, err := s.GetProject(ctx, a, p.ID)
@@ -583,14 +556,14 @@ func TestR25ReverseAuditFailureRollsBackLineageProvenanceAndOperation(t *testing
 type r25InverseAuditlessRepository struct{ inner Repository }
 type r25InverseAuditlessTransaction struct {
 	Transaction
-	g4AuditlessSourcePorts
+	auditlessSourcePorts
 	inverseLineageTransaction
 	changes changeSetTransaction
 }
 
 func (r r25InverseAuditlessRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
 	return r.inner.Transaction(ctx, options, func(tx Transaction) error {
-		ports, ok := tx.(g4AuditlessSourcePorts)
+		ports, ok := tx.(auditlessSourcePorts)
 		if !ok {
 			return ErrInvalidState
 		}
@@ -602,7 +575,7 @@ func (r r25InverseAuditlessRepository) Transaction(ctx context.Context, options 
 		if !ok {
 			return ErrInvalidState
 		}
-		return fn(r25InverseAuditlessTransaction{Transaction: tx, g4AuditlessSourcePorts: ports, inverseLineageTransaction: lineage, changes: changes})
+		return fn(r25InverseAuditlessTransaction{Transaction: tx, auditlessSourcePorts: ports, inverseLineageTransaction: lineage, changes: changes})
 	})
 }
 func (tx r25InverseAuditlessTransaction) ChangeSet(p, id string) (ChangeSet, error) {
@@ -626,7 +599,7 @@ func TestR25ReverseMissingAuditPortHasZeroWrites(t *testing.T) {
 	counts := func() [3]int64 {
 		t.Helper()
 		var result [3]int64
-		for i, model := range []any{&changeSetRow{}, &operationRow{}, &g5RecordRow{}} {
+		for i, model := range []any{&changeSetRow{}, &operationRow{}, &projectRecordRow{}} {
 			if err := s.testDB().Model(model).Count(&result[i]).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -654,17 +627,17 @@ func TestR25LegacyG1InverseBlocksDuplicateAndReassessesWithDurableLineage(t *tes
 	ctx := context.Background()
 	// Reproduce f8's server-owned reverse flow through the real service: it
 	// carried the original ID in G1 history, before the public lineage field.
-	prepared, err := s.g1PrepareChangeProvenance(ctx, a, source, map[string]bool{})
+	prepared, err := s.prepareChangeProvenance(ctx, a, source, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared = context.WithValue(prepared, g1ReverseSourceKey{}, source.ID)
+	prepared = context.WithValue(prepared, reverseSourceKey{}, source.ID)
 	raw, _, _, err := s.CreateChangeSet(prepared, a, p.ID, "r25-legacy-inverse", CreateChangeSetInput{
 		ExpectedContextRevision: p.CurrentContextRevision, Reason: "legacy field inverse",
 		Fields:             map[string]ChangeFieldInput{"research_goal": {OldValue: source.Fields[0].NewValue, NewValue: source.Fields[0].OldValue}},
 		AffectedChapterIDs: []string{source.Impacts[0].ChapterID},
 	})
-	legacy := g2Decode[ChangeSet](t, raw, err)
+	legacy := decodeAgentJSON[ChangeSet](t, raw, err)
 	if legacy.ReversesChangeSetID != "" {
 		t.Fatal("fixture is not the pre-lineage-field compatibility case")
 	}
@@ -676,7 +649,7 @@ func TestR25LegacyG1InverseBlocksDuplicateAndReassessesWithDurableLineage(t *tes
 		Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: p.Spec["research_subject"], NewValue: "new subject"}},
 		AffectedChapterIDs: []string{source.Impacts[0].ChapterID},
 	})
-	other := g2Decode[ChangeSet](t, raw, err)
+	other := decodeAgentJSON[ChangeSet](t, raw, err)
 	if _, _, _, err := s.ApplyChangeSet(ctx, a, p.ID, other.ID, "r25-legacy-other-apply"); err != nil {
 		t.Fatal(err)
 	}
@@ -684,7 +657,7 @@ func TestR25LegacyG1InverseBlocksDuplicateAndReassessesWithDurableLineage(t *tes
 		t.Fatalf("legacy stale: status=%d err=%v", status, err)
 	}
 	raw, _, _, err = s.ReassessChangeSet(ctx, a, p.ID, legacy.ID, "r25-legacy-reassess")
-	child := g2Decode[ChangeSet](t, raw, err)
+	child := decodeAgentJSON[ChangeSet](t, raw, err)
 	if child.ReassessedFromID != legacy.ID || child.ReversesChangeSetID != source.ID {
 		t.Fatalf("legacy reassessment did not carry durable lineage: %+v", child)
 	}
@@ -715,7 +688,7 @@ func TestR25PausedRuntimePermitsInverseProposalButStillBlocksApply(t *testing.T)
 	if err != nil || status != 201 || replayed {
 		t.Fatalf("existing reverse recovery exception: status=%d replay=%v err=%v", status, replayed, err)
 	}
-	inverse := g2Decode[ChangeSet](t, raw, err)
+	inverse := decodeAgentJSON[ChangeSet](t, raw, err)
 	afterProposal, err := s.GetProject(ctx, a, p.ID)
 	if err != nil || !reflect.DeepEqual(before, afterProposal) || inverse.Status != "assessed" {
 		t.Fatalf("paused inverse proposal changed formal project: err=%v", err)

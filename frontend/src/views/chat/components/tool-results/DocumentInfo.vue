@@ -87,7 +87,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { DocumentInfoData, DocumentInfoDocument } from '@/types/tool-results';
+import type { DocumentInfoData, DocumentInfoDocument } from '@/types/toolResults';
 
 const props = defineProps<{
   data: DocumentInfoData;
@@ -159,7 +159,7 @@ const formatMetadataValue = (value: unknown) => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .document-info {
   display: flex;

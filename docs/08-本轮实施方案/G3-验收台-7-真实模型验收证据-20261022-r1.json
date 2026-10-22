@@ -1,0 +1,2428 @@
+{
+  "generated_at": "2026-10-21T17:19:59.761Z",
+  "backend_base_url": "http://127.0.0.1:63281",
+  "run_id": "g3r-mvidnlqn-3f10f0cf",
+  "started_at": "2026-10-21T17:19:49.967Z",
+  "ticket": "G3 验收台-7：依赖真实模型的验收项",
+  "demo_account": {
+    "username": "g3demo-28f524f562",
+    "email": "g3demo-28f524f562@example.com"
+  },
+  "account_reused": false,
+  "backend_head": {
+    "commitId": "5088e31b",
+    "buildTime": "unknown",
+    "version": "unknown",
+    "probedAt": "2026-10-21T17:19:50.102Z",
+    "probePath": "/api/v1/version",
+    "probeStatus": 401
+  },
+  "identity": {
+    "userId": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+    "username": "g3demo-28f524f562",
+    "email": "g3demo-28f524f562@example.com",
+    "tenantId": "5"
+  },
+  "project": {
+    "id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+    "name": "G3 验收台演示项目（运行 g3r-mvidnlqn-3f10f0cf）",
+    "status": "active",
+    "projectVersion": 3,
+    "specRevision": 1,
+    "currentContextRevision": 1,
+    "templateId": "template-demo",
+    "templateVersion": "1"
+  },
+  "chapters": [
+    {
+      "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+      "sectionId": "question",
+      "title": "研究问题",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    },
+    {
+      "id": "553f6883-5172-4c7c-be9b-3a2b5eec6f76",
+      "sectionId": "method",
+      "title": "研究方案",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    }
+  ],
+  "model_available": true,
+  "model_unavailable_reason": "",
+  "model_runs": [
+    {
+      "runId": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+      "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "completed",
+      "failureCode": "",
+      "durationMs": 3278,
+      "inputTokens": 869,
+      "outputTokens": 633,
+      "startedAt": "2026-10-21T17:19:50.1497388Z",
+      "finishedAt": "2026-10-21T17:19:53.424Z"
+    },
+    {
+      "runId": "52968802-f773-4457-b3cd-8952e50e4cdc",
+      "sessionId": "73a13ae1-b815-4196-b80d-b131eaf18cec",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "stale",
+      "failureCode": "stale_context",
+      "durationMs": 2846,
+      "inputTokens": 664,
+      "outputTokens": 346,
+      "startedAt": "2026-10-21T17:19:53.6471786Z",
+      "finishedAt": "2026-10-21T17:19:56.489Z"
+    },
+    {
+      "runId": "49204607-5bd2-40fa-956d-2e86731b2273",
+      "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "completed",
+      "failureCode": "",
+      "durationMs": 3121,
+      "inputTokens": 916,
+      "outputTokens": 718,
+      "startedAt": "2026-10-21T17:19:56.5928545Z",
+      "finishedAt": "2026-10-21T17:19:59.698Z"
+    }
+  ],
+  "evidence_sources": [
+    {
+      "kind": "deterministic",
+      "non_deterministic": false,
+      "note": "确定性结论：状态由本轮真实调用与响应事实推出。"
+    },
+    {
+      "kind": "model_dependent",
+      "non_deterministic": true,
+      "depends_on": "real_model",
+      "note": "非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。",
+      "runs": [
+        {
+          "runId": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+          "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+          "modelId": "g3-acceptance-deepseek",
+          "runMode": "real",
+          "status": "completed",
+          "failureCode": "",
+          "durationMs": 3278,
+          "inputTokens": 869,
+          "outputTokens": 633,
+          "startedAt": "2026-10-21T17:19:50.1497388Z",
+          "finishedAt": "2026-10-21T17:19:53.424Z"
+        },
+        {
+          "runId": "52968802-f773-4457-b3cd-8952e50e4cdc",
+          "sessionId": "73a13ae1-b815-4196-b80d-b131eaf18cec",
+          "modelId": "g3-acceptance-deepseek",
+          "runMode": "real",
+          "status": "stale",
+          "failureCode": "stale_context",
+          "durationMs": 2846,
+          "inputTokens": 664,
+          "outputTokens": 346,
+          "startedAt": "2026-10-21T17:19:53.6471786Z",
+          "finishedAt": "2026-10-21T17:19:56.489Z"
+        },
+        {
+          "runId": "49204607-5bd2-40fa-956d-2e86731b2273",
+          "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+          "modelId": "g3-acceptance-deepseek",
+          "runMode": "real",
+          "status": "completed",
+          "failureCode": "",
+          "durationMs": 3121,
+          "inputTokens": 916,
+          "outputTokens": 718,
+          "startedAt": "2026-10-21T17:19:56.5928545Z",
+          "finishedAt": "2026-10-21T17:19:59.698Z"
+        }
+      ]
+    }
+  ],
+  "ac_g3_06_old_async_result": {
+    "turnStatus": "stale",
+    "turnFailureCode": "stale_context",
+    "baseRevision": 4,
+    "newRevision": 5,
+    "savedAsCandidate": true,
+    "candidateId": "b883796f-ee3d-4189-ad49-ec867e71d685",
+    "candidateStatus": "awaiting_consent",
+    "chapterVersionAfter": "question:f5cecbc9-3950-4393-bbb4-b965196789b3、method:1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+    "confirmationAfter": "question:dfdf1c14-a188-4af7-aedf-1f37b350ec2a、method:b3364c8f-06b6-47f6-93a1-553789728dcd",
+    "releaseSnapshotUnchanged": true,
+    "releaseSnapshotCount": 1,
+    "stabilizationStatus": "STABILIZED",
+    "stabilizationBlockers": [],
+    "releaseSnapshotId": "snapshot-ec66668748ec9e468aa1d3d260e31155",
+    "releaseFreezeStatus": 200,
+    "closedTasks": [
+      "d874e608-3ca7-5210-9532-026f9f6cb652"
+    ],
+    "run": {
+      "runId": "52968802-f773-4457-b3cd-8952e50e4cdc",
+      "sessionId": "73a13ae1-b815-4196-b80d-b131eaf18cec",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "stale",
+      "failureCode": "stale_context",
+      "durationMs": 2846,
+      "inputTokens": 664,
+      "outputTokens": 346,
+      "startedAt": "2026-10-21T17:19:53.6471786Z",
+      "finishedAt": "2026-10-21T17:19:56.489Z"
+    },
+    "detail": "模型运行标识 52968802-f773-4457-b3cd-8952e50e4cdc（模型 g3-acceptance-deepseek，耗时 2846ms）：运行在 revision 4 上发起，期间变更集把项目推进到 revision 5；旧运行返回后状态 stale（失败码 stale_context），结果只存成历史候选 b883796f-ee3d-4189-ad49-ec867e71d685（状态 awaiting_consent）；稳定化 STABILIZED、交付快照 snapshot-ec66668748ec9e468aa1d3d260e31155、人工闭环任务 1 条；新修订的章节版本 question:f5cecbc9-3950-4393-bbb4-b965196789b3、method:1dfc2ac4-59af-4df5-8641-17c0d87ff4f0、当前确认 question:dfdf1c14-a188-4af7-aedf-1f37b350ec2a、method:b3364c8f-06b6-47f6-93a1-553789728dcd、交付快照 1 份在返回前后一致。"
+  },
+  "ac_g3_14_assistant_draft": {
+    "turnId": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+    "reply": "已按你的要求生成研究条件修改候选：将 research_subject 改为「G3 验收台演示对象（运行 g3r-mvidnlqn-3f10f0cf）（接受过创业教育的本科生）」。这是候选草案，尚未应用，也不构成任何业务确认。确定受影响：当前章节 54f4e5e1-a943-493b-869f-3851a335ad98（版本 65d09e53-0ee0-4279-a098-5dcaba42cbfd）——研究条件属于该章节的上下文，条件变更后其内容与结论表述需按新口径复核；依据为当前上下文中的 chapter_id 与 chapter_version_id。可能受影响：章节 553f6883-5172-4c7c-be9b-3a2b5eec6f76——该 ID 来自你给出的候选范围，但当前上下文未提供其版本与依赖关系，是否实际依赖该研究条件待确认；依据为 change_set 中拟议的 affected_chapter_ids。当前 source_refs 与 card_refs 为空，无法判断来源与卡片层面的连带影响，需在应用前确认。",
+    "suggestion": {
+      "expectedContextRevision": 1,
+      "reason": "用户明确要求将研究条件 research_subject 细化为接受过创业教育的本科生，以限定研究对象范围。",
+      "fields": {
+        "research_subject": "G3 验收台演示对象（运行 g3r-mvidnlqn-3f10f0cf）（接受过创业教育的本科生）"
+      },
+      "affectedChapterIds": [
+        "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "553f6883-5172-4c7c-be9b-3a2b5eec6f76"
+      ]
+    },
+    "proposalId": "2341f6c0-746b-42bb-8101-d5d1f22aba39",
+    "proposalStatus": "completed",
+    "draftId": "4cb16c23-9a30-4860-9bcc-1ba0dbcdb834",
+    "draftStatus": "draft",
+    "contextRevisionBefore": 1,
+    "contextRevisionAfter": 1,
+    "forbiddenCalls": [],
+    "closedTasks": [],
+    "checkStatus": "passed",
+    "proposalActions": [
+      "create_change_set:completed"
+    ],
+    "groupedExplanation": true,
+    "run": {
+      "runId": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+      "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "completed",
+      "failureCode": "",
+      "durationMs": 3278,
+      "inputTokens": 869,
+      "outputTokens": 633,
+      "startedAt": "2026-10-21T17:19:50.1497388Z",
+      "finishedAt": "2026-10-21T17:19:53.424Z"
+    },
+    "detail": "模型运行标识 89a6ad60-256b-4799-a2bf-65c5c36c132a（模型 g3-acceptance-deepseek，耗时 3278ms）：助手把自然语言整理成变更草稿 4cb16c23-9a30-4860-9bcc-1ba0dbcdb834，状态 draft；上下文修订 1 → 1（没有推进，没有应用变更）；助手触达的应用/导出/任务处置端点 0 个；已关闭的人工任务 0 条；助手登记过的动作 create_change_set:completed（没有 apply_change_set / export）；交付检查 passed（导出闸门没有被助手放行）。"
+  },
+  "ac_g3_15_model_candidates": {
+    "candidateCount": 3,
+    "candidates": [
+      {
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+          "version": "5"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+          "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+        },
+        "relation": "spec_governs_chapter",
+        "action": "REVIEW_REQUIRED",
+        "reason": "当前章节版本属于该项目上下文，规范版本变化可能影响章节研究条件，但上下文未给出具体字段差异，只能建议复核而非直接重生成。",
+        "confidence": 0.4,
+        "basis": "context.project_id=d702397a-afb9-4ded-bbce-b77318d0393d, context.spec_revision=5, context.chapter_version_id=f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      {
+        "source": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+          "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+        },
+        "relation": "template_shapes_chapter",
+        "action": "NO_ACTION",
+        "reason": "章节由该模板副本生成，模板版本未变化时无需动作；此候选仅用于登记结构依赖，供人工确认。",
+        "confidence": 0.35,
+        "basis": "context.template_id=template-demo, context.template_version=1, context.chapter_version_id=f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      {
+        "source": {
+          "kind": "ChapterVersion",
+          "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+          "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+          "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+        },
+        "relation": "chapter_cross_reference",
+        "action": "REVIEW_REQUIRED",
+        "reason": "两个章节版本同处当前项目，可能存在引用关系，但上下文未给出引用内容或方向依据，需人工确认是否成立。",
+        "confidence": 0.25,
+        "basis": "context.chapter_id=54f4e5e1-a943-493b-869f-3851a335ad98, 候选对象 ChapterVersion id=553f6883-5172-4c7c-be9b-3a2b5eec6f76 version=1dfc2ac4-59af-4df5-8641-17c0d87ff4f0"
+      }
+    ],
+    "reproposedEdgeId": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+    "reproposedNewEdge": false,
+    "run": {
+      "runId": "49204607-5bd2-40fa-956d-2e86731b2273",
+      "sessionId": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+      "modelId": "g3-acceptance-deepseek",
+      "runMode": "real",
+      "status": "completed",
+      "failureCode": "",
+      "durationMs": 3121,
+      "inputTokens": 916,
+      "outputTokens": 718,
+      "startedAt": "2026-10-21T17:19:56.5928545Z",
+      "finishedAt": "2026-10-21T17:19:59.698Z"
+    },
+    "detail": "模型运行标识 49204607-5bd2-40fa-956d-2e86731b2273（模型 g3-acceptance-deepseek，耗时 3121ms）一次性提出 3 条候选依赖；确认 confirmed、修改 confirmed（旧边 template_shapes_chapter）、拒绝 rejected；被拒候选重投返回同一条边 6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3（新建=false）；依赖图现有边 3 条。",
+    "confirmed": {
+      "id": "c7596062-4f7c-4573-b27e-3420ffe62de6",
+      "projectId": "d702397a-afb9-4ded-bbce-b77318d0393d",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "version": "5"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      "relation": "spec_governs_chapter",
+      "action": "REVIEW_REQUIRED",
+      "origin": "ai",
+      "reason": "人工确认：模型候选关系成立",
+      "status": "confirmed",
+      "confidence": 0.4,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    "modified": {
+      "id": "82ea3a3d-ed71-4fed-a01d-4e3632633f79",
+      "projectId": "d702397a-afb9-4ded-bbce-b77318d0393d",
+      "source": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      "relation": "template_shapes_chapter_revised",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工修改：模型候选关系的关系名按人工判断修正",
+      "status": "confirmed",
+      "confidence": 0.44999999999999996,
+      "version": 2,
+      "supersededRelation": "template_shapes_chapter",
+      "supersededAction": "NO_ACTION"
+    },
+    "rejected": {
+      "id": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+      "projectId": "d702397a-afb9-4ded-bbce-b77318d0393d",
+      "source": {
+        "kind": "ChapterVersion",
+        "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "version": "f5cecbc9-3950-4393-bbb4-b965196789b3"
+      },
+      "relation": "chapter_cross_reference",
+      "action": "REVIEW_REQUIRED",
+      "origin": "ai",
+      "reason": "人工拒绝：该候选关系在本版本不成立",
+      "status": "rejected",
+      "confidence": 0.25,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    }
+  },
+  "verdicts": [
+    {
+      "id": "AC-G3-14",
+      "title": "AC-G3-14 影响助手（模型侧）",
+      "holds": true,
+      "detail": "模型运行标识 89a6ad60-256b-4799-a2bf-65c5c36c132a（模型 g3-acceptance-deepseek，耗时 3278ms）：助手把自然语言整理成变更草稿 4cb16c23-9a30-4860-9bcc-1ba0dbcdb834，状态 draft；上下文修订 1 → 1（没有推进，没有应用变更）；助手触达的应用/导出/任务处置端点 0 个；已关闭的人工任务 0 条；助手登记过的动作 create_change_set:completed（没有 apply_change_set / export）；交付检查 passed（导出闸门没有被助手放行）。 本链路未覆盖那半段：助手草稿里的「确定受影响 / 可能受影响」**解释分组**已经实现（模型回复里成组出现=true，工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/agents/task_assistant/sessions → 会话 a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+        "POST /api/v1/lingdoc/projects/{projectId}/agent-sessions/{sessionId}/turns → 轮次 89a6ad60-256b-4799-a2bf-65c5c36c132a · 模型 g3-acceptance-deepseek · 耗时 3278ms",
+        "POST /api/v1/lingdoc/projects/{projectId}/action-proposals → 提案 2341f6c0-746b-42bb-8101-d5d1f22aba39 · 状态 completed",
+        "POST /api/v1/lingdoc/projects/{projectId}/action-proposals/{proposalId}/confirm → 提案状态 completed",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/{draftId} → 草稿状态 draft",
+        "否定性证据：助手触达禁用端点 0 个 · 已关闭任务 0 条 · 助手登记的动作 create_change_set:completed · 交付检查 passed"
+      ],
+      "status": "WARNING",
+      "modelDependent": true
+    },
+    {
+      "id": "AC-G3-06",
+      "title": "AC-G3-06 旧异步结果",
+      "holds": true,
+      "detail": "模型运行标识 52968802-f773-4457-b3cd-8952e50e4cdc（模型 g3-acceptance-deepseek，耗时 2846ms）：运行在 revision 4 上发起，期间变更集把项目推进到 revision 5；旧运行返回后状态 stale（失败码 stale_context），结果只存成历史候选 b883796f-ee3d-4189-ad49-ec867e71d685（状态 awaiting_consent）；稳定化 STABILIZED、交付快照 snapshot-ec66668748ec9e468aa1d3d260e31155、人工闭环任务 1 条；新修订的章节版本 question:f5cecbc9-3950-4393-bbb4-b965196789b3、method:1dfc2ac4-59af-4df5-8641-17c0d87ff4f0、当前确认 question:dfdf1c14-a188-4af7-aedf-1f37b350ec2a、method:b3364c8f-06b6-47f6-93a1-553789728dcd、交付快照 1 份在返回前后一致。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/agent-sessions/{sessionId}/turns → 轮次 52968802-f773-4457-b3cd-8952e50e4cdc · 状态 stale · 失败码 stale_context · 耗时 2846ms",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets → 推进到 revision 5",
+        "POST /api/v1/lingdoc/projects/{projectId}/import-candidates → 历史候选 b883796f-ee3d-4189-ad49-ec867e71d685 · 状态 awaiting_consent",
+        "GET /api/v1/lingdoc/projects/{projectId}/chapters · /confirmations · /releases → 返回前后一致=true"
+      ],
+      "status": "WARNING",
+      "modelDependent": true
+    },
+    {
+      "id": "AC-G3-15",
+      "title": "AC-G3-15 依赖候选（模型侧）",
+      "holds": true,
+      "detail": "模型运行标识 49204607-5bd2-40fa-956d-2e86731b2273（模型 g3-acceptance-deepseek，耗时 3121ms）一次性提出 3 条候选依赖；确认 confirmed、修改 confirmed（旧边 template_shapes_chapter）、拒绝 rejected；被拒候选重投返回同一条边 6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3（新建=false）；依赖图现有边 3 条。 本链路未覆盖那半段：候选的「依据片段 / 建议理由」只落在依赖边的 reason 字段里，没有独立的结构化展示位，缺口清单见 #246。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/agent-sessions/{sessionId}/turns → 轮次 49204607-5bd2-40fa-956d-2e86731b2273 · 模型 g3-acceptance-deepseek · 耗时 3121ms · 候选 3 条",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependencies → 登记模型候选边",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → 确认 confirmed · 修改 confirmed · 拒绝 rejected",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependencies → 重投被拒候选 → 边 6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3 · 新建=false"
+      ],
+      "status": "WARNING",
+      "modelDependent": true
+    }
+  ],
+  "steps": [
+    {
+      "name": "后端存活探针",
+      "method": "GET",
+      "path": "/api/v1/version",
+      "status": 401,
+      "ok": false,
+      "durationMs": 29,
+      "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
+      "index": 1,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "注册演示账号",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "status": 201,
+      "ok": true,
+      "durationMs": 53,
+      "conclusion": "注册成功（HTTP 201）：g3demo-28f524f562@example.com",
+      "details": {
+        "user_id": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+        "username": "g3demo-28f524f562",
+        "email": "g3demo-28f524f562@example.com",
+        "tenant_id": 5
+      },
+      "index": 2,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "登录",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ok": true,
+      "durationMs": 49,
+      "conclusion": "登录成功（HTTP 200）：g3demo-28f524f562@example.com",
+      "details": {
+        "user_id": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+        "email": "g3demo-28f524f562@example.com",
+        "tenant_id": 5
+      },
+      "index": 3,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读取当前身份",
+      "method": "GET",
+      "path": "/api/v1/auth/validate",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "令牌有效（HTTP 200）",
+      "index": 4,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读取后端 head",
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "status": 200,
+      "ok": true,
+      "durationMs": 1,
+      "conclusion": "读取后端 head 成功（HTTP 200）",
+      "index": 5,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "建项",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-create-project",
+      "durationMs": 4,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvidnlqn-3f10f0cf）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "draft",
+        "project_version": 1,
+        "spec_revision": 0,
+        "template_id": "template-demo",
+        "template_version": "1"
+      },
+      "index": 6,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "写规格",
+      "method": "PUT",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/spec",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-save-spec",
+      "durationMs": 4,
+      "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
+      "details": {
+        "spec_revision": 1,
+        "project_version": 2,
+        "spec_fields": [
+          "research_goal",
+          "research_subject"
+        ]
+      },
+      "index": 7,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "登记立项阅读",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/activation-read",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-activation-read",
+      "durationMs": 2,
+      "conclusion": "立项阅读已登记（HTTP 201）",
+      "details": {
+        "activation_read_id": "ca27ab43-a932-4777-b53d-6e8fb8816b97",
+        "project_version": 2,
+        "spec_revision": 1
+      },
+      "index": 8,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "激活",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/activate",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-activate",
+      "durationMs": 6,
+      "conclusion": "项目已激活（HTTP 200）",
+      "details": {
+        "status": "active",
+        "project_version": 3,
+        "current_context_revision": 1,
+        "baseline_confirmation_id": "d7841074-4d5a-4627-b253-aea983d68a47"
+      },
+      "index": 9,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "section_ids": [
+          "question",
+          "method"
+        ]
+      },
+      "index": 10,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 11,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-chapter-body-question",
+      "durationMs": 4,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "current_version_id": "65d09e53-0ee0-4279-a098-5dcaba42cbfd",
+        "confirmation_valid": false
+      },
+      "index": 12,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-confirm-question",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 65d09e53-0ee0-4279-a098-5dcaba42cbfd · 规格修订 1",
+      "details": {
+        "confirmation_id": "8d899620-3a68-4016-b55c-e055115d13c0",
+        "chapter_version_id": "65d09e53-0ee0-4279-a098-5dcaba42cbfd",
+        "spec_revision": 1
+      },
+      "index": 13,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-chapter-body-method",
+      "durationMs": 4,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "553f6883-5172-4c7c-be9b-3a2b5eec6f76",
+        "current_version_id": "bd424691-1f79-4061-b37c-7cd30a6f5341",
+        "confirmation_valid": false
+      },
+      "index": 14,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-confirm-method",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 bd424691-1f79-4061-b37c-7cd30a6f5341 · 规格修订 1",
+      "details": {
+        "confirmation_id": "99e9143f-48ef-4f83-8349-b51d932db461",
+        "chapter_version_id": "bd424691-1f79-4061-b37c-7cd30a6f5341",
+        "spec_revision": 1
+      },
+      "index": 15,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 7,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 16,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-创建助手会话",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agents/task_assistant/sessions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-agent-session-draft",
+      "durationMs": 3,
+      "conclusion": "助手会话已创建（HTTP 201）",
+      "details": {
+        "session_id": "a20e7f0f-8f00-409b-bad2-3ac3f9fba13a",
+        "agent": "task_assistant"
+      },
+      "index": 17,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-发送助手轮次",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agent-sessions/a20e7f0f-8f00-409b-bad2-3ac3f9fba13a/turns",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-agent-turn-a20e7f0f-8f00-409b-bad2-3ac3f9fba13a-17",
+      "durationMs": 3278,
+      "conclusion": "助手轮次已返回（HTTP 200）",
+      "details": {
+        "turn_id": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+        "status": "completed",
+        "failure_code": "",
+        "model_id": "g3-acceptance-deepseek",
+        "run_mode": "real",
+        "input_tokens": 869,
+        "output_tokens": 633,
+        "context_revision": 1,
+        "error_code": ""
+      },
+      "index": 18,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-登记变更提案",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/action-proposals",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-proposal-create_change_set",
+      "durationMs": 14,
+      "conclusion": "变更提案已登记（HTTP 201，未执行）",
+      "details": {
+        "proposal_id": "2341f6c0-746b-42bb-8101-d5d1f22aba39",
+        "action": "create_change_set",
+        "status": "pending",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 19,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-人工确认变更提案",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/action-proposals/2341f6c0-746b-42bb-8101-d5d1f22aba39/confirm",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-proposal-confirm-2341f6c0-746b-42bb-8101-d5d1f22aba39",
+      "durationMs": 36,
+      "conclusion": "变更提案已人工确认（HTTP 200）",
+      "details": {
+        "proposal_id": "2341f6c0-746b-42bb-8101-d5d1f22aba39",
+        "status": "completed",
+        "result_status": "draft",
+        "result_change_set_id": "4cb16c23-9a30-4860-9bcc-1ba0dbcdb834",
+        "error_code": ""
+      },
+      "index": 20,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回变更草稿",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/4cb16c23-9a30-4860-9bcc-1ba0dbcdb834",
+      "status": 200,
+      "ok": true,
+      "durationMs": 6,
+      "conclusion": "变更集已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "4cb16c23-9a30-4860-9bcc-1ba0dbcdb834",
+        "status": "draft",
+        "stale_reason": "",
+        "reassessed_from_id": "",
+        "reverses_change_set_id": ""
+      },
+      "index": 21,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 7,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 22,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 0,
+        "tasks": []
+      },
+      "index": 23,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回交付检查",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/checks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "交付检查已完成（HTTP 200）",
+      "details": {
+        "receipt_id": "2743aab7-13fa-4ebc-8460-3a2ec7f8a9b2",
+        "status": "passed",
+        "project_version": 7,
+        "issue_count": 0,
+        "issues": []
+      },
+      "index": 24,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回变更提案",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/action-proposals",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "变更提案已读回（HTTP 200）",
+      "details": {
+        "proposal_count": 1,
+        "proposals": [
+          "create_change_set:completed"
+        ]
+      },
+      "index": 25,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-助手草稿-结论",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agents/task_assistant/sessions（场景结论）",
+      "status": 201,
+      "ok": true,
+      "durationMs": 3278,
+      "conclusion": "助手草稿已生成（草稿 4cb16c23-9a30-4860-9bcc-1ba0dbcdb834，状态 draft，未应用）",
+      "details": {
+        "turn_id": "89a6ad60-256b-4799-a2bf-65c5c36c132a",
+        "draft_id": "4cb16c23-9a30-4860-9bcc-1ba0dbcdb834",
+        "draft_status": "draft",
+        "proposal_status": "completed",
+        "context_revision_before": 1,
+        "context_revision_after": 1,
+        "forbidden_calls": [],
+        "closed_tasks": [],
+        "check_status": "passed",
+        "grouped_explanation": true
+      },
+      "index": 26,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 7,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 27,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-to-4-1",
+      "durationMs": 9,
+      "conclusion": "变更集已创建（HTTP 201）：G3 验收台-7：推进上下文修订（to-4-1）",
+      "details": {
+        "change_set_id": "c745ee1b-368a-42c5-873f-65426ab833df",
+        "status": "assessed",
+        "base_context_revision": 1,
+        "base_spec_revision": 1,
+        "affected_chapter_ids": [
+          "54f4e5e1-a943-493b-869f-3851a335ad98"
+        ]
+      },
+      "index": 28,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/c745ee1b-368a-42c5-873f-65426ab833df/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-assess-c745ee1b-368a-42c5-873f-65426ab833df",
+      "durationMs": 10,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "c745ee1b-368a-42c5-873f-65426ab833df",
+        "status": "assessed"
+      },
+      "index": 29,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/c745ee1b-368a-42c5-873f-65426ab833df/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "c745ee1b-368a-42c5-873f-65426ab833df",
+        "context_revision": 1,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 30,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/c745ee1b-368a-42c5-873f-65426ab833df/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-apply-to-4-1",
+      "durationMs": 10,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "c745ee1b-368a-42c5-873f-65426ab833df",
+        "status": "applied",
+        "target_context_revision": 2,
+        "target_spec_revision": 2,
+        "error_code": ""
+      },
+      "index": 31,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 8,
+        "spec_revision": 2,
+        "current_context_revision": 2
+      },
+      "index": 32,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-to-4-2",
+      "durationMs": 8,
+      "conclusion": "变更集已创建（HTTP 201）：G3 验收台-7：推进上下文修订（to-4-2）",
+      "details": {
+        "change_set_id": "94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b",
+        "status": "assessed",
+        "base_context_revision": 2,
+        "base_spec_revision": 2,
+        "affected_chapter_ids": [
+          "54f4e5e1-a943-493b-869f-3851a335ad98"
+        ]
+      },
+      "index": 33,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-assess-94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b",
+      "durationMs": 9,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b",
+        "status": "assessed"
+      },
+      "index": 34,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b",
+        "context_revision": 2,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 35,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-apply-to-4-2",
+      "durationMs": 10,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "94cd5b31-7929-4a3d-9aac-0e9ed8e4cf7b",
+        "status": "applied",
+        "target_context_revision": 3,
+        "target_spec_revision": 3,
+        "error_code": ""
+      },
+      "index": 36,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 9,
+        "spec_revision": 3,
+        "current_context_revision": 3
+      },
+      "index": 37,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-to-4-3",
+      "durationMs": 8,
+      "conclusion": "变更集已创建（HTTP 201）：G3 验收台-7：推进上下文修订（to-4-3）",
+      "details": {
+        "change_set_id": "2164443e-7ccb-4c4f-8902-244c3f35a999",
+        "status": "assessed",
+        "base_context_revision": 3,
+        "base_spec_revision": 3,
+        "affected_chapter_ids": [
+          "54f4e5e1-a943-493b-869f-3851a335ad98"
+        ]
+      },
+      "index": 38,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/2164443e-7ccb-4c4f-8902-244c3f35a999/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-assess-2164443e-7ccb-4c4f-8902-244c3f35a999",
+      "durationMs": 11,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "2164443e-7ccb-4c4f-8902-244c3f35a999",
+        "status": "assessed"
+      },
+      "index": 39,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/2164443e-7ccb-4c4f-8902-244c3f35a999/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "2164443e-7ccb-4c4f-8902-244c3f35a999",
+        "context_revision": 3,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 40,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/2164443e-7ccb-4c4f-8902-244c3f35a999/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-apply-to-4-3",
+      "durationMs": 10,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "2164443e-7ccb-4c4f-8902-244c3f35a999",
+        "status": "applied",
+        "target_context_revision": 4,
+        "target_spec_revision": 4,
+        "error_code": ""
+      },
+      "index": 41,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 10,
+        "spec_revision": 4,
+        "current_context_revision": 4
+      },
+      "index": 42,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 43,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "65d09e53-0ee0-4279-a098-5dcaba42cbfd:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 44,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 45,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-body-rev4-question",
+      "durationMs": 5,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 4",
+      "details": {
+        "chapter_id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "current_version_id": "edcec867-f9de-481f-a9a2-1157542d3049",
+        "confirmation_valid": false
+      },
+      "index": 46,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-confirm-rev4-question",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 edcec867-f9de-481f-a9a2-1157542d3049 · 规格修订 4",
+      "details": {
+        "confirmation_id": "757924d8-46e8-4161-a4b6-e06660f8aeaa",
+        "chapter_version_id": "edcec867-f9de-481f-a9a2-1157542d3049",
+        "spec_revision": 4
+      },
+      "index": 47,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 48,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "bd424691-1f79-4061-b37c-7cd30a6f5341:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 49,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 50,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-body-rev4-method",
+      "durationMs": 4,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 4",
+      "details": {
+        "chapter_id": "553f6883-5172-4c7c-be9b-3a2b5eec6f76",
+        "current_version_id": "950241a4-232e-499b-be20-ea4ea1d50eb1",
+        "confirmation_valid": false
+      },
+      "index": 51,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-confirm-rev4-method",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 950241a4-232e-499b-be20-ea4ea1d50eb1 · 规格修订 4",
+      "details": {
+        "confirmation_id": "fe08845a-4e61-4471-9261-05c041d174f5",
+        "chapter_version_id": "950241a4-232e-499b-be20-ea4ea1d50eb1",
+        "spec_revision": 4
+      },
+      "index": 52,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 14,
+        "spec_revision": 4,
+        "current_context_revision": 4
+      },
+      "index": 53,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-创建助手会话",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agents/task_assistant/sessions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-agent-session-history",
+      "durationMs": 3,
+      "conclusion": "助手会话已创建（HTTP 201）",
+      "details": {
+        "session_id": "73a13ae1-b815-4196-b80d-b131eaf18cec",
+        "agent": "task_assistant"
+      },
+      "index": 54,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-to-5",
+      "durationMs": 9,
+      "conclusion": "变更集已创建（HTTP 201）：G3 验收台-7：推进上下文修订（to-5）",
+      "details": {
+        "change_set_id": "82c7e614-e06f-492f-8b8b-9992112cb3b1",
+        "status": "assessed",
+        "base_context_revision": 4,
+        "base_spec_revision": 4,
+        "affected_chapter_ids": [
+          "54f4e5e1-a943-493b-869f-3851a335ad98"
+        ]
+      },
+      "index": 55,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/82c7e614-e06f-492f-8b8b-9992112cb3b1/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-assess-82c7e614-e06f-492f-8b8b-9992112cb3b1",
+      "durationMs": 11,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "82c7e614-e06f-492f-8b8b-9992112cb3b1",
+        "status": "assessed"
+      },
+      "index": 56,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/82c7e614-e06f-492f-8b8b-9992112cb3b1/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "82c7e614-e06f-492f-8b8b-9992112cb3b1",
+        "context_revision": 4,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 57,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-推进变更集到新修订",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/82c7e614-e06f-492f-8b8b-9992112cb3b1/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-advance-apply-to-5",
+      "durationMs": 11,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "82c7e614-e06f-492f-8b8b-9992112cb3b1",
+        "status": "applied",
+        "target_context_revision": 5,
+        "target_spec_revision": 5,
+        "error_code": ""
+      },
+      "index": 58,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 15,
+        "spec_revision": 5,
+        "current_context_revision": 5
+      },
+      "index": 59,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 4,
+        "tasks": [
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1",
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1",
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1",
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1"
+        ]
+      },
+      "index": 60,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/impact-tasks/d874e608-3ca7-5210-9532-026f9f6cb652/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-assign-rev5-d874e608-3ca7-5210-9532-026f9f6cb652",
+      "durationMs": 5,
+      "conclusion": "影响任务处置「assign」（HTTP 200）",
+      "details": {
+        "task_id": "d874e608-3ca7-5210-9532-026f9f6cb652",
+        "action": "assign",
+        "status": "OPEN",
+        "severity": "blocking",
+        "assignee_id": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+        "version": 2,
+        "disposition": "G3 验收台-7：把影响任务指派给当前操作者",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 61,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/impact-tasks/d874e608-3ca7-5210-9532-026f9f6cb652/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-start-rev5-d874e608-3ca7-5210-9532-026f9f6cb652",
+      "durationMs": 5,
+      "conclusion": "影响任务处置「start」（HTTP 200）",
+      "details": {
+        "task_id": "d874e608-3ca7-5210-9532-026f9f6cb652",
+        "action": "start",
+        "status": "IN_PROGRESS",
+        "severity": "blocking",
+        "assignee_id": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+        "version": 3,
+        "disposition": "G3 验收台-7：开始处置影响任务",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 62,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 63,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 1,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 2,
+        "versions": [
+          "edcec867-f9de-481f-a9a2-1157542d3049:spec=4:confirmation_valid=false",
+          "65d09e53-0ee0-4279-a098-5dcaba42cbfd:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 64,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 65,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-body-rev5-question",
+      "durationMs": 3,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 5",
+      "details": {
+        "chapter_id": "54f4e5e1-a943-493b-869f-3851a335ad98",
+        "current_version_id": "f5cecbc9-3950-4393-bbb4-b965196789b3",
+        "confirmation_valid": false
+      },
+      "index": 66,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-confirm-rev5-question",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 f5cecbc9-3950-4393-bbb4-b965196789b3 · 规格修订 5",
+      "details": {
+        "confirmation_id": "dfdf1c14-a188-4af7-aedf-1f37b350ec2a",
+        "chapter_version_id": "f5cecbc9-3950-4393-bbb4-b965196789b3",
+        "spec_revision": 5
+      },
+      "index": 67,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 68,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 2,
+        "versions": [
+          "950241a4-232e-499b-be20-ea4ea1d50eb1:spec=4:confirmation_valid=true",
+          "bd424691-1f79-4061-b37c-7cd30a6f5341:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 69,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 1,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 70,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-body-rev5-method",
+      "durationMs": 4,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 5",
+      "details": {
+        "chapter_id": "553f6883-5172-4c7c-be9b-3a2b5eec6f76",
+        "current_version_id": "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+        "confirmation_valid": false
+      },
+      "index": 71,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-refresh-confirm-rev5-method",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 1dfc2ac4-59af-4df5-8641-17c0d87ff4f0 · 规格修订 5",
+      "details": {
+        "confirmation_id": "b3364c8f-06b6-47f6-93a1-553789728dcd",
+        "chapter_version_id": "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+        "spec_revision": 5
+      },
+      "index": 72,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/impact-tasks/d874e608-3ca7-5210-9532-026f9f6cb652/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-complete-rev5-d874e608-3ca7-5210-9532-026f9f6cb652",
+      "durationMs": 7,
+      "conclusion": "影响任务处置「complete」（HTTP 200）",
+      "details": {
+        "task_id": "d874e608-3ca7-5210-9532-026f9f6cb652",
+        "action": "complete",
+        "status": "DONE",
+        "severity": "blocking",
+        "assignee_id": "b6c9c23c-d727-478f-bc0c-95695828d47f",
+        "version": 4,
+        "disposition": "G3 验收台-7：已按当前规格修订复写并重新确认章节，提交闭环证据",
+        "stale_reason": "",
+        "closure_evidence_count": 1,
+        "error_code": ""
+      },
+      "index": 73,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-稳定化并冻结交付快照",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/change-sets/82c7e614-e06f-492f-8b8b-9992112cb3b1/stabilize",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-stabilize-82c7e614-e06f-492f-8b8b-9992112cb3b1",
+      "durationMs": 12,
+      "conclusion": "稳定化已执行（HTTP 200）",
+      "details": {
+        "status": "STABILIZED",
+        "blockers": [],
+        "error_code": ""
+      },
+      "index": 74,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 19,
+        "spec_revision": 5,
+        "current_context_revision": 5
+      },
+      "index": 75,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-稳定化并冻结交付快照",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/releases",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-freeze-82c7e614-e06f-492f-8b8b-9992112cb3b1",
+      "durationMs": 21,
+      "conclusion": "交付快照已冻结（HTTP 201）",
+      "details": {
+        "snapshot_id": "snapshot-ec66668748ec9e468aa1d3d260e31155",
+        "check_status": "passed",
+        "is_current": true,
+        "snapshot_digest": "cabfd310bc95f09bbd9a1c6f7570ac3a877293261a3f42ee6e70f8c0e4be9550",
+        "error_code": ""
+      },
+      "index": 76,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 19,
+        "spec_revision": 5,
+        "current_context_revision": 5
+      },
+      "index": 77,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 78,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "f5cecbc9-3950-4393-bbb4-b965196789b3:spec=5:confirmation_valid=true",
+          "edcec867-f9de-481f-a9a2-1157542d3049:spec=4:confirmation_valid=false",
+          "65d09e53-0ee0-4279-a098-5dcaba42cbfd:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 79,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "dfdf1c14-a188-4af7-aedf-1f37b350ec2a",
+        "chapter_version_id": "f5cecbc9-3950-4393-bbb4-b965196789b3",
+        "spec_revision": 5
+      },
+      "index": 80,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 81,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0:spec=5:confirmation_valid=true",
+          "950241a4-232e-499b-be20-ea4ea1d50eb1:spec=4:confirmation_valid=true",
+          "bd424691-1f79-4061-b37c-7cd30a6f5341:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 82,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "b3364c8f-06b6-47f6-93a1-553789728dcd",
+        "chapter_version_id": "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+        "spec_revision": 5
+      },
+      "index": 83,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/releases",
+      "status": 200,
+      "ok": true,
+      "durationMs": 6,
+      "conclusion": "交付快照列表已读回（HTTP 200）",
+      "details": {
+        "item_count": 1,
+        "truncated": false,
+        "check_statuses": [
+          "passed"
+        ]
+      },
+      "index": 84,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-发送助手轮次",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agent-sessions/73a13ae1-b815-4196-b80d-b131eaf18cec/turns",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-agent-turn-73a13ae1-b815-4196-b80d-b131eaf18cec-54",
+      "durationMs": 2846,
+      "conclusion": "助手轮次已返回（HTTP 200）",
+      "details": {
+        "turn_id": "52968802-f773-4457-b3cd-8952e50e4cdc",
+        "status": "stale",
+        "failure_code": "stale_context",
+        "model_id": "g3-acceptance-deepseek",
+        "run_mode": "real",
+        "input_tokens": 664,
+        "output_tokens": 346,
+        "context_revision": 4,
+        "error_code": ""
+      },
+      "index": 85,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-存为历史候选",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/import-candidates",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-history-candidate-52968802-f773-4457-b3cd-8952e50e4cdc",
+      "durationMs": 7,
+      "conclusion": "旧运行结果已存为历史候选（HTTP 201）",
+      "details": {
+        "candidate_id": "b883796f-ee3d-4189-ad49-ec867e71d685",
+        "status": "awaiting_consent",
+        "level": "AI_GENERATED_CANDIDATE",
+        "selection_type": "conversation",
+        "error_code": ""
+      },
+      "index": 86,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 87,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "f5cecbc9-3950-4393-bbb4-b965196789b3:spec=5:confirmation_valid=true",
+          "edcec867-f9de-481f-a9a2-1157542d3049:spec=4:confirmation_valid=false",
+          "65d09e53-0ee0-4279-a098-5dcaba42cbfd:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 88,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 6,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "dfdf1c14-a188-4af7-aedf-1f37b350ec2a",
+        "chapter_version_id": "f5cecbc9-3950-4393-bbb4-b965196789b3",
+        "spec_revision": 5
+      },
+      "index": 89,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 5,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 90,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 5,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0:spec=5:confirmation_valid=true",
+          "950241a4-232e-499b-be20-ea4ea1d50eb1:spec=4:confirmation_valid=true",
+          "bd424691-1f79-4061-b37c-7cd30a6f5341:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 91,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "b3364c8f-06b6-47f6-93a1-553789728dcd",
+        "chapter_version_id": "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+        "spec_revision": 5
+      },
+      "index": 92,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/releases",
+      "status": 200,
+      "ok": true,
+      "durationMs": 13,
+      "conclusion": "交付快照列表已读回（HTTP 200）",
+      "details": {
+        "item_count": 1,
+        "truncated": false,
+        "check_statuses": [
+          "passed"
+        ]
+      },
+      "index": 93,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-旧异步-结论",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agent-sessions/{sessionId}/turns（场景结论）",
+      "status": 201,
+      "ok": true,
+      "durationMs": 2846,
+      "conclusion": "旧异步结果已存为历史候选 b883796f-ee3d-4189-ad49-ec867e71d685，新修订对象未被改写=true",
+      "details": {
+        "base_revision": 4,
+        "new_revision": 5,
+        "turn_status": "stale",
+        "failure_code": "stale_context",
+        "candidate_id": "b883796f-ee3d-4189-ad49-ec867e71d685",
+        "candidate_status": "awaiting_consent",
+        "objects_unchanged": true
+      },
+      "index": 94,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "d702397a-afb9-4ded-bbce-b77318d0393d",
+        "status": "active",
+        "project_version": 19,
+        "spec_revision": 5,
+        "current_context_revision": 5
+      },
+      "index": 95,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 96,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "f5cecbc9-3950-4393-bbb4-b965196789b3:spec=5:confirmation_valid=true",
+          "edcec867-f9de-481f-a9a2-1157542d3049:spec=4:confirmation_valid=false",
+          "65d09e53-0ee0-4279-a098-5dcaba42cbfd:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 97,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/54f4e5e1-a943-493b-869f-3851a335ad98/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "dfdf1c14-a188-4af7-aedf-1f37b350ec2a",
+        "chapter_version_id": "f5cecbc9-3950-4393-bbb4-b965196789b3",
+        "spec_revision": 5
+      },
+      "index": 98,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 99,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 6,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 3,
+        "versions": [
+          "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0:spec=5:confirmation_valid=true",
+          "950241a4-232e-499b-be20-ea4ea1d50eb1:spec=4:confirmation_valid=true",
+          "bd424691-1f79-4061-b37c-7cd30a6f5341:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 100,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回新修订对象",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/chapters/553f6883-5172-4c7c-be9b-3a2b5eec6f76/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 5,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "b3364c8f-06b6-47f6-93a1-553789728dcd",
+        "chapter_version_id": "1dfc2ac4-59af-4df5-8641-17c0d87ff4f0",
+        "spec_revision": 5
+      },
+      "index": 101,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-发送助手轮次",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/agent-sessions/a20e7f0f-8f00-409b-bad2-3ac3f9fba13a/turns",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-agent-turn-a20e7f0f-8f00-409b-bad2-3ac3f9fba13a-101",
+      "durationMs": 3121,
+      "conclusion": "助手轮次已返回（HTTP 200）",
+      "details": {
+        "turn_id": "49204607-5bd2-40fa-956d-2e86731b2273",
+        "status": "completed",
+        "failure_code": "",
+        "model_id": "g3-acceptance-deepseek",
+        "run_mode": "real",
+        "input_tokens": 916,
+        "output_tokens": 718,
+        "context_revision": 5,
+        "error_code": ""
+      },
+      "index": 102,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-登记候选依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-edge-1",
+      "durationMs": 8,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ChapterVersion · spec_governs_chapter",
+      "details": {
+        "edge_id": "c7596062-4f7c-4573-b27e-3420ffe62de6",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "REVIEW_REQUIRED",
+        "relation": "spec_governs_chapter",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 103,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-登记候选依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-edge-2",
+      "durationMs": 7,
+      "conclusion": "依赖边已建立（HTTP 201）：TemplateCopy → ChapterVersion · template_shapes_chapter",
+      "details": {
+        "edge_id": "82ea3a3d-ed71-4fed-a01d-4e3632633f79",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "NO_ACTION",
+        "relation": "template_shapes_chapter",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 104,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-登记候选依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-edge-3",
+      "durationMs": 8,
+      "conclusion": "依赖边已建立（HTTP 201）：ChapterVersion → ChapterVersion · chapter_cross_reference",
+      "details": {
+        "edge_id": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "REVIEW_REQUIRED",
+        "relation": "chapter_cross_reference",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 105,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-裁决候选-确认",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies/c7596062-4f7c-4573-b27e-3420ffe62de6/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-decide-confirm",
+      "durationMs": 10,
+      "conclusion": "依赖边裁决「confirm」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "c7596062-4f7c-4573-b27e-3420ffe62de6",
+        "decision": "confirm",
+        "status": "confirmed",
+        "relation": "spec_governs_chapter",
+        "action": "REVIEW_REQUIRED",
+        "confidence": 0.4,
+        "version": 2,
+        "superseded_relation": "",
+        "superseded_action": "",
+        "error_code": ""
+      },
+      "index": 106,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-裁决候选-修改",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies/82ea3a3d-ed71-4fed-a01d-4e3632633f79/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-decide-modify",
+      "durationMs": 9,
+      "conclusion": "依赖边裁决「modify」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "82ea3a3d-ed71-4fed-a01d-4e3632633f79",
+        "decision": "modify",
+        "status": "confirmed",
+        "relation": "template_shapes_chapter_revised",
+        "action": "NO_ACTION",
+        "confidence": 0.44999999999999996,
+        "version": 2,
+        "superseded_relation": "template_shapes_chapter",
+        "superseded_action": "NO_ACTION",
+        "error_code": ""
+      },
+      "index": 107,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-裁决候选-拒绝",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies/6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-decide-reject",
+      "durationMs": 8,
+      "conclusion": "依赖边裁决「reject」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+        "decision": "reject",
+        "status": "rejected",
+        "relation": "chapter_cross_reference",
+        "action": "REVIEW_REQUIRED",
+        "confidence": 0.25,
+        "version": 2,
+        "superseded_relation": "",
+        "superseded_action": "",
+        "error_code": ""
+      },
+      "index": 108,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-重投被拒候选边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvidnlqn-3f10f0cf-model-edge-repropose",
+      "durationMs": 8,
+      "conclusion": "依赖边已建立（HTTP 200）：ChapterVersion → ChapterVersion · chapter_cross_reference",
+      "details": {
+        "edge_id": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+        "status": "rejected",
+        "origin": "ai",
+        "action": "REVIEW_REQUIRED",
+        "relation": "chapter_cross_reference",
+        "version": 2,
+        "error_code": ""
+      },
+      "index": 109,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-读回模型候选依赖",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "依赖边已读回（HTTP 200）",
+      "details": {
+        "edge_count": 3,
+        "edges": [
+          "spec_governs_chapter:confirmed",
+          "template_shapes_chapter_revised:confirmed",
+          "chapter_cross_reference:rejected"
+        ]
+      },
+      "index": 110,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    },
+    {
+      "name": "模型-候选依赖-结论",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/d702397a-afb9-4ded-bbce-b77318d0393d/dependencies（场景结论）",
+      "status": 201,
+      "ok": true,
+      "durationMs": 3121,
+      "conclusion": "模型提出 3 条候选依赖，确认 / 修改 / 拒绝三态已分别落证",
+      "details": {
+        "candidate_count": 3,
+        "confirmed": "confirmed",
+        "modified": "confirmed",
+        "rejected": "rejected",
+        "reproposed_edge_id": "6c185a9c-4c5d-4b04-b8a7-e44b4a0ce2d3",
+        "reproposed_new_edge": false
+      },
+      "index": 111,
+      "runId": "g3r-mvidnlqn-3f10f0cf"
+    }
+  ]
+}

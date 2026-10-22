@@ -89,7 +89,7 @@ func checkRewriteContextPolicy(plan writingaction.Plan, selection writingaction.
 
 // checkRewriteCard 按当前授权复核一张证据卡。
 func (s *SelectedRewriteService) checkRewriteCard(ctx context.Context, actor Actor, projectID, chapterID string, ref generation.EvidenceCardRef) error {
-	_, err := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs([]generation.EvidenceCardRef{ref}))
+	_, err := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs([]generation.EvidenceCardRef{ref}))
 	return err
 }
 

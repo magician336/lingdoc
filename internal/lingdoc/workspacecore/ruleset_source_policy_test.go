@@ -61,7 +61,7 @@ func sourcePolicyProject(t *testing.T, path string) (*Service, Actor, Project, l
 
 func sourcePolicySidecarBytes(t *testing.T, svc *Service, copy *ProjectTemplateCopy) string {
 	t.Helper()
-	var row g5RecordRow
+	var row projectRecordRow
 	if err := svc.testDB().Where("project_id = ? AND kind = ? AND id = ?", copy.ProjectID, "template_binding", copy.ID).Take(&row).Error; err != nil {
 		t.Fatalf("persisted binding sidecar for copy %d: %v", copy.Version, err)
 	}
@@ -327,7 +327,7 @@ func TestBindRuleSetRejectsIncompatibleSourcePolicyWithoutWrites(t *testing.T) {
 	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copies).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.testDB().Model(&g5RecordRow{}).Where("project_id = ? AND kind = ?", project.ID, "template_binding").Count(&sidecars).Error; err != nil {
+	if err := svc.testDB().Model(&projectRecordRow{}).Where("project_id = ? AND kind = ?", project.ID, "template_binding").Count(&sidecars).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", key).Count(&operations).Error; err != nil {
@@ -420,7 +420,7 @@ func TestCanonicalRuleSetCopyRejectsPersistedSourceTampering(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				result := svc.testDB().Model(&g5RecordRow{}).Where("project_id = ? AND kind = ? AND id = ?", project.ID, "template_binding", bound.TemplateCopy.ID).Update("payload_json", string(payload))
+				result := svc.testDB().Model(&projectRecordRow{}).Where("project_id = ? AND kind = ? AND id = ?", project.ID, "template_binding", bound.TemplateCopy.ID).Update("payload_json", string(payload))
 				if result.Error != nil || result.RowsAffected != 1 {
 					t.Fatalf("persist source-sidecar tamper: rows=%d err=%v", result.RowsAffected, result.Error)
 				}

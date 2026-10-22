@@ -4,7 +4,6 @@ import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
-type Service = core.Service
 type Repository = core.Repository
 type SourcePolicy = core.SourcePolicy
 type Actor = core.Actor
@@ -85,19 +84,3 @@ var (
 	ErrRequestInProgress   = core.ErrRequestInProgress
 	ErrSourceUnavailable   = core.ErrSourceUnavailable
 )
-
-func NewService(repository Repository) *Service {
-	return core.NewService(repository)
-}
-
-func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
-	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
-}
-
-func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
-	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
-}
-
-func NewServiceWithAuditMode(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink, mode AuthorizationMode) *Service {
-	return core.NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, mode)
-}

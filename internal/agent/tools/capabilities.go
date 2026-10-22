@@ -1,6 +1,6 @@
 // Package tools — capability requirements for built-in agent tools.
 //
-// This file is the Go mirror of `frontend/src/utils/tool-capabilities.ts`.
+// This file is the Go mirror of `frontend/src/utils/toolCapabilities.ts`.
 // They MUST be kept in sync: whenever you add a tool to the registry with
 // specific KB requirements, update both maps.
 //
@@ -45,7 +45,7 @@ type ToolRequirement struct {
 }
 
 // ToolCapabilityRequirements maps tool names to their capability needs.
-// Keep this aligned with `frontend/src/utils/tool-capabilities.ts`.
+// Keep this aligned with `frontend/src/utils/toolCapabilities.ts`.
 //
 // Tools absent from this map default to "no requirement" and are treated
 // as always available / file-consuming (permissive fallback: unknown MCP

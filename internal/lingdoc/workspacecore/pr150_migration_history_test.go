@@ -96,8 +96,8 @@ func pr150SeedMigrationHistory(t *testing.T, s *Service) (Actor, Project, map[st
 		if err != nil {
 			return err
 		}
-		var provenance g1ChangeProvenance
-		if _, err := store.G5Get(p.ID, "g1_change_provenance", applied.ID, &provenance); err != nil {
+		var provenance changeProvenance
+		if _, err := store.GetProjectRecord(p.ID, "g1_change_provenance", applied.ID, &provenance); err != nil {
 			return err
 		}
 		for i, status := range []string{"draft", "assessed", "applied", "stabilized", "rejected", "stale"} {
@@ -141,7 +141,7 @@ func pr150SeedMigrationHistory(t *testing.T, s *Service) (Actor, Project, map[st
 			}
 			// The copied history has the exact same old values/baseline as the
 			// actual applied proposal; retain its genuine immutable source pins.
-			if err := store.G5Put(p.ID, "g1_change_provenance", row.ID, 0, provenance); err != nil {
+			if err := store.PutProjectRecord(p.ID, "g1_change_provenance", row.ID, 0, provenance); err != nil {
 				return err
 			}
 		}

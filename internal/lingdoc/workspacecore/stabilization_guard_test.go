@@ -125,7 +125,7 @@ func receiptWithSources(t *testing.T, svc *Service, actor Actor, p Project, sour
 			SourceIDs: sourceIDs, CheckedAt: time.Now().UTC(),
 			Evaluations: []template.Evaluation{{RuleID: "required-fields", TargetRef: p.ID, TargetVersion: "1",
 				RulesetHash: p.TemplateCopy.RulesetHash, EvaluatorVersion: template.EvaluatorVersion, Status: template.EvaluationIssue}}}
-		return tx.(runtimeTransaction).G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
+		return tx.(runtimeTransaction).InsertRuntimeRecord(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
 	}))
 	return receipt
 }
@@ -148,7 +148,7 @@ func unresolvableReceipt(t *testing.T, svc *Service, actor Actor, p Project, sou
 			SourceIDs: sourceIDs, CheckedAt: time.Now().UTC(),
 			Evaluations: []template.Evaluation{{RuleID: "required-fields", TargetRef: p.ID, TargetVersion: "1",
 				RulesetHash: p.TemplateCopy.RulesetHash, EvaluatorVersion: template.EvaluatorVersion, Status: template.EvaluationIssue}}}
-		return tx.(runtimeTransaction).G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
+		return tx.(runtimeTransaction).InsertRuntimeRecord(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
 	}))
 	return receipt
 }
@@ -548,7 +548,7 @@ func TestStabilizationRefusesChangeSetOfAnotherRevision(t *testing.T) {
 		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: fresh.Spec["research_subject"], NewValue: "守护 第二个主题"}},
 		AffectedChapterIDs:      []string{chapter.ID}, Reason: "守护 第二次正式变更"})
 	require.NoError(t, err)
-	second := g2Decode[ChangeSet](t, raw, nil)
+	second := decodeAgentJSON[ChangeSet](t, raw, nil)
 	if _, _, _, err := svc.ApplyChangeSet(context.Background(), actor, p.ID, second.ID, "guard-revision-second-apply"); err != nil {
 		t.Fatalf("apply second change set: %v", err)
 	}
@@ -649,11 +649,11 @@ func guardClaim(t *testing.T, svc *Service, p Project, id string) ObjectVersionR
 func guardClaimOnBasis(t *testing.T, svc *Service, p Project, id string, specRevision int64) ObjectVersionRef {
 	t.Helper()
 	claim := ResearchClaim{ID: id, ProjectID: p.ID, Version: 1, Text: "守护 合成研究主张", Scope: "守护范围",
-		Status: "active", Basis: G2Basis{ProjectVersion: p.ProjectVersion, SpecRevision: specRevision,
+		Status: "active", Basis: VersionBasis{ProjectVersion: p.ProjectVersion, SpecRevision: specRevision,
 			ContextRevision: p.CurrentContextRevision}, Reason: "守护 合成主张", CreatedBy: "owner",
 		CreatedAt: time.Now().UTC()}
 	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
-		return g2Store(tx, G2StoredObject{}, p.ID, G2ClaimKind, id, 1, claim)
+		return storeStoredObject(tx, StoredObject{}, p.ID, ResearchClaimKind, id, 1, claim)
 	}))
 	return ObjectVersionRef{Kind: "ResearchClaim", ID: id, Version: "1"}
 }

@@ -21,7 +21,11 @@ type candidateAdoptionSourcesStub struct {
 // only checks which routes the workspace registers, so none of the methods
 // are called.
 type candidateAdoptionServiceStub struct {
-	workspace.ApplicationService
+	workspace.ProjectApplication
+	workspace.MembershipApplication
+	workspace.ChapterApplication
+	workspace.TemplateApplication
+	workspace.ChangeSetApplication
 }
 
 func TestRegisterRoutesLeavesChapterListingToWorkspaceOwner(t *testing.T) {
@@ -39,7 +43,15 @@ func TestRegisterRoutesComposesWithWorkspaceWithoutDuplicateChapterListing(t *te
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	v1 := r.Group("/api/v1")
-	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{Service: &candidateAdoptionServiceStub{}, Sources: candidateAdoptionSourcesStub{}})
+	service := &candidateAdoptionServiceStub{}
+	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{
+		Projects:    service,
+		Members:     service,
+		Chapters:    service,
+		TemplateApp: service,
+		ChangeSets:  service,
+		Sources:     candidateAdoptionSourcesStub{},
+	})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}

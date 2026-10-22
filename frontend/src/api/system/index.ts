@@ -545,9 +545,9 @@ export type {
   AuditOutcome,
   ListAuditLogParams,
   ListAuditLogResponse,
-} from '@/api/tenant/audit-log'
+} from '@/api/tenant/auditLog'
 
-import type { ListAuditLogParams, ListAuditLogResponse } from '@/api/tenant/audit-log'
+import type { ListAuditLogParams, ListAuditLogResponse } from '@/api/tenant/auditLog'
 
 /**
  * List the platform-wide audit log (system-scope, tenant_id=0).

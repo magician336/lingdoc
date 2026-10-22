@@ -1957,7 +1957,7 @@ html[theme-mode="dark"] .aside_box .menu_item_active .menu_icon img.icon {
     opacity: 1;
 }
 
-// 下拉菜单样式已统一至 @/assets/dropdown-menu.less
+// 下拉菜单样式已统一至 @/assets/dropdownMenu.less
 
 // 退出登录确认框样式
 :deep(.t-popconfirm) {

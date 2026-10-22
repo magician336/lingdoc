@@ -340,7 +340,7 @@ onBeforeUnmount(stopPolling)
 </template>
 
 <style scoped lang="less">
-@import './datasource-surface.less';
+@import './datasourceSurface.less';
 .ds-settings {
   width: 100%;
 }

@@ -35,7 +35,13 @@ type DeliveryInputBuilder struct {
 	reviewer  sourcepolicy.Reviewer
 	gateway   evidence.AssetGateway
 	templates delivery.TemplateReader
-	projects  ApplicationService
+	// provenance is the optional project-provenance capability. It is nil when
+	// the assembly has no full-workflow core, and the provenance checks are
+	// then skipped instead of failing to compile. It used to be found with a
+	// run-time type assertion on the project port, which let the transport
+	// reach any aggregate operation the assertion's interface happened to
+	// name; an explicit nullable port keeps the reach at three operations.
+	provenance core.ProjectProvenanceApplication
 }
 
 func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
@@ -122,12 +128,12 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 		return nil
 	}
 	// 交付侧另有一份带 rules 的模板（lingdoctemplate.Template）。工作区自己那份
-	// ContractDemoTemplate 是 workspacecore.Template，**没有 Rules**——拿它来冻结，
+	// ContractDemoTemplate 是 core.Template，**没有 Rules**——拿它来冻结，
 	// T13 会因为没有规则声明把每一次检查都判成 not_evaluated。
 	if h.templates == nil {
 		return nil
 	}
-	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, projects: h.service}
+	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, provenance: h.provenance}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。
@@ -146,7 +152,8 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
 	var specProvenance *core.ProjectProvenanceSnapshot
-	if projects, ok := b.projects.(deliveryProvenanceCore); ok {
+	if b.provenance != nil {
+		projects := b.provenance
 		caller := types.CallerFromContext(checked)
 		a := core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}
 		proof, prepared := core.ProjectProvenanceSnapshotFromContext(checked, input.ProjectID)
@@ -160,7 +167,20 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		if proof.SpecRevision != int64(input.SpecRevision) || proof.TemplateCopyVersion != input.TemplateCopyVersion {
 			return delivery.DeliveryInput{}, candidateadoption.ErrVersionConflict
 		}
-		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, input.Spec, proof, false); err != nil {
+		// 溯源校验比对的是**原始规格**：溯源快照记的正是它（#324）。
+		//
+		// input.Spec 是路线感知投影——模板声明为必需的路线节点在它里面是空的
+		// （路线图还没给出那个节点），而快照记的是规格里的占位值。拿投影去比，
+		// 值对不上，来源访问就被拒（403 source_access_denied）。
+		//
+		// 求值仍然读 input.Spec：投影那份才让「已声明但缺失的路线节点」保持缺失
+		// （#319）。两个值各司其职，少一个都不行。
+		provenanceSpec := input.SpecSource
+		if provenanceSpec == nil {
+			// 没有单独的原始规格时（比如调用方直接手写输入），手里这份就是它。
+			provenanceSpec = input.Spec
+		}
+		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, provenanceSpec, proof, false); err != nil {
 			return delivery.DeliveryInput{}, err
 		}
 		specProvenance = &proof
@@ -421,15 +441,9 @@ func frozenChaptersInTemplateOrder(chapters []candidateadoption.WorkspaceDeliver
 
 // The production core owns these provenance checks. Public snapshot JSON is
 // only a durable reference to its immutable server pins, never an access proof.
-type deliveryProvenanceCore interface {
-	PrepareProjectProvenance(context.Context, core.Actor, string, bool) (context.Context, core.ProjectProvenanceSnapshot, error)
-	ValidateProjectProvenanceSnapshot(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
-	AssertFrozenProjectProvenance(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
-}
-
 func (b *DeliveryInputBuilder) AuthorizeFrozenProvenance(ctx context.Context, actorID, projectID string, frozen delivery.DeliveryInput) error {
-	projects, ok := b.projects.(deliveryProvenanceCore)
-	if !ok {
+	projects := b.provenance
+	if projects == nil {
 		// Legacy contract fixtures have no full-workflow core. A persisted
 		// provenance snapshot still requires its real validator.
 		if frozen.SpecProvenance != nil {

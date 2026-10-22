@@ -201,10 +201,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/database/migration_generation_digest_version_test.go", "file"),
-            ("internal/database/migration_rewrite_validity_legacy_test.go", "file"),
+            ("internal/database/migration_rewrite_validity_upgrade_test.go", "file"),
             # The candidate shape migration tests follow the candidate shape
             # normalisation this branch landed.
-            ("internal/database/migration_candidate_shape_legacy_test.go", "file"),
+            ("internal/database/migration_candidate_shape_upgrade_test.go", "file"),
             ("internal/database/migration_sqlite_candidate_shape_test.go", "file"),
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
@@ -259,7 +259,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "available",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspacecore/g6_runtime.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
         ),
         "resolves": (),
@@ -277,7 +277,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/workspacecore/g5_owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
         ),
         "resolves": ((127, 143),),
@@ -297,8 +297,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
-            ("internal/lingdoc/workspacecore/g2_service.go", "file"),
-            ("internal/lingdoc/workspacecore/g2_model.go", "file"),
+            ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
+            ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
         ),
         "resolves": (),
         "summary": (

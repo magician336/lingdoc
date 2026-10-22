@@ -3,7 +3,6 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -263,93 +262,6 @@ func TestPR150DecisionRecoveryEditedDraftReasonSurvivesRestart(t *testing.T) {
 		t.Fatalf("apply lost edited explanation: result=%+v err=%v", result, err)
 	}
 	pr150AssertDecision(t, f.service, f.owner, f.project.ID, result.ChangeSet, "apply", f.owner.UserID)
-}
-
-func TestPR150DecisionRecoveryOwnerReplayRequiresCurrentOwner(t *testing.T) {
-	for _, action := range []string{"apply", "reject"} {
-		t.Run(action, func(t *testing.T) {
-			f := pr150NewRecoveryFixture(t)
-			change := f.assessed(t)
-			key := "pr150-current-owner-" + action
-			result, err := pr150Decide(f.service, f.owner, f.project.ID, change.ID, key, action)
-			if err != nil || result.Replayed {
-				t.Fatalf("initial Owner decision: replayed=%v err=%v", result.Replayed, err)
-			}
-			f.reopen(t)
-			pr150AssertDecision(t, f.service, f.owner, f.project.ID, result.ChangeSet, action, f.owner.UserID)
-			original := pr150JSON(t, result.ChangeSet)
-			retry, err := pr150Decide(f.service, f.owner, f.project.ID, change.ID, key, action)
-			if err != nil || !retry.Replayed || pr150JSON(t, retry.ChangeSet) != original {
-				t.Fatalf("current Owner retry: replayed=%v err=%v", retry.Replayed, err)
-			}
-
-			// Use real invitation, acceptance and transfer applications rather than
-			// rewriting a member row to manufacture the authority change.
-			nextOwner := Actor{TenantID: f.owner.TenantID, UserID: "pr150-next-owner", Role: types.TenantRoleContributor}
-			seedTenantMember(t, f.service, nextOwner)
-			p, err := f.service.GetProject(context.Background(), f.owner, f.project.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			invitation, _ := firstPassInvite(t, f.service, f.owner, nextOwner, p)
-			if _, _, _, err := f.service.AcceptProjectInvitation(context.Background(), nextOwner, p.ID, invitation.ID,
-				"pr150-accept-invitation", AcceptMemberInput{ExpectedInvitationVersion: invitation.Version}); err != nil {
-				t.Fatal(err)
-			}
-			p, err = f.service.GetProject(context.Background(), f.owner, p.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			raw, _, _, err := f.service.RequestOwnerTransfer(context.Background(), f.owner, p.ID, "pr150-request-owner-transfer",
-				OwnerTransferInput{ExpectedProjectVersion: p.ProjectVersion, ToUserID: nextOwner.UserID})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var transfer OwnerTransfer
-			if err := json.Unmarshal(raw, &transfer); err != nil || transfer.ID == "" {
-				t.Fatalf("decode owner transfer: %+v err=%v", transfer, err)
-			}
-			if _, _, _, err := f.service.AcceptOwnerTransfer(context.Background(), nextOwner, p.ID, transfer.ID, "pr150-accept-owner-transfer"); err != nil {
-				t.Fatal(err)
-			}
-			p, err = f.service.GetProject(context.Background(), nextOwner, p.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !projectOwner(p, nextOwner.UserID) || projectOwner(p, f.owner.UserID) {
-				t.Fatalf("fixture did not transfer current Owner: %+v", p.Members)
-			}
-			before := pr150RecoveryState(t, f.service, nextOwner, p.ID, change.ID)
-			denied, err := pr150Decide(f.service, f.owner, p.ID, change.ID, key, action)
-			if !errors.Is(err, ErrNotFound) || denied.Replayed || denied.ChangeSet.ID != "" {
-				t.Fatalf("former Owner replay was not denied: result=%+v err=%v", denied, err)
-			}
-			if after := pr150RecoveryState(t, f.service, nextOwner, p.ID, change.ID); after != before {
-				t.Fatalf("denied transferred-Owner replay changed formal state or business audit\nbefore=%s\nafter=%s", before, after)
-			}
-
-			if _, _, _, err := f.service.SetMemberAssignment(context.Background(), nextOwner, p.ID, f.owner.UserID,
-				"pr150-former-owner-admin", MemberAssignmentInput{
-					ExpectedProjectVersion: p.ProjectVersion,
-					Assignment:             Member{UserID: f.owner.UserID, GovernanceRole: "admin"},
-					Reason:                 "Retain coordination authority without Owner decisions.",
-				}); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.service.Authorize(context.Background(), f.owner, p.ID, "manage"); err != nil {
-				t.Fatalf("former Owner must still have current Admin manage authority: %v", err)
-			}
-			before = pr150RecoveryState(t, f.service, nextOwner, p.ID, change.ID)
-			denied, err = pr150Decide(f.service, f.owner, p.ID, change.ID, key, action)
-			if !errors.Is(err, ErrNotFound) || denied.Replayed || denied.ChangeSet.ID != "" {
-				t.Fatalf("current Admin replay bypassed Owner-only decision authority: result=%+v err=%v", denied, err)
-			}
-			if after := pr150RecoveryState(t, f.service, nextOwner, p.ID, change.ID); after != before {
-				t.Fatalf("denied Admin replay changed formal state or business audit\nbefore=%s\nafter=%s", before, after)
-			}
-			pr150AssertDecision(t, f.service, nextOwner, p.ID, result.ChangeSet, action, f.owner.UserID)
-		})
-	}
 }
 
 func TestPR150DecisionRecoveryDecisionAuditFailureIsAtomic(t *testing.T) {

@@ -28,7 +28,14 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}}
 	routes := newLingDocRegistrar(v1, guards)
 	service := &lingDocRouteServiceStub{}
-	deps := workspace.HandlerDependencies{Service: service, Sources: routeSourcesStub{}}
+	deps := workspace.HandlerDependencies{
+		Projects:    service,
+		Members:     service,
+		Chapters:    service,
+		TemplateApp: service,
+		ChangeSets:  service,
+		Sources:     routeSourcesStub{},
+	}
 	// The machine read and the review anchor endpoints are capabilities the
 	// caller names, so their presence is a decision rather than an accident.
 	deps.WithMachineReads(service)
@@ -68,7 +75,13 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 }
 
 type lingDocRouteServiceStub struct {
-	workspace.ApplicationService
+	core.ProjectApplication
+	core.CapabilityAuthorizer
+	core.GenerationContextApplication
+	workspace.MembershipApplication
+	workspace.ChapterApplication
+	workspace.TemplateApplication
+	workspace.ChangeSetApplication
 	createCalls int
 	listCalls   int
 }
@@ -147,7 +160,14 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
-	deps := workspace.HandlerDependencies{Service: service, Sources: routeSourcesStub{}}
+	deps := workspace.HandlerDependencies{
+		Projects:    service,
+		Members:     service,
+		Chapters:    service,
+		TemplateApp: service,
+		ChangeSets:  service,
+		Sources:     routeSourcesStub{},
+	}
 	// The machine read and the review anchor endpoints are capabilities the
 	// caller names, so their presence is a decision rather than an accident.
 	deps.WithMachineReads(service)
@@ -283,7 +303,14 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
-	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{Read: service, Write: service, Sources: routeSourcesStub{}})
+	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{
+		Projects:    service,
+		Members:     service,
+		Chapters:    service,
+		TemplateApp: service,
+		ChangeSets:  service,
+		Sources:     routeSourcesStub{},
+	})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}

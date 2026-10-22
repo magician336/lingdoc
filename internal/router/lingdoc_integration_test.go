@@ -15,6 +15,7 @@ import (
 	appservice "github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -151,7 +152,14 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	deps := workspace.HandlerDependencies{Read: projects, Write: projects, Sources: sources}
+	deps := workspace.HandlerDependencies{
+		Projects:    projects,
+		Members:     integrationMembershipService(projects, workspacecore.NewGORMRepository(db)),
+		Chapters:    projects,
+		TemplateApp: projects,
+		ChangeSets:  projects,
+		Sources:     sources,
+	}
 	// The capabilities the project service provides are named by the caller.
 	deps.WithMachineReads(projects)
 	deps.WithReviewAnchors(projects, projects)
@@ -350,9 +358,9 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	shares := &integrationShares{allowed: true}
-	runtime := workspace.NewGORMSourceRuntime(db, nil, shares, integrationKnowledge{}, delivery.NewFixedTemplateReader())
+	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, shares, integrationKnowledge{}, delivery.NewFixedTemplateReader())
 	projects := workspacecore.NewServiceWithSources(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	engine := gin.New()
 	engine.Use(middleware.Auth(integrationTenant{}, authUsers, members, keys, cfg))
@@ -367,8 +375,25 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	deps := workspace.HandlerDependencies{Service: projects,
-		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{Core: projects}}
+	deps := workspace.HandlerDependencies{
+		Projects: projects, Members: integrationMembershipService(projects, workspacecore.NewGORMRepository(db)),
+		Chapters: projects, TemplateApp: projects, ChangeSets: projects,
+		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{
+			Impact: workspace.ImpactRoutePorts{
+				ChangeSets: projects, Impact: projects, Dependency: projects,
+				Runtime: projects, Trials: projects, Roadmap: projects,
+			},
+			Agent: workspace.AgentRoutePorts{
+				Research: projects, Imports: projects, EvidenceCards: projects,
+				Claims: projects, Anchors: projects, AgentSessions: projects, Proposals: projects,
+				Context: projects, ChangeSets: projects,
+			},
+			Routes: workspace.FullWorkflowRoutePorts{
+				Members: integrationMembershipService(projects, workspacecore.NewGORMRepository(db)),
+				Reviews: projects, Lifecycle: projects,
+			},
+		},
+	}
 	// The capabilities the project service provides are named by the caller.
 	deps.WithMachineReads(projects)
 	deps.WithReviewAnchors(projects, projects)
@@ -605,4 +630,29 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 			t.Fatalf("machine audit forged human or retained content: %+v", audit)
 		}
 	}
+}
+
+// integrationMembershipService builds the member and owner service for the
+// integration fixtures.
+//
+// The member context left the aggregate: it runs its writes through the shared
+// pipeline and reads through narrow ports, and it never holds the aggregate
+// itself. The composition root is the only place that knows how those ports
+// are built.
+func integrationMembershipService(
+	projects *workspacecore.Service,
+	repository workspacecore.Repository,
+) *membership.Service {
+	storage := workspacecore.NewMemberStorage(projects)
+	return membership.NewService(membership.Ports{
+		Runner:     workspacecore.NewOperationRunner(projects),
+		Authorizer: workspacecore.NewWorkspaceAuthorizer(projects),
+		Policy:     workspacecore.NewWorkspacePolicy(projects),
+		Repository: repository,
+		Records:    storage,
+		Directory:  storage,
+		Transfers:  storage,
+		APIKeys:    storage,
+		Resources:  storage,
+	})
 }

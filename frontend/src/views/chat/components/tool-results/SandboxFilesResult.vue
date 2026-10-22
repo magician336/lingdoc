@@ -25,7 +25,7 @@ import {
   sandboxFileListItems,
   type SkillFileListItem,
 } from '@/utils/skillToolDisplay'
-import type { ListSandboxFilesData } from '@/types/tool-results'
+import type { ListSandboxFilesData } from '@/types/toolResults'
 import ResultRow from './ResultRow.vue'
 
 const props = defineProps<{
@@ -60,7 +60,7 @@ function metaFor(item: SkillFileListItem): string {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .sandbox-files-result {
   display: flex;

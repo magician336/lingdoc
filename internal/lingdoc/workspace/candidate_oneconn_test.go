@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
@@ -59,6 +60,7 @@ type candidateOneConnFixture struct {
 	db        *gorm.DB
 	runtime   *SourceRuntime
 	projects  *core.Service
+	members   *membership.Service
 	store     *candidateadoption.SQLiteCandidateAdoptionStore
 	adoption  *candidateadoption.CandidateAdoptionService
 	ctx       context.Context
@@ -114,7 +116,7 @@ func assertDeliveryBoundTemplatePrerequisites(t *testing.T, service *core.Servic
 }
 
 // Only an external sharing service is stubbed; same-tenant access takes the
-// existing owner branch. Core, SourceRuntime, G2ResearchAdapter, bindings,
+// existing owner branch. Core, SourceRuntime, ResearchAdapter, bindings,
 // original text, model consent and adoption persistence are actual adapters.
 func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	t.Helper()
@@ -139,12 +141,13 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	// A second, genuinely bound asset is deliberately excluded from generation.
 	require.NoError(t, db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status) VALUES(?,?,?,?,?,?,?,?,?,?)`, "unused-knowledge", 7, "kb-1", "file", "Unused synthetic", "txt", 0, "unused-hash", "", "completed").Error)
 	shares := candidateOneConnShares{}
-	runtime := NewGORMSourceRuntime(db, nil, shares, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, shares, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	adapter := NewG2ResearchAdapter(db, projects, runtime, shares, nil, nil)
-	projects.ConfigureG2(core.G2Runtime{Sources: adapter})
+	adapter := NewResearchAdapter(db, projects, runtime, shares, nil, nil)
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter})
 	_, err := runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
 	require.NoError(t, err)
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
@@ -152,7 +155,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "合成软件流程验证", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "合成人工许可fixture", ContextRevision: 1}
 	policyJSON, err := json.Marshal(policy)
 	require.NoError(t, err)
-	require.NoError(t, core.NewTransactionAdapter(db).(core.G2Transaction).InsertG2Object(core.G2StoredObject{ProjectID: "project-1", Kind: core.G2AssetPolicyKind, ID: assetID, Version: 1, Payload: policyJSON}))
+	require.NoError(t, core.NewTransactionAdapter(db).(core.ObjectStore).InsertObject(core.StoredObject{ProjectID: "project-1", Kind: core.AssetPolicyKind, ID: assetID, Version: 1, Payload: policyJSON}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
@@ -161,21 +164,21 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	t.Cleanup(cancel)
 	p, err := projects.GetProject(deadline, actor, "project-1")
 	require.NoError(t, err)
-	expectation := core.G2Expectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision}
-	raw, _, _, err := projects.SaveSourceAnchor(deadline, actor, p.ID, "oneconn-anchor", core.SaveSourceAnchorInput{G2Expectation: expectation, SourceID: "source-1", SelectionEnd: len([]rune(sourcePolicyQuote)), ExtractionType: "native_text", OCRConfidence: 1, HumanVerified: true, Confirmed: true})
+	expectation := core.VersionExpectation{ExpectedProjectVersion: p.ProjectVersion, ExpectedContextRevision: p.CurrentContextRevision}
+	raw, _, _, err := projects.SaveSourceAnchor(deadline, actor, p.ID, "oneconn-anchor", core.SaveSourceAnchorInput{VersionExpectation: expectation, SourceID: "source-1", SelectionEnd: len([]rune(sourcePolicyQuote)), ExtractionType: "native_text", OCRConfidence: 1, HumanVerified: true, Confirmed: true})
 	require.NoError(t, err)
 	var anchor core.SourceAnchor
 	require.NoError(t, json.Unmarshal(raw, &anchor))
-	raw, _, _, err = projects.SaveResearchClaim(deadline, actor, p.ID, "oneconn-claim", core.SaveResearchClaimInput{G2Expectation: expectation, Text: "合成内容仅测试代码路径", Scope: "软件流程", Reason: "人工录入fixture", Confirmed: true})
+	raw, _, _, err = projects.SaveResearchClaim(deadline, actor, p.ID, "oneconn-claim", core.SaveResearchClaimInput{VersionExpectation: expectation, Text: "合成内容仅测试代码路径", Scope: "软件流程", Reason: "人工录入fixture", Confirmed: true})
 	require.NoError(t, err)
 	var claim core.ResearchClaim
 	require.NoError(t, json.Unmarshal(raw, &claim))
-	raw, _, _, err = projects.SaveEvidenceCard(deadline, actor, p.ID, "oneconn-card", core.SaveEvidenceCardInput{G2Expectation: expectation, ClaimRef: &core.G2VersionRef{ID: claim.ID, Version: claim.Version}, AnchorRefs: []core.G2VersionRef{{ID: anchor.ID, Version: anchor.Version}}, SupportType: "supports", Scope: "软件fixture", ScopeChapterIDs: []string{"chapter-2"}, Limitations: "不是真实研究案例", Confirmed: true})
+	raw, _, _, err = projects.SaveEvidenceCard(deadline, actor, p.ID, "oneconn-card", core.SaveEvidenceCardInput{VersionExpectation: expectation, ClaimRef: &core.VersionRef{ID: claim.ID, Version: claim.Version}, AnchorRefs: []core.VersionRef{{ID: anchor.ID, Version: anchor.Version}}, SupportType: "supports", Scope: "软件fixture", ScopeChapterIDs: []string{"chapter-2"}, Limitations: "不是真实研究案例", Confirmed: true})
 	require.NoError(t, err)
 	var card core.EvidenceCard
 	require.NoError(t, json.Unmarshal(raw, &card))
 	expectation.ExpectedVersion = card.Version
-	raw, _, _, err = projects.ConfirmEvidenceCard(deadline, actor, p.ID, card.ID, "oneconn-card-confirm", core.G2ConfirmedInput{G2Expectation: expectation, Confirmed: true, Reason: "合成fixture逐字核对，不是科学证明"})
+	raw, _, _, err = projects.ConfirmEvidenceCard(deadline, actor, p.ID, card.ID, "oneconn-card-confirm", core.ConfirmationInput{VersionExpectation: expectation, Confirmed: true, Reason: "合成fixture逐字核对，不是科学证明"})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &card))
 	require.NoError(t, db.Exec(`INSERT INTO lingdoc_working_copies(project_id,chapter_id,base_chapter_version_id,spec_revision,working_copy_revision,body_markdown,source_ids_json,citation_usages_json,review_items_json) SELECT project_id,chapter_id,id,spec_revision,1,body_markdown,source_ids_json,citation_usages_json,review_items_json FROM lingdoc_chapter_versions WHERE id=?`, "version-2").Error)
@@ -183,7 +186,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	current, err := store.GenerationContext(deadline, p.ID, "chapter-2")
 	require.NoError(t, err)
 	current.Basis.AssetVersions = []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: 1}}
-	current.Basis.EvidenceCardRefs = []core.G2VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
+	current.Basis.EvidenceCardRefs = []core.VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
 	candidate := candidateadoption.Candidate{ID: "oneconn-candidate", ProjectID: p.ID, ChapterID: "chapter-2", Validity: "fresh", RunID: "synthetic-local-run", BodyMarkdown: "合成候选 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: current.Basis, WritingAction: writingaction.ActionGenerate, Origin: writingaction.OriginGenerated}
 	require.NoError(t, store.UpsertCandidate(deadline, candidate))
 	// 采纳是一次显式确认：确认载荷要说清采纳的是哪个动作的结果、写到哪里、
@@ -205,7 +208,10 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	require.NoError(t, db.Raw("SELECT working_copy_revision, body_markdown FROM lingdoc_working_copies WHERE project_id = ? AND chapter_id = ?", p.ID, "chapter-2").Scan(&workingCopy).Error)
 	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true, ExpectedWorkingCopyRevision: workingCopy.WorkingCopyRevision, ExpectedBodyHash: workingCopyBodyHash(workingCopy.BodyMarkdown), Confirmation: confirmation}
 	adoption := candidateadoption.NewCandidateAdoptionService(store, runtime.CandidateAdoptionSourcePolicy(), candidateOneConnAuthorizer{projects})
-	return candidateOneConnFixture{db, runtime, projects, store, adoption, deadline, actor, candidate, input, card}
+	return candidateOneConnFixture{
+		db, runtime, projects, newMembershipService(projects, core.NewGORMRepository(db)),
+		store, adoption, deadline, actor, candidate, input, card,
+	}
 }
 
 func TestCandidateActualOneConnectionAdaptersAdoptSelectedAssetAndRecheckReplay(t *testing.T) {
@@ -262,11 +268,11 @@ func TestCandidateActualOneConnectionProofRejectsChangedNativeFactsAndIdentity(t
 				case "model_consent":
 					var policy core.ProjectAssetPolicy
 					var row struct{ PayloadJSON string }
-					require.NoError(t, tx.Table("lingdoc_g2_objects").Where("kind=? AND id=?", core.G2AssetPolicyKind, f.candidate.Basis.AssetVersions[0].AssetID).Take(&row).Error)
+					require.NoError(t, tx.Table("lingdoc_g2_objects").Where("kind=? AND id=?", core.AssetPolicyKind, f.candidate.Basis.AssetVersions[0].AssetID).Take(&row).Error)
 					require.NoError(t, json.Unmarshal([]byte(row.PayloadJSON), &policy))
 					policy.ModelUseAllowed = false
 					raw, _ := json.Marshal(policy)
-					require.NoError(t, tx.Table("lingdoc_g2_objects").Where("kind=? AND id=?", core.G2AssetPolicyKind, policy.ID).Update("payload_json", string(raw)).Error)
+					require.NoError(t, tx.Table("lingdoc_g2_objects").Where("kind=? AND id=?", core.AssetPolicyKind, policy.ID).Update("payload_json", string(raw)).Error)
 				case "member":
 					require.NoError(t, tx.Exec("UPDATE tenant_members SET role='viewer' WHERE user_id=?", f.actor.UserID).Error)
 				case "cross_tenant":
@@ -291,9 +297,33 @@ func TestCandidateActualAdapterRejectsMachineAdoptionAndPreservesScope(t *testin
 	require.NoError(t, err)
 	// Native keys have an explicit read seam, never an artificial human write
 	// grant. The real native-auth positive/KB tests live in router integration.
-	_, _, _, err = f.projects.SaveProjectAPIKeyGrant(f.ctx, f.actor, f.input.ProjectID, "candidate-api-write-grant", core.ProjectAPIKeyGrant{ExpectedProjectVersion: p.ProjectVersion, KeyID: 44, Capabilities: []string{"read", "write"}, Active: true, Reason: "合成机器写权限必须拒绝"})
+	_, _, _, err = f.members.SaveProjectAPIKeyGrant(
+		f.ctx,
+		f.actor,
+		f.input.ProjectID,
+		"candidate-api-write-grant",
+		core.ProjectAPIKeyGrant{
+			ExpectedProjectVersion: p.ProjectVersion,
+			KeyID:                  44,
+			Capabilities:           []string{"read", "write"},
+			Active:                 true,
+			Reason:                 "合成机器写权限必须拒绝",
+		},
+	)
 	require.ErrorIs(t, err, core.ErrInvalidRequest)
-	_, _, _, err = f.projects.SaveProjectAPIKeyGrant(f.ctx, f.actor, f.input.ProjectID, "candidate-api-read-grant", core.ProjectAPIKeyGrant{ExpectedProjectVersion: p.ProjectVersion, KeyID: 44, Capabilities: []string{"read"}, Active: true, Reason: "合成只读许可不代表人工采纳"})
+	_, _, _, err = f.members.SaveProjectAPIKeyGrant(
+		f.ctx,
+		f.actor,
+		f.input.ProjectID,
+		"candidate-api-read-grant",
+		core.ProjectAPIKeyGrant{
+			ExpectedProjectVersion: p.ProjectVersion,
+			KeyID:                  44,
+			Capabilities:           []string{"read"},
+			Active:                 true,
+			Reason:                 "合成只读许可不代表人工采纳",
+		},
+	)
 	require.NoError(t, err)
 	for _, kb := range []string{"kb-1", "kb-excluded"} {
 		scoped := types.WithTenantAPIKeyScope(f.ctx, types.TenantAPIKeyScope{KeyID: 44, ScopeType: types.APIKeyScopeTenant, KnowledgeBaseIDs: types.StringArray{kb}, Capabilities: types.StringArray{"retrieve", "ingest"}})

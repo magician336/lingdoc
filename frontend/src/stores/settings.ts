@@ -1,8 +1,8 @@
 import { defineStore } from "pinia";
 import { nextTick } from "vue";
 import { BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from "@/api/agent";
-import { getApiBaseUrl } from "@/utils/api-base";
-import { isAgentStreamAgentId } from "@/utils/agent-mode";
+import { getApiBaseUrl } from "@/utils/apiBase";
+import { isAgentStreamAgentId } from "@/utils/agentMode";
 import { loadAndReconcileSettings } from "@/stores/settingsStorage";
 
 // 定义设置接口

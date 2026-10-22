@@ -569,7 +569,7 @@ watch(
 </script>
 
 <style lang="less" scoped>
-@import '@/components/css/chat-markdown.less';
+@import '@/components/css/chatMarkdown.less';
 
 .skill-files-panel {
   position: relative;

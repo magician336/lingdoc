@@ -35,9 +35,25 @@ const (
 // instead of in the transport's error table.
 var (
 	// ErrUnavailable is a governance service that is not configured.
-	ErrUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "template_governance_unavailable", Message: "目录或规则建议服务尚未配置。", Retryable: true}, "template_governance_unavailable")
+	//
+	// Not configured is not temporarily unavailable: the service is absent, so a
+	// retry cannot make it better. DR-47-03 (D-47-05, #292) keeps every other
+	// 5xx retryable but holds this one back — a caller that retries a
+	// "not configured" answer only waits for a configuration that is not coming.
+	ErrUnavailable = clienterror.New(clienterror.Form{
+		Status:    503,
+		Code:      "template_governance_unavailable",
+		Message:   "目录或规则建议服务尚未配置。",
+		Retryable: false,
+	}, "template_governance_unavailable")
 	// ErrModelUnavailable is a rule suggestion model that is not configured.
-	ErrModelUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "template_governance_unavailable", Message: "目录或规则建议服务尚未配置。", Retryable: true}, "rule_suggestion_model_unavailable")
+	// It shares ErrUnavailable's reason: nothing is going to change on its own.
+	ErrModelUnavailable = clienterror.New(clienterror.Form{
+		Status:    503,
+		Code:      "template_governance_unavailable",
+		Message:   "目录或规则建议服务尚未配置。",
+		Retryable: false,
+	}, "rule_suggestion_model_unavailable")
 	// ErrUnauthorized is a governance authorization that could not be
 	// established.
 	ErrUnauthorized = clienterror.New(clienterror.Form{Status: 403, Code: "template_governance_authorization_unavailable", Message: "目录治理授权不可用。", Retryable: false}, "template_governance_authorization_unavailable")

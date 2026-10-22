@@ -7,7 +7,7 @@ const agentStream = readFileSync(new URL('./AgentStreamDisplay.vue', import.meta
 const chatView = readFileSync(new URL('../index.vue', import.meta.url), 'utf8')
 const embedChat = readFileSync(new URL('../../embed/EmbedChatCore.vue', import.meta.url), 'utf8')
 const sharedStyles = readFileSync(
-  new URL('../../../components/css/chat-message-shared.less', import.meta.url),
+  new URL('../../../components/css/chatMessageShared.less', import.meta.url),
   'utf8',
 )
 

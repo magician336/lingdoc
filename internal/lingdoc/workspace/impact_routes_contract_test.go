@@ -171,7 +171,7 @@ func validateOperationResponse(t *testing.T, doc map[string]any, compiler *jsons
 // exactly the way the application registers it.
 type routeContractFixture struct {
 	engine   *gin.Engine
-	service  *Service
+	service  *core.Service
 	project  Project
 	chapters []Chapter
 }
@@ -189,12 +189,12 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 		t.Fatalf("seed context revision: %v", err)
 	}
 	seedDeliveryBoundTemplateCopy(t, db, "accept-copy")
-	service, ok := testRuntime(handler).service.(*Service)
+	service, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	engine := gin.New()
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	project, err := service.GetProject(policyContext(), Actor{TenantID: 7, UserID: deliveryActorID}, "project-1")
 	if err != nil {
 		t.Fatalf("read fixture project: %v", err)

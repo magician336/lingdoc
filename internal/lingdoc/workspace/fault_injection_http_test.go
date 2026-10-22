@@ -26,15 +26,24 @@ import (
 // 这是组合根在测试里的等价物：默认组合（fault 为零值）与注入组合走同一条路。
 func newFaultInjectionHandler(t *testing.T, db *gorm.DB, fault core.FaultInjection) (*Handler, *core.Service) {
 	t.Helper()
-	runtime := NewGORMSourceRuntime(db, nil, nil, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, delivery.NewFixedTemplateReader())
 	var policy core.AuthorizationPolicy
 	if fault.Point == core.FaultPointAuthorization {
 		policy = core.NewFaultInjectingAuthorizationPolicy(nil, fault)
 	}
 	service := core.NewServiceWithAuthorizationPolicy(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), policy, nil, core.AuthorizationModeEnforce)
 	service.InstallFaultInjection(fault)
-	runtime.ConnectProjects(service)
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: runtime, Integration: runtime})
+	runtime.ConnectProjects(ProjectPorts{Authorizer: service, Projects: service, Context: service})
+	connectAggregateCapabilities(runtime, service)
+	handler, err := NewHandler(HandlerDependencies{
+		Projects:    service,
+		Members:     newMembershipService(service, core.NewGORMRepository(db)),
+		Chapters:    service,
+		TemplateApp: service,
+		ChangeSets:  service,
+		Sources:     runtime,
+		Integration: runtime,
+	})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -60,7 +69,7 @@ func faultInjectionFixture(t *testing.T, fault core.FaultInjection) (*Handler, *
 func faultInjectionEngine(handler *Handler, service *core.Service) *gin.Engine {
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	return engine
 }
 

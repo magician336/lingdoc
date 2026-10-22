@@ -118,7 +118,7 @@ import {
   updateMCPService,
   deleteMCPService,
   type MCPService
-} from '@/api/mcp-service'
+} from '@/api/mcpService'
 import McpServiceDialog from './components/McpServiceDialog.vue'
 import { useConfirmDelete } from '@/components/settings/useConfirmDelete'
 import { useAuthStore } from '@/stores/auth'

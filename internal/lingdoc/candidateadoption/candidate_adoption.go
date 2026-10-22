@@ -88,17 +88,17 @@ type AssetVersion struct {
 }
 
 type Basis struct {
-	TemplateCopyID          string              `json:"template_copy_id,omitempty"`
-	TemplateCopyVersion     int64               `json:"template_copy_version,omitempty"`
-	TemplateCopyContentHash string              `json:"template_copy_content_hash,omitempty"`
-	ContextRevision         int64               `json:"context_revision,omitempty"`
-	EvidenceCardRefs        []core.G2VersionRef `json:"evidence_card_refs,omitempty"`
-	SpecRevision            int                 `json:"spec_revision"`
-	ChapterVersionID        *string             `json:"chapter_version_id"`
-	TemplateID              string              `json:"template_id"`
-	TemplateVersion         string              `json:"template_version"`
-	RulesetHash             string              `json:"ruleset_hash"`
-	AssetVersions           []AssetVersion      `json:"asset_versions"`
+	TemplateCopyID          string            `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64             `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string            `json:"template_copy_content_hash,omitempty"`
+	ContextRevision         int64             `json:"context_revision,omitempty"`
+	EvidenceCardRefs        []core.VersionRef `json:"evidence_card_refs,omitempty"`
+	SpecRevision            int               `json:"spec_revision"`
+	ChapterVersionID        *string           `json:"chapter_version_id"`
+	TemplateID              string            `json:"template_id"`
+	TemplateVersion         string            `json:"template_version"`
+	RulesetHash             string            `json:"ruleset_hash"`
+	AssetVersions           []AssetVersion    `json:"asset_versions"`
 }
 
 type Candidate struct {

@@ -212,7 +212,7 @@ func pr150TemplateState(t *testing.T, f *pr150TemplateFixture, changeID string) 
 	if err := f.s.testDB().Where("project_id = ?", f.project.ID).Order("id").Find(&records).Error; err != nil {
 		t.Fatal(err)
 	}
-	var provenance []g5RecordRow
+	var provenance []projectRecordRow
 	if err := f.s.testDB().Where("project_id = ?", f.project.ID).Order("kind, id").Find(&provenance).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func pr150TemplateState(t *testing.T, f *pr150TemplateFixture, changeID string) 
 		Project    Project
 		Changes    []ChangeSet
 		Records    []versionedRecordRow
-		Provenance []g5RecordRow
+		Provenance []projectRecordRow
 	}{formal, p, changes, records, provenance})
 }
 

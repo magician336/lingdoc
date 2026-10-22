@@ -75,7 +75,7 @@ func impactSourceIDsForRefs(tx Transaction, p Project, refs []ObjectVersionRef) 
 			if err != nil {
 				return nil, err
 			}
-			if _, err := store.G6Read(tenantID, p.ID, "preflight_check", ref.ID, &proof); err != nil {
+			if _, err := store.ReadRuntimeRecord(tenantID, p.ID, "preflight_check", ref.ID, &proof); err != nil {
 				if err == ErrNotFound {
 					reader, ok := tx.(impactSourceReadTransaction)
 					if !ok {

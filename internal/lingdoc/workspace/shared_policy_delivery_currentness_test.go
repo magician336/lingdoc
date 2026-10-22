@@ -30,7 +30,9 @@ func TestSharedDeliveryCurrentnessMappingsRetainFrozenBasis(t *testing.T) {
 	require.Equal(t, 9, frozen.AssetVersions[0].Revision, "policy DTO must not mutate frozen asset revisions")
 	current := &mergeDeliveryCurrentness{}
 	policy := &accessPolicy{
-		projects: &g2GenerationCurrentWorkspace{},
+		authorizer: &generationContextWorkspaceStub{},
+		projects:   &generationContextWorkspaceStub{},
+		context:    &generationContextWorkspaceStub{},
 		reader: mergeDeliveryReader{input: candidateadoption.WorkspaceDeliveryInput{
 			ProjectID: "project", ProjectVersion: 5, SpecRevision: 2, ContextRevision: 7,
 			TemplateID: "template", TemplateVersion: "version", TemplateCopyID: "copy",
@@ -54,7 +56,7 @@ func TestSharedPolicyRejectsStaleFrozenDelivery(t *testing.T) {
 			f := newDeliveryGuardFixture(t, change == "asset_revision")
 			reader := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
 			inputs := &candidateadoption.DeliveryInputService{Reader: reader, Authorizer: deliveryGuardProjectAuthorizer{f.projects}}
-			policy := NewAccessPolicy(f.projects, f.runtime, reader)
+			policy := NewAccessPolicy(ProjectPorts{Authorizer: f.projects, Projects: f.projects, Context: f.projects}, f.runtime, reader)
 			require.NotNil(t, policy)
 			snapshots := delivery.NewSQLiteSnapshotStore(f.db)
 			artifacts := delivery.NewSQLiteExportStore(f.db)
@@ -113,7 +115,7 @@ func TestSharedPolicyHistoricalDownloadRechecksFrozenSources(t *testing.T) {
 	f := newDeliveryGuardFixture(t, true)
 	reader := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
 	inputs := &candidateadoption.DeliveryInputService{Reader: reader, Authorizer: deliveryGuardProjectAuthorizer{f.projects}}
-	policy := NewAccessPolicy(f.projects, f.runtime, reader)
+	policy := NewAccessPolicy(ProjectPorts{Authorizer: f.projects, Projects: f.projects, Context: f.projects}, f.runtime, reader)
 	snapshots := delivery.NewSQLiteSnapshotStore(f.db)
 	artifacts := delivery.NewSQLiteExportStore(f.db)
 	releases := NewDeliveryReleaseServiceWithPolicy(inputs, f.runtime.DeliveryInputBuilder(), snapshots, f.runtime.CandidateAdoptionSourcePolicy(), policy, nil)
@@ -145,7 +147,7 @@ func TestSharedPolicyFreezeRejectsBasisChangedDuringAssembly(t *testing.T) {
 	f := newDeliveryGuardFixture(t, false)
 	reader := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
 	inputs := &candidateadoption.DeliveryInputService{Reader: reader, Authorizer: deliveryGuardProjectAuthorizer{f.projects}}
-	policy := NewAccessPolicy(f.projects, f.runtime, reader)
+	policy := NewAccessPolicy(ProjectPorts{Authorizer: f.projects, Projects: f.projects, Context: f.projects}, f.runtime, reader)
 	builder := sharedBasisChangeAssembler{actual: f.runtime.DeliveryInputBuilder(), change: func() {
 		require.NoError(t, f.db.Exec("UPDATE lingdoc_project_template_copies SET content_hash='changed-during-assembly' WHERE project_id=?", f.project.ID).Error)
 	}}
@@ -161,7 +163,7 @@ func TestSharedPolicyFreezeRejectsBasisChangedDuringAssembly(t *testing.T) {
 
 func TestSharedPolicyDeliveryReadsKeepCurrentTenantFloorAndNoWriteGrant(t *testing.T) {
 	f := newDeliveryGuardFixture(t, false)
-	policy := NewAccessPolicy(f.projects, f.runtime, candidateadoption.NewSQLiteCandidateAdoptionStore(f.db))
+	policy := NewAccessPolicy(ProjectPorts{Authorizer: f.projects, Projects: f.projects, Context: f.projects}, f.runtime, candidateadoption.NewSQLiteCandidateAdoptionStore(f.db))
 	owner := LingDocAccessContext{TenantID: f.actor.TenantID, UserID: f.actor.UserID, Role: string(f.actor.Role), ProjectID: f.project.ID}
 	require.NoError(t, policy.Authorize(f.ctx, owner, "contributor"))
 	// The captured owner token does not survive a reduced current tenant role.

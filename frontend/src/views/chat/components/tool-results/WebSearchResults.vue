@@ -54,7 +54,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { WebSearchResultsData, WebSearchResultItem } from '@/types/tool-results';
+import type { WebSearchResultsData, WebSearchResultItem } from '@/types/toolResults';
 import { useI18n } from 'vue-i18n';
 
 interface Props {
@@ -145,7 +145,7 @@ const formatDate = (dateStr: string): string => {
 </script>
 
 <style lang="less" scoped>
-@import './tool-results.less';
+@import './toolResults.less';
 
 .web-search-results {
   display: flex;

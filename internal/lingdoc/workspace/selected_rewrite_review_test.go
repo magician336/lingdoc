@@ -30,8 +30,10 @@ import (
 )
 
 // reviewWorkspace 记下工作副本的写入。
+//
+// 它只实现选段改写那条窄口（授权、读项目、读工作副本、写回结果）——这四个
+// 方法就是改写用例真正用得着的全部，主循环之外的聚合体方法它一个也不需要。
 type reviewWorkspace struct {
-	ApplicationService
 	copy   WorkingCopy
 	writes []reviewWrite
 }
@@ -112,7 +114,7 @@ func reviewFixture(t *testing.T) (*SelectedRewriteService, *reviewWorkspace, *re
 		SpecRevision: 1, WorkingCopyRevision: 1, BodyMarkdown: body, SourceIDs: []string{"existing"}}}
 	sources := &reviewSources{}
 	model := &reviewModel{}
-	service := NewSelectedRewriteService(db, workspace, sources, model)
+	service := NewSelectedRewriteService(db, workspace, nil, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	require.NoError(t, service.reviewStore().autoMigrate(context.Background()))
 	return service, workspace, sources, model

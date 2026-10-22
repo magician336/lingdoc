@@ -1,0 +1,71 @@
+{
+ "mode": "real",
+ "note": "47.13 直连收口③：影响中心路由（G3）。影响中心 / 路线图 / 依赖候选三条面不再持有聚合体，改由六个上下文窄口驱动：ChangeSetDraftApplication / ImpactApplication / DependencyApplication / RuntimeApplication / TrialApplication / RoadmapApplication。窄口束 ImpactRoutePorts 不把任何一个口变宽，只把「这条面需要哪几门语言」写在一处。守卫语义逐条译回旧形态：整束缺任一口即答 ErrInvalidState（迁移前是聚合体指针为 nil 时拒绝）；路线图注册器的「service == nil 就不注册」译为「nilPort(ports.Roadmap) 就不注册」。口径变化：本票无对外变化——路由、信封、状态码、错误码、文案逐字不变，契约面 base/head 逐字段对照后 94 = 94、签名集完全相同、摘掉源文件行号后差异 0 条。与在途票 #246 的对齐：G3.7 仍是 NOT RUN，本票未改任何 docs/矩阵；G3-GAP-06/07 缺的是验收台页面证据，能力侧已实现，本票只改服务端接缝，与两条缺口不冲突。",
+ "head": "fdc35cf",
+ "base": "633ba34",
+ "passed": [
+  {
+   "id": "影响中心路由不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/impact_routes.go：impactRoutesHandler 由 service *core.Service 改为 ports ImpactRoutePorts；31 处调用改走 ports.ChangeSets / Impact / Dependency / Runtime / Trials；roadmap_routes.go 12 处改走 ports.Roadmap；impact_dependency_candidate_routes.go 3 处改走 ports.Dependency"
+  },
+  {
+   "id": "端口按上下文收窄，只含本上下文用到的操作",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_impact_ports.go 的 ImpactRoutePorts 束；六个窄口的声明与登记表见 internal/lingdoc/workspacecore/seg3_context_ports.go 与 seg3_context_ports_test.go（窄口方法集 = 登记表，签名逐字 = 聚合体同名方法）"
+  },
+  {
+   "id": "旧守卫语义逐条译回（nil 拒绝与不注册）",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_impact_ports.go 的 wired() 整束检查 → ErrInvalidState；roadmap_routes.go 的 nilPort(ports.Roadmap) → 不注册路由；nilPort 复用 #266 留在同包的实现，同时覆盖「口是 nil」与「口里装的是 nil 指针」"
+  },
+  {
+   "id": "结构断言：传输层无聚合体具体类型引用",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go 的白名单表删掉 #267 三行后，impact_routes.go / roadmap_routes.go / impact_dependency_candidate_routes.go 不再有任何聚合体类型引用"
+  },
+  {
+   "id": "阴性验证：注入 *core.Service 引用被抓到",
+   "status": "passed",
+   "evidence": "往 impact_routes.go 注入 var negativeProbeAggregate *core.Service 后，TestTheTransportLayerHoldsNoAggregateType 报出「impact_routes.go:14 still names the aggregate concrete type (core.Service)」；还原后复跑通过。RED 步同样成立：先删白名单三行，命中 4 处违规"
+  },
+  {
+   "id": "行为零变化：契约面 base/head 逐字段对照",
+   "status": "passed",
+   "evidence": "python .scratch/lingdoc-arch-20261021/seg3/compare_parity_base_head.py：result / registered_operations / frontend_calls / frontend_calls_to_scoped_registrars / consumers / focused_workspace_operations / scope / limits 全部 SAME；routes 字段的差异经 compare_routes_shape.py 确认仅是源文件行号位移（94 = 94，签名集完全相同，摘掉行号后差异 0 条）"
+  },
+  {
+   "id": "行为零变化：路由树 70 与生产装配 48 未变",
+   "status": "passed",
+   "evidence": "internal/router/lingdoc_routes_test.go 的 TestAllLingDocRoutesDeclareAPIKeyPolicies（70）与 internal/container/lingdoc_test.go 的 TestLingDocWorkspaceCompositionKeepsItsRouteSurface（48）断言期望值一字未改且通过"
+  },
+  {
+   "id": "读方法承重路由数不变",
+   "status": "passed",
+   "evidence": "python .scratch/lingdoc-arch-20261021/seg3/check_readmethod_weight.py：改动前 14 条、改动后仍 14 条，且 14 条全部出自 g2_full_http.go（属 #275 的范围）"
+  },
+  {
+   "id": "全量定向测试通过（主会话独立复跑）",
+   "status": "passed",
+   "evidence": "go test -count=1 ./internal/lingdoc/workspace/ ./internal/router/ ./internal/container/ → ok workspace 128.448s / ok router 1.554s / ok container 2.141s，exit 0；gofmt -l 无输出；go vet ./internal/... exit 0；python scripts/ci/check_lingdoc_routes.py → result PASS"
+  }
+ ],
+ "failed": [],
+ "not_run": [
+  {
+   "id": "隔离 PostgreSQL 用例",
+   "status": "not_run",
+   "reason": "本票只改传输层接缝，不改持久化路径；PG 用例需要单独一轮轻负载（隔离实例 55433），与全量回归并发会被本机资源压垮。段三整体收口前单独跑一轮。"
+  },
+  {
+   "id": "验收台页面实跑（G3.7 判定）",
+   "status": "not_run",
+   "reason": "G3.7 属在途票 #246 的验收范围，本票不触碰该矩阵行。#246 的 G3-GAP-06/07 仍为 NOT RUN，本票不因重构而改变其判定"
+  },
+  {
+   "id": "真实服务链路（外部模型 / 真实模型调用）",
+   "status": "not_run",
+   "reason": "本票不涉及外部服务，记 N/A"
+  }
+ ]
+}

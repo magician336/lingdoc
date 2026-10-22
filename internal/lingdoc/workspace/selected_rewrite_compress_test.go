@@ -93,7 +93,7 @@ func compressFixture(t *testing.T) (*SelectedRewriteService, *compressWorkspace,
 			WorkingCopyRevision: 1, BodyMarkdown: body, SourceIDs: []string{"existing"}}}}
 	sources := &inheritedRewriteSources{}
 	model := &compressRewriteModel{}
-	service := NewSelectedRewriteService(db, workspace, sources, model)
+	service := NewSelectedRewriteService(db, workspace, nil, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	input := SelectedRewriteRequest{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
 		Selection: RewriteSelection{

@@ -1,9 +1,9 @@
 // 已选证据上下文（SelectedEvidenceContext.vue）的纯状态逻辑。
 // 只读匹配与代次守卫集中在这里，组件保持薄接线；不写字库、不调用模型。
-import type { EvidenceCard, G2VersionRef, ResearchClaim } from '@/api/lingdoc/g2'
+import type { EvidenceCard, VersionRef, ResearchClaim } from '@/api/lingdoc/agentApi'
 
 export interface SelectedEvidenceRow {
-  ref: G2VersionRef
+  ref: VersionRef
   // ready：可完整展示；其余三种都是“待重新核对/当前无法核验”，不回退、不自动升级。
   state: 'ready' | 'version-mismatch' | 'not-confirmed' | 'claim-missing'
   card?: EvidenceCard
@@ -11,7 +11,7 @@ export interface SelectedEvidenceRow {
 }
 
 // 同一 id@version 只保留一行，避免重复 refs 渲染出重复卡片。
-export const dedupeRefs = (refs: G2VersionRef[]): G2VersionRef[] => {
+export const dedupeRefs = (refs: VersionRef[]): VersionRef[] => {
   const seen = new Set<string>()
   return refs.filter(ref => {
     const key = `${ref.id}@${ref.version}`
@@ -23,7 +23,7 @@ export const dedupeRefs = (refs: G2VersionRef[]): G2VersionRef[] => {
 
 // 只按 id+version 精确匹配：服务端不存在所选版本时标 version-mismatch，
 // 绝不自动改用同名卡的其他版本，也不显示未选中的卡。
-export const matchSelectedRows = (refs: G2VersionRef[], cards: EvidenceCard[], claims: ResearchClaim[]): SelectedEvidenceRow[] =>
+export const matchSelectedRows = (refs: VersionRef[], cards: EvidenceCard[], claims: ResearchClaim[]): SelectedEvidenceRow[] =>
   dedupeRefs(refs).map(ref => {
     const card = cards.find(item => item.id === ref.id && item.version === ref.version)
     if (!card) return { ref, state: 'version-mismatch' as const }

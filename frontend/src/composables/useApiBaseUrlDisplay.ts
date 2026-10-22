@@ -1,5 +1,5 @@
 import { computed, onMounted, ref } from 'vue'
-import { getApiBaseUrl } from '@/utils/api-base'
+import { getApiBaseUrl } from '@/utils/apiBase'
 
 type WeKnoraDesktopWindow = Window & {
   __WEKNORA_API_BASE__?: string

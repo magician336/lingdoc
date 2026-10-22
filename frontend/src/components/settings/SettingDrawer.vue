@@ -90,7 +90,7 @@ interface Props {
   width?: string
   /**
    * Whether the drawer can be horizontally resized by dragging the visible
-   * handle on its left edge (same affordance as doc-content drawer).
+   * handle on its left edge (same affordance as DocContent drawer).
    */
   resizable?: boolean
   /** Min/max bounds for the drag-resize, in px. */
@@ -208,7 +208,7 @@ const persistWidth = (width: number) => {
   }
 }
 
-// ---------- Custom drag-resize (visible handle, same as doc-content) ----------
+// ---------- Custom drag-resize (visible handle, same as DocContent) ----------
 const drawerResizing = ref(false)
 
 const drawerClass = computed(() => [

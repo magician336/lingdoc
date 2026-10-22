@@ -15,7 +15,11 @@ import (
 )
 
 type applicationServiceStub struct {
-	ApplicationService
+	ProjectApplication
+	MembershipApplication
+	ChapterApplication
+	TemplateApplication
+	ChangeSetApplication
 	actor             Actor
 	called            bool
 	project           Project
@@ -270,7 +274,7 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 	sources := &sourceApplicationServiceStub{err: &DeniedAssetsError{
 		Denied: []evidence.DeniedAsset{{AssetID: "asset-private", Reason: evidence.DenyNotAuthorized}},
 	}}
-	handler, err := NewHandler(HandlerDependencies{Sources: sources, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	handler, err := NewHandler(contextPorts(&applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}, sources))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -311,7 +315,7 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -338,7 +342,7 @@ func TestHandlerMapsTransportNeutralSaveSpecResult(t *testing.T) {
 		Project:  Project{ID: "project-1", SpecRevision: 1, ProjectVersion: 2},
 		Replayed: true,
 	}}
-	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -376,7 +380,7 @@ func TestHandlerMapsTransportNeutralCreateProjectResult(t *testing.T) {
 	service := &createProjectApplicationStub{result: CreateProjectResult{
 		Project: Project{ID: "project-1", Name: "typed project", Status: "draft"},
 	}}
-	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -415,7 +419,7 @@ func TestHandlerMapsTransportNeutralDraftCandidateResult(t *testing.T) {
 		Candidate: DraftCandidate{ID: "candidate-1", ProjectID: "project-1", Title: "typed candidate", Content: "candidate body"},
 		Replayed:  true,
 	}}
-	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -454,7 +458,7 @@ func TestHandlerMapsTransportNeutralProjectManagementResults(t *testing.T) {
 		projectResult:  ProjectMutationResult{Project: Project{ID: "project-1", ProjectVersion: 2}},
 		transferResult: OwnerTransferResult{Transfer: OwnerTransfer{ID: "transfer-1", Status: "pending"}},
 	}
-	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -500,7 +504,7 @@ func TestHandlerMapsTransportNeutralChapterAndChangeSetResults(t *testing.T) {
 		committed:   CommittedChapterVersion{ChapterVersionID: "version-1"},
 		changeSet:   ChangeSet{ID: "change-1", ProjectID: "project-1", Status: "assessed"},
 	}
-	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -542,7 +546,7 @@ func TestHandlerMapsTransportNeutralChapterAndChangeSetResults(t *testing.T) {
 func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{templateCopy: ProjectTemplateCopy{ProjectID: "project-1", Version: 1, Status: "draft"}}
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -591,11 +595,25 @@ func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	}
 }
 
-func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
+// The template RuleSet binding belongs to the template context, so it must
+// reach the template port and no other.
+//
+// The legacy read/write split is retired: the binding used to be dispatched
+// through the write half of a read/write pair. What the port model now
+// guarantees is the same thing one level up — an operation reaches the port
+// of the context that owns it.
+func TestBindTemplateCopyRuleSetUsesTheTemplatePort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	read := &applicationServiceStub{}
-	write := &applicationServiceStub{}
-	handler, err := NewHandler(HandlerDependencies{Read: read, Write: write, Sources: emptySourcesStub{}})
+	template := &applicationServiceStub{}
+	projects := &applicationServiceStub{}
+	handler, err := NewHandler(HandlerDependencies{
+		Projects:    projects,
+		Members:     projects,
+		Chapters:    projects,
+		TemplateApp: template,
+		ChangeSets:  projects,
+		Sources:     emptySourcesStub{},
+	})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -608,14 +626,16 @@ func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
 	request.Header.Set("Idempotency-Key", "template-ruleset-bind-port")
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !write.bindRuleSetCalled || read.bindRuleSetCalled {
-		t.Fatalf("binding must use write port: status=%d read=%v write=%v body=%s", response.Code, read.bindRuleSetCalled, write.bindRuleSetCalled, response.Body.String())
+	if response.Code != http.StatusOK || !template.bindRuleSetCalled || projects.bindRuleSetCalled {
+		t.Fatalf("binding must use the template port: status=%d projects=%v template=%v body=%s", response.Code, projects.bindRuleSetCalled, template.bindRuleSetCalled, response.Body.String())
 	}
 }
 
 func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler, err := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader(), Sources: emptySourcesStub{}, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	deps := contextPorts(&applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}, emptySourcesStub{})
+	deps.Templates = delivery.NewFixedTemplateReader()
+	handler, err := NewHandler(deps)
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -653,7 +673,9 @@ func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
 
 func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler, err := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader(), Sources: emptySourcesStub{}, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	deps := contextPorts(&applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}, emptySourcesStub{})
+	deps.Templates = delivery.NewFixedTemplateReader()
+	handler, err := NewHandler(deps)
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -684,7 +706,7 @@ func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
 func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{}
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -728,7 +750,7 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{applyStatus: http.StatusConflict}
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
@@ -759,7 +781,7 @@ func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 func TestReassessChangeSetRejectsAnyRequestBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{}
-	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}

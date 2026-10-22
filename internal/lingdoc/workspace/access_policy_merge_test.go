@@ -36,7 +36,7 @@ func TestSharedPolicyRetainsEmptySourceProvenanceAndRevokeError(t *testing.T) {
 	proof := &core.ProjectProvenanceSnapshot{ProjectID: "project", SpecRevision: 2, ContextRevision: 3, TemplateCopyVersion: 4, Digest: "digest", Fields: []core.SpecProvenanceRef{{FieldKey: "topic", ValueHash: "hash", PinID: "pin"}}}
 	frozen := delivery.DeliveryInput{ProjectID: "project", ProjectVersion: 5, SpecRevision: 2, Spec: map[string]string{"topic": "synthetic"}, SpecProvenance: proof, TemplateCopyID: "copy", TemplateCopyVersion: 4, TemplateCopyContentHash: "copy-hash"}
 	current := &mergeDeliveryCurrentness{}
-	p := &accessPolicy{projects: &g2GenerationCurrentWorkspace{}, reader: mergeDeliveryReader{input: candidateadoption.WorkspaceDeliveryInput{ProjectID: "project", ProjectVersion: 5, SpecRevision: 2, ContextRevision: 3, TemplateCopyID: "copy", TemplateCopyVersion: 4, TemplateCopyContentHash: "copy-hash"}}, sources: current}
+	p := &accessPolicy{authorizer: &generationContextWorkspaceStub{}, projects: &generationContextWorkspaceStub{}, context: &generationContextWorkspaceStub{}, reader: mergeDeliveryReader{input: candidateadoption.WorkspaceDeliveryInput{ProjectID: "project", ProjectVersion: 5, SpecRevision: 2, ContextRevision: 3, TemplateCopyID: "copy", TemplateCopyVersion: 4, TemplateCopyContentHash: "copy-hash"}}, sources: current}
 	actor := LingDocAccessContext{TenantID: 1, UserID: "owner", ProjectID: "project"}
 	ok, err := p.Current(context.Background(), actor, delivery.AccessCurrentnessInput(frozen))
 	require.NoError(t, err)
@@ -56,12 +56,12 @@ func TestSharedPolicyRetainsEmptySourceProvenanceAndRevokeError(t *testing.T) {
 }
 
 func TestSharedPolicyUsesProjectCopyRuleHashForGeneration(t *testing.T) {
-	project := g2BoundProject()
+	project := boundProject()
 	_, hash, err := generationBoundTemplate(project, nil)
 	require.NoError(t, err)
-	w := &g2GenerationCurrentWorkspace{project: project, context: core.GenerationContext{ProjectID: "project", ChapterID: "chapter", SpecRevision: 1, TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion}}
+	w := &generationContextWorkspaceStub{project: project, context: core.GenerationContext{ProjectID: "project", ChapterID: "chapter", SpecRevision: 1, TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion}}
 	gateway := &assetGatewayStub{result: &evidence.ResolveResult{Allowed: []evidence.Asset{{ID: "asset", AssetRevision: 1}}}}
-	p := &accessPolicy{projects: w, reader: mergeDeliveryReader{}, gateway: gateway, templates: core.ContractDemoTemplate{}}
+	p := &accessPolicy{authorizer: w, projects: w, context: w, reader: mergeDeliveryReader{}, gateway: gateway, templates: core.ContractDemoTemplate{}}
 	input := access.CurrentnessInput{Kind: access.GenerationInput, ProjectID: "project", ChapterID: "chapter", SpecRevision: 1, TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion, RulesetHash: hash, TemplateCopyID: project.TemplateCopy.ID, TemplateCopyVersion: 3, TemplateCopyContentHash: project.TemplateCopy.ContentHash, ContextRevision: 7, AssetVersions: []access.AssetVersion{{AssetID: "asset", Revision: 1}}}
 	actor := LingDocAccessContext{TenantID: 1, UserID: "owner", ProjectID: "project"}
 	current, err := p.Current(context.Background(), actor, input)

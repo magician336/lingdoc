@@ -25,44 +25,48 @@ type LingDocAccessContext = access.LingDocAccessContext
 // delivery reader provide the live revision checks. No use case reconstructs
 // these rules independently.
 func NewAccessPolicy(
-	projects ApplicationService,
+	projectPorts ProjectPorts,
 	runtime *SourceRuntime,
 	reader candidateadoption.DeliveryInputReader,
 ) AccessPolicy {
-	if projects == nil || runtime == nil || reader == nil {
+	if projectPorts.Authorizer == nil || projectPorts.Projects == nil || projectPorts.Context == nil || runtime == nil || reader == nil {
 		return nil
 	}
 	currentness, _ := runtime.DeliveryInputBuilder().(DeliveryCurrentness)
 	return &accessPolicy{
-		projects:  projects,
-		gateway:   runtime.generationGateway(),
-		templates: runtime.templates,
-		reader:    reader,
-		sources:   currentness,
+		authorizer: projectPorts.Authorizer,
+		projects:   projectPorts.Projects,
+		context:    projectPorts.Context,
+		gateway:    runtime.generationGateway(),
+		templates:  runtime.templates,
+		reader:     reader,
+		sources:    currentness,
 	}
 }
 
 type accessPolicy struct {
-	projects  ApplicationService
-	gateway   evidence.AssetGateway
-	templates core.TemplateReader
-	reader    candidateadoption.DeliveryInputReader
-	sources   DeliveryCurrentness
+	authorizer core.CapabilityAuthorizer
+	projects   core.ProjectApplication
+	context    core.GenerationContextApplication
+	gateway    evidence.AssetGateway
+	templates  core.TemplateReader
+	reader     candidateadoption.DeliveryInputReader
+	sources    DeliveryCurrentness
 }
 
 func (p *accessPolicy) Authorize(ctx context.Context, accessContext LingDocAccessContext, capability string) error {
-	if p == nil || p.projects == nil || accessContext.UserID == "" || accessContext.ProjectID == "" {
+	if p == nil || p.authorizer == nil || accessContext.UserID == "" || accessContext.ProjectID == "" {
 		return errors.New("lingdoc access policy is unavailable")
 	}
 	actor := generationWorkspaceActor(ctx, generation.Actor{TenantID: accessContext.TenantID, UserID: accessContext.UserID, Role: types.TenantRole(accessContext.Role)})
 	if capability == "contributor" {
 		capability = "delivery-read"
 	}
-	return p.projects.Authorize(ctx, actor, accessContext.ProjectID, capability)
+	return p.authorizer.Authorize(ctx, actor, accessContext.ProjectID, capability)
 }
 
 func (p *accessPolicy) Current(ctx context.Context, accessContext LingDocAccessContext, input access.CurrentnessInput) (bool, error) {
-	if p == nil || p.projects == nil || p.reader == nil || accessContext.UserID == "" || input.ProjectID == "" || input.ProjectID != accessContext.ProjectID {
+	if p == nil || p.context == nil || p.reader == nil || accessContext.UserID == "" || input.ProjectID == "" || input.ProjectID != accessContext.ProjectID {
 		return false, errors.New("lingdoc access policy is unavailable")
 	}
 	switch input.Kind {
@@ -80,7 +84,7 @@ func (p *accessPolicy) AuthorizeHumanGeneration(ctx context.Context) error {
 }
 
 func (p *accessPolicy) generationCurrent(ctx context.Context, a LingDocAccessContext, input access.CurrentnessInput) (bool, error) {
-	checker := generationCurrentnessChecker{workspace: p.projects, projectCopies: p.projects, gateway: p.gateway, templates: p.templates}
+	checker := generationCurrentnessChecker{workspace: p.context, projectCopies: p.projects, gateway: p.gateway, templates: p.templates}
 	versions := make([]candidateadoption.AssetVersion, 0, len(input.AssetVersions))
 	for _, v := range input.AssetVersions {
 		versions = append(versions, candidateadoption.AssetVersion{AssetID: v.AssetID, AssetRevision: v.Revision})
@@ -169,8 +173,8 @@ func (p *accessPolicy) deliveryCurrent(ctx context.Context, accessContext LingDo
 // The legacy checker is also used by isolated adapters; production calls it
 // only through accessPolicy, retaining one currentness implementation.
 type generationCurrentnessChecker struct {
-	projectCopies ApplicationService
-	workspace     ApplicationService
+	projectCopies core.ProjectApplication
+	workspace     core.GenerationContextApplication
 	gateway       evidence.AssetGateway
 	templates     core.TemplateReader
 }

@@ -1,0 +1,83 @@
+{
+  "mode": "real",
+  "note": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界。PostgreSQL 侧的 action 列一直是 varchar(64)（写入时拒超长值，SQLSTATE 22001），SQLite 侧此前是无界 TEXT —— 同一类缺陷在开发机上完全看不见（#253 的「合法请求得到 500」只在 PG 上现形）。本轮让两种方言对同一条规则表达一致：SQLite 表重建加 CHECK (length(action) <= 64)，PostgreSQL 加同名显式约束 ck_lingdoc_project_audits_action_len。盘点结论：两种方言的真实库里都没有超 64 字符的行，因此不需要清理；迁移里对旧格式超长行的原地规范化是防御性分支。",
+  "head": "70ce053b",
+  "base": "058637c4",
+  "passed": [
+    {
+      "id": "盘点：两种方言现存审计行的动作长度分布",
+      "status": "passed",
+      "evidence": "PostgreSQL（本机容器 WeKnora-postgres-dev 的 WeKnora 库，真实数据 5628 行）：最长 64 字符，超 64 的行 0 行，长度分布 13:32 / 14:93 / 15:12 / 16:194 / 17:615 / 18:1558 / 19:894 / 20:615 / 21:280 / 22:1 / 23:10 / 24:177 / 25:494 / 27:16 / 28:101 / 29:1 / 56:272 / 58:252 / 64:11 —— 其中 64 字符的 11 行全是 authorization.issue-resolve:<uuid>（旧形状）。SQLite（本机验收跑出来的真实库 .acceptance-257/lingdoc-41234.sqlite，54 行）：最长 28 字符，超 64 的行 0 行。两边都没有需要清理的超长行。"
+    },
+    {
+      "id": "盘点结论决定了两件事：不需要清理；边界必须含 64",
+      "status": "passed",
+      "evidence": "真实 PG 数据里有 11 行恰好 64 字符的旧形状行，所以边界取 <= 64（含）而不是 < 64 —— 用 < 64 会把这 11 行历史拒掉。旧形状行在 PG 上真实存在 535 行（长度 56 / 58 / 64），所以 #282 的「新旧格式并存」不是假设。"
+    },
+    {
+      "id": "SQLite 侧：审计分类列获得与 PostgreSQL 等价的有界性",
+      "status": "passed",
+      "evidence": "migrations/sqlite/000046_lingdoc_audit_action_bounds.up.sql：按仓内既有模板（000043 的 CREATE _next → INSERT SELECT → DROP → RENAME → CREATE INDEX）重建 lingdoc_project_audits，把 action 列为 action TEXT NOT NULL CHECK (length(action) <= 64)。搬数据时把旧形状的超长行原地规范化（截到第一个 ':' 之前），完整能力留在 details_json.capability —— 旧写入方（aa9bc394 的父提交）本来就把它写进了 details，所以规范化不丢信息。无法规范化的超长行让迁移响亮失败，不静默截断。"
+    },
+    {
+      "id": "PostgreSQL 侧：获得等价的显式约束",
+      "status": "passed",
+      "evidence": "migrations/versioned/000125_lingdoc_audit_action_bounds.up.sql：ALTER TABLE lingdoc_project_audits ADD CONSTRAINT ck_lingdoc_project_audits_action_len CHECK (length(action) <= 64)。varchar(64) 已经保证没有历史行违反它，所以这条 ADD CONSTRAINT 不会失败；加它是为了让两种方言把同一条规则写在同一个名字下。规则按字符数计（length 与 varchar 的计数口径一致）。"
+    },
+    {
+      "id": "迁移可升可降，up / down 齐备",
+      "status": "passed",
+      "evidence": "两个方向各 4 个文件（sqlite 000046 up/down、versioned 000125 up/down），scripts/check_migration_pairs.sh 通过：validated migration pairs: migrations/versioned (latest 000125_lingdoc_audit_action_bounds) / migrations/sqlite (latest 000046_lingdoc_audit_action_bounds)。SQLite 的 down 把列变回无界 TEXT 并原样保留行；PG 的 down 只去掉显式约束，varchar(64) 不变（它是 PostgreSQL 侧一直存在的边界）。"
+    },
+    {
+      "id": "迁移契约测试跟上新版本号",
+      "status": "passed",
+      "evidence": "internal/database/migration_sqlite_versioned_schema_test.go:91 的 expectedSQLiteMigrationVersion 由 45 提到 46；go test ./internal/database/... 全绿（2.573s）。该文件同时断言表集合不变 —— 本轮是重建既有表、不新增表，所以表清单不用改。"
+    },
+    {
+      "id": "双库迁移演练：真实的迁移前数据库上跑一遍",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/audit_action_migration_rehearsal_test.go 三条用例：① SQLite 先把生产迁移链跑到 000045，插入真实旧形状行 authorization.issue-dismiss-blocking:<uuid>（73 字符），再跑 000046 —— 该行被规范化成 authorization.issue-dismiss-blocking，details_json 里的 capability 仍在（资源不丢），之后超长写入被拒；② PostgreSQL 先把 versioned 链跑到 000124，插入同一行 —— **写不进去**（这正是 #253 的缺陷面），跑 000125 后显式约束存在；③ 未处置的超长行（不是旧授权形状）让迁移以 CHECK constraint failed 响亮失败，不静默截断。up → down → up 往返也已断言：down 后列变宽（超长写入被接受），up 后边界恢复。"
+    },
+    {
+      "id": "守护测试：同一个超长分类在两种方言上都被拒绝写入",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/audit_action_bounds_test.go：TestSQLiteAuditCategoryColumnRejectsOverLongAction 与 TestPostgresAuditCategoryColumnRejectsOverLongAction 都断言三件事 —— 恰好 64 字符的分类**被接受**（外键与其它列都合法，失败只可能来自边界本身），65 字符**被拒绝**，拒绝后表里没有超长行（不是截断、不是静默接受）。"
+    },
+    {
+      "id": "守护测试：现有写入路径不回归",
+      "status": "passed",
+      "evidence": "同两条用例先跑真实写入路径：SQLite 用 testStore（生产迁移链快照，已含 28 条迁移到 000046）+ CreateProject + Authorize，落库一条 authorization.read 审计行；PostgreSQL 用独立 schema + 生产 versioned 迁移链 + 真实 workspacecore Service，同路径落库。两种方言上都断言该行的 action / actor / target 完整。"
+    },
+    {
+      "id": "红灯：测试能在错误实现下失败",
+      "status": "passed",
+      "evidence": "临时把 SQLite 迁移里的 CHECK 去掉后重跑：FAIL —— audit_action_bounds_test.go:68: SQLite accepted an over-long audit category。约束已恢复。"
+    },
+    {
+      "id": "受影响包的回归",
+      "status": "passed",
+      "evidence": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/candidateadoption/... ./internal/router/... ./internal/database/... -count=1：ok 35.537s / ok 0.793s / ok 2.734s / ok 3.800s，exit 0。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "前端测试",
+      "status": "not_run",
+      "reason": "本票不改前端代码（只加 SQLite / PostgreSQL 迁移与 Go 侧的守护测试）；前端由 CI 的 Frontend 工作流覆盖。"
+    }
+  ],
+  "notes": [
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。",
+    "规格轴评审的加强项已落实：① PG 侧补了「处置审计照常落库」的断言（`internal/lingdoc/workspacecore/postgres_issue_disposition_test.go`）——授权审计与处置审计是同一列上的两条写入路径，两条都要在 PostgreSQL 上落库；SQLite 侧由既有 `g4_issue_disposition_test.go` 的「disposition audit count = 1」覆盖。② 盘点口径演练：两端的超 64 行都是 0 行，所以「列出所有超过 64 字符的行（含项目与时间）」在本次是空集；为了让这个口径本身可核对，证据里把**压线**的 11 行（长度恰好 64）按项目与时间列了出来 —— 它们正是边界取值必须含 64 的那批行。③ 生产库盘点按门禁词表改记 **N/A**（没有真实生产数据库 ⇒ 验收前提不存在，记 NOT RUN 会挡住 Ready）。复跑：go test 四包 ok（37.877s / 0.854s / 2.465s / 3.617s，含真实 PostgreSQL）、go test -race 三包 ok、go vet exit 0、gofmt 干净。"
+  ],
+  "n_a": [
+    {
+      "id": "生产数据库上的盘点",
+      "status": "n/a",
+      "reason": "按 development-rules 的 N/A 定义：当前没有真实生产数据库，这一项的**验收前提不存在**，记 N/A 而不是 NOT RUN（NOT RUN 会挡住 Ready）。盘点已在两个可达的真实库上完成（PostgreSQL 容器库 5628 行、SQLite 验收库 54 行），生产库按同一口径自查一次即可：统计 action 长度分布、列出超过 64 字符的行（含项目与时间）。"
+    }
+  ]
+}

@@ -180,7 +180,7 @@ func TestSelectedRewriteRecordsEachRunMode(t *testing.T) {
 				BodyMarkdown: selected + " context", SourceIDs: []string{"existing"},
 			}}
 			model := &rewriteModeModel{mode: string(mode)}
-			service := NewSelectedRewriteService(db, workspace, &inheritedRewriteSources{}, model)
+			service := NewSelectedRewriteService(db, workspace, nil, &inheritedRewriteSources{}, model)
 			require.NoError(t, service.store.AutoMigrate(context.Background()))
 			input := SelectedRewriteRequest{
 				ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
@@ -200,7 +200,7 @@ func TestSelectedRewriteRecordsEachRunMode(t *testing.T) {
 func rewriteHTTPRouter(t *testing.T, service SelectedRewriteApplication) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	deps := HandlerDependencies{Service: &applicationServiceStub{}, Sources: emptySourcesStub{}}
+	deps := contextPorts(&applicationServiceStub{}, emptySourcesStub{})
 	deps.WithSelectedRewrites(service)
 	handler, err := NewHandler(deps)
 	require.NoError(t, err)
