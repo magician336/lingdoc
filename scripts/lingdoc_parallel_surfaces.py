@@ -166,6 +166,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/", "dir"),
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review_test.go", "file"),
             # The validity normalization renames the selected rewrite
             # candidate's own status word list to the candidate layer's
             # validity enumeration, so the assertions that pinned the old
@@ -193,6 +195,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/database/migration_generation_digest_version_test.go", "file"),
             ("internal/database/migration_rewrite_validity_legacy_test.go", "file"),
+            ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),

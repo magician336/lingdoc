@@ -44,6 +44,37 @@ func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
 	require.Len(t, generation, 3, "生成管道做生成、转写与提纲三个动作")
 }
 
+// TestTheReviewPipelineDeclaresTheReviewAction 断言评审管道声明语言评审。
+//
+// 评审是**第三条**路径：生成管道与选段管道都以候选收尾，评审以一份报告收尾。
+// 报告不是候选，所以它不归那两条管道里的任何一条。
+func TestTheReviewPipelineDeclaresTheReviewAction(t *testing.T) {
+	review, err := writingaction.ActionsFor(writingaction.PipelineReview)
+	require.NoError(t, err)
+	require.Equal(t, []writingaction.Action{writingaction.ActionReview}, review,
+		"评审管道只做语言评审")
+	require.Len(t, review, 1, "评审管道只实现一个动作")
+
+	// 评审既不做整章也不做选段之外的范围：它两种范围都做。
+	scopes, err := writingaction.ScopesFor(writingaction.PipelineReview)
+	require.NoError(t, err)
+	require.True(t, slices.Contains(scopes, writingaction.ScopeChapter), "评审管道做整章")
+	require.True(t, slices.Contains(scopes, writingaction.ScopeSection), "评审管道做选段")
+
+	// 评审管道的默认动作就是评审：请求不必点名它。
+	action, err := writingaction.DefaultActionFor(writingaction.PipelineReview)
+	require.NoError(t, err)
+	require.Equal(t, writingaction.ActionReview, action)
+
+	// 另外两条管道不做评审：评审既不产生候选，也不走它们那条落地路径。
+	for _, pipeline := range []writingaction.Pipeline{writingaction.PipelineGeneration, writingaction.PipelineRewrite} {
+		actions, err := writingaction.ActionsFor(pipeline)
+		require.NoError(t, err)
+		require.False(t, slices.Contains(actions, writingaction.ActionReview),
+			"管道 %q 不做语言评审", pipeline)
+	}
+}
+
 // TestUnknownPipelineHasNoActions 断言未知管道没有动作可问。
 func TestUnknownPipelineHasNoActions(t *testing.T) {
 	_, err := writingaction.ActionsFor(writingaction.Pipeline("polish"))

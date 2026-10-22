@@ -419,6 +419,16 @@ func (h *Handler) Register(routes RouteGroups) {
 		routes.Read.GET("/projects/:projectId/rewrite-candidates/:candidateId", h.getSelectedRewrite)
 		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates", h.createSelectedRewrite)
 		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply", h.applySelectedRewrite)
+		// The review endpoints exist when the rewrite capability also speaks
+		// the review path: a language review produces a report, not a
+		// candidate, and it is applied through its own entry point.
+		if reviewer, ok := h.rewrites.(ReviewReportApplication); ok {
+			routes.Write.POST("/projects/:projectId/chapters/:chapterId/review-reports", h.createReviewReport)
+			routes.Read.GET("/projects/:projectId/review-reports/:reportId", h.getReviewReport)
+			routes.Write.POST("/projects/:projectId/review-reports/:reportId/reject", h.rejectReviewReport)
+			routes.Write.POST("/projects/:projectId/chapters/:chapterId/review-reports/:reportId/apply", h.applyReviewReport)
+			_ = reviewer
+		}
 	}
 }
 
@@ -1130,6 +1140,106 @@ func (h *Handler) applySelectedRewrite(c *gin.Context) {
 		return
 	}
 	workingCopy, replayed, err := h.rewrites.Apply(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), c.Param("candidateId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, workingCopy, replayed)
+}
+
+// createReviewReport 生成一份语言评审报告。
+//
+// 报告不是候选：它不进候选表，也不进采纳那条路。用户预览之后显式确认，才由
+// applyReviewReport 把它写进工作副本。
+func (h *Handler) createReviewReport(c *gin.Context) {
+	reviewer, ok := h.rewrites.(ReviewReportApplication)
+	if !ok {
+		sendError(c, ErrRewriteUnavailable)
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input ReviewReportRequest
+	if !decodeBody(c, &input) {
+		return
+	}
+	report, err := reviewer.CreateReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusCreated, report, false)
+}
+
+// getReviewReport 读回一份评审报告（预览）。
+func (h *Handler) getReviewReport(c *gin.Context) {
+	reviewer, ok := h.rewrites.(ReviewReportApplication)
+	if !ok {
+		sendError(c, ErrRewriteUnavailable)
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	report, err := reviewer.GetReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("reportId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, report, false)
+}
+
+// rejectReviewReport 拒绝一份评审报告：工作副本一个字符都不动。
+func (h *Handler) rejectReviewReport(c *gin.Context) {
+	reviewer, ok := h.rewrites.(ReviewReportApplication)
+	if !ok {
+		sendError(c, ErrRewriteUnavailable)
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	report, err := reviewer.RejectReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("reportId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, report, false)
+}
+
+// applyReviewReport 把一份评审报告显式应用到工作副本。
+func (h *Handler) applyReviewReport(c *gin.Context) {
+	reviewer, ok := h.rewrites.(ReviewReportApplication)
+	if !ok {
+		sendError(c, ErrRewriteUnavailable)
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input ApplyReviewInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	workingCopy, replayed, err := reviewer.ApplyReviewReport(c.Request.Context(), actor, c.Param("projectId"),
+		c.Param("chapterId"), c.Param("reportId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

@@ -29,6 +29,13 @@ const (
 	// 它叫「选段管道」而不是「改写管道」：一条管道可以实现多个动作，动作之间
 	// 的差别由词汇包给出，执行方不解释。
 	PipelineRewrite Pipeline = "rewrite"
+	// PipelineReview 是评审管道：它实现「语言评审」这一个动作。
+	//
+	// 它是**第三条**路径，理由是它的产出形状不同：生成管道与选段管道都以候选
+	// 收尾，评审以一份报告收尾——报告不是候选，没有可采纳物，应用它的是另一个
+	// 入口（ApplyReview）。把评审塞进那两条管道里的任何一条，都要么逼它变成
+	// 候选，要么把那条管道的工作单位搅浑。
+	PipelineReview Pipeline = "review_report"
 )
 
 // pipelineSpec 是一个管道的声明。
@@ -63,6 +70,11 @@ var pipelineSpecs = map[Pipeline]pipelineSpec{
 		actions:       []Action{ActionRewrite, ActionContinue, ActionCompress, ActionExpand, ActionTransform},
 		scopes:        []Scope{ScopeSection},
 		defaultAction: ActionRewrite,
+	},
+	PipelineReview: {
+		actions:       []Action{ActionReview},
+		scopes:        []Scope{ScopeChapter, ScopeSection},
+		defaultAction: ActionReview,
 	},
 }
 

@@ -155,6 +155,12 @@ type SelectedRewritePrompt struct {
 	ContextBefore     string
 	ContextAfter      string
 	Sources           []evidence.Source
+	// Produce 是这次执行的产出形状：候选正文，还是评审意见。
+	//
+	// 旧路径下它为空：旧路径不记录动作，模型适配器按「改写」那一种提示语
+	// 说话。动作路径下它来自执行计划，模型适配器据此换一套提示语——评审
+	// 要的是意见清单，不是改好的正文。
+	Produce string
 }
 
 type SelectedRewriteOutput struct {

@@ -61,6 +61,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_g3_records",
 	"lingdoc_g6_records",
 	"lingdoc_selected_rewrites",
+	"lingdoc_review_reports",
 	"lingdoc_ruleset_metrics",
 	"lingdoc_g3_roadmap_edit_sessions",
 	"lingdoc_g3_route_edges",
@@ -91,7 +92,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000125
 }
 
-const expectedSQLiteMigrationVersion = 49
+const expectedSQLiteMigrationVersion = 50
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
