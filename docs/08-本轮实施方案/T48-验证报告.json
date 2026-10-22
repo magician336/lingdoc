@@ -37,7 +37,7 @@
     {
       "id": "AC-48-07 前端文件名符合单一约定",
       "status": "passed",
-      "evidence": "本轮把 `.less` 纳入登记表的 CODE_EXTENSIONS：样式表也是源文件，它的文件名和引用它的组件遵守同一条规则。此前 `.less` 不在白名单里，造成 `chatCitations.test.mjs` 测 `chat-citations.less` 的不对称。17 个 kebab 样式资源改名（dropdown-menu.less → dropdownMenu.less 等），50 个文件的引用同步（含正则字面量里的转义写法 chat-timeline-loading\\.less）。规则侧：frontend_kebab 对 `.less` 生效，frontend_camel / frontend_vue_case 仍只管 ts/js/vue。活树自检 exit 0，棘轮仍 0/0/0。"
+      "evidence": "本轮把 `.less` 纳入登记表的 CODE_EXTENSIONS：样式表也是源文件，它的文件名和引用它的组件遵守同一条规则。此前 `.less` 不在白名单里，造成 `chatCitations.test.mjs` 测 `chat-citations.less` 的不对称。17 个 kebab 样式资源改名（dropdown-menu.less → dropdownMenu.less 等），52 个前端文件的引用同步（含正则字面量里的转义写法 chat-timeline-loading\\.less）。规则侧：frontend_kebab 对 `.less` 生效，frontend_camel / frontend_vue_case 仍只管 ts/js/vue。活树自检 exit 0，棘轮仍 0/0/0。"
     },
     {
       "id": "AC-48-08 对外契约零变化",
