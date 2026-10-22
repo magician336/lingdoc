@@ -233,6 +233,37 @@ class TicketParsingTests(unittest.TestCase):
         self.assertEqual(
             ownership.extract_declared_paths(body), ("internal/a.go",))
 
+    def test_a_shorthand_is_found_and_reported(self):
+        """A brace shorthand names several files; it cannot be compared.
+
+        It has to be reported rather than skipped: a shorthand that is
+        quietly ignored is a declaration the check cannot see.
+        """
+        body = """## 文件所有权
+
+- `migrations/sqlite/000052_thing.{up,down}.sql`
+- `internal/a.go`
+"""
+        self.assertEqual(
+            ownership.find_shorthand_paths(body),
+            ("migrations/sqlite/000052_thing.{up,down}.sql",),
+        )
+
+    def test_a_shorthand_is_drift(self):
+        original = ownership._gh
+        try:
+            ownership._gh = lambda *args: (0, _body_json(
+                "## 文件所有权\n\n"
+                "- `migrations/sqlite/000052_thing.{up,down}.sql`\n"))
+            faces = _faces(_face(issue=900, status="claimed",
+                                  claimed_by="someone",
+                                  paths=("internal/ok.go",)))
+            result = ownership.compare_ticket_to_registry(faces)
+        finally:
+            ownership._gh = original
+        self.assertEqual(len(result.drifts), 1)
+        self.assertIn("shorthand", result.drifts[0].kind)
+
 
 class TicketDriftTests(unittest.TestCase):
     """An ownership collision is drift; an unrecorded path is not."""

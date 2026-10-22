@@ -92,6 +92,12 @@ _DECLARATION_ITEM = re.compile(
     re.MULTILINE,
 )
 
+#: The same, but the path may be a shorthand (``{up,down}`` or a glob).
+_DECLARATION_ITEM_ANY = re.compile(
+    r"^\s*[-*+]\s+`([A-Za-z0-9_./{}*,-]+)`",
+    re.MULTILINE,
+)
+
 #: The next heading after the ownership section ends it.
 _NEXT_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 
@@ -138,15 +144,35 @@ def extract_declared_paths(body: str) -> tuple[str, ...] | None:
     found: list[str] = []
     for match in _DECLARATION_ITEM.finditer(section):
         path = match.group(1)
-        # A brace expansion is a shorthand for several files; the registry
-        # records each file separately, so the shorthand cannot be compared
-        # one-to-one.  Such a path is left out and the ticket keeps its
-        # shorthand -- the check then reports it as unrecorded, which is the
-        # honest answer.
-        if "{" in path or "}" in path or "*" in path:
-            continue
         if path not in found:
             found.append(path)
+    return tuple(found)
+
+
+def find_shorthand_paths(body: str) -> tuple[str, ...]:
+    """The declared paths that are written as a shorthand.
+
+    A brace expansion (``000052_....{up,down}.sql``) or a glob names several
+    files at once, while the registry records each file separately.  Such a
+    declaration **cannot be compared one to one**, so it has to be written
+    out before the comparison means anything.
+
+    It is reported rather than skipped.  A shorthand that is quietly ignored
+    is a declaration the check cannot see -- and a declaration nobody checks
+    is exactly the kind that rots.
+    """
+    heading = _OWNERSHIP_HEADING.search(body)
+    if heading is None:
+        return ()
+    rest = body[heading.end():]
+    next_heading = _NEXT_HEADING.search(rest)
+    section = rest[:next_heading.start()] if next_heading else rest
+    found: list[str] = []
+    for match in _DECLARATION_ITEM_ANY.finditer(section):
+        path = match.group(1)
+        if any(token in path for token in ("{", "}", "*")):
+            if path not in found:
+                found.append(path)
     return tuple(found)
 
 
@@ -247,6 +273,17 @@ def compare_ticket_to_registry(
             skipped.append(f"#{face.issue} (no ownership section)")
             continue
         compared += 1
+
+        # A shorthand declaration cannot be compared one to one with the
+        # registry, so it is reported: it is a declaration the check cannot
+        # see, and a declaration nobody checks is one that rots.
+        shorthand = find_shorthand_paths(body)
+        if shorthand:
+            drifts.append(TicketDrift(
+                face.issue, face.name,
+                "ticket declares paths as a shorthand; write them out",
+                shorthand,
+            ))
 
         # What the other live faces own.  The overlap rule is the manifest's
         # own, so a directory claim covers the files inside it -- exactly the
