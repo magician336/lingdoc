@@ -22,6 +22,8 @@ func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
 		"选段管道做续写")
 	require.True(t, slices.Contains(selection, writingaction.ActionCompress),
 		"选段管道做压缩")
+	require.True(t, slices.Contains(selection, writingaction.ActionExpand),
+		"选段管道做扩展")
 
 	generation, err := writingaction.ActionsFor(writingaction.PipelineGeneration)
 	require.NoError(t, err)
