@@ -6,8 +6,8 @@
     "scope": "three_full_workflow_registrars_four_api_consumers_and_five_focused_workspace_handlers",
     "focused_workspace_operations": 5,
     "registered_operations": 95,
-    "frontend_calls": 94,
-    "frontend_calls_to_scoped_registrars": 79,
+    "frontend_calls": 95,
+    "frontend_calls_to_scoped_registrars": 80,
     "routes": [
       {
         "signature": "GET /discarded-projects",
@@ -1598,84 +1598,91 @@
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "listMemberDirectory",
-        "line": 39,
+        "line": 51,
         "body_mode": "none",
         "signature": "GET /projects/{}/members/directory"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "listMyProjectInvitations",
-        "line": 40,
+        "line": 52,
         "body_mode": "none",
         "signature": "GET /project-invitations"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "listProjectInvitations",
-        "line": 41,
+        "line": 53,
         "body_mode": "none",
         "signature": "GET /projects/{}/invitations"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "inviteProjectMember",
-        "line": 42,
+        "line": 54,
         "body_mode": "json",
         "signature": "POST /projects/{}/invitations"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "acceptProjectInvitation",
-        "line": 43,
+        "line": 55,
         "body_mode": "json",
         "signature": "POST /projects/{}/invitations/{}/accept"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "updateMemberAssignment",
-        "line": 44,
+        "line": 56,
         "body_mode": "json",
         "signature": "PUT /projects/{}/members/{}/assignment"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "changeMemberState",
-        "line": 45,
+        "line": 57,
         "body_mode": "json",
         "signature": "POST /projects/{}/members/{}/state"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "getCollaborationProject",
-        "line": 46,
+        "line": 58,
         "body_mode": "none",
         "signature": "GET /projects/{}"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "listOwnerTransfers",
-        "line": 47,
+        "line": 59,
         "body_mode": "none",
         "signature": "GET /projects/{}/owner-transfers"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
+        "function": "getOwnerAvailability",
+        "line": 60,
+        "body_mode": "none",
+        "signature": "GET /projects/{}/owner-availability"
+      },
+      {
+        "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "requestOwnerTransfer",
-        "line": 48,
+        "line": 61,
         "body_mode": "json",
         "signature": "POST /projects/{}/owner-transfer"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "acceptOwnerTransfer",
-        "line": 49,
+        "line": 62,
         "body_mode": "json",
         "signature": "POST /projects/{}/owner-transfer/{}/accept"
       },
       {
         "file": "frontend/src/api/lingdoc/collaboration.ts",
         "function": "rejectOwnerTransfer",
-        "line": 50,
+        "line": 63,
         "body_mode": "json",
         "signature": "POST /projects/{}/owner-transfer/{}/reject"
       },
