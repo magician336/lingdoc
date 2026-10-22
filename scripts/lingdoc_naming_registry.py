@@ -44,6 +44,38 @@ baseline in the same change that clears its own segment; ticket ``#370``
 finally drives it to zero, at which point the guard test judges every file by
 the full rule instead of by exemption.
 
+The three kinds of number
+-------------------------
+A number in the code layer is a defect in three different shapes, and the
+rules below say which shape they are:
+
+``project number`` (``g5``, ``G6CAS``)
+    The product line a piece of work came from.  Spec #48's first target.
+``task number`` (``t09``, ``T15_SCENARIO_IDS``)
+    The historical task pool ``T01``-``T16``.  The documentation layer keeps
+    those numbers on purpose; the code layer does not.
+``segment number`` (``seg3_context_ports.go``)
+    Spec #47's third segment.  It says which batch of work a file came from,
+    exactly like ``G5`` does, and it says nothing about what the file knows.
+
+A number may sit at the front of a name (``G2ActionExecutor``) or inside it
+(``verify_t09_test.go``).  Both are defects, and the rules below judge both.
+
+What the rules cover
+--------------------
+Three coverage holes used to sit between this registry and the repository,
+and the rules below close them:
+
+* A file whose **name** is clean but whose **body** defines numbered
+  identifiers was invisible: it broke no name-level rule, so it was never
+  declared, so no ticket owned it and nothing would ever rename those
+  identifiers.  The ``numbered_identifiers`` rule makes the body part of the
+  file's verdict.
+* The **segment number** (``seg3_``) was not a rule at all, so the files
+  named after Spec #47's third segment carried no ticket.
+* The **task number** (``t09``) was only caught at the front of a name, so
+  ``verify_t09_test.go`` slipped through.
+
 Terms
 -----
 ``legacy``
@@ -115,8 +147,20 @@ SKIPPED_DIRECTORIES = frozenset({
 #: A path segment (directory or file stem) that starts with a project number.
 NUMBERED_NAME = re.compile(r"^[gGtT]\d")
 
+#: A name that starts with a work-segment number (``seg3``).  Spec #47's
+#: third segment is a work coordinate like ``G5``: it says which batch of work
+#: the code came from, never what the code knows.  The rule covers the
+#: *prefix*, exactly like ``NUMBERED_NAME`` does for the project numbers.
+SEGMENT_NAME = re.compile(r"^[sS][eE][gG]\d")
+
 #: A ticket, spec or acceptance-criteria number inside a file name.
 TICKET_NUMBER = re.compile(r"(?<![A-Za-z0-9])(?:issue|spec|ac)\d+")
+
+#: A task-pool number (``t09``, ``T15``) inside a file name.  ``T01``-``T16``
+#: are the historical task numbers: the documentation layer keeps them on
+#: purpose, the code layer does not.  Same mouth as ``TICKET_NUMBER``: the
+#: number may sit anywhere in the name.
+TASK_NUMBER = re.compile(r"(?<![A-Za-z0-9])[tT]\d+")
 
 #: A test file suffix.  The stem of a test file names the module it exercises.
 TEST_SUFFIX = re.compile(r"\.(?:test|spec)\.[A-Za-z0-9]+$")
@@ -144,6 +188,17 @@ ACCEPTANCE_RIG_DIRS = (
     "scripts/lingdoc_mock/",
 )
 
+#: The rules that do not reach into the acceptance rigs.  A rig's vocabulary
+#: (``G3SnapshotProject``, ``T15_SCENARIO_IDS``) is the rig's own: a number
+#: there names a rig concept, not a product concept.  The rigs' grandfathered
+#: ``numbered`` entries stay declared -- they were recognised before this
+#: exemption existed -- but the rules added afterwards do not add rig debt.
+RIG_EXEMPT_RULES = frozenset({
+    "segment_number",
+    "task_number",
+    "numbered_identifiers",
+})
+
 #: Weak-semantic names: a "temporary" concept, an underscore-prefixed debug
 #: leftover, a bare "copy", or a leftover "legacy" marker.  Spec #48 batch 5.
 WEAK_NAME_PATTERNS = (
@@ -153,10 +208,14 @@ WEAK_NAME_PATTERNS = (
     re.compile(r"legacy"),
 )
 
-#: The file-level rules.  A file breaks a rule when its name does.
+#: The file-level rules.  A file breaks a rule when its name does, or when
+#: its body defines identifiers that carry a work number.
 FILE_DEFECTS = (
     "numbered",
+    "segment_number",
     "ticket_number",
+    "task_number",
+    "numbered_identifiers",
     "frontend_kebab",
     "frontend_vue_case",
     "frontend_camel",
@@ -249,6 +308,14 @@ RANDOM_FIXTURE_TOKENS = (
 # Unit test files are *not* excluded -- a helper named ``g2Fixture`` is
 # renamed together with the package it tests.
 #
+# The ``files`` count is the one that moved when the rule set grew.  The
+# registry originally only judged a file by its *name*, so a file whose name
+# was clean but whose body defined numbered identifiers was never declared
+# and no ticket owned it.  The ``numbered_identifiers`` rule recognises that
+# debt, and the ``segment_number`` / ``task_number`` rules recognise the two
+# number families the name rules had missed.  The baseline was raised once,
+# in the change that recognised the debt; from there it only goes down.
+#
 # For comparison, Spec #48 measured 56 exported and 210 private identifiers
 # over the whole code area by occurrence; the definition-site counts below are
 # the same measure made exact.
@@ -259,7 +326,7 @@ RATCHET_BASELINE = {
         "counted at definition sites; acceptance rigs excluded from the "
         "identifier counts"
     ),
-    "files": 186,
+    "files": 211,
     "exported_identifiers": 54,
     "private_identifiers": 205,
 }
@@ -402,7 +469,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 5,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 前端接口：研究任务、导入候选、来源锚点与证据选择",
     },
     {
@@ -591,7 +658,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 5,
         "legacy": True,
         "harness": False,
-        "defects": ("frontend_kebab", "frontend_vue_case"),
+        "defects": ("numbered_identifiers", "frontend_kebab", "frontend_vue_case"),
         "knowledge": "知识处理时间线：知识入库各阶段的进度与诊断展示",
     },
     {
@@ -897,7 +964,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 5,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "研究界面状态：研究查询、选区、来源固定与候选输入构造",
     },
     {
@@ -1351,6 +1418,24 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "规则集遗留路径端到端：遗留模板路径在重启后仍然生效（SQLite 与 Postgres）",
     },
     {
+        "path": "internal/container/lingdoc_ruleset_delivery_e2e_test.go",
+        "ticket": 364,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "规则集投递端到端验收：HTTP 导出落到库里并跨重启仍然读得回",
+    },
+    {
+        "path": "internal/evidence/verify_t09_test.go",
+        "ticket": 369,
+        "batch": 5,
+        "legacy": True,
+        "harness": True,
+        "defects": ("task_number", "numbered_identifiers"),
+        "knowledge": "资料服务验收报告：把绑定存储、原文读取与迁移表各条验收跑一遍并落盘",
+    },
+    {
         "path": "internal/handler/session/temporary_attachment_persist_test.go",
         "ticket": 369,
         "batch": 5,
@@ -1383,8 +1468,44 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "生成证据验收：卡在模型前或模型中变更不得发布候选、快照被篡改要在模型前停住、机器身份不得升级",
+    },
+    {
+        "path": "internal/lingdoc/workspace/agent_context.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "智能体行动执行器：把行动提案分派到保存规格、绑定资产等应用口",
+    },
+    {
+        "path": "internal/lingdoc/workspace/agent_model.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "智能体模型宿主：复用对话模型登记表与验收额度账本回答一次提问",
+    },
+    {
+        "path": "internal/lingdoc/workspace/agent_model_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "智能体模型验收用例：同意、输出与超时账本三条边界的断言",
+    },
+    {
+        "path": "internal/lingdoc/workspace/assets_http_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "来源路由的 HTTP 验收：挂上路由后状态码与响应体仍合领域判据",
     },
     {
         "path": "internal/lingdoc/workspace/g1_provenance_oneconn_test.go",
@@ -1392,7 +1513,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "单连接来源验收：回放须复核历史来源、人工同值改写不得抹掉来源固定",
     },
     {
@@ -1401,7 +1522,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 全量 HTTP 路由：注册 Agent 全量接口与统一错误回写",
     },
     {
@@ -1410,7 +1531,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "生成证据授权：人工生成与章节生成的授权、证据校验与证据约束",
     },
     {
@@ -1419,7 +1540,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "生成证据验收：缺模型同意或章节写入不得调模型、只许使用选定的不可变来源",
     },
     {
@@ -1446,7 +1567,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 表面措辞：Agent 这一侧对四类失败的自有措辞与状态码",
     },
     {
@@ -1464,7 +1585,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "治理全量 HTTP 路由：注册治理全量接口与「需人工决策」的错误形态",
     },
     {
@@ -1473,7 +1594,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "治理全量 HTTP 验收：当前权限、严格请求体、重放登记与机器不得替人决策",
     },
     {
@@ -1482,7 +1603,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "权限 HTTP 契约验收：代表性 HTTP 规格契约与处理器组合的上下文端口",
     },
     {
@@ -1504,12 +1625,156 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "knowledge": "机器只读 HTTP 验收：保留认证主体与最小响应形状、缺依赖一律失败关闭",
     },
     {
+        "path": "internal/lingdoc/workspace/research_adapter.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "调研适配器：把检索、原文读取与来源核验转给现有检索服务",
+    },
+    {
+        "path": "internal/lingdoc/workspace/research_adapter_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "调研适配器替身：授权、资产、来源检索、原文与网页搜索的五个假端口",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_full_workflow_ports.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number",),
+        "knowledge": "全流程路由的成员、复核与生命周期三门窄口束",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_full_workflow_ports_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "全流程守卫窄口装配替身：把聚合体接到交付、溯源、影响等六个窄口",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_g2_ports.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number", "numbered_identifiers"),
+        "knowledge": "G2 路由的九门上下文束：把这条面要用的窄口写在一处清单里",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_g2_ports_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number", "numbered_identifiers"),
+        "knowledge": "G2 路由窄口装配替身：测试侧把聚合体接到九个上下文窄口上",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_impact_ports.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number",),
+        "knowledge": "影响中心的变更集、影响、依赖、运行时、试验与路线图六门窄口束",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_impact_ports_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "影响中心窄口装配替身：把聚合体接到影响中心的六个上下文窄口",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_no_backdoor_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "传输层后门断言：运行期类型断言不得指向聚合体方法集的子集",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_optional_capabilities_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "可选能力接线替身：把溯源与证据选择四个可选能力显式交给运行时",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_port_stubs_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "五个上下文窄口的测试替身：一个服务替身装配成五条具名窄口",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_project_ports.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number",),
+        "knowledge": "项目侧三条窄口：授权、项目读与生成上下文各答各的问题",
+    },
+    {
+        "path": "internal/lingdoc/workspace/seg3_transport_ports_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "传输层不持有聚合体的源码断言：逐个类型表达式查出聚合体具体类型",
+    },
+    {
+        "path": "internal/lingdoc/workspace/template_governance_adapter_test.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "模板治理验收夹具：共享权限、章节授权与模板草稿规则集的装配",
+    },
+    {
+        "path": "internal/lingdoc/workspace/template_governance_runtime.go",
+        "ticket": 363,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "模板治理运行时：装配工作区、证据、模型与目录服务并负责影响规则检查",
+    },
+    {
+        "path": "internal/lingdoc/workspacecore/change_set_test.go",
+        "ticket": 362,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("numbered_identifiers",),
+        "knowledge": "变更集事务替身：藏掉审计能力、留下变更集与来源读写口",
+    },
+    {
         "path": "internal/lingdoc/workspacecore/g1_baseline_test.go",
         "ticket": 362,
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "项目基线与激活验收：激活差异绑定确认版本、Owner 转移只能接受一次、模板迁移预览与废弃项目恢复的基线用例",
     },
     {
@@ -1536,7 +1801,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "继承字段还原：把服务端历史里的引用来源恢复到草稿字段，客户端断言不得抹掉来源绑定",
     },
     {
@@ -1545,7 +1810,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "操作级来源凭证：可变草稿每次写操作的身份、正文哈希与不可变历史副本",
     },
     {
@@ -1554,7 +1819,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "项目来源快照：项目每个字段的来源标识、冻结版本与来源输入校验",
     },
     {
@@ -1563,7 +1828,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "来源变更历史：一次草稿变更的来源快照、继承字段、提议字段与反向来源键",
     },
     {
@@ -1572,7 +1837,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "来源凭证服务：准备、断言并在事务内校验项目来源快照",
     },
     {
@@ -1581,7 +1846,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "来源快照验收：来源须出自真实轮次、跨项目改写被拒、未知旧来源保留但不可激活",
     },
     {
@@ -1644,7 +1909,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 会话与上下文包：会话、轮次、消息、来源引用、动作提案与证据卡的数据形状",
     },
     {
@@ -1653,7 +1918,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 动作服务：创建会话与提案、确认与导入、构建上下文包、研究任务的管控",
     },
     {
@@ -1662,7 +1927,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 动作服务验收：确认幂等、模型超时保持未知、撤销后会话清空、资产策略按修订固定",
     },
     {
@@ -1671,7 +1936,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "共享流水线验收：研究域行为须与共用流水线一致、机器身份被门禁拒绝、门禁清单不得私抄",
     },
     {
@@ -1680,7 +1945,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "Agent 对象存储：把对象、版本、锚点与证据卡存进同一事务",
     },
     {
@@ -1725,7 +1990,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": True,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "授权评审回归：空作者不得写全局规格、前任不得恢复旧作者范围、转移失败整体回滚",
     },
     {
@@ -1770,7 +2035,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "成员生命周期：邀请、接受、成员状态变更、租户停用与激活回执",
     },
     {
@@ -1824,7 +2089,7 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "batch": 4,
         "legacy": True,
         "harness": False,
-        "defects": ("numbered",),
+        "defects": ("numbered", "numbered_identifiers"),
         "knowledge": "运行控制与事件：暂停、恢复、指标、告警与运行记录的读写",
     },
     {
@@ -1853,6 +2118,33 @@ NAMED_FILES: tuple[Mapping[str, Any], ...] = (
         "harness": False,
         "defects": ("numbered",),
         "knowledge": "章节评审与评论：章节评审状态流转、评审意见与评论存取",
+    },
+    {
+        "path": "internal/lingdoc/workspacecore/seg3_context_ports.go",
+        "ticket": 362,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number",),
+        "knowledge": "按上下文分桶的窄口：把聚合体的方法按治理复核、智能体上下文等语境重新分门",
+    },
+    {
+        "path": "internal/lingdoc/workspacecore/seg3_context_ports_test.go",
+        "ticket": 362,
+        "batch": 4,
+        "legacy": True,
+        "harness": True,
+        "defects": ("segment_number",),
+        "knowledge": "窄口方法表断言：每个窄口的方法签名逐字取自聚合体且不得私自增宽",
+    },
+    {
+        "path": "internal/lingdoc/workspacecore/seg3_migrated_ports.go",
+        "ticket": 362,
+        "batch": 4,
+        "legacy": True,
+        "harness": False,
+        "defects": ("segment_number",),
+        "knowledge": "从传输层迁回的四条上下文窄口：项目、章节、模板与变更集各带自己那门语言",
     },
     {
         "path": "internal/types/interfaces/temporary_document.go",
@@ -2514,15 +2806,27 @@ def is_harness_file(rel: str) -> bool:
     return bool(TEST_SUFFIX.search(base))
 
 
-def file_defects(rel: str) -> tuple[str, ...]:
-    """Which file-level rules this path breaks."""
+def file_defects(rel: str, content: str | None = None) -> tuple[str, ...]:
+    """Which file-level rules this path breaks.
+
+    ``content`` is the file's source.  It is optional, because the name-level
+    rules can be asked about a path alone; the body-level rule -- a file
+    whose own identifiers carry a work number -- needs the source and is
+    therefore only decided when the content is given.
+    """
     hits: list[str] = []
     segments = rel.split("/")
     if any(NUMBERED_NAME.match(segment.rsplit(".", 1)[0]) for segment in segments):
         hits.append("numbered")
+    if any(SEGMENT_NAME.match(segment.rsplit(".", 1)[0]) for segment in segments):
+        hits.append("segment_number")
     stem = stem_of(rel)
     if TICKET_NUMBER.search(stem):
         hits.append("ticket_number")
+    if TASK_NUMBER.search(stem):
+        hits.append("task_number")
+    if content is not None and numbered_identifier_names(rel, content):
+        hits.append("numbered_identifiers")
     if rel.startswith("frontend/") and not _frontend_style_exempt(rel):
         extension = rel.rsplit(".", 1)[-1]
         if "-" in stem:
@@ -2537,6 +2841,8 @@ def file_defects(rel: str) -> tuple[str, ...]:
             hits.append("frontend_camel")
     if any(pattern.search(stem) for pattern in WEAK_NAME_PATTERNS):
         hits.append("weak_name")
+    if is_acceptance_rig(rel):
+        hits = [hit for hit in hits if hit not in RIG_EXEMPT_RULES]
     return tuple(hits)
 
 
@@ -2575,6 +2881,14 @@ def clear_scan_cache() -> None:
     _SCAN_CACHE.clear()
 
 
+def _read_text(path: Path) -> str:
+    """The source of a file, or an empty string when it cannot be read."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def scan_file_defects(root: Path) -> dict[str, tuple[str, ...]]:
     """Every code file that breaks at least one file-level rule."""
     key = ("defects", str(root))
@@ -2583,7 +2897,7 @@ def scan_file_defects(root: Path) -> dict[str, tuple[str, ...]]:
         return cached
     found: dict[str, tuple[str, ...]] = {}
     for rel in scan_code_files(root):
-        defects = file_defects(rel)
+        defects = file_defects(rel, _read_text(Path(root) / rel))
         if defects:
             found[rel] = defects
     _SCAN_CACHE[key] = found
@@ -2653,6 +2967,37 @@ def _py_definitions(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def definitions_of(rel: str, text: str) -> list[tuple[str, str]]:
+    """The identifiers this file defines, each with its scope."""
+    extension = rel.rsplit(".", 1)[-1]
+    if extension == "go":
+        return _go_definitions(text)
+    if extension in ("ts", "tsx", "js", "jsx", "mjs", "vue"):
+        return _ts_definitions(text)
+    return _py_definitions(text)
+
+
+def is_work_numbered(name: str) -> bool:
+    """Whether an identifier carries a work number at its front.
+
+    ``G5``/``T09`` name the product line or the task pool, ``seg3`` names the
+    work segment.  All three say *which batch of work* the code came from;
+    none of them says what the code knows.
+    """
+    return bool(NUMBERED_NAME.match(name) or SEGMENT_NAME.match(name))
+
+
+def numbered_identifier_names(rel: str, content: str) -> list[str]:
+    """The identifiers this file defines that carry a work number.
+
+    This is what makes a file with a clean name but a numbered body a
+    naming defect: the file owns those identifiers, so it needs an owner
+    entry -- and an owner entry is what gives them a rename ticket.
+    """
+    return [name for name, _scope in definitions_of(rel, content)
+            if is_work_numbered(name)]
+
+
 def scan_identifier_definitions(root: Path) -> dict[tuple[str, str, str], None]:
     """Every numbered identifier defined in the code area.
 
@@ -2665,19 +3010,9 @@ def scan_identifier_definitions(root: Path) -> dict[tuple[str, str, str], None]:
         return cached
     found: dict[tuple[str, str, str], None] = {}
     for rel in scan_code_files(root):
-        try:
-            text = (Path(root) / rel).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        extension = rel.rsplit(".", 1)[-1]
-        if extension == "go":
-            definitions = _go_definitions(text)
-        elif extension in ("ts", "tsx", "js", "jsx", "mjs", "vue"):
-            definitions = _ts_definitions(text)
-        else:
-            definitions = _py_definitions(text)
-        for name, scope in definitions:
-            if not NUMBERED_NAME.match(name):
+        text = _read_text(Path(root) / rel)
+        for name, scope in definitions_of(rel, text):
+            if not is_work_numbered(name):
                 continue
             found[(name, scope, rel)] = None
     _SCAN_CACHE[key] = found
@@ -2823,9 +3158,9 @@ def _named_identifier_from_record(entry: Any, index: int) -> NamedIdentifier:
         what,
     )
     name = _require_text(entry["name"], f"{what}.name")
-    if not NUMBERED_NAME.match(name):
+    if not is_work_numbered(name):
         raise NamingRegistryError(
-            f"{what}.name: {name!r} does not start with a project number")
+            f"{what}.name: {name!r} does not start with a work number")
 
     scope = _require_text(entry["scope"], f"{what}.scope")
     if scope not in IDENTIFIER_SCOPES:
