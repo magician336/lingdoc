@@ -295,7 +295,7 @@ test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',
  assert.equal(f.state.taskForm.goal,'')
  assert.equal(f.state.taskForm.queries,'')
  assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
- assert.match(f.state.label('invalid_proposal'),/未通过服务端校验/)
+ assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
  f.close()
 })
 
@@ -479,6 +479,22 @@ test('调研智能体轮次的提案仍标为服务端校验过的',async()=>{
  assert.match(f.ui(),/服务端校验过的研究提案/)
  assert.equal(byClass(f.container,'research-proposal').length,1)
  f.close()
+})
+
+// N5: 失败码有自己的词表。'outcome_unknown' 出现在状态词表里（那是回执上
+// 的状态）：拿状态词表当失败码词表，会把「原样显示代码」变成「结果待核对」。
+// 失败码词表里没有的码原样显示；'invalid_proposal' 仍有一句读得懂的话。
+test('未登记的失败码原样显示，不被状态词表翻译',async()=>{
+  const f=renderedFixture();await tick()
+  const base=researchProposalTurn()
+  f.state.tab.value='agents'
+  f.state.turns.value=[{...base,failure_code:'outcome_unknown'}]
+  await tick()
+  assert.match(f.ui(),/outcome_unknown/)
+  assert.doesNotMatch(f.ui(),/结果待核对/)
+  assert.equal(f.state.failureLabel('outcome_unknown'),'outcome_unknown')
+  assert.match(f.state.failureLabel('invalid_proposal'),/未通过服务端校验/)
+  f.close()
 })
 
 // A14: 助手轮次那张同名卡片没有经过提案契约的校验，面板因此不把它显示成
