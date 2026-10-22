@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-type g2TestEvidenceValidator struct {
+type testEvidenceValidator struct {
 	denied bool
 	calls  int
 }
 
-func (v *g2TestEvidenceValidator) ValidateGenerationEvidence(_ context.Context, _ Actor, _, _ string, refs []EvidenceCardRef, sources []Source) error {
+func (v *testEvidenceValidator) ValidateGenerationEvidence(_ context.Context, _ Actor, _, _ string, refs []EvidenceCardRef, sources []Source) error {
 	v.calls++
 	if v.denied || len(refs) != 1 || refs[0].ID != "card" || refs[0].Version != 2 || len(sources) != 1 {
 		return ErrSourceAccessDenied
@@ -21,13 +21,13 @@ func (v *g2TestEvidenceValidator) ValidateGenerationEvidence(_ context.Context, 
 	return nil
 }
 
-type g2ScopedAuthorizer struct {
+type testScopedAuthorizer struct {
 	testAuthorizer
 	denied  bool
 	chapter string
 }
 
-func (a *g2ScopedAuthorizer) AuthorizeGenerationChapter(_ context.Context, _ Actor, _, chapter string) error {
+func (a *testScopedAuthorizer) AuthorizeGenerationChapter(_ context.Context, _ Actor, _, chapter string) error {
 	a.chapter = chapter
 	if a.denied {
 		return ErrForbidden
@@ -35,25 +35,25 @@ func (a *g2ScopedAuthorizer) AuthorizeGenerationChapter(_ context.Context, _ Act
 	return nil
 }
 
-type g2ChangingModel struct {
+type evidenceRevokingModel struct {
 	calls     int
-	validator *g2TestEvidenceValidator
+	validator *testEvidenceValidator
 }
 
-func (m *g2ChangingModel) Generate(_ context.Context, in Input) (Draft, error) {
+func (m *evidenceRevokingModel) Generate(_ context.Context, in Input) (Draft, error) {
 	m.calls++
 	m.validator.denied = true
 	return Draft{BodyMarkdown: "候选 [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}, nil
 }
-func g2EvidenceRequest() Request {
+func evidenceStartRequest() Request {
 	return Request{ChapterID: "chapter-1", AssetIDs: []string{}, EvidenceCardRefs: []EvidenceCardRef{{ID: "card", Version: 2}}, Instruction: "Draft", ExpectedSpecRevision: 3, ExpectedChapterVersionID: stringPtr("chapter-v1")}
 }
-func TestG2GenerationRefsOnlyQueuesImmutableRefsAndReplayRechecksBeforeEnqueue(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationRefsOnlyQueuesImmutableRefsAndReplayRechecksBeforeEnqueue(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	validator := &g2TestEvidenceValidator{}
+	validator := &testEvidenceValidator{}
 	service.Evidence = validator
-	request := g2EvidenceRequest()
+	request := evidenceStartRequest()
 	actor := Actor{TenantID: 1, UserID: "user-1"}
 	run, err := service.Start(context.Background(), actor, "project-1", "g2-card-queue", request)
 	if err != nil || run.ID == "" || len(repo.input.Basis.AssetVersions) != 1 || len(repo.input.EvidenceCardRefs) != 1 {
@@ -64,19 +64,19 @@ func TestG2GenerationRefsOnlyQueuesImmutableRefsAndReplayRechecksBeforeEnqueue(t
 		t.Fatal("caller mutated queued immutable references")
 	}
 	validator.denied = true
-	_, err = service.Start(context.Background(), actor, "project-1", "g2-card-queue", g2EvidenceRequest())
+	_, err = service.Start(context.Background(), actor, "project-1", "g2-card-queue", evidenceStartRequest())
 	if !errors.Is(err, ErrSourceAccessDenied) || repo.createRunCalls != 1 {
 		t.Fatalf("revoked replay accepted: %v creates=%d", err, repo.createRunCalls)
 	}
 }
-func TestG2GenerationCardChangedBeforeWorkerNeverCallsModel(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationCardChangedBeforeWorkerNeverCallsModel(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	validator := &g2TestEvidenceValidator{}
+	validator := &testEvidenceValidator{}
 	service.Evidence = validator
 	model := &countingModel{}
 	service.Model = model
-	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-card-before-worker", g2EvidenceRequest())
+	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-card-before-worker", evidenceStartRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,14 @@ func TestG2GenerationCardChangedBeforeWorkerNeverCallsModel(t *testing.T) {
 		t.Fatalf("stale evidence called model: %+v %v calls=%d", result, err, model.calls)
 	}
 }
-func TestG2GenerationCardChangedDuringModelNeverPublishesCandidate(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationCardChangedDuringModelNeverPublishesCandidate(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	validator := &g2TestEvidenceValidator{}
+	validator := &testEvidenceValidator{}
 	service.Evidence = validator
-	model := &g2ChangingModel{validator: validator}
+	model := &evidenceRevokingModel{validator: validator}
 	service.Model = model
-	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-card-during-model", g2EvidenceRequest())
+	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-card-during-model", evidenceStartRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,21 +102,21 @@ func TestG2GenerationCardChangedDuringModelNeverPublishesCandidate(t *testing.T)
 		t.Fatalf("changed evidence published candidate: %+v %v calls=%d", result, err, model.calls)
 	}
 }
-func TestG2GenerationObserverCannotStartScopedChapterOrExecuteQueuedWrite(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationObserverCannotStartScopedChapterOrExecuteQueuedWrite(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	scoped := &g2ScopedAuthorizer{denied: true}
+	scoped := &testScopedAuthorizer{denied: true}
 	service.Authorizer = scoped
-	service.Evidence = &g2TestEvidenceValidator{}
-	_, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-observer-start", g2EvidenceRequest())
+	service.Evidence = &testEvidenceValidator{}
+	_, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-observer-start", evidenceStartRequest())
 	if !errors.Is(err, ErrForbidden) || scoped.chapter != "chapter-1" || repo.createRunCalls != 0 {
 		t.Fatalf("observer read escalated: %v %+v", err, scoped)
 	}
 }
-func TestG2GenerationRefsFailClosedWithoutEvidenceValidator(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationRefsFailClosedWithoutEvidenceValidator(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	_, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-missing-evidence-port", g2EvidenceRequest())
+	_, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-missing-evidence-port", evidenceStartRequest())
 	if !errors.Is(err, ErrSourceAccessDenied) || repo.createRunCalls != 0 {
 		t.Fatalf("unverified refs queued: %v", err)
 	}
@@ -126,33 +126,33 @@ func (r *testRepository) LoadGenerationInput(context.Context, Actor, string, str
 	return r.input, nil
 }
 
-type g2HumanAuthorizer struct{ g2ScopedAuthorizer }
+type testHumanAuthorizer struct{ testScopedAuthorizer }
 
-func (*g2HumanAuthorizer) AuthorizeHumanGeneration(ctx context.Context) error {
+func (*testHumanAuthorizer) AuthorizeHumanGeneration(ctx context.Context) error {
 	return core.RequireHumanDecision(ctx)
 }
-func TestG2GenerationMachineInitiationAndReplayCannotUpgradeQueuedHumanIdentity(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationMachineInitiationAndReplayCannotUpgradeQueuedHumanIdentity(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
 	service.RequireHumanInitiation = true
-	auth := &g2HumanAuthorizer{}
+	auth := &testHumanAuthorizer{}
 	service.Authorizer = auth
-	service.Evidence = &g2TestEvidenceValidator{}
+	service.Evidence = &testEvidenceValidator{}
 	machine := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{KeyID: 5, Capabilities: types.StringArray{"write"}})
 	actor := Actor{TenantID: 1, UserID: "user-1"}
-	_, err := service.Start(machine, actor, "project-1", "g2-machine-queue", g2EvidenceRequest())
+	_, err := service.Start(machine, actor, "project-1", "g2-machine-queue", evidenceStartRequest())
 	if !errors.Is(err, core.ErrHumanDecisionRequired) || repo.createRunCalls != 0 {
 		t.Fatalf("machine initiation accepted: %v", err)
 	}
 	human := types.WithCaller(context.Background(), types.Caller{TenantID: 1, UserID: "user-1", Role: types.TenantRoleContributor})
-	run, err := service.Start(human, actor, "project-1", "g2-human-queue", g2EvidenceRequest())
+	run, err := service.Start(human, actor, "project-1", "g2-human-queue", evidenceStartRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !repo.input.HumanInitiated || repo.input.Actor.Role != types.TenantRoleContributor || len(repo.input.Basis.EvidenceCardRefs) != 1 {
 		t.Fatal("human authority/evidence snapshot missing")
 	}
-	_, err = service.Start(machine, actor, "project-1", "g2-human-queue", g2EvidenceRequest())
+	_, err = service.Start(machine, actor, "project-1", "g2-human-queue", evidenceStartRequest())
 	if !errors.Is(err, core.ErrHumanDecisionRequired) || repo.createRunCalls != 1 {
 		t.Fatalf("machine replay upgraded human identity: %v", err)
 	}
@@ -165,22 +165,22 @@ func TestG2GenerationMachineInitiationAndReplayCannotUpgradeQueuedHumanIdentity(
 		t.Fatalf("unknown legacy principal invoked model: %+v %v", result, err)
 	}
 }
-func TestG2GenerationQueuedRoleRevocationAndPinnedReplayBasisFailBeforeModel(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationQueuedRoleRevocationAndPinnedReplayBasisFailBeforeModel(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	auth := &g2HumanAuthorizer{}
+	auth := &testHumanAuthorizer{}
 	service.Authorizer = auth
 	service.RequireHumanInitiation = true
-	service.Evidence = &g2TestEvidenceValidator{}
+	service.Evidence = &testEvidenceValidator{}
 	actor := Actor{TenantID: 1, UserID: "user-1"}
-	run, err := service.Start(context.Background(), actor, "project-1", "g2-pinned-replay", g2EvidenceRequest())
+	run, err := service.Start(context.Background(), actor, "project-1", "g2-pinned-replay", evidenceStartRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.Currentness = testCurrentness{current: false}
 	enqueuer := service.Enqueuer.(*testEnqueuer)
 	before := enqueuer.calls
-	_, err = service.Start(context.Background(), actor, "project-1", "g2-pinned-replay", g2EvidenceRequest())
+	_, err = service.Start(context.Background(), actor, "project-1", "g2-pinned-replay", evidenceStartRequest())
 	if !errors.Is(err, ErrStaleInput) || enqueuer.calls != before {
 		t.Fatalf("stale immutable replay queued: %v", err)
 	}
@@ -194,9 +194,9 @@ func TestG2GenerationQueuedRoleRevocationAndPinnedReplayBasisFailBeforeModel(t *
 	}
 }
 
-type g2EvidenceTestInputs struct{ InputResolver }
+type testEvidenceInputs struct{ InputResolver }
 
-func (r g2EvidenceTestInputs) ResolveGenerationInput(ctx context.Context, actor Actor, project string, request Request) (Input, error) {
+func (r testEvidenceInputs) ResolveGenerationInput(ctx context.Context, actor Actor, project string, request Request) (Input, error) {
 	input, err := r.InputResolver.ResolveGenerationInput(ctx, actor, project, request)
 	if err != nil {
 		return input, err
@@ -207,12 +207,12 @@ func (r g2EvidenceTestInputs) ResolveGenerationInput(ctx context.Context, actor 
 	}
 	return input, nil
 }
-func g2FormalGenerationFixture() (*Service, *testRepository) {
+func evidenceFixture() (*Service, *testRepository) {
 	service, repo := generationFixture()
-	service.Inputs = g2EvidenceTestInputs{InputResolver: service.Inputs}
+	service.Inputs = testEvidenceInputs{InputResolver: service.Inputs}
 	return service, repo
 }
-func (v *g2TestEvidenceValidator) ValidateGenerationEvidenceConstraints(_ context.Context, _ Actor, _, _ string, refs []EvidenceCardRef, values []EvidenceConstraint) error {
+func (v *testEvidenceValidator) ValidateGenerationEvidenceConstraints(_ context.Context, _ Actor, _, _ string, refs []EvidenceCardRef, values []EvidenceConstraint) error {
 	if v.denied || len(values) != len(refs) {
 		return ErrSourceAccessDenied
 	}
@@ -223,13 +223,13 @@ func (v *g2TestEvidenceValidator) ValidateGenerationEvidenceConstraints(_ contex
 	}
 	return nil
 }
-func TestG2GenerationConstraintSnapshotTamperStopsWorkerBeforeModel(t *testing.T) {
-	service, repo := g2FormalGenerationFixture()
+func TestGenerationConstraintSnapshotTamperStopsWorkerBeforeModel(t *testing.T) {
+	service, repo := evidenceFixture()
 	repo.run = Run{}
-	service.Evidence = &g2TestEvidenceValidator{}
+	service.Evidence = &testEvidenceValidator{}
 	model := &countingModel{}
 	service.Model = model
-	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-constraint-tamper", g2EvidenceRequest())
+	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "g2-constraint-tamper", evidenceStartRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
