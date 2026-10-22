@@ -16,6 +16,9 @@ import (
 //
 // 转写在**两条**管道上都做得出：选段管道转写选段，生成管道转写整章。因此两条
 // 管道都声明它。
+//
+// 提纲只在生成管道上做得出：它只允许整章，选段管道不做它——它的工作单位是整章
+// 骨架。
 func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
 	selection, err := writingaction.ActionsFor(writingaction.PipelineRewrite)
 	require.NoError(t, err)
@@ -36,7 +39,9 @@ func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
 		"生成管道做生成")
 	require.True(t, slices.Contains(generation, writingaction.ActionTransform),
 		"生成管道做转写")
-	require.Len(t, generation, 2, "生成管道做生成与转写两个动作")
+	require.True(t, slices.Contains(generation, writingaction.ActionOutline),
+		"生成管道做提纲")
+	require.Len(t, generation, 3, "生成管道做生成、转写与提纲三个动作")
 }
 
 // TestUnknownPipelineHasNoActions 断言未知管道没有动作可问。

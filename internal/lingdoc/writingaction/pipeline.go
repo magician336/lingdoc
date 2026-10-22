@@ -20,7 +20,8 @@ var ErrUnknownPipeline = clienterror.New(clienterror.InvalidRequest, "unknown_pi
 type Pipeline string
 
 const (
-	// PipelineGeneration 是整章生成管道：它实现「生成」与「转写」这两个动作。
+	// PipelineGeneration 是整章生成管道：它实现「生成」「转写」与「提纲」这三个
+	// 动作。
 	PipelineGeneration Pipeline = "generation"
 	// PipelineRewrite 是选段管道：它实现「改写」「续写」「压缩」「扩展」与「转写」
 	// 这五个动作。
@@ -54,7 +55,7 @@ type pipelineSpec struct {
 // 词汇包是这两条轴的同一个拥有者。
 var pipelineSpecs = map[Pipeline]pipelineSpec{
 	PipelineGeneration: {
-		actions:       []Action{ActionGenerate, ActionTransform},
+		actions:       []Action{ActionGenerate, ActionTransform, ActionOutline},
 		scopes:        []Scope{ScopeChapter, ScopeSection},
 		defaultAction: ActionGenerate,
 	},

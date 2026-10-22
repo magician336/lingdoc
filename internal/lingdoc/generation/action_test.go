@@ -109,7 +109,7 @@ func TestGenerationActionPathRendersTheActionInstruction(t *testing.T) {
 // 非法声明不产生 run：产出参数与目标范围在模型调用之前就被拒。
 func TestGenerationActionPathRejectsInvalidDeclarations(t *testing.T) {
 	unknown := writingaction.Action("unknown")
-	outline := writingaction.ActionOutline
+	review := writingaction.ActionReview
 	paragraph := writingaction.Scope("paragraph")
 	badLength := writingaction.Length("huge")
 	ratio := 50
@@ -137,8 +137,11 @@ func TestGenerationActionPathRejectsInvalidDeclarations(t *testing.T) {
 			params := writingaction.OutputParams{Length: writingaction.LengthMedium, Tone: writingaction.ToneFormal, Ratio: ratio}
 			r.OutputParams = &params
 		}, wantErr: writingaction.ErrInvalidOutputParams},
+		// 样本是「评审」：它允许整章与选段两种范围，PlanFor 不会先把它拒掉，
+		// 所以请求真的走到了管道归属判定那一支；而它不在任何管道里，于是被拒。
+		// 错误期望一字未动——换的只是样本。
 		{name: "another action on this endpoint", mutate: func(r *Request) {
-			r.WritingAction = &outline
+			r.WritingAction = &review
 			r.OutputParams = nil
 		}, wantErr: ErrInvalidRequest},
 	}
