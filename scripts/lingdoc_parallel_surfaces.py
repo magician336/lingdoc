@@ -138,11 +138,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
+            # 2026-10-23：G6 前端独立化（PF-7 / #384）把 ImpactOpsPanel.vue、
+            # mainlineChanges.test.js、ImpactOpsPanel.test.js 三个路径的所有权
+            # 转给了 PF-7——它们随 G6 段一起搬走了。本面只留口径表这两个文件，
+            # 拆分时它们原地未动。
             ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
             ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
-            ("frontend/src/api/lingdoc/mainlineChanges.test.js", "file"),
-            ("frontend/src/views/lingdoc/ImpactOpsPanel.test.js", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -156,6 +157,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "G6 前端的独立面板与 Workspace 集成不在本面，另开票。"
             "2026-10-22 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
+            "2026-10-23 该独立化由 PF-7（#384）完成，"
+            "本面交出 ImpactOpsPanel.vue 与两个测试文件的所有权。"
         ),
     },
     {
@@ -359,6 +362,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # own, and mainlineChanges.ts -- which PF-1's own summary listed as
             # an unowned path -- is claimed by the face that moves the code out.
             ("frontend/src/api/lingdoc/mainlineChanges.ts", "file"),
+            # 2026-10-23 从 PF-1 交来的三个路径：G6 段从这三个文件里搬走，
+            # 所以它们跟着 PF-7 的路径集走（登记处的重叠检查不看 status，
+            # done 的面仍然占着路径，必须显式转移）。
+            ("frontend/src/api/lingdoc/mainlineChanges.test.js", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.test.js", "file"),
             ("frontend/src/api/lingdoc/runtimeControl.ts", "file"),
             ("frontend/src/api/lingdoc/runtimeControl.test.ts", "file"),
             ("frontend/src/api/lingdoc/trialWindow.ts", "file"),
