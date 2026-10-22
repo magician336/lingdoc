@@ -1937,7 +1937,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 	//
 	// What is refused is the proposal, not the answer: the reply the model
 	// wrote stays, and only the proposal is taken out of the suggestions.
-	proposalState := ResearchProposalStateAbsent
+	proposalState := researchProposalStateAbsent
 	suggestions := reply.StructuredOutput
 	if modelErr == nil {
 		proposalState, suggestions = researchProposalJudgement(started.Agent, reply.StructuredOutput, pack)
@@ -1982,7 +1982,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 			turn.FailureCode = "incomplete_response"
 			turn.Reply = ""
 			turn.Suggestions = nil
-		case proposalState == ResearchProposalStateInvalid:
+		case proposalState == researchProposalStateInvalid:
 			// The model stated a proposal the contract does not accept.
 			// The proposal is refused and never reaches the interface; the
 			// turn says so in a code the reader can act on. The reply stays:
