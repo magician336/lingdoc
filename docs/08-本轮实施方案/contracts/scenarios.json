@@ -2552,20 +2552,24 @@
               "base_chapter_version_id": "cv-question-1",
               "confirmation": {
                 "writing_action": "rewrite",
-                "adoption_target": "working_copy_whole",
+                "adoption_target": "working_copy_partial",
+                "scope": {
+                  "start_utf16": 0,
+                  "end_utf16": 4
+                },
                 "confirmed_at": "2026-10-22T00:00:00Z",
                 "confirmed_by": "u-owner",
                 "origin": "ai_generated"
               }
             }
           },
-          "assertion": "采纳必须带显式确认载荷：动作、采纳目标、确认时刻、确认人与来源，缺一即拒。",
+          "assertion": "采纳必须带显式确认载荷：动作、采纳目标、目标范围、确认时刻、确认人与来源，缺一即拒。选段采纳端点只写工作副本的选段，所以采纳目标固定为 working_copy_partial，目标范围必须就是候选的选区（start_utf16=0、end_utf16=4，与 G7-02-01 发起时一致）。",
           "response_example": "success",
           "checks": [
             {
               "path": "/data/working_copy_revision",
               "equals": 2,
-              "intent": "采纳把工作副本推进一版，用户看得到这次写入了"
+              "intent": "采纳把工作副本推进一版，用户看得到这次写入了；写进去的是确认载荷声明的那一段（候选的选区）"
             },
             {
               "path": "/data/source_ids/0",
