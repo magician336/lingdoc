@@ -67,8 +67,10 @@ func convergedFormContract() []struct {
 		{template.ErrRuleSetNotPublished, 409, "invalid_state", "当前版本状态不允许此操作。", false},
 
 		// 规则治理面。
-		{governance.ErrUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", true},
-		{governance.ErrModelUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", true},
+		// D-47-05（#292）：尚未配置不是暂时不可用 —— 服务不存在时重试也不会变好，
+		// 所以这两个 503 不可重试；治理面其余 5xx（502）仍可重试。
+		{governance.ErrUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
+		{governance.ErrModelUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
 		{governance.ErrUnauthorized, 403, "template_governance_authorization_unavailable", "目录治理授权不可用。", false},
 		{governance.ErrSourceUnavailable, 403, "source_access_denied", "来源已不可用或无当前授权。", false},
 		{governance.ErrNotFound, 404, "not_found", "资源不存在或不可访问。", false},
