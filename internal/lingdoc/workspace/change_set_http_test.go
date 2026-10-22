@@ -37,11 +37,6 @@ func ensureImpactRouteTables(t *testing.T, db *gorm.DB) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (tenant_id, user_id, operation, target, key)
 		)`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
 		`CREATE TABLE IF NOT EXISTS lingdoc_change_sets (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_by TEXT NOT NULL,
 			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized','satisfied')), base_context_revision INTEGER NOT NULL,
@@ -55,6 +50,7 @@ func ensureImpactRouteTables(t *testing.T, db *gorm.DB) {
 			t.Fatalf("seed impact HTTP table: %v", err)
 		}
 	}
+	ensureAuditEventTable(t, db)
 }
 
 func actorContext(userID string) context.Context {
