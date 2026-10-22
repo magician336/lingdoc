@@ -811,6 +811,11 @@ func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 // plugged in would count zero calls whatever the server did.
 func TestResearchProposalCitingARevokedSourceIsRefused(t *testing.T) {
 	f := newAgentFixture(t, false)
+	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, AgentResearch, "pf5-revoked-session", f.expectation(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := decodeAgentJSON[AgentSession](t, raw, err)
 	source := f.source.sources["source-1"]
 	source.ModelUseAllowed = false
 	f.source.sources["source-1"] = source
@@ -819,12 +824,15 @@ func TestResearchProposalCitingARevokedSourceIsRefused(t *testing.T) {
 	if f.svc.agentRuntime.Model != stub {
 		t.Fatal("the stub is not the model this turn would ask, so its call count would prove nothing")
 	}
-	_, _, _, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, "pf5-revoked-session", "pf5-revoked-turn", AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我找合成材料的资料"})
-	if !errors.Is(err, ErrConsentRequired) {
-		t.Fatalf("a revoked source was accepted into the turn's context: %v", err)
-	}
+	// The session exists and only the revoked source stands between this turn
+	// and the model: so "the model was not asked" is a measurement of the
+	// consent check, not of some earlier failure.
+	_, _, _, err = f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "pf5-revoked-turn", AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我找合成材料的资料"})
 	if stub.calls != 0 {
 		t.Fatalf("the model was asked about a revoked source: %d calls", stub.calls)
+	}
+	if !errors.Is(err, ErrConsentRequired) {
+		t.Fatalf("a revoked source was accepted into the turn's context: %v", err)
 	}
 }
 

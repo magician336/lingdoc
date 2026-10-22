@@ -140,13 +140,13 @@ const levels:Record<string,string>={candidate_evidence:'待核证据候选',back
 const supports:Record<string,string>={supports:'支持',refutes:'反驳',qualifies:'限定条件',background:'背景'}
 const actions:Record<string,string>={create_change_set:'创建待评估变更草稿',save_spec:'保存研究条件',bind_asset:'绑定已有资料',create_evidence_card:'保存候选证据卡',confirm_evidence_card:'人工确认证据卡',apply_change_set:'应用已评估变更',commit_working_copy:'提交工作副本',export:'导出冻结快照'}
 const label=(value:string)=>labels[value]||value,levelLabel=(value:string)=>levels[value]||value,supportLabel=(value:string)=>supports[value]||value,actionLabel=(value:string)=>actions[value]||value
-// 提案的候选来源与服务端校验过的形状同行到达：这里只负责分列展示，
-// 读到的每一条都已经是对过这一轮授权上下文的引用。
 // 提案块只对调研智能体那一轮渲染：助手那张同名卡片没有经过提案契约的
 // 校验，界面替它宣称「服务端校验过」、宣称候选来源「已逐条核对」，
 // 就是替服务端说了一句没有发生的话。助手那条轮次因此不显示提案块
 // （提案契约之前，面板本来也不展示它）。
 const isResearchProposalTurn=(turn:api.AgentTurn):boolean=>turn.agent==='research_agent'
+// 提案的候选来源与服务端校验过的形状同行到达：这里只负责分列展示，
+// 读到的每一条都已经是对过这一轮授权上下文的引用。
 const proposalCandidateSources=(turn:api.AgentTurn):api.ResearchProposalCandidateSource[]=>turn.suggestions?.task_card?.candidate_sources||[]
 // 理由与缺口同样只来自服务端校验过的那份形状：理由一条一行，缺口分
 // 「缺什么」与「期望补什么」两列，缺了任何一半的缺口到不了这里。
