@@ -191,7 +191,7 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 | 迁移两方言一致 | —— | I6 | SQLite 与 PostgreSQL 列集合一致 | down 可回退 | 迁移前后逐字比对 | 迁移彩排测试 | TODO |
 | PG 上普通读真 fail-open | 真实 PG 演练 | I1 | 读成功 | **实测不成立**（已转 [#387](https://github.com/magician336/lingdoc/issues/387)） | 隔离级别 | 隔离实例实测（§5 B1） | **FAIL（已实测）** —— 不在本票范围 |
 
-矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。当前除一行已实测的 **FAIL**（已转独立票）外全部 `TODO` ⇒ 实现门未开始，PR 必须保持 Draft。
+矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-13 全部 passed（含四条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围；`go test -race` 与 PostgreSQL 端的告警注入用例为 not run，解除条件写在验证报告里。
 
 ## 5. 实施切片
 
@@ -355,12 +355,16 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 
 | 命令 | 结果 |
 |---|---|
-| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（补齐路径集后重跑） |
-| `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | **PASS** — `Ran 231 tests ... OK`（基线 `87b3cecc` 上；新基线需重跑） |
+| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（补齐 14 条路径后重跑） |
+| `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | **PASS** — `Ran 322 tests ... OK`；命名棘轮自检 `0/0/0`（本轮新增文件未引入编号） |
 | 文档行号指针逐条核对（grep + read） | **PASS** — 在 `c4c9ac93` 上复核：Spec-48 是纯改名，**行号全部未变**；已改写文件名指针 |
 | 迁移编号占用核对 | **PASS** — sqlite 下一个 `000052`、versioned 下一个 `000131`（偏移量 79） |
+| `go test -p 1 -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` | **PASS** — 两包全绿（29.7s / 2.0s） |
+| PostgreSQL 隔离实例上的既有 PG 用例 | **PASS** — `TestPostgres*` 与 `TestPR150Postgres*` 全绿（127.0.0.1:55437，postgres:17） |
+| `golangci-lint run --new-from-rev=origin/main ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` | **PASS** — `0 issues`（首轮 9 issues 已逐条修掉） |
 | SQLite fail-open 定向测试 | **PASS** — `TestAuthorizationAuditFailureDoesNotBlockDecision` |
 | PostgreSQL 上普通读 fail-open 核实 | **FAIL（已实测）** — `GetProject` / `Authorize` 均返回 `commit unexpectedly resulted in rollback`；详见 §5 B1；缺口转 [#387](https://github.com/magician336/lingdoc/issues/387) |
-| Go 全量测试 | **NOT RUN**（本轮只改文档与登记处脚本，未动 Go 代码；实现门再跑） |
+| 四条结构断言的阴性验证 | **PASS** — 去掉落库 / 迁移回填 / 去掉显式类别 / 让审计错误返回，各自主张变红并复原 |
+| `go test -race ./...` | **NOT RUN** — 本机有兄弟会话并行，资源会互相干扰；解除条件见验证报告 |
 
 未覆盖风险：PG 行为已实测且为负（已转票）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修。
