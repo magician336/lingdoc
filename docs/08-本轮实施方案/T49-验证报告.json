@@ -1,0 +1,91 @@
+{
+ "mode": "static-and-suite",
+ "note": "PF-4 owner_unavailable 派生状态与 Owner-only 冻结（票 #406–#410，Spec #391）。一件事：项目 Owner 的租户身份失效时，五项 Owner 专属动作（立项确认、模板升级、ChangeSet 应用/驳回、正式导出、归档）被冻结，普通协作照常；冻结是读时派生的，不落库、不新增项目状态、不进项目结构体，所以租户身份恢复即自动解冻。设计要点：判定收口到一处（workspacecore/owner_unavailable.go，判定与门面同处），并由一个 AST 守护测试拒绝第二份内联判定；拒绝可归因但不破坏既有契约（ErrOwnerUnavailable 包住 ErrNotFound，状态码 404 / code not_found 不变，原因只进可选 details.reason_code）；读侧两处出口读同一份判定（权限读出口回答「这个入口被冻了吗」，项目级只读出口回答「这个项目出了什么事、怎么恢复」）；写侧按行动者判定（Owner 得 owner_unavailable，非 Owner 保持朴素 404）；能力取值用既有的 manage（硬约束禁止新增能力值）。本轮还实测出并修复了三个夹具/schema 缺陷：owner 冻结夹具的迁移清单停在 000041（PF-3 加了审计版本列后带审计的写入在夹具里 500）、#410 的归档迁移编号与 PF-3 撞车、以及三票各自补夹具造成同一迁移清单三份副本（已归一到共享夹具）。",
+ "head": "eae2d246",
+ "base": "e1cff741",
+ "head_note": "证据产出于 eae2d246 这棵树（代码 head）。其后的提交只改文档与证据，`git diff eae2d246 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
+ "base_note": "origin/main 在本轮最后一次基线合并后的尖端（e1cff741，含 PF-3 交面）。本轮共做了两次基线合并：f1dcfdce（合并当时的 main，零冲突，PF-3 改了 service_facade.go / typed_contracts.go 与本面重叠但改动落在不同区域）、以及四张票各自在实现分支上合并 main（90bced51 / 98e8e701 / f5453975 / a871129c）。两次合并的代码改动对本面为零冲突 —— `git diff eae2d246 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 —— 所以证据里的测试结论逐条仍然绑定最终 head。",
+ "passed": [
+  {
+   "id": "AC-49-01 Owner 可用性由一处判定产出",
+   "status": "passed",
+   "evidence": "判定与门面同处 internal/lingdoc/workspacecore/owner_unavailable.go：OwnerAuthorityOf(78) / OwnerAvailabilityOf(138) / JudgeOwnerAction(165) / OwnerOnlyCapability(193) / requireOwnerDecision(214) / ownerFreezeRefusal(234) / ownerDecisionInTransaction(250)，ownerCurrentlyAvailable(298) 是可用性判定的唯一实现（OwnerCurrentlyAvailable(278) 是它的导出门面，membership/results.go:655,663 调用它）。原先的内联复制已合并：membership/results.go 里那份条件子集少一项的写法改为一次调用。守护：internal/lingdoc/workspacecore/owner_unavailable_single_source_test.go 用 go/parser + go/ast 遍历 internal/lingdoc/，凡「命名函数调用 ActiveMember 且问到 Owner 角色」即判为内联判定副本，白名单只有 ownerCurrentlyAvailable 与 legacyAuthorizeProject（legacy 授权路径答的是「这个 actor 能不能做」，不是可用性判定，白名单里写明了理由）。`go test ./internal/lingdoc/workspacecore/ -run 'TestOwnerAvailability' -v` → PASS（TestOwnerAvailabilityJudgementHasOneImplementation 0.04s + TestOwnerAvailabilitySingleSourceGuardFindsAnInlineCopy 0.00s）。故意注入实验：新建 scratch_inline_owner_availability.go（命名函数调用 projectOwner + tx.ActiveMember）后守护转红并点名该文件与函数，删除后转绿 —— 守护确实抓得住，不是自洽摆设。"
+  },
+  {
+   "id": "AC-49-02 区分「Owner 专属」与「Owner 也有权」",
+   "status": "passed",
+   "evidence": "「Owner 也有权」四处（创建者或 Owner 可编辑自己的变更草稿/评论/查看转让记录）走 OwnerMayAct(269)，它只问「是不是 Owner」，不读可用性 —— 冻结不触及它们：workspacecore/change_draft_edit.go、chapter_review.go、context_revision.go、member_records.go 四处已改走该函数，注释写明「永不冻结」的理由。HTTP 层的正面证据：TestOwnerUnavailableDoesNotFreezeOrdinaryCollaboration（读取、编辑、调研、复核在冻结期间照常放行）、TestDraftCollaborationSurvivesTheOwnerFreeze、TestActiveCollaborationSurvivesTheOwnerFreeze（#408 票面要求的两条正面断言）。Owner 专属侧被拒且可归因：TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal、TestActivationRefusalIsNotTheOwnersOwnRefusal。定向 `go test ./internal/router/ -run 'TestOwnerUnavailable|TestActivation|TestDraft|TestActive'` → 全部 PASS（见 AC-49-05 的整包结果）。"
+  },
+  {
+   "id": "AC-49-03 owner_unavailable 是派生的，租户身份恢复即自动解冻",
+   "status": "passed",
+   "evidence": "派生：OwnerAuthorityOf(78) 每次现读 Owner 的租户成员状态、租户角色与项目成员状态；OwnerAvailabilityOf(138) 只是它的投影。落库面：领域 Project 结构体没有新增字段，数据库没有新增列（归档能力另加的列属于项目归档，不是冻结状态）—— TestOwnerAvailabilityIsDerivedRatherThanStored 断言的正是这一点。自动解冻（无需任何修复动作）：TestOwnerUnavailableUnfreezesWhenTheIdentityComesBack（变更集决策）、TestActivationUnfreezesWhenTheIdentityComesBack（立项确认）、TestOwnerUnavailableFormalExportUnfreezesWhenTheIdentityComesBack（正式导出）三条分别在同一条用例里停用→拒绝、恢复→放行；TestCompletedOwnerTransferSurvivesThePredecessorRestoration 断言已完成转让后恢复不回退。HTTP 层：TestOwnerAvailabilityOutletReportsTheFrozenOwner 与 TestOwnerAvailabilityOutletReportsAHealthyOwner 分别断言项目级出口在两种状态下的取值。"
+  },
+  {
+   "id": "AC-49-04 五项 Owner 专属动作各自被冻结且拒绝可归因",
+   "status": "passed",
+   "evidence": "五项各有 HTTP 层断言，全部 PASS：立项确认 TestActivationFreezesWhileTheOwnerIsUnavailable、模板升级 TestActivationAndTemplateUpgradeShareTheFreezeReason（与立项确认同因）、ChangeSet 应用/驳回 TestOwnerUnavailableFreezesChangeSetDecision、正式导出 TestOwnerUnavailableFreezesFormalExport、归档 TestOwnerUnavailableFreezesArchive。归因形态：既有 404 与既有 code not_found 不变，原因只进可选 details.reason_code（internal/clienterror/clienterror.go 的 Form.Details 可选字段 + internal/lingdoc/workspace/http.go 渲染）—— TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal 与 TestPermissionReadOutletNamesTheFreezeForOwnerOnlyCapabilities 分别从写拒绝与读出口两侧钉住。导出的租户降权形态另由 TestOwnerUnavailableFormalExportIsAttributableWhenTheTenantRoleIsDowngraded 覆盖。"
+  },
+  {
+   "id": "AC-49-05 冻结期间普通协作照常",
+   "status": "passed",
+   "evidence": "TestOwnerUnavailableDoesNotFreezeOrdinaryCollaboration（读取、编辑、调研、复核放行）、TestDraftCollaborationSurvivesTheOwnerFreeze、TestActiveCollaborationSurvivesTheOwnerFreeze 三条正面用例 PASS。整包回归：go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/membership/... ./internal/lingdoc/workspace/... ./internal/router/... → 全部 ok（workspacecore 43.450s / membership 3.303s / workspace 200.743s / router 16.153s，exit 0），相对合并前基线（db9e884b，同一套命令全绿）**零新增失败**。"
+  },
+  {
+   "id": "AC-49-06 冻结原因在读出口、写拒绝与项目级出口三处一致可读",
+   "status": "passed",
+   "evidence": "三处读的是同一份判定（OwnerAuthorityOf），不是三套逻辑：① 写拒绝 —— ErrOwnerUnavailable 的 details.reason_code = owner_unavailable（TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal）；② 权限读出口 —— reason_code = owner_unavailable（TestPermissionReadOutletNamesTheFreezeForOwnerOnlyCapabilities 与 TestPermissionReadOutletNamesTheFreezeForTheOwnerItself）；③ 项目级只读出口 GET /api/v1/lingdoc/projects/:projectId/owner-availability —— reason_code = owner_unavailable + owner_user_id + recovery_paths（TestOwnerAvailabilityOutletReportsTheFrozenOwner）。一致性由设计保证：项目级出口的 OwnerAvailabilityOf(138) 直接调 OwnerAuthorityOf(78)，权限读出口调的是同一个 OwnerAuthorityOf。"
+  },
+  {
+   "id": "AC-49-07 前端入口据冻结原因置灰并给出恢复指引",
+   "status": "passed",
+   "evidence": "事实与文案单点持有在 frontend/src/composables/useOwnerAvailability.ts：入口级（权限读出口）与项目级（owner-availability 出口）两级事实各问各的出口，返回 frozen / ownerUnavailable / recoveryPaths / recoveryTexts / noticeReason / noticeRecovery；页面与按钮消费它，不各写一遍。前端断言：`npx tsx --test src/composables/useOwnerAvailability.test.ts` → 7/7 pass（含「冻结项目禁用 Owner 专属入口并说清原因」「未冻结不乱置灰」「读出口答不出来时不谎称有冻结原因」「项目级横幅给出两条恢复路径」）；frontend/src/views/lingdoc/workspaceOwnerFreeze.test.js（#408 新建）覆盖工作台入口置灰；frontend/src/views/lingdoc/ProjectArchivePanel.test.ts（#410 新建）覆盖归档入口。前端全量：npm run type-check → exit 0；npm test → 1642 tests / 1641 pass / 0 fail / 1 skipped（基线 1630 tests / 1629 pass / 0 fail / 1 skipped，本轮新增 12 条全绿）。"
+  },
+  {
+   "id": "AC-49-08 归档：Owner 专属、幂等、版本检查、审计、终态、draft 不可归档",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspacecore/project_archive.go + 契约端点 POST /api/v1/lingdoc/projects/:projectId/archive。八条 HTTP 断言全部 PASS：TestOwnerArchivesAnActiveProject（生效）、TestArchiveIsIdempotent（只生效一次）、TestArchiveWritesAnAuditEvent（写审计）、TestArchiveRefusesANonOwner（非 Owner 被拒）、TestArchiveRefusesAStaleProjectVersion（陈旧版本被拒）、TestDraftProjectCannotBeArchived（draft 不可归档）、TestArchivedProjectAcceptsNoFurtherChange（终态不再接受变更）、TestOwnerUnavailableFreezesArchive（与其它四项受同一道闸门管）。迁移：sqlite/000053_lingdoc_project_archive.{up,down}.sql 与 versioned/000132_lingdoc_project_archive.{up,down}.sql（编号 000052/000131 已被 PF-3 的 audit_version_fields 占用，本面取下一号）。"
+  },
+  {
+   "id": "AC-49-09 既有契约与端点零变化",
+   "status": "passed",
+   "evidence": "python docs/08-本轮实施方案/contracts/validate_artifacts.py → exit 0（契约校验 PASS，产物由脚本重生成，计数 paths 152 / operations 178 / core_operations 175 / schemas 362 / local_refs 1730 / shape_checks 949 —— 相对基线只多了归档端点与 owner-availability 端点各一个，无既有形状漂移）。python scripts/ci/check_lingdoc_routes.py → exit 0（路由与前端调用双向一致，95 路由 / 95 前端调用）。既有错误码语义不变：ErrOwnerUnavailable 包住 ErrNotFound，状态码 404、code not_found 逐字不变，原因只进可选 details —— TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal 与 TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities 分别从写侧与读侧钉住。既有权限用例（既有权限读出口的既有能力与既有 reason_code）走既有回归，未改断言。"
+  },
+  {
+   "id": "AC-49-10 闸门统一后既有 Owner-only 动作的放行结果变化被逐条记录",
+   "status": "passed",
+   "evidence": "基线与合并后逐条对照（基线 = db9e884b，同一套命令全绿；合并后同样全绿，零新增失败）：① 既有 Owner-only 动作在 Owner 可用时放行结果不变 —— 回归覆盖既有 Owner-only 用例，未改任何既有断言（worker 逐条核过：routes_lingdoc_owner_test.go:415、routes_lingdoc_owner_407_test.go:115、routes_lingdoc_owner_408_test.go:269 用 manage，routes_lingdoc_owner_409_test.go:143,184 用 ops-control）；② 既有 Owner-only 动作在 Owner 不可用时**新增**冻结拒绝（404 + details.reason_code=owner_unavailable）—— 这是有意制造的行为变化，五项各自的用例已逐条列出（见 AC-49-04）；③ 非 Owner 的既有拒绝**未变**（仍是 404 / not_found，无 owner_unavailable 细节）—— TestArchiveRefusesANonOwner、TestActivationRefusalIsNotTheOwnersOwnRefusal；④ 权限读出口对**非** Owner-only 能力的既有 reason_code capability_or_scope_denied 未被吞掉 —— TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities（普通成员在冻结项目上请求 write/review 仍得 capability_or_scope_denied）。这一条是本轮评审发现并修掉的回归：修前读出口对任何被拒能力都报 owner_unavailable，语义越界；修复提交 7243d6d2，红验证见 known_limits。"
+  }
+ ],
+ "not_run": [
+  {
+   "id": "go test ./... （全仓）",
+   "reason": "本机 Windows 环境限制，与本轮无关：cmd/server 等 4 个包缺 sqlite3.h 无法编译（需 CGO_CFLAGS=-IC:/Users/ASUS/.sqlite-headers 才可编译其中大部分），internal/agent/tools 5 处与 internal/application/service 6 处为既有环境失败（缺 /bin/bash、Windows 路径、临时目录文件锁）。基线 2351edb7 上逐条对照一致，非本轮引入。本轮实际跑的是 go build ./...（exit 0）与四个相关包整包（全部 ok）。"
+  },
+  {
+   "id": "golangci-lint / make lint",
+   "reason": "本机未装该工具链；CI 以 --new-from-rev 跑（需 PR 基线）。本轮以 gofmt -l ./cmd ./internal ./migrations 为空（exit 0）作为格式判据。"
+  },
+  {
+   "id": "go test -race",
+   "reason": "AGENTS.md 写的是「when practical」；本机 Windows 下全量 -race 耗时不可控，且本轮改动是只读派生判定与新增归档写路径，未引入并发共享状态。"
+  },
+  {
+   "id": "PostgreSQL 方言上的实测",
+   "reason": "本轮未新增方言相关逻辑（审计版本列的方言迁移由 PF-3 交付并在 main 上），冻结判定读的是租户成员状态与项目成员状态，与方言无关。PF-3 在 PostgreSQL 上实测过 fail-open 语义并留有残留票 #387 / #414 —— 本轮不重复该范围。"
+  },
+  {
+   "id": "浏览器端的人工点验",
+   "reason": "前端置灰与提示条由 composable 的单元断言与项目真实 runner（tsx --test）覆盖；本轮未做人工浏览器走查（仓库既有的 G6 人工验收脚本属 PF-1/#384 范围）。"
+  }
+ ],
+ "known_limits": [
+  "**读出口按能力聚合，五项动作在读侧共用 manage。** OwnerOnlyCapability(193) 只认 manage 与 ops-control；五项动作各自的授权能力并不一致（立项确认自身的授权问的是 write、正式导出问的是 ops-control、其余走 manage）。前端统一按 manage 读入口级事实，所以现状正确；但将来若有入口按别的能力读，读出口不会给出冻结原因。OwnerOnlyCapability 的注释写明了「新增 Owner-only 动作要在同一次改动里把它的能力登记进来」。",
+  "**写侧按行动者判定：只有 Owner 本人拿得到 owner_unavailable。** 非 Owner 保持朴素的 404（他们本来就没权）；Owner 的租户成员身份被停用/移除时，请求在更早的鉴权处就被拒（401/404），走不到冻结闸门 —— 归因只在「租户角色降权但成员身份仍在」与「项目成员状态停用而租户身份仍在」这两条路径上可得。项目级只读出口不受此限：任何成员都能读到项目当前是否冻结。",
+  "**本轮修掉一个评审发现的语义越界。** 修前权限读出口对任何被拒能力都报 owner_unavailable，把「你无权」误标成「Owner 失效」，吞掉了既有 capability_or_scope_denied 的语义。修复提交 7243d6d2。",
+  "**「判定单一来源」守护抓不到藏在闭包里的内联副本。** 检测按命名函数的语句判定（闭包内的副本不会被点名）；白名单只有 ownerCurrentlyAvailable 与 legacyAuthorizeProject，每条都写明了理由。",
+  "**三处「集成步骤」而非面拥有**：frontend/src/views/lingdoc/Workspace.vue 是所有前端面的保留集成点；frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件；另有三个跨面共享的模块桩清单（firstPassIdentity.test.js / r26ComponentRuntimeFixture.js / workspaceHistory.test.js）、两个迁移子集清单（migration_sqlite_versioned_schema_test.go / lingdoc_integration_test.go）与命名登记表（scripts/lingdoc_naming_registry.py）本面确实改了，按 PF-3 已定的「共享维护点」约定不登记进任何面的路径集，只在登记处 summary 里记事实。",
+  "**本机既有环境失败（与本轮无关，逐条与基线一致）**：cmd/server 等 4 个包缺 sqlite3.h 无法编译；internal/agent/tools 5 处、internal/application/service 6 处既有失败（缺 /bin/bash、Windows 路径、临时目录文件锁）。",
+  "**RestoreProject 未被冻结。** 冻结清单按 Spec 49 是可数的五项具体动作，RestoreProject 不在其中 —— 它没有落在「Owner 专属动作」这份清单上，本轮不扩大清单。"
+ ]
+}
