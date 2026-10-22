@@ -11,14 +11,16 @@ import { getEffectivePermission } from '@/api/lingdoc/permissions'
 export const OWNER_UNAVAILABLE_REASON = 'owner_unavailable'
 
 /**
- * 变更集应用与驳回所要求的能力。
+ * Owner 专属决策所要求的能力。
  *
- * 这两个动作是 Owner 专属的；权限读出口对这个能力回答「可否执行 + 原因」。
+ * 立项确认、模板升级与变更集应用都是 Owner 专属的决策：它们没有第二个
+ * 权威。权限读出口对这个能力回答「可否执行 + 原因」，所以三处入口读的是
+ * 同一个答案——读一次，就知道这些入口现在是不是冻结的。
  */
-export const OWNER_CHANGE_SET_CAPABILITY = 'manage'
+export const OWNER_ONLY_CAPABILITY = 'manage'
 
 /** 冻结原因文案。 */
-export const OWNER_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，变更集应用与驳回已冻结。'
+export const OWNER_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，立项确认、模板升级与变更集应用已冻结。'
 
 /** 恢复指引文案。 */
 export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或由租户 Owner 指定受让人完成一次所有权转让。'
@@ -61,7 +63,7 @@ export function useOwnerAvailability(projectId: () => string | undefined) {
     }
     loading.value = true
     try {
-      const answer = await getEffectivePermission(id, OWNER_CHANGE_SET_CAPABILITY)
+      const answer = await getEffectivePermission(id, OWNER_ONLY_CAPABILITY)
       reasonCode.value = answer?.data?.reason_code ?? ''
     } catch {
       // 读出口答不出来的时候，界面不谎称有冻结原因：入口保持原样。

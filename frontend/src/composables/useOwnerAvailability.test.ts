@@ -58,10 +58,12 @@ test('a frozen project disables the Owner-only entries and says why', async () =
   })
   const availability = subject.useOwnerAvailability(() => 'project-1')
   await availability.refresh()
-  assert.deepEqual(asked, ['project-1/manage'], 'the read outlet answers for the change set capability')
+  assert.deepEqual(asked, ['project-1/manage'], 'one read answers for every Owner-only entry')
   assert.equal(availability.frozen.value, true)
   assert.equal(availability.reasonCode.value, 'owner_unavailable')
   assert.match(availability.reason.value, /Owner/, 'the reason names the Owner')
+  assert.match(availability.reason.value, /立项/, 'the reason names the activation entry')
+  assert.match(availability.reason.value, /模板/, 'the reason names the template upgrade entry')
   assert.match(availability.recovery.value, /恢复|转让/, 'the recovery guidance names a way back')
 })
 
