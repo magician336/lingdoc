@@ -362,6 +362,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "paths": (
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
             ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_unavailable_single_source_test.go", "file"),
             ("internal/lingdoc/workspacecore/change_draft_edit.go", "file"),
             ("internal/lingdoc/workspacecore/chapter_review.go", "file"),
             ("internal/lingdoc/workspacecore/context_revision.go", "file"),
@@ -383,6 +384,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_407_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_408_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_409_test.go", "file"),
