@@ -73,9 +73,13 @@ export interface AgentSession { id: string; project_id: string; version: number;
 // 调研智能体的提案由服务端按那一份契约解码，解不开就拒绝，所以到达这里的形状已经是校验过的。
 // 助手侧那张同名卡片另有自己的规则，尚未经这份契约校验（后续票收紧）。
 // 字段名沿用调研任务自己的一套，保存时不必改名。
+// 候选来源是引用，不是检索产物的等级：每一份都指回这一轮授权上下文里的资料，
+// 服务端逐条比对过，对不上的整份提案被拒，所以这里看不到编造的出处。
+export interface ResearchProposalCandidateSource { source_id: string; reason: string }
 export interface ResearchProposal {
   goal: string; question_type?: string; scope: string
   exclusions?: string[]; queries: string[]; expected_output: string
+  candidate_sources?: ResearchProposalCandidateSource[]
 }
 export interface AgentTurn {
   id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string

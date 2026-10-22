@@ -1246,7 +1246,7 @@
     },
     "ResearchProposal": {
       "type": "object",
-      "description": "服务端按唯一一份契约解码过的调研提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。它永远是候选。",
+      "description": "服务端按唯一一份契约解码过的调研提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级，每一份都指回这一轮授权上下文里的资料。它永远是候选。",
       "properties": {
         "goal": {
           "type": "string",
@@ -1276,6 +1276,80 @@
         "expected_output": {
           "type": "string",
           "minLength": 1
+        },
+        "candidate_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "source_id",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "goal",
+        "scope",
+        "queries",
+        "expected_output"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalWithinTurnContext": {
+      "type": "object",
+      "description": "同一份提案形状在某一轮授权上下文之内的写法：候选来源的 source_id 只能取该轮给出的资料。这是「引用上下文外的资料被拒」这条规则的静态写法——动态的判定由服务端持有（internal/lingdoc/workspacecore/research_proposal.go），它把每一份候选来源逐条对过这一轮的授权来源，对不上就整份拒绝，不降级、不悄悄丢掉那一条。形状本身仍然只有一份（ResearchProposal），这里只多一条上下文约束。",
+      "properties": {
+        "goal": {
+          "$ref": "#/schemas/ResearchProposal/properties/goal"
+        },
+        "question_type": {
+          "$ref": "#/schemas/ResearchProposal/properties/question_type"
+        },
+        "scope": {
+          "$ref": "#/schemas/ResearchProposal/properties/scope"
+        },
+        "exclusions": {
+          "$ref": "#/schemas/ResearchProposal/properties/exclusions"
+        },
+        "queries": {
+          "$ref": "#/schemas/ResearchProposal/properties/queries"
+        },
+        "expected_output": {
+          "$ref": "#/schemas/ResearchProposal/properties/expected_output"
+        },
+        "candidate_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "enum": [
+                  "src-synthetic-1"
+                ]
+              },
+              "reason": {
+                "$ref": "#/schemas/ResearchProposal/properties/candidate_sources/items/properties/reason"
+              }
+            },
+            "required": [
+              "source_id",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -1677,6 +1751,54 @@
           "synthetic material definition"
         ],
         "expected_output": "候选资料、反例与证据缺口"
+      }
+    },
+    {
+      "id": "research-proposal-with-candidate-sources-valid",
+      "schema": "ResearchProposal",
+      "accepted": true,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "candidate_sources": [
+          {
+            "source_id": "src-synthetic-1",
+            "reason": "它写明了合成材料的定义"
+          }
+        ]
+      }
+    },
+    {
+      "id": "research-proposal-out-of-context-source-rejected",
+      "schema": "ResearchProposalWithinTurnContext",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "exclusions": [
+          "不含二手综述"
+        ],
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "candidate_sources": [
+          {
+            "source_id": "src-other-project",
+            "reason": "它在另一个课题里，看起来相关"
+          }
+        ]
       }
     }
   ],
