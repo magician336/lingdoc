@@ -1,7 +1,7 @@
 {
   "mode": "static-and-suite",
   "note": "#48 代码命名规范收口：把「编号在代码层是 0 比特信息」这件事变成机械可判的规则。核心机制是三件套——登记表（文件 → 拥有的知识 / 是否遗留 / 归属票）、守护测试（拿登记表和活树逐条对账）、棘轮（遗留清单只减不增）。本轮把棘轮从 211/54/205 收到 0/0/0：代码区不再有任何以项目号 / 任务号 / 段号命名的文件，也不再有任何以工作号开头的标识符（验收台自己的词汇除外）。改名是「按知识重新命名」，不是「去掉数字」——同一批文件在 Go 侧叫 agent_routes.go / membership_grants.go，在前端叫 agentApi.ts / impactCenterAcceptance/，前后端镜像类型统一为 VersionBasis / VersionExpectation / ConfirmationInput / VersionRef。",
-  "head": "7417ae64",
+  "head": "d11b58cf",
   "base": "058637c4",
   "passed": [
     {
@@ -71,7 +71,7 @@
     "前端构建产物（npm run build）未在本轮执行，只跑了 type-check 与全量测试"
   ],
   "known_limits": [
-    "本机为 Windows：11 处 Go 用例因缺 /bin/bash、Windows 路径与文件锁而失败，已在 origin/main 基线上逐条复现，属既有环境失败",
+    "本机为 Windows：11 处 Go 用例因缺 /bin/bash、Windows 路径与文件锁而失败，已在 origin/main 基线上逐条复现，属既有环境失败。另：本机 cgo 需要 CGO_CFLAGS=-IC:/Users/ASUS/.sqlite-headers 才能构建依赖 sqlite-vec 的包（cmd/server、cmd/desktop、internal/container、retriever/sqlite），不设该变量时这四个包报 sqlite3.h 缺失；它们本次未被触及，且 Linux CI 上该构建正常",
     "验收台（impactCenterAcceptance/、frontend/scripts/、scripts/acceptance/、scripts/lingdoc_mock/）内部的 G3*/T15* 词汇按 2026-10-22 裁决保持不变，它们仍需在登记表中声明，但不计入棘轮"
   ]
 }

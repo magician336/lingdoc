@@ -21,7 +21,7 @@
 | AC-48-09 | 功能未破坏 | 现有 Go 与前端测试 | 成功：全量通过；失败：任一用例红即阻断；权限：现有权限用例；恢复：回到改名前的提交即通过 | `go test ./...`；`cd frontend && npm test` | `docs/08-本轮实施方案/T48-验证报告.json` | **PASS（限环境）** —— `npm run type-check` / `npm test` 全绿；`go test ./...` 的 11 处失败在 origin/main 基线上**逐条复现**（同名测试函数），属既有 Windows 环境失败，本轮未新增失败。 |
 | AC-48-10 | 批次 N 的偿还完成且遗留清单下降 | 命名守护测试 + 登记表 | 成功：批次内全部条目移出遗留；失败：遗留仍有该批次条目即未完成；权限：不适用；恢复：分批回退 | 同 AC-48-01 | 同上 | **PASS** —— 10 张执行票 #361–#370 全部落地；遗留清单 211/54/205 → **0/0/0**。 |
 
-**本轮结果（head `7417ae64`，2026-10-22）**：10 行全部 **PASS**（AC-48-09 的后端部分带环境限制说明）。
+**本轮结果（head `d11b58cf`，2026-10-22）**：10 行全部 **PASS**（AC-48-09 的后端部分带环境限制说明）。
 
 证据去处：[`T48-验证报告.json`](T48-验证报告.json)（逐条证据）。实测命令与退出码：
 
@@ -31,14 +31,14 @@
 | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | exit 0 —— `Ran 322 tests` / `OK`（98.8s） |
 | `python scripts/ci/check_lingdoc_routes.py` | exit 0 |
 | `python docs/08-本轮实施方案/contracts/validate_artifacts.py` | exit 0 |
-| `go test ./...` | 11 处失败，**全部在 origin/main（`bd0ef9ab`）上逐条复现**（同名测试函数），属既有 Windows 环境失败 |
+| `go test ./...` | 11 处失败，**全部在 origin/main（`bd0ef9ab`）上逐条复现**（同名测试函数），属既有 Windows 环境失败。本机 cgo 需要 `CGO_CFLAGS=-IC:/Users/ASUS/.sqlite-headers` 才能构建依赖 sqlite-vec 的包（`cmd/server`、`cmd/desktop`、`internal/container`、`retriever/sqlite`）；不设该变量时这四个包报 `sqlite3.h: No such file or directory`，与本次改动无关（这些包本次未被触及） |
 | `cd frontend && npm run type-check` | exit 0 |
 | `cd frontend && npm test` | exit 0 |
 
-**证据 head 的边界**：上表在 head `7417ae64` 上采集。此后本分支只追加本档与验证报告等文档，**代码树逐字未变**——这一点由下面这条命令在任何后续 head 上自证（它只列代码扩展名，不含 docs 下的 JSON）：
+**证据 head 的边界**：上表在 head `d11b58cf` 上采集。此后本分支只追加本档与验证报告等文档，**代码树逐字未变**——这一点由下面这条命令在任何后续 head 上自证（它只列代码扩展名，不含 docs 下的 JSON）：
 
 ```
-git diff --name-only 7417ae64..HEAD -- '*.go' '*.ts' '*.tsx' '*.vue' '*.js' '*.mjs' '*.less' '*.py' '*.sql'
+git diff --name-only d11b58cf..HEAD -- '*.go' '*.ts' '*.tsx' '*.vue' '*.js' '*.mjs' '*.less' '*.py' '*.sql'
 ```
 
 输出为空即说明上表证据绑定到该 head 仍然成立。
