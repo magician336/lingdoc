@@ -115,7 +115,14 @@ type SelectedRewriteCandidate struct {
 	// 它是**候选层的那个枚举**：选段候选与生成候选用同一份词表、同一组取值，
 	// 不再各说各的（开发计划 §3.4 的归一）。空值表示「这次运行没有交出可采纳的
 	// 产出」——运行中是这样，一次失败也是这样；失败的原因在 ErrorCode 里。
-	Validity             candidateadoption.Validity     `json:"validity"`
+	Validity candidateadoption.Validity `json:"validity"`
+	// Status 是给还没改读 validity 的消费者看的**兼容渲染**。
+	//
+	// 状态只有一个拥有者：上面那个枚举。这个字段是它的渲染结果，不是第二套
+	// 状态机——它由 rewriteStatusProjection 从枚举算出。保留路径
+	// （frontend/src/views/lingdoc/Workspace.vue）还在读它；那些消费者改读
+	// validity 之后，这个字段与那段代码一起删掉。
+	Status               string                         `json:"status"`
 	RunMode              candidateadoption.RunMode      `json:"run_mode"`
 	BaseChapterVersionID *string                        `json:"base_chapter_version_id"`
 	SpecRevision         int64                          `json:"spec_revision"`
@@ -897,13 +904,37 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		}
 	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
-		Validity: candidateadoption.Validity(row.Validity), RunMode: row.RunMode, BaseChapterVersionID: row.BaseChapterVersionID,
-		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
+		Validity: candidateadoption.Validity(row.Validity), Status: rewriteStatusProjection(row), RunMode: row.RunMode,
+		BaseChapterVersionID: row.BaseChapterVersionID,
+		SpecRevision:         row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
 		ReplacementMarkdown: row.ReplacementMarkdown, SourceIDs: sourceIDs, AuthorizedSources: snapshots,
 		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt,
 		WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin),
 		DroppedContext: dropped}, nil
+}
+
+// rewriteStatusProjection 把统一的状态渲染成旧字段的取值。
+//
+// 它是**渲染**，不是第二套状态：状态只有一个拥有者（候选层的 Validity 枚举）。
+// 这个投影只为还没改读 validity 的消费者而存在（保留路径
+// frontend/src/views/lingdoc/Workspace.vue 还在读它）；那些消费者改完之后，
+// 这个函数与那个字段一起删掉。
+func rewriteStatusProjection(row selectedRewriteRow) string {
+	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
+		return "applying"
+	}
+	switch candidateadoption.Validity(row.Validity) {
+	case candidateadoption.ValidityFresh:
+		return "ready"
+	case candidateadoption.ValidityStale, candidateadoption.ValidityNotAuthorized:
+		return "stale"
+	default:
+		if row.ErrorCode != "" {
+			return "failed"
+		}
+		return "queued"
+	}
 }
 
 func stringSet(values []string) []string {

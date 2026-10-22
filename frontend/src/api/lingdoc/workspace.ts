@@ -296,6 +296,14 @@ export interface SelectedRewriteCandidate {
    * 失败的原因在 error_code 里。
    */
   validity: '' | 'fresh' | 'stale' | 'not_authorized'
+  /**
+   * 旧字段名的兼容渲染。
+   *
+   * @deprecated 状态只有一个拥有者：validity。这个字段是它的渲染结果，
+   * 只为还没改读 validity 的消费者而存在（保留路径 Workspace.vue 还在读它）；
+   * 那些消费者改完之后它就删掉了。
+   */
+  status: 'queued' | 'ready' | 'applying' | 'failed' | 'stale'
   run_mode: 'real' | 'mock' | 'real_api_fake_model'
   base_chapter_version_id: string | null
   spec_revision: number
