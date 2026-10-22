@@ -294,3 +294,88 @@ test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',
  assert.match(f.state.label('invalid_proposal'),/未通过服务端校验/)
  f.close()
 })
+
+// A custom host renderer: the actual compiled template is rendered, so the
+// panel's own markup decides what the user sees. No browser, no network.
+const host=Vue.createRenderer({
+ createElement:type=>({type,tagName:type.toUpperCase(),children:[],props:{},listeners:{},parent:null,value:'',checked:false,multiple:false,selectedIndex:-1,get options(){return this.children.filter(n=>n.type==='option')},getRootNode(){return global.document},getAttribute(k){return this.props[k]},addEventListener(k,h){this.listeners[k]=h},removeEventListener(k){delete this.listeners[k]},showModal(){},close(){},querySelector(){return null},focus(){}}),
+ createText:text=>({type:'#text',text,children:[],parent:null}),createComment:text=>({type:'#comment',text,children:[],parent:null}),
+ setElementText(n,t){n.text=t},setText(n,t){n.text=t},patchProp(n,k,_old,v){n.props[k]=v;if(['value','checked','selected','multiple','disabled','type'].includes(k))n[k]=v;if(k==='value')n._value=v},
+ insert(n,p,a=null){if(n.parent)n.parent.children.splice(n.parent.children.indexOf(n),1);const at=a?p.children.indexOf(a):-1;p.children.splice(at<0?p.children.length:at,0,n);n.parent=p},
+ remove(n){if(n.parent)n.parent.children.splice(n.parent.children.indexOf(n),1)},parentNode:n=>n.parent,
+ nextSibling:n=>n.parent?.children[n.parent.children.indexOf(n)+1]||null,
+})
+const nodeText=n=>n.type==='#comment'?'':(n.text||'')+(n.children||[]).map(nodeText).join('')
+const allNodes=n=>[n,...(n.children||[]).flatMap(allNodes)]
+const byClass=(root,name)=>allNodes(root).filter(n=>n.props&&n.props.class===name)
+
+function renderedFixture(options={}){
+ const calls=[],cleanup=[],emitted=[],project={id:'project',name:'合成测试',status:'active',project_version:7,spec_revision:3,current_context_revision:4,spec:{topic:'合成主题'},template_id:'template',template_version:'1',members:[{user_id:'owner',role:'owner'}]}
+ const props=Vue.reactive({project,readonly:false,currentUserId:'owner',...options.props})
+ const defaultAPI=new Proxy({}, {get:(_,method)=>(...args)=>{calls.push({method,args});if(method==='listReleases')return Promise.resolve({data:{items:[]}});return Promise.resolve({data:[]})}})
+ const g2=new Proxy(options.api||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
+ const workspace=new Proxy(options.workspace||{}, {get:(target,method)=>method in target?target[method]:defaultAPI[method]})
+ global.document={activeElement:null};global.HTMLElement=class {};global.Document=class {};global.ShadowRoot=class {}
+ const raw=fs.readFileSync(new URL('./ResearchPanel.vue',import.meta.url),'utf8'),parsed=parse(raw)
+ assert.equal(parsed.errors.length,0)
+ const script=compileScript(parsed.descriptor,{id:'g2-render-test'})
+ const template=compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g2-render-test',compilerOptions:{bindingMetadata:script.bindings}})
+ assert.equal(template.errors.length,0)
+ const helperSource=fs.readFileSync(new URL('./researchUiState.ts',import.meta.url),'utf8'),helpers={}
+ vm.runInNewContext(ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:helpers,URL,crypto:{randomUUID:()=>String(calls.length)}})
+ const affectedSource=fs.readFileSync(new URL('./assistantAffectedGroups.ts',import.meta.url),'utf8'),affected={}
+ vm.runInNewContext(ts.transpileModule(affectedSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:affected,URL})
+ const require_=id=>{
+  if(id==='vue')return {...Vue,onBeforeUnmount:callback=>cleanup.push(callback)}
+  if(id==='@/stores/auth')return {useAuthStore:()=>({currentUserId:props.currentUserId,effectiveTenantId:'fixture-tenant'})}
+  if(id==='@/api/lingdoc/permissions')return {getEffectivePermission:()=>Promise.resolve({data:{allowed:false,capability:'manage',project_version:props.project.project_version,reason_code:'fixture-denied'}})}
+  if(id==='@/api/lingdoc/agentApi')return g2
+  if(id==='@/api/lingdoc/workspace')return workspace
+  if(id==='./researchUiState')return helpers
+  if(id==='./assistantAffectedGroups')return affected
+  if(['@/api/lingdoc/delivery','@/api/webSearchProvider','@/api/knowledge-base'].includes(id))return defaultAPI
+  throw new Error('unexpected dependency '+id)
+ }
+ const scriptBox={exports:{}}
+ vm.runInNewContext(ts.transpileModule(script.content,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:scriptBox.exports,console,document:{activeElement:null},setTimeout,clearTimeout,require:require_})
+ const renderBox={exports:{}}
+ vm.runInNewContext(ts.transpileModule(template.code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:renderBox.exports,console,document:{activeElement:null},setTimeout,clearTimeout,require:require_})
+ const component=scriptBox.exports.default
+ let state
+ const wrapped={...component,render:renderBox.exports.render,setup(p,ctx){state=component.setup(p,{expose:()=>{},emit:(...args)=>emitted.push(args)});return state}}
+ const container={children:[]}
+ const app=host.createApp({render:()=>Vue.h(wrapped,{...props,onChanged:()=>{},onDirty:()=>{}})})
+ app.mount(container)
+ return {state,props,calls,emitted,container,ui:()=>nodeText(container),close:()=>app.unmount()}
+}
+
+test('提案的候选来源与各自理由在面板上分列展示，来源与理由不是一段话',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const turn={...base,suggestions:{...base.suggestions,task_card:{...base.suggestions.task_card,candidate_sources:[{source_id:'source-1',reason:'它写明了合成材料的定义'},{source_id:'source-2',reason:'它给出了反例'}]}}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[turn]
+ await tick()
+ const ids=byClass(f.container,'proposal-source-id').map(nodeText)
+ const reasons=byClass(f.container,'proposal-source-reason').map(nodeText)
+ assert.deepEqual(ids,['source-1','source-2'])
+ assert.deepEqual(reasons,['它写明了合成材料的定义','它给出了反例'])
+ // 分列：来源与理由各自在自己的格子里，没有被揉成一段话
+ for(const node of byClass(f.container,'proposal-source-id'))assert.doesNotMatch(nodeText(node),/它写明了|它给出了/)
+ for(const node of byClass(f.container,'proposal-source-reason'))assert.doesNotMatch(nodeText(node),/source-\d/)
+ assert.match(f.ui(),/候选来源/)
+ f.close()
+})
+
+test('被服务端拒绝的提案在面板上不出现任何候选来源',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const refused={...base,status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ assert.equal(byClass(f.container,'proposal-source-reason').length,0)
+ assert.doesNotMatch(f.ui(),/source-1/)
+ f.close()
+})
