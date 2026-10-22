@@ -91,6 +91,9 @@ func newOwnerFreezeFixture(t *testing.T) *ownerFreezeFixture {
 		"000039_lingdoc_ruleset_export_reference.up.sql",
 		"000040_lingdoc_ruleset_use_audits.up.sql",
 		"000041_lingdoc_template_version_ruleset_ref.up.sql",
+		// 000052 adds the two audit version columns (#327): without them the
+		// audit insert of every write fails on this fixture.
+		"000052_lingdoc_audit_version_fields.up.sql",
 		"000053_lingdoc_project_archive.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
