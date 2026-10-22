@@ -153,6 +153,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/template-copy/rule-set", h.bindTemplateCopyRuleSet)
 	routes.Write.POST("/projects/:projectId/discard", h.discardProject)
 	routes.Write.POST("/projects/:projectId/restore", h.restoreProject)
+	routes.Write.POST("/projects/:projectId/archive", h.archiveProject)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
 	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
@@ -644,6 +645,32 @@ func (h *Handler) restoreProject(c *gin.Context) {
 		return
 	}
 	result, err := h.projects.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
+}
+
+// archiveProject ends a project. The project version the caller read travels
+// with the request, and the idempotency key makes a retried request one
+// action.
+func (h *Handler) archiveProject(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ExpectedProjectVersion int64 `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	result, err := h.projects.ArchiveProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return

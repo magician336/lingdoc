@@ -96,6 +96,8 @@ func newOwnerFreezeFixture(t *testing.T) *ownerFreezeFixture {
 		// refusal under test never gets a chance to happen: the write dies
 		// with an opaque 500 before the Owner check is reached.
 		"000052_lingdoc_audit_version_fields.up.sql",
+		// 000053 adds the project archive table (#410).
+		"000053_lingdoc_project_archive.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {

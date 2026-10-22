@@ -26,6 +26,9 @@ export const OWNER_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，�
 /** Owner 专属决策被冻结时的文案。 */
 export const OWNER_DECISION_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，立项确认、模板升级与变更集应用已冻结。'
 
+/** 归档被冻结时的文案：同一个冻结事实，落在归档入口上就讲归档。 */
+export const OWNER_ARCHIVE_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，归档已冻结。'
+
 /** 恢复指引文案。 */
 export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或由 WeKnora 租户 Owner 指定受让人完成一次所有权转让。'
 

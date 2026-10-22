@@ -123,6 +123,7 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		"000050_lingdoc_selected_rewrite_validity.up.sql",
 		"000051_lingdoc_review_reports.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
+		"000053_lingdoc_project_archive.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {

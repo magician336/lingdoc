@@ -564,6 +564,9 @@
 
         <DraftCandidatePanel ref="draftCandidatePanelRef" v-if="project.status==='draft'" :project="project" :readonly="!canManageProjectMembers" :current-user-id="auth.currentUserId??''" @dirty="draftCandidateDirty=$event" @use-field="useManualDraftField" />
 
+        <!-- 归档入口是本面新建的组件；这里是集成步骤，不独占这个文件。 -->
+        <ProjectArchivePanel v-if="project.status === 'active'" :project="project" @archived="refreshProjectVersion()" />
+
         <section v-if="project.status === 'active' && (specChanged || lastChangeSet)" class="change-set-panel" aria-label="研究条件变更复核">
           <div v-if="specChanged">
             <h3>提交研究条件变更</h3>
@@ -768,6 +771,7 @@ import {
 } from '@/api/lingdoc/generation'
 import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
+import ProjectArchivePanel from './ProjectArchivePanel.vue'
 import ResearchPanel from './ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
 import LingDocReviewReportPanel from './LingDocReviewReportPanel.vue'
