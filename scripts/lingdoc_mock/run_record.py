@@ -12,16 +12,16 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import (RUNTIME_DEPENDENCIES, RUNTIME_MODES, SAFE_FIXTURE_ID,
-                                               build_evidence, digest,
-                                               main_path_report_to_scenario_evidence,
-                                               normalize_scenario_evidence, reduce_results)
-from scripts.lingdoc_mock.g6_evidence import SENSITIVE_VALUE_PATTERN
-from scripts.lingdoc_mock.g6_main_path import build_main_path_report
-from scripts.lingdoc_mock.g6_metrics import build_beta_report
-from scripts.lingdoc_mock.g6_observability import build_observability_report
-from scripts.lingdoc_mock.g6_rollback import build_rollback_report
-from scripts.lingdoc_mock.g6_security import build_security_report
+from scripts.lingdoc_mock.quality_evidence import (RUNTIME_DEPENDENCIES, RUNTIME_MODES, SAFE_FIXTURE_ID,
+                                                   build_evidence, digest,
+                                                   main_path_report_to_scenario_evidence,
+                                                   normalize_scenario_evidence, reduce_results)
+from scripts.lingdoc_mock.quality_evidence import SENSITIVE_VALUE_PATTERN
+from scripts.lingdoc_mock.main_path_evidence import build_main_path_report
+from scripts.lingdoc_mock.trial_window_metrics import build_beta_report
+from scripts.lingdoc_mock.observability_contract import build_observability_report
+from scripts.lingdoc_mock.rollback_rehearsal import build_rollback_report
+from scripts.lingdoc_mock.security_acceptance_matrix import build_security_report
 
 SENSITIVE_KEYS = frozenset({"body", "content", "quoted_text", "source_text", "token",
                             "authorization", "prompt", "completion", "model_input"})

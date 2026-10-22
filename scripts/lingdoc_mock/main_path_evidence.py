@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, SAFE_FIXTURE_ID, build_evidence, digest
+from scripts.lingdoc_mock.quality_evidence import RUNTIME_MODES, SAFE_FIXTURE_ID, build_evidence, digest
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, WORKFLOW_PATH, ScenarioRunner, WorkflowError, write_report
 
 REQUIRED_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")

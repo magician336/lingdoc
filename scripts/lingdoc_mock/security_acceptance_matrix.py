@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, digest, reduce_results
+from scripts.lingdoc_mock.quality_evidence import RUNTIME_MODES, build_evidence, digest, reduce_results
 
 SECURITY_CASES = (
     {"id": "SEC-01", "name": "revoked_source_read", "severity": "P0",
