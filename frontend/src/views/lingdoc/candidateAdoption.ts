@@ -1,4 +1,4 @@
-import type { AcceptCandidateInput } from '@/api/lingdoc/candidateAdoption'
+import type { AcceptCandidateInput, AdoptionConfirmation } from '@/api/lingdoc/candidateAdoption'
 
 // 采纳对话框的幂等签名，与渲染分开（同 generationAttempt.ts / deliveryState.ts）。
 //
@@ -74,4 +74,79 @@ export function newSnapshotId(): string {
     return `candidate-adoption-snapshot-${crypto.randomUUID()}`
   }
   return `candidate-adoption-snapshot-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+/**
+ * 选段改写候选的事实：确认载荷要跟它对上的那几项。
+ */
+export interface RewriteConfirmationFacts {
+  /** 产生这个候选的动作。旧路径的候选没有动作。 */
+  writing_action?: string
+  /** 候选正文的来源。 */
+  origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
+  /** 这个候选的选区：部分采纳写的就是这一段。 */
+  selection: { start_utf16: number; end_utf16: number }
+}
+
+/**
+ * 选段改写的确认结果。
+ *
+ * 三种，不是两种：
+ *
+ * - `confirmed` —— 这次采纳带确认载荷。
+ * - `legacy` —— 旧路径的候选，没有动作可确认，因此**不带**载荷。服务端把
+ *   「有载荷但没有动作」判成非法请求，所以这一份必须什么都不带。
+ * - `unconfirmable` —— 这一次**应该**确认，但缺了东西（来源、身份、时刻）。
+ *   它和 `legacy` 混成一种的后果是：动作路径的候选因为缺来源而被静默地当成
+ *   旧路径发出去，服务端拒，用户只看到一句「请求不合法」。
+ */
+export type RewriteConfirmationResult =
+  | { kind: 'confirmed'; confirmation: AdoptionConfirmation }
+  | { kind: 'legacy' }
+  | { kind: 'unconfirmable'; reason: string }
+
+/**
+ * 组装选段改写的显式确认载荷。
+ *
+ * 动作路径的候选必须带它：服务端要确认这次采纳的是哪个动作的结果、写到哪里、
+ * 写到哪一段、谁在什么时候确认的、候选是什么来源。缺任何一项，服务层拒——
+ * 所以这不是界面上的一个勾选框，而是请求体的一部分。
+ *
+ * 两条规则在这里落地：
+ *
+ * - **旧路径的候选不带载荷**。旧路径没有动作可确认，带了反而被拒（服务端把
+ *   「有载荷但没有动作」判成非法请求）。所以缺 `writing_action` 时返回
+ *   `legacy`，由调用方**不发**载荷。
+ * - **采纳目标固定为「工作副本·选段」**。选段端点只实现这一种写入方式，
+ *   另两个目标服务端会拒。范围就是候选的选区：这个端点写的就是那一段。
+ */
+export function rewriteAdoptionConfirmation(
+  candidate: RewriteConfirmationFacts,
+  confirmedBy: string,
+  confirmedAt: string,
+): RewriteConfirmationResult {
+  if (!candidate.writing_action) return { kind: 'legacy' }
+  if (!candidate.origin) {
+    return { kind: 'unconfirmable', reason: '这个候选没有记录来源，无法确认采纳；请用动作面板重新运行后再采纳。' }
+  }
+  if (!confirmedBy.trim()) {
+    return { kind: 'unconfirmable', reason: '当前登录身份未识别，无法确认采纳。' }
+  }
+  if (!confirmedAt) {
+    return { kind: 'unconfirmable', reason: '确认时刻缺失，无法确认采纳。' }
+  }
+  return {
+    kind: 'confirmed',
+    confirmation: {
+      writing_action: candidate.writing_action,
+      adoption_target: 'working_copy_partial',
+      scope: {
+        start_utf16: candidate.selection.start_utf16,
+        end_utf16: candidate.selection.end_utf16,
+      },
+      confirmed_at: confirmedAt,
+      confirmed_by: confirmedBy,
+      origin: candidate.origin,
+    },
+  }
 }

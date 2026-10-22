@@ -258,3 +258,25 @@ test('the output parameter check refuses a payload that mixes the two exclusive 
  assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'explain'}}),false)
  assert.equal(api.outputParamsFit(description,{length:'short',transform:{mode:'translate',target_language:'zh',audience:'peer'}}),false)
 })
+
+test('the workspace actually mounts the action panel and sends what the panel produced',()=>{
+ // 缺口：面板造好了却零引用，页面上的改写永远走不到动作路径。这条守卫钉的是
+ // 接线——面板交出来的动作、产出参数、范围与说明得真的进请求体。
+ const workspace=fs.readFileSync(path.join(__dirname,'Workspace.vue'),'utf8')
+ assert.match(workspace,/import GenerationActionPanel from '\.\/GenerationActionPanel\.vue'/)
+ assert.match(workspace,/<GenerationActionPanel/)
+ assert.match(workspace,/@submit="onRewriteActionSubmit"/)
+ assert.match(workspace,/writing_action: plan\.action/)
+ assert.match(workspace,/output_params: plan\.output_params/)
+ assert.match(workspace,/scope: plan\.scope/)
+ assert.match(workspace,/instruction: plan \? plan\.instruction\.trim\(\) : rewriteInstruction\.value\.trim\(\)/)
+})
+
+test('the workspace no longer reads the old status word list of a rewrite candidate',()=>{
+ // 旧形状：候选带一个 status 字符串，页面在十一处读它。现在失效判据归
+ // validity 一个拥有者，「正在应用」归 apply_pending 一个拥有者。
+ const workspace=fs.readFileSync(path.join(__dirname,'Workspace.vue'),'utf8')
+ assert.doesNotMatch(workspace,/rewriteCandidate\.status/)
+ assert.doesNotMatch(workspace,/rewriteCandidate\.value\.status/)
+ assert.match(workspace,/rewriteCandidateStage/)
+})

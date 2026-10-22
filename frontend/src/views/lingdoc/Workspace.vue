@@ -437,8 +437,9 @@
           <SelectedEvidenceContext v-if="project && generationEvidenceRefs.length" :project="project" :current-user-id="auth.currentUserId ?? ''" :selected="generationEvidenceRefs" :readonly="busy || generationPending || rewriteBusy" @remove="removeGenerationEvidence" @open="openSelectedEvidence" />
 <section class="selected-rewrite" aria-label="选段改写">
               <h4>选段 AI 改写</h4>
-              <p class="muted">先在正文中选中一段，再填写改写要求。生成只会产生候选，不会直接改正文。</p>
-              <label for="rewrite-instruction">改写要求</label>
+              <p class="muted">先在正文中选中一段，再选择动作与产出参数。生成只会产生候选，不会直接改正文。</p>
+              <GenerationActionPanel v-if="project" :project-id="project.id" scope="section" action="rewrite" @submit="onRewriteActionSubmit" />
+              <label for="rewrite-instruction">改写要求（不按动作发起的自由文本路径）</label>
               <textarea id="rewrite-instruction" v-model="rewriteInstruction" :disabled="busy || rewriteBusy" rows="2" maxlength="2000" />
               <label v-if="generationEvidenceRefs.length" class="rewrite-evidence-choice"><input v-model="rewriteUseEvidence" type="checkbox" :disabled="rewriteBusy || busy">本次选段改写使用上述 {{generationEvidenceRefs.length}} 张明确选定证据卡（不混入额外来源）</label>
               <fieldset class="rewrite-sources" :disabled="rewriteUseEvidence">
@@ -451,8 +452,8 @@
                 </label>
                 <p v-if="!sources.length" class="muted">如需补充其他参考资料，请先检索。原文已有引用不受此列表是否为空影响。</p>
               </fieldset>
-              <button type="button" @click="requestSelectedRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
-                {{ rewriteBusy ? '正在生成候选…' : '改写选中段落' }}
+              <button type="button" @click="requestLegacyRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
+                {{ rewriteBusy ? '正在生成候选…' : '按自由文本要求生成候选' }}
               </button>
               <section v-if="rewriteCandidate" class="rewrite-preview" aria-live="polite">
                 <p class="muted">候选状态：{{ rewriteCandidateStageLabel }} · 运行模式：{{ rewriteCandidate.run_mode }}</p>
@@ -759,6 +760,7 @@ import G2ResearchPanel from './G2ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
 import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
+import GenerationActionPanel from './GenerationActionPanel.vue'
 import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
@@ -780,10 +782,12 @@ import {
 } from './sourceContext'
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import { useAuthStore } from '@/stores/auth'
+import type { WritingActionOutputParams, WritingActionScope } from '@/api/lingdoc/writingAction'
 import { reviewAnchorHint, reviewAnchorState, reviewItemStatus, reviewProgress, reviewStatusLabel, type ReviewDisposition } from './reviewPanel'
 import { rewriteStage, rewriteStageAdoptable, rewriteStageLabel, rewriteStageNotice } from './rewriteStage'
 import { inspectorOnNarrowTransition, mergeWbLayoutPref, readWbLayoutPref, wbLayoutStorageKey, type WbLayoutPref } from './layoutPref'
 import { filterProjects } from './projectPicker'
+import { rewriteAdoptionConfirmation } from './candidateAdoption'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
@@ -944,6 +948,16 @@ const rewriteSourceIds = ref<string[]>([])
 const rewriteUseEvidence=ref(false)
 const rewriteBusy = ref(false)
 const rewriteOpen = ref(false)
+// 这一次按动作发起的改写计划：动作、目标范围、产出参数与补充说明。
+//
+// 它是**一次**计划，不是页面的常驻设置：动作面板每次提交都覆盖它，而走自由
+// 文本路径时它被清空——否则「按自由文本要求生成候选」会悄悄带上上一次的动作。
+const rewriteActionPlan = ref<{
+  action: string
+  scope: WritingActionScope
+  output_params: WritingActionOutputParams
+  instruction: string
+} | null>(null)
 /* 待核重新关联：选段经三重验证映射后真实 PUT anchor；无锚点/失效项才可关联 */
 const relinkItemId = ref('')
 const relinkNotice = ref('')
@@ -2549,6 +2563,31 @@ function toggleRewriteSource(sourceId: string, event: Event) {
   rewriteSourceIds.value = [...next].sort()
 }
 
+// 动作面板提交：这一次按动作发起。
+//
+// 面板交出来的动作、目标范围、产出参数与补充说明**真的进请求体**——动作路
+// 径的候选因此带上动作与来源，采纳时才有东西可确认。
+function onRewriteActionSubmit(payload: {
+  action: string
+  scope: WritingActionScope
+  output_params: WritingActionOutputParams
+  instruction: string
+}) {
+  rewriteActionPlan.value = {
+    action: payload.action,
+    scope: payload.scope,
+    output_params: payload.output_params,
+    instruction: payload.instruction,
+  }
+  void requestSelectedRewrite()
+}
+
+// 自由文本路径：清掉上一次的动作计划，免得「按自由文本要求」悄悄带上动作。
+function requestLegacyRewrite() {
+  rewriteActionPlan.value = null
+  void requestSelectedRewrite()
+}
+
 async function requestSelectedRewrite() {
   if (!project.value || !chapter.value || !workingCopy.value || rewriteBusy.value || busy.value) return
   // 连续文稿编辑器：经"保存正文 + 三重验证"的 UTF-16 映射取选区；无法安全映射明确拒绝（不猜范围）
@@ -2568,7 +2607,10 @@ async function requestSelectedRewrite() {
     errorMessage.value = '选中的内容为空白，请选择一段正文。'
     return
   }
-  if (!rewriteInstruction.value.trim()) {
+  const plan = rewriteActionPlan.value
+  // 自由文本路径的说明是必填的；动作路径的说明只是补充说明，必填的是动作与
+  // 产出参数（服务端按执行计划校验）。
+  if (!plan && !rewriteInstruction.value.trim()) {
     errorMessage.value = '请填写改写要求。'
     return
   }
@@ -2588,9 +2630,11 @@ async function requestSelectedRewrite() {
     expected_spec_revision: project.value.spec_revision,
     expected_working_copy_revision: workingCopy.value.working_copy_revision,
     selection,
-    instruction: rewriteInstruction.value.trim(),
+    instruction: plan ? plan.instruction.trim() : rewriteInstruction.value.trim(),
     source_ids: rewriteUseEvidence.value&&generationEvidenceRefs.value.length?[]:[...rewriteSourceIds.value].sort(),
     evidence_card_refs: rewriteUseEvidence.value&&generationEvidenceRefs.value.length?generationEvidenceRefs.value.map(({id,version})=>({id,version})):undefined,
+    // 动作路径三个字段一起给：服务端看到它们就按动作解析执行计划，缺一即拒。
+    ...(plan ? { writing_action: plan.action, output_params: plan.output_params, scope: plan.scope } : {}),
   }
   const keyName = `selected-rewrite:${projectId}:${chapterId}`
   const key = operationKey(keyName, input)
@@ -2609,6 +2653,16 @@ async function requestSelectedRewrite() {
 
 async function applyRewriteCandidate() {
   if (!project.value || !chapter.value || !workingCopy.value || !rewriteCandidate.value || rewriteBusy.value || busy.value || chapterChanged.value) return
+  // 确认载荷：动作、采纳目标、目标范围、确认时刻、确认人、来源。
+  //
+  // 动作路径的候选缺它会被服务端 400 拒（ErrRewriteConfirmationRequired）——
+  // 采纳不是「点一下就写进去」，用户要确认这次采纳的是哪个动作的结果、写到哪里、
+  // 写到哪一段。旧路径的候选没有动作可确认，因此**不带**这个字段。
+  const confirmation = rewriteAdoptionConfirmation(rewriteCandidate.value, auth.currentUserId, new Date().toISOString())
+  if (confirmation.kind === 'unconfirmable') {
+    errorMessage.value = confirmation.reason
+    return
+  }
   const candidate = rewriteCandidate.value
   const stage = rewriteCandidateStage.value
   if (!rewriteStageAdoptable(stage)) return
@@ -2620,6 +2674,7 @@ async function applyRewriteCandidate() {
     expected_spec_revision: candidate.spec_revision,
     expected_working_copy_revision: candidate.working_copy_revision,
     base_chapter_version_id: candidate.base_chapter_version_id,
+    ...(confirmation.kind === 'confirmed' ? { confirmation: confirmation.confirmation } : {}),
   }
   const keyName = `apply-selected-rewrite:${candidate.candidate_id}`
   const key = `apply-${candidate.candidate_id}`

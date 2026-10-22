@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import type { AcceptCandidateInput, AdoptionConfirmation } from '@/api/lingdoc/candidateAdoption'
-import { adoptionSignature, keyForAttempt, newSnapshotId, workingCopyBodyHash } from './candidateAdoption'
+import { adoptionSignature, keyForAttempt, newSnapshotId, rewriteAdoptionConfirmation, workingCopyBodyHash } from './candidateAdoption'
 
 const workspace = readFileSync(new URL('./Workspace.vue', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('../../components/LingDocCandidateAdoptionDialog.vue', import.meta.url), 'utf8')
@@ -169,4 +169,59 @@ test('project selection uses named options and the shared unsaved-input policy',
   assert.match(workspace, /selectProject\(id, \{ handledConditions: handledDraft \}\)/)
   assert.match(workspace, /const unsavedInputState = computed<UnsavedInputState>/)
   assert.match(workspace, /unsavedInputsAreDirty\(\{\s*\.\.\.unsavedInputState\.value,[\s\S]*?\}, \{ conditionsHandled \}\)/)
+})
+
+test('the selected rewrite adoption carries the explicit confirmation payload', () => {
+  // 动作路径的候选缺确认载荷会被服务端 400 拒（ErrRewriteConfirmationRequired），
+  // 所以这不是「界面上的一个勾选框」，而是请求体的一部分。
+  const result = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', origin: 'ai_generated', selection: { start_utf16: 3, end_utf16: 11 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(result.kind, 'confirmed')
+  if (result.kind !== 'confirmed') return
+  const confirmation = result.confirmation
+  assert.equal(confirmation.writing_action, 'rewrite')
+  // 采纳目标固定为选段：选段端点只实现这一种写入方式，另两个目标服务端会拒。
+  assert.equal(confirmation.adoption_target, 'working_copy_partial')
+  // 范围就是候选的选区：这个端点写的就是那一段。
+  assert.deepEqual(confirmation.scope, { start_utf16: 3, end_utf16: 11 })
+  assert.equal(confirmation.confirmed_at, '2026-10-22T01:00:00.000Z')
+  assert.equal(confirmation.confirmed_by, 'user-1')
+  assert.equal(confirmation.origin, 'ai_generated')
+})
+
+test('a legacy rewrite candidate carries no confirmation payload at all', () => {
+  // 旧路径没有动作可确认：带了载荷反而被服务端判成非法请求。所以这一份是
+  // 「不带」，不是「带一个空的」。
+  const legacy = rewriteAdoptionConfirmation(
+    { origin: 'ai_generated', selection: { start_utf16: 0, end_utf16: 4 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(legacy.kind, 'legacy')
+})
+
+test('a rewrite candidate without an origin or an identity cannot be confirmed', () => {
+  // 这两种不能被当成「旧路径」：旧路径只是没有动作，动作路径缺来源是**缺**了
+  // 确认所需的东西。混成一种的话，缺来源的候选会被静默地当成旧路径发出去。
+  const noOrigin = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', selection: { start_utf16: 0, end_utf16: 4 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(noOrigin.kind, 'unconfirmable')
+  const noIdentity = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', origin: 'ai_generated', selection: { start_utf16: 0, end_utf16: 4 } },
+    '  ',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(noIdentity.kind, 'unconfirmable')
+})
+
+test('the workspace sends the confirmation with the rewrite adoption', () => {
+  // 这条守卫盯的是接线：确认载荷不是「有个函数就够」，它得真的进了请求体。
+  assert.match(workspace, /rewriteAdoptionConfirmation\(/)
+  assert.match(workspace, /confirmation:\s*confirmation\.confirmation/)
 })
