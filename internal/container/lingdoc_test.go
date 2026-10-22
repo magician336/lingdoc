@@ -93,13 +93,17 @@ func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
 		"GET /api/projects/:projectId/rewrite-candidates/:candidateId",
 		"POST /api/projects/:projectId/chapters/:chapterId/rewrite-candidates",
 		"POST /api/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply",
+		"POST /api/projects/:projectId/chapters/:chapterId/review-reports",
+		"GET /api/projects/:projectId/review-reports/:reportId",
+		"POST /api/projects/:projectId/review-reports/:reportId/reject",
+		"POST /api/projects/:projectId/chapters/:chapterId/review-reports/:reportId/apply",
 	} {
 		if !routes[path] {
 			t.Errorf("the production composition does not serve %s although the capability is declared", path)
 		}
 	}
-	if got := len(engine.Routes()); got != 48 {
-		t.Fatalf("the production composition registered %d routes, want 48", got)
+	if got := len(engine.Routes()); got != 53 {
+		t.Fatalf("the production composition registered %d routes, want 53", got)
 	}
 }
 

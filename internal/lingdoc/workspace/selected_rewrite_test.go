@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 )
 
 func TestSelectionByteRangeUsesUTF16OffsetsAndWholeRuneBoundaries(t *testing.T) {
@@ -68,7 +70,7 @@ func TestWriteRewriteResultPersistsOnlySourcesActuallyUsed(t *testing.T) {
 	if len(persistedIDs) != 1 || persistedIDs[0] != "src-b" || len(persistedSnapshots) != 1 || persistedSnapshots[0].SourceID != "src-b" {
 		t.Fatalf("persisted source set = %v / %v, want only src-b", persistedIDs, persistedSnapshots)
 	}
-	if row.Status != "ready" || row.RunMode != "" {
-		t.Fatalf("candidate status/run mode = %q/%q, want ready/empty (filled by caller)", row.Status, row.RunMode)
+	if row.Validity != string(candidateadoption.ValidityFresh) || row.RunMode != "" {
+		t.Fatalf("candidate validity/run mode = %q/%q, want fresh/empty (filled by caller)", row.Validity, row.RunMode)
 	}
 }

@@ -28,6 +28,24 @@ import (
 //     exist — the rejection is exactly the #253 defect. The migration adds the
 //     explicit constraint next to the type bound.
 
+// auditBoundsMigrationIndex locates the audit category bound migration inside
+// the production chain.
+//
+// The bound migration is not the last one any more: the migration number is a
+// shared serial resource, and other faces keep adding migrations after it.
+// The rehearsal wants the chain state *just before* the bound, so the
+// migration is located by name instead of by position.
+func auditBoundsMigrationIndex(tb testing.TB, files []string) int {
+	tb.Helper()
+	for i, file := range files {
+		if strings.Contains(file, "audit_action_bounds") {
+			return i
+		}
+	}
+	tb.Fatalf("the audit action bounds migration is not in the production chain: %v", files)
+	return -1
+}
+
 func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "legacy-audit.db"))
 	if err != nil {
@@ -39,13 +57,11 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no production SQLite migrations found")
 	}
-	last := files[len(files)-1]
-	if !strings.Contains(last, "audit_action_bounds") {
-		t.Fatalf("last production SQLite migration = %q, want the audit bounds one", last)
-	}
+	index := auditBoundsMigrationIndex(t, files)
+	bound := files[index]
 	// Everything before the bound migration, so the database is a real
 	// pre-migration database.
-	for _, file := range files[:len(files)-1] {
+	for _, file := range files[:index] {
 		raw, readErr := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -63,12 +79,12 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	}
 
 	// Now the bound migration runs.
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", last))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", bound))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(context.Background(), string(raw)); err != nil {
-		t.Fatalf("%s: %v", last, err)
+		t.Fatalf("%s: %v", bound, err)
 	}
 
 	// The bound carries the same constraint name as the PostgreSQL side, so
@@ -106,12 +122,12 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	// The down migration widens the column again, and the up migration puts
 	// the bound back: the pair is a round trip.
 	down, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
-		strings.TrimSuffix(last, ".up.sql")+".down.sql"))
+		strings.TrimSuffix(bound, ".up.sql")+".down.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(context.Background(), string(down)); err != nil {
-		t.Fatalf("%s (down): %v", last, err)
+		t.Fatalf("%s (down): %v", bound, err)
 	}
 	if err := insertAuditRow(t, db, "over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
 		"project-legacy", "{}", "2026-01-01 00:00:00"); err != nil {
@@ -123,12 +139,12 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	if _, err := db.Exec("DELETE FROM lingdoc_project_audits WHERE id = ?", "over-long-row"); err != nil {
 		t.Fatal(err)
 	}
-	up, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", last))
+	up, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", bound))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(context.Background(), string(up)); err != nil {
-		t.Fatalf("%s (up again): %v", last, err)
+		t.Fatalf("%s (up again): %v", bound, err)
 	}
 	if err := insertAuditRow(t, db, "over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
 		"project-legacy", "{}", "2026-01-01 00:00:00"); err == nil {
@@ -179,11 +195,9 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no production versioned migrations found")
 	}
-	last := files[len(files)-1]
-	if !strings.Contains(last, "audit_action_bounds") {
-		t.Fatalf("last production versioned migration = %q, want the audit bounds one", last)
-	}
-	for _, file := range files[:len(files)-1] {
+	index := auditBoundsMigrationIndex(t, files)
+	bound := files[index]
+	for _, file := range files[:index] {
 		raw, readErr := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -201,12 +215,12 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	}
 
 	// The migration adds the explicit constraint.
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", last))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", bound))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sqlDB.ExecContext(context.Background(), string(raw)); err != nil {
-		t.Fatalf("%s: %v", last, err)
+		t.Fatalf("%s: %v", bound, err)
 	}
 	var definition string
 	if err := db.Raw(
@@ -223,12 +237,12 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	// varchar(64) stays, so PostgreSQL still refuses an over-long category:
 	// the type bound was there before this ticket and does not depend on it.
 	down, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned",
-		strings.TrimSuffix(last, ".up.sql")+".down.sql"))
+		strings.TrimSuffix(bound, ".up.sql")+".down.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sqlDB.ExecContext(context.Background(), string(down)); err != nil {
-		t.Fatalf("%s (down): %v", last, err)
+		t.Fatalf("%s (down): %v", bound, err)
 	}
 	var afterDown string
 	if err := db.Raw(
@@ -261,8 +275,9 @@ func TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	files := productionLingDocMigrationNames(t, "sqlite")
-	last := files[len(files)-1]
-	for _, file := range files[:len(files)-1] {
+	index := auditBoundsMigrationIndex(t, files)
+	bound := files[index]
+	for _, file := range files[:index] {
 		raw, readErr := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -278,7 +293,7 @@ func TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows(t *testing.T) {
 		t.Fatalf("the unbounded column must accept the row first: %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", last))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", bound))
 	if err != nil {
 		t.Fatal(err)
 	}

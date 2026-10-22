@@ -49,6 +49,32 @@ Terms
     dependency it does not own.
     ``done`` -- the face has landed; its paths are part of ``main``.
 
+Shared maintenance points
+-------------------------
+Some files are not owned by any face because *every* face legitimately has
+to change them.  They are not reserved paths (a reserved path is an
+integration point, integrated in one explicit step); they are shared
+maintenance points, and they are deliberately left out of every face's path
+set:
+
+* ``internal/lingdoc/operationcore/ownership_test.go`` -- the guard that
+  keeps the idempotency-key rule and the request-digest rule in one place.
+  A face that adds a second digest or a second key rule edits it.
+* ``internal/database/migration_sqlite_versioned_schema_test.go`` -- holds
+  the single ``expectedSQLiteMigrationVersion`` constant.
+* ``internal/router/lingdoc_integration_test.go`` -- holds the migration
+  file list.
+* ``migrations/`` -- the migration files themselves.  **The version number
+  is a shared serial resource: whoever merges first takes the next number.**
+  A face that adds a migration must rebase onto the integration branch tip
+  and re-allocate its version number if the slot it picked was taken.
+
+The path-overlap check cannot catch this kind of contention, because it is a
+race for a *sequence*, not for a path.  It shows up as an explicit merge
+conflict -- loud, not silent.  Do not register these files into a face's
+path set: doing so would forbid the other faces from changing files they
+must change.
+
 How to add a face
 -----------------
 1. Open a tracker issue for the face and note its number -- the face's ticket
@@ -139,29 +165,83 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/generation/service.go", "file"),
-            ("internal/lingdoc/generation/application.go", "file"),
-            ("internal/lingdoc/generation/http.go", "file"),
-            ("internal/lingdoc/generation/store.go", "file"),
+            # The two packages below are claimed as directories, so that a new
+            # file inside them is covered by this face's ownership without a
+            # manifest edit.  ``internal/lingdoc/workspace/`` is deliberately
+            # NOT a directory here: PF-5 owns a file in it, and a directory
+            # claim would overlap.
+            ("internal/lingdoc/generation/", "dir"),
+            ("internal/lingdoc/candidateadoption/", "dir"),
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review_test.go", "file"),
+            # The validity normalization renames the selected rewrite
+            # candidate's own status word list to the candidate layer's
+            # validity enumeration, so the assertions that pinned the old
+            # words move with it.  These files are claimed here for that
+            # reason only.
+            ("internal/lingdoc/workspace/selected_rewrite_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_format_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_observation_test.go", "file"),
+            ("internal/lingdoc/workspace/g2_generation_evidence_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_action_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_continue_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_compress_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_expand_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_transform_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_confirmation_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_revocation_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_context_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_context.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_unsupported_reference_test.go", "file"),
+            ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
+            # These two files are changed by this branch but were left out of
+            # the path set, so their edits were not covered by the overlap
+            # check at all.  Claimed here for that reason only.
+            ("internal/lingdoc/workspace/client_form_contract_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_inherited_sources_test.go", "file"),
+            # The lifecycle-stage / validity split gets its own assertion file.
+            ("internal/lingdoc/workspace/selected_rewrite_lifecycle_test.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption_store.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_basis.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption_http.go", "file"),
-            ("internal/lingdoc/candidateadoption/confirmation.go", "file"),
+            ("internal/lingdoc/workspace/generation.go", "file"),
+            ("internal/lingdoc/workspace/model_run_mode.go", "file"),
+            ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
+            ("internal/database/migration_generation_digest_version_test.go", "file"),
+            ("internal/database/migration_rewrite_validity_upgrade_test.go", "file"),
+            # The candidate shape migration tests follow the candidate shape
+            # normalisation this branch landed.
+            ("internal/database/migration_candidate_shape_upgrade_test.go", "file"),
+            ("internal/database/migration_sqlite_candidate_shape_test.go", "file"),
+            ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
+            # The production composition's route-count assertion follows the
+            # new endpoints: the review report endpoints are part of the
+            # rewrite capability, so the composition serves four more routes.
+            ("internal/container/lingdoc_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
+            ("frontend/src/views/lingdoc/candidateAdoption.test.ts", "file"),
             ("frontend/src/views/lingdoc/GenerationActionPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/GenerationActionPanel.test.js", "file"),
+            # 集成步新增的四个文件：改写候选的阶段映射（失效判据与「正在应用」
+            # 各归其位）、语言评审报告的面板，以及它们各自的断言。
+            ("frontend/src/views/lingdoc/rewriteStage.ts", "file"),
+            ("frontend/src/views/lingdoc/rewriteStage.test.ts", "file"),
+            ("frontend/src/views/lingdoc/LingDocReviewReportPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/LingDocReviewReportPanel.test.js", "file"),
             ("frontend/src/api/lingdoc/generation.ts", "file"),
+            ("frontend/src/api/lingdoc/generation.test.ts", "file"),
+            ("frontend/src/api/lingdoc/generationAction.ts", "file"),
+            ("frontend/src/api/lingdoc/generationAction.test.ts", "file"),
             ("frontend/src/api/lingdoc/candidateAdoption.ts", "file"),
             ("frontend/src/api/lingdoc/workspace.ts", "file"),
             ("frontend/src/api/lingdoc/writingAction.ts", "file"),
             ("frontend/src/components/LingDocCandidateAdoptionDialog.vue", "file"),
+            ("frontend/src/components/LingDocCandidateAdoptionDialog.test.js", "file"),
         ),
         "resolves": (),
         "summary": (

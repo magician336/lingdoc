@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 )
 
 // Reproduce Get-read -> Apply-write -> Get-stale-write deterministically. The
@@ -14,7 +16,7 @@ func TestStaleObserverCannotEraseClaimedOrAppliedReceipt(t *testing.T) {
 			service, _, _, _, _ := inheritedRewriteFixture(t)
 			ctx := context.Background()
 			now := time.Now().UTC()
-			original := selectedRewriteRow{ID: "race-candidate", TenantID: 1, ActorID: "owner", ProjectID: "project", ChapterID: "chapter", IdempotencyKey: "race-create", RequestHash: "hash", Status: "ready", RunMode: "mock", ReplacementMarkdown: "replacement", SourceIDsJSON: "[]", AuthorizedSourcesJSON: "[]", ReviewItemsJSON: "[]", CreatedAt: now, UpdatedAt: now}
+			original := selectedRewriteRow{ID: "race-candidate", TenantID: 1, ActorID: "owner", ProjectID: "project", ChapterID: "chapter", IdempotencyKey: "race-create", RequestHash: "hash", Validity: string(candidateadoption.ValidityFresh), RunMode: "mock", ReplacementMarkdown: "replacement", SourceIDsJSON: "[]", AuthorizedSourcesJSON: "[]", ReviewItemsJSON: "[]", CreatedAt: now, UpdatedAt: now}
 			row, _, err := service.store.createOrReplay(ctx, original)
 			if err != nil {
 				t.Fatal(err)
@@ -53,7 +55,7 @@ func TestStaleObserverCannotEraseClaimedOrAppliedReceipt(t *testing.T) {
 					t.Fatal("lost response cannot replay")
 				}
 			}
-			if latest.Status != "ready" || latest.ReplacementMarkdown != "replacement" {
+			if latest.Validity != string(candidateadoption.ValidityFresh) || latest.ReplacementMarkdown != "replacement" {
 				t.Fatal("observer changed operation-owned candidate")
 			}
 		})
@@ -63,7 +65,7 @@ func TestStaleUnclaimedObservationStillInvalidatesCandidate(t *testing.T) {
 	service, _, _, _, _ := inheritedRewriteFixture(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	row := selectedRewriteRow{ID: "stale-candidate", TenantID: 1, ActorID: "owner", ProjectID: "project", ChapterID: "chapter", IdempotencyKey: "stale-create", RequestHash: "hash", Status: "ready", ReplacementMarkdown: "old", SourceIDsJSON: "[]", AuthorizedSourcesJSON: "[]", ReviewItemsJSON: "[]", CreatedAt: now, UpdatedAt: now}
+	row := selectedRewriteRow{ID: "stale-candidate", TenantID: 1, ActorID: "owner", ProjectID: "project", ChapterID: "chapter", IdempotencyKey: "stale-create", RequestHash: "hash", Validity: string(candidateadoption.ValidityFresh), ReplacementMarkdown: "old", SourceIDsJSON: "[]", AuthorizedSourcesJSON: "[]", ReviewItemsJSON: "[]", CreatedAt: now, UpdatedAt: now}
 	row, _, err := service.store.createOrReplay(ctx, row)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +74,7 @@ func TestStaleUnclaimedObservationStillInvalidatesCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if latest.Status != "stale" || latest.ReplacementMarkdown != "" || latest.ErrorCode != "stale_input" {
+	if latest.Validity != string(candidateadoption.ValidityStale) || latest.ReplacementMarkdown != "" || latest.ErrorCode != "stale_input" {
 		t.Fatal("unsafe candidate remained actionable")
 	}
 }

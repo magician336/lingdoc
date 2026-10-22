@@ -33,6 +33,13 @@ var (
 	// IdempotencyConflict and keeps its own wording.
 	IdempotencyKeyConflict = Form{Status: 409, Code: "idempotency_conflict", Message: "同一幂等键对应不同请求。", Retryable: false}
 
+	// IdempotencyKeyExpired is the answer for one idempotency key that was
+	// issued under an older request digest rule. The request itself is
+	// fine -- the key belongs to a rule this build no longer speaks, so the
+	// caller replaces the key instead of looking for a request that never
+	// changed.
+	IdempotencyKeyExpired = Form{Status: 409, Code: "idempotency_key_expired", Message: "该幂等键属于旧版摘要规则，请换一个新的幂等键重试。", Retryable: false}
+
 	// VersionConflict is the answer for content that changed underneath the
 	// caller.
 	VersionConflict = Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}
@@ -68,6 +75,48 @@ var (
 	// CandidateStaleInput is the answer for a candidate or snapshot that was
 	// built on an input that has changed since.
 	CandidateStaleInput = Form{Status: 409, Code: "stale_input", Message: "候选稿或快照基于旧输入。", Retryable: false}
+
+	// CandidateStaleAction is the answer for a candidate whose inputs changed.
+	//
+	// It shares the error code with CandidateStaleInput and keeps its own
+	// wording, because the recovery step is part of the answer: the inputs
+	// changed means the action has to be run again, and the caller is told so
+	// instead of being left to guess.
+	CandidateStaleAction = Form{Status: 409, Code: "stale_input", Message: "输入已变，请重新运行该动作。", Retryable: false}
+
+	// CandidateNotAuthorized is the answer for a candidate whose authorization
+	// is gone.
+	//
+	// It is the candidate-level answer and it is deliberately distinct from
+	// SourceAccessDenied, which is the source-level reason: "this source is
+	// not accessible to you" and "this candidate rests on an authorization that
+	// no longer exists" need two different recovery steps -- restore the
+	// authorization and run the action again, rather than looking for a
+	// permission that was never missing.
+	CandidateNotAuthorized = Form{Status: 403, Code: "candidate_not_authorized", Message: "该候选所依据的授权已失效，请恢复授权后重新运行该动作。", Retryable: false}
+
+	// CandidateActionUnknown is the answer for a candidate that does not record
+	// the writing action (or the origin) that produced it.
+	//
+	// Adoption is an explicit confirmation: the confirmation has to name the
+	// action it confirms. A candidate that does not say what produced it cannot
+	// be confirmed against, so it is refused loudly instead of being adopted
+	// under a guessed action. The wording carries the next step: run the
+	// action path again, then adopt.
+	CandidateActionUnknown = Form{Status: 409, Code: "candidate_action_unknown", Message: "该候选没有记录产生它的动作与来源，请用动作化路径重新运行后再采纳。", Retryable: false}
+
+	// WorkingCopyDirty is the answer for a request that would replace content
+	// the caller is not looking at any more.
+	//
+	// The caller declared which working copy it acts on (revision and body
+	// digest). The server sees a different body: either the caller's editor
+	// holds changes that were never saved, or the draft moved under it. The
+	// wording carries the next step, because there are exactly two: save the
+	// edits first, or ask for the replacement to carry a recoverable snapshot.
+	//
+	// It is a conflict, not a permission failure: the request is well formed
+	// and authorized, it just does not describe the current state.
+	WorkingCopyDirty = Form{Status: 409, Code: "working_copy_dirty", Message: "工作副本与你看到的内容不一致：请先保存你的修改，或改用带快照的替换。", Retryable: false}
 
 	// PreflightBlocked is the answer for a request that has to clear the
 	// delivery blockers first.

@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -83,7 +84,7 @@ func TestSelectedRewriteInheritsOnlyVerifiedSelectionSourcesAndReplays(t *testin
 	actor := Actor{TenantID: 1, UserID: "owner"}
 	candidate, err := s.Create(context.Background(), actor, "project", "chapter", "inherit-key", input)
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 	require.Equal(t, []string{"existing"}, candidate.SourceIDs)
 	require.Len(t, candidate.AuthorizedSources, 1)
 	require.Len(t, model.prompt.Sources, 1)
@@ -127,7 +128,7 @@ func TestSelectedRewriteInheritanceDoesNotAuthorizeModelInventedSources(t *testi
 	model.invented = true
 	candidate, err := s.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"}, "project", "chapter", "invented-key", input)
 	require.NoError(t, err)
-	require.Equal(t, "failed", candidate.Status)
+	require.Empty(t, candidate.Validity)
 	require.Equal(t, "source_access_denied", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown)
 	require.NotContains(t, sources.calls, "invented")

@@ -18,9 +18,11 @@ import (
 	"unicode/utf16"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,11 +31,30 @@ import (
 var (
 	ErrRewriteInvalidRequest = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "改写请求字段不符合约定。", Retryable: false}, "selected_rewrite_invalid_request")
 	ErrRewriteNotFound       = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "候选不存在或不可访问。", Retryable: false}, "selected_rewrite_not_found")
-	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_stale")
+	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新运行该改写动作。", Retryable: false}, "selected_rewrite_stale")
 	ErrRewriteConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_conflict")
 	ErrRewriteUnavailable    = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "改写模型暂不可用，请稍后重试。", Retryable: true}, "selected_rewrite_unavailable")
-	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选的来源已失效或当前不可访问。", Retryable: false}, "selected_rewrite_source_denied")
+	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选所依据的授权已失效，请恢复授权后重新运行该改写动作。", Retryable: false}, "selected_rewrite_source_denied")
 	ErrRewriteKeyConflict    = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "selected_rewrite_idempotency_conflict")
+	// ErrRewriteContextNotAllowed 说清「这个动作不读你选的那一类上下文」。
+	//
+	// 它是请求错误：客户端要求纳入的东西这个动作根本不读，服务端不会替它
+	// 猜一个意思，也不会把这一类上下文悄悄塞进模型请求。
+	ErrRewriteContextNotAllowed = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "这个动作不读所选的那一类上下文，请调整上下文选择后再试。", Retryable: false}, "selected_rewrite_context_not_allowed")
+	// ErrRewriteContextRequired 说清「这一类上下文这个动作必须用」。
+	//
+	// 用户可以点名它、可以选它，只是不能把它拿掉：「这一类必须用」是执行方
+	// 的事实，不是用户的偏好。
+	ErrRewriteContextRequired = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "这一类上下文是本次动作必须使用的，不能剔除。", Retryable: false}, "selected_rewrite_context_required")
+	// ErrRewriteConfirmationRequired 说清「这次采纳没有确认」。
+	//
+	// 候选记下了动作 ⇒ 采纳必须确认它。没有载荷的采纳请求在服务层被拒，不是
+	// 前端禁用一个按钮。
+	ErrRewriteConfirmationRequired = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "采纳动作化候选必须携带确认载荷：动作、采纳目标与目标范围。", Retryable: false}, "selected_rewrite_confirmation_required")
+	// ErrRewriteConfirmationForbidden 说清「这次确认不是你自己做的」。
+	//
+	// 代他人确认一律拒：确认人是这次请求的认证身份。
+	ErrRewriteConfirmationForbidden = clienterror.New(clienterror.Form{Status: 403, Code: "forbidden", Message: "确认人必须是这次请求的认证身份。", Retryable: false}, "selected_rewrite_confirmation_forbidden")
 )
 
 type RewriteSelection struct {
@@ -50,6 +71,29 @@ type SelectedRewriteRequest struct {
 	Selection                   RewriteSelection             `json:"selection"`
 	Instruction                 string                       `json:"instruction"`
 	SourceIDs                   []string                     `json:"source_ids"`
+
+	// 下面三个字段把这次请求从「自由文本说明」变成「按动作发起」。
+	//
+	// 它们都是**指针**加 omitempty：指针为 nil 时字段整个不出现，请求的 JSON
+	// 与它的摘要值逐字不变——历史幂等键的重放语义不能被这次改动碰坏。
+	// 用非指针的结构体字段做不到这一点：omitempty 对结构体不起作用，旧请求
+	// 会多出一个 "output_params":{...}，摘要全变，重试从「重放」变成「冲突」。
+	//
+	// 三个字段全部缺省 ⇒ 旧路径：自由文本说明驱动，不记录动作。
+	// 任一字段出现 ⇒ 动作路径：动作与产出参数必齐，缺一即拒。
+	WritingAction *writingaction.Action       `json:"writing_action,omitempty"`
+	OutputParams  *writingaction.OutputParams `json:"output_params,omitempty"`
+	Scope         *writingaction.Scope        `json:"scope,omitempty"`
+	// Context 是用户对这次执行要纳入的可选上下文的选择。
+	//
+	// 它是**指针**加 omitempty：缺省即「没选」，旧请求的 JSON 与它的摘要
+	// 值逐字不变。它只在动作路径下有意义——旧路径带上它会被拒。
+	Context *writingaction.ContextSelection `json:"context,omitempty"`
+}
+
+// isLegacyPath 判定这次请求是不是旧路径。
+func (r SelectedRewriteRequest) isLegacyPath() bool {
+	return r.WritingAction == nil && r.OutputParams == nil && r.Scope == nil && r.Context == nil
 }
 
 type RewriteSourceSnapshot struct {
@@ -62,22 +106,48 @@ type RewriteSourceSnapshot struct {
 }
 
 type SelectedRewriteCandidate struct {
-	EvidenceCardRefs     []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
-	CandidateID          string                       `json:"candidate_id"`
-	ProjectID            string                       `json:"project_id"`
-	ChapterID            string                       `json:"chapter_id"`
-	Status               string                       `json:"status"`
-	RunMode              string                       `json:"run_mode"`
-	BaseChapterVersionID *string                      `json:"base_chapter_version_id"`
-	SpecRevision         int64                        `json:"spec_revision"`
-	WorkingCopyRevision  int64                        `json:"working_copy_revision"`
-	Selection            RewriteSelection             `json:"selection"`
-	ReplacementMarkdown  string                       `json:"replacement_markdown"`
-	SourceIDs            []string                     `json:"source_ids"`
-	AuthorizedSources    []RewriteSourceSnapshot      `json:"authorized_sources"`
-	ReviewItems          []core.ReviewItem            `json:"review_items"`
-	ErrorCode            string                       `json:"error_code"`
-	CreatedAt            time.Time                    `json:"created_at"`
+	EvidenceCardRefs []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
+	CandidateID      string                       `json:"candidate_id"`
+	ProjectID        string                       `json:"project_id"`
+	ChapterID        string                       `json:"chapter_id"`
+	// Validity 是这个候选还能不能被采纳。
+	//
+	// 它是**候选层的那个枚举**：选段候选与生成候选用同一份词表、同一组取值，
+	// 不再各说各的（开发计划 §3.4 的归一）。空值表示「这次运行没有交出可采纳的
+	// 产出」——运行中是这样，一次失败也是这样；失败的原因在 ErrorCode 里。
+	Validity candidateadoption.Validity `json:"validity"`
+	// ApplyPending 说这次采纳正在写。
+	//
+	// 它是一个**事实**，不是一个阶段：这个候选此刻正被写进工作副本，写完之前
+	// 不能重来。它不由字符串状态机承载——字符串状态机会让「失效判据」与
+	// 「走到哪一步」抢同一个字段，而这两个问题回答的不是同一件事。
+	//
+	// 失效判据仍然只有 Validity 一个拥有者（fresh / stale / not_authorized）：
+	// 「还能不能被采纳」是此刻的可用性，「正在应用」是时间上的位置。
+	ApplyPending         bool                           `json:"apply_pending"`
+	RunMode              candidateadoption.RunMode      `json:"run_mode"`
+	BaseChapterVersionID *string                        `json:"base_chapter_version_id"`
+	SpecRevision         int64                          `json:"spec_revision"`
+	WorkingCopyRevision  int64                          `json:"working_copy_revision"`
+	Selection            RewriteSelection               `json:"selection"`
+	ReplacementMarkdown  string                         `json:"replacement_markdown"`
+	SourceIDs            []string                       `json:"source_ids"`
+	AuthorizedSources    []RewriteSourceSnapshot        `json:"authorized_sources"`
+	ReviewItems          []candidateadoption.ReviewItem `json:"review_items"`
+	ErrorCode            string                         `json:"error_code"`
+	CreatedAt            time.Time                      `json:"created_at"`
+	// WritingAction 是产生这个候选的动作。旧路径没有动作，字段为空。
+	//
+	// 它挂在结构体末尾并带 omitempty：旧路径的候选 JSON 逐字不变。
+	WritingAction writingaction.Action `json:"writing_action,omitempty"`
+	// Origin 是候选正文的来源。改写是模型产出，所以是 ai_generated；
+	// 旧路径没有来源标注，字段为空。
+	Origin writingaction.Origin `json:"origin,omitempty"`
+	// DroppedContext 是用户选了、但没有进入模型请求的可选上下文条目。
+	//
+	// 丢弃是可见的：静默丢弃会让用户以为它进去了。它只在发起的那一刻
+	// 有值——之后读回来的是候选本身。
+	DroppedContext []writingaction.DroppedContextEntry `json:"dropped_context,omitempty"`
 }
 
 type SelectedRewritePrompt struct {
@@ -85,17 +155,28 @@ type SelectedRewritePrompt struct {
 	EvidenceCardRefs    []generation.EvidenceCardRef
 	EvidenceConstraints []generation.EvidenceConstraint
 	Selection           RewriteSelection
-	Instruction         string
-	ContextBefore       string
-	ContextAfter        string
-	Sources             []evidence.Source
+	// Instruction 是给模型的动作指令。旧路径下它是客户端原文，逐字不变；
+	// 动作路径下它由执行计划渲染。
+	Instruction string
+	// SupplementaryNote 是客户端的补充说明。旧路径恒为空；动作路径下它不参与
+	// 动作判定，也不与动作指令混成一段。
+	SupplementaryNote string
+	ContextBefore     string
+	ContextAfter      string
+	Sources           []evidence.Source
+	// Produce 是这次执行的产出形状：候选正文，还是评审意见。
+	//
+	// 旧路径下它为空：旧路径不记录动作，模型适配器按「改写」那一种提示语
+	// 说话。动作路径下它来自执行计划，模型适配器据此换一套提示语——评审
+	// 要的是意见清单，不是改好的正文。
+	Produce string
 }
 
 type SelectedRewriteOutput struct {
-	ReplacementMarkdown string   `json:"replacement_markdown"`
-	SourceIDs           []string `json:"source_ids"`
-	ReviewItems         []string `json:"review_items"`
-	RunMode             string   `json:"-"`
+	ReplacementMarkdown string                         `json:"replacement_markdown"`
+	SourceIDs           []string                       `json:"source_ids"`
+	ReviewItems         []candidateadoption.ReviewItem `json:"review_items"`
+	RunMode             string                         `json:"-"`
 }
 
 type SelectedRewriteModel interface {
@@ -125,39 +206,58 @@ type ApplySelectedRewriteInput struct {
 	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
 	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
 	BaseChapterVersionID        *string `json:"base_chapter_version_id"`
+	// Confirmation 是采纳的显式确认载荷。
+	//
+	// 动作化路径的候选必须带它：采纳不是「点一下就写进去」，用户要确认这次
+	// 采纳的是哪个动作的结果、写到哪里、写到哪一段。载荷缺了，服务层拒。
+	//
+	// 它是**指针**：缺省即「没确认」，与「确认了但字段填错」要能分开——两者
+	// 的恢复动作不同。旧路径的候选没有动作可确认，它不带这个字段，行为逐字
+	// 不变。
+	Confirmation *candidateadoption.AdoptionConfirmation `json:"confirmation,omitempty"`
 }
 
 type selectedRewriteRow struct {
-	EvidenceConstraintsJSON string  `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
-	TemplateBasisJSON       string  `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
-	EvidenceCardRefsJSON    string  `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
-	ID                      string  `gorm:"primaryKey;size:36"`
-	TenantID                uint64  `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
-	ActorID                 string  `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
-	ProjectID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
-	ChapterID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
-	IdempotencyKey          string  `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
-	RequestHash             string  `gorm:"not null;size:64"`
-	Status                  string  `gorm:"not null;size:16;index"`
-	RunMode                 string  `gorm:"not null;size:32"`
-	BaseChapterVersionID    *string `gorm:"size:36"`
-	SpecRevision            int64   `gorm:"not null"`
-	WorkingCopyRevision     int64   `gorm:"not null"`
-	StartUTF16              int     `gorm:"not null"`
-	EndUTF16                int     `gorm:"not null"`
-	SelectedText            string  `gorm:"not null;type:text"`
-	Instruction             string  `gorm:"not null;size:2000"`
-	ReplacementMarkdown     string  `gorm:"not null;type:text"`
-	SourceIDsJSON           string  `gorm:"not null;type:text"`
-	AuthorizedSourcesJSON   string  `gorm:"not null;type:text"`
-	ReviewItemsJSON         string  `gorm:"not null;type:text"`
-	ErrorCode               string  `gorm:"not null;size:64;default:''"`
-	AppliedKey              string  `gorm:"not null;size:128;default:''"`
-	AppliedResponseJSON     string  `gorm:"not null;type:text;default:''"`
-	ApplyPendingKey         string  `gorm:"not null;size:128;default:''"`
-	ApplyPendingInputJSON   string  `gorm:"not null;type:text;default:''"`
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	EvidenceConstraintsJSON string `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
+	TemplateBasisJSON       string `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
+	EvidenceCardRefsJSON    string `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
+	ID                      string `gorm:"primaryKey;size:36"`
+	TenantID                uint64 `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
+	ActorID                 string `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
+	ProjectID               string `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
+	ChapterID               string `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
+	IdempotencyKey          string `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
+	RequestHash             string `gorm:"not null;size:64"`
+	// Validity 是这个候选还能不能被采纳：与候选层同一个枚举、同一份词表。
+	//
+	// 空值表示「这次运行没有交出可采纳的产出」——运行中与失败都是这样；失败的
+	// 原因在 ErrorCode 里。
+	Validity              string                    `gorm:"column:validity;not null;size:16;index;default:''"`
+	RunMode               candidateadoption.RunMode `gorm:"not null;size:32;default:''"`
+	BaseChapterVersionID  *string                   `gorm:"size:36"`
+	SpecRevision          int64                     `gorm:"not null"`
+	WorkingCopyRevision   int64                     `gorm:"not null"`
+	StartUTF16            int                       `gorm:"not null"`
+	EndUTF16              int                       `gorm:"not null"`
+	SelectedText          string                    `gorm:"not null;type:text"`
+	Instruction           string                    `gorm:"not null;size:2000"`
+	ReplacementMarkdown   string                    `gorm:"not null;type:text"`
+	SourceIDsJSON         string                    `gorm:"not null;type:text"`
+	AuthorizedSourcesJSON string                    `gorm:"not null;type:text"`
+	ReviewItemsJSON       string                    `gorm:"not null;type:text"`
+	WritingAction         string                    `gorm:"not null;size:64;default:''"`
+	Origin                string                    `gorm:"not null;size:32;default:''"`
+	ErrorCode             string                    `gorm:"not null;size:64;default:''"`
+	AppliedKey            string                    `gorm:"not null;size:128;default:''"`
+	AppliedResponseJSON   string                    `gorm:"not null;type:text;default:''"`
+	ApplyPendingKey       string                    `gorm:"not null;size:128;default:''"`
+	ApplyPendingInputJSON string                    `gorm:"not null;type:text;default:''"`
+	// DroppedContextJSON 是这一次请求里被丢掉的可选上下文条目。
+	//
+	// 它不进库：丢弃只发生在发起的那一刻，之后读回来的是候选本身。
+	DroppedContextJSON string `gorm:"-"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (selectedRewriteRow) TableName() string { return "lingdoc_selected_rewrites" }
@@ -223,7 +323,7 @@ func (s *GORMSelectedRewriteStore) byOperation(ctx context.Context, tenantID uin
 
 func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewriteRow) error {
 	return s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": row.Status, "run_mode": row.RunMode, "replacement_markdown": row.ReplacementMarkdown,
+		"validity": row.Validity, "run_mode": row.RunMode, "replacement_markdown": row.ReplacementMarkdown,
 		"source_ids_json": row.SourceIDsJSON, "authorized_sources_json": row.AuthorizedSourcesJSON,
 		"review_items_json": row.ReviewItemsJSON, "error_code": row.ErrorCode, "applied_key": row.AppliedKey,
 		"applied_response_json": row.AppliedResponseJSON, "apply_pending_key": row.ApplyPendingKey,
@@ -234,7 +334,7 @@ func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewri
 // Only observation fields may be changed by a stale reader. A concurrently
 // claimed/applied operation owns its receipt and cannot be overwritten here.
 func (s *GORMSelectedRewriteStore) markStale(ctx context.Context, row selectedRewriteRow, now time.Time) (selectedRewriteRow, error) {
-	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ? AND tenant_id = ? AND applied_key = '' AND apply_pending_key = '' AND status = ? AND updated_at = ?", row.ID, row.TenantID, row.Status, row.UpdatedAt).Updates(map[string]any{"status": "stale", "replacement_markdown": "", "error_code": "stale_input", "updated_at": now})
+	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ? AND tenant_id = ? AND applied_key = '' AND apply_pending_key = '' AND validity = ? AND updated_at = ?", row.ID, row.TenantID, row.Validity, row.UpdatedAt).Updates(map[string]any{"validity": string(candidateadoption.ValidityStale), "replacement_markdown": "", "error_code": "stale_input", "updated_at": now})
 	if result.Error != nil {
 		return selectedRewriteRow{}, result.Error
 	}
@@ -243,7 +343,7 @@ func (s *GORMSelectedRewriteStore) markStale(ctx context.Context, row selectedRe
 
 func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedRewriteRow, key, inputJSON string, now time.Time) (selectedRewriteRow, error) {
 	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).
-		Where("id = ? AND applied_key = '' AND apply_pending_key = '' AND status = 'ready'", row.ID).
+		Where("id = ? AND applied_key = '' AND apply_pending_key = '' AND validity = ?", row.ID, string(candidateadoption.ValidityFresh)).
 		Updates(map[string]any{"apply_pending_key": key, "apply_pending_input_json": inputJSON, "updated_at": now})
 	if result.Error != nil {
 		return selectedRewriteRow{}, result.Error
@@ -306,9 +406,30 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	// 动作路径的声明先解析、再干活：产出参数与目标范围在模型调用之前就被拒，
+	// 非法声明不产生 run，也不产生候选行（开发计划 I-2）。
+	plan, err := resolveRewritePlan(input)
+	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
+		return SelectedRewriteCandidate{}, err
+	}
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.SourceIDs = slices.Clone(input.SourceIDs)
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
+	// 用户对可选上下文的选择先解析：类别越过策略的请求被拒；没授权的条目
+	// 被丢掉并被点名；用户剔除的条目不进模型请求。
+	var droppedContext []writingaction.DroppedContextEntry
+	if plan != nil && input.Context != nil {
+		includedSources, includedCards, dropped, contextErr := s.resolveRewriteContext(ctx, actor, projectID, chapterID, *plan, *input.Context)
+		if contextErr != nil {
+			auditDecision, auditReason = "deny", contextErr.Error()
+			return SelectedRewriteCandidate{}, contextErr
+		}
+		droppedContext = dropped
+		input.SourceIDs = append(input.SourceIDs, includedSources...)
+		input.EvidenceCardRefs = append(input.EvidenceCardRefs, includedCards...)
+		input.EvidenceCardRefs = removeRewriteExcludedCards(input.EvidenceCardRefs, input.Context)
+	}
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
 		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(input.EvidenceCardRefs))
@@ -324,10 +445,18 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			ids = append(ids, source.SourceID)
 		}
 		ids = stringSet(ids)
-		if len(input.SourceIDs) > 0 && !slices.Equal(stringSet(input.SourceIDs), ids) {
-			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		if input.Context == nil {
+			// 旧路径的来源集合就是卡片解析出来的那一组：客户端列的来源必须
+			// 与它逐字一致，否则整个请求按「来源对不上」被拒。
+			if len(input.SourceIDs) > 0 && !slices.Equal(stringSet(input.SourceIDs), ids) {
+				return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+			}
+			input.SourceIDs = ids
+		} else {
+			// 有上下文选择时，用户此刻正在显式地选资料：客户端列的来源与卡片
+			// 解析出来的来源取并集，每一个都还要过取来源那一步的授权。
+			input.SourceIDs = stringSet(append(input.SourceIDs, ids...))
 		}
-		input.SourceIDs = ids
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
 		auditDecision, auditReason = "deny", err.Error()
@@ -369,6 +498,10 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		}
 		input.SourceIDs = append(input.SourceIDs, marker)
 	}
+	// 用户剔除的来源不进模型请求。剔除在继承来源标记之后：用户剔除一条
+	// 继承来的来源，意思正是「这一条不要」，它不该被标记再塞回来。剔除
+	// 先于取来源——用户剔除一条来源，往往正是因为它已经不可用了。
+	input.SourceIDs = s.removeRewriteExcludedSources(ctx, actor, projectID, input.SourceIDs, input.Context)
 	input.SourceIDs = stringSet(input.SourceIDs)
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
 	if err != nil {
@@ -381,8 +514,8 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	if err := s.checkEvidenceRefs(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, snapshots); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
-	mode := s.model.RunMode()
-	if !validRewriteMode(mode) {
+	mode := candidateadoption.RunMode(s.model.RunMode())
+	if !candidateadoption.ValidRunMode(mode) {
 		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
@@ -391,11 +524,12 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
-	seed, err := s.createRow(actor, projectID, chapterID, key, input, hash, snapshots)
+	seed, err := s.createRow(actor, projectID, chapterID, key, input, hash, snapshots, plan)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	seed.DroppedContextJSON = encodeDroppedContext(droppedContext)
 	templateBasis, basisErr := rewriteProjectBasis(project)
 	if basisErr != nil {
 		return SelectedRewriteCandidate{}, basisErr
@@ -424,11 +558,11 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			auditDecision, auditReason = "deny", err.Error()
 			return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 		}
-		if row.Status == "ready" && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
+		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		auditDetails["candidate_id"], auditDetails["run_mode"], auditDetails["status"] = row.ID, row.RunMode, row.Status
+		auditDetails["candidate_id"], auditDetails["run_mode"], auditDetails["validity"] = row.ID, row.RunMode, row.Validity
 		return selectedRewriteView(row)
 	}
 	if err := s.store.update(ctx, row); err != nil {
@@ -441,64 +575,65 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		before = ""
 		after = ""
 	}
-	output, modelErr := s.model.RewriteSelected(ctx, actor, SelectedRewritePrompt{
-		TemplateBasis:    templateBasis,
-		EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: evidenceConstraints,
-		Selection: input.Selection, Instruction: input.Instruction, ContextBefore: before, ContextAfter: after, Sources: sources,
-	})
+	prompt, promptErr := rewritePrompt(input, plan, templateBasis, evidenceConstraints, before, after, sources)
+	if promptErr != nil {
+		auditDecision, auditReason = "deny", promptErr.Error()
+		return SelectedRewriteCandidate{}, promptErr
+	}
+	output, modelErr := s.model.RewriteSelected(ctx, actor, prompt)
 	if modelErr != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "rewrite_failed", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "rewrite_failed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if output.RunMode != "" {
-		if !validRewriteMode(output.RunMode) {
-			row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "invalid_run_mode", ""
+		if !candidateadoption.ValidRunMode(candidateadoption.RunMode(output.RunMode)) {
+			row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "invalid_run_mode", ""
 			auditDecision, auditReason = "deny", row.ErrorCode
-			auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+			auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 			return s.updateCandidate(context.WithoutCancel(ctx), row)
 		}
-		row.RunMode = output.RunMode
+		row.RunMode = candidateadoption.RunMode(output.RunMode)
 	}
 	if err := validateRewriteOutput(output, input.SourceIDs); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", selectedRewriteFailureCode(err), ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "source_access_denied", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "source_access_denied", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "authorization_changed", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "authorization_changed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	currentCopy, err := s.workspace.GetWorkingCopy(ctx, actor, projectID, chapterID)
 	if err != nil || !workingCopyIsCandidateBasis(currentCopy, row) {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "stale_input", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityStale), "stale_input", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.checkRowEvidence(ctx, actor, projectID, row); err != nil {
-		row.Status = "stale"
+		row.Validity = string(candidateadoption.ValidityStale)
 		row.ErrorCode = "evidence_changed"
 		row.ReplacementMarkdown = ""
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := writeRewriteResult(&row, output); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", selectedRewriteFailureCode(err), ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
-	auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+	auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 	return s.updateCandidate(context.WithoutCancel(ctx), row)
 }
 
@@ -524,7 +659,7 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
 		return SelectedRewriteCandidate{}, evidenceErr
 	}
-	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["spec_revision"], details["working_copy_revision"] = row.SpecRevision, row.WorkingCopyRevision
 	if row.ApplyPendingKey == "" {
 		row, err = s.staleIfNeeded(ctx, actor, projectID, row.ChapterID, row)
@@ -567,11 +702,23 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
 		return core.WorkingCopy{}, false, evidenceErr
 	}
-	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["base_chapter_version_id"] = row.BaseChapterVersionID
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteSourceDenied
+	}
+	// 撤权先说、确认后说：一个依据已经没了的候选，说的是「授权没了」，不是
+	// 「你的确认填错了」——两种失效要能分开说。
+	if err := validateRewriteAdoptionConfirmation(row, input.Confirmation, actor); err != nil {
+		return core.WorkingCopy{}, false, err
+	}
+	// 确认载荷进审计：采纳之后要能说清「用户确认的是哪一次采纳、写到哪里」。
+	if input.Confirmation != nil {
+		details["writing_action"] = row.WritingAction
+		details["confirmed_target"] = string(input.Confirmation.Target)
+		details["confirmed_at"] = input.Confirmation.ConfirmedAt
+		details["confirmed_by"] = input.Confirmation.ConfirmedBy
 	}
 	if row.AppliedKey == key && row.AppliedResponseJSON != "" {
 		if input.ExpectedSpecRevision != row.SpecRevision || input.ExpectedWorkingCopyRevision != row.WorkingCopyRevision ||
@@ -594,7 +741,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 		}
 		return s.completePendingApply(ctx, actor, projectID, chapterID, key, row)
 	}
-	if row.Status != "ready" || row.ReplacementMarkdown == "" {
+	if row.Validity != string(candidateadoption.ValidityFresh) || row.ReplacementMarkdown == "" {
 		return core.WorkingCopy{}, false, ErrRewriteStale
 	}
 	project, err := s.workspace.GetProject(ctx, actor, projectID)
@@ -628,7 +775,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	writeInput := core.SaveWorkingCopyInput{BaseChapterVersionID: row.BaseChapterVersionID,
 		ExpectedSpecRevision: project.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision,
 		BodyMarkdown: body, SourceIDs: stringSet(refs)}
-	pendingJSON, err := json.Marshal(selectedRewritePendingApply{WorkingCopy: writeInput, ReviewItems: reviewItems})
+	pendingJSON, err := json.Marshal(selectedRewritePendingApply{WorkingCopy: writeInput, ReviewItems: reviewItemsForWorkingCopy(reviewItems)})
 	if err != nil {
 		return core.WorkingCopy{}, false, err
 	}
@@ -663,7 +810,7 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 	result, err := s.workspace.ApplyRewriteResult(ctx, actor, projectID, chapterID, operationKey, pending.WorkingCopy, pending.ReviewItems)
 	if err != nil {
 		if errors.Is(err, core.ErrVersionConflict) {
-			row.Status, row.ReplacementMarkdown, row.ErrorCode = "stale", "", "stale_input"
+			row.Validity, row.ReplacementMarkdown, row.ErrorCode = string(candidateadoption.ValidityStale), "", "stale_input"
 			row.ApplyPendingKey, row.ApplyPendingInputJSON, row.UpdatedAt = "", "", s.now()
 			if persistErr := s.store.update(context.WithoutCancel(ctx), row); persistErr != nil {
 				return core.WorkingCopy{}, false, persistErr
@@ -683,10 +830,70 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 	return saved, result.Replayed, nil
 }
 
+// rewriteAdoptionTarget 是选段采纳端点实现的采纳目标。
+//
+// 动作的许可位说「这个动作可以这样被采纳」，端点说的是「我能这样写」。两者
+// 都要成立：这个端点只写工作副本的选段——它把候选正文写回候选记录的那一段
+// 选区。
+const rewriteAdoptionTarget = writingaction.TargetWorkingCopyPartial
+
+// validateRewriteAdoptionConfirmation 校验采纳的显式确认载荷。
+//
+// 候选记下了动作 ⇒ 采纳必须确认它。确认载荷要说的六件事缺一不可：动作、采纳
+// 目标、目标范围、确认时刻、确认人与来源。其中动作与来源必须与候选对得上，
+// 采纳目标必须落在动作声明的许可位里（许可位查词汇包，执行方不按动作名
+// 分支），目标范围必须就是候选的选区——这个端点写的就是那一段。
+//
+// 旧路径的候选没有动作，确认不了：它不带确认载荷，行为逐字不变；带了载荷
+// 反而被拒，因为没有动作可对。
+func validateRewriteAdoptionConfirmation(row selectedRewriteRow,
+	confirmation *candidateadoption.AdoptionConfirmation, actor Actor) error {
+	if row.WritingAction == "" {
+		if confirmation != nil {
+			return ErrRewriteInvalidRequest
+		}
+		return nil
+	}
+	if confirmation == nil {
+		return ErrRewriteConfirmationRequired
+	}
+	if confirmation.WritingAction == "" || confirmation.Target == "" ||
+		confirmation.ConfirmedAt.IsZero() || strings.TrimSpace(confirmation.ConfirmedBy) == "" ||
+		confirmation.Origin == "" {
+		return ErrRewriteInvalidRequest
+	}
+	// 代他人确认：确认人必须是这次请求的认证身份。
+	if strings.TrimSpace(confirmation.ConfirmedBy) != strings.TrimSpace(actor.UserID) {
+		return ErrRewriteConfirmationForbidden
+	}
+	// 确认的动作与来源必须与候选对得上：确认了但没确认对东西，不算确认。
+	if confirmation.WritingAction != writingaction.Action(row.WritingAction) ||
+		confirmation.Origin != writingaction.Origin(row.Origin) {
+		return ErrRewriteInvalidRequest
+	}
+	allowed, err := writingaction.TargetsFor(writingaction.Action(row.WritingAction))
+	if err != nil {
+		return ErrRewriteInvalidRequest
+	}
+	if !slices.Contains(allowed, confirmation.Target) {
+		return ErrRewriteInvalidRequest
+	}
+	if confirmation.Target != rewriteAdoptionTarget {
+		return ErrRewriteInvalidRequest
+	}
+	// 部分采纳必须说清写到哪一段，而且那一段就是候选的选区。
+	if confirmation.Scope == nil ||
+		confirmation.Scope.StartUTF16 != row.StartUTF16 ||
+		confirmation.Scope.EndUTF16 != row.EndUTF16 {
+		return ErrRewriteInvalidRequest
+	}
+	return nil
+}
+
 func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, error) {
 	var sourceIDs []string
 	var snapshots []RewriteSourceSnapshot
-	var reviewItems []core.ReviewItem
+	var reviewItems []candidateadoption.ReviewItem
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &sourceIDs); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
@@ -703,22 +910,35 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		snapshots = []RewriteSourceSnapshot{}
 	}
 	if reviewItems == nil {
-		reviewItems = []core.ReviewItem{}
+		reviewItems = []candidateadoption.ReviewItem{}
 	}
 	evidenceRefs, refErr := decodeRewriteEvidenceRefs(row.EvidenceCardRefsJSON)
 	if refErr != nil {
 		return SelectedRewriteCandidate{}, refErr
 	}
-	status := row.Status
-	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
-		status = "applying"
+	var dropped []writingaction.DroppedContextEntry
+	if row.DroppedContextJSON != "" {
+		if err := json.Unmarshal([]byte(row.DroppedContextJSON), &dropped); err != nil {
+			return SelectedRewriteCandidate{}, err
+		}
 	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
-		Status: status, RunMode: row.RunMode, BaseChapterVersionID: row.BaseChapterVersionID,
-		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
+		Validity: candidateadoption.Validity(row.Validity), ApplyPending: applyPending(row), RunMode: row.RunMode,
+		BaseChapterVersionID: row.BaseChapterVersionID,
+		SpecRevision:         row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
 		ReplacementMarkdown: row.ReplacementMarkdown, SourceIDs: sourceIDs, AuthorizedSources: snapshots,
-		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt}, nil
+		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt,
+		WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin),
+		DroppedContext: dropped}, nil
+}
+
+// applyPending 说这次采纳正在写。
+//
+// 它是行上两把键的关系，不是一套状态机：有待应用的键、且还没有落下的应用
+// 结果 ⇒ 这次采纳正在写。落下了（AppliedKey 非空）就不在了。
+func applyPending(row selectedRewriteRow) bool {
+	return row.ApplyPendingKey != "" && row.AppliedKey == ""
 }
 
 func stringSet(values []string) []string {
@@ -781,13 +1001,9 @@ func sourceSnapshots(sources []evidence.Source, now time.Time) []RewriteSourceSn
 	return result
 }
 
-func validRewriteMode(mode string) bool {
-	return mode == "mock" || mode == "real_api_fake_model" || mode == "real"
-}
-
 func validateRewriteOutput(output SelectedRewriteOutput, requested []string) error {
 	if strings.TrimSpace(output.ReplacementMarkdown) == "" || len(output.ReplacementMarkdown) > 40000 ||
-		(output.RunMode != "" && !validRewriteMode(output.RunMode)) {
+		(output.RunMode != "" && !candidateadoption.ValidRunMode(candidateadoption.RunMode(output.RunMode))) {
 		return ErrRewriteInvalidRequest
 	}
 	allowed := make(map[string]bool, len(requested))
@@ -806,8 +1022,8 @@ func validateRewriteOutput(output SelectedRewriteOutput, requested []string) err
 	if !slices.Equal(stringSet(refs), stringSet(output.SourceIDs)) {
 		return ErrRewriteInvalidRequest
 	}
-	for _, statement := range output.ReviewItems {
-		if strings.TrimSpace(statement) == "" {
+	for _, item := range output.ReviewItems {
+		if strings.TrimSpace(item.Statement) == "" {
 			return ErrRewriteInvalidRequest
 		}
 	}
@@ -870,17 +1086,23 @@ func (s *SelectedRewriteService) staleIfNeeded(ctx context.Context, actor Actor,
 	return row, nil
 }
 
-func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest, hash string, sources []RewriteSourceSnapshot) (selectedRewriteRow, error) {
+func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest, hash string, sources []RewriteSourceSnapshot, plan *writingaction.Plan) (selectedRewriteRow, error) {
 	sourceJSON, _ := json.Marshal(input.SourceIDs)
 	evidenceJSON, _ := json.Marshal(input.EvidenceCardRefs)
 	snapshotJSON, _ := json.Marshal(sources)
+	writingAction, origin := "", ""
+	if plan != nil {
+		writingAction = string(plan.Action)
+		// 改写是模型产出：候选正文的来源是 AI 生成。
+		origin = string(writingaction.OriginGenerated)
+	}
 	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
 		ProjectID: projectID, ChapterID: chapterID, IdempotencyKey: key, RequestHash: hash,
-		Status: "queued", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
+		Validity: "", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
 		SpecRevision: input.ExpectedSpecRevision, WorkingCopyRevision: input.ExpectedWorkingCopyRevision,
 		StartUTF16: input.Selection.StartUTF16, EndUTF16: input.Selection.EndUTF16, SelectedText: input.Selection.SelectedText,
 		EvidenceCardRefsJSON: string(evidenceJSON), Instruction: input.Instruction, SourceIDsJSON: string(sourceJSON), AuthorizedSourcesJSON: string(snapshotJSON),
-		ReviewItemsJSON: "[]", CreatedAt: s.now(), UpdatedAt: s.now()}
+		ReviewItemsJSON: "[]", WritingAction: writingAction, Origin: origin, CreatedAt: s.now(), UpdatedAt: s.now()}
 	return row, nil
 }
 
@@ -888,9 +1110,11 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 	if err := validateRewriteOutput(output, mustDecodeIDs(row.SourceIDsJSON)); err != nil {
 		return err
 	}
-	items := make([]core.ReviewItem, 0, len(output.ReviewItems))
-	for _, statement := range output.ReviewItems {
-		items = append(items, core.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement), OriginCandidateID: row.ID})
+	items := make([]candidateadoption.ReviewItem, 0, len(output.ReviewItems))
+	for _, item := range output.ReviewItems {
+		// 编号由服务端给：模型只负责说清「有哪些待核事项」，身份是服务端的事实。
+		items = append(items, candidateadoption.ReviewItem{ID: uuid.NewString(),
+			Statement: strings.TrimSpace(item.Statement), OriginCandidateID: row.ID})
 	}
 	ids := stringSet(output.SourceIDs)
 	idsJSON, err := json.Marshal(ids)
@@ -918,7 +1142,7 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 		return err
 	}
 	row.ReplacementMarkdown, row.SourceIDsJSON, row.AuthorizedSourcesJSON, row.ReviewItemsJSON = output.ReplacementMarkdown, string(idsJSON), string(snapshotsJSON), string(review)
-	row.Status, row.RunMode, row.ErrorCode = "ready", output.RunMode, ""
+	row.Validity, row.RunMode, row.ErrorCode = string(candidateadoption.ValidityFresh), candidateadoption.RunMode(output.RunMode), ""
 	return nil
 }
 
@@ -934,10 +1158,24 @@ func mustDecodeSnapshots(raw string) []RewriteSourceSnapshot {
 	return snapshots
 }
 
-func mustDecodeReviewItems(raw string) []core.ReviewItem {
-	var items []core.ReviewItem
+func mustDecodeReviewItems(raw string) []candidateadoption.ReviewItem {
+	var items []candidateadoption.ReviewItem
 	_ = json.Unmarshal([]byte(raw), &items)
 	return items
+}
+
+// reviewItemsForWorkingCopy 把候选层的待核事项转成工作副本侧的类型。
+//
+// 转换点在 workspace 包内：候选层的待核事项只有一种类型，工作副本侧保留
+// 自己的类型（开发计划 A39 / I-9）。两型的 JSON 形状逐字相同，所以落库的
+// 格式不变，改的是 Go 类型。
+func reviewItemsForWorkingCopy(items []candidateadoption.ReviewItem) []core.ReviewItem {
+	converted := make([]core.ReviewItem, 0, len(items))
+	for _, item := range items {
+		converted = append(converted, core.ReviewItem{ID: item.ID, Statement: item.Statement,
+			OriginCandidateID: item.OriginCandidateID, Anchor: item.Anchor})
+	}
+	return converted
 }
 
 func (s *SelectedRewriteService) updateCandidate(ctx context.Context, row selectedRewriteRow) (SelectedRewriteCandidate, error) {
@@ -985,8 +1223,13 @@ func selectedRewriteContextError(err error) error {
 
 func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
 	if !operationcore.ValidKey(key) || in.ExpectedSpecRevision < 0 || in.ExpectedWorkingCopyRevision < 1 ||
-		strings.TrimSpace(in.Instruction) == "" || len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
+		len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
 		in.Selection.EndUTF16 <= in.Selection.StartUTF16 || in.Selection.StartUTF16 < 0 || in.Selection.SelectedText == "" {
+		return ErrRewriteInvalidRequest
+	}
+	// 旧路径的说明是必填的自由文本；动作路径的说明只是补充说明，必填的是
+	// 动作与产出参数（由执行计划校验），所以这里不为动作路径要求它。
+	if in.isLegacyPath() && strings.TrimSpace(in.Instruction) == "" {
 		return ErrRewriteInvalidRequest
 	}
 	ids := slices.Clone(in.SourceIDs)
@@ -1004,6 +1247,122 @@ func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
 func operationKeyForApply(key, candidateID string) string {
 	digest := sha256.Sum256([]byte(candidateID + "\x00" + key))
 	return "g7-apply-" + hex.EncodeToString(digest[:])
+}
+
+// resolveRewritePlan 判定这次请求走哪条路径，并解析动作路径的执行计划。
+//
+// 三个新字段全部缺省 ⇒ 旧路径（plan 为 nil）：自由文本说明驱动，不记录动作。
+// 任一字段出现 ⇒ 动作路径：动作必填、产出参数必齐、范围只能是选区。
+//
+// 动作语义一律由 writingaction.PlanFor 解析：执行方不按动作名分支，也不自己
+// 解释产出参数。
+func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, error) {
+	if input.isLegacyPath() {
+		return nil, nil
+	}
+	if input.WritingAction == nil {
+		return nil, ErrRewriteInvalidRequest
+	}
+	scope := writingaction.ScopeSection
+	if input.Scope != nil {
+		scope = *input.Scope
+	}
+	params := writingaction.OutputParams{}
+	if input.OutputParams != nil {
+		params = *input.OutputParams
+	}
+	plan, err := writingaction.PlanFor(*input.WritingAction, scope, params)
+	if err != nil {
+		return nil, err
+	}
+	// 这个端点只实现选段管道声明的那几个动作（改写、续写、压缩、扩展与转写）。
+	// 别的已知动作由它们自己的端点负责。动作身份引用管道常量，不写字符串字面量，
+	// 也不写具体动作常量——执行方因此在语法上就没法按动作名分支（A33）。
+	pipelineActions, err := writingaction.ActionsFor(writingaction.PipelineRewrite)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(pipelineActions, plan.Action) {
+		return nil, ErrRewriteInvalidRequest
+	}
+	// 这个端点只写选段：范围是**管道**的声明，不是动作的声明——同一个动作
+	// （转写）在动作层面允许整章，在这条管道里只做选段。声明了整章的请求在
+	// 模型调用之前就被拒。
+	pipelineScopes, err := writingaction.ScopesFor(writingaction.PipelineRewrite)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(pipelineScopes, scope) {
+		return nil, clienterror.Wrap(clienterror.InvalidRequest,
+			fmt.Sprintf("invalid_request: pipeline %q does not allow scope %q",
+				writingaction.PipelineRewrite, scope), writingaction.ErrScopeNotAllowed)
+	}
+	return &plan, nil
+}
+
+// rewritePrompt 按路径组装给模型的提示。
+//
+// 它自己不组装提示：两条路径各自组装，所以写给模型的指令只有一个来源。
+func rewritePrompt(input SelectedRewriteRequest, plan *writingaction.Plan, basis rewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
+	if plan != nil {
+		return actionRewritePrompt(input, *plan, basis, constraints, before, after, sources)
+	}
+	return legacyRewritePrompt(input, basis, constraints, before, after, sources), nil
+}
+
+// actionRewritePrompt 组装动作路径的提示。
+//
+// 指令只来自执行计划：执行方按 Plan.Context 声明的类别组装上下文，把渲染
+// 出来的动作指令交给模型。它不按动作名分支，也不自己解释产出参数。
+//
+// 客户端的补充说明单独放一个字段：它不参与动作判定，也不与动作指令混成一段。
+func actionRewritePrompt(input SelectedRewriteRequest, plan writingaction.Plan, basis rewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
+	instruction, err := writingaction.RenderInstruction(plan, writingaction.RenderContext{
+		Section:  selectedRewriteSectionContext(input.Selection, before, after),
+		Template: selectedRewriteTemplateContext(basis),
+	})
+	if err != nil {
+		return SelectedRewritePrompt{}, err
+	}
+	return SelectedRewritePrompt{
+		TemplateBasis: basis, EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: constraints,
+		Selection: input.Selection, Instruction: instruction, SupplementaryNote: input.Instruction,
+		ContextBefore: before, ContextAfter: after, Sources: sources,
+	}, nil
+}
+
+// legacyRewritePrompt 组装旧路径的提示。
+//
+// 客户端的自由文本说明原样作为指令：旧路径的行为逐字不变。
+func legacyRewritePrompt(input SelectedRewriteRequest, basis rewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) SelectedRewritePrompt {
+	return SelectedRewritePrompt{
+		TemplateBasis: basis, EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: constraints,
+		Selection: input.Selection, Instruction: input.Instruction,
+		ContextBefore: before, ContextAfter: after, Sources: sources,
+	}
+}
+
+// selectedRewriteSectionContext 渲染「目标选区及其上下文」这一类上下文。
+//
+// 它是**上下文**，不是动作语义：动作说什么由词汇包渲染，这里只回答
+// 「有没有选区上下文」。
+func selectedRewriteSectionContext(selection RewriteSelection, before, after string) string {
+	return strings.TrimSpace(selection.SelectedText + "\n" + before + "\n" + after)
+}
+
+// selectedRewriteTemplateContext 渲染「模板与规则」这一类上下文。
+//
+// 「没有绑定模板」也是一个事实——它告诉模型这次改写不受项目模板约束——
+// 所以这一槽永远非空：否则「缺少必需上下文」与「没有模板」会分不开。
+func selectedRewriteTemplateContext(basis rewriteTemplateBasis) string {
+	if basis.CopyID == "" {
+		return "本项目未绑定模板，改写不受项目模板约束。"
+	}
+	return fmt.Sprintf("模板副本 %s@%d，内容哈希 %s，规则集哈希 %s，上下文修订号 %d。",
+		basis.CopyID, basis.CopyVersion, basis.ContentHash, basis.RulesetHash, basis.ContextRevision)
 }
 
 func selectedRewriteContextWindow(body string, selection RewriteSelection) (int, int, string, string, bool) {

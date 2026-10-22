@@ -15,6 +15,20 @@ export interface CandidateBasis {
   asset_versions: Array<{ asset_id: string; asset_revision: number }>
 }
 
+/**
+ * 候选的有效性。
+ *
+ * `not_authorized` 是候选级的状态：撤权 / 权限丧失导致候选不可用。它与
+ * `stale`（输入变了所以旧）不同，两者都不可采纳。
+ */
+export type CandidateValidity = 'fresh' | 'stale' | 'not_authorized'
+
+/** 一次采纳把候选写到哪里。词表归服务端所有，客户端不枚举。 */
+export type AdoptionTarget =
+  | 'working_copy_partial'
+  | 'working_copy_whole'
+  | 'formal_version_whole'
+
 export interface Candidate {
   id: string
   project_id: string
@@ -23,8 +37,17 @@ export interface Candidate {
   body_markdown: string
   source_ids: string[]
   basis: CandidateBasis
-  validity: 'fresh' | 'stale'
+  validity: CandidateValidity
   review_items: ReviewItem[]
+  /** 候选正文的来源。三值文案由采纳对话框写，不在客户端猜。 */
+  origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
+  /**
+   * 产生这个候选的写作动作。
+   *
+   * 动作词表归服务端所有：这里只有形状。候选必须记下自己是怎么来的——采纳
+   * 是一次显式确认，确认载荷要能拿它和候选对上。
+   */
+  writing_action?: string
 }
 
 export interface Chapter {
@@ -50,11 +73,58 @@ export interface Envelope<T> {
   meta: ApiMeta
 }
 
+/**
+ * 部分采纳写入工作副本的范围（UTF-16 偏移，与选区一致）。
+ */
+export interface AdoptionScope {
+  start_utf16: number
+  end_utf16: number
+}
+
+/**
+ * 采纳的显式确认载荷。
+ *
+ * 采纳不是「点一下就写进去」：用户必须确认这次采纳的是哪个动作的结果、
+ * 写到哪里、写到哪一段、确认时刻、确认人是谁、候选是什么来源。缺任何一项，
+ * 服务层拒——所以这不是界面上的一个勾选框，而是请求体的一部分。
+ */
+export interface AdoptionConfirmation {
+  writing_action: string
+  adoption_target: AdoptionTarget
+  scope?: AdoptionScope
+  confirmed_at: string
+  confirmed_by: string
+  origin: 'human' | 'ai_generated' | 'ai_assisted_human'
+}
+
 export interface AcceptCandidateInput {
   candidate_id: string
   expected_chapter_version_id: string | null
   expected_spec_revision: number
   replace_existing: boolean
+  /**
+   * 「用户看到的是哪一份工作副本」的声明。
+   *
+   * 两个字段缺一不可：没有它们，服务端无从分辨这次替换动的是不是用户正在看
+   * 的那份内容——用户在编辑器里有没保存的编辑时，整段替换会把它悄悄吃掉。
+   *
+   * - `expected_working_copy_revision` 是用户读到的工作副本修订号；对不上说明
+   *   别人改过这份草稿。
+   * - `expected_body_hash` 是用户看到的正文摘要：正文的 UTF-8 字节的 SHA-256，
+   *   小写十六进制、64 个字符（见 `views/lingdoc/candidateAdoption.ts` 的
+   *   `workingCopyBodyHash`）。对不上说明编辑器里有没保存的内容。
+   */
+  expected_working_copy_revision: number
+  expected_body_hash: string
+  /**
+   * 「带快照的替换」的快照标识。
+   *
+   * 带它，服务端会先把当前工作副本正文与替换范围记进审计详情，然后允许在
+   * 工作副本 dirty 的情况下继续。这不是一张可恢复快照表，是审计留痕：能追、
+   * 能人工恢复。
+   */
+  snapshot_id?: string
+  confirmation: AdoptionConfirmation
 }
 
 export function getCandidate(projectId: string, candidateId: string): Promise<Envelope<Candidate>> {

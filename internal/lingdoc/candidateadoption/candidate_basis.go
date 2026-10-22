@@ -189,8 +189,8 @@ func (s *SQLiteCandidateAdoptionStore) CandidateAcceptancePending(ctx context.Co
 	if err != nil {
 		return false, err
 	}
-	if row.RequestHash != requestHash(in) {
-		return false, ErrIdempotencyConflict
+	if err := compareAdoptionDigest(row, requestHash(in)); err != nil {
+		return false, err
 	}
 	return true, nil
 }

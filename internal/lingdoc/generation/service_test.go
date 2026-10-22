@@ -9,6 +9,7 @@ import (
 
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 )
@@ -69,9 +70,14 @@ type testModel struct {
 	err   error
 }
 
+// RunMode 报 mock：测试替身没有 provider，不得冒充真实证据。
+func (m testModel) RunMode() string { return "mock" }
+
 func (m testModel) Generate(context.Context, Input) (Draft, error) { return m.draft, m.err }
 
 type deadlineTestModel struct{}
+
+func (deadlineTestModel) RunMode() string { return "mock" }
 
 func (deadlineTestModel) Generate(ctx context.Context, _ Input) (Draft, error) {
 	<-ctx.Done()
@@ -82,6 +88,8 @@ type countingModel struct {
 	calls int
 	draft Draft
 }
+
+func (m *countingModel) RunMode() string { return "mock" }
 
 func (m *countingModel) Generate(context.Context, Input) (Draft, error) {
 	m.calls++
@@ -246,6 +254,14 @@ func TestExecuteCreatesCandidateOnlyForVerifiedSources(t *testing.T) {
 	}
 	if repo.candidate.ID != "candidate-1" || len(repo.candidate.SourceIDs) != 1 || repo.candidate.SourceIDs[0] != "source-1" {
 		t.Fatalf("candidate source result = %+v", repo.candidate)
+	}
+	// 候选必须记下自己是怎么来的：采纳是一次显式确认，确认载荷要拿它和候选
+	// 对上。这个生成端点产出的就是「生成」这个动作的结果，正文全部来自模型。
+	if repo.candidate.WritingAction != writingaction.ActionGenerate {
+		t.Fatalf("candidate writing action = %q, want %q", repo.candidate.WritingAction, writingaction.ActionGenerate)
+	}
+	if repo.candidate.Origin != writingaction.OriginGenerated {
+		t.Fatalf("candidate origin = %q, want %q", repo.candidate.Origin, writingaction.OriginGenerated)
 	}
 	candidate, err := svc.GetCandidate(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "run-1")
 	if err != nil || candidate.Validity != "fresh" {

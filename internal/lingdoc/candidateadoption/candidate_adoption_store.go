@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
 // SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records
@@ -98,6 +100,10 @@ type candidateRow struct {
 	BasisJSON       string `gorm:"type:text;not null"`
 	Validity        string `gorm:"not null;size:16"`
 	ReviewItemsJSON string `gorm:"type:text;not null"`
+	WritingAction   string `gorm:"column:writing_action;not null;size:64;default:''"`
+	Origin          string `gorm:"column:origin;not null;size:32;default:''"`
+	RunMode         string `gorm:"column:run_mode;not null;size:32;default:''"`
+	ModelID         string `gorm:"column:model_id;not null;size:128;default:''"`
 	CreatedAt       time.Time
 }
 
@@ -115,6 +121,7 @@ type adoptionIdempotencyRow struct {
 	ActorID          string `gorm:"index;not null;size:128"`
 	Key              string `gorm:"column:idempotency_key;not null;size:128"`
 	RequestHash      string `gorm:"not null;size:64"`
+	DigestVersion    int    `gorm:"not null;default:1"`
 	ChapterVersionID string `gorm:"not null;size:36"`
 	ResponseJSON     string `gorm:"type:text;not null"`
 	CreatedAt        time.Time
@@ -323,7 +330,7 @@ func (s *SQLiteCandidateAdoptionStore) ListCandidates(ctx context.Context, proje
 		if err := json.Unmarshal([]byte(row.BasisJSON), &basis); err != nil {
 			return nil, fmt.Errorf("decode candidate basis: %w", err)
 		}
-		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: row.Validity, CreatedAt: row.CreatedAt, Basis: basis})
+		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: Validity(row.Validity), CreatedAt: row.CreatedAt, Basis: basis})
 	}
 	return candidates, nil
 }
@@ -394,8 +401,8 @@ func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if row.RequestHash != requestHash(in) {
-		return nil, ErrIdempotencyConflict
+	if err := compareAdoptionDigest(row, requestHash(in)); err != nil {
+		return nil, err
 	}
 	candidate, err := NewSQLiteCandidateAdoptionStore(tx).GetCandidate(ctx, in.ProjectID, in.CandidateID)
 	if err != nil {
@@ -420,15 +427,22 @@ func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Con
 func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in AcceptCandidateInput, candidate Candidate) (AcceptResult, error) {
 	var result AcceptResult
 	hash := requestHash(in)
+	// 审计表在聚焦测试库里可能不存在（生产迁移会建），所以先探一次。
+	auditEnabled := s.db.Migrator().HasTable((projectAuditRow{}).TableName())
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.authorizeCandidateInTransaction(ctx, tx, in); err != nil {
+			return err
+		}
+		// 确认载荷在事务内复核：授权与内容校验在同一个事务里，不给
+		// 「校验过了、写入时又变了」留缝。
+		if err := validateAdoptionConfirmation(in); err != nil {
 			return err
 		}
 		var existing adoptionIdempotencyRow
 		lookupErr := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&existing).Error
 		if lookupErr == nil {
-			if existing.RequestHash != hash {
-				return ErrIdempotencyConflict
+			if err := compareAdoptionDigest(existing, hash); err != nil {
+				return err
 			}
 			if err := json.Unmarshal([]byte(existing.ResponseJSON), &result.Chapter); err != nil {
 				return fmt.Errorf("decode idempotency response: %w", err)
@@ -474,7 +488,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
-		if current.CurrentVersionID != nil && !in.ReplaceExisting {
+		if current.CurrentVersionID != nil && !in.ReplaceExisting && writesFormalVersion(in) {
 			return ErrInvalidState
 		}
 
@@ -501,8 +515,37 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err := s.validateEvidenceInTransaction(ctx, tx, in, persisted); err != nil {
 			return err
 		}
-		workingCopy, err := s.cleanWorkingCopy(tx, current)
+		// 采纳目标决定写入路径。分派按目标走，不按动作名走。
+		path, err := writePathFor(in.Confirmation.Target)
 		if err != nil {
+			return err
+		}
+		workingCopy, err := s.readWorkingCopy(tx, in.ProjectID, in.ChapterID)
+		if err != nil {
+			return err
+		}
+		// 客户端声明的是哪一份工作副本，先对这一份。它不对，后面的写入就是在
+		// 替用户「猜」他想改哪一份。
+		if err := checkWorkingCopyDeclaration(in, workingCopy); err != nil {
+			return err
+		}
+		if !path.buildsFormalVersion() {
+			// 只写工作副本：不建正式版本，不动章节版本指针，不推进项目版本。
+			return s.acceptIntoWorkingCopy(tx, in, candidate, current, path, workingCopy, auditEnabled, &result)
+		}
+		// 正式版本路径的第二层复核：即使许可位被绕过，写路径本身也不给那些
+		// 动作建正式版本的机会。
+		if err := guardFormalVersionPath(in); err != nil {
+			return err
+		}
+		// 建正式版本要求工作副本与当前章节一致：草稿里还有没提交的编辑时，
+		// 正式版本会盖掉它们。
+		if err := cleanWorkingCopy(workingCopy, current); err != nil {
+			return err
+		}
+		// 确认的范围必须还对得上工作副本当前正文：范围是用户看着正文选出来的，
+		// 正文在确认之后又变了，范围就落在别的段落上了。
+		if err := validateAdoptionScopeAgainstBody(in, adoptionBodyOf(workingCopy, current)); err != nil {
 			return err
 		}
 
@@ -577,20 +620,86 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		current.ReviewItems = candidate.ReviewItems
 		current.ConfirmationValid = false
 		result.Chapter = current
-		responseJSON, err := json.Marshal(result.Chapter)
-		if err != nil {
+		if err := recordAdoptionAudit(tx, auditEnabled, in, candidate, newVersionID); err != nil {
 			return err
 		}
-		if err := tx.Create(&adoptionIdempotencyRow{
-			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
-			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
-			ChapterVersionID: newVersionID, ResponseJSON: string(responseJSON),
-		}).Error; err != nil {
-			return err
-		}
-		return nil
+		return recordAdoptionIdempotency(tx, in, hash, &result, &newVersionID)
 	})
 	return result, err
+}
+
+// recordAdoptionIdempotency 记下这次采纳的幂等行。
+//
+// 幂等行是「同一个键对应同一次采纳」的凭据：它落在同一个事务里，所以要么
+// 采纳与幂等行一起成立，要么一起不成立。半截的幂等行会让下一次同键请求
+// 既不像重放、也不像新请求。
+//
+// chapterVersionID 是这次采纳**指向**的章节版本：正式版本路径是新建的那一版；
+// 只写工作副本的路径不建版本，指向的还是原来那一版（没有则为 nil）。
+func recordAdoptionIdempotency(tx *gorm.DB, in AcceptCandidateInput, hash string, result *AcceptResult, chapterVersionID *string) error {
+	responseJSON, err := json.Marshal(result.Chapter)
+	if err != nil {
+		return err
+	}
+	versionID := ""
+	if chapterVersionID != nil {
+		versionID = *chapterVersionID
+	}
+	return tx.Create(&adoptionIdempotencyRow{
+		ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+		ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
+		DigestVersion:    adoptionDigestVersion,
+		ChapterVersionID: versionID, ResponseJSON: string(responseJSON),
+	}).Error
+}
+
+// recordAdoptionAudit 把这次采纳的确认载荷写进项目审计。
+//
+// 确认载荷落在审计详情里，而不是新增章节版本列：它是一次采纳的凭据，不是
+// 正文的一部分。为一条审计记录动表结构，代价大于收益。
+func recordAdoptionAudit(tx *gorm.DB, auditEnabled bool, in AcceptCandidateInput, candidate Candidate, chapterVersionID string) error {
+	if !auditEnabled {
+		return nil
+	}
+	details := map[string]any{
+		"candidate_id":       candidate.ID,
+		"chapter_id":         in.ChapterID,
+		"chapter_version_id": chapterVersionID,
+		"spec_revision":      in.ExpectedSpecRevision,
+	}
+	if confirmation := in.Confirmation; confirmation != nil {
+		details["writing_action"] = string(confirmation.WritingAction)
+		details["adoption_target"] = string(confirmation.Target)
+		details["confirmed_at"] = confirmation.ConfirmedAt.UTC().Format(time.RFC3339Nano)
+		details["confirmed_by"] = confirmation.ConfirmedBy
+		details["origin"] = string(confirmation.Origin)
+		if confirmation.Scope != nil {
+			details["scope"] = map[string]any{
+				"start_utf16": confirmation.Scope.StartUTF16,
+				"end_utf16":   confirmation.Scope.EndUTF16,
+			}
+		}
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	return tx.Create(&projectAuditRow{
+		ID: uuid.NewString(), ProjectID: in.ProjectID, ActorID: in.ActorID,
+		Action: "project.candidate.adopt", Target: in.ChapterID,
+		DetailsJSON: string(encoded), CreatedAt: time.Now().UTC(),
+	}).Error
+}
+
+// adoptionBodyOf 取出采纳要面对的正文。
+//
+// 有工作副本时以工作副本为准——范围是用户在工作副本上选的；聚焦测试库可能
+// 没有工作副本表，这时以章节当前正文为准。
+func adoptionBodyOf(workingCopy *adoptionWorkingCopyRow, current Chapter) string {
+	if workingCopy != nil {
+		return workingCopy.BodyMarkdown
+	}
+	return current.BodyMarkdown
 }
 
 func (s *SQLiteCandidateAdoptionStore) UpsertProject(ctx context.Context, id string, version int) error {
@@ -634,8 +743,12 @@ func (s *SQLiteCandidateAdoptionStore) UpsertCandidate(ctx context.Context, cand
 	return s.db.WithContext(ctx).Save(&candidateRow{
 		ID: candidate.ID, ProjectID: candidate.ProjectID, ChapterID: candidate.ChapterID,
 		RunID: candidate.RunID, BodyMarkdown: candidate.BodyMarkdown,
-		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: candidate.Validity,
+		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: string(candidate.Validity),
 		ReviewItemsJSON: string(reviews),
+		WritingAction:   string(candidate.WritingAction),
+		Origin:          string(candidate.Origin),
+		RunMode:         string(candidate.RunMode),
+		ModelID:         candidate.ModelID,
 	}).Error
 }
 
@@ -674,7 +787,11 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 func candidateFromRow(row candidateRow) (Candidate, error) {
 	var candidate Candidate
 	candidate.ID, candidate.ProjectID, candidate.ChapterID, candidate.RunID = row.ID, row.ProjectID, row.ChapterID, row.RunID
-	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, row.Validity
+	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, Validity(row.Validity)
+	candidate.WritingAction = writingaction.Action(row.WritingAction)
+	candidate.Origin = writingaction.Origin(row.Origin)
+	candidate.RunMode = RunMode(row.RunMode)
+	candidate.ModelID = row.ModelID
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &candidate.SourceIDs); err != nil {
 		return Candidate{}, err
 	}
@@ -722,24 +839,45 @@ func equalAdoptionJSON(raw string, value any) bool {
 	return reflect.DeepEqual(stored, expected)
 }
 
-func (s *SQLiteCandidateAdoptionStore) cleanWorkingCopy(tx *gorm.DB, current Chapter) (*adoptionWorkingCopyRow, error) {
+// readWorkingCopy 读当前工作副本行。
+//
+// 聚焦测试库可能没有这张表（那里的采纳用例不建工作副本），这时返回 nil：
+// 「没有工作副本」是一个合法状态，声明与判据都按修订号 0、正文为空算。
+//
+// 生产模式（focusedSchema 为 false）下没有表或没有行都是**错**：缺迁移的库
+// 不能拿着过期编辑器继续收采纳。
+func (s *SQLiteCandidateAdoptionStore) readWorkingCopy(tx *gorm.DB, projectID, chapterID string) (*adoptionWorkingCopyRow, error) {
 	// Only the explicit focused schema helper permits an absent G7 table.
 	// Production must fail on missing migrations instead of accepting a stale editor.
 	if s.focusedSchema && !tx.Migrator().HasTable(&adoptionWorkingCopyRow{}) {
 		return nil, nil
 	}
 	var row adoptionWorkingCopyRow
-	if err := tx.Where("project_id = ? AND chapter_id = ?", current.ProjectID, current.ID).First(&row).Error; err != nil {
+	if err := tx.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrVersionConflict
+		}
 		return nil, err
 	}
-	if !sameOptionalString(row.BaseChapterVersionID, current.CurrentVersionID) ||
-		row.BodyMarkdown != current.BodyMarkdown ||
-		!equalAdoptionJSON(row.SourceIDsJSON, current.SourceIDs) ||
-		!equalAdoptionJSON(row.CitationUsagesJSON, current.CitationUsages) ||
-		!equalAdoptionJSON(row.ReviewItemsJSON, current.ReviewItems) {
-		return nil, ErrVersionConflict
-	}
 	return &row, nil
+}
+
+// cleanWorkingCopy 复核工作副本与当前章节是一致的。
+//
+// 「一致」= 基线版本、正文、来源、引用说明、待核事项全都一样。工作副本里
+// 还有没提交的编辑时，采纳建正式版本会盖掉它们——所以这里拒。
+func cleanWorkingCopy(workingCopy *adoptionWorkingCopyRow, current Chapter) error {
+	if workingCopy == nil {
+		return nil
+	}
+	if !sameOptionalString(workingCopy.BaseChapterVersionID, current.CurrentVersionID) ||
+		workingCopy.BodyMarkdown != current.BodyMarkdown ||
+		!equalAdoptionJSON(workingCopy.SourceIDsJSON, current.SourceIDs) ||
+		!equalAdoptionJSON(workingCopy.CitationUsagesJSON, current.CitationUsages) ||
+		!equalAdoptionJSON(workingCopy.ReviewItemsJSON, current.ReviewItems) {
+		return ErrVersionConflict
+	}
+	return nil
 }
 
 func advanceAdoptedWorkingCopy(tx *gorm.DB, previous adoptionWorkingCopyRow, version chapterVersionRow) error {

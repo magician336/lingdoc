@@ -1710,17 +1710,17 @@
       "Concrete schema plus Go request fields and typed/read-service response root fields; opaque write-result DTO semantic equivalence remains review/runtime work"
     ]
   },
-  "paths": 142,
-  "operations": 168,
-  "core_operations": 165,
-  "schemas": 339,
-  "local_refs": 1634,
-  "shape_checks": 929,
-  "scenarios": 26,
-  "scenario_example_references": 132,
+  "paths": 150,
+  "operations": 176,
+  "core_operations": 173,
+  "schemas": 359,
+  "local_refs": 1712,
+  "shape_checks": 941,
+  "scenarios": 29,
+  "scenario_example_references": 140,
   "continuous_trace_steps": 24,
-  "scenario_steps_with_requests": 106,
-  "scenario_checks_tied_to_a_published_example": 50,
+  "scenario_steps_with_requests": 114,
+  "scenario_checks_tied_to_a_published_example": 64,
   "scenario_checks_left_to_the_run": 19,
   "starting_states": 8,
   "starting_state_parts_buildable": [
@@ -1774,7 +1774,10 @@
     "scenario_declares_an_unknown_starting_state",
     "white_box_observation_is_restricted_to_f02",
     "scenario_uses_a_capture_before_it_is_produced",
-    "scenario_capture_points_outside_the_published_response"
+    "scenario_capture_points_outside_the_published_response",
+    "g7_contract_confirmation_declares_a_different_field",
+    "g7_contract_confirmation_requires_a_different_field",
+    "g7_contract_confirmation_widens_the_accepted_values"
   ],
   "not_run": [
     "real provider/database/model tests",

@@ -2,15 +2,14 @@ package candidateadoption
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 )
 
 type ReviewDecision struct {
@@ -132,6 +131,16 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 	return s.Writer.ConfirmChapter(ctx, in, workspace)
 }
 
+// ValidateReviewDecisions 校验逐条处置：每一条待核事项都要有处置，每一条处置
+// 都要有理由。
+//
+// 这是**处置模型**的校验入口：章节确认与评审报告的应用走的是同一套处置模型
+// （处置 ∈ {resolved, retained_warning}，理由必填），所以它们问同一个函数，
+// 而不是各写各的校验。
+func ValidateReviewDecisions(items []ReviewItem, decisions []ReviewDecision) error {
+	return validateReviewDecisions(items, decisions)
+}
+
 func validateReviewDecisions(items []ReviewItem, decisions []ReviewDecision) error {
 	known := make(map[string]struct{}, len(items))
 	for _, item := range items {
@@ -165,18 +174,27 @@ func validateReviewDecisions(items []ReviewItem, decisions []ReviewDecision) err
 	return nil
 }
 
+// confirmationRequestHash computes the digest of one chapter confirmation
+// request.
+//
+// The digest is computed by operationcore.RequestHash, the one owner of the
+// request digest rule. The rule did not change when the implementation moved:
+// the payload is the same four fields and a decision list, and
+// operationcore.RequestHash is hex(sha256(json.Marshal(payload))), which is
+// what this function used to compute by hand. The digest of an already issued
+// request is therefore unchanged, and the idempotency rows that carry it
+// still match.
 func confirmationRequestHash(in ConfirmChapterInput) string {
 	decisions := append([]ReviewDecision{}, in.Decisions...)
 	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ReviewItemID < decisions[j].ReviewItemID })
-	b, _ := json.Marshal(struct {
+	hash, _ := operationcore.RequestHash(struct {
 		Project, Chapter, Version string
 		Revision                  int
 		Decisions                 []ReviewDecision
 	}{
 		in.ProjectID, in.ChapterID, in.ExpectedChapterVersionID, in.ExpectedSpecRevision, decisions,
 	})
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
+	return hash
 }
 
 func newConfirmation(in ConfirmChapterInput, workspace GenerationContext) Confirmation {

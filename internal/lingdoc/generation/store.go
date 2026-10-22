@@ -20,6 +20,7 @@ type generationRow struct {
 	ChapterID       string  `gorm:"not null;size:36;index"`
 	IdempotencyKey  string  `gorm:"column:idempotency_key;not null;size:128;uniqueIndex:idx_generation_idempotency,priority:4"`
 	RequestHash     string  `gorm:"not null;size:64"`
+	DigestVersion   int     `gorm:"column:digest_version;not null;default:1"`
 	Status          Status  `gorm:"not null;size:16;index"`
 	ClaimToken      string  `gorm:"not null;size:36"`
 	CancelRequested bool    `gorm:"not null;default:false"`
@@ -33,6 +34,40 @@ type generationRow struct {
 }
 
 func (generationRow) TableName() string { return "lingdoc_generation_runs" }
+
+// generationDigestVersion is the digest rule version this build writes.
+//
+// The version is bumped whenever the digest payload changes shape. A row written
+// under an older rule carries a digest this build cannot interpret, so the
+// version is compared before the digest is: see compareGenerationDigest.
+//
+// Version 1 is the rule that hashes the whole request with
+// operationcore.RequestHash. The action path adds fields to that request, but
+// they are pointers with omitempty: the legacy request payload stays byte
+// identical, so the rows that exist today still replay under this version.
+const generationDigestVersion = 1
+
+// compareGenerationDigest decides what an existing idempotency row means for
+// this request.
+//
+// The version is compared first, and that order is the whole point. A row
+// written under an older digest rule carries a digest this build cannot
+// interpret, so the answer is "this key belongs to an older rule" -- the caller
+// retries with a new key -- and not "this key carries a different request",
+// which would send the caller looking for a request that never changed.
+//
+// Every place that compares a generation digest goes through this one function:
+// the replay path and the two write-transaction paths cannot disagree about the
+// same key.
+func compareGenerationDigest(row generationRow, digest string) error {
+	if row.DigestVersion != generationDigestVersion {
+		return ErrIdempotencyKeyExpired
+	}
+	if row.RequestHash != digest {
+		return ErrIdempotencyConflict
+	}
+	return nil
+}
 
 type SQLiteRepository struct{ db *gorm.DB }
 
@@ -52,8 +87,8 @@ func (s *SQLiteRepository) FindReplay(ctx context.Context, actor Actor, projectI
 	if err != nil {
 		return Run{}, false, err
 	}
-	if row.RequestHash != requestHash {
-		return Run{}, false, ErrIdempotencyConflict
+	if err := compareGenerationDigest(row, requestHash); err != nil {
+		return Run{}, false, err
 	}
 	run := runFromRow(row)
 	run.Replayed = true
@@ -70,8 +105,8 @@ func (s *SQLiteRepository) CreateOrReplay(ctx context.Context, actor Actor, proj
 		var existing generationRow
 		err := tx.Where("tenant_id = ? AND actor_id = ? AND project_id = ? AND idempotency_key = ?", actor.TenantID, actor.UserID, projectID, key).First(&existing).Error
 		if err == nil {
-			if existing.RequestHash != requestHash {
-				return ErrIdempotencyConflict
+			if err := compareGenerationDigest(existing, requestHash); err != nil {
+				return err
 			}
 			run = runFromRow(existing)
 			run.Replayed = true
@@ -83,8 +118,8 @@ func (s *SQLiteRepository) CreateOrReplay(ctx context.Context, actor Actor, proj
 		row := generationRow{
 			ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
 			ProjectID: projectID, ChapterID: input.Request.ChapterID,
-			IdempotencyKey: key, RequestHash: requestHash, Status: StatusQueued,
-			InputJSON: string(inputJSON),
+			IdempotencyKey: key, RequestHash: requestHash, DigestVersion: generationDigestVersion,
+			Status: StatusQueued, InputJSON: string(inputJSON),
 		}
 		result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{
 			{Name: "tenant_id"}, {Name: "actor_id"}, {Name: "project_id"}, {Name: "idempotency_key"},
@@ -99,8 +134,8 @@ func (s *SQLiteRepository) CreateOrReplay(ctx context.Context, actor Actor, proj
 		if err := tx.Where("tenant_id = ? AND actor_id = ? AND project_id = ? AND idempotency_key = ?", actor.TenantID, actor.UserID, projectID, key).First(&existing).Error; err != nil {
 			return err
 		}
-		if existing.RequestHash != requestHash {
-			return ErrIdempotencyConflict
+		if err := compareGenerationDigest(existing, requestHash); err != nil {
+			return err
 		}
 		run = runFromRow(existing)
 		run.Replayed = true
@@ -350,5 +385,9 @@ func runFromRow(row generationRow) Run {
 	if row.ErrorCode != "" {
 		run.Error = &RunError{Code: row.ErrorCode, Message: row.ErrorMessage, Retryable: row.Retryable}
 	}
+	// The input summary is derived from the stored input on read: the run row
+	// keeps the whole input for a retry, and the summary is the part a caller
+	// may read back.
+	run.InputSummary = inputSummaryFromJSON(row.InputJSON)
 	return run
 }

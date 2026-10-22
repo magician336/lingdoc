@@ -78,7 +78,7 @@ func TestFormalRewriteUsesRefsOnlyImmutableSourcesAndRevalidatesGetReplayApply(t
 	actor := Actor{TenantID: 1, UserID: "owner"}
 	candidate, err := s.Create(context.Background(), actor, "project", "chapter", "g2-refs-rewrite", input)
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 	require.True(t, w.formal)
 	require.Equal(t, []string{"existing"}, candidate.SourceIDs)
 	require.Empty(t, model.prompt.ContextBefore)
@@ -126,7 +126,7 @@ func TestFormalRewriteCardChangeDuringModelClearsCandidateBody(t *testing.T) {
 	s.model = &changingRewriteModelStub{base: model, onCall: func() { w.denied = true }}
 	candidate, err := s.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"}, "project", "chapter", "g2-change-during-rewrite", input)
 	require.NoError(t, err)
-	require.Equal(t, "stale", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityStale, candidate.Validity)
 	require.Equal(t, "evidence_changed", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown)
 	require.Equal(t, 1, model.calls)
@@ -143,7 +143,7 @@ func TestRewritePinsCustomTemplateAndDetectsChangeDuringModelAndRead(t *testing.
 	s.model = &changingRewriteModelStub{base: model, onCall: func() { w.current.TemplateCopy.ContentHash = "changed" }}
 	candidate, err := s.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"}, "project", "chapter", "g2-template-race", input)
 	require.NoError(t, err)
-	require.Equal(t, "stale", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityStale, candidate.Validity)
 	require.Empty(t, candidate.ReplacementMarkdown)
 	require.Equal(t, "copy-custom", model.prompt.TemplateBasis.CopyID)
 	require.Equal(t, "independent-rule-hash", model.prompt.TemplateBasis.RulesetHash)

@@ -13,6 +13,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -171,6 +172,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
+	// The writing action table is static: it belongs to the vocabulary package,
+	// so the panel reads it instead of keeping a second copy of the actions.
+	routes.Read.GET("/projects/:projectId/writing-actions", h.listWritingActions)
 	// The review anchor and the rewrite endpoints exist because the caller
 	// asked for them. A capability that was not asked for has no route, and
 	// that is the caller's decision rather than an accident of which field
@@ -182,6 +186,15 @@ func (h *Handler) Register(routes RouteGroups) {
 		routes.Read.GET("/projects/:projectId/rewrite-candidates/:candidateId", h.getSelectedRewrite)
 		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates", h.createSelectedRewrite)
 		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply", h.applySelectedRewrite)
+		// The review endpoints exist when the rewrite capability also speaks
+		// the review path: a language review produces a report, not a
+		// candidate, and it is applied through its own entry point.
+		if _, ok := h.rewrites.(ReviewReportApplication); ok {
+			routes.Write.POST("/projects/:projectId/chapters/:chapterId/review-reports", h.createReviewReport)
+			routes.Read.GET("/projects/:projectId/review-reports/:reportId", h.getReviewReport)
+			routes.Write.POST("/projects/:projectId/review-reports/:reportId/reject", h.rejectReviewReport)
+			routes.Write.POST("/projects/:projectId/chapters/:chapterId/review-reports/:reportId/apply", h.applyReviewReport)
+		}
 	}
 }
 
@@ -824,6 +837,27 @@ func (h *Handler) getWorkingCopy(c *gin.Context) {
 	sendOK(c, http.StatusOK, workingCopy, false)
 }
 
+// listWritingActions returns the writing actions available for a target scope.
+//
+// The action table belongs to the vocabulary package: the panel reads it from
+// here instead of keeping a second copy of the actions. The scope is optional
+// and defaults to the selection scope; an unknown scope is refused rather
+// than silently answered with an empty table.
+func (h *Handler) listWritingActions(c *gin.Context) {
+	if _, ok := identity(c); !ok {
+		return
+	}
+	scope := writingaction.Scope(c.Query("scope"))
+	if scope == "" {
+		scope = writingaction.ScopeSection
+	}
+	if scope != writingaction.ScopeSection && scope != writingaction.ScopeChapter {
+		sendError(c, writingaction.ErrScopeNotAllowed)
+		return
+	}
+	sendOK(c, http.StatusOK, writingaction.Describe(scope), false)
+}
+
 func (h *Handler) createSelectedRewrite(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {
@@ -872,6 +906,117 @@ func (h *Handler) applySelectedRewrite(c *gin.Context) {
 		return
 	}
 	workingCopy, replayed, err := h.rewrites.Apply(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), c.Param("candidateId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, workingCopy, replayed)
+}
+
+// reviewReporter 取出评审报告的应用实现。
+//
+// 评审能力在不在由装配决定：装配里没有评审实现，这四个端点根本不注册。断言
+// 失败按「评审暂不可用」答——调用方能据此重试，而不是拿到一个说不清原因的 500。
+//
+// 四个评审端点共用它：同一份断言、同一句错误，不各写各的。
+func (h *Handler) reviewReporter(c *gin.Context) (ReviewReportApplication, bool) {
+	reviewer, ok := h.rewrites.(ReviewReportApplication)
+	if !ok {
+		sendError(c, ErrRewriteUnavailable)
+		return nil, false
+	}
+	return reviewer, true
+}
+
+// createReviewReport 生成一份语言评审报告。
+//
+// 报告不是候选：它不进候选表，也不进采纳那条路。用户预览之后显式确认，才由
+// applyReviewReport 把它写进工作副本。
+func (h *Handler) createReviewReport(c *gin.Context) {
+	reviewer, ok := h.reviewReporter(c)
+	if !ok {
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input ReviewReportRequest
+	if !decodeBody(c, &input) {
+		return
+	}
+	report, err := reviewer.CreateReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusCreated, report, false)
+}
+
+// getReviewReport 读回一份评审报告（预览）。
+func (h *Handler) getReviewReport(c *gin.Context) {
+	reviewer, ok := h.reviewReporter(c)
+	if !ok {
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	report, err := reviewer.GetReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("reportId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, report, false)
+}
+
+// rejectReviewReport 拒绝一份评审报告：工作副本一个字符都不动。
+func (h *Handler) rejectReviewReport(c *gin.Context) {
+	reviewer, ok := h.reviewReporter(c)
+	if !ok {
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	report, err := reviewer.RejectReviewReport(c.Request.Context(), actor, c.Param("projectId"), c.Param("reportId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, report, false)
+}
+
+// applyReviewReport 把一份评审报告显式应用到工作副本。
+func (h *Handler) applyReviewReport(c *gin.Context) {
+	reviewer, ok := h.reviewReporter(c)
+	if !ok {
+		return
+	}
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input ApplyReviewInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	workingCopy, replayed, err := reviewer.ApplyReviewReport(c.Request.Context(), actor, c.Param("projectId"),
+		c.Param("chapterId"), c.Param("reportId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

@@ -40,6 +40,8 @@ type evidenceRevokingModel struct {
 	validator *testEvidenceValidator
 }
 
+func (m *evidenceRevokingModel) RunMode() string { return "mock" }
+
 func (m *evidenceRevokingModel) Generate(_ context.Context, in Input) (Draft, error) {
 	m.calls++
 	m.validator.denied = true

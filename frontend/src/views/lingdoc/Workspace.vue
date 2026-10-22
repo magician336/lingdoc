@@ -437,8 +437,9 @@
           <SelectedEvidenceContext v-if="project && generationEvidenceRefs.length" :project="project" :current-user-id="auth.currentUserId ?? ''" :selected="generationEvidenceRefs" :readonly="busy || generationPending || rewriteBusy" @remove="removeGenerationEvidence" @open="openSelectedEvidence" />
 <section class="selected-rewrite" aria-label="选段改写">
               <h4>选段 AI 改写</h4>
-              <p class="muted">先在正文中选中一段，再填写改写要求。生成只会产生候选，不会直接改正文。</p>
-              <label for="rewrite-instruction">改写要求</label>
+              <p class="muted">先在正文中选中一段，再选择动作与产出参数。生成只会产生候选，不会直接改正文。</p>
+              <GenerationActionPanel v-if="project" :project-id="project.id" scope="section" action="rewrite" @submit="onRewriteActionSubmit" />
+              <label for="rewrite-instruction">改写要求（不按动作发起的自由文本路径）</label>
               <textarea id="rewrite-instruction" v-model="rewriteInstruction" :disabled="busy || rewriteBusy" rows="2" maxlength="2000" />
               <label v-if="generationEvidenceRefs.length" class="rewrite-evidence-choice"><input v-model="rewriteUseEvidence" type="checkbox" :disabled="rewriteBusy || busy">本次选段改写使用上述 {{generationEvidenceRefs.length}} 张明确选定证据卡（不混入额外来源）</label>
               <fieldset class="rewrite-sources" :disabled="rewriteUseEvidence">
@@ -451,35 +452,43 @@
                 </label>
                 <p v-if="!sources.length" class="muted">如需补充其他参考资料，请先检索。原文已有引用不受此列表是否为空影响。</p>
               </fieldset>
-              <button type="button" @click="requestSelectedRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
-                {{ rewriteBusy ? '正在生成候选…' : '改写选中段落' }}
+              <button type="button" @click="requestLegacyRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
+                {{ rewriteBusy ? '正在生成候选…' : '按自由文本要求生成候选' }}
               </button>
               <section v-if="rewriteCandidate" class="rewrite-preview" aria-live="polite">
-                <p class="muted">候选状态：{{ rewriteCandidate.status }} · 运行模式：{{ rewriteCandidate.run_mode }}</p>
-                <p v-if="rewriteCandidate.status === 'failed'" class="warning">
+                <p class="muted">候选状态：{{ rewriteCandidateStageLabel }} · 运行模式：{{ rewriteCandidate.run_mode }}</p>
+                <p v-if="rewriteCandidateStage === 'failed'" class="warning">
                   <template v-if="rewriteCandidate.error_code === 'source_access_denied'">本次改写未通过引用来源核验。请重新读取项目并检查引用资料是否仍可访问；修改改写要求不能解决来源权限问题。原文未被替换。</template>
                   <template v-else-if="rewriteCandidate.error_code === 'unsupported_format'">模型输出了当前 DOCX 不支持的格式，候选不能采纳。请使用纯文本段落和原文引用；原文未被替换，系统不会自动重试。</template>
                   <template v-else>候选生成未完成（{{ rewriteCandidate.error_code || 'unknown' }}）。原文未被替换，请检查错误原因后重试。</template>
                 </p>
-                <p v-else-if="rewriteCandidate.status === 'stale'" class="warning">候选基于旧工作副本或来源，不能采纳；请重新选择并生成。</p>
-                <template v-else-if="rewriteCandidate.status === 'ready' || rewriteCandidate.status === 'applying'">
+                <p v-else-if="rewriteCandidateStage === 'stale' || rewriteCandidateStage === 'not_authorized'" class="warning">{{ rewriteCandidateStageNotice }}</p>
+                <template v-else-if="rewriteCandidateStage === 'ready' || rewriteCandidateStage === 'applying'">
                   <h5>原文选段</h5>
                   <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
                   <h5>改写候选</h5>
                   <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
-                  <button v-if="rewriteCandidate.status === 'ready'" type="button" class="ghost" @click="openRewriteCompare">展开宽对照</button>
+                  <button v-if="rewriteCandidateStage === 'ready'" type="button" class="ghost" @click="openRewriteCompare">展开宽对照</button>
                   <p v-if="rewriteCandidate.replacement_markdown.trim() === rewriteCandidate.selection.selected_text.trim()" class="muted" role="status">本次候选与原文一致，未产生文字改动。可以保留原文，或明确需要改善的地方后再生成。</p>
                   <p class="muted">候选来源：{{ rewriteCandidate.source_ids.length ? rewriteCandidate.source_ids.join('、') : '无' }}</p>
                   <ul v-if="rewriteCandidate.review_items.length" class="rewrite-review-list">
                     <li v-for="item in rewriteCandidate.review_items" :key="item.id">待核：{{ item.statement }}</li>
                   </ul>
-                  <button type="button" @click="applyRewriteCandidate" :disabled="rewriteBusy || busy || chapterChanged || !workingCopy || (rewriteCandidate.status !== 'applying' && workingCopy.working_copy_revision !== rewriteCandidate.working_copy_revision)">
-                    {{ rewriteCandidate.status === 'applying' ? '重试确认采纳结果' : '接受并应用到工作副本' }}
+                  <button type="button" @click="applyRewriteCandidate" :disabled="rewriteBusy || busy || chapterChanged || !workingCopy || (rewriteCandidateStage !== 'applying' && workingCopy.working_copy_revision !== rewriteCandidate.working_copy_revision)">
+                    {{ rewriteCandidateStage === 'applying' ? '重试确认采纳结果' : '接受并应用到工作副本' }}
                   </button>
-                  <button type="button" @click="rejectRewriteCandidate" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">拒绝候选</button>
+                  <button type="button" @click="rejectRewriteCandidate" :disabled="rewriteBusy || busy || rewriteCandidateStage === 'applying'">拒绝候选</button>
                 </template>
               </section>
             </section>
+            <LingDocReviewReportPanel
+              v-if="project && chapter && workingCopy"
+              :project-id="project.id" :chapter-id="chapter.id"
+              scope="section" :resolve-selection="resolveRewriteSelection"
+              :expected-spec-revision="project.spec_revision"
+              :expected-working-copy-revision="workingCopy.working_copy_revision"
+              :base-chapter-version-id="workingCopy.base_chapter_version_id"
+              @applied="onReviewReportApplied" />
           <h3>生成候选稿</h3>
           <fieldset class="generation-assets" :disabled="generationPending || busy">
             <legend>本次允许使用的资料</legend>
@@ -663,10 +672,10 @@
             <span class="muted">候选基于工作副本修订 {{ rewriteCandidate.working_copy_revision }}；正文尚未改变。</span>
             <span class="grow" />
             <button type="button" class="primary" @click="applyFromCompare"
-              :disabled="rewriteBusy || busy || chapterChanged || (rewriteCandidate.status !== 'applying' && workingCopy?.working_copy_revision !== rewriteCandidate.working_copy_revision)">
-              {{ rewriteCandidate.status === 'applying' ? '重试确认采纳结果' : '采纳选段改写' }}
+              :disabled="rewriteBusy || busy || chapterChanged || (rewriteCandidateStage !== 'applying' && workingCopy?.working_copy_revision !== rewriteCandidate.working_copy_revision)">
+              {{ rewriteCandidateStage === 'applying' ? '重试确认采纳结果' : '采纳选段改写' }}
             </button>
-            <button type="button" @click="rejectFromCompare" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">放弃候选</button>
+            <button type="button" @click="rejectFromCompare" :disabled="rewriteBusy || busy || rewriteCandidateStage === 'applying'">放弃候选</button>
             <button type="button" class="ghost" @click="closeRewriteCompare">返回编辑位置</button>
           </footer>
         </div>
@@ -757,8 +766,10 @@ import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
 import ResearchPanel from './ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
+import LingDocReviewReportPanel from './LingDocReviewReportPanel.vue'
 import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
+import GenerationActionPanel from './GenerationActionPanel.vue'
 import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
@@ -780,9 +791,12 @@ import {
 } from './sourceContext'
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import { useAuthStore } from '@/stores/auth'
+import type { WritingActionOutputParams, WritingActionScope } from '@/api/lingdoc/writingAction'
 import { reviewAnchorHint, reviewAnchorState, reviewItemStatus, reviewProgress, reviewStatusLabel, type ReviewDisposition } from './reviewPanel'
+import { rewriteStage, rewriteStageAdoptable, rewriteStageLabel, rewriteStageNotice } from './rewriteStage'
 import { inspectorOnNarrowTransition, mergeWbLayoutPref, readWbLayoutPref, wbLayoutStorageKey, type WbLayoutPref } from './layoutPref'
 import { filterProjects } from './projectPicker'
+import { rewriteAdoptionConfirmation } from './candidateAdoption'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
@@ -933,11 +947,26 @@ const workingCopySaving = ref(false)
 const workingCopyStatus = ref<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
 const workingCopyLoading = ref(false)
 const rewriteCandidate = ref<SelectedRewriteCandidate | null>(null)
+// 候选走到了哪一步：失效判据归 validity 一个拥有者，「正在应用」归
+// apply_pending 一个拥有者，模板只读这一个计算属性。
+const rewriteCandidateStage = computed(() => rewriteStage(rewriteCandidate.value))
+const rewriteCandidateStageLabel = computed(() => rewriteStageLabel(rewriteCandidateStage.value))
+const rewriteCandidateStageNotice = computed(() => rewriteStageNotice(rewriteCandidateStage.value))
 const rewriteInstruction = ref('保留原意、事实、数字、引用和不确定性说明。梳理句子的主次关系，精简重复或冗长表达，让并列内容和前后衔接更清楚；不要仅替换序号或同义词，也不要为变化而变化。原文无需修改时可保持原文。使用纯文本段落，保留引用标记，不使用加粗等 Markdown 格式。')
 const rewriteSourceIds = ref<string[]>([])
 const rewriteUseEvidence=ref(false)
 const rewriteBusy = ref(false)
 const rewriteOpen = ref(false)
+// 这一次按动作发起的改写计划：动作、目标范围、产出参数与补充说明。
+//
+// 它是**一次**计划，不是页面的常驻设置：动作面板每次提交都覆盖它，而走自由
+// 文本路径时它被清空——否则「按自由文本要求生成候选」会悄悄带上上一次的动作。
+const rewriteActionPlan = ref<{
+  action: string
+  scope: WritingActionScope
+  output_params: WritingActionOutputParams
+  instruction: string
+} | null>(null)
 /* 待核重新关联：选段经三重验证映射后真实 PUT anchor；无锚点/失效项才可关联 */
 const relinkItemId = ref('')
 const relinkNotice = ref('')
@@ -1165,6 +1194,17 @@ const sourceLabels = computed(() => {
   }))
 })
 function onSelectionContext() { selectionContextVersion.value++ }
+// 当前选区（UTF-16）。它是一个**取数函数**，不是一个渲染期算好的值：
+// 选区的映射要经编辑器的 UTF-16 映射与三重验证，渲染页面上顺手算一次太贵
+// （每次击键都要重新序列化整篇正文）。页面只在用户点「发起语言评审」的那一刻
+// 问一次。
+function resolveRewriteSelection() {
+  const editor = editorRef.value
+  if (!editor || typeof editor.selectionToUtf16 !== 'function') return undefined
+  const mapped = editor.selectionToUtf16()
+  if (!mapped || !mapped.ok || mapped.chapterId !== chapter.value?.id) return undefined
+  return { start_utf16: mapped.start_utf16, end_utf16: mapped.end_utf16, selected_text: mapped.quote }
+}
 async function openNativeSource(id: string) {
   inspOpen.value = true; inspTab.value = 'sources'
   const pid = project.value?.id
@@ -1376,7 +1416,7 @@ function closeOverlays() {
   if (rewriteCompareOpen.value) closeRewriteCompare()
 }
 function openRewriteCompare() {
-  if (!rewriteCandidate.value || rewriteCandidate.value.status !== 'ready') return
+  if (!rewriteCandidate.value || rewriteCandidateStage.value !== 'ready') return
   rewriteCompareOpen.value = true
 }
 function closeRewriteCompare() {
@@ -2543,6 +2583,31 @@ function toggleRewriteSource(sourceId: string, event: Event) {
   rewriteSourceIds.value = [...next].sort()
 }
 
+// 动作面板提交：这一次按动作发起。
+//
+// 面板交出来的动作、目标范围、产出参数与补充说明**真的进请求体**——动作路
+// 径的候选因此带上动作与来源，采纳时才有东西可确认。
+function onRewriteActionSubmit(payload: {
+  action: string
+  scope: WritingActionScope
+  output_params: WritingActionOutputParams
+  instruction: string
+}) {
+  rewriteActionPlan.value = {
+    action: payload.action,
+    scope: payload.scope,
+    output_params: payload.output_params,
+    instruction: payload.instruction,
+  }
+  void requestSelectedRewrite()
+}
+
+// 自由文本路径：清掉上一次的动作计划，免得「按自由文本要求」悄悄带上动作。
+function requestLegacyRewrite() {
+  rewriteActionPlan.value = null
+  void requestSelectedRewrite()
+}
+
 async function requestSelectedRewrite() {
   if (!project.value || !chapter.value || !workingCopy.value || rewriteBusy.value || busy.value) return
   // 连续文稿编辑器：经"保存正文 + 三重验证"的 UTF-16 映射取选区；无法安全映射明确拒绝（不猜范围）
@@ -2562,7 +2627,10 @@ async function requestSelectedRewrite() {
     errorMessage.value = '选中的内容为空白，请选择一段正文。'
     return
   }
-  if (!rewriteInstruction.value.trim()) {
+  const plan = rewriteActionPlan.value
+  // 自由文本路径的说明是必填的；动作路径的说明只是补充说明，必填的是动作与
+  // 产出参数（服务端按执行计划校验）。
+  if (!plan && !rewriteInstruction.value.trim()) {
     errorMessage.value = '请填写改写要求。'
     return
   }
@@ -2582,9 +2650,11 @@ async function requestSelectedRewrite() {
     expected_spec_revision: project.value.spec_revision,
     expected_working_copy_revision: workingCopy.value.working_copy_revision,
     selection,
-    instruction: rewriteInstruction.value.trim(),
+    instruction: plan ? plan.instruction.trim() : rewriteInstruction.value.trim(),
     source_ids: rewriteUseEvidence.value&&generationEvidenceRefs.value.length?[]:[...rewriteSourceIds.value].sort(),
     evidence_card_refs: rewriteUseEvidence.value&&generationEvidenceRefs.value.length?generationEvidenceRefs.value.map(({id,version})=>({id,version})):undefined,
+    // 动作路径三个字段一起给：服务端看到它们就按动作解析执行计划，缺一即拒。
+    ...(plan ? { writing_action: plan.action, output_params: plan.output_params, scope: plan.scope } : {}),
   }
   const keyName = `selected-rewrite:${projectId}:${chapterId}`
   const key = operationKey(keyName, input)
@@ -2603,9 +2673,20 @@ async function requestSelectedRewrite() {
 
 async function applyRewriteCandidate() {
   if (!project.value || !chapter.value || !workingCopy.value || !rewriteCandidate.value || rewriteBusy.value || busy.value || chapterChanged.value) return
+  // 确认载荷：动作、采纳目标、目标范围、确认时刻、确认人、来源。
+  //
+  // 动作路径的候选缺它会被服务端 400 拒（ErrRewriteConfirmationRequired）——
+  // 采纳不是「点一下就写进去」，用户要确认这次采纳的是哪个动作的结果、写到哪里、
+  // 写到哪一段。旧路径的候选没有动作可确认，因此**不带**这个字段。
+  const confirmation = rewriteAdoptionConfirmation(rewriteCandidate.value, auth.currentUserId, new Date().toISOString())
+  if (confirmation.kind === 'unconfirmable') {
+    errorMessage.value = confirmation.reason
+    return
+  }
   const candidate = rewriteCandidate.value
-  if (candidate.status !== 'ready' && candidate.status !== 'applying') return
-  if (candidate.status !== 'applying' && workingCopy.value.working_copy_revision !== candidate.working_copy_revision) return
+  const stage = rewriteCandidateStage.value
+  if (!rewriteStageAdoptable(stage)) return
+  if (stage !== 'applying' && workingCopy.value.working_copy_revision !== candidate.working_copy_revision) return
   if (!window.confirm('只把候选替换到所选文字，并保存为工作副本；不会创建正式版本。确定接受吗？')) return
   const projectId = project.value.id
   const chapterId = chapter.value.id
@@ -2613,6 +2694,7 @@ async function applyRewriteCandidate() {
     expected_spec_revision: candidate.spec_revision,
     expected_working_copy_revision: candidate.working_copy_revision,
     base_chapter_version_id: candidate.base_chapter_version_id,
+    ...(confirmation.kind === 'confirmed' ? { confirmation: confirmation.confirmation } : {}),
   }
   const keyName = `apply-selected-rewrite:${candidate.candidate_id}`
   const key = `apply-${candidate.candidate_id}`
@@ -2636,6 +2718,20 @@ async function applyRewriteCandidate() {
 
 function rejectRewriteCandidate() {
   clearRewriteCandidate()
+}
+
+// 评审报告已应用：工作副本多了一份待核事项，正文随之更新。
+//
+// 报告不是候选，所以这里没有「候选被采纳」那套清场动作：改写候选还在原地，
+// 它与这份报告是两条独立的线。
+async function onReviewReportApplied(copy: WorkingCopy) {
+  if (!project.value || chapter.value?.id !== copy.chapter_id) return
+  workingCopy.value = copy
+  hydrateCitationUsages(copy)
+  bodyDraft.value = copy.body_markdown
+  workingCopyStatus.value = 'saved'
+  editorDocs.value[copy.chapter_id] = snapshotOf(copy)
+  await synchronizeCleanDocument()
 }
 
 const pendingChapterCommit = ref<ChapterCommitBasis | null>(null)

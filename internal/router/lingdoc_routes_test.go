@@ -40,6 +40,10 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	// caller names, so their presence is a decision rather than an accident.
 	deps.WithMachineReads(service)
 	deps.WithReviewAnchors(service, service)
+	// The rewrite capability carries the review endpoints with it: a language
+	// review is a report, and its application entry point lives beside the
+	// rewrite one.
+	deps.WithSelectedRewrites(&lingDocRewriteRouteStub{})
 	lingdocHandler, err := workspace.NewHandler(deps)
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
@@ -53,13 +57,14 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 	// The baseline is the route surface a fully-capable composition root
 	// serves: the six required ports plus the machine read and the review
-	// anchor capabilities. The base tree measured the same 70 routes with the
+	// anchor capabilities, plus the rewrite capability and the review
+	// endpoints it carries. The base tree measured the same 70 routes with the
 	// same capability set, so the surface did not change. The older 68 came
 	// from a handler assembled with no ports at all, which never had the
 	// machine read endpoints - the production composition root always had
 	// them.
-	if got := len(engine.Routes()); got != 70 {
-		t.Fatalf("registered %d LingDoc routes, want 70", got)
+	if got := len(engine.Routes()); got != 78 {
+		t.Fatalf("registered %d LingDoc routes, want 78", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
@@ -79,6 +84,40 @@ type lingDocRouteServiceStub struct {
 	workspace.ChangeSetApplication
 	createCalls int
 	listCalls   int
+}
+
+// lingDocRewriteRouteStub 站在改写与评审这两条能力的门口。
+//
+// 路由面测试要的是「这些端点在生产装配里真的存在」：改写能力带着评审的四个
+// 端点一起注册，因此这个桩同时实现两组接口。
+type lingDocRewriteRouteStub struct{}
+
+func (*lingDocRewriteRouteStub) Create(context.Context, workspace.Actor, string, string, string, workspace.SelectedRewriteRequest) (workspace.SelectedRewriteCandidate, error) {
+	return workspace.SelectedRewriteCandidate{}, nil
+}
+
+func (*lingDocRewriteRouteStub) Get(context.Context, workspace.Actor, string, string) (workspace.SelectedRewriteCandidate, error) {
+	return workspace.SelectedRewriteCandidate{}, nil
+}
+
+func (*lingDocRewriteRouteStub) Apply(context.Context, workspace.Actor, string, string, string, string, workspace.ApplySelectedRewriteInput) (core.WorkingCopy, bool, error) {
+	return core.WorkingCopy{}, false, nil
+}
+
+func (*lingDocRewriteRouteStub) CreateReviewReport(context.Context, workspace.Actor, string, string, string, workspace.ReviewReportRequest) (workspace.ReviewReport, error) {
+	return workspace.ReviewReport{}, nil
+}
+
+func (*lingDocRewriteRouteStub) GetReviewReport(context.Context, workspace.Actor, string, string) (workspace.ReviewReport, error) {
+	return workspace.ReviewReport{}, nil
+}
+
+func (*lingDocRewriteRouteStub) RejectReviewReport(context.Context, workspace.Actor, string, string, string) (workspace.ReviewReport, error) {
+	return workspace.ReviewReport{}, nil
+}
+
+func (*lingDocRewriteRouteStub) ApplyReviewReport(context.Context, workspace.Actor, string, string, string, string, workspace.ApplyReviewInput) (core.WorkingCopy, bool, error) {
+	return core.WorkingCopy{}, false, nil
 }
 
 // routeSourcesStub stands in for the sources port when a test does not

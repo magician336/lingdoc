@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import type { AcceptCandidateInput } from '@/api/lingdoc/candidateAdoption'
-import { adoptionSignature, keyForAttempt } from './candidateAdoption'
+import type { AcceptCandidateInput, AdoptionConfirmation } from '@/api/lingdoc/candidateAdoption'
+import { adoptionSignature, keyForAttempt, newSnapshotId, rewriteAdoptionConfirmation, workingCopyBodyHash } from './candidateAdoption'
 
 const workspace = readFileSync(new URL('./Workspace.vue', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('../../components/LingDocCandidateAdoptionDialog.vue', import.meta.url), 'utf8')
+
+function confirmationOf(overrides: Partial<AdoptionConfirmation> = {}): AdoptionConfirmation {
+  return {
+    writing_action: 'generate',
+    adoption_target: 'formal_version_whole',
+    confirmed_at: '2026-10-22T01:00:00.000Z',
+    confirmed_by: 'user-1',
+    origin: 'ai_generated',
+    ...overrides,
+  }
+}
 
 function inputOf(overrides: Partial<AcceptCandidateInput> = {}): AcceptCandidateInput {
   return {
@@ -13,6 +24,9 @@ function inputOf(overrides: Partial<AcceptCandidateInput> = {}): AcceptCandidate
     expected_chapter_version_id: null,
     expected_spec_revision: 3,
     replace_existing: false,
+    expected_working_copy_revision: 7,
+    expected_body_hash: 'a'.repeat(64),
+    confirmation: confirmationOf(),
     ...overrides,
   }
 }
@@ -64,7 +78,38 @@ test('the signature covers every field that goes into the request body', () => {
   assert.notEqual(adoptionSignature(inputOf({ expected_chapter_version_id: 'version-9' })), base)
   assert.notEqual(adoptionSignature(inputOf({ expected_spec_revision: 4 })), base)
   assert.notEqual(adoptionSignature(inputOf({ replace_existing: true })), base)
+  // 工作副本声明：换了要动的那一份草稿，就是另一次请求。
+  assert.notEqual(adoptionSignature(inputOf({ expected_working_copy_revision: 8 })), base)
+  assert.notEqual(adoptionSignature(inputOf({ expected_body_hash: 'b'.repeat(64) })), base)
+  // 带快照的替换：它放行了 dirty，所以也是另一次请求。
+  assert.notEqual(adoptionSignature(inputOf({ snapshot_id: 'snapshot-1' })), base)
   assert.equal(adoptionSignature(inputOf()), base)
+})
+
+test('the signature covers the adoption confirmation', () => {
+  // 确认载荷在请求体里，所以它必须在签名里：确认了另一个动作、另一个采纳目标或
+  // 另一个范围，都是另一次采纳，必须换一把键。
+  const base = adoptionSignature(inputOf())
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ writing_action: 'rewrite' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ adoption_target: 'working_copy_whole' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ confirmed_by: 'user-2' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ origin: 'human' }) })), base)
+  assert.notEqual(
+    adoptionSignature(inputOf({ confirmation: confirmationOf({ adoption_target: 'working_copy_partial', scope: { start_utf16: 0, end_utf16: 4 } }) })),
+    base,
+  )
+  assert.equal(adoptionSignature(inputOf()), base)
+})
+
+test('a retried adoption keeps its key because the confirmation moment does not move', () => {
+  // 确认时刻在对话框打开时定下：它每次都变的话，同一次采纳的重试会换一把键，
+  // 整章替换就做两遍。
+  const { state, mint } = mintCounter()
+  let attempt = keyForAttempt(null, inputOf(), mint)
+  assert.equal(state.calls, 1)
+  attempt = keyForAttempt(attempt, inputOf(), mint)
+  assert.equal(state.calls, 1)
+  assert.equal(attempt.key, 'key-1')
 })
 
 test('the dialog signs the very body it sends', () => {
@@ -73,6 +118,23 @@ test('the dialog signs the very body it sends', () => {
   assert.match(dialog, /keyForAttempt\(attempt\.value, input\.value, newIdempotencyKey\)/)
   assert.match(dialog, /acceptCandidate\(\s*props\.projectId,\s*props\.chapter\.id,\s*input\.value,/)
   assert.doesNotMatch(dialog, /idempotencyKeyForAttempt/)
+})
+
+test('the working copy digest is the sha256 of the body, in lowercase hex', async () => {
+  // 算法是契约的一部分：服务端算的是同一个值（candidateadoption 的
+  // workingCopyBodyHash）。两边算不出同一个值，这一声明就白声明了。
+  const digest = await workingCopyBodyHash('正文')
+  assert.equal(digest.length, 64)
+  assert.match(digest, /^[0-9a-f]{64}$/)
+  // 空正文也有确定的摘要。
+  assert.equal((await workingCopyBodyHash('')).length, 64)
+  // 换一个正文，摘要就换。
+  assert.notEqual(await workingCopyBodyHash('正文'), await workingCopyBodyHash('另一段'))
+})
+
+test('a snapshot id is minted per replacement', () => {
+  assert.notEqual(newSnapshotId(), newSnapshotId())
+  assert.match(newSnapshotId(), /^candidate-adoption-snapshot-/)
 })
 
 test('a successful adoption cannot be cancelled before chapter readback succeeds', () => {
@@ -107,4 +169,59 @@ test('project selection uses named options and the shared unsaved-input policy',
   assert.match(workspace, /selectProject\(id, \{ handledConditions: handledDraft \}\)/)
   assert.match(workspace, /const unsavedInputState = computed<UnsavedInputState>/)
   assert.match(workspace, /unsavedInputsAreDirty\(\{\s*\.\.\.unsavedInputState\.value,[\s\S]*?\}, \{ conditionsHandled \}\)/)
+})
+
+test('the selected rewrite adoption carries the explicit confirmation payload', () => {
+  // 动作路径的候选缺确认载荷会被服务端 400 拒（ErrRewriteConfirmationRequired），
+  // 所以这不是「界面上的一个勾选框」，而是请求体的一部分。
+  const result = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', origin: 'ai_generated', selection: { start_utf16: 3, end_utf16: 11 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(result.kind, 'confirmed')
+  if (result.kind !== 'confirmed') return
+  const confirmation = result.confirmation
+  assert.equal(confirmation.writing_action, 'rewrite')
+  // 采纳目标固定为选段：选段端点只实现这一种写入方式，另两个目标服务端会拒。
+  assert.equal(confirmation.adoption_target, 'working_copy_partial')
+  // 范围就是候选的选区：这个端点写的就是那一段。
+  assert.deepEqual(confirmation.scope, { start_utf16: 3, end_utf16: 11 })
+  assert.equal(confirmation.confirmed_at, '2026-10-22T01:00:00.000Z')
+  assert.equal(confirmation.confirmed_by, 'user-1')
+  assert.equal(confirmation.origin, 'ai_generated')
+})
+
+test('a legacy rewrite candidate carries no confirmation payload at all', () => {
+  // 旧路径没有动作可确认：带了载荷反而被服务端判成非法请求。所以这一份是
+  // 「不带」，不是「带一个空的」。
+  const legacy = rewriteAdoptionConfirmation(
+    { origin: 'ai_generated', selection: { start_utf16: 0, end_utf16: 4 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(legacy.kind, 'legacy')
+})
+
+test('a rewrite candidate without an origin or an identity cannot be confirmed', () => {
+  // 这两种不能被当成「旧路径」：旧路径只是没有动作，动作路径缺来源是**缺**了
+  // 确认所需的东西。混成一种的话，缺来源的候选会被静默地当成旧路径发出去。
+  const noOrigin = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', selection: { start_utf16: 0, end_utf16: 4 } },
+    'user-1',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(noOrigin.kind, 'unconfirmable')
+  const noIdentity = rewriteAdoptionConfirmation(
+    { writing_action: 'rewrite', origin: 'ai_generated', selection: { start_utf16: 0, end_utf16: 4 } },
+    '  ',
+    '2026-10-22T01:00:00.000Z',
+  )
+  assert.equal(noIdentity.kind, 'unconfirmable')
+})
+
+test('the workspace sends the confirmation with the rewrite adoption', () => {
+  // 这条守卫盯的是接线：确认载荷不是「有个函数就够」，它得真的进了请求体。
+  assert.match(workspace, /rewriteAdoptionConfirmation\(/)
+  assert.match(workspace, /confirmation:\s*confirmation\.confirmation/)
 })

@@ -19,8 +19,11 @@ import (
 // 000104 LingDoc member permissions, 000105-000114 LingDoc lifecycle stores,
 // 000115 RuleSet base, 000116 full workflow, 000118-000120 RuleSet delivery,
 // 000123 roadmap editing sessions and route edges, 000124 dependency
-// candidates;
-// SQLite counterparts are 000036, 000037, and 000039-000045.
+// candidates, 000125 audit action bounds, 000126 candidate storage shape and
+// idempotency digest version, 000127 selected rewrite action shape,
+// 000128 generation run digest version, 000129 selected rewrite validity,
+// 000130 review reports;
+// SQLite counterparts are 000036, 000037, and 000039-000051.
 // 000122 is not listed: it renames lingdoc_change_sets in place, so it ends
 // up under the name the table already had.
 var versionedSQLiteTables = []string{
@@ -60,6 +63,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_g3_records",
 	"lingdoc_g6_records",
 	"lingdoc_selected_rewrites",
+	"lingdoc_review_reports",
 	"lingdoc_ruleset_metrics",
 	"lingdoc_g3_roadmap_edit_sessions",
 	"lingdoc_g3_route_edges",
@@ -72,7 +76,7 @@ var versionedSQLiteTables = []string{
 var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_export_artifacts":        {"ruleset_ref_json"},                                                                                              // SQLite 000039 / PostgreSQL 000118
 	"lingdoc_project_template_copies": {"ruleset_ref_json"},                                                                                              // SQLite 000041 / PostgreSQL 000120
-	"lingdoc_selected_rewrites":       {"evidence_card_refs_json", "template_basis_json", "evidence_constraints_json"},                                   // SQLite 000037
+	"lingdoc_selected_rewrites":       {"evidence_card_refs_json", "template_basis_json", "evidence_constraints_json", "writing_action", "origin"},       // SQLite 000037 / 000048
 	"memory_subjects":                 {"extraction_state"},                                                                                              // 000094
 	"memory_items":                    {"replaces_id"},                                                                                                   // 000094
 	"tenants":                         {"api_principal_config"},                                                                                          // 000064
@@ -83,14 +87,16 @@ var versionedSQLiteColumns = map[string][]string{
 	"embed_channels":                  {"allow_memory"},                                                                                                  // 000060
 	"mcp_oauth_tokens":                {"principal_type", "principal_id"},                                                                                // 000064
 	"mcp_tool_approvals":              {"enabled"},                                                                                                       // 000091
-	"lingdoc_generation_runs":         {"claim_token", "cancel_requested"},                                                                               // 000101
+	"lingdoc_generation_runs":         {"claim_token", "cancel_requested", "digest_version"},                                                             // 000101 / 000049
 	"lingdoc_chapter_versions":        {"citation_usages_json"},                                                                                          // 000110
 	"lingdoc_projects":                {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
+	"lingdoc_candidates":              {"writing_action", "origin", "run_mode", "model_id"},                                                              // 000126
+	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000126
 }
 
 // 000046 rebuilds lingdoc_project_audits in place to bound its action
 // category column (#276). It adds no table, so the table set is unchanged.
-const expectedSQLiteMigrationVersion = 46
+const expectedSQLiteMigrationVersion = 51
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
@@ -123,6 +129,13 @@ func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	assertSQLiteMCPOAuthPrincipalUpsertWorks(t, db)
 	require.False(t, sqliteColumnExists(t, db, "knowledges", "tag_id"),
 		"SQLite migrations must drop legacy knowledges.tag_id after multi-tag migration")
+	// The selected rewrite candidate used to carry a status word list of its
+	// own. The validity migration replaces it with the candidate layer's
+	// validity: the old column must be gone, not merely unused.
+	require.True(t, sqliteColumnExists(t, db, "lingdoc_selected_rewrites", "validity"),
+		"SQLite migrations must give the selected rewrite candidate the validity column")
+	require.False(t, sqliteColumnExists(t, db, "lingdoc_selected_rewrites", "status"),
+		"SQLite migrations must drop the selected rewrite candidate's old status word list")
 }
 
 func TestSQLiteMigrationsUpgradeV4PreservesData(t *testing.T) {
