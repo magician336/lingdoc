@@ -35,7 +35,13 @@
 | `cd frontend && npm run type-check` | exit 0 |
 | `cd frontend && npm test` | exit 0 |
 
-**证据 head 的边界**：上表在 head `80ed06ab` 上采集；此后本分支只追加本档与验证报告等文档，代码树未变（`git diff --name-only 80ed06ab..HEAD -- '*.go' '*.ts' '*.vue' '*.js' '*.json' '*.sql'` 为空），故上表证据绑定到最终 head 仍然成立。
+**证据 head 的边界**：上表在 head `80ed06ab` 上采集。此后本分支只追加本档与验证报告等文档，**代码树逐字未变**——这一点由下面这条命令在任何后续 head 上自证（它只列代码扩展名，不含 docs 下的 JSON）：
+
+```
+git diff --name-only 80ed06ab..HEAD -- '*.go' '*.ts' '*.tsx' '*.vue' '*.js' '*.mjs' '*.less' '*.py' '*.sql'
+```
+
+输出为空即说明上表证据绑定到该 head 仍然成立。
 
 ## 2. 批次与对应票据
 
