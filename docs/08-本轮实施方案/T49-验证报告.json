@@ -1,9 +1,9 @@
 {
  "mode": "static-and-suite",
  "note": "PF-4 owner_unavailable 派生状态与 Owner-only 冻结（票 #406–#410，Spec #391）。一件事：项目 Owner 的租户身份失效时，五项 Owner 专属动作（立项确认、模板升级、ChangeSet 应用/驳回、正式导出、归档）被冻结，普通协作照常；冻结是读时派生的，不落库、不新增项目状态、不进项目结构体，所以租户身份恢复即自动解冻。设计要点：判定收口到一处（workspacecore/owner_unavailable.go，判定与门面同处），并由一个 AST 守护测试拒绝第二份内联判定；拒绝可归因但不破坏既有契约（ErrOwnerUnavailable 包住 ErrNotFound，状态码 404 / code not_found 不变，原因只进可选 details.reason_code）；读侧两处出口读同一份判定（权限读出口回答「这个入口被冻了吗」，项目级只读出口回答「这个项目出了什么事、怎么恢复」）；写侧按行动者判定（Owner 得 owner_unavailable，非 Owner 保持朴素 404）；能力取值用既有的 manage（硬约束禁止新增能力值）。本轮还实测出并修复了三个夹具/schema 缺陷：owner 冻结夹具的迁移清单停在 000041（PF-3 加了审计版本列后带审计的写入在夹具里 500）、#410 的归档迁移编号与 PF-3 撞车、以及三票各自补夹具造成同一迁移清单三份副本（已归一到共享夹具）。",
- "head": "eae2d246",
+ "head": "3840d867",
  "base": "e1cff741",
- "head_note": "证据产出于 eae2d246 这棵树（代码 head）。其后的提交只改文档与证据，`git diff eae2d246 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
+ "head_note": "证据产出于 3840d867 这棵树（代码 head）。其后的提交只改登记处脚本与文档证据：`git diff 3840d867 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
  "base_note": "origin/main 在本轮最后一次基线合并后的尖端（e1cff741，含 PF-3 交面）。本轮共做了两次基线合并：f1dcfdce（合并当时的 main，零冲突，PF-3 改了 service_facade.go / typed_contracts.go 与本面重叠但改动落在不同区域）、以及四张票各自在实现分支上合并 main（90bced51 / 98e8e701 / f5453975 / a871129c）。两次合并的代码改动对本面为零冲突 —— `git diff eae2d246 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 —— 所以证据里的测试结论逐条仍然绑定最终 head。",
  "passed": [
   {
@@ -49,7 +49,7 @@
   {
    "id": "AC-49-09 既有契约与端点零变化",
    "status": "passed",
-   "evidence": "python docs/08-本轮实施方案/contracts/validate_artifacts.py → exit 0（契约校验 PASS，产物由脚本重生成，计数 paths 152 / operations 178 / core_operations 175 / schemas 362 / local_refs 1730 / shape_checks 949 —— 相对基线只多了归档端点与 owner-availability 端点各一个，无既有形状漂移）。python scripts/ci/check_lingdoc_routes.py → exit 0（路由与前端调用双向一致，95 路由 / 95 前端调用）。既有错误码语义不变：ErrOwnerUnavailable 包住 ErrNotFound，状态码 404、code not_found 逐字不变，原因只进可选 details —— TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal 与 TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities 分别从写侧与读侧钉住。既有权限用例（既有权限读出口的既有能力与既有 reason_code）走既有回归，未改断言。"
+   "evidence": "python docs/08-本轮实施方案/contracts/validate_artifacts.py → exit 0（契约校验 PASS，产物由脚本重生成，计数 paths 152 / operations 178 / core_operations 175 / schemas 362 / local_refs 1730 / shape_checks 949 —— 相对基线只多了归档端点与 owner-availability 端点各一个，无既有形状漂移）。python scripts/ci/check_lingdoc_routes.py → exit 0（路由与前端调用双向一致，95 路由 / 95 前端调用）。既有错误码语义不变：ErrOwnerUnavailable 包住 ErrNotFound，状态码 404、code not_found 逐字不变，原因只进可选 details —— TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal 与 TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities 分别从写侧与读侧钉住。既有权限用例（既有权限读出口的既有能力与既有 reason_code）走既有回归，未改断言。**路由表面快照随新增端点同步**：仓里有两处钉着路由总数的断言 —— internal/router/lingdoc_routes_test.go（79 条，#410 已随归档端点更新，注释写明「The project archive entry adds one route of its own」）与 internal/container/lingdoc_test.go（生产组合的路由表面，53→54 条，新增的 POST /api/projects/:projectId/archive 按名加进该测试已有的「可选能力按名列出」列表）。既有路由一条未动：新增的端点必须按名声明才会被计入，悄悄增删仍会被总数与按名两条断言抓住。"
   },
   {
    "id": "AC-49-10 闸门统一后既有 Owner-only 动作的放行结果变化被逐条记录",
@@ -60,7 +60,7 @@
  "not_run": [
   {
    "id": "go test ./... （全仓）",
-   "reason": "本机 Windows 环境限制，与本轮无关：cmd/server 等 4 个包缺 sqlite3.h 无法编译（需 CGO_CFLAGS=-IC:/Users/ASUS/.sqlite-headers 才可编译其中大部分），internal/agent/tools 5 处与 internal/application/service 6 处为既有环境失败（缺 /bin/bash、Windows 路径、临时目录文件锁）。基线 2351edb7 上逐条对照一致，非本轮引入。本轮实际跑的是 go build ./...（exit 0）与四个相关包整包（全部 ok）。"
+   "reason": "已跑，失败项与基线逐条一致（非本轮引入）：本机 Windows 上 internal/agent/tools 5 处（TestMCPSchemaDoesNotLoadExternalResources / TestReadFileCombinesSourcesWithoutGrantingHostAccess / TestShellStdinPreservesLiteralDataForTheEntireCommand / TestSkillPythonPackageRecoveryInstallsWithoutPip / TestSkillPackageCommandsRefuseMissingDirectory，缺 /bin/bash 等环境限制）与 internal/application/service 6 处（TestDataSourceServiceDeleteSQLiteCleansUpAfterSoftDelete / TestDataSourceServiceDeleteKeepsCleanupStateWhenSoftDeleteFails / TestDeleteKnowledgeBaseCleansUpSQLiteDataSources / TestSeededSkillHelperIsDirectlyExecutable / TestRuntimePrerequisitesResolveSkillLocalCLI / TestSkillPythonVerifierReportsAnUnreadableScript，临时目录文件锁：unlinkat ... The process cannot access the file because it is being used by another process）。**对照方式**：在基线 e1cff741 上另建 worktree 跑同两个包，失败项与测试名逐条相同 ⇒ 11 处均为既有环境失败。另 cmd/server 等 4 个包缺 sqlite3.h 无法编译（跑 go 命令前需设 CGO_CFLAGS=-IC:/Users/ASUS/.sqlite-headers），CI 上这些包正常编译。"
   },
   {
    "id": "golangci-lint / make lint",
@@ -80,6 +80,7 @@
   }
  ],
  "known_limits": [
+  "**本轮的第一轮 CI 是红的，本地没抓到。** PR #419 首轮 CI 的 App job 失败：internal/container 的 TestLingDocWorkspaceCompositionKeepsItsRouteSurface 报「registered 54 routes, want 53」—— 生产组合的路由表面快照被本面新增的归档端点打破。**本地没抓到的原因是验证范围不足**：本轮本地只跑了四个相关包（workspacecore / membership / workspace / router），internal/container 不在其中；CI 跑的是全仓范围，它先看见。修复提交 3840d867（既有 53 条一条未动，新增的归档端点按名加进该测试已有的「可选能力按名列出」列表）。**这是本轮最贵的一课：本地绿灯不等于 CI 绿灯，验证范围必须对齐 CI 的范围。**",
   "**读出口按能力聚合，五项动作在读侧共用 manage。** OwnerOnlyCapability(193) 只认 manage 与 ops-control；五项动作各自的授权能力并不一致（立项确认自身的授权问的是 write、正式导出问的是 ops-control、其余走 manage）。前端统一按 manage 读入口级事实，所以现状正确；但将来若有入口按别的能力读，读出口不会给出冻结原因。OwnerOnlyCapability 的注释写明了「新增 Owner-only 动作要在同一次改动里把它的能力登记进来」。",
   "**写侧按行动者判定：只有 Owner 本人拿得到 owner_unavailable。** 非 Owner 保持朴素的 404（他们本来就没权）；Owner 的租户成员身份被停用/移除时，请求在更早的鉴权处就被拒（401/404），走不到冻结闸门 —— 归因只在「租户角色降权但成员身份仍在」与「项目成员状态停用而租户身份仍在」这两条路径上可得。项目级只读出口不受此限：任何成员都能读到项目当前是否冻结。",
   "**本轮修掉一个评审发现的语义越界。** 修前权限读出口对任何被拒能力都报 owner_unavailable，把「你无权」误标成「Owner 失效」，吞掉了既有 capability_or_scope_denied 的语义。修复提交 7243d6d2。",
