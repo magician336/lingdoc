@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const inputField = readFileSync(new URL('./Input-field.vue', import.meta.url), 'utf8')
+const inputField = readFileSync(new URL('./InputField.vue', import.meta.url), 'utf8')
 const chatPage = readFileSync(new URL('../views/chat/index.vue', import.meta.url), 'utf8')
 
 test('composer browser button is disabled and opens settings when the extension is offline', () => {

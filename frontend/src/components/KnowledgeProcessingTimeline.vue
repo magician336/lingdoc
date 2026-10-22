@@ -54,7 +54,7 @@ const props = withDefaults(
     //   false — strict mode. Poll ONLY while parse_status itself is
     //           non-terminal; ignore post-pipeline async subspans.
     //           This is what background mounts (the hidden badge
-    //           driver in doc-content.vue) want, so they stop firing
+    //           driver in DocContent.vue) want, so they stop firing
     //           /spans the instant parsing finishes — async wiki/
     //           summary work doesn't keep a headless poller alive
     //           after the user closed the trace drawer.
@@ -318,7 +318,7 @@ const isWithinQuiesceGrace = computed<boolean>(() => {
 //     the tree quiesces (so wiki ingest's 30s-debounced subspan
 //     surfaces on its own without a manual refresh).
 //
-//   gracePoll = false (for background mounts e.g. doc-content's
+//   gracePoll = false (for background mounts e.g. DocContent's
 //     hidden badge driver):
 //     Strict mode. Poll ONLY while the parse pipeline itself is
 //     non-terminal. Post-pipeline async work (wiki / summary /
@@ -635,7 +635,7 @@ const traceRoot = computed<SpanNode | null>(() => {
   }
 })
 
-const t0 = computed<number | null>(() => {
+const traceStartMs = computed<number | null>(() => {
   const root = traceRoot.value
   if (!root) return null
   const direct = nodeStart(root)
@@ -646,7 +646,7 @@ const t0 = computed<number | null>(() => {
   return Math.min(...all)
 })
 
-const tEnd = computed<number | null>(() => {
+const traceEndMs = computed<number | null>(() => {
   const root = traceRoot.value
   if (!root) return null
   const direct = parseTime(root.finished_at || undefined)
@@ -669,14 +669,14 @@ const tEnd = computed<number | null>(() => {
 })
 
 const totalMs = computed<number>(() => {
-  if (t0.value === null || tEnd.value === null) return 0
+  if (traceStartMs.value === null || traceEndMs.value === null) return 0
   // The trace's own duration_ms only covers the parsing pipeline up to
   // FinalizeAttempt. Async post-processing subspans (summary / question /
   // graph) keep producing rows AFTER the root closes — so the time axis
   // must scale to the latest descendant end, otherwise their bars get
   // clipped past the right edge. Take the max of (root duration, observed
   // span tail) regardless of polling state.
-  const observed = Math.max(0, tEnd.value - t0.value)
+  const observed = Math.max(0, traceEndMs.value - traceStartMs.value)
   const traceDur = data.value?.trace?.duration_ms
   if (typeof traceDur === 'number' && traceDur > 0) {
     return Math.max(traceDur, observed)
@@ -703,8 +703,8 @@ const rulerTicks = computed(() => {
 // while polling so the user can see time advancing even when the running
 // stage's bar grows slowly toward the right edge.
 const nowMarkerPct = computed<number | null>(() => {
-  if (!isLive.value || !t0.value || !totalMs.value) return null
-  const pct = ((nowTick.value - t0.value) / totalMs.value) * 100
+  if (!isLive.value || !traceStartMs.value || !totalMs.value) return null
+  const pct = ((nowTick.value - traceStartMs.value) / totalMs.value) * 100
   return Math.max(0, Math.min(100, pct))
 })
 
@@ -782,7 +782,7 @@ const detailOpen = computed(() => selectedSpanId.value !== null && selectedRow.v
 
 function barStyle(node: SpanNode): Record<string, string> {
   const total = totalMs.value
-  if (!total || t0.value === null) return { display: 'none' }
+  if (!total || traceStartMs.value === null) return { display: 'none' }
   const start = nodeStart(node)
   if (start === null) return { display: 'none' }
   // For a span with no recorded finished_at, use "now" as the end
@@ -792,7 +792,7 @@ function barStyle(node: SpanNode): Record<string, string> {
   // parse_status='completed' would collapse to zero width.
   const liveBar = isLive.value || node.status === 'running' || node.status === 'pending'
   const end = nodeEnd(node) ?? (liveBar ? nowTick.value : start)
-  const leftPct = ((start - t0.value) / total) * 100
+  const leftPct = ((start - traceStartMs.value) / total) * 100
   const widthPct = Math.max(0.4, ((end - start) / total) * 100)
   return {
     left: `${Math.max(0, Math.min(100, leftPct))}%`,
@@ -817,7 +817,7 @@ function descendantMaxEnd(node: SpanNode): number | null {
 
 function wrapStyle(node: SpanNode): Record<string, string> | null {
   const total = totalMs.value
-  if (!total || t0.value === null) return null
+  if (!total || traceStartMs.value === null) return null
   const start = nodeStart(node)
   if (start === null) return null
   const selfEnd = nodeEnd(node) ?? start
@@ -827,7 +827,7 @@ function wrapStyle(node: SpanNode): Record<string, string> | null {
   // past the parent — otherwise the outline is indistinguishable from
   // the solid self-bar and only adds visual noise.
   if (childEnd - selfEnd < 50) return null
-  const leftPct = ((start - t0.value) / total) * 100
+  const leftPct = ((start - traceStartMs.value) / total) * 100
   const widthPct = Math.max(0.4, ((childEnd - start) / total) * 100)
   return {
     left: `${Math.max(0, Math.min(100, leftPct))}%`,
@@ -844,16 +844,16 @@ function wrapDurationMs(node: SpanNode): number {
 
 function barOffsetPct(node: SpanNode): number | null {
   const total = totalMs.value
-  if (!total || t0.value === null) return null
+  if (!total || traceStartMs.value === null) return null
   const start = nodeStart(node)
   if (start === null) return null
-  return Math.max(0, Math.min(100, ((start - t0.value) / total) * 100))
+  return Math.max(0, Math.min(100, ((start - traceStartMs.value) / total) * 100))
 }
 
 function barOffsetMs(node: SpanNode): number {
   const start = nodeStart(node)
-  if (start === null || t0.value === null) return 0
-  return Math.max(0, start - t0.value)
+  if (start === null || traceStartMs.value === null) return 0
+  return Math.max(0, start - traceStartMs.value)
 }
 
 function liveElapsedMs(node: SpanNode): number {
@@ -1238,7 +1238,7 @@ const headMetaParts = computed(() => {
 
 const primaryHeadTitle = computed(() => props.docTitle || t('knowledgeStages.title'))
 
-// Emit summary upstream so the doc-content drawer can show a one-line
+// Emit summary upstream so the DocContent drawer can show a one-line
 // status pill without mounting a second copy of the tree.
 watch(
   [

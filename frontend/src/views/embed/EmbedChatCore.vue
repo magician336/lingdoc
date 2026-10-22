@@ -133,7 +133,7 @@ import { useEmbedChatSession } from '@/composables/useEmbedChatSession'
 import FollowUpSuggestions from '@/components/chat/FollowUpSuggestions.vue'
 import MessageTimestamp from '@/components/chat/MessageTimestamp.vue'
 import { shouldShowConversationTimestamp } from '@/utils/messageTimestamp'
-import type { MessageSuggestionItem, MessageSuggestionSet } from '@/api/message-suggestion'
+import type { MessageSuggestionItem, MessageSuggestionSet } from '@/api/messageSuggestion'
 
 provideChatReferencesDrawer()
 

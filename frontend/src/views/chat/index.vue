@@ -177,7 +177,7 @@ import { makeSteerClientId } from '@/utils/steerId';
 import { storeToRefs } from 'pinia';
 import { ref, onMounted, onBeforeMount, onUnmounted, nextTick, watch, reactive, computed } from 'vue';
 import { useRoute, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
-import InputField from '../../components/Input-field.vue';
+import InputField from '../../components/InputField.vue';
 import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
 import { getMessageList, getSession } from "@/api/chat/index";
@@ -212,7 +212,7 @@ import {
     ensureMessageSuggestions,
     getMessageSuggestions,
     recordMessageSuggestionEvent,
-} from '@/api/message-suggestion';
+} from '@/api/messageSuggestion';
 import { provideChatReferencesDrawer } from '@/composables/useChatReferencesDrawer';
 import { provideChatAttachmentPreviewDrawer } from '@/composables/useChatAttachmentPreviewDrawer';
 import { useSessionActivityStore } from '@/stores/sessionActivity';
@@ -1413,7 +1413,7 @@ onBeforeMount(async () => {
         useSettingsStoreInstance.selectKnowledgeBases(props.kbIds);
     }
 
-    // 必须在 Input-field onMounted 之前完成：按 session.last_request_state 恢复输入栏
+    // 必须在 InputField onMounted 之前完成：按 session.last_request_state 恢复输入栏
     await loadSessionAndHydrate(session_id.value);
 });
 

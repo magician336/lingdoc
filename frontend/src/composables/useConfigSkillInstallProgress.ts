@@ -6,7 +6,7 @@ import {
 } from '@/api/system'
 import i18n from '@/i18n'
 import { generateRandomString } from '@/utils'
-import { getApiBaseUrl } from '@/utils/api-base'
+import { getApiBaseUrl } from '@/utils/apiBase'
 import {
   liveInstallPercent,
   progressKey,

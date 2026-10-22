@@ -7,7 +7,7 @@ import {
   getRagPipelineWaitKind,
   type RagWaitScheduler,
   type RagWaitView,
-} from './rag-pipeline-state.ts'
+} from './ragPipelineState.ts'
 
 const completedRetrieval = {
   isCompleted: false,

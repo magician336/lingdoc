@@ -8,7 +8,7 @@ import { renderToString } from 'vue/server-renderer'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { transformSync } from 'esbuild'
 import { createRequestEpoch, matchSelectedRows } from './selectedEvidenceContextState'
-import type { EvidenceCard, G2VersionRef, ResearchClaim } from '@/api/lingdoc/g2'
+import type { EvidenceCard, VersionRef, ResearchClaim } from '@/api/lingdoc/agentApi'
 
 // The component under test is compiled from its real .vue source at runtime so
 // assertions exercise the same markup a browser receives. Its read-only API is
@@ -28,7 +28,7 @@ export const listResearchClaims = async () => { if (impl.claimError) throw impl.
 writeFileSync(join(here, stubName), stubSource)
 
 const withoutTypeImports = compiled.content.split('\n').filter(line => !line.startsWith('import type ')).join('\n')
-const rewritten = withoutTypeImports.replace(/from '@\/api\/lingdoc\/g2'/g, `from './${stubName}'`)
+const rewritten = withoutTypeImports.replace(/from '@\/api\/lingdoc\/agentApi'/g, `from './${stubName}'`)
 assert.ok(rewritten.includes(`from './${stubName}'`))
 const runnable = transformSync(rewritten, { loader: 'ts', format: 'esm' }).code
 
@@ -65,7 +65,7 @@ const project = { id: 'p1', name: '久坐与健康', status: 'active', project_v
 async function render(props: Record<string, unknown>) {
   return renderToString(createSSRApp(SelectedEvidenceContext as never, props) as never)
 }
-const baseProps = (selected: G2VersionRef[], extra: Record<string, unknown> = {}) => ({
+const baseProps = (selected: VersionRef[], extra: Record<string, unknown> = {}) => ({
   project, currentUserId: 'u1', selected, ...extra,
 })
 

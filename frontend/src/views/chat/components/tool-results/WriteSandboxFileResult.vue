@@ -14,7 +14,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatFileSize } from '@/utils/files'
-import type { WriteSandboxFileData } from '@/types/tool-results'
+import type { WriteSandboxFileData } from '@/types/toolResults'
 import ResultRow from './ResultRow.vue'
 
 const props = defineProps<{

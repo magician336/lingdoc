@@ -801,7 +801,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { hydrateProtectedFileImages, sanitizeMarkdownHTML } from '@/utils/security'
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess'
-import picturePreview from '@/components/picture-preview.vue'
+import picturePreview from '@/components/PicturePreview.vue'
 import WikiFolderActions from './WikiFolderActions.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import {

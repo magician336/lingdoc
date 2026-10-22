@@ -1,6 +1,6 @@
 import { get, post, put, del, postUpload, getDown } from "../../utils/request";
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
-import type { AuditLog, AuditOutcome, ListAuditLogResponse } from '@/api/tenant/audit-log';
+import type { AuditLog, AuditOutcome, ListAuditLogResponse } from '@/api/tenant/auditLog';
 
 export type KnowledgeBaseActivity = AuditLog;
 

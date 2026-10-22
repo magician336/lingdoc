@@ -6,7 +6,7 @@ import ts from 'typescript'
 import { effectScope, nextTick, reactive, shallowRef as ref, watch } from 'vue'
 import { parse, compileTemplate } from '@vue/compiler-sfc'
 
-const source = readFileSync(new URL('./document-preview.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('./DocumentPreview.vue', import.meta.url), 'utf8')
 const start = source.indexOf('const previewRoot =')
 const end = source.indexOf('\nfunction toggleFullscreen()', start)
 assert.ok(start >= 0 && end > start)
@@ -140,5 +140,5 @@ test('every document scroll target is tabbable and key events keep native behavi
   }
   assert.doesNotMatch(template, /@key(?:down|up)/)
   assert.match(template, /sandbox="allow-scripts"/)
-  assert.deepEqual(compileTemplate({ source: template, filename: 'document-preview.vue', id: 'preview' }).errors, [])
+  assert.deepEqual(compileTemplate({ source: template, filename: 'DocumentPreview.vue', id: 'preview' }).errors, [])
 })

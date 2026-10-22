@@ -197,8 +197,8 @@ import {
   resolveAgentNotReadyHighlight,
   canLocallyConfigureAgent,
   type AgentNotReadyReasonKey,
-} from '@/utils/agent-readiness';
-import { formatLocalizedList } from '@/utils/format-list';
+} from '@/utils/agentReadiness';
+import { formatLocalizedList } from '@/utils/formatList';
 import { useChatResourcesStore } from '@/stores/chatResources';
 import {
   isAgentWebSearchEnabled,

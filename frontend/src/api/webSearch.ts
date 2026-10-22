@@ -1,7 +1,7 @@
 import { get, put } from '@/utils/request'
 
 // WebSearchProviderConfig represents information about a web search provider type
-// Deprecated: Use WebSearchProviderTypeInfo from web-search-provider.ts instead
+// Deprecated: Use WebSearchProviderTypeInfo from webSearchProvider.ts instead
 export interface WebSearchProviderConfig {
   id: string
   name: string

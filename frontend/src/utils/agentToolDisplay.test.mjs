@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getAgentToolIconName } from './agent-tool-icons.ts'
+import { getAgentToolIconName } from './agentToolIcons.ts'
 import {
   getKnowledgeSearchSummaryHtml,
   getQueryText,
   getRagPipelineStepTitle,
   getWikiPageText,
-} from './agent-tool-display.ts'
+} from './agentToolDisplay.ts'
 
 const t = (key, params) => {
   if (key === 'agentStream.search.foundResultsFromFiles') {

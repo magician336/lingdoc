@@ -19,7 +19,7 @@ function requestModule() {
     axios: require('axios'),
     './index': { generateRandomString: () => 't06-integration', MAX_FILE_SIZE_MB: 50, MAX_SKILL_BUNDLE_SIZE_MB: 50 },
     '@/i18n': { global: { t: key => key, locale: { value: 'zh-CN' } } },
-    './api-base': { getApiBaseUrl: () => 'https://must-not-be-called.invalid' },
+    './apiBase': { getApiBaseUrl: () => 'https://must-not-be-called.invalid' },
     './uploadLimit': { isSkillBundleUploadUrl: () => false },
     './authRefresh': { isEmbedPage: () => false, forceReloginRedirect: () => { throw new Error('unexpected redirect') },
       refreshAccessTokenShared: () => { refreshCalls++; throw new Error('unexpected refresh') } },

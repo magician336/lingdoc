@@ -73,7 +73,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
-import { resolveToolApproval } from '@/api/mcp-service'
+import { resolveToolApproval } from '@/api/mcpService'
 import { resolveEmbedToolApproval } from '@/api/embed'
 
 const props = defineProps<{

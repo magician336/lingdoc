@@ -7,7 +7,7 @@ import {
   getAgentNotReadyReasonKeys,
   resolveAgentNotReadySection,
   resolveAgentNotReadyHighlight,
-} from './agent-readiness.ts'
+} from './agentReadiness.ts'
 
 test('does not treat an unrelated built-in chat model as agent configuration', () => {
   assert.equal(agentHasConfiguredChatModel(

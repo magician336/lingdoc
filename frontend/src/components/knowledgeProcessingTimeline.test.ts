@@ -5,7 +5,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const source = readFileSync(join(here, 'knowledge-processing-timeline.vue'), 'utf8')
+const source = readFileSync(join(here, 'KnowledgeProcessingTimeline.vue'), 'utf8')
 
 test('counts skipped stages when determining the current stage', () => {
   const currentStageIndex = source.slice(

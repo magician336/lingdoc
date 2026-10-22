@@ -5,7 +5,7 @@ import { formatFileSize } from '@/utils/files';
 import { useTagChipsOverflow } from '@/composables/useTagChipsOverflow';
 import DocumentActionMenu from './DocumentActionMenu.vue';
 import FolderPickerMenu, { type FolderOption } from './FolderPickerMenu.vue';
-import KnowledgeProcessingTimeline from '@/components/knowledge-processing-timeline.vue';
+import KnowledgeProcessingTimeline from '@/components/KnowledgeProcessingTimeline.vue';
 
 interface Tag {
   id: string;

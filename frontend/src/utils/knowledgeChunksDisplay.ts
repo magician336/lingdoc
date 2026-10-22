@@ -1,6 +1,6 @@
 import type { ComposerTranslation } from 'vue-i18n'
 
-import type { KnowledgeChunksListData } from '@/types/tool-results'
+import type { KnowledgeChunksListData } from '@/types/toolResults'
 
 export function getKnowledgeChunksSummaryHtml(
   t: ComposerTranslation,

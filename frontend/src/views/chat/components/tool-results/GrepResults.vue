@@ -20,7 +20,7 @@ import { useI18n } from 'vue-i18n';
 import { cleanSnippet } from './contentClean';
 import ResultRow from './ResultRow.vue';
 import { groupGrepChunkResults } from '@/utils/grepResultsGroup';
-import type { GrepKnowledgeResult, GrepResultsData } from '@/types/tool-results';
+import type { GrepKnowledgeResult, GrepResultsData } from '@/types/toolResults';
 
 const props = defineProps<{
   data: GrepResultsData;

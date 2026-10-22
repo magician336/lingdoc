@@ -379,7 +379,7 @@ import {
   type MCPService,
   type McpCredentialField,
   type MCPOAuthTokenState,
-} from '@/api/mcp-service'
+} from '@/api/mcpService'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import McpMetadataPanel from './McpMetadataPanel.vue'
 import CredentialResource, {

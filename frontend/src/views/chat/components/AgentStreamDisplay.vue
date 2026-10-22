@@ -613,7 +613,7 @@ import ToolApprovalCard from './ToolApprovalCard.vue';
 import McpOAuthCard from './McpOAuthCard.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
-import picturePreview from '@/components/picture-preview.vue';
+import picturePreview from '@/components/PicturePreview.vue';
 import ChatArtifactsDrawer from './ChatArtifactsDrawer.vue';
 import { isCollectingSkillArtifacts } from '@/utils/skillArtifacts';
 import { useArtifactArriveMotion } from '@/composables/useArtifactArriveMotion';
@@ -643,9 +643,9 @@ import {
 } from '@/utils/sandboxArtifactRefs';
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess';
 import { unwrapFinalAnswerWrappers, thinkingEqualsAnswer } from '@/utils/finalAnswer';
-import { getAgentToolIconName } from '@/utils/agent-tool-icons';
+import { getAgentToolIconName } from '@/utils/agentToolIcons';
 import { getMcpToolDisplayType, getMcpToolTitle, mcpToolResultOutput } from '@/utils/mcpToolDisplay';
-import { getQueryText, getWikiPageText } from '@/utils/agent-tool-display';
+import { getQueryText, getWikiPageText } from '@/utils/agentToolDisplay';
 import {
   formatToolTitleWithDetail,
   getEventSkillName,
@@ -657,7 +657,7 @@ import {
   skillScriptTitleCommand,
 } from '@/utils/skillToolDisplay';
 import { previewShellCommand } from '@/utils/shellExecResult';
-import type { DisplayType } from '@/types/tool-results';
+import type { DisplayType } from '@/types/toolResults';
 import { parseWikiToolReferences } from '@/utils/wikiToolReferences';
 import {
   buildManualMarkdown,

@@ -1,6 +1,6 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { knowledgeSemanticSearch } from '@/api/knowledge-base'
-import { searchMessages, type MessageSearchGroupItem } from '@/api/chat-history'
+import { searchMessages, type MessageSearchGroupItem } from '@/api/chatHistory'
 import { useOrganizationStore } from '@/stores/organization'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useMenuStore } from '@/stores/menu'

@@ -6,7 +6,7 @@ import ts from 'typescript'
 import { effectScope, nextTick, reactive, shallowRef as ref, watch } from 'vue'
 import { parse, compileStyleAsync } from '@vue/compiler-sfc'
 
-const source = readFileSync(new URL('./document-preview.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('./DocumentPreview.vue', import.meta.url), 'utf8')
 const start = source.indexOf('function toggleFullscreen()')
 const end = source.indexOf('function ensureBlobType(', start)
 assert.ok(start >= 0 && end > start)
@@ -153,7 +153,7 @@ test('toolbar reserves layout space in normal and fullscreen modes and keeps exi
   assert.match(descriptor.template.content, /<Teleport :to="toolbarTarget \|\| 'body'" :disabled="isFullscreen \|\| !toolbarTarget">/)
   assert.doesNotMatch(descriptor.template.content, /\{\{ isFullscreen \? \$t\('preview.exitFullscreen'\)/)
   const result = await compileStyleAsync({
-    source: descriptor.styles[0].content, filename: 'document-preview.vue', id: 'preview', preprocessLang: 'less',
+    source: descriptor.styles[0].content, filename: 'DocumentPreview.vue', id: 'preview', preprocessLang: 'less',
   })
   assert.deepEqual(result.errors, [])
   const toolbars = [...result.code.matchAll(/[^{}]*\.preview-toolbar\s*\{([^}]+)\}/g)]

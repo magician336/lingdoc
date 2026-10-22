@@ -264,7 +264,7 @@ import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import { AUDIT_ACTION_I18N_ROOTS } from '@/i18n/auditActionRegistry'
 import { auditActionLabel } from '@/i18n/auditActionLabel'
 import { listKnowledgeBaseActivity, type KnowledgeBaseActivity } from '@/api/knowledge-base'
-import type { AuditOutcome } from '@/api/tenant/audit-log'
+import type { AuditOutcome } from '@/api/tenant/auditLog'
 import { useAuthStore } from '@/stores/auth'
 
 interface DetailField {

@@ -1,7 +1,7 @@
 import type { Project } from '@/api/lingdoc/workspace'
 import type { ProjectInvitation } from '@/api/lingdoc/collaboration'
 import type { TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
-import type { G2VersionRef } from '@/api/lingdoc/g2'
+import type { VersionRef } from '@/api/lingdoc/agentApi'
 
 export function publishedChoices(versions: TemplateCatalogVersion[]) {
   const unique = new Map<string, TemplateCatalogVersion>()
@@ -71,7 +71,7 @@ export function permissionIdentity(project: Project, userId: string | undefined,
   return JSON.stringify([tenantId,project.id, userId, session, project.status, project.members])
 }
 
-export function toggleEvidenceSelection(current: G2VersionRef[], incoming: G2VersionRef[]) {
+export function toggleEvidenceSelection(current: VersionRef[], incoming: VersionRef[]) {
   const next = new Map(current.map(ref => [ref.id, { ...ref }]))
   for (const ref of incoming) {
     if (next.get(ref.id)?.version === ref.version) next.delete(ref.id)

@@ -41,7 +41,7 @@ import {
   resolveMCPOAuth,
   refreshMCPMetadata,
   MCP_OAUTH_CALLBACK_PATH,
-} from '@/api/mcp-service'
+} from '@/api/mcpService'
 import {
   cancelEmbedMCPOAuth,
   getEmbedMCPOAuthAuthorizeURL,

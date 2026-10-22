@@ -7,7 +7,7 @@ import ts from 'typescript'
 function fixture() {
  const calls = []
  const request = Object.fromEntries(['get','post','put'].map(method => [method, (...args) => { calls.push({ method, args }); return Promise.resolve({ data: {} }) }]))
- const source = fs.readFileSync(new URL('./g2.ts', import.meta.url), 'utf8')
+ const source = fs.readFileSync(new URL('./agentApi.ts', import.meta.url), 'utf8')
  const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
  const exports = {}
  vm.runInNewContext(output, { exports, require: id => { if (id === '@/utils/request') return request; throw new Error('unexpected dependency: ' + id) } })

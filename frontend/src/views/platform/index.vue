@@ -22,7 +22,7 @@
 import Menu from '@/components/menu.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router'
-import UploadMask from '@/components/upload-mask.vue'
+import UploadMask from '@/components/UploadMask.vue'
 import Settings from '@/views/settings/Settings.vue'
 import GlobalCommandPalette from '@/components/GlobalCommandPalette.vue'
 import GlobalInvitationBell from '@/components/GlobalInvitationBell.vue'

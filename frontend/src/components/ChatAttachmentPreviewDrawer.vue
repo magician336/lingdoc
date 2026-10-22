@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import DocumentPreview from '@/components/document-preview.vue'
+import DocumentPreview from '@/components/DocumentPreview.vue'
 import { useChatAttachmentPreviewDrawer } from '@/composables/useChatAttachmentPreviewDrawer'
 
 const drawer = useChatAttachmentPreviewDrawer()

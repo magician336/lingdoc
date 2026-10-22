@@ -10,7 +10,7 @@ import { useUIStore } from '@/stores/ui';
 import BrowserIcon from '@/components/icons/BrowserIcon.vue';
 import { useMenuStore } from '@/stores/menu';
 import { listKnowledgeBases, searchKnowledge, batchQueryKnowledge, listKnowledgeTags } from '@/api/knowledge-base';
-import { listMCPServices, type MCPService } from '@/api/mcp-service';
+import { listMCPServices, type MCPService } from '@/api/mcpService';
 import { stopSession } from '@/api/chat';
 import type { SteerQueueItem } from '@/api/chat/steer';
 import { chatSubmitShortcut } from '@/utils/chatSubmitShortcut';
@@ -36,7 +36,7 @@ import {
   deriveKbFilterForAgent,
   toolsConsumeFiles,
   type ScopeCapabilities,
-} from '@/utils/tool-capabilities';
+} from '@/utils/toolCapabilities';
 import {
   isAgentWebSearchEnabled,
   isAgentWebSearchReady,
@@ -48,8 +48,8 @@ import {
   resolveAgentNotReadyHighlight,
   canLocallyConfigureAgent,
   type AgentNotReadyReasonKey,
-} from '@/utils/agent-readiness';
-import { formatLocalizedList } from '@/utils/format-list';
+} from '@/utils/agentReadiness';
+import { formatLocalizedList } from '@/utils/formatList';
 import { SKILL_ICON, type MentionItem, type MentionItemType, type MentionRequestItem } from '@/types/mention';
 
 const route = useRoute();
