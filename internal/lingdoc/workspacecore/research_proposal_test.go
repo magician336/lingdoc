@@ -3,6 +3,11 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -84,6 +89,168 @@ func TestResearchProposalStatesArePresentAbsentAndInvalid(t *testing.T) {
 	if err != nil || state != ResearchProposalStateInvalid {
 		t.Fatalf("broken proposal is not invalid: %q %v", state, err)
 	}
+}
+
+// A1/A2: the shape has exactly one owner. The contract module declares it, the
+// prompt renders it, and nothing else may spell it out again - a second copy
+// is how the prompt and the contract drift apart.
+func TestResearchProposalShapeHasOneOwner(t *testing.T) {
+	contract := ResearchProposalFieldSet()
+	if len(contract) == 0 {
+		t.Fatal("the contract declares no field")
+	}
+	copies := proposalShapeCopies(t, contract)
+	if len(copies) != 1 || copies[0] != "research_proposal.go:ResearchProposal" {
+		t.Fatalf("the proposal shape is declared more than once: %v", copies)
+	}
+	adapter := filepath.Join("..", "workspace", "agent_model.go")
+	for _, literal := range stringLiterals(t, adapter) {
+		// One field name in a prompt is a word, not a shape: the rule
+		// suggestion prompt says "scope" in its own vocabulary. Two or
+		// more is the shape written down a second time.
+		named := 0
+		for _, name := range contract {
+			if strings.Contains(literal, name) {
+				named++
+			}
+		}
+		if named >= 2 {
+			t.Fatalf("the prompt spells the shape out again: %s", literal)
+		}
+		if strings.Contains(literal, ResearchProposalKey) {
+			t.Fatalf("the prompt spells the proposal key out again: %s", literal)
+		}
+	}
+	if calls := contractRendererCalls(t, adapter); calls < 2 {
+		t.Fatalf("the prompt does not render the contract shape: %d renderings", calls)
+	}
+}
+
+// ResearchProposalFieldSet is the field names the contract owns.
+func ResearchProposalFieldSet() []string {
+	return append([]string{}, ResearchProposalFields...)
+}
+
+// proposalShapeCopies finds every struct type in the server that declares
+// exactly the proposal's field names. Only the contract module may.
+func proposalShapeCopies(t *testing.T, contract []string) []string {
+	t.Helper()
+	found := []string{}
+	err := filepath.WalkDir("..", func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("cannot parse %s: %v", path, parseErr)
+		}
+		for _, declaration := range file.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range generic.Specs {
+				typeSpec, ok := specification.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				structure, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				names := jsonFieldNames(structure)
+				if len(names) != len(contract) {
+					continue
+				}
+				same := true
+				for _, name := range contract {
+					if !names[name] {
+						same = false
+						break
+					}
+				}
+				if same {
+					found = append(found, filepath.Base(path)+":"+typeSpec.Name.Name)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return found
+}
+
+// jsonFieldNames reads the JSON field names a struct declares.
+func jsonFieldNames(structure *ast.StructType) map[string]bool {
+	names := map[string]bool{}
+	for _, field := range structure.Fields.List {
+		tag := ""
+		if field.Tag != nil {
+			tag = strings.Trim(field.Tag.Value, "`")
+		}
+		value := ""
+		if index := strings.Index(tag, `json:"`); index >= 0 {
+			rest := tag[index+len(`json:"`):]
+			if end := strings.Index(rest, `"`); end >= 0 {
+				value = rest[:end]
+			}
+		}
+		if value == "" || value == "-" {
+			continue
+		}
+		if comma := strings.Index(value, ","); comma >= 0 {
+			value = value[:comma]
+		}
+		names[value] = true
+	}
+	return names
+}
+
+// stringLiterals reads every string literal of a Go source file.
+func stringLiterals(t *testing.T, path string) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	literals := []string{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		literal, ok := node.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		literals = append(literals, literal.Value)
+		return true
+	})
+	return literals
+}
+
+// contractRendererCalls counts how often the adapter builds a prompt from the
+// contract module instead of carrying its own copy of the shape.
+func contractRendererCalls(t *testing.T, path string) int {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "ResearchProposalShapeText" {
+			calls++
+		}
+		return true
+	})
+	return calls
 }
 
 // proposalModelStub is a fake model: it answers with the structured output the
