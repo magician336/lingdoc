@@ -95,7 +95,7 @@ func TestSelectedRewriteActionPathRecordsTheActionTheOriginAndTheRunMode(t *test
 	require.Equal(t, writingaction.ActionRewrite, candidate.WritingAction)
 	require.Equal(t, writingaction.OriginGenerated, candidate.Origin)
 	require.Equal(t, candidateadoption.RunModeMock, candidate.RunMode)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 }
 
 // TestSelectedRewriteActionPathSeparatesTheActionInstructionFromTheSupplementaryNote
@@ -191,7 +191,7 @@ func TestSelectedRewriteRecordsEachRunMode(t *testing.T) {
 				"project", "chapter", "mode-key", input)
 			require.NoError(t, err)
 			require.Equal(t, mode, candidate.RunMode)
-			require.Equal(t, "ready", candidate.Status)
+			require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 		})
 	}
 }
@@ -301,7 +301,7 @@ func TestSelectedRewriteActionPathOverHTTP(t *testing.T) {
 			WritingAction string `json:"writing_action"`
 			Origin        string `json:"origin"`
 			RunMode       string `json:"run_mode"`
-			Status        string `json:"status"`
+			Validity      string `json:"validity"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &envelope))
@@ -309,7 +309,7 @@ func TestSelectedRewriteActionPathOverHTTP(t *testing.T) {
 	require.Equal(t, "rewrite", envelope.Data.WritingAction)
 	require.Equal(t, "ai_generated", envelope.Data.Origin)
 	require.Equal(t, "mock", envelope.Data.RunMode)
-	require.Equal(t, "ready", envelope.Data.Status)
+	require.Equal(t, string(candidateadoption.ValidityFresh), envelope.Data.Validity)
 }
 
 // TestWritingActionsEndpointServesTheVocabulary 覆盖动作表端点。

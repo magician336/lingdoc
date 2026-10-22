@@ -166,6 +166,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/", "dir"),
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
+            # The validity normalization renames the selected rewrite
+            # candidate's own status word list to the candidate layer's
+            # validity enumeration, so the assertions that pinned the old
+            # words move with it.  These files are claimed here for that
+            # reason only.
+            ("internal/lingdoc/workspace/selected_rewrite_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_format_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_observation_test.go", "file"),
+            ("internal/lingdoc/workspace/g2_generation_evidence_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_action_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_continue_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_compress_test.go", "file"),
@@ -183,6 +192,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/database/migration_generation_digest_version_test.go", "file"),
+            ("internal/database/migration_rewrite_validity_legacy_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),

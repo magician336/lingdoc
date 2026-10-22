@@ -6,6 +6,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -82,7 +84,7 @@ func TestSelectedRewriteRevocationDuringRunLeavesNoUsableCandidate(t *testing.T)
 		"project", "chapter", "revoked-during-run", input)
 	require.NoError(t, err)
 	require.Equal(t, 1, model.calls)
-	require.Equal(t, "stale", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityNotAuthorized, candidate.Validity)
 	require.Equal(t, "source_access_denied", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown, "撤权后候选正文必须清空")
 	require.Equal(t, int64(1), workspace.copy.WorkingCopyRevision, "工作副本不得被改动")
@@ -106,7 +108,7 @@ func TestSelectedRewriteRevocationBeforeCandidateReadIsDenied(t *testing.T) {
 	candidate, err := service.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"},
 		"project", "chapter", "revoked-before-read", input)
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 
 	sources.denied = true
 	_, err = service.Get(context.Background(), Actor{TenantID: 1, UserID: "owner"},

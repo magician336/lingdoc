@@ -41,7 +41,7 @@ type expandRewriteModel struct {
 	// cancelAware 让模型像真的适配器那样：上下文被取消时它交回上下文的错误。
 	cancelAware bool
 	// reviewItems 是模型交回的待核事项：它与正文分列，不混进候选正文。
-	reviewItems []string
+	reviewItems []candidateadoption.ReviewItem
 }
 
 func (*expandRewriteModel) RunMode() string { return "mock" }
@@ -142,7 +142,7 @@ func TestSelectedRewriteExpandRunsAndRecordsTheActionOriginAndRunMode(t *testing
 	require.Equal(t, writingaction.ActionExpand, candidate.WritingAction)
 	require.Equal(t, writingaction.OriginGenerated, candidate.Origin)
 	require.Equal(t, candidateadoption.RunModeMock, candidate.RunMode)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 	require.Equal(t, 1, model.calls)
 }
 
@@ -358,7 +358,7 @@ func TestSelectedRewriteExpandOverHTTP(t *testing.T) {
 			WritingAction string `json:"writing_action"`
 			Origin        string `json:"origin"`
 			RunMode       string `json:"run_mode"`
-			Status        string `json:"status"`
+			Validity      string `json:"validity"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &envelope))
@@ -366,7 +366,7 @@ func TestSelectedRewriteExpandOverHTTP(t *testing.T) {
 	require.Equal(t, "expand", envelope.Data.WritingAction)
 	require.Equal(t, "ai_generated", envelope.Data.Origin)
 	require.Equal(t, "mock", envelope.Data.RunMode)
-	require.Equal(t, "ready", envelope.Data.Status)
+	require.Equal(t, string(candidateadoption.ValidityFresh), envelope.Data.Validity)
 }
 
 // TestSelectedRewriteExpandCandidateShowsItsContextAndSeparatesReviewItems
@@ -375,7 +375,7 @@ func TestSelectedRewriteExpandOverHTTP(t *testing.T) {
 // 这两行是矩阵里的 A6 与 A7：上下文要看得见，三类内容不能混成一段。
 func TestSelectedRewriteExpandCandidateShowsItsContextAndSeparatesReviewItems(t *testing.T) {
 	service, _, model, base := expandFixture(t)
-	model.reviewItems = []string{"扩展后的事实需要核对"}
+	model.reviewItems = []candidateadoption.ReviewItem{{Statement: "扩展后的事实需要核对"}}
 	candidate, err := service.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"},
 		"project", "chapter", "expand-key", expandRequest(base))
 	require.NoError(t, err)
@@ -408,7 +408,7 @@ func TestSelectedRewriteExpandNeedsAnExplicitAdoptionConfirmation(t *testing.T) 
 	candidate, err := service.Create(context.Background(), actor, "project", "chapter", "expand-key",
 		expandRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 
 	apply := func(t *testing.T, key string, confirmation *candidateadoption.AdoptionConfirmation) error {
 		t.Helper()
@@ -474,7 +474,7 @@ func TestSelectedRewriteExpandRevocationBlocksTheFourTimings(t *testing.T) {
 			"revoked-during-run", expandRequest(base))
 		require.NoError(t, err)
 		require.Equal(t, 1, model.calls)
-		require.Equal(t, "stale", candidate.Status)
+		require.Equal(t, candidateadoption.ValidityNotAuthorized, candidate.Validity)
 		require.Equal(t, "source_access_denied", candidate.ErrorCode)
 		require.Empty(t, candidate.ReplacementMarkdown)
 		require.Equal(t, int64(1), workspace.copy.WorkingCopyRevision)
@@ -484,7 +484,7 @@ func TestSelectedRewriteExpandRevocationBlocksTheFourTimings(t *testing.T) {
 		candidate, err := service.Create(context.Background(), actor, "project", "chapter",
 			"revoked-before-read", expandRequest(base))
 		require.NoError(t, err)
-		require.Equal(t, "ready", candidate.Status)
+		require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 		service.sources.(*inheritedRewriteSources).denied = true
 		_, err = service.Get(context.Background(), actor, "project", candidate.CandidateID)
 		require.ErrorIs(t, err, ErrRewriteSourceDenied)
@@ -494,7 +494,7 @@ func TestSelectedRewriteExpandRevocationBlocksTheFourTimings(t *testing.T) {
 		candidate, err := service.Create(context.Background(), actor, "project", "chapter",
 			"revoked-before-apply", expandRequest(base))
 		require.NoError(t, err)
-		require.Equal(t, "ready", candidate.Status)
+		require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 		service.sources.(*inheritedRewriteSources).denied = true
 		_, _, err = service.Apply(context.Background(), actor, "project", "chapter", candidate.CandidateID,
 			"apply-revoked", ApplySelectedRewriteInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
@@ -516,7 +516,7 @@ func TestSelectedRewriteExpandFailureKeepsItsInputStatusAndReason(t *testing.T) 
 	failed, err := service.Create(context.Background(), actor, "project", "chapter",
 		"expand-failed", expandRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "failed", failed.Status)
+	require.Empty(t, failed.Validity)
 	require.Equal(t, "rewrite_failed", failed.ErrorCode)
 	require.Empty(t, failed.ReplacementMarkdown)
 	require.Empty(t, workspace.writes, "失败的运行不得写工作副本")
@@ -524,7 +524,7 @@ func TestSelectedRewriteExpandFailureKeepsItsInputStatusAndReason(t *testing.T) 
 	// 失败留下的输入与原因读回来还在。
 	readBack, err := service.Get(context.Background(), actor, "project", failed.CandidateID)
 	require.NoError(t, err)
-	require.Equal(t, "failed", readBack.Status)
+	require.Empty(t, readBack.Validity)
 	require.Equal(t, "rewrite_failed", readBack.ErrorCode)
 	require.Equal(t, expandSelected, readBack.Selection.SelectedText)
 	require.Equal(t, []string{"existing"}, readBack.SourceIDs)
@@ -534,7 +534,7 @@ func TestSelectedRewriteExpandFailureKeepsItsInputStatusAndReason(t *testing.T) 
 	retried, err := service.Create(context.Background(), actor, "project", "chapter",
 		"expand-retry", expandRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "ready", retried.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, retried.Validity)
 	require.NotEqual(t, failed.CandidateID, retried.CandidateID)
 	require.Empty(t, workspace.writes, "重试不得写工作副本")
 }
@@ -554,7 +554,7 @@ func TestSelectedRewriteExpandCancellationKeepsItsStatusAndReason(t *testing.T) 
 	candidate, err := service.Create(ctx, actor, "project", "chapter", "expand-cancelled",
 		expandRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "failed", candidate.Status)
+	require.Empty(t, candidate.Validity)
 	require.Equal(t, "rewrite_failed", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown)
 	require.Empty(t, workspace.writes, "被取消的运行不得写工作副本")

@@ -106,11 +106,16 @@ type RewriteSourceSnapshot struct {
 }
 
 type SelectedRewriteCandidate struct {
-	EvidenceCardRefs     []generation.EvidenceCardRef   `json:"evidence_card_refs,omitempty"`
-	CandidateID          string                         `json:"candidate_id"`
-	ProjectID            string                         `json:"project_id"`
-	ChapterID            string                         `json:"chapter_id"`
-	Status               string                         `json:"status"`
+	EvidenceCardRefs []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
+	CandidateID      string                       `json:"candidate_id"`
+	ProjectID        string                       `json:"project_id"`
+	ChapterID        string                       `json:"chapter_id"`
+	// Validity 是这个候选还能不能被采纳。
+	//
+	// 它是**候选层的那个枚举**：选段候选与生成候选用同一份词表、同一组取值，
+	// 不再各说各的（开发计划 §3.4 的归一）。空值表示「这次运行没有交出可采纳的
+	// 产出」——运行中是这样，一次失败也是这样；失败的原因在 ErrorCode 里。
+	Validity             candidateadoption.Validity     `json:"validity"`
 	RunMode              candidateadoption.RunMode      `json:"run_mode"`
 	BaseChapterVersionID *string                        `json:"base_chapter_version_id"`
 	SpecRevision         int64                          `json:"spec_revision"`
@@ -153,10 +158,10 @@ type SelectedRewritePrompt struct {
 }
 
 type SelectedRewriteOutput struct {
-	ReplacementMarkdown string   `json:"replacement_markdown"`
-	SourceIDs           []string `json:"source_ids"`
-	ReviewItems         []string `json:"review_items"`
-	RunMode             string   `json:"-"`
+	ReplacementMarkdown string                         `json:"replacement_markdown"`
+	SourceIDs           []string                       `json:"source_ids"`
+	ReviewItems         []candidateadoption.ReviewItem `json:"review_items"`
+	RunMode             string                         `json:"-"`
 }
 
 type SelectedRewriteModel interface {
@@ -186,36 +191,40 @@ type ApplySelectedRewriteInput struct {
 }
 
 type selectedRewriteRow struct {
-	EvidenceConstraintsJSON string  `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
-	TemplateBasisJSON       string  `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
-	EvidenceCardRefsJSON    string  `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
-	ID                      string  `gorm:"primaryKey;size:36"`
-	TenantID                uint64  `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
-	ActorID                 string  `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
-	ProjectID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
-	ChapterID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
-	IdempotencyKey          string  `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
-	RequestHash             string  `gorm:"not null;size:64"`
-	Status                  string  `gorm:"not null;size:16;index"`
-	RunMode                 string  `gorm:"not null;size:32"`
-	BaseChapterVersionID    *string `gorm:"size:36"`
-	SpecRevision            int64   `gorm:"not null"`
-	WorkingCopyRevision     int64   `gorm:"not null"`
-	StartUTF16              int     `gorm:"not null"`
-	EndUTF16                int     `gorm:"not null"`
-	SelectedText            string  `gorm:"not null;type:text"`
-	Instruction             string  `gorm:"not null;size:2000"`
-	ReplacementMarkdown     string  `gorm:"not null;type:text"`
-	SourceIDsJSON           string  `gorm:"not null;type:text"`
-	AuthorizedSourcesJSON   string  `gorm:"not null;type:text"`
-	ReviewItemsJSON         string  `gorm:"not null;type:text"`
-	WritingAction           string  `gorm:"not null;size:64;default:''"`
-	Origin                  string  `gorm:"not null;size:32;default:''"`
-	ErrorCode               string  `gorm:"not null;size:64;default:''"`
-	AppliedKey              string  `gorm:"not null;size:128;default:''"`
-	AppliedResponseJSON     string  `gorm:"not null;type:text;default:''"`
-	ApplyPendingKey         string  `gorm:"not null;size:128;default:''"`
-	ApplyPendingInputJSON   string  `gorm:"not null;type:text;default:''"`
+	EvidenceConstraintsJSON string `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
+	TemplateBasisJSON       string `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
+	EvidenceCardRefsJSON    string `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
+	ID                      string `gorm:"primaryKey;size:36"`
+	TenantID                uint64 `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
+	ActorID                 string `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
+	ProjectID               string `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
+	ChapterID               string `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
+	IdempotencyKey          string `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
+	RequestHash             string `gorm:"not null;size:64"`
+	// Validity 是这个候选还能不能被采纳：与候选层同一个枚举、同一份词表。
+	//
+	// 空值表示「这次运行没有交出可采纳的产出」——运行中与失败都是这样；失败的
+	// 原因在 ErrorCode 里。
+	Validity              string                    `gorm:"column:validity;not null;size:16;index;default:''"`
+	RunMode               candidateadoption.RunMode `gorm:"not null;size:32;default:''"`
+	BaseChapterVersionID  *string                   `gorm:"size:36"`
+	SpecRevision          int64                     `gorm:"not null"`
+	WorkingCopyRevision   int64                     `gorm:"not null"`
+	StartUTF16            int                       `gorm:"not null"`
+	EndUTF16              int                       `gorm:"not null"`
+	SelectedText          string                    `gorm:"not null;type:text"`
+	Instruction           string                    `gorm:"not null;size:2000"`
+	ReplacementMarkdown   string                    `gorm:"not null;type:text"`
+	SourceIDsJSON         string                    `gorm:"not null;type:text"`
+	AuthorizedSourcesJSON string                    `gorm:"not null;type:text"`
+	ReviewItemsJSON       string                    `gorm:"not null;type:text"`
+	WritingAction         string                    `gorm:"not null;size:64;default:''"`
+	Origin                string                    `gorm:"not null;size:32;default:''"`
+	ErrorCode             string                    `gorm:"not null;size:64;default:''"`
+	AppliedKey            string                    `gorm:"not null;size:128;default:''"`
+	AppliedResponseJSON   string                    `gorm:"not null;type:text;default:''"`
+	ApplyPendingKey       string                    `gorm:"not null;size:128;default:''"`
+	ApplyPendingInputJSON string                    `gorm:"not null;type:text;default:''"`
 	// DroppedContextJSON 是这一次请求里被丢掉的可选上下文条目。
 	//
 	// 它不进库：丢弃只发生在发起的那一刻，之后读回来的是候选本身。
@@ -287,7 +296,7 @@ func (s *GORMSelectedRewriteStore) byOperation(ctx context.Context, tenantID uin
 
 func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewriteRow) error {
 	return s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": row.Status, "run_mode": row.RunMode, "replacement_markdown": row.ReplacementMarkdown,
+		"validity": row.Validity, "run_mode": row.RunMode, "replacement_markdown": row.ReplacementMarkdown,
 		"source_ids_json": row.SourceIDsJSON, "authorized_sources_json": row.AuthorizedSourcesJSON,
 		"review_items_json": row.ReviewItemsJSON, "error_code": row.ErrorCode, "applied_key": row.AppliedKey,
 		"applied_response_json": row.AppliedResponseJSON, "apply_pending_key": row.ApplyPendingKey,
@@ -298,7 +307,7 @@ func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewri
 // Only observation fields may be changed by a stale reader. A concurrently
 // claimed/applied operation owns its receipt and cannot be overwritten here.
 func (s *GORMSelectedRewriteStore) markStale(ctx context.Context, row selectedRewriteRow, now time.Time) (selectedRewriteRow, error) {
-	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ? AND tenant_id = ? AND applied_key = '' AND apply_pending_key = '' AND status = ? AND updated_at = ?", row.ID, row.TenantID, row.Status, row.UpdatedAt).Updates(map[string]any{"status": "stale", "replacement_markdown": "", "error_code": "stale_input", "updated_at": now})
+	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ? AND tenant_id = ? AND applied_key = '' AND apply_pending_key = '' AND validity = ? AND updated_at = ?", row.ID, row.TenantID, row.Validity, row.UpdatedAt).Updates(map[string]any{"validity": string(candidateadoption.ValidityStale), "replacement_markdown": "", "error_code": "stale_input", "updated_at": now})
 	if result.Error != nil {
 		return selectedRewriteRow{}, result.Error
 	}
@@ -307,7 +316,7 @@ func (s *GORMSelectedRewriteStore) markStale(ctx context.Context, row selectedRe
 
 func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedRewriteRow, key, inputJSON string, now time.Time) (selectedRewriteRow, error) {
 	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).
-		Where("id = ? AND applied_key = '' AND apply_pending_key = '' AND status = 'ready'", row.ID).
+		Where("id = ? AND applied_key = '' AND apply_pending_key = '' AND validity = ?", row.ID, string(candidateadoption.ValidityFresh)).
 		Updates(map[string]any{"apply_pending_key": key, "apply_pending_input_json": inputJSON, "updated_at": now})
 	if result.Error != nil {
 		return selectedRewriteRow{}, result.Error
@@ -473,8 +482,8 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	if err := s.checkEvidenceRefs(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, snapshots); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
-	mode := s.model.RunMode()
-	if !validRewriteMode(mode) {
+	mode := candidateadoption.RunMode(s.model.RunMode())
+	if !candidateadoption.ValidRunMode(mode) {
 		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
@@ -517,11 +526,11 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			auditDecision, auditReason = "deny", err.Error()
 			return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 		}
-		if row.Status == "ready" && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
+		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		auditDetails["candidate_id"], auditDetails["run_mode"], auditDetails["status"] = row.ID, row.RunMode, row.Status
+		auditDetails["candidate_id"], auditDetails["run_mode"], auditDetails["validity"] = row.ID, row.RunMode, row.Validity
 		return selectedRewriteView(row)
 	}
 	if err := s.store.update(ctx, row); err != nil {
@@ -541,58 +550,58 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	}
 	output, modelErr := s.model.RewriteSelected(ctx, actor, prompt)
 	if modelErr != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "rewrite_failed", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "rewrite_failed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if output.RunMode != "" {
-		if !validRewriteMode(output.RunMode) {
-			row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "invalid_run_mode", ""
+		if !candidateadoption.ValidRunMode(candidateadoption.RunMode(output.RunMode)) {
+			row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "invalid_run_mode", ""
 			auditDecision, auditReason = "deny", row.ErrorCode
-			auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+			auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 			return s.updateCandidate(context.WithoutCancel(ctx), row)
 		}
-		row.RunMode = output.RunMode
+		row.RunMode = candidateadoption.RunMode(output.RunMode)
 	}
 	if err := validateRewriteOutput(output, input.SourceIDs); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", selectedRewriteFailureCode(err), ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "source_access_denied", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "source_access_denied", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "authorization_changed", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "authorization_changed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	currentCopy, err := s.workspace.GetWorkingCopy(ctx, actor, projectID, chapterID)
 	if err != nil || !workingCopyIsCandidateBasis(currentCopy, row) {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "stale_input", ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityStale), "stale_input", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.checkRowEvidence(ctx, actor, projectID, row); err != nil {
-		row.Status = "stale"
+		row.Validity = string(candidateadoption.ValidityStale)
 		row.ErrorCode = "evidence_changed"
 		row.ReplacementMarkdown = ""
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := writeRewriteResult(&row, output); err != nil {
-		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", selectedRewriteFailureCode(err), ""
 		auditDecision, auditReason = "deny", row.ErrorCode
-		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
-	auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+	auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 	return s.updateCandidate(context.WithoutCancel(ctx), row)
 }
 
@@ -618,7 +627,7 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
 		return SelectedRewriteCandidate{}, evidenceErr
 	}
-	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["spec_revision"], details["working_copy_revision"] = row.SpecRevision, row.WorkingCopyRevision
 	if row.ApplyPendingKey == "" {
 		row, err = s.staleIfNeeded(ctx, actor, projectID, row.ChapterID, row)
@@ -661,7 +670,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
 		return core.WorkingCopy{}, false, evidenceErr
 	}
-	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["base_chapter_version_id"] = row.BaseChapterVersionID
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
@@ -700,7 +709,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 		}
 		return s.completePendingApply(ctx, actor, projectID, chapterID, key, row)
 	}
-	if row.Status != "ready" || row.ReplacementMarkdown == "" {
+	if row.Validity != string(candidateadoption.ValidityFresh) || row.ReplacementMarkdown == "" {
 		return core.WorkingCopy{}, false, ErrRewriteStale
 	}
 	project, err := s.workspace.GetProject(ctx, actor, projectID)
@@ -769,7 +778,7 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 	result, err := s.workspace.ApplyRewriteResult(ctx, actor, projectID, chapterID, operationKey, pending.WorkingCopy, pending.ReviewItems)
 	if err != nil {
 		if errors.Is(err, core.ErrVersionConflict) {
-			row.Status, row.ReplacementMarkdown, row.ErrorCode = "stale", "", "stale_input"
+			row.Validity, row.ReplacementMarkdown, row.ErrorCode = string(candidateadoption.ValidityStale), "", "stale_input"
 			row.ApplyPendingKey, row.ApplyPendingInputJSON, row.UpdatedAt = "", "", s.now()
 			if persistErr := s.store.update(context.WithoutCancel(ctx), row); persistErr != nil {
 				return core.WorkingCopy{}, false, persistErr
@@ -875,10 +884,6 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 	if refErr != nil {
 		return SelectedRewriteCandidate{}, refErr
 	}
-	status := row.Status
-	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
-		status = "applying"
-	}
 	var dropped []DroppedContextItem
 	if row.DroppedContextJSON != "" {
 		if err := json.Unmarshal([]byte(row.DroppedContextJSON), &dropped); err != nil {
@@ -886,7 +891,7 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		}
 	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
-		Status: status, RunMode: candidateadoption.RunMode(row.RunMode), BaseChapterVersionID: row.BaseChapterVersionID,
+		Validity: candidateadoption.Validity(row.Validity), RunMode: row.RunMode, BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
 		ReplacementMarkdown: row.ReplacementMarkdown, SourceIDs: sourceIDs, AuthorizedSources: snapshots,
@@ -955,13 +960,9 @@ func sourceSnapshots(sources []evidence.Source, now time.Time) []RewriteSourceSn
 	return result
 }
 
-func validRewriteMode(mode string) bool {
-	return mode == "mock" || mode == "real_api_fake_model" || mode == "real"
-}
-
 func validateRewriteOutput(output SelectedRewriteOutput, requested []string) error {
 	if strings.TrimSpace(output.ReplacementMarkdown) == "" || len(output.ReplacementMarkdown) > 40000 ||
-		(output.RunMode != "" && !validRewriteMode(output.RunMode)) {
+		(output.RunMode != "" && !candidateadoption.ValidRunMode(candidateadoption.RunMode(output.RunMode))) {
 		return ErrRewriteInvalidRequest
 	}
 	allowed := make(map[string]bool, len(requested))
@@ -980,8 +981,8 @@ func validateRewriteOutput(output SelectedRewriteOutput, requested []string) err
 	if !slices.Equal(stringSet(refs), stringSet(output.SourceIDs)) {
 		return ErrRewriteInvalidRequest
 	}
-	for _, statement := range output.ReviewItems {
-		if strings.TrimSpace(statement) == "" {
+	for _, item := range output.ReviewItems {
+		if strings.TrimSpace(item.Statement) == "" {
 			return ErrRewriteInvalidRequest
 		}
 	}
@@ -1056,7 +1057,7 @@ func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, ke
 	}
 	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
 		ProjectID: projectID, ChapterID: chapterID, IdempotencyKey: key, RequestHash: hash,
-		Status: "queued", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
+		Validity: "", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
 		SpecRevision: input.ExpectedSpecRevision, WorkingCopyRevision: input.ExpectedWorkingCopyRevision,
 		StartUTF16: input.Selection.StartUTF16, EndUTF16: input.Selection.EndUTF16, SelectedText: input.Selection.SelectedText,
 		EvidenceCardRefsJSON: string(evidenceJSON), Instruction: input.Instruction, SourceIDsJSON: string(sourceJSON), AuthorizedSourcesJSON: string(snapshotJSON),
@@ -1069,8 +1070,10 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 		return err
 	}
 	items := make([]candidateadoption.ReviewItem, 0, len(output.ReviewItems))
-	for _, statement := range output.ReviewItems {
-		items = append(items, candidateadoption.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement), OriginCandidateID: row.ID})
+	for _, item := range output.ReviewItems {
+		// 编号由服务端给：模型只负责说清「有哪些待核事项」，身份是服务端的事实。
+		items = append(items, candidateadoption.ReviewItem{ID: uuid.NewString(),
+			Statement: strings.TrimSpace(item.Statement), OriginCandidateID: row.ID})
 	}
 	ids := stringSet(output.SourceIDs)
 	idsJSON, err := json.Marshal(ids)
@@ -1098,7 +1101,7 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 		return err
 	}
 	row.ReplacementMarkdown, row.SourceIDsJSON, row.AuthorizedSourcesJSON, row.ReviewItemsJSON = output.ReplacementMarkdown, string(idsJSON), string(snapshotsJSON), string(review)
-	row.Status, row.RunMode, row.ErrorCode = "ready", output.RunMode, ""
+	row.Validity, row.RunMode, row.ErrorCode = string(candidateadoption.ValidityFresh), candidateadoption.RunMode(output.RunMode), ""
 	return nil
 }
 

@@ -289,7 +289,13 @@ export interface SelectedRewriteCandidate {
   candidate_id: string
   project_id: string
   chapter_id: string
-  status: 'queued' | 'ready' | 'applying' | 'failed' | 'stale'
+  /**
+   * 这个候选还能不能被采纳：与候选层同一份词表。
+   *
+   * 空值表示这次运行没有交出可采纳的产出——运行中是这样，一次失败也是这样；
+   * 失败的原因在 error_code 里。
+   */
+  validity: '' | 'fresh' | 'stale' | 'not_authorized'
   run_mode: 'real' | 'mock' | 'real_api_fake_model'
   base_chapter_version_id: string | null
   spec_revision: number
