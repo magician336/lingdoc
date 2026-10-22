@@ -42,11 +42,6 @@ func TestChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (tenant_id, user_id, operation, target, key)
 		)`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
 		`CREATE TABLE IF NOT EXISTS lingdoc_change_sets (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_by TEXT NOT NULL,
 			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized')), base_context_revision INTEGER NOT NULL,
@@ -60,6 +55,7 @@ func TestChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 			t.Fatalf("seed impact records table: %v", err)
 		}
 	}
+	ensureAuditEventTable(t, db)
 	if err := db.Exec("UPDATE lingdoc_projects SET current_context_revision = ? WHERE id = ?", 1, "project-1").Error; err != nil {
 		t.Fatalf("seed context revision: %v", err)
 	}

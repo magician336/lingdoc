@@ -284,6 +284,19 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/audit_event_version_fields_test.go", "file"),
             ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
+            # These fixtures hand-wrote the column list of lingdoc_project_audits.
+            # Adding two columns to that table broke them, and the failure
+            # surfaced as an opaque HTTP 500 instead of a schema error, so they
+            # now apply the production migration instead of copying the shape.
+            ("internal/lingdoc/workspace/audit_event_table_fixture_test.go", "file"),
+            ("internal/lingdoc/workspace/change_set_http_test.go", "file"),
+            ("internal/lingdoc/workspace/change_set_delivery_test.go", "file"),
+            ("internal/lingdoc/workspace/delivery_http_test.go", "file"),
+            # These two run a curated subset of the production migration chain.
+            # The subset stopped before 000052, so the audit table had no
+            # version columns and every audit write failed.
+            ("internal/lingdoc/workspace/save_chapter_policy_test.go", "file"),
+            ("internal/container/lingdoc_ruleset_delivery_e2e_test.go", "file"),
             ("migrations/sqlite/000052_lingdoc_audit_version_fields.up.sql", "file"),
             ("migrations/sqlite/000052_lingdoc_audit_version_fields.down.sql", "file"),
             ("migrations/versioned/000131_lingdoc_audit_version_fields.up.sql", "file"),
@@ -300,6 +313,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "路径集按 #327 认领后的实测清单补齐（先例：PF-1 与 PF-2 同样在认领后补齐）。"
             "pr150_migration_history_test.go 是实测补进来的：它演练一个停在 000043 之前的旧库，"
             "当前代码写审计版本列时那个旧库缺列，种数据前必须先把审计表带到当前形状。"
+            "internal/lingdoc/workspace/ 下的三个夹具同样是实测补进来的：它们手抄了"
+            "lingdoc_project_audits 的列清单，加列后审计写失败，而失败被 HTTP 层转成 500，"
+            "看不出来是 schema 漂移；现在改为主动应用生产迁移，夹具与生产按构造一致。"
+            "另有两个跑迁移子集的夹具也补进来了：子集停在 000052 之前，审计表没有版本列。"
+            "internal/database/migration_sqlite_versioned_schema_test.go 与"
+            "internal/router/lingdoc_integration_test.go 按上面的「共享维护点」约定修改，"
+            "不登记进任何面的路径集。"
             "本面独占 model.go 与 runtime_control.go，PF-4 因此不得声明 model.go。"
             "本面产出文档：docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md 与 T327-验证报告.json。"
         ),
