@@ -233,8 +233,14 @@ func sendError(c *gin.Context, err error) {
 		if form.RetryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(form.RetryAfter))
 		}
-		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
-			"retryable": form.Retryable}, "request_id": requestID(c)})
+		failure := gin.H{"code": form.Code, "message": form.Message, "retryable": form.Retryable}
+		// A failure that can name its reason carries it in the optional
+		// details. The failures that have nothing extra to say keep the shape
+		// they always had.
+		if form.Details != nil {
+			failure["details"] = form.Details
+		}
+		c.JSON(form.Status, gin.H{"error": failure, "request_id": requestID(c)})
 		return
 	}
 	// The fallback is a 5xx, so it is retryable (DR-47-03: 4xx is not, 5xx is).

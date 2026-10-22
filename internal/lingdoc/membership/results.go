@@ -461,19 +461,11 @@ func (s *Service) RequestOwnerTransfer(
 		if currentOwner == "" {
 			return core.OperationOutcome{}, core.ErrInvalidState
 		}
-		ownerActive, err := port.ActiveMember(core.Actor{TenantID: actor.TenantID, UserID: currentOwner})
-		if err != nil {
-			return core.OperationOutcome{}, err
-		}
-		if ownerActive {
-			role, err := core.CurrentTenantRole(featureTx, core.Actor{TenantID: actor.TenantID, UserID: currentOwner})
-			if err != nil || role != "" && !role.HasPermission(types.TenantRoleContributor) {
-				ownerActive = false
-			}
-			if m, ok := core.ProjectMember(p, currentOwner); !ok || m.Status != "" && m.Status != "active" {
-				ownerActive = false
-			}
-		}
+		// The Owner's availability is one fact, and it is derived in one
+		// place. This used to be a second copy of the same conditions, and
+		// the two copies did not hold the same conditions.
+		authority := core.OwnerAuthorityOf(featureTx, p, actor.TenantID)
+		ownerAvailable := authority.Available
 		role := string(actor.Role)
 		if role == "" {
 			role = actor.TenantRole
@@ -484,7 +476,7 @@ func (s *Service) RequestOwnerTransfer(
 		}
 		_ = role
 		isRecoveryAdmin := currentRole == types.TenantRoleOwner
-		if actor.UserID != currentOwner && (!isRecoveryAdmin || ownerActive) {
+		if actor.UserID != currentOwner && (!isRecoveryAdmin || ownerAvailable) {
 			return core.OperationOutcome{}, core.ErrNotFound
 		}
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {

@@ -2031,11 +2031,39 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 	return s.changeProvenanceProjection(ctx, actor, result)
 }
 
+// requireOwnerDecision refuses an Owner-only decision while the project's
+// Owner may not take it.
+//
+// The refusal carries its reason, so a caller can tell the freeze from "you
+// are not the Owner". It runs before the ordinary authorization, because the
+// ordinary authorization answers a lapsed Owner with a plain "not found" --
+// and that is exactly the answer the caller cannot act on.
+//
+// A caller who is not the Owner is left to the ordinary authorization: the
+// freeze is not their reason for being refused.
+func (s *Service) requireOwnerDecision(ctx context.Context, actor Actor, projectID string) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			// A project that is not there is the ordinary authorization's
+			// answer; this gate has nothing to say about it.
+			return nil
+		}
+		if JudgeOwnerAction(tx, p, actor).ReasonCode != ReasonOwnerUnavailable {
+			return nil
+		}
+		return ErrOwnerUnavailable
+	})
+}
+
 func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	if err := RequireHumanDecision(ctx); err != nil {
+		return nil, 0, false, err
+	}
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
 		return nil, 0, false, err
 	}
 	if err := s.Authorize(ctx, actor, projectID, "manage"); err != nil {
@@ -2056,8 +2084,8 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		if !projectOwner(p, actor.UserID) {
-			return operationResult[ChangeSet]{}, ErrNotFound
+		if err := ownerDecisionInTransaction(featureTx, p, actor); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
@@ -2464,12 +2492,19 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
+	}
 	return runOperation(s, ctx, actor, ownerDecisionOperation(operationInput(operationRejectChangeSet, projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, ""))), mutationPort[ChangeSetMutationTransaction], func(tx ChangeSetMutationTransaction, p Project) (operationResult[ChangeSet], error) {
+		featureTx, featureErr := extendedTransaction(tx)
+		if featureErr != nil {
+			return operationResult[ChangeSet]{}, featureErr
+		}
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		if !projectOwner(p, actor.UserID) {
-			return operationResult[ChangeSet]{}, ErrNotFound
+		if err := ownerDecisionInTransaction(featureTx, p, actor); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {

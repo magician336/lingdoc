@@ -106,7 +106,10 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if !ChangeSetStatusCanMove("editDraft", old.Status) || old.TemplateUpgrade != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
-		if old.CreatedBy != actor.UserID && !projectOwner(p, actor.UserID) {
+		// The creator may edit their own draft, and the Owner may edit any.
+		// The Owner's tenant identity lapsing removes the Owner's own
+		// alternative and nothing else, so this use is never frozen.
+		if old.CreatedBy != actor.UserID && !OwnerMayAct(p, actor) {
 			return operationResult[ChangeSet]{}, ErrNotFound
 		}
 		if old.BaseContextRevision != p.CurrentContextRevision || old.BaseSpecRevision != p.SpecRevision {
