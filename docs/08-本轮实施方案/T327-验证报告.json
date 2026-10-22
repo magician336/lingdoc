@@ -88,14 +88,14 @@
     },    {
       "id": "AC-327-17 CI 逐 check 结论",
       "status": "passed",
-      "evidence": "逐 check 读结论，不按 workflow 级别绿推断：必需检查 `LingDoc PR gate` 在每个 head 上都真的跑了，内部对本次改动的两个包执行 `go test -race -count=1 -json ./internal/lingdoc/membership/... ./internal/lingdoc/workspacecore/...` → `PROVIDERS: success`。仓库级矩阵（app.yml 的 `Format, vet, test, and build`、frontend 的 `Test, type-check, and build`、Docker、mock、F01、integration、workspace-concurrency、golangci-lint）在基线合并那一次 push 上被门禁按「贡献面内容未变」缩面跳过（判定层输出 surface_changed=false / base_moved=true），在本轮改到 Go 面的 push 上重新参与。跳过不是通过：每一次缩面都在门禁产物里写明理由。"
+      "evidence": "逐 check 读结论，不按 workflow 级别绿推断。必需检查 `LingDoc PR gate` 在每个 head 上都真的跑了，门禁产物 `lingdoc-checks-<run>/result.json` 与 `scope.json` 逐字段核对：两个 head 上 `provider_packages` 同为 `./internal/lingdoc/membership/... ./internal/lingdoc/workspace/... ./internal/lingdoc/workspacecore/...`（**三个**包树，不是两个），`go test -race -count=1 -json` 对这三个包树共 1228 条测试行全部 pass、0 条 fail，`PROVIDERS: success`。门禁的 `FRONTEND` 在两个 head 上都是 `skipped`（前端不在本次贡献面内）⇒ 前端覆盖来自独立的 Frontend workflow，不来自门禁。仓库级矩阵（app.yml 的 `Format, vet, test, and build`、frontend 的 `Test, type-check, and build`、Docker、mock、F01、integration、workspace-concurrency、golangci-lint）在**代码 head `7c000321`** 上真的参与了并全部 success；在其后的基线合并与纯文档提交上被门禁按「贡献面内容未变」缩面跳过（判定层输出 `base_moved=true` / `surface_changed=false`，理由 `the base moved under the branch; the contribution is re-tested against it`）。跳过不是通过：门禁自己的产物里写明「Skipped means NOT RUN, not passed」，每一次缩面都在产物里写明理由。缩面期间的覆盖由两重机器核对补上：① `git diff --name-only 7c000321 <最终 head> -- '*.go'`、`-- frontend/`、`-- migrations/` 三条都为空 ⇒ 被测面逐字未变，代码 head 上真跑过的结论可以绑定；② 最终 head 上的 PR gate 仍然实跑了那三个包树的 `-race`（`PROVIDERS: success`）。"
     }
   ],
   "not_run": [
     {
       "id": "go test -race ./...（全仓本地）",
-      "reason": "本机有兄弟会话并行，-race 的资源占用会互相干扰；但这一层在 Linux 上由 CI 的 PR gate 覆盖，且覆盖到本次改动的两个包（AC-327-17）。",
-      "unblock": "在无其它会话占用的机器上跑 `go test -race -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/`。"
+      "reason": "本机有兄弟会话并行，-race 的资源占用会互相干扰；但这一层在 Linux 上由 CI 的 PR gate 覆盖，且覆盖到本次改动的三个包树（membership / workspace / workspacecore，AC-327-17）。",
+      "unblock": "在无其它会话占用的机器上跑 `go test -race -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/workspace/ ./internal/lingdoc/membership/`。"
     },
     {
       "id": "真实生产迁移与回滚",
@@ -141,7 +141,7 @@
     },
     {
       "id": "CI 的仓库级矩阵会按贡献面缩面",
-      "detail": "基线合并那一次 push 的判定层输出 surface_changed=false / base_moved=true，于是 app.yml 的仓库级套件、frontend、lint、mock、并发与集成作业全部是 skipped（不是 passed）。本轮把 Go 面真正改掉之后，仓库级矩阵才重新参与。因此「CI 全绿」这句话必须逐 check 看结论，不能按 workflow 级别推断；本轮的真实回归也是靠本机全仓跑才抓到的。"
+      "detail": "门禁按「贡献面内容是否变化」决定跑不跑仓库级矩阵。判定层在基线合并与纯文档提交上输出 `base_moved=true` / `surface_changed=false`，于是 app.yml 的仓库级套件、frontend、lint、mock、并发与集成作业全部是 skipped（不是 passed），理由写在门禁产物里（`the base moved under the branch; the contribution is re-tested against it`）。只有在代码 head `7c000321`（真正改到 Go 面）上仓库级矩阵才重新参与并全绿。因此「CI 全绿」这句话必须逐 check 看结论，不能按 workflow 级别推断；本轮的真实回归也是靠本机全仓跑才抓到的。缩面期间的覆盖靠机器核对补：被测面（`*.go`、`frontend/`、`migrations/`）在代码 head 与最终 head 之间逐字未变，且最终 head 上 PR gate 仍实跑了那三个包树（membership / workspace / workspacecore）的 `-race`（`PROVIDERS: success`，1228 条测试行全过）。门禁自己的产物里写着「Skipped means NOT RUN, not passed」——跳过就是没跑。"
     }
   ]
 }

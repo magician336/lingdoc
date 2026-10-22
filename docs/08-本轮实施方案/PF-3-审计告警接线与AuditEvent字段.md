@@ -191,7 +191,7 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 | 迁移两方言一致 | —— | I6 | SQLite 与 PostgreSQL 列集合一致 | down 可回退 | 迁移前后逐字比对 | 迁移彩排测试 | **PASS** |
 | PG 上普通读真 fail-open | 真实 PG 演练 | I1 | 读成功 | **实测不成立**（已转 [#387](https://github.com/magician336/lingdoc/issues/387)） | 隔离级别 | 隔离实例实测（§5 B1）；PG 端告警用例同时实测到「读失败但告警仍发出」 | **FAIL（已实测）** —— 不在本票范围 |
 
-矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-14 全部 passed（含五条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围。**PostgreSQL 端的告警注入用例已于 2026-10-23 补齐并通过**（`TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`）；`go test -race` 全仓本地仍未跑（兄弟会话并行），但 CI 的 PR gate 已在当前 head 上对本次改动的两个包跑了 `go test -race`（`PROVIDERS: success`）。
+矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-14 全部 passed（含五条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围。**PostgreSQL 端的告警注入用例已于 2026-10-23 补齐并通过**（`TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`）；`go test -race` 全仓本地仍未跑（兄弟会话并行），但 CI 的 PR gate 在每个 head 上都对本次改动的**三个包树**（`membership` / `workspace` / `workspacecore`）跑了 `go test -race -count=1` ⇒ 1228 条测试行全过、`PROVIDERS: success`。
 
 ## 5. 实施切片
 
@@ -253,7 +253,7 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 
 S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**29 条用例因审计表缺两列而失败**。
 
-**CI 没有抓到它**：基线合并那一次 push 的判定层输出 `surface_changed=false / base_moved=true`，仓库级矩阵（`app.yml` 的 `Format, vet, test, and build`）被门禁按「贡献面内容未变」缩面跳过；PR gate 只对本次改动的两个包跑 `-race`。⇒ **「CI 全绿」不等于「仓库被测过」**。
+**CI 没有抓到它**：基线合并那一次 push 的判定层输出 `surface_changed=false / base_moved=true`，仓库级矩阵（`app.yml` 的 `Format, vet, test, and build`）被门禁按「贡献面内容未变」缩面跳过；PR gate 只对本次改动的三个包树（`membership` / `workspace` / `workspacecore`）跑 `-race`。⇒ **「CI 全绿」不等于「仓库被测过」**。
 
 **失败形态很难看**：审计写失败被 HTTP 层映射成不透明的 `500 internal_error`，看不出是 schema 漂移。
 
@@ -267,7 +267,7 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 | `internal/router/lingdoc_integration_test.go` | 两份迁移子集（止于 000041 / 000051） | 两份分别补 `000052` |
 | `internal/database/migration_sqlite_versioned_schema_test.go` | 版本常量 | `expectedSQLiteMigrationVersion` 51 → 52 |
 
-后两个文件按登记处「共享维护点」的约定修改，**不登记进任何面的路径集**；其余按实测补进 PF-3 的路径集（20 条，零重叠）。
+后两个文件按登记处「共享维护点」的约定修改，**不登记进任何面的路径集**；其余按实测补进 PF-3 的路径集（补齐时 20 条，零重叠）。**后来让出 2 条**（`workspacecore/service_facade.go` 与 `workspacecore/typed_contracts.go`——PF-4 于 2026-10-22 先在 main 上声明了它们，登记处要求一条路径只有一个拥有者），**当前为 18 条，零重叠**。
 
 **复跑结果**：`internal/lingdoc/workspace` ok（196.4s）｜`workspacecore` ok（41.0s）｜`membership` ok（2.6s）｜`internal/database` ok（22.3s）｜`internal/router` ok（1.4s）｜`internal/container` ok（7.8s）。
 
@@ -379,7 +379,7 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 
 | 命令 | 结果 |
 |---|---|
-| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（PF-3 按实测补到 20 条路径后重跑） |
+| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（PF-3 按实测补到 20 条、让出 2 条后为 18 条路径，零重叠） |
 | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | **PASS** — `Ran 322 tests ... OK`；命名棘轮自检 `0/0/0`（本轮新增文件未引入编号） |
 | 文档行号指针逐条核对（grep + read） | **PASS** — 在 `c4c9ac93` 上复核：Spec-48 是纯改名，**行号全部未变**；已改写文件名指针 |
 | 迁移编号占用核对 | **PASS** — sqlite 下一个 `000052`、versioned 下一个 `000131`（偏移量 79） |
@@ -393,7 +393,7 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 | 五条结构断言的阴性验证 | **PASS** — 去掉落库 / 迁移回填 / 去掉显式类别 / 让审计错误返回 / 去掉 PG 失败注入，各自主张变红并复原 |
 | **加列打红的夹具回归** | **PASS（修复后）** — 本机全仓跑出 29 条失败（6 处夹具：3 处手抄列清单、3 处跑迁移子集），逐处修完复跑全绿；详见 §5 B4 |
 | **本机全仓 Go 套件（123 包）** | **PASS（改动面全绿）** — `go vet` 全过；`go test` 仅剩 12 条与本票无关的既有 Windows 失败（`internal/agent/tools` 6 条 + `internal/application/service` 6 条），在 `origin/main` 基线副本上**逐条原样复现** |
-| **CI 逐 check 结论** | **PASS** — 必需检查 `LingDoc PR gate` 实跑，内部对本次改动的两个包执行 `go test -race`（`PROVIDERS: success`）；仓库级矩阵在基线合并那次 push 上被门禁缩面跳过（`surface_changed=false`），本轮改到 Go 面后重新参与 |
+| **CI 逐 check 结论** | **PASS** — 必需检查 `LingDoc PR gate` 在每个 head 上都实跑，对本次改动的**三个包树**（`membership` / `workspace` / `workspacecore`）执行 `go test -race -count=1` ⇒ 1228 条测试行全过、`PROVIDERS: success`（门禁产物 `scope.json` 的 `provider_packages` 逐字段核对过）。门禁的 `FRONTEND` 在两个 head 上都是 `skipped`——**前端不在本次贡献面内**，前端覆盖来自独立的 Frontend workflow。仓库级矩阵（app 的 `Format, vet, test, and build`、frontend 的 `Test, type-check, and build`、lint、mock、并发、集成、Docker）在**代码 head `7c000321`** 上真的参与并全绿，在其后的基线合并与纯文档提交上被门禁缩面跳过（判定层 `base_moved=true` / `surface_changed=false`）。**跳过不是通过**（门禁产物自己写着「Skipped means NOT RUN, not passed」），缩面期间的覆盖由机器核对补：`*.go`、`frontend/`、`migrations/` 三条面在代码 head 与最终 head 之间逐字未变 |
 | `go test -race ./...`（全仓本地） | **NOT RUN** — 本机有兄弟会话并行，资源会互相干扰；这一层由 CI 的 PR gate 在 Linux 上覆盖到改动面；解除条件见验证报告 |
 
 未覆盖风险：PG 行为已实测且为负（已转票）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；**夹具自持一份 schema 形状的机制仍在**（本轮修掉 6 处，但下一次加列仍会重演）。
@@ -471,6 +471,22 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 | 仓库级 Go 套件（本机全仓 123 包） | **PASS（除 12 条与本票无关的既有 Windows 失败）** —— 12 条全在 `internal/agent/tools`（6 条：MCP schema 的 `file://D:\` URI、读文件沙箱、shell stdin、skill 的可执行位与 pip/uv/ensurepip 恢复路径）与 `internal/application/service`（6 条：SQLite 临时目录被占用、skill 同类），在 `origin/main` 基线副本上**逐条原样复现**；本分支未触碰这两个包，它们也不 import 本次改动的包 |
 | 登记处 | **PASS** —— `6 parallel work faces validated`（PF-3 补到 18 条路径后与其余五面零重叠） |
 | 命名棘轮 | **PASS** —— `0/0/0` |
-| `go test -race`（全仓本地） | **NOT RUN** —— 兄弟会话并行；但 CI 的 PR gate 已在 head 上对本次改动的两个包跑了 `go test -race`（`PROVIDERS: success`） |
+| `go test -race`（全仓本地） | **NOT RUN** —— 兄弟会话并行；但 CI 的 PR gate 在每个 head 上都对本次改动的三个包树（`membership` / `workspace` / `workspacecore`）跑了 `go test -race`（`PROVIDERS: success`，1228 条测试行全过） |
 
-**未覆盖风险**：本机全仓跑出的 5 条 Windows 失败说明「本地全仓绿」在 Windows 上不可得（CI 在 ubuntu 上跑同一套）；PG 端的普通读 fail-open 仍不成立（#387）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；CodeGraph 索引本轮未使用（工具不可用），取样以 `grep`/`read` 与可复现运行为准。
+**未覆盖风险**：本机全仓跑出的 12 条 Windows 失败说明「本地全仓绿」在 Windows 上不可得（CI 在 ubuntu 上跑同一套）；PG 端的普通读 fail-open 仍不成立（#387）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；CodeGraph 索引本轮未使用（工具不可用），取样以 `grep`/`read` 与可复现运行为准。
+
+## 11. 基线合并与冲突处置（2026-10-23）
+
+本票从 `c4c9ac93` 分出，合并期间 `main` 前移三次。三次合并的**代码改动均为零**——`git diff 7c000321 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空——所以 §4 矩阵与证据里的每一条测试结论都仍然绑定最终 head。
+
+| 合并 | 基线 | 冲突 | 处置 |
+|---|---|---|---|
+| `65b33531` | 当时的 main 尖端 | 路径图一处内容冲突 | 取本分支版本 |
+| `d380459a` | `fc3d30b2`（PF-4 的 PR #392 合入） | **登记处所有权撞车**：`workspacecore/service_facade.go` 与 `workspacecore/typed_contracts.go` 被 PF-4 声明，而 PF-3 也要改它们 | **PF-3 让出这两个文件**（路径集 20 → 18 条）。理由：PF-4 于 2026-10-22 先在 main 上声明、且仍是待施工面，登记处要求一条路径只有一个拥有者，不擅自剥离他人所有权。**但 PF-3 确实改了它们**（`readWithAudit` 接缝与 Authorize/GetProject 接线在 `service_facade.go`，AuthorizeRequest 接线在 `typed_contracts.go`），两面改动由基线合并组合在同一棵树上，合并零冲突，PF-4 之后动这两个文件时冲突会显式报出来，不会静默覆盖 |
+| `7627853` | `6e48ee10`（PF-5 的 Spec #393 合入） | 路径图 PF-5 行：main 扩到 9 条路径并加了 #393 | **取 main 版本**。它列的文件名 `internal/lingdoc/workspacecore/agent_research_model.go` 与磁盘一致，而本分支此前那一格写的是 `g2_model.go`——该文件不存在，是本分支带入的陈旧引用，合并把它暴露出来 |
+
+顺带修掉两处陈旧路径指针（都是「同一事实的多份副本」里没跟上的那一份）：路径图 PF-5 行里的 `g2_model.go`（本分支引入）与「PF-2 的路径集」段里的 `workspacecore/g2_*.go`（main 上既有）。两者都指向不存在的文件，读者按指针找会扑空。
+
+**门禁在合并后的缩面**：最终 head 的门禁判定层输出 `base_moved=true` / `surface_changed=false`（理由 `the base moved under the branch; the contribution is re-tested against it`），于是仓库级矩阵（app 的 `Format, vet, test, and build`、frontend、lint、mock、并发、集成、Docker）全部 **skipped**——不是 passed（门禁产物里自己写着 `Skipped means NOT RUN, not passed`）。覆盖由两重机器核对补上：① `*.go`、`frontend/`、`migrations/` 三条面在代码 head `7c000321`（仓库级矩阵真跑并全绿）与最终 head 之间**逐字未变**；② 最终 head 上的必需检查 `LingDoc PR gate` 仍然实跑了那三个包树（`membership` / `workspace` / `workspacecore`）的 `go test -race -count=1` ⇒ 1228 条测试行全过、`PROVIDERS: success`——门禁产物 `scope.json` 的 `provider_packages` 与 `go-test.jsonl` 逐条核对过，不是从 workflow 绿推断的。
+
+门禁的 `FRONTEND` 在**两个** head 上都是 `skipped`：前端不在本次贡献面内，**门禁不提供前端覆盖**——前端覆盖来自独立的 Frontend workflow（在代码 head 上 `Test, type-check, and build` success）。这条容易读错，所以单列。
