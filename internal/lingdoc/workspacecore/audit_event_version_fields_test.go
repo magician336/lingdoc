@@ -99,9 +99,8 @@ func TestAuditEventVersionFieldsDefaultWhenAbsent(t *testing.T) {
 	actor := Actor{TenantID: 91, UserID: "owner"}
 	seedTenantMember(t, svc, actor)
 	svc.audit = &auditSinkStub{}
-	raw, _, _, err := svc.CreateProject(context.Background(), actor, "audit-version-default-project", CreateProjectInput{
-		Name: "audit version default", TemplateID: "template-demo",
-	})
+	raw, _, _, err := svc.CreateProject(context.Background(), actor, "audit-version-default-project",
+		CreateProjectInput{Name: "audit version default", TemplateID: "template-demo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,13 +186,15 @@ func TestSQLiteAuditVersionMigrationLeavesHistoricRowsUntouched(t *testing.T) {
 	var targetVersion string
 	var projectRevision int64
 	var action, target, details string
-	if err := db.QueryRow(
-		"SELECT target_version, project_revision, action, target, details_json FROM lingdoc_project_audits WHERE id = ?",
-		"historic-row").Scan(&targetVersion, &projectRevision, &action, &target, &details); err != nil {
+	const historicRow = "SELECT target_version, project_revision, action, target, details_json " +
+		"FROM lingdoc_project_audits WHERE id = ?"
+	if err := db.QueryRow(historicRow, "historic-row").
+		Scan(&targetVersion, &projectRevision, &action, &target, &details); err != nil {
 		t.Fatal(err)
 	}
 	if targetVersion != "" || projectRevision != 0 {
-		t.Fatalf("the migration back-filled a historic row: target_version=%q project_revision=%d", targetVersion, projectRevision)
+		t.Fatalf("the migration back-filled a historic row: target_version=%q project_revision=%d",
+			targetVersion, projectRevision)
 	}
 	if action != "authorization.read" || target != "project-historic" || !strings.Contains(details, "read") {
 		t.Fatalf("the migration rewrote a historic row: action=%q target=%q details=%q", action, target, details)
@@ -209,15 +210,16 @@ func TestSQLiteAuditVersionMigrationLeavesHistoricRowsUntouched(t *testing.T) {
 		t.Fatalf("%s: %v", down, err)
 	}
 	var schema string
-	if err := db.QueryRow(
-		"SELECT sql FROM sqlite_master WHERE type='table' AND name='lingdoc_project_audits'").Scan(&schema); err != nil {
+	const tableSchema = "SELECT sql FROM sqlite_master WHERE type='table' AND name='lingdoc_project_audits'"
+	if err := db.QueryRow(tableSchema).Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(schema, "target_version") || strings.Contains(schema, "project_revision") {
 		t.Fatalf("the rollback left the version columns behind: %s", schema)
 	}
 	var remaining int
-	if err := db.QueryRow("SELECT count(*) FROM lingdoc_project_audits WHERE id = ?", "historic-row").Scan(&remaining); err != nil {
+	const countHistoric = "SELECT count(*) FROM lingdoc_project_audits WHERE id = ?"
+	if err := db.QueryRow(countHistoric, "historic-row").Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
 	if remaining != 1 {
@@ -249,8 +251,12 @@ func TestAuditVersionMigrationDeclaresTheSameColumnsInBothDialects(t *testing.T)
 		}
 		return names
 	}
-	sqlite := columns(t, filepath.Join("..", "..", "..", "migrations", "sqlite", "000052_lingdoc_audit_version_fields.up.sql"))
-	postgres := columns(t, filepath.Join("..", "..", "..", "migrations", "versioned", "000131_lingdoc_audit_version_fields.up.sql"))
+	sqlitePath := filepath.Join("..", "..", "..", "migrations", "sqlite",
+		"000052_lingdoc_audit_version_fields.up.sql")
+	postgresPath := filepath.Join("..", "..", "..", "migrations", "versioned",
+		"000131_lingdoc_audit_version_fields.up.sql")
+	sqlite := columns(t, sqlitePath)
+	postgres := columns(t, postgresPath)
 	// The set of columns has to match; the order two files declare them in
 	// does not, because both dialects append the new columns at the end.
 	slices.Sort(sqlite)

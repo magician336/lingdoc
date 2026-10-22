@@ -524,6 +524,7 @@ func (s *Service) readWithAudit(
 	}
 	return err
 }
+
 func auditDecision(err error) string {
 	if err != nil {
 		return "deny"
@@ -567,6 +568,7 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 			return s.authorizeProject(ctx, tx, request)
 		})
 }
+
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
 	request := authorizationRequest(actor, id, AuthorizationRead, "")

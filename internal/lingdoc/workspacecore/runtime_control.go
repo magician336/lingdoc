@@ -530,7 +530,12 @@ const auditFailureErrorCode = "audit_write_failed"
 // The event carries no research content and no raw error text: only the
 // failed audit action, the tenant and project aliases the runtime event model
 // already uses, and a bounded error code.
-func (s *Service) EmitAuditFailureAlert(ctx context.Context, actor Actor, projectID, auditAction string, cause error) error {
+func (s *Service) EmitAuditFailureAlert(
+	ctx context.Context,
+	actor Actor,
+	projectID, auditAction string,
+	cause error,
+) error {
 	// Alert rules are read per project, so an event without a project scope
 	// can never match one. Publishing it would cost a transaction and change
 	// nothing.
