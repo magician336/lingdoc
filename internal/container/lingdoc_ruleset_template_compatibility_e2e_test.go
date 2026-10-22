@@ -25,9 +25,9 @@ import (
 // export and read back without being relabelled as a canonical binding.
 func TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartSQLite(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "g4-legacy-e2e.sqlite")
-	db := openG4E2ESQLite(t, dbPath)
-	applyG4E2ESQLiteSchema(t, db)
-	runG4LegacyTemplateE2E(t, db, func() *gorm.DB { return openG4E2ESQLite(t, dbPath) })
+	db := openRuleSetSQLite(t, dbPath)
+	applyRuleSetSQLiteSchema(t, db)
+	runTemplateCompatibilityScenario(t, db, func() *gorm.DB { return openRuleSetSQLite(t, dbPath) })
 }
 
 func TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres(t *tes
 		}
 	}()
 	open := func() *gorm.DB {
-		db, err := gorm.Open(postgres.Open(g4E2EPostgresDSN(dsn, schema)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+		db, err := gorm.Open(postgres.Open(postgresDSNWithSchema(dsn, schema)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,13 +66,13 @@ func TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres(t *tes
 		return db
 	}
 	db := open()
-	applyG4E2EPostgresSchema(t, db)
-	runG4LegacyTemplateE2E(t, db, open)
+	applyRuleSetPostgresSchema(t, db)
+	runTemplateCompatibilityScenario(t, db, open)
 }
 
-func runG4LegacyTemplateE2E(t *testing.T, db *gorm.DB, reopen func() *gorm.DB) {
+func runTemplateCompatibilityScenario(t *testing.T, db *gorm.DB, reopen func() *gorm.DB) {
 	t.Helper()
-	first := buildG4E2EHTTP(t, db)
+	first := buildRuleSetHTTPFixture(t, db)
 	request := func(router *gin.Engine, method, path, body, key string, want int) *httptest.ResponseRecorder {
 		t.Helper()
 		var reader io.Reader
@@ -92,9 +92,9 @@ func runG4LegacyTemplateE2E(t *testing.T, db *gorm.DB, reopen func() *gorm.DB) {
 		}
 		return res
 	}
-	decode := func(res *httptest.ResponseRecorder, target any) g4E2EEnvelope {
+	decode := func(res *httptest.ResponseRecorder, target any) ruleSetHTTPEnvelope {
 		t.Helper()
-		var envelope g4E2EEnvelope
+		var envelope ruleSetHTTPEnvelope
 		if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
 			t.Fatalf("decode HTTP response %q: %v", res.Body.String(), err)
 		}
@@ -203,8 +203,8 @@ func runG4LegacyTemplateE2E(t *testing.T, db *gorm.DB, reopen func() *gorm.DB) {
 		t.Fatalf("legacy export not verified: %+v", artifact)
 	}
 
-	closeG4E2EDatabase(t, db)
-	second := buildG4E2EHTTP(t, reopen())
+	closeRuleSetDatabase(t, db)
+	second := buildRuleSetHTTPFixture(t, reopen())
 	var readBack struct {
 		ID         string `json:"id"`
 		RuleSetRef *struct {
