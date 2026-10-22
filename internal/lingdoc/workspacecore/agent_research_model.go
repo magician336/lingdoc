@@ -102,6 +102,26 @@ type ProjectAssetVersion struct {
 	AssetID       string `json:"asset_id"`
 	AssetRevision int    `json:"asset_revision"`
 }
+
+// The research task's own bounds. They live here, next to the task they
+// belong to, and the research proposal contract refers to them instead of
+// restating them: two copies of a number are two numbers that drift, and a
+// proposal that decodes has to be savable as a task without being edited into
+// shape first.
+const (
+	// researchTaskMinimumQueries is the smallest number of queries a task may
+	// carry. One query does not define a search.
+	researchTaskMinimumQueries = 2
+	// researchTaskMaximumQueries is the largest number of queries a task may
+	// carry.
+	researchTaskMaximumQueries = 8
+	// researchTaskMaximumQueryLength is the longest a single query may be.
+	researchTaskMaximumQueryLength = 1000
+	// researchTaskMaximumTextLength is the longest a task's long text field may
+	// be: the goal, and the proposal's scope and expected output.
+	researchTaskMaximumTextLength = 6000
+)
+
 type ResearchTask struct {
 	ID             string       `json:"id"`
 	ProjectID      string       `json:"project_id"`

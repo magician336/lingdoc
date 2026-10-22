@@ -21,16 +21,6 @@ import (
 // structured output and in the turn's suggestions.
 const ResearchProposalKey = "task_card"
 
-// ResearchProposalMinimumQueries is the smallest number of queries a proposal
-// may carry. One query does not define a search, and the research task save
-// path refuses fewer than two as well, so a proposal that decodes can be
-// saved without being edited into shape first.
-const ResearchProposalMinimumQueries = 2
-
-// ResearchProposalMaximumQueries mirrors the research task's own bound: a
-// proposal may not carry more queries than a task may hold.
-const ResearchProposalMaximumQueries = 8
-
 // ResearchProposalFailureCode is the failure a turn carries when the model
 // stated a proposal that does not decode.
 //
@@ -61,48 +51,54 @@ const (
 	researchProposalGapExpectedEvidenceField   = "expected_evidence"
 )
 
-// ResearchProposalMaximumCandidateSources is the largest number of candidate
-// sources a proposal may name. A proposal says what it wants to read next; a
-// longer list is a dump, not a plan.
-const ResearchProposalMaximumCandidateSources = 20
+// The proposal's own bounds: the ones the research task does not have.
+//
+// The bounds the research task shares - how many queries, how long a query,
+// how long a task's long text - live with the task (agent_research_model.go)
+// and are referred to, not restated. What is left here is what only a
+// proposal has: how many candidate sources it may name, how long their
+// reasons and ids may be, how many reasons and gaps it may carry, and how
+// long those may be.
+const (
+	// researchProposalMaximumCandidateSources is the largest number of candidate
+	// sources a proposal may name. A proposal says what it wants to read next; a
+	// longer list is a dump, not a plan.
+	researchProposalMaximumCandidateSources = 20
+	// researchProposalMaximumCandidateSourceReason is the longest reason a
+	// candidate source may carry.
+	researchProposalMaximumCandidateSourceReason = 1000
+	// researchProposalMaximumCandidateSourceID is the longest source id a candidate
+	// source may carry.
+	researchProposalMaximumCandidateSourceID = 200
+	// researchProposalMaximumReasons is the largest number of reasons a proposal
+	// may carry. A proposal that cannot say why it chose this goal and this scope
+	// in a handful of lines has not said it at all.
+	researchProposalMaximumReasons = 10
+	// researchProposalMaximumReasonLength is the longest reason a proposal may
+	// carry.
+	researchProposalMaximumReasonLength = 1000
+	// researchProposalMaximumGaps is the largest number of gaps a proposal may
+	// carry. A longer list is a list of complaints, not a plan.
+	researchProposalMaximumGaps = 10
+	// researchProposalMaximumGapDescriptionLength is the longest "what is missing"
+	// a gap may carry.
+	researchProposalMaximumGapDescriptionLength = 1000
+	// researchProposalMaximumGapExpectedEvidenceLength is the longest "what would
+	// fill it" a gap may carry.
+	researchProposalMaximumGapExpectedEvidenceLength = 1000
+)
 
-// ResearchProposalMaximumCandidateSourceReason is the longest reason a
-// candidate source may carry.
-const ResearchProposalMaximumCandidateSourceReason = 1000
-
-// ResearchProposalMaximumCandidateSourceID is the longest source id a candidate
-// source may carry.
-const ResearchProposalMaximumCandidateSourceID = 200
-
-// ResearchProposalMaximumReasons is the largest number of reasons a proposal
-// may carry. A proposal that cannot say why it chose this goal and this scope
-// in a handful of lines has not said it at all.
-const ResearchProposalMaximumReasons = 10
-
-// ResearchProposalMaximumReasonLength is the longest reason a proposal may
-// carry.
-const ResearchProposalMaximumReasonLength = 1000
-
-// ResearchProposalMaximumGaps is the largest number of gaps a proposal may
-// carry. A longer list is a list of complaints, not a plan.
-const ResearchProposalMaximumGaps = 10
-
-// ResearchProposalMaximumGapDescriptionLength is the longest "what is missing"
-// a gap may carry.
-const ResearchProposalMaximumGapDescriptionLength = 1000
-
-// ResearchProposalMaximumGapExpectedEvidenceLength is the longest "what would
-// fill it" a gap may carry.
-const ResearchProposalMaximumGapExpectedEvidenceLength = 1000
-
-// ResearchProposalTaskFields are the six fields that make a research task.
+// researchProposalTaskFields are the six fields that make a research task.
 //
 // They are the shape of the assistant's editable task suggestion too: a
 // proposal is a research task plus three additions, and the assistant's card
 // is the task part on its own. The two cards have different rules - the
 // proposal contract judges the research agent's card and does not touch the
 // assistant's - so they are rendered apart.
-var ResearchProposalTaskFields = []string{
+//
+// These lists are read-only. Go has no immutable slice, so the ones that
+// leave this module are handed out as copies (see researchProposalFieldSet).
+var researchProposalTaskFields = []string{
 	researchProposalGoalField,
 	researchProposalQuestionTypeField,
 	researchProposalScopeField,
@@ -111,20 +107,26 @@ var ResearchProposalTaskFields = []string{
 	researchProposalExpectedOutputField,
 }
 
-// ResearchProposalAdditionFields are the three fields a proposal adds on top
+// researchProposalAdditionFields are the three fields a proposal adds on top
 // of the task fields: the candidate sources, the reasons and the gaps.
 //
 // They are the research agent's. The assistant's task suggestion has never
 // carried them, and asking for them would change what the assistant answers.
-var ResearchProposalAdditionFields = []string{
+var researchProposalAdditionFields = []string{
 	researchProposalCandidateSourcesField,
 	researchProposalReasonsField,
 	researchProposalGapsField,
 }
 
-// ResearchProposalFields are the field names of the whole shape, in the order
+// researchProposalFields are the field names of the whole shape, in the order
 // a prompt reads them. This list is the only place the shape is written down.
-var ResearchProposalFields = append(append([]string{}, ResearchProposalTaskFields...), ResearchProposalAdditionFields...)
+var researchProposalFields = append(append([]string{}, researchProposalTaskFields...), researchProposalAdditionFields...)
+
+// researchProposalFieldSet hands out the field names as a copy, so that no
+// caller can change the shape by writing to the list it was given.
+func researchProposalFieldSet() []string {
+	return append([]string{}, researchProposalFields...)
+}
 
 // ResearchProposalCandidateSource is one material the proposal wants to read
 // next, with the reason it wants to read it.
@@ -196,7 +198,7 @@ const (
 // shape out itself is a second copy of the contract, and two copies drift;
 // the prompt asks for this rendering instead.
 func ResearchProposalTaskShapeText() string {
-	return renderResearchProposalShape(ResearchProposalTaskFields, researchProposalTaskQueriesRule)
+	return renderResearchProposalShape(researchProposalTaskFields, researchProposalTaskQueriesRule)
 }
 
 // ResearchProposalShapeText renders the shape of a research proposal for a
@@ -210,7 +212,7 @@ func ResearchProposalTaskShapeText() string {
 // the plan looks like this, and a gap says what is missing and what would
 // fill it.
 func ResearchProposalShapeText() string {
-	return renderResearchProposalShape(ResearchProposalFields, researchProposalProposalQueriesRule)
+	return renderResearchProposalShape(researchProposalFields, researchProposalProposalQueriesRule)
 }
 
 // renderResearchProposalShape renders the given fields of the shape, with
@@ -283,23 +285,23 @@ func DecodeResearchProposal(raw json.RawMessage, pack AgentContextPackage) (Rese
 // task save path holds: what decodes here can be saved there without being
 // edited into shape first.
 func validateResearchProposal(proposal ResearchProposal) error {
-	if strings.TrimSpace(proposal.Goal) == "" || len(proposal.Goal) > 6000 {
+	if strings.TrimSpace(proposal.Goal) == "" || len(proposal.Goal) > researchTaskMaximumTextLength {
 		return ErrInvalidRequest
 	}
 	if len(proposal.QuestionType) > 2000 {
 		return ErrInvalidRequest
 	}
-	if strings.TrimSpace(proposal.Scope) == "" || len(proposal.Scope) > 6000 {
+	if strings.TrimSpace(proposal.Scope) == "" || len(proposal.Scope) > researchTaskMaximumTextLength {
 		return ErrInvalidRequest
 	}
-	if strings.TrimSpace(proposal.ExpectedOutput) == "" || len(proposal.ExpectedOutput) > 6000 {
+	if strings.TrimSpace(proposal.ExpectedOutput) == "" || len(proposal.ExpectedOutput) > researchTaskMaximumTextLength {
 		return ErrInvalidRequest
 	}
-	if len(proposal.Queries) < ResearchProposalMinimumQueries || len(proposal.Queries) > ResearchProposalMaximumQueries {
+	if len(proposal.Queries) < researchTaskMinimumQueries || len(proposal.Queries) > researchTaskMaximumQueries {
 		return ErrInvalidRequest
 	}
 	for _, query := range proposal.Queries {
-		if strings.TrimSpace(query) == "" || len(query) > 1000 {
+		if strings.TrimSpace(query) == "" || len(query) > researchTaskMaximumQueryLength {
 			return ErrInvalidRequest
 		}
 	}
@@ -324,22 +326,22 @@ func validateResearchProposal(proposal ResearchProposal) error {
 // finding. The count and the length of both columns are bounded like the
 // rest of the shape, so a proposal nobody can read is refused whole.
 func validateResearchProposalReasonsAndGaps(proposal ResearchProposal) error {
-	if len(proposal.Reasons) > ResearchProposalMaximumReasons {
+	if len(proposal.Reasons) > researchProposalMaximumReasons {
 		return ErrInvalidRequest
 	}
 	for _, reason := range proposal.Reasons {
-		if strings.TrimSpace(reason) == "" || len(reason) > ResearchProposalMaximumReasonLength {
+		if strings.TrimSpace(reason) == "" || len(reason) > researchProposalMaximumReasonLength {
 			return ErrInvalidRequest
 		}
 	}
-	if len(proposal.Gaps) > ResearchProposalMaximumGaps {
+	if len(proposal.Gaps) > researchProposalMaximumGaps {
 		return ErrInvalidRequest
 	}
 	for _, gap := range proposal.Gaps {
-		if strings.TrimSpace(gap.Description) == "" || len(gap.Description) > ResearchProposalMaximumGapDescriptionLength {
+		if strings.TrimSpace(gap.Description) == "" || len(gap.Description) > researchProposalMaximumGapDescriptionLength {
 			return ErrInvalidRequest
 		}
-		if strings.TrimSpace(gap.ExpectedEvidence) == "" || len(gap.ExpectedEvidence) > ResearchProposalMaximumGapExpectedEvidenceLength {
+		if strings.TrimSpace(gap.ExpectedEvidence) == "" || len(gap.ExpectedEvidence) > researchProposalMaximumGapExpectedEvidenceLength {
 			return ErrInvalidRequest
 		}
 	}
@@ -360,7 +362,7 @@ func validateResearchProposalReasonsAndGaps(proposal ResearchProposal) error {
 // available" would be lost, and the user would look for the missing source
 // in the wrong place.
 func validateResearchProposalCandidateSources(proposal ResearchProposal, pack AgentContextPackage) error {
-	if len(proposal.CandidateSources) > ResearchProposalMaximumCandidateSources {
+	if len(proposal.CandidateSources) > researchProposalMaximumCandidateSources {
 		return ErrInvalidRequest
 	}
 	allowed := map[string]bool{}
@@ -370,10 +372,10 @@ func validateResearchProposalCandidateSources(proposal ResearchProposal, pack Ag
 		}
 	}
 	for _, source := range proposal.CandidateSources {
-		if strings.TrimSpace(source.SourceID) == "" || len(source.SourceID) > ResearchProposalMaximumCandidateSourceID {
+		if strings.TrimSpace(source.SourceID) == "" || len(source.SourceID) > researchProposalMaximumCandidateSourceID {
 			return ErrInvalidRequest
 		}
-		if strings.TrimSpace(source.Reason) == "" || len(source.Reason) > ResearchProposalMaximumCandidateSourceReason {
+		if strings.TrimSpace(source.Reason) == "" || len(source.Reason) > researchProposalMaximumCandidateSourceReason {
 			return ErrInvalidRequest
 		}
 		if !allowed[source.SourceID] {
@@ -389,45 +391,17 @@ func validateResearchProposalCandidateSources(proposal ResearchProposal, pack Ag
 //   - present: the answer carries a proposal that decodes;
 //   - absent: the answer carries no proposal at all;
 //   - invalid: the answer carries a proposal that does not decode.
+//
+// The interface reads the state off the turn's own fields: the proposal in
+// the turn's suggestions, and the failure code the server leaves behind when
+// it refused one. There is no second reading of a stored turn - a client
+// cannot say which state a proposal is in, and only the server that judged
+// it knows.
 const (
 	ResearchProposalStatePresent = "present"
 	ResearchProposalStateAbsent  = "absent"
 	ResearchProposalStateInvalid = "invalid"
 )
-
-// ResearchProposalStateForTurn judges, from the persisted turn alone, which of
-// the three states the turn's answer is in. The stored turn is the only
-// source: a client cannot say which state a proposal is in.
-//
-// The turn carries the context it was given, so the judgement also asks
-// whether the proposal's candidate sources were readable in that very turn.
-//
-// A turn whose proposal the server refused says so in its failure code: the
-// refused proposal never reached the turn, so the turn itself cannot be
-// re-judged into "present", and it must not be mistaken for a turn that
-// simply carried no proposal.
-func ResearchProposalStateForTurn(turn AgentTurn) (string, error) {
-	if turn.FailureCode == ResearchProposalFailureCode {
-		return ResearchProposalStateInvalid, nil
-	}
-	if turn.Agent != AgentResearch {
-		// The contract judges the research agent's proposal. The assistant's
-		// editable task suggestion is a different card with its own rules,
-		// and this contract does not touch it.
-		return ResearchProposalStateAbsent, nil
-	}
-	raw, err := researchProposalFromSuggestions(turn.Suggestions)
-	if err != nil {
-		return "", err
-	}
-	if ResearchProposalAbsent(raw) {
-		return ResearchProposalStateAbsent, nil
-	}
-	if _, err = DecodeResearchProposal(raw, turn.Context); err != nil {
-		return ResearchProposalStateInvalid, nil
-	}
-	return ResearchProposalStatePresent, nil
-}
 
 // researchProposalFromSuggestions reads the proposal out of a turn's
 // suggestions, which carry the model's whole structured answer.

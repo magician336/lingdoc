@@ -254,11 +254,11 @@ func validAgentMode(mode string) bool {
 }
 
 func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, key string, input SaveResearchTaskInput) (json.RawMessage, int, bool, error) {
-	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > 6000 || len(input.Queries) < 2 || len(input.Queries) > 8 || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 {
+	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > researchTaskMaximumTextLength || len(input.Queries) < researchTaskMinimumQueries || len(input.Queries) > researchTaskMaximumQueries || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	for _, query := range input.Queries {
-		if strings.TrimSpace(query) == "" || len(query) > 1000 {
+		if strings.TrimSpace(query) == "" || len(query) > researchTaskMaximumQueryLength {
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}

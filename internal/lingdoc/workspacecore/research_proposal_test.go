@@ -238,40 +238,47 @@ func TestResearchProposalDoesNotBorrowTheRetrievalLevelVocabulary(t *testing.T) 
 	}
 }
 
-func TestResearchProposalStatesArePresentAbsentAndInvalid(t *testing.T) {
-	legal := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
-	state, err := ResearchProposalStateForTurn(legal)
-	if err != nil || state != ResearchProposalStatePresent {
-		t.Fatalf("legal proposal is not present: %q %v", state, err)
+// A5/A6: the three states are told apart by the turn's own fields, not by a
+// second reading of the stored turn. A turn that carries a proposal, a turn
+// that carries none and stays a completed answer, and a turn whose proposal
+// the server refused - which says so in its failure code while the answer
+// stays.
+func TestAStoredTurnSaysItsProposalStateThroughItsOwnFields(t *testing.T) {
+	f := newAgentFixture(t, false)
+	present := proposalTurn(t, f, AgentResearch, "pf5-state-present", &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"})
+	if present.FailureCode != "" || strings.TrimSpace(present.Reply) == "" {
+		t.Fatalf("a present proposal is not a completed answer: %+v", present)
 	}
-	absent := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r"}`)}
-	state, err = ResearchProposalStateForTurn(absent)
-	if err != nil || state != ResearchProposalStateAbsent {
-		t.Fatalf("missing proposal is not absent: %q %v", state, err)
+	if !proposalTravelled(t, present) {
+		t.Fatal("a present proposal did not travel with its turn")
 	}
-	invalid := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a"],"expected_output":"o"}}`)}
-	state, err = ResearchProposalStateForTurn(invalid)
-	if err != nil || state != ResearchProposalStateInvalid {
-		t.Fatalf("broken proposal is not invalid: %q %v", state, err)
+	absent := proposalTurn(t, f, AgentResearch, "pf5-state-absent", &proposalModelStub{structured: json.RawMessage(`{"reply":"我这一轮没有给建议。"}`), reply: "我这一轮没有给建议。"})
+	if absent.FailureCode != "" || strings.TrimSpace(absent.Reply) == "" {
+		t.Fatalf("an absent proposal is not a completed answer: %+v", absent)
+	}
+	if proposalTravelled(t, absent) {
+		t.Fatal("an absent proposal travelled with its turn")
+	}
+	refused := proposalTurn(t, f, AgentResearch, "pf5-state-refused", &proposalModelStub{structured: json.RawMessage(`{"reply":"我给了一条建议。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`), reply: "我给了一条建议。"})
+	if refused.FailureCode != ResearchProposalFailureCode {
+		t.Fatalf("a refused proposal did not say so: %+v", refused)
+	}
+	if strings.TrimSpace(refused.Reply) == "" {
+		t.Fatalf("a refused proposal cost the user the answer: %+v", refused)
+	}
+	if proposalTravelled(t, refused) {
+		t.Fatal("a refused proposal travelled with its turn")
 	}
 }
 
-// A5/A6: a stored turn says which state it is in, and the refused proposal is
-// still readable as "invalid" after the fact: the server took it out of the
-// suggestions, so only the turn's own record can say that there was one.
-func TestResearchProposalStateOfAStoredTurnTellsTheThreeStatesApart(t *testing.T) {
-	present := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
-	if state, err := ResearchProposalStateForTurn(present); err != nil || state != ResearchProposalStatePresent {
-		t.Fatalf("the stored turn is not present: %q %v", state, err)
+// proposalTravelled reports whether the turn's suggestions carry the proposal.
+func proposalTravelled(t *testing.T, turn AgentTurn) bool {
+	t.Helper()
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil {
+		t.Fatal(err)
 	}
-	absent := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r"}`)}
-	if state, err := ResearchProposalStateForTurn(absent); err != nil || state != ResearchProposalStateAbsent {
-		t.Fatalf("the stored turn is not absent: %q %v", state, err)
-	}
-	refused := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", FailureCode: ResearchProposalFailureCode, Suggestions: json.RawMessage(`{"reply":"r"}`)}
-	if state, err := ResearchProposalStateForTurn(refused); err != nil || state != ResearchProposalStateInvalid {
-		t.Fatalf("the refused proposal is not invalid: %q %v", state, err)
-	}
+	return !ResearchProposalAbsent(raw)
 }
 
 // A1/A2: the shape has exactly one owner. The contract module declares it, the
@@ -338,18 +345,18 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 	// for the first one only, so a rendering that grew the second's columns
 	// would change what the assistant answers.
 	task := ResearchProposalTaskShapeText()
-	for _, name := range ResearchProposalTaskFields {
+	for _, name := range researchProposalTaskFields {
 		if !strings.Contains(task, name) {
 			t.Fatalf("the rendered task shape does not mention %s", name)
 		}
 	}
-	for _, name := range ResearchProposalAdditionFields {
+	for _, name := range researchProposalAdditionFields {
 		if strings.Contains(task, name) {
 			t.Fatalf("the rendered task shape carries the proposal's %s", name)
 		}
 	}
 	proposal := ResearchProposalShapeText()
-	for _, name := range ResearchProposalFields {
+	for _, name := range researchProposalFields {
 		if !strings.Contains(proposal, name) {
 			t.Fatalf("the rendered proposal shape does not mention %s", name)
 		}
@@ -386,7 +393,7 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 
 // ResearchProposalFieldSet is the field names the contract owns.
 func ResearchProposalFieldSet() []string {
-	return append([]string{}, ResearchProposalFields...)
+	return researchProposalFieldSet()
 }
 
 // ResearchProposalCandidateSourceFieldSet is the field names the candidate
@@ -697,8 +704,8 @@ func TestAbsentResearchProposalKeepsTheReplyAndCarriesNoProposal(t *testing.T) {
 // rules: this contract does not change what the assistant may answer.
 //
 // A16: the assistant's answer still completes, still carries what the model
-// said, and is not judged as a research proposal - not even by the state
-// this contract derives from the stored turn.
+// said, and is not judged as a research proposal - the contract leaves the
+// assistant's card alone, the way it did before the proposal arrived.
 func TestAssistantTaskSuggestionIsNotJudgedByTheProposalContract(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我给了一条建议。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`
@@ -713,9 +720,6 @@ func TestAssistantTaskSuggestionIsNotJudgedByTheProposalContract(t *testing.T) {
 	raw, err := researchProposalFromSuggestions(turn.Suggestions)
 	if err != nil || ResearchProposalAbsent(raw) {
 		t.Fatalf("the assistant's own suggestion was taken away: %s %v", raw, err)
-	}
-	if state, err := ResearchProposalStateForTurn(turn); err != nil || state != ResearchProposalStateAbsent {
-		t.Fatalf("the assistant's card was judged as a research proposal: %q %v", state, err)
 	}
 }
 
@@ -801,18 +805,62 @@ func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 // A8: a source whose permission was taken away never reaches the model, so
 // the turn is refused before the model is asked - and a proposal that names it
 // is refused as well.
+//
+// The stub is installed as the turn's model, so "the model was not asked" is
+// a measurement of this turn and not a tautology: a stub that was never
+// plugged in would count zero calls whatever the server did.
 func TestResearchProposalCitingARevokedSourceIsRefused(t *testing.T) {
 	f := newAgentFixture(t, false)
 	source := f.source.sources["source-1"]
 	source.ModelUseAllowed = false
 	f.source.sources["source-1"] = source
 	stub := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我整理了一条检索计划。"}
+	f.svc.agentRuntime.Model = stub
+	if f.svc.agentRuntime.Model != stub {
+		t.Fatal("the stub is not the model this turn would ask, so its call count would prove nothing")
+	}
 	_, _, _, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, "pf5-revoked-session", "pf5-revoked-turn", AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我找合成材料的资料"})
 	if !errors.Is(err, ErrConsentRequired) {
 		t.Fatalf("a revoked source was accepted into the turn's context: %v", err)
 	}
 	if stub.calls != 0 {
 		t.Fatalf("the model was asked about a revoked source: %d calls", stub.calls)
+	}
+}
+
+// A8: revocation reaches a stored proposal where the material is actually
+// used - the research task the proposal became. The run re-checks the
+// material scope before every query round, so a source whose permission was
+// taken away stops the run instead of being read.
+//
+// This is where revocation actually takes effect for a stored proposal. The
+// stored turn keeps the proposal it was given; what stops being readable is
+// the material, at the point where somebody wants to use it.
+func TestRevokedSourceStopsTheRunOfAProposalThatBecameAResearchTask(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "pf5-revoked-task", SaveResearchTaskInput{VersionExpectation: f.expectation(0), Goal: "弄清合成材料", Scope: "只查项目资料", Queries: []string{"定义", "限制"}, ProviderID: "synthetic-provider", AssetIDs: []string{"asset-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "pf5-revoked-task-approve", ConfirmationInput{VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "人工确认合成范围"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	// The permission is taken away after the task was saved and approved.
+	f.source.denied["source-1"] = true
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "pf5-revoked-task-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "stale" || run.FailureCode != "asset_scope_changed" {
+		t.Fatalf("a revoked source did not stop the run: %+v", run)
+	}
+	if f.search.calls != 0 {
+		t.Fatalf("the search ran over a revoked source: %d calls", f.search.calls)
 	}
 }
 
