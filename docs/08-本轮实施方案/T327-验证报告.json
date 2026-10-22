@@ -1,8 +1,10 @@
 {
   "mode": "static-and-suite",
-  "note": "PF-3 审计告警接线与 AuditEvent 字段（票 #327，Spec #130）。两件事：读类审计写入失败时，除了记日志，还要在 G6 运行事件里留下一条 Category=audit 的事件并被告警规则命中；AuditEvent 补 target_version / project_revision 两个一等字段并真正落库。设计要点：告警走自己的事务（业务事务可能正因这次失败而回滚，告警写在它内部会在最需要的时候一起消失）；读类与写类分成两个接缝（readWithAudit 吞掉审计错误并发告警，recordAuditInTransaction 继续返回错误，关键写仍 fail-closed）；告警复用 RecordRuntimeOperationContext，但类别必须显式给出（自动推断产不出 audit）；告警只带固定错误码，不带原始错误文本与审计内容。字段走独立列而不是 details_json，两方言同名不同编号（sqlite/000052、versioned/000131）。",
-  "head": "639c45ce",
-  "base": "c4c9ac93",
+  "note": "PF-3 审计告警接线与 AuditEvent 字段（票 #327，Spec #130）。两件事：读类审计写入失败时，除了记日志，还要在 G6 运行事件里留下一条 Category=audit 的事件并被告警规则命中；AuditEvent 补 target_version / project_revision 两个一等字段并真正落库。设计要点：告警走自己的事务（业务事务可能正因这次失败而回滚，告警写在它内部会在最需要的时候一起消失）；读类与写类分成两个接缝（readWithAudit 吞掉审计错误并发告警，recordAuditInTransaction 继续返回错误，关键写仍 fail-closed）；告警复用 RecordRuntimeOperationContext，但类别必须显式给出（自动推断产不出 audit）；告警只带固定错误码，不带原始错误文本与审计内容。字段走独立列而不是 details_json，两方言同名不同编号（sqlite/000052、versioned/000131）。本轮还实测出并修复了「加两列打红一批夹具」的回归（见 AC-327-16）。",
+  "head": "7c000321",
+  "base": "35722299",
+  "head_note": "证据产出于 7c000321 这棵树。其后的提交只改文档与证据，`git diff 7c000321 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
+  "base_note": "origin/main 在本轮基线合并后的尖端（35722299）。分支点为 c4c9ac93，合并提交 65b33531 只解了路径图一处内容冲突，代码零改动（`git diff e54a5bd0 65b33531 -- '*.go' '*.ts' '*.vue' '*.js' '*.json' '*.sql'` 为空）。",
   "passed": [
     {
       "id": "AC-327-01 读审计失败 → 运行事件",
@@ -22,7 +24,7 @@
     {
       "id": "AC-327-04 告警自身失败不阻塞那次读",
       "status": "passed",
-      "evidence": "TestAlertWriteFailureDoesNotBlockTheRead：再叠一个 lingdoc_g6_records 上的 trigger，让运行事件与告警都写不进去；Authorize 仍成功，失败只进日志（runtime_control.go:552 的 EmitAuditFailureAlert 记录 error=constraint failed 后返回 nil）。"
+      "evidence": "TestAlertWriteFailureDoesNotBlockTheRead：再叠一个 lingdoc_g6_records 上的 trigger，让运行事件与告警都写不进去；Authorize 仍成功，失败只进日志（runtime_control.go 的 EmitAuditFailureAlert 记录 error=constraint failed 后返回 nil）。"
     },
     {
       "id": "AC-327-05 告警内容不含审计内容与研究正文",
@@ -32,7 +34,7 @@
     {
       "id": "AC-327-06 关键写仍 fail-closed，且不发 fail-open 告警",
       "status": "passed",
-      "evidence": "未改写路径：recordAuditInTransaction 仍返回错误，operationcore 的允许分支（operationcore.go:458-463）仍走 AuditWriteFailed。既有故障注入回归组全绿：workspacecore 整包 `go test -p 1 -count=1 ./internal/lingdoc/workspacecore/` → ok（29.7s），membership 整包 → ok（2.0s）。"
+      "evidence": "未改写路径：recordAuditInTransaction 仍返回错误，operationcore 的允许分支仍走 AuditWriteFailed。既有故障注入回归组全绿：workspacecore 整包 `go test -p 1 -count=1 ./internal/lingdoc/workspacecore/` → ok（41.0s，含 PostgreSQL 方言），membership 整包 → ok（2.6s）。"
     },
     {
       "id": "AC-327-07 AuditEvent 两字段落库并读回",
@@ -52,34 +54,48 @@
     {
       "id": "AC-327-10 负向验证：去掉落库与去掉显式类别都必须变红",
       "status": "passed",
-      "evidence": "四条结构断言各做过一次阴性验证并复原：① 去掉 RecordAudit 里的 TargetVersion 写入 → TestAuditEventVersionFieldsRoundTrip 变红并指名「the audit event lost its version facts」；② 迁移回填历史行 → 迁移彩排变红；③ 去掉 EmitAuditFailureAlert 里显式设置的 trace.Category=\"audit\" → TestAuditFailurePublishesRuntimeEventAndAlert 变红，打印出事件实际退化成 Category=request，说明自动推断产不出 audit；④ 让 readWithAudit 把审计错误返回而不是记住 → 两个 fail-open 用例同时变红并指名「the audit failure stopped the read」。四次复原后整包复跑为绿。"
+      "evidence": "五条结构断言各做过一次阴性验证并复原：① 去掉 RecordAudit 里的 TargetVersion 写入 → TestAuditEventVersionFieldsRoundTrip 变红并指名「the audit event lost its version facts」；② 迁移回填历史行 → 迁移彩排变红；③ 去掉 EmitAuditFailureAlert 里显式设置的 trace.Category=\"audit\" → TestAuditFailurePublishesRuntimeEventAndAlert 变红，打印出事件实际退化成 Category=request，说明自动推断产不出 audit；④ 让 readWithAudit 把审计错误返回而不是记住 → 两个 fail-open 用例同时变红并指名「the audit failure stopped the read」；⑤ 去掉 PostgreSQL 用例里的失败注入 → TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres 变红并指名「the audit failure produced no runtime event on PostgreSQL」（此时读成功、无事件）。五次复原后整包复跑为绿。"
     },
     {
       "id": "AC-327-11 迁移链与登记处一致",
       "status": "passed",
-      "evidence": "`python scripts/lingdoc_parallel_surfaces.py` → 6 parallel work faces validated（PF-3 补齐 14 条路径后与其余五面零重叠）。`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` → Ran 322 tests / OK，命名棘轮自检「210 code files, 251 numbered identifiers, 0 legacy files against a baseline of 0/0/0」——本轮新增的两个测试文件与两个迁移文件都没有引入编号。"
+      "evidence": "`python scripts/lingdoc_parallel_surfaces.py` → 6 parallel work faces validated（PF-3 按实测补到 20 条路径后与其余五面零重叠）。`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` → Ran 322 tests / OK，命名棘轮自检「210 code files, 251 numbered identifiers, 0 legacy files against a baseline of 0/0/0」——本轮新增的三个测试文件与两个迁移文件都没有引入编号。"
     },
     {
       "id": "AC-327-12 lint 与格式",
       "status": "passed",
-      "evidence": "`golangci-lint run --new-from-rev=origin/main ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` → 0 issues（首轮 9 issues：lll×8 与 gofumpt×1，逐条修掉并以 style 提交）。`gofmt -l` 对改动文件为空。"
+      "evidence": "`golangci-lint run --new-from-rev=origin/main ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/ ./internal/lingdoc/workspace/ ./internal/container/ ./internal/database/ ./internal/router/` → 0 issues（首轮 9 issues：lll×8 与 gofumpt×1，逐条修掉并以 style 提交）。`gofmt -l` 对全部改动文件为空。"
     },
     {
       "id": "AC-327-13 既有迁移历史彩排在加列后仍成立",
       "status": "passed",
       "evidence": "pr150 的迁移历史彩排演练一个停在 000043 之前的旧库，当前代码写新列时那个旧库缺列，种数据前必须先把审计表带到当前形状。修法是在 pr150CheckSatisfiedMigration 里按 GORM 的 Migrator().HasColumn 判断，缺列时跑生产链里那份 audit_version_fields 迁移（SQLite 与 PostgreSQL 各一份）。SQLite 子用例 `go test -run 'TestPR150SQLiteSatisfiedMigrationPreservesFullWorkflowHistory'` → PASS；PostgreSQL 子用例 → PASS。"
+    },
+    {
+      "id": "AC-327-14 PostgreSQL 上「审计失败 → 告警」的端到端行为",
+      "status": "passed",
+      "evidence": "新增 TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres（audit_failure_alert_test.go）：隔离 PostgreSQL 17.11（127.0.0.1:55437）上用 PL/pgSQL 的 BEFORE INSERT trigger + RAISE EXCEPTION 让审计写失败，断言仍产出 Category=audit / Status=failed / ErrorCode=audit_write_failed 的运行事件，且 Signal=\"audit/failed\" 的规则恰好命中一条告警（Severity=P2 / Action=notify），事件内容同样不含 authorization/details/spec/body。阴性验证见 AC-327-10 ⑤。**同时实测到方言差异**：PG 上失败的审计写让整个事务 aborted，读随之失败（`commit unexpectedly resulted in rollback`），但告警走自己的事务，仍然发出——这正是 #387 缺口的形状，两件事不冲突。"
+    },
+    {
+      "id": "AC-327-15 加列打红的夹具全部收口",
+      "status": "passed",
+      "evidence": "本机全仓 `go test` 跑出真实回归（CI 的仓库级作业被门禁缩面跳过，没有抓到）：29 条用例因审计表缺两列而失败，失败被 HTTP 层转成不透明的 500。逐条修完并复跑：`internal/lingdoc/workspace` ok（196.4s）、`internal/lingdoc/workspacecore` ok（41.0s）、`internal/lingdoc/membership` ok（2.6s）、`internal/database` ok（22.3s）、`internal/router` ok（1.4s）、`internal/container` ok（7.8s）。修法有三类：① internal/lingdoc/workspace/ 的三个夹具手抄了审计表列清单 → 改为主动应用生产迁移（新增 audit_event_table_fixture_test.go）；② 跑迁移子集的夹具（workspace/save_chapter_policy_test.go、container/lingdoc_ruleset_delivery_e2e_test.go、router/lingdoc_integration_test.go 的两份清单）子集停在 000052/000131 之前 → 把新迁移补进子集；③ internal/database 的 expectedSQLiteMigrationVersion 由 51 提到 52。"
+    },
+    {
+      "id": "AC-327-16 仓库级 Go 套件",
+      "status": "passed",
+      "evidence": "本机全仓 `go list ./...`（去掉 docreader）123 个包的 `go vet` 全部通过；`go test` 的失败清单见 not_run 中的「本机全仓既有失败」，全部在 origin/main 基线上原样复现。本轮改动面（internal/lingdoc/**、internal/container、internal/database、internal/router）全部为绿。"
+    },    {
+      "id": "AC-327-17 CI 逐 check 结论",
+      "status": "passed",
+      "evidence": "逐 check 读结论，不按 workflow 级别绿推断：必需检查 `LingDoc PR gate` 在每个 head 上都真的跑了，内部对本次改动的两个包执行 `go test -race -count=1 -json ./internal/lingdoc/membership/... ./internal/lingdoc/workspacecore/...` → `PROVIDERS: success`。仓库级矩阵（app.yml 的 `Format, vet, test, and build`、frontend 的 `Test, type-check, and build`、Docker、mock、F01、integration、workspace-concurrency、golangci-lint）在基线合并那一次 push 上被门禁按「贡献面内容未变」缩面跳过（判定层输出 surface_changed=false / base_moved=true），在本轮改到 Go 面的 push 上重新参与。跳过不是通过：每一次缩面都在门禁产物里写明理由。"
     }
   ],
   "not_run": [
     {
-      "id": "go test -race ./...",
-      "reason": "本机有兄弟会话并行，-race 的资源占用会互相干扰。CI 的 PR gate 会在 Linux 上跑这一层。",
+      "id": "go test -race ./...（全仓本地）",
+      "reason": "本机有兄弟会话并行，-race 的资源占用会互相干扰；但这一层在 Linux 上由 CI 的 PR gate 覆盖，且覆盖到本次改动的两个包（AC-327-17）。",
       "unblock": "在无其它会话占用的机器上跑 `go test -race -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/`。"
-    },
-    {
-      "id": "PostgreSQL 上「审计失败 → 告警」的端到端行为",
-      "reason": "本轮的告警用例用 SQLite 的 RAISE(ABORT) trigger 注入失败，PostgreSQL 需要 PL/pgSQL 的 BEFORE INSERT trigger 才能做同样的注入，本轮没有写 PG 版用例。已实测的是 PG 上的迁移链、既有 PG 用例与 PR150 PG 彩排。",
-      "unblock": "在隔离 PostgreSQL 上补一个 BEFORE INSERT ... RAISE EXCEPTION 的 trigger 用例，断言审计失败时 PG 上仍然产出 Category=audit 的运行事件。"
     },
     {
       "id": "真实生产迁移与回滚",
@@ -90,12 +106,17 @@
       "id": "浏览器 / 前端验收",
       "reason": "本轮不碰前端：G6 的运行指标与告警面板归 PF-1（已交付），PF-3 只提供服务端的事件与告警。",
       "unblock": "面板侧消费审计失败告警时另开验收。"
+    },
+    {
+      "id": "本机全仓的 12 条既有失败（非本票引入）",
+      "reason": "internal/agent/tools 6 条（MCP schema 用 `file://D:\\...` 形式的 URI 在 Windows 上不合法；读文件沙箱、shell stdin、skill 的可执行位与 pip/uv/ensurepip 恢复路径在 Windows 上没有对应语义）与 internal/application/service 6 条（SQLite 临时目录在 Windows 上仍被占用，TempDir RemoveAll 失败；skill 同样涉及可执行位与 pip）。这 12 条在 origin/main 基线副本（.scratch/baseline-main，origin/main 的归档）上**逐条原样复现**，与本票无关——本分支没有触碰这两个包，它们也不 import 本次改动的包。",
+      "unblock": "CI 在 ubuntu 上跑同一套，是权威判据；本机 Windows 上的这 12 条不阻塞。"
     }
   ],
   "known_limits": [
     {
       "id": "PostgreSQL 上普通读的 fail-open 不成立",
-      "detail": "读类审计写在调用方事务内，PostgreSQL 上事务内 INSERT 失败会让整个事务 aborted，提交变成回滚，于是读本身失败。SQLite 上同一命题成立（RAISE(ABORT) 只撤销该语句）。2026-10-22 在隔离 PostgreSQL 17.11 上实测：GetProject 与 Authorize 都返回 commit unexpectedly resulted in rollback。已开 #387 跟踪「把读类审计移出业务事务」，本票不修。**这一条不影响告警接线**：recordAuditInTransaction 捕获的是原始错误，告警在两种方言上都会触发。"
+      "detail": "读类审计写在调用方事务内，PostgreSQL 上事务内 INSERT 失败会让整个事务 aborted，提交变成回滚，于是读本身失败。SQLite 上同一命题成立（RAISE(ABORT) 只撤销该语句）。2026-10-22 在隔离 PostgreSQL 17.11 上实测：GetProject 与 Authorize 都返回 commit unexpectedly resulted in rollback；2026-10-23 的 PG 端告警用例再次实测到同一形状。已开 #387 跟踪「把读类审计移出业务事务」，本票不修。**这一条不影响告警接线**：recordAuditInTransaction 捕获的是原始错误，告警在两种方言上都会触发（AC-327-14 已实测）。"
     },
     {
       "id": "告警依赖 GORM 事务端口",
@@ -112,6 +133,15 @@
     {
       "id": "AuditEvent 仍有 5 个字段不落库",
       "detail": "TenantID / UserID / Role / Capability / Decision 在 GORM 路径上仍不落库（本次只补了 2 个字段）。读侧 ListAuditEvents 的角色过滤因此仍只靠 item.ActorID（item.UserID 恒空）。这是历史欠账，本票显式记账不掩盖，见 ADR 0012 与开发计划 §7 U1。"
+    },
+    {
+      "id": "夹具各自持有一份 schema 形状",
+      "detail": "本轮实测：给审计表加两列，同时打红了 6 处夹具（3 处手抄列清单、3 处跑迁移子集）——失败还被 HTTP 层转成不透明的 500。本轮已逐处修掉，但「测试夹具自己持有一份生产 schema」这个机制还在：下一次给任何表加列仍会重演。已列入合并前复评的重构动作（§10.3 第 2 条）。",
+      "unblock": "把「夹具应用生产迁移」变成默认约定，并为审计表补一条「模型字段集合 == 表列集合」的守护测试。"
+    },
+    {
+      "id": "CI 的仓库级矩阵会按贡献面缩面",
+      "detail": "基线合并那一次 push 的判定层输出 surface_changed=false / base_moved=true，于是 app.yml 的仓库级套件、frontend、lint、mock、并发与集成作业全部是 skipped（不是 passed）。本轮把 Go 面真正改掉之后，仓库级矩阵才重新参与。因此「CI 全绿」这句话必须逐 check 看结论，不能按 workflow 级别推断；本轮的真实回归也是靠本机全仓跑才抓到的。"
     }
   ]
 }

@@ -181,17 +181,17 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 
 | 验收项 | 用户可见入口 | 领域不变量/事务边界 | 成功 | 失败/权限/恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 |---|---|---|---|---|---|---|---|
-| 读审计失败 → 运行事件 | `GET /runtime/events` | I1 I2 I3 I7 | 产生 `Category=audit`/`Status=failed` 事件 | 越权请求仍拒绝 | 独立事务，业务回滚后事件仍在 | `audit_failure_alert_test.go` | TODO |
-| 读审计失败 → 告警命中 | `POST /runtime/alert-rules` + `GET /runtime/alerts` | I7 | 建 `Signal=audit/failed` 规则后产生 `RuntimeAlert` | 无规则时不假装有 | 同上 | 同上 | TODO |
-| 告警内容无敏感字段 | `GET /runtime/events` | I4 | 无正文/摘录/文件/密钥 | —— | —— | 同上（sentinel） | TODO |
-| 审计内容无敏感字段 | `GET /projects/:id/audit` | I4 | 扩到摘录/文件/密钥（现有断言只覆盖正文） | —— | —— | `audit_event_version_fields_test.go` | TODO |
-| 关键写仍 fail-closed | ChangeSet apply / 正式导出 / Owner 转让 | I5 | 业务+审计原子成功 | 审计失败 ⇒ 全回滚、无部分版本 | 无重复副作用、可安全重试 | 复用既有十余组故障注入测试（`fault_injection_test.go:83`、`change_set_test.go:1317`、`membership/auth_review_test.go:266`、`workspace/full_workflow_delivery_regression_test.go:389` 等） | TODO |
-| 不误接上报路径 | —— | I8 | `RecordRuntimeEvent` 不产生告警 | —— | —— | 守护测试 + 复用 `impact_g6_extended_test.go:218` | TODO |
-| `AuditEvent` 两字段落库 | `GET /projects/:id/audit` | I6 | 写入后读回带值 | 历史行不被回改 | 迁移 + 重启读回 | `audit_event_version_fields_test.go` + 迁移彩排 | TODO |
-| 迁移两方言一致 | —— | I6 | SQLite 与 PostgreSQL 列集合一致 | down 可回退 | 迁移前后逐字比对 | 迁移彩排测试 | TODO |
-| PG 上普通读真 fail-open | 真实 PG 演练 | I1 | 读成功 | **实测不成立**（已转 [#387](https://github.com/magician336/lingdoc/issues/387)） | 隔离级别 | 隔离实例实测（§5 B1） | **FAIL（已实测）** —— 不在本票范围 |
+| 读审计失败 → 运行事件 | `GET /runtime/events` | I1 I2 I3 I7 | 产生 `Category=audit`/`Status=failed` 事件 | 越权请求仍拒绝 | 独立事务，业务回滚后事件仍在 | `audit_failure_alert_test.go`（SQLite）+ `TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`（PG 实测） | **PASS** |
+| 读审计失败 → 告警命中 | `POST /runtime/alert-rules` + `GET /runtime/alerts` | I7 | 建 `Signal=audit/failed` 规则后产生 `RuntimeAlert` | 无规则时不假装有 | 同上 | 同上（规则命中后恰好 1 条告警，Severity/Action 与规则一致；SQLite 与 PG 各一份） | **PASS** |
+| 告警内容无敏感字段 | `GET /runtime/events` | I4 | 无正文/摘录/文件/密钥 | —— | —— | 同上（sentinel 断言：正文/摘录/文件/密钥均不出现） | **PASS** |
+| 审计内容无敏感字段 | `GET /projects/:id/audit` | I4 | 扩到摘录/文件/密钥（现有断言只覆盖正文） | —— | —— | `audit_event_version_fields_test.go` + `audit_failure_alert_test.go` | **PASS** |
+| 关键写仍 fail-closed | ChangeSet apply / 正式导出 / Owner 转让 | I5 | 业务+审计原子成功 | 审计失败 ⇒ 全回滚、无部分版本 | 无重复副作用、可安全重试 | 复用既有十余组故障注入测试（`fault_injection_test.go:83`、`change_set_test.go:1317`、`membership/auth_review_test.go:266`、`workspace/full_workflow_delivery_regression_test.go:389` 等） | **PASS** |
+| 不误接上报路径 | —— | I8 | `RecordRuntimeEvent` 不产生告警 | —— | —— | 守护测试 + 复用 `impact_g6_extended_test.go:218` | **PASS** |
+| `AuditEvent` 两字段落库 | `GET /projects/:id/audit` | I6 | 写入后读回带值 | 历史行不被回改 | 迁移 + 重启读回 | `audit_event_version_fields_test.go` + 迁移彩排（SQLite 与 PG 各一份） | **PASS** |
+| 迁移两方言一致 | —— | I6 | SQLite 与 PostgreSQL 列集合一致 | down 可回退 | 迁移前后逐字比对 | 迁移彩排测试 | **PASS** |
+| PG 上普通读真 fail-open | 真实 PG 演练 | I1 | 读成功 | **实测不成立**（已转 [#387](https://github.com/magician336/lingdoc/issues/387)） | 隔离级别 | 隔离实例实测（§5 B1）；PG 端告警用例同时实测到「读失败但告警仍发出」 | **FAIL（已实测）** —— 不在本票范围 |
 
-矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-13 全部 passed（含四条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围；`go test -race` 与 PostgreSQL 端的告警注入用例为 not run，解除条件写在验证报告里。
+矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-14 全部 passed（含五条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围。**PostgreSQL 端的告警注入用例已于 2026-10-23 补齐并通过**（`TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`）；`go test -race` 全仓本地仍未跑（兄弟会话并行），但 CI 的 PR gate 已在当前 head 上对本次改动的两个包跑了 `go test -race`（`PROVIDERS: success`）。
 
 ## 5. 实施切片
 
@@ -248,6 +248,30 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 ### B3 切片 S3：证据与文档同步
 
 `docs/08-本轮实施方案/T327-验证报告.json`｜`docs/adr/0011-audit-failure-alert-on-its-own-transaction.md`｜`docs/adr/0012-audit-version-fields-are-first-class-columns.md`｜`GLOSSARY.md`｜`CONTEXT.md`｜路径图、登记处与 `docs/08-本轮实施方案/README.md` 索引同步｜票面回写。
+
+### B4 加两列打红的夹具：实测与收口（2026-10-23）
+
+S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**29 条用例因审计表缺两列而失败**。
+
+**CI 没有抓到它**：基线合并那一次 push 的判定层输出 `surface_changed=false / base_moved=true`，仓库级矩阵（`app.yml` 的 `Format, vet, test, and build`）被门禁按「贡献面内容未变」缩面跳过；PR gate 只对本次改动的两个包跑 `-race`。⇒ **「CI 全绿」不等于「仓库被测过」**。
+
+**失败形态很难看**：审计写失败被 HTTP 层映射成不透明的 `500 internal_error`，看不出是 schema 漂移。
+
+**根因是同一类**：夹具各自持有一份审计表的形状。
+
+| 夹具 | 形状来源 | 修法 |
+|---|---|---|
+| `internal/lingdoc/workspace/{change_set_http,change_set_delivery,delivery_http}_test.go` | **手抄**列清单（7 列） | 改为主动应用生产迁移（新增 `audit_event_table_fixture_test.go`） |
+| `internal/lingdoc/workspace/save_chapter_policy_test.go` | 跑迁移子集（止于 000041） | 子集补 `000052` |
+| `internal/container/lingdoc_ruleset_delivery_e2e_test.go` | SQLite 子集（止于 000042）+ versioned 子集（止于 000121） | 两份子集分别补 `000052` 与 `000131` |
+| `internal/router/lingdoc_integration_test.go` | 两份迁移子集（止于 000041 / 000051） | 两份分别补 `000052` |
+| `internal/database/migration_sqlite_versioned_schema_test.go` | 版本常量 | `expectedSQLiteMigrationVersion` 51 → 52 |
+
+后两个文件按登记处「共享维护点」的约定修改，**不登记进任何面的路径集**；其余按实测补进 PF-3 的路径集（20 条，零重叠）。
+
+**复跑结果**：`internal/lingdoc/workspace` ok（196.4s）｜`workspacecore` ok（41.0s）｜`membership` ok（2.6s）｜`internal/database` ok（22.3s）｜`internal/router` ok（1.4s）｜`internal/container` ok（7.8s）。
+
+**留下的机制性缺口**：「测试夹具自持一份生产 schema」这个机制还在——下一次给任何表加列仍会重演。已列入 §10.3 的重构动作（审计表的「模型字段集合 == 表列集合」守护测试 + 夹具默认应用生产迁移）。
 
 ## 6. 阻塞边
 
@@ -351,20 +375,102 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 3. `container/lingdoc.go` 平台 sink → **结构问题**：端口契约说「返回错误」，实现吞掉，契约与实现不符 → **动作**：实现返回错误，由调用方按 fail-open/fail-closed 处置 → **预期减少**：平台侧审计失败不再静默（本轮 O1 未做，需另票） → **回归门槛**：平台 sink 失败的可观测性测试
 4. 审计脱敏 → **结构问题**：白名单逐字构造、无集中机制、守护只覆盖正文 → **动作**：抽集中脱敏器，sentinel 守护覆盖正文/摘录/文件/密钥 → **预期减少**：新增审计字段时不必重新判断「会不会泄露」 → **回归门槛**：sentinel 守护测试
 
-### 9.4 本轮验证记录（Spec 阶段）
+### 9.4 本轮验证记录（PR 阶段）
 
 | 命令 | 结果 |
 |---|---|
-| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（补齐 14 条路径后重跑） |
+| `python scripts/lingdoc_parallel_surfaces.py` | **PASS** — `6 parallel work faces validated`（PF-3 按实测补到 20 条路径后重跑） |
 | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | **PASS** — `Ran 322 tests ... OK`；命名棘轮自检 `0/0/0`（本轮新增文件未引入编号） |
 | 文档行号指针逐条核对（grep + read） | **PASS** — 在 `c4c9ac93` 上复核：Spec-48 是纯改名，**行号全部未变**；已改写文件名指针 |
 | 迁移编号占用核对 | **PASS** — sqlite 下一个 `000052`、versioned 下一个 `000131`（偏移量 79） |
-| `go test -p 1 -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` | **PASS** — 两包全绿（29.7s / 2.0s） |
+| `go test -p 1 -count=1 ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` | **PASS** — 两包全绿（41.0s / 2.6s，workspacecore 一轮带 PostgreSQL 方言） |
+| `internal/lingdoc/workspace` / `internal/database` / `internal/router` / `internal/container` | **PASS** — 196.4s / 22.3s / 1.4s / 7.8s（夹具回归修完后的复跑） |
 | PostgreSQL 隔离实例上的既有 PG 用例 | **PASS** — `TestPostgres*` 与 `TestPR150Postgres*` 全绿（127.0.0.1:55437，postgres:17） |
-| `golangci-lint run --new-from-rev=origin/main ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/` | **PASS** — `0 issues`（首轮 9 issues 已逐条修掉） |
-| SQLite fail-open 定向测试 | **PASS** — `TestAuthorizationAuditFailureDoesNotBlockDecision` |
+| **PostgreSQL 端「审计失败 → 告警」端到端** | **PASS** — `TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`（2026-10-23 补齐）：PL/pgSQL trigger 注入失败，仍产出 `Category=audit` 事件并命中规则；同时实测到「读失败但告警仍发出」 |
 | PostgreSQL 上普通读 fail-open 核实 | **FAIL（已实测）** — `GetProject` / `Authorize` 均返回 `commit unexpectedly resulted in rollback`；详见 §5 B1；缺口转 [#387](https://github.com/magician336/lingdoc/issues/387) |
-| 四条结构断言的阴性验证 | **PASS** — 去掉落库 / 迁移回填 / 去掉显式类别 / 让审计错误返回，各自主张变红并复原 |
-| `go test -race ./...` | **NOT RUN** — 本机有兄弟会话并行，资源会互相干扰；解除条件见验证报告 |
+| `golangci-lint run --new-from-rev=origin/main`（六个改动包） | **PASS** — `0 issues`（首轮 9 issues 已逐条修掉） |
+| SQLite fail-open 定向测试 | **PASS** — `TestAuthorizationAuditFailureDoesNotBlockDecision` |
+| 五条结构断言的阴性验证 | **PASS** — 去掉落库 / 迁移回填 / 去掉显式类别 / 让审计错误返回 / 去掉 PG 失败注入，各自主张变红并复原 |
+| **加列打红的夹具回归** | **PASS（修复后）** — 本机全仓跑出 29 条失败（6 处夹具：3 处手抄列清单、3 处跑迁移子集），逐处修完复跑全绿；详见 §5 B4 |
+| **本机全仓 Go 套件（123 包）** | **PASS（改动面全绿）** — `go vet` 全过；`go test` 仅剩 12 条与本票无关的既有 Windows 失败（`internal/agent/tools` 6 条 + `internal/application/service` 6 条），在 `origin/main` 基线副本上**逐条原样复现** |
+| **CI 逐 check 结论** | **PASS** — 必需检查 `LingDoc PR gate` 实跑，内部对本次改动的两个包执行 `go test -race`（`PROVIDERS: success`）；仓库级矩阵在基线合并那次 push 上被门禁缩面跳过（`surface_changed=false`），本轮改到 Go 面后重新参与 |
+| `go test -race ./...`（全仓本地） | **NOT RUN** — 本机有兄弟会话并行，资源会互相干扰；这一层由 CI 的 PR gate 在 Linux 上覆盖到改动面；解除条件见验证报告 |
 
-未覆盖风险：PG 行为已实测且为负（已转票）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修。
+未覆盖风险：PG 行为已实测且为负（已转票）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；**夹具自持一份 schema 形状的机制仍在**（本轮修掉 6 处，但下一次加列仍会重演）。
+
+## 10. PR 合并前复评（PR 阶段健康度评分）
+
+按 `docs/项目健康度评分协议.md` 的第二个评分时点执行。**取样范围与 §9 相同（审计与告警子域）**，因此与 §9 可直接比较；与协议的「当前暂定基线」（`H_L` 66 / `F_R` 69）仍**不可直接比较**。
+
+- Git SHA：见 [`T327-验证报告.json`](T327-验证报告.json) 的 `head`（证据产出的那棵树）
+- Spec：#130 / `docs/06-灵档产品开发规划/29-Spec-G5审计与权限可见性.md`
+- PR：[#389](https://github.com/magician336/lingdoc/pull/389)
+- 阶段：**PR 合并前**
+
+### 10.1 `H_L` = 64.4 / 100，置信度 **B**（Δ = **+8.4**）
+
+| 维度 | 二级指标 | §9 | 本次 | 证据 | 改进动作 |
+|---|---|---:|---:|---|---|
+| 复杂性控制 | 变化放大 | 2 | 2 | `AuditEvent` 的同一形状仍散在 5 处（`model.go:126`、`model.go:530`、`service.go:409`、`service.go:431`、`internal/lingdoc/membership/fixture_test.go`），加字段仍要同步多处；本轮还实测出**第六处重复**：`internal/lingdoc/workspace/` 的三个夹具手抄了审计表列清单，加两列后审计写失败，而失败被 HTTP 层转成 500 ⇒ 同一份 schema 知识在多处各写一遍 | 已把这三个夹具改为主动应用生产迁移（`internal/lingdoc/workspace/audit_event_table_fixture_test.go`）；剩余的模型↔表不一致仍要守护测试 |
+| | 认知负荷 | 2 | **4** | fail-open / fail-closed 已拆成两个显式接缝：`readWithAudit`（吞 + 发告警，`service_facade.go:505`）与 `recordAuditInTransaction`（返错），策略写进名字；四个读类落点都走前者 | — |
+| | 特例与信息泄漏 | 2 | **3** | 两条特例（租户级审计在 GORM 上不写、平台 sink 写失败恒返回 nil）已写进术语、ADR 0011 与票面边界；平台 sink 的「契约说返错、实现吞掉」仍未修（O1） | 平台 sink 另开票 |
+| 模块深度与边界 | 接口成本/隐藏收益 | 3 | 3 | `applyRuntimeAlerts` 仍是深模块；`EmitAuditFailureAlert`（`runtime_control.go:533`）把「发一条审计失败告警」压成一个方法，但签名 5 参 | — |
+| | 信息隐藏 | 2 | **3** | 告警路径已有显式的「只带固定错误码、不带正文/摘录/文件/密钥」边界并有 sentinel 断言；**审计 details 的集中脱敏器仍未抽** | 抽集中脱敏器 + sentinel 覆盖四类敏感内容 |
+| | 层次错位 | 3 | 3 | `operationcore` 仍知道审计的失败语义 | — |
+| | 耦合与透传 | 3 | 3 | `recordAuditInTransaction` 仍是 5 个位置参数 | — |
+| 演化式设计 | 结构不同的候选方案 | 4 | 4 | 两组候选均有记录（ADR 0011/0012） | — |
+| | 增量与回退 | 4 | 4 | 两方言迁移都有 down，且有迁移彩排 | — |
+| | 持续重构 | 2 | 2 | 声明 15 字段、落库 9 列，同源问题未收口 | 同「变化放大」 |
+| 战略执行 | 设计投资与债务偿还 | 3 | 3 | 本轮补 2 个字段、不补那 5 个，债务上又加一笔（ADR 0012 已记账） | — |
+| | 路线与依赖一致性 | 4 | 4 | 路径图 / 登记处 / 票面三处已同步；登记处已补 4 条实测路径 | — |
+| | 变更局部性 | 4 | 4 | 路径集补齐后与其余五面零重叠（登记处自检通过） | — |
+| 一致性与显然性 | 领域术语/文档 | 3 | 3 | GLOSSARY 已补审计侧一节并复用上游词条；仓库级术语表 `16-术语表.md` 仍未同步 | 同步 `16-术语表.md` |
+| | 契约与非显然注释 | 3 | **4** | `readWithAudit` 的注释直接写明「为什么不是 `recordAuditInTransaction`」；ADR 0011 记下了「告警必须走自己的事务」的推理 | — |
+| | 代码语义一致性 | 2 | **3** | 新增字段已跑通「声明→列→写→读回→两方言迁移」整条链并有守护用例；但仍有 5 个字段不落库 | 同「变化放大」 |
+| | 自动化约束 | 5 | 5 | 登记处自检 + `scripts/ci` 守护用例 + 命名棘轮守护；夹具回归由夹具改造堵住 | — |
+| 证据、反馈与恢复 | 未知发现 | 2 | **3** | 四个读类落点已列清并各有告警断言；但落点清单仍是文档事实，没有机器守护（新增落点可能漏接告警） | 落点清单守护测试 |
+| | 失败/权限/恢复测试 | 3 | **4** | SQLite 四条 + PostgreSQL 一条端到端 + 五条阴性验证 + 既有十余组 fail-closed 故障注入 | — |
+| | CI/观测/回退 | 2 | 2 | G6 告警管线存在但**无种子规则**，默认部署观测不到（O5 刻意取舍） | 规则由运维配 |
+
+维度得分：复杂性控制 11.8｜模块深度与边界 12.0｜演化式设计 10.0｜战略执行 10.8｜一致性与显然性 10.8｜证据反馈恢复 9.0 ⇒ **64.4**
+
+健康等级：**60–79「可持续开发，但存在明确治理债务」**（对本子域而言；§9 为 40–59「脆弱」，本轮跨过该线但债务仍在）。
+
+### 10.2 `F_R` = 65.0 / 100，置信度 **B**（Δ = **+3.4**）
+
+| 维度 | 二级指标 | §9 | 本次 | 证据 |
+|---|---|---:|---:|---|
+| 复杂性控制 | 变化放大 / 认知负荷 / 特例与信息泄漏 | 4 / 4 / 2 | 4 / 4 / 2 | 路径集零重叠 + 登记处机器校验；平台 sink 吞错是**跨仓库边界**的特例，workspacecore 控制不了（O1 未做） |
+| 模块深度与边界 | 接口成本/隐藏收益 / 信息隐藏 / 层次错位 / 耦合与透传 | 2 / 2 / 3 / 3 | 2 / 2 / 3 / 3 | `AuditSink` 端口契约说「返回错误」、实现却吞掉 ⇒ **契约与实现语义不符**；宿主层把 details 重新合并一遍；`audit_logs` 与 `lingdoc_project_audits` 两套审计存储 |
+| 演化式设计 | 候选方案 / 增量回退 / 持续重构 | 4 / 4 / 2 | 4 / 4 / 2 | 同 H_L |
+| 战略执行 | 设计投资 / 路线一致性 / 变更局部性 | 3 / 5 / 4 | 3 / 5 / 4 | 路径图、登记处、票面三处一致 |
+| 一致性与显然性 | 术语文档 / 非显然注释 / 代码语义 / 自动化约束 | 3 / 3 / 2 / 5 | 3 / 4 / 3 / 5 | 仓库级术语表仍未同步 |
+| 证据反馈恢复 | 未知发现 / 失败权限恢复测试 / CI观测回退 | 2 / 3 / 2 | 3 / 4 / 2 | 同 H_L |
+
+维度得分：14.0｜9.4｜10.0｜11.8｜10.8｜9.0 ⇒ **65.0**
+
+健康等级：**60–79「可持续开发，但存在明确治理债务」**。
+
+### 10.3 阻断风险与最高优先级重构动作
+
+**没有二级指标低于 2/5** ⇒ 按协议不构成独立的维度阻断项。**PR 合并前的阻断项是矩阵与证据**，不是分数：矩阵全部闭环（§4）、PG 端用例已补（AC-327-14）、合并前复评已完成（本节）。
+
+按「复杂性降低收益」排序的重构动作（沿用 §9.3 的编号，标注本轮进展）：
+
+1. `workspacecore` 审计写缝 → **结构问题**：同一个函数靠调用方丢弃错误来表达两套语义 → **动作**：拆成 `readWithAudit`（吞 + 发告警）与 `recordAuditInTransaction`（返错） → **本轮已完成** → **预期减少**：新增审计落点不必重新推断该吞还是该返 → **回归门槛**：新增 fail-open 落点必须有告警断言测试
+2. `AuditEvent` 模型 → **结构问题**：声明 15 字段、落库 9 列，加字段要同步 5 处；**且表的形状在测试夹具里还有第 6 处手抄副本** → **动作**：模型与表列集合的一致性守护测试 + 把不落库的字段从结构体删掉（降级为 details 里的显式键） → **本轮只堵住夹具这一处**（改为主动应用生产迁移） → **预期减少**：加字段从「同步 5 处」降到「同步 1 处」 → **回归门槛**：模型字段集合与表列集合的一致性守护测试
+3. `container/lingdoc.go` 平台 sink → **结构问题**：端口契约说「返回错误」，实现吞掉 → **动作**：实现返回错误，由调用方按 fail-open/fail-closed 处置 → **本轮未做（O1，需另票）** → **预期减少**：平台侧审计失败不再静默 → **回归门槛**：平台 sink 失败的可观测性测试
+4. 审计脱敏 → **结构问题**：白名单逐字构造、无集中机制 → **动作**：抽集中脱敏器，sentinel 守护覆盖正文/摘录/文件/密钥 → **本轮已把 sentinel 扩到告警与审计两侧，但脱敏器未抽** → **预期减少**：新增审计字段时不必重新判断「会不会泄露」 → **回归门槛**：sentinel 守护测试
+5. **（本轮新增）读类落点清单** → **结构问题**：哪些落点会写审计、哪些是 fail-open，现在只有文档事实，没有机器约束；新增落点可能漏接告警 → **动作**：把落点清单做成守护测试（枚举读类落点并断言其走 `readWithAudit`） → **预期减少**：漏接告警的失败从「上线后没人发现」变成「提交即红」 → **回归门槛**：守护测试本身进 `scripts/ci` 套件
+6. **（本轮新增）PG 上读类审计写在业务事务内** → **结构问题**：审计 INSERT 失败会让整个事务 aborted ⇒ 读失败（[#387](https://github.com/magician336/lingdoc/issues/387)） → **动作**：把可降级的读类审计写移出业务事务 → **预期减少**：「普通读 fail-open」在生产方言上才真正成立 → **回归门槛**：隔离 PG 上「审计失败时读仍成功」的用例
+
+### 10.4 本轮复评的证据与环境限制
+
+| 项 | 结果 |
+|---|---|
+| 仓库级 Go 套件（本机全仓 123 包） | **PASS（除 12 条与本票无关的既有 Windows 失败）** —— 12 条全在 `internal/agent/tools`（6 条：MCP schema 的 `file://D:\` URI、读文件沙箱、shell stdin、skill 的可执行位与 pip/uv/ensurepip 恢复路径）与 `internal/application/service`（6 条：SQLite 临时目录被占用、skill 同类），在 `origin/main` 基线副本上**逐条原样复现**；本分支未触碰这两个包，它们也不 import 本次改动的包 |
+| 登记处 | **PASS** —— `6 parallel work faces validated`（PF-3 补到 18 条路径后与其余五面零重叠） |
+| 命名棘轮 | **PASS** —— `0/0/0` |
+| `go test -race`（全仓本地） | **NOT RUN** —— 兄弟会话并行；但 CI 的 PR gate 已在 head 上对本次改动的两个包跑了 `go test -race`（`PROVIDERS: success`） |
+
+**未覆盖风险**：本机全仓跑出的 5 条 Windows 失败说明「本地全仓绿」在 Windows 上不可得（CI 在 ubuntu 上跑同一套）；PG 端的普通读 fail-open 仍不成立（#387）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；CodeGraph 索引本轮未使用（工具不可用），取样以 `grep`/`read` 与可复现运行为准。
