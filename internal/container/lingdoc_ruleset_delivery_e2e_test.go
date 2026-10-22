@@ -161,6 +161,7 @@ func applyRuleSetSQLiteSchema(t *testing.T, db *gorm.DB) {
 		"000039_lingdoc_ruleset_export_reference.up.sql",
 		"000040_lingdoc_ruleset_use_audits.up.sql", "000041_lingdoc_template_version_ruleset_ref.up.sql",
 		"000042_lingdoc_ruleset_metrics.up.sql",
+		"000052_lingdoc_audit_version_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -210,6 +211,7 @@ func applyRuleSetPostgresSchema(t *testing.T, db *gorm.DB) {
 		"000118_lingdoc_ruleset_export_reference.up.sql",
 		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
 		"000121_lingdoc_ruleset_metrics.up.sql",
+		"000131_lingdoc_audit_version_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "versioned", name))
 		if err != nil {
