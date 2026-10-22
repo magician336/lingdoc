@@ -1,7 +1,7 @@
 {
   "mode": "static-and-suite",
   "note": "#48 代码命名规范收口：把「编号在代码层是 0 比特信息」这件事变成机械可判的规则。核心机制是三件套——登记表（文件 → 拥有的知识 / 是否遗留 / 归属票）、守护测试（拿登记表和活树逐条对账）、棘轮（遗留清单只减不增）。本轮把棘轮从 211/54/205 收到 0/0/0：代码区不再有任何以项目号 / 任务号 / 段号命名的文件，也不再有任何以工作号开头的标识符（验收台自己的词汇除外）。改名是「按知识重新命名」，不是「去掉数字」——同一批文件在 Go 侧叫 agent_routes.go / membership_grants.go，在前端叫 agentApi.ts / impactCenterAcceptance/，前后端镜像类型统一为 VersionBasis / VersionExpectation / ConfirmationInput / VersionRef。",
-  "head": "80ed06ab",
+  "head": "7417ae64",
   "base": "058637c4",
   "passed": [
     {
