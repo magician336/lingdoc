@@ -21437,6 +21437,57 @@
                           "output_tokens": 1,
                           "created_by": "synthetic-created-by",
                           "created_at": "2026-10-18T00:00:00Z"
+                        },
+                        {
+                          "id": "synthetic-proposal-turn-id",
+                          "project_id": "synthetic-project-id",
+                          "session_id": "synthetic-session-id",
+                          "version": 2,
+                          "agent": "research_agent",
+                          "user_input": "synthetic-user-input",
+                          "reply": "synthetic-reply",
+                          "suggestions": {
+                            "reply": "synthetic-reply",
+                            "task_card": {
+                              "goal": "synthetic-goal",
+                              "question_type": "synthetic-question-type",
+                              "scope": "synthetic-scope",
+                              "exclusions": [
+                                "synthetic-exclusion"
+                              ],
+                              "queries": [
+                                "synthetic-query-1",
+                                "synthetic-query-2",
+                                "synthetic-synonym-query"
+                              ],
+                              "expected_output": "synthetic-expected-output"
+                            }
+                          },
+                          "context": {
+                            "project_id": "synthetic-project-id",
+                            "project_version": 1,
+                            "spec_revision": 1,
+                            "context_revision": 1,
+                            "template_id": "synthetic-template-id",
+                            "template_version": "synthetic-template-version",
+                            "source_refs": [],
+                            "card_refs": [],
+                            "selection_reasons": [
+                              "synthetic-selection-reasons"
+                            ],
+                            "authorization_state": "synthetic-authorization-state",
+                            "output_constraints": [
+                              "synthetic-output-constraints"
+                            ],
+                            "correlation_id": "synthetic-correlation-id"
+                          },
+                          "status": "completed",
+                          "model_id": "synthetic-model-id",
+                          "run_mode": "real_api_fake_model",
+                          "input_tokens": 1,
+                          "output_tokens": 1,
+                          "created_by": "synthetic-created-by",
+                          "created_at": "2026-10-18T00:00:00Z"
                         }
                       ],
                       "request_id": "synthetic-contract-example",
@@ -21638,6 +21689,81 @@
                           "correlation_id": "synthetic-correlation-id"
                         },
                         "status": "completed",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal": {
+                    "summary": "Synthetic contract illustration only; a server-validated research proposal travelling with the turn it belongs to",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "synthetic-reply",
+                        "suggestions": {
+                          "reply": "synthetic-reply",
+                          "task_card": {
+                            "goal": "synthetic-goal",
+                            "question_type": "synthetic-question-type",
+                            "scope": "synthetic-scope",
+                            "exclusions": [
+                              "synthetic-exclusion"
+                            ],
+                            "queries": [
+                              "synthetic-query-1",
+                              "synthetic-query-2",
+                              "synthetic-synonym-query"
+                            ],
+                            "expected_output": "synthetic-expected-output"
+                          }
+                        },
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-source-id",
+                              "asset_id": "synthetic-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "locator": "synthetic-locator",
+                              "model_use_allowed": false
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "completed",
+                        "model_id": "synthetic-model-id",
                         "run_mode": "real_api_fake_model",
                         "input_tokens": 1,
                         "output_tokens": 1,
@@ -44202,68 +44328,58 @@
         "x-go-type": "core.CommitWorkingCopyInput",
         "x-go-source": "internal/lingdoc/workspacecore/service_facade.go"
       },
-      "AgentTaskSuggestion": {
+      "ResearchProposal": {
         "type": "object",
         "properties": {
-          "expected_project_version": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "expected_context_revision": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "expected_version": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "task_id": {
-            "type": "string"
-          },
-          "chapter_id": {
-            "type": "string"
-          },
           "goal": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
           },
           "question_type": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "scope": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
           },
           "exclusions": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
             },
-            "nullable": true
+            "maxItems": 50
           },
           "queries": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
             },
-            "nullable": true
-          },
-          "asset_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "provider_id": {
-            "type": "string"
+            "minItems": 2,
+            "maxItems": 8
           },
           "expected_output": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 6000
           }
         },
         "additionalProperties": false,
-        "x-go-type": "core.SaveResearchTaskInput",
-        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go",
-        "description": "Editable candidate task fields; not an execution or permission grant."
+        "required": [
+          "goal",
+          "scope",
+          "queries",
+          "expected_output"
+        ],
+        "x-go-type": "core.ResearchProposal",
+        "x-go-source": "internal/lingdoc/workspacecore/research_proposal.go",
+        "description": "调研智能体的调研提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。它永远是候选：用户自己保存才成为调研任务。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，另票收紧。"
       },
       "AgentSuggestions": {
         "type": "object",
@@ -44272,7 +44388,7 @@
             "type": "string"
           },
           "task_card": {
-            "$ref": "#/components/schemas/AgentTaskSuggestion"
+            "$ref": "#/components/schemas/ResearchProposal"
           },
           "change_draft": {
             "$ref": "#/components/schemas/AgentChangeDraftSuggestion"
