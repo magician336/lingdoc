@@ -1246,7 +1246,7 @@
     },
     "ResearchProposal": {
       "type": "object",
-      "description": "服务端按唯一一份契约解码过的调研提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级，每一份都指回这一轮授权上下文里的资料。reasons 是整份提案为什么这么定；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选。",
+      "description": "服务端按唯一一份契约解码过的调研提案：字段名沿用调研任务自己的一套，同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级，每一份都指回这一轮授权上下文里的资料。reasons 是整份提案为什么这么定；gaps 每条含 description（缺什么）与 expected_evidence（期望补什么），只有「没有来源」这种空话不算，缺了任何一半即整份拒绝。理由与缺口都有长度与条数上限，超了即拒。它永远是候选。三态是关于这一轮答案的事实，不是判决：有提案（present，形状逐字照上）；没给提案（absent，形状见 ResearchProposalAbsentTurn）；给了但不可信（invalid，整份拒绝、提案不送达，形状见 ResearchProposalRefusedTurn——那一轮的自然语言回复留着，坏建议不该连累用户的答案）。整份载荷另有上限（服务端解码时判定），这一份声明写不出来。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，不受本契约约束——这是有意保留的残留，另票收紧。",
       "properties": {
         "goal": {
           "type": "string",
@@ -1337,6 +1337,41 @@
         "scope",
         "queries",
         "expected_output"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalAbsentTurn": {
+      "type": "object",
+      "description": "这一轮没有提案的那一轮（absent）：模型的回答里没有提案块，只有自然语言回复。缺建议不是失败——这一轮照样完成、答复照样在，这一轮没有提案。三态是关于这一轮答案的事实，不是判决。",
+      "properties": {
+        "reply": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "reply"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchProposalRefusedTurn": {
+      "type": "object",
+      "description": "提案不可信的那一轮（invalid）：模型给了但不可信的提案被整份拒绝，绝不落进建议；那一轮的自然语言回复留着（坏建议不该连累用户的答案），失败码读得懂地说明「本轮的建议未通过服务端校验」。这里写的是这一轮的形状，不是那份被拒的提案——那份提案一个字段都不留。",
+      "properties": {
+        "reply": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_code": {
+          "type": "string",
+          "enum": [
+            "invalid_proposal"
+          ]
+        }
+      },
+      "required": [
+        "reply",
+        "failure_code"
       ],
       "additionalProperties": false
     },
@@ -1910,6 +1945,53 @@
             "reason": "它在另一个课题里，看起来相关"
           }
         ]
+      }
+    },
+    {
+      "id": "research-proposal-absent-turn",
+      "schema": "ResearchProposalAbsentTurn",
+      "accepted": true,
+      "value": {
+        "reply": "授权的资料里还没有合成材料的定义，我按你给的范围说明了缺口。"
+      }
+    },
+    {
+      "id": "research-proposal-refused-turn",
+      "schema": "ResearchProposalRefusedTurn",
+      "accepted": true,
+      "value": {
+        "reply": "我整理了一条检索计划。",
+        "failure_code": "invalid_proposal"
+      }
+    },
+    {
+      "id": "research-proposal-unknown-field-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "goal": "弄清合成材料的定义与限制",
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口",
+        "confidence": 0.9
+      }
+    },
+    {
+      "id": "research-proposal-missing-required-field-rejected",
+      "schema": "ResearchProposal",
+      "accepted": false,
+      "value": {
+        "question_type": "定义",
+        "scope": "只查项目资料与公开综述",
+        "queries": [
+          "合成材料 定义",
+          "合成材料 反例"
+        ],
+        "expected_output": "候选资料、反例与证据缺口"
       }
     }
   ],

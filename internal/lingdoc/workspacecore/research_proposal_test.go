@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 )
 
 // The research proposal contract is the seam the whole path reads: the model
@@ -235,20 +239,38 @@ func TestResearchProposalDoesNotBorrowTheRetrievalLevelVocabulary(t *testing.T) 
 }
 
 func TestResearchProposalStatesArePresentAbsentAndInvalid(t *testing.T) {
-	legal := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
+	legal := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
 	state, err := ResearchProposalStateForTurn(legal)
 	if err != nil || state != ResearchProposalStatePresent {
 		t.Fatalf("legal proposal is not present: %q %v", state, err)
 	}
-	absent := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	absent := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r"}`)}
 	state, err = ResearchProposalStateForTurn(absent)
 	if err != nil || state != ResearchProposalStateAbsent {
 		t.Fatalf("missing proposal is not absent: %q %v", state, err)
 	}
-	invalid := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a"],"expected_output":"o"}}`)}
+	invalid := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a"],"expected_output":"o"}}`)}
 	state, err = ResearchProposalStateForTurn(invalid)
 	if err != nil || state != ResearchProposalStateInvalid {
 		t.Fatalf("broken proposal is not invalid: %q %v", state, err)
+	}
+}
+
+// A5/A6: a stored turn says which state it is in, and the refused proposal is
+// still readable as "invalid" after the fact: the server took it out of the
+// suggestions, so only the turn's own record can say that there was one.
+func TestResearchProposalStateOfAStoredTurnTellsTheThreeStatesApart(t *testing.T) {
+	present := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
+	if state, err := ResearchProposalStateForTurn(present); err != nil || state != ResearchProposalStatePresent {
+		t.Fatalf("the stored turn is not present: %q %v", state, err)
+	}
+	absent := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	if state, err := ResearchProposalStateForTurn(absent); err != nil || state != ResearchProposalStateAbsent {
+		t.Fatalf("the stored turn is not absent: %q %v", state, err)
+	}
+	refused := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", FailureCode: ResearchProposalFailureCode, Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	if state, err := ResearchProposalStateForTurn(refused); err != nil || state != ResearchProposalStateInvalid {
+		t.Fatalf("the refused proposal is not invalid: %q %v", state, err)
 	}
 }
 
@@ -492,15 +514,21 @@ func contractRendererCalls(t *testing.T, path string) int {
 }
 
 // proposalModelStub is a fake model: it answers with the structured output the
-// case needs, so the turn endpoint can be exercised without a provider.
+// case needs, so the turn endpoint can be exercised without a provider. It
+// remembers what it was asked for, so a case can see the purpose the server
+// derived.
 type proposalModelStub struct {
 	structured json.RawMessage
 	reply      string
 	calls      int
+	purposes   []string
+	agents     []string
 }
 
-func (m *proposalModelStub) Reply(_ context.Context, _ Actor, _ ModelRequest) (ModelReply, error) {
+func (m *proposalModelStub) Reply(_ context.Context, _ Actor, request ModelRequest) (ModelReply, error) {
 	m.calls++
+	m.purposes = append(m.purposes, request.Purpose)
+	m.agents = append(m.agents, request.Agent)
 	return ModelReply{Content: m.reply, StructuredOutput: m.structured, ModelID: "synthetic-model", RunMode: "real_api_fake_model", InputTokens: 100, OutputTokens: 20, FinishReason: "stop"}, nil
 }
 
@@ -567,7 +595,7 @@ func assertProposalCreatedNothing(t *testing.T, f agentFixture) {
 func TestResearchProposalReachesTheTurnAndCreatesNothing(t *testing.T) {
 	f := newAgentFixture(t, false)
 	stub := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-legal", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-legal", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -589,7 +617,12 @@ func TestResearchProposalReachesTheTurnAndCreatesNothing(t *testing.T) {
 
 // A6/A11: a proposal that does not decode never reaches the interface, and
 // nothing is written on the way to saying so.
-func TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything(t *testing.T) {
+//
+// What is refused is the proposal, not the answer. The turn still completes
+// and the reply the model wrote stays: a broken suggestion must not cost the
+// user their answer. The turn says in a readable code that this turn carries
+// no proposal.
+func TestInvalidResearchProposalKeepsTheReplyAndLosesTheProposal(t *testing.T) {
 	for name, payload := range map[string]string{
 		"one query":     `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`,
 		"unknown field": `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","confidence":0.9}}`,
@@ -597,26 +630,68 @@ func TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything(t *testing.T)
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-invalid", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the broken proposal was not refused: %+v", name, turn)
+		turn := proposalTurn(t, f, AgentResearch, "pf5-invalid", stub)
+		if turn.Status != "completed" {
+			t.Fatalf("%s: the broken proposal failed the whole turn: %+v", name, turn)
 		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the broken proposal still reached the interface: %+v", name, turn)
+		if turn.Reply != "我整理了一条检索计划。" {
+			t.Fatalf("%s: the answer was lost with the proposal: %+v", name, turn)
+		}
+		if turn.FailureCode != ResearchProposalFailureCode {
+			t.Fatalf("%s: the refusal is not readable: %+v", name, turn)
+		}
+		raw, err := researchProposalFromSuggestions(turn.Suggestions)
+		if err != nil || !ResearchProposalAbsent(raw) {
+			t.Fatalf("%s: the broken proposal still reached the interface: %s %v", name, raw, err)
 		}
 		assertProposalCreatedNothing(t, f)
 	}
 }
 
+// A5: a turn with no proposal still answers the question. The model proposed
+// nothing, and that is not a failure: the reply stays, the turn completes,
+// and the turn carries no proposal.
+func TestAbsentResearchProposalKeepsTheReplyAndCarriesNoProposal(t *testing.T) {
+	f := newAgentFixture(t, false)
+	reply := "授权的资料里还没有合成材料的定义，我按你给的范围说明了缺口。"
+	stub := &proposalModelStub{structured: json.RawMessage(`{"reply":"` + reply + `"}`), reply: reply}
+	turn := proposalTurn(t, f, AgentResearch, "pf5-absent", stub)
+	if turn.Status != "completed" || turn.FailureCode != "" {
+		t.Fatalf("a turn without a proposal was treated as a failure: %+v", turn)
+	}
+	if turn.Reply != reply {
+		t.Fatalf("the answer was lost: %+v", turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || !ResearchProposalAbsent(raw) {
+		t.Fatalf("the turn carries a proposal it was never given: %s %v", raw, err)
+	}
+	assertProposalCreatedNothing(t, f)
+}
+
 // The assistant's editable task suggestion is a different card with its own
 // rules: this contract does not change what the assistant may answer.
+//
+// A16: the assistant's answer still completes, still carries what the model
+// said, and is not judged as a research proposal - not even by the state
+// this contract derives from the stored turn.
 func TestAssistantTaskSuggestionIsNotJudgedByTheProposalContract(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我给了一条建议。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我给了一条建议。"}
-	turn := proposalTurn(t, f, "task_assistant", "pf5-assistant", stub)
+	turn := proposalTurn(t, f, AgentTaskAssistant, "pf5-assistant", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the assistant's answer changed: %+v", turn)
+	}
+	if turn.FailureCode != "" {
+		t.Fatalf("the assistant's answer was refused by the proposal contract: %+v", turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || ResearchProposalAbsent(raw) {
+		t.Fatalf("the assistant's own suggestion was taken away: %s %v", raw, err)
+	}
+	if state, err := ResearchProposalStateForTurn(turn); err != nil || state != ResearchProposalStateAbsent {
+		t.Fatalf("the assistant's card was judged as a research proposal: %q %v", state, err)
 	}
 }
 
@@ -627,7 +702,7 @@ func TestResearchProposalCarriesItsCandidateSourcesToTheTurn(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我按你的问题整理了一条检索计划。","task_card":{"goal":"弄清合成材料的定义","scope":"只查项目资料","queries":["合成材料 定义","合成材料 反例"],"expected_output":"候选资料与反例","candidate_sources":[{"source_id":"source-1","reason":"它写明了合成材料的定义"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我按你的问题整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-sources", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-sources", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -647,7 +722,7 @@ func TestResearchProposalCarriesItsReasonsAndGapsToTheTurn(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我按你的问题整理了一条检索计划。","task_card":{"goal":"弄清合成材料的定义","scope":"只查项目资料","queries":["合成材料 定义","合成材料 反例"],"expected_output":"候选资料与反例","reasons":["目标定成「定义」是因为用户问的就是这个词本身","范围只划到项目资料是因为公开综述尚未授权"],"gaps":[{"description":"缺一篇给出反例的对照研究","expected_evidence":"一篇标注了反例的同行评议文章"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我按你的问题整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-reasons", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-reasons", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -665,10 +740,10 @@ func TestResearchProposalCarriesItsReasonsAndGapsToTheTurn(t *testing.T) {
 }
 
 // A13: a proposal whose reason or gap is overlong - or whose gap does not
-// say what would fill it - never reaches the interface: the turn fails with
-// a readable code, nothing is written, and no proposal shows up beside the
-// draft.
-func TestResearchProposalWithOverlongReasonOrGapFailsTheTurnWithoutWritingAnything(t *testing.T) {
+// say what would fill it - never reaches the interface: the refusal is
+// readable, nothing is written, and no proposal shows up beside the draft.
+// The answer itself stays.
+func TestResearchProposalWithOverlongReasonOrGapIsRefusedWithoutLosingTheAnswer(t *testing.T) {
 	for name, payload := range map[string]string{
 		"overlong reason":                `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","reasons":["` + strings.Repeat("长", 2000) + `"]}}`,
 		"overlong gap":                   `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","gaps":[{"description":"缺一篇反例","expected_evidence":"` + strings.Repeat("长", 2000) + `"}]}}`,
@@ -676,20 +751,15 @@ func TestResearchProposalWithOverlongReasonOrGapFailsTheTurnWithoutWritingAnythi
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-overlong", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the proposal was not refused: %+v", name, turn)
-		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the refused proposal still reached the interface: %+v", name, turn)
-		}
+		turn := proposalTurn(t, f, AgentResearch, "pf5-overlong", stub)
+		assertProposalRefused(t, name, turn, "我整理了一条检索计划。")
 		assertProposalCreatedNothing(t, f)
 	}
 }
 
 // A7: a proposal that names a source this turn was never given is refused
-// whole: the turn fails with a readable code, nothing is written, and the
-// source never reaches the interface.
+// whole: the refusal is readable, nothing is written, and the source never
+// reaches the interface. The answer the model gave stays.
 func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 	for name, payload := range map[string]string{
 		"another source of the same project": `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","candidate_sources":[{"source_id":"source-2","reason":"它看起来相关"}]}}`,
@@ -698,13 +768,8 @@ func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-outside", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the unreadable candidate source was not refused: %+v", name, turn)
-		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the refused proposal still reached the interface: %+v", name, turn)
-		}
+		turn := proposalTurn(t, f, AgentResearch, "pf5-outside", stub)
+		assertProposalRefused(t, name, turn, "我整理了一条检索计划。")
 		assertProposalCreatedNothing(t, f)
 	}
 }
@@ -745,14 +810,29 @@ func TestResearchProposalCitingAnotherProjectsSourceIsRefused(t *testing.T) {
 	}
 	payload := `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","candidate_sources":[{"source_id":"source-2","reason":"它在另一个课题里"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-cross-project", stub)
-	if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-		t.Fatalf("another project's source was accepted: %+v", turn)
-	}
-	if len(turn.Suggestions) != 0 || turn.Reply != "" {
-		t.Fatalf("the refused proposal still reached the interface: %+v", turn)
-	}
+	turn := proposalTurn(t, f, AgentResearch, "pf5-cross-project", stub)
+	assertProposalRefused(t, "another project's source", turn, "我整理了一条检索计划。")
 	assertProposalCreatedNothing(t, f)
+}
+
+// assertProposalRefused checks the shape of a turn whose proposal the
+// contract refused: the turn completes, the answer the model gave stays, the
+// proposal does not reach the interface, and the refusal is readable.
+func assertProposalRefused(t *testing.T, name string, turn AgentTurn, reply string) {
+	t.Helper()
+	if turn.Status != "completed" {
+		t.Fatalf("%s: the broken proposal failed the whole turn: %+v", name, turn)
+	}
+	if turn.Reply != reply {
+		t.Fatalf("%s: the answer was lost with the proposal: %+v", name, turn)
+	}
+	if turn.FailureCode != ResearchProposalFailureCode {
+		t.Fatalf("%s: the refusal is not readable: %+v", name, turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || !ResearchProposalAbsent(raw) {
+		t.Fatalf("%s: the refused proposal still reached the interface: %s %v", name, raw, err)
+	}
 }
 
 // projectScopedSources serves a source only to the project that owns it. It
@@ -772,4 +852,236 @@ func (r *projectScopedSources) ReadResearchSource(ctx context.Context, actor Act
 
 func (r *projectScopedSources) CheckAssetScope(ctx context.Context, actor Actor, projectID string, ids []string) ([]ProjectAssetVersion, error) {
 	return r.inner.CheckAssetScope(ctx, actor, projectID, ids)
+}
+
+// A3: the purpose of a turn is the server's to decide. The session declares
+// its agent, and the shape of the answer follows from it: the research agent
+// asks for a research proposal, the task assistant keeps the conversation it
+// has always had. The client states no purpose, so it cannot ask for another
+// shape.
+func TestAgentPurposeIsDerivedFromTheSessionAgent(t *testing.T) {
+	f := newAgentFixture(t, false)
+	research := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
+	proposalTurn(t, f, AgentResearch, "pf5-purpose-research", research)
+	if len(research.purposes) != 1 || research.purposes[0] != AgentPurposeResearch {
+		t.Fatalf("the research agent's turn did not ask for a research proposal: %v", research.purposes)
+	}
+	if len(research.agents) != 1 || research.agents[0] != AgentResearch {
+		t.Fatalf("the turn did not carry the session's agent: %v", research.agents)
+	}
+	assistant := &proposalModelStub{structured: json.RawMessage(`{"reply":"当前没有阻断。"}`), reply: "当前没有阻断。"}
+	proposalTurn(t, f, AgentTaskAssistant, "pf5-purpose-assistant", assistant)
+	if len(assistant.purposes) != 1 || assistant.purposes[0] != AgentPurposeConversation {
+		t.Fatalf("the assistant's turn did not keep the conversation shape: %v", assistant.purposes)
+	}
+}
+
+// A3: the request shape does not move, so the idempotency digest does not
+// move either. A key issued before the purpose was derived still replays, and
+// the replay does not ask the model again.
+func TestAgentTurnRequestDigestIsUnchangedAndAnIssuedKeyStillReplays(t *testing.T) {
+	input := AgentTurnInput{
+		AgentContextInput: AgentContextInput{
+			VersionExpectation:        VersionExpectation{ExpectedProjectVersion: 1, ExpectedContextRevision: 1, ExpectedVersion: 1},
+			SourceIDs:                 []string{"source-1"},
+			CardRefs:                  []VersionRef{},
+			SensitiveContextConfirmed: true,
+		},
+		UserInput: "帮我找合成材料的资料",
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The client states no purpose and no agent: the request shape is the
+	// one the digest was computed over before the purpose was derived.
+	if strings.Contains(string(encoded), "purpose") || strings.Contains(string(encoded), "agent") {
+		t.Fatalf("the turn request grew a field: %s", encoded)
+	}
+	digest, err := operationcore.RequestHash(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The digest is pinned to the value the request had before the purpose
+	// was derived: the struct the pipeline hashes is byte for byte the one
+	// it hashed then, so a key issued under the old rule still matches.
+	if digest != "481e6ee77587dbd8885b26da068a1bc0eb42d6b0602880a020b1f9465c0c930f" {
+		t.Fatalf("the turn request digest moved: %s", digest)
+	}
+
+	f := newAgentFixture(t, false)
+	stub := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
+	f.svc.agentRuntime.Model = stub
+	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, AgentResearch, "pf5-replay-session", f.expectation(0))
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	turnInput := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我找合成材料的资料"}
+	first, _, _, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "pf5-replay-turn", turnInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, replay, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "pf5-replay-turn", turnInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay {
+		t.Fatal("an issued key did not replay")
+	}
+	firstTurn := decodeAgentJSON[AgentTurn](t, first, nil)
+	secondTurn := decodeAgentJSON[AgentTurn](t, second, nil)
+	if firstTurn.ID != secondTurn.ID || firstTurn.Version != secondTurn.Version {
+		t.Fatalf("the replay is not the same turn: %+v %+v", firstTurn, secondTurn)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("the model was asked again on a replay: %d calls", stub.calls)
+	}
+	turns, err := f.svc.GetAgentTurns(context.Background(), f.owner, f.project.ID, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 {
+		t.Fatalf("the replay wrote a second turn: %d turns", len(turns))
+	}
+}
+
+// The words the server owns: the agent a session declares and the shape an
+// answer takes. They live in the server's constants, and nothing else spells
+// them when it decides what an answer is.
+var agentVocabularyWords = []string{
+	AgentTaskAssistant,
+	AgentResearch,
+	AgentConstraint,
+	AgentPurposeConversation,
+	AgentPurposeRuleSuggestion,
+	AgentPurposeResearch,
+}
+
+// A18: the agent and purpose vocabulary has one owner. The adapter and the
+// service refer to the server's constants instead of comparing loose
+// strings: a prompt that branches on a misspelled word loses its
+// instructions without anybody noticing.
+//
+// The scan is narrow on purpose. It looks at comparisons and at assignments
+// to an agent or a purpose, so a word that is common elsewhere - the import
+// candidate's own "conversation" selection type, the provenance source type
+// - is not mistaken for the vocabulary.
+func TestAgentVocabularyHasOneOwner(t *testing.T) {
+	for _, path := range vocabularyFiles(t) {
+		for _, hit := range vocabularyComparisons(t, path) {
+			t.Fatalf("the vocabulary is decided by a loose string: %s", hit)
+		}
+	}
+}
+
+// vocabularyFiles lists the server's own Go files. Test files are left out:
+// a case may name the words it is about.
+func vocabularyFiles(t *testing.T) []string {
+	t.Helper()
+	files := []string{}
+	err := filepath.WalkDir("..", func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// vocabularyComparisons finds every place the server decides an agent or a
+// purpose by comparing it against a loose string.
+func vocabularyComparisons(t *testing.T, path string) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits := []string{}
+	report := func(place string, other ast.Expr) {
+		hits = append(hits, fmt.Sprintf("%s: %s %s", path, place, expressionName(other)))
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.BinaryExpr:
+			if typed.Op != token.EQL && typed.Op != token.NEQ {
+				return true
+			}
+			if vocabularyLiteral(typed.X) && mentionsAgentOrPurpose(typed.Y) {
+				report("compares", typed.Y)
+			}
+			if vocabularyLiteral(typed.Y) && mentionsAgentOrPurpose(typed.X) {
+				report("compares", typed.X)
+			}
+		case *ast.KeyValueExpr:
+			if vocabularyLiteral(typed.Value) && mentionsAgentOrPurpose(typed.Key) {
+				report("assigns", typed.Key)
+			}
+		case *ast.SwitchStmt:
+			if !mentionsAgentOrPurpose(typed.Tag) {
+				return true
+			}
+			for _, statement := range typed.Body.List {
+				clause, ok := statement.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				for _, option := range clause.List {
+					if vocabularyLiteral(option) {
+						report("switches on", typed.Tag)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return hits
+}
+
+// vocabularyLiteral reports whether an expression is one of the vocabulary
+// words.
+func vocabularyLiteral(node ast.Expr) bool {
+	literal, ok := node.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	if err != nil {
+		return false
+	}
+	for _, word := range agentVocabularyWords {
+		if value == word {
+			return true
+		}
+	}
+	return false
+}
+
+// mentionsAgentOrPurpose reports whether an expression names an agent or a
+// purpose. The name is what the reader sees - the field or the variable.
+func mentionsAgentOrPurpose(node ast.Expr) bool {
+	name := strings.ToLower(expressionName(node))
+	return strings.Contains(name, "agent") || strings.Contains(name, "purpose")
+}
+
+// expressionName names an expression the way a reader would: the identifier
+// or the field it ends in.
+func expressionName(node ast.Expr) string {
+	switch typed := node.(type) {
+	case *ast.Ident:
+		return typed.Name
+	case *ast.SelectorExpr:
+		return typed.Sel.Name
+	case *ast.CallExpr:
+		return expressionName(typed.Fun)
+	case *ast.IndexExpr:
+		return expressionName(typed.X)
+	case *ast.ParenExpr:
+		return expressionName(typed.X)
+	}
+	return ""
 }

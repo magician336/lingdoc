@@ -262,6 +262,10 @@ test('助手两组说明各自带对象、原因与依据，且不混用影响�
 
 function researchProposalTurn(){return {id:'proposal-turn',project_id:'project',session_id:'session',version:2,created_by:'owner',status:'completed',agent:'research_agent',reply:'我整理了一条检索计划。',run_mode:'real_api_fake_model',model_id:'synthetic-model',user_input:'帮我找合成材料的资料',context:{project_version:7,spec_revision:3,context_revision:4,source_refs:[]},suggestions:{task_card:{goal:'弄清合成材料的定义',question_type:'定义',scope:'只查项目资料',exclusions:['不含二手综述'],queries:['合成材料 定义','合成材料 反例','synthetic material definition'],expected_output:'候选资料与反例'}}}}
 
+// 服务端拒掉提案时的那一轮：拒的是提案，不是整轮的问答复——这一轮照样完成，
+// 答复照样在，只有那份建议被摘掉，并留下一个读得懂的失败码。
+function refusedProposalTurn(){const base=researchProposalTurn();return {...base,status:'completed',failure_code:'invalid_proposal',suggestions:{reply:base.reply}}}
+
 test('服务端校验过的提案放进可编辑表单，同义词留在查询词里，保存前不创建任何东西',async()=>{
  const f=fixture({api:{saveResearchTask:(project,input)=>{f.calls.push({method:'saveResearchTask',args:[project,input]});return Promise.resolve({data:{...task(),goal:input.goal,question_type:input.question_type,scope:input.scope,exclusions:input.exclusions,queries:input.queries,expected_output:input.expected_output}})}}});await tick()
  const turn=researchProposalTurn();f.state.turns.value=[turn];await tick()
@@ -285,7 +289,7 @@ test('服务端校验过的提案放进可编辑表单，同义词留在查询�
 
 test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',async()=>{
  const f=fixture();await tick()
- const turn={...researchProposalTurn(),status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ const turn=refusedProposalTurn()
  f.state.turns.value=[turn];await tick()
  f.state.adoptTaskSuggestion(turn);await tick()
  assert.equal(f.state.taskForm.goal,'')
@@ -369,8 +373,7 @@ test('提案的候选来源与各自理由在面板上分列展示，来源与�
 
 test('被服务端拒绝的提案在面板上不出现任何候选来源',async()=>{
  const f=renderedFixture();await tick()
- const base=researchProposalTurn()
- const refused={...base,status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ const refused=refusedProposalTurn()
  f.state.tab.value='agents'
  f.state.turns.value=[refused]
  await tick()
@@ -407,8 +410,7 @@ test('提案的理由与缺口在面板上分列展示，缺口分缺什么与�
 // A13: 服务端拒掉的提案，理由与缺口都不到界面上。
 test('被服务端拒绝的提案在面板上不出现理由与缺口',async()=>{
  const f=renderedFixture();await tick()
- const base=researchProposalTurn()
- const refused={...base,status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ const refused=refusedProposalTurn()
  f.state.tab.value='agents'
  f.state.turns.value=[refused]
  await tick()
@@ -416,5 +418,36 @@ test('被服务端拒绝的提案在面板上不出现理由与缺口',async()=>
  assert.equal(byClass(f.container,'proposal-gap-description').length,0)
  assert.equal(byClass(f.container,'proposal-gap-evidence').length,0)
  assert.doesNotMatch(f.ui(),/缺一篇给出反例/)
+ f.close()
+})
+
+// A5/A6: 坏建议不连累用户那一轮的问答复。这一轮照样完成、答复照样在，
+// 面板上读得到「本轮的建议未通过服务端校验」，但看不到那份建议，也看不到
+// 它的候选来源、理由与缺口。
+test('坏提案不连累那一轮的问答复：答复仍在，面板上没有建议',async()=>{
+ const f=renderedFixture();await tick()
+ const refused=refusedProposalTurn()
+ f.state.tab.value='agents'
+ f.state.turns.value=[refused]
+ await tick()
+ assert.match(f.ui(),/我整理了一条检索计划。/)
+ assert.match(f.ui(),/未通过服务端校验/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
+ assert.equal(byClass(f.container,'proposal-source-id').length,0)
+ assert.equal(byClass(f.container,'proposal-reason').length,0)
+ f.close()
+})
+
+// A5: 没有提案的那一轮照样有答复，这一轮没有提案，也不算失败。
+test('没有提案的那一轮照样有答复，面板上没有建议',async()=>{
+ const f=renderedFixture();await tick()
+ const base=researchProposalTurn()
+ const absent={...base,suggestions:{reply:base.reply}}
+ f.state.tab.value='agents'
+ f.state.turns.value=[absent]
+ await tick()
+ assert.match(f.ui(),/我整理了一条检索计划。/)
+ assert.doesNotMatch(f.ui(),/未通过服务端校验/)
+ assert.equal(byClass(f.container,'research-proposal').length,0)
  f.close()
 })

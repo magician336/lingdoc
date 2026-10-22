@@ -32,16 +32,12 @@ const ResearchProposalMinimumQueries = 2
 const ResearchProposalMaximumQueries = 8
 
 // ResearchProposalFailureCode is the failure a turn carries when the model
-// stated a proposal that does not decode. The reply is lost with it: an
-// interface that shows a proposal nobody can read is worse than a plain
-// failure.
+// stated a proposal that does not decode.
+//
+// The code says what happened to the proposal, not to the answer: the reply
+// the model wrote stays, and the turn still completes. The interface reads
+// the code and tells the user that this turn carries no proposal.
 const ResearchProposalFailureCode = "invalid_proposal"
-
-// ResearchProposalAgent is the agent whose answers carry a proposal. The agent
-// and purpose vocabulary gets its own owner in a later ticket; until then the
-// proposal contract names the one agent it applies to. The assistant's
-// editable task suggestion is a different card and keeps its own rules.
-const ResearchProposalAgent = "research_agent"
 
 // researchProposalMaxPayload is the largest proposal the server reads.
 const researchProposalMaxPayload = 60000
@@ -354,7 +350,21 @@ const (
 //
 // The turn carries the context it was given, so the judgement also asks
 // whether the proposal's candidate sources were readable in that very turn.
+//
+// A turn whose proposal the server refused says so in its failure code: the
+// refused proposal never reached the turn, so the turn itself cannot be
+// re-judged into "present", and it must not be mistaken for a turn that
+// simply carried no proposal.
 func ResearchProposalStateForTurn(turn AgentTurn) (string, error) {
+	if turn.FailureCode == ResearchProposalFailureCode {
+		return ResearchProposalStateInvalid, nil
+	}
+	if turn.Agent != AgentResearch {
+		// The contract judges the research agent's proposal. The assistant's
+		// editable task suggestion is a different card with its own rules,
+		// and this contract does not touch it.
+		return ResearchProposalStateAbsent, nil
+	}
 	raw, err := researchProposalFromSuggestions(turn.Suggestions)
 	if err != nil {
 		return "", err
@@ -383,26 +393,70 @@ func researchProposalFromSuggestions(suggestions json.RawMessage) (json.RawMessa
 	return output.TaskCard, nil
 }
 
-// researchProposalError validates the proposal a turn's model answer carries.
+// researchProposalJudgement judges the proposal a turn's model answer carries
+// and returns the suggestions the turn may store.
 //
-// Only the research agent's answers are a proposal. The assistant's editable
-// task suggestion is a different card with its own rules, so this contract
-// does not touch it. A proposal that does not decode is an error: it never
-// becomes a suggestion.
+// The three states are facts about one answer, not verdicts about the project:
+//
+//   - present: the answer carries a proposal that decodes;
+//   - absent:  the answer carries no proposal at all;
+//   - invalid: the answer carries a proposal that does not decode.
+//
+// What is refused is the proposal, not the answer. An invalid proposal is
+// taken out of the suggestions and the rest of the answer - the reply the
+// user asked for - stays: a broken suggestion must not cost the user their
+// answer.
 //
 // The pack is the context the model was given. It is what makes a candidate
 // source checkable: a source the turn did not carry cannot be cited.
-func researchProposalError(agent string, structured json.RawMessage, pack AgentContextPackage) error {
-	if agent != ResearchProposalAgent {
-		return nil
+func researchProposalJudgement(agent string, structured json.RawMessage, pack AgentContextPackage) (string, json.RawMessage) {
+	if agent != AgentResearch {
+		// Only the research agent's answers are a proposal. The assistant's
+		// editable task suggestion is a different card with its own rules,
+		// so this contract does not judge it and does not touch it.
+		return ResearchProposalStateAbsent, structured
 	}
 	raw, err := researchProposalFromSuggestions(structured)
 	if err != nil {
-		return err
+		// The answer is not even a JSON object: none of it can be kept, and
+		// none of it can be a proposal.
+		return ResearchProposalStateInvalid, nil
 	}
 	if ResearchProposalAbsent(raw) {
-		return nil
+		return ResearchProposalStateAbsent, structured
 	}
-	_, err = DecodeResearchProposal(raw, pack)
-	return err
+	if _, err = DecodeResearchProposal(raw, pack); err != nil {
+		cleaned, stripErr := researchProposalWithoutProposal(structured)
+		if stripErr != nil {
+			return ResearchProposalStateInvalid, nil
+		}
+		return ResearchProposalStateInvalid, cleaned
+	}
+	return ResearchProposalStatePresent, structured
+}
+
+// researchProposalWithoutProposal takes the refused proposal out of a model
+// answer and leaves the rest of it alone.
+//
+// The answer is the model's own JSON: the reply the user asked for lives
+// under its own key, and only the proposal is taken out. A suggestion the
+// server cannot stand behind must not reach the interface - not as a
+// proposal, and not as a leftover fragment either.
+func researchProposalWithoutProposal(structured json.RawMessage) (json.RawMessage, error) {
+	if len(structured) == 0 {
+		return nil, ErrInvalidRequest
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(structured, &fields); err != nil {
+		return nil, ErrInvalidRequest
+	}
+	if _, stated := fields[ResearchProposalKey]; !stated {
+		return structured, nil
+	}
+	delete(fields, ResearchProposalKey)
+	cleaned, err := json.Marshal(fields)
+	if err != nil {
+		return nil, ErrInvalidRequest
+	}
+	return cleaned, nil
 }
