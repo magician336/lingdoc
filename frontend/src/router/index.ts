@@ -77,7 +77,7 @@ const router = createRouter({
     {
       path: "/demo/g3",
       name: "lingdocG3AcceptanceDemo",
-      component: () => import("../views/lingdoc/g3demo/G3Demo.vue"),
+      component: () => import("../views/lingdoc/impactCenterAcceptance/AcceptanceConsole.vue"),
       meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
     },
     {

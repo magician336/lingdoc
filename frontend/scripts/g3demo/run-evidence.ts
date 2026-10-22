@@ -30,29 +30,29 @@ import {
   exportFileName,
   type G3ChainRunInput,
   type G3EvidenceFileInput,
-} from '../../src/views/lingdoc/g3demo/g3Export'
-import { applyRunEvidence } from '../../src/views/lingdoc/g3demo/g3Evidence'
-import { G3_MATRIX_ROWS } from '../../src/views/lingdoc/g3demo/g3Matrix'
+} from '../../src/views/lingdoc/impactCenterAcceptance/evidenceExport'
+import { applyRunEvidence } from '../../src/views/lingdoc/impactCenterAcceptance/rowEvidenceRules'
+import { G3_MATRIX_ROWS } from '../../src/views/lingdoc/impactCenterAcceptance/impactMatrix'
 import {
   readProjectState,
   runChangeSetChain,
   writeChapterVersion,
-} from '../../src/views/lingdoc/g3demo/runner/changeset'
-import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
-import { runRoadmapChain } from '../../src/views/lingdoc/g3demo/runner/roadmap'
-import { runFaultInjectionChain } from '../../src/views/lingdoc/g3demo/runner/faultInjection'
+} from '../../src/views/lingdoc/impactCenterAcceptance/chains/changeSetChain'
+import { runChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/chainExecution'
+import { runRoadmapChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/roadmapChain'
+import { runFaultInjectionChain } from '../../src/views/lingdoc/impactCenterAcceptance/chains/faultInjection'
 import {
   G3_ASSISTANT_DRAFT_USER_INPUT,
   runAssistantChain,
-} from '../../src/views/lingdoc/g3demo/runner/assistant'
-import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
+} from '../../src/views/lingdoc/impactCenterAcceptance/chains/assistantChain'
+import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/impactCenterAcceptance/chains/demoIdentity'
 import {
   G3_DEMO_REQUIRED_ROUTE_NODE_ID,
   G3_DEMO_ROUTE_TEMPLATE_VERSION,
   runProjectChain,
-} from '../../src/views/lingdoc/g3demo/runner/project'
-import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
-import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/g3demo/runner/runContext'
+} from '../../src/views/lingdoc/impactCenterAcceptance/chains/demoProject'
+import { createRunId } from '../../src/views/lingdoc/impactCenterAcceptance/chains/runContext'
+import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/impactCenterAcceptance/chains/runContext'
 import { createFetchClient } from './fetchClient'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

@@ -1,14 +1,14 @@
 /**
  * G3 验收台 · node 脚本用的 fetch 风格 HTTP 客户端。
  *
- * 与浏览器侧适配器（`g3HttpAdapter.ts`）走的是同一份执行器契约：
+ * 与浏览器侧适配器（`httpAdapter.ts`）走的是同一份执行器契约：
  * 方法 / 路径 / 请求体 / 幂等键 / 令牌，两边语义一致，证据不会走样。
  *
  * **请求体为 `undefined` 时不发体**——`POST /change-sets/{id}/reassess`
  * 要求完全空体（服务端只读 1 字节，多 1 字节即 400）。
  */
 
-import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/views/lingdoc/g3demo/runner/httpClient'
+import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/views/lingdoc/impactCenterAcceptance/chains/httpClient'
 
 /**
  * 单个请求的超时（毫秒）。
