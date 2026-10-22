@@ -15,7 +15,14 @@ export const G3_MAIN_BASELINE_PATH =
 
 /** 另两份给出不同 ChangeSet 状态集合的文档，页面要标出各自位置。 */
 export const G3_LIFECYCLE_SPEC_PATH = 'docs/06-灵档产品开发规划/30-Spec-G3-ChangeSet生命周期与ContextRevision.md'
-export const G3_FIRST_RELEASE_REVIEW_PATH = 'docs/08-本轮实施方案/G3-首版最小变更复核.md'
+/**
+ * 首版最小变更复核那份读法的**现行记录位置**。
+ *
+ * 来源文档 `G3-首版最小变更复核.md` 已于 2026-10-22 随历史文档清理删除；
+ * 它给出的 ChangeSet 状态读法记录在收口总结的「ChangeSet 状态集合的三种读法」
+ * 一节，页面锚点指向那一节 —— 不指向已不存在的文件。
+ */
+export const G3_FIRST_RELEASE_READING_PATH = 'docs/08-本轮实施方案/G3-缺口收口-总结.md'
 
 /** 仓库门禁的验收矩阵八列（`docs/agents/development-rules.md:80-82`）。 */
 export const G3_MATRIX_COLUMNS = [
@@ -644,10 +651,10 @@ export const G3_LIFECYCLE_READINGS: readonly G3LifecycleReading[] = [
   },
   {
     id: '首版最小变更复核',
-    source: 'G3-首版最小变更复核.md',
-    anchor: { path: G3_FIRST_RELEASE_REVIEW_PATH, start: 48, end: 48 },
+    source: 'G3-首版最小变更复核.md（2026-10-22 已删除；读法记录在 G3-缺口收口-总结.md）',
+    anchor: { path: G3_FIRST_RELEASE_READING_PATH, start: 79, end: 89 },
     states: ['assessed', 'applied', 'rejected', 'stale', 'satisfied'],
-    note: '五态：明确「没有持久化 draft、没有 stabilized」，且状态用小写。',
+    note: '五态：明确「没有持久化 draft、没有 stabilized」，且状态用小写。来源文档已随历史文档清理删除，读法与原文出处记录在锚点位置。',
     primary: false,
   },
 ]

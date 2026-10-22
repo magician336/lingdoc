@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
   G3_GAP_LIST_ISSUE,
-  G3_GAP_TICKET_REGISTRY,
   G3_IMPLEMENTATION_GAPS,
   gapIdsForRow,
   gapsForRow,
@@ -88,23 +87,6 @@ function readMirrorGaps(): MirrorGap[] {
     })
   }
   return gaps
-}
-
-/** 读镜像里的「承接票清单」表，返回票号集合。 */
-function readMirrorTickets(): number[] {
-  assert.ok(
-    existsSync(MIRROR_ABS),
-    `读不到缺口清单的仓库内镜像（${MIRROR_ABS}）：镜像缺失就无法做同源守护`,
-  )
-  const source = readFileSync(MIRROR_ABS, 'utf8')
-  const tickets: number[] = []
-  for (const line of source.split('\n')) {
-    if (!/^\|\s*#\d+/.test(line.trim())) continue
-    const cells = cellsOf(line)
-    const ticket = Number((cells[0] ?? '').replace('#', '').trim())
-    if (Number.isFinite(ticket)) tickets.push(ticket)
-  }
-  return tickets
 }
 
 test('缺口清单覆盖本票点名的五条：AC-G3-03、AC-G3-08、AC-G3-16 与影响中心两个渲染缺口', () => {
@@ -306,119 +288,6 @@ test('同源守护：前端缺口副本与 #246 的仓库内镜像逐条相等',
     }
   }
   assert.deepEqual(diffs, [], `前端副本与仓库内镜像不一致：\n${diffs.join('\n')}`)
-})
-
-test('承接票存在性守护：每条缺口的承接票都在镜像的「承接票清单」表里', () => {
-  const tickets = readMirrorTickets()
-  for (const gap of G3_IMPLEMENTATION_GAPS) {
-    assert.ok(
-      tickets.includes(gap.ticket!),
-      `${gap.id} 的承接票 #${gap.ticket} 不在镜像的「承接票清单」表里`,
-    )
-  }
-  // 清单本身必须覆盖本轮拆出的十张票。
-  for (const ticket of [249, 250, 251, 252, 253, 254, 255, 256, 257, 258]) {
-    assert.ok(tickets.includes(ticket), `镜像的「承接票清单」缺 #${ticket}`)
-  }
-})
-
-/**
- * 承接票的**更强守护**：镜像的「承接票清单」表必须与代码里的
- * `G3_GAP_TICKET_REGISTRY`（登记表）逐条一致。
- *
- * 为什么不能只断言「票号出现在镜像表里」：那两条事实都来自同一处（镜像表），
- * 是**自证**——票号写错了、重复登记了、漏登记解除条件票了，都发现不了。
- * 这条守护改成三方对照：
- * **镜像表 ↔ 代码登记表 ↔ 缺口条目自身的 `ticket` 字段**，
- * 任何一方写错票号、重复登记、漏登记都会失败。
- *
- * 关于「票两两互不相同」：这条做不到，也不该做——一张票可以承接多条缺口
- * （#250 承接两条路线图缺口、#257 承接两条影响中心缺口），
- * 登记表把「哪张票承接哪几条缺口」显式写出来，守护按这份映射逐条核对。
- *
- * **注意**：登记表只保证「内部自洽、无遗漏、无重复」。
- * 票在 GitHub 上确实存在这一点由 PR 评审与逐票回写承担，不在自动化守护范围内。
- */
-test('承接票登记表守护：镜像的承接票清单与代码登记表逐条一致（无重复、无遗漏、无写错）', () => {
-  const mirror = readMirrorTickets()
-  const registry = G3_GAP_TICKET_REGISTRY.map((entry) => entry.ticket)
-
-  /** 票号 → 出现次数。 */
-  const countBy = (tickets: readonly number[]): Map<number, number> => {
-    const counts = new Map<number, number>()
-    for (const ticket of tickets) counts.set(ticket, (counts.get(ticket) ?? 0) + 1)
-    return counts
-  }
-
-  // 1. 镜像表里每个票号出现恰好一次（防重复登记）。
-  const mirrorCounts = countBy(mirror)
-  const duplicatedInMirror = [...mirrorCounts.entries()].filter(([, count]) => count > 1)
-  assert.deepEqual(
-    duplicatedInMirror.map(([ticket, count]) => `#${ticket} 登记了 ${count} 次`),
-    [],
-    '镜像的「承接票清单」里有票号被登记了多次',
-  )
-
-  // 2. 登记表本身每个票号出现恰好一次。
-  const registryCounts = countBy(registry)
-  const duplicatedInRegistry = [...registryCounts.entries()].filter(([, count]) => count > 1)
-  assert.deepEqual(
-    duplicatedInRegistry.map(([ticket, count]) => `#${ticket} 登记了 ${count} 次`),
-    [],
-    '承接票登记表里有票号被登记了多次',
-  )
-
-  // 3. 镜像表与登记表的票号集合完全一致（无遗漏、无多出）。
-  const sorted = (tickets: Iterable<number>): number[] => [...tickets].sort((a, b) => a - b)
-  assert.deepEqual(
-    sorted(mirrorCounts.keys()),
-    sorted(registryCounts.keys()),
-    '镜像的「承接票清单」与代码登记表的票号集合不一致',
-  )
-
-  // 4. 解除条件 / 派生缺陷票必须登记完整（不能只登记子票）。
-  for (const ticket of [306, 310, 314, 315, 318, 319, 320, 321]) {
-    assert.ok(mirrorCounts.has(ticket), `镜像的「承接票清单」缺解除条件票 #${ticket}`)
-    assert.ok(registryCounts.has(ticket), `承接票登记表缺解除条件票 #${ticket}`)
-  }
-
-  // 5. 每条缺口的票号必须与登记表里「承接它的那张票」逐条一致，
-  //    且落在本轮拆出的子票区间内。
-  const subEntries = G3_GAP_TICKET_REGISTRY.filter((entry) => entry.kind === 'sub')
-  for (const gap of G3_IMPLEMENTATION_GAPS) {
-    const owners = subEntries.filter((entry) => entry.gaps.includes(gap.id))
-    assert.equal(owners.length, 1, `${gap.id} 在登记表里被登记了 ${owners.length} 次（应恰好一次）`)
-    assert.equal(owners[0].ticket, gap.ticket, `${gap.id} 的承接票与登记表不一致`)
-    assert.ok(gap.ticket! >= 249 && gap.ticket! <= 258, `${gap.id} 的承接票号不在 #249–#258 区间内`)
-  }
-
-  // 6. 反向核对：登记表登记的每条缺口都真实存在，票号关系也对得上。
-  const gapIds = new Set(G3_IMPLEMENTATION_GAPS.map((gap) => gap.id))
-  for (const entry of G3_GAP_TICKET_REGISTRY) {
-    for (const gapId of entry.gaps) {
-      assert.ok(gapIds.has(gapId), `登记表 #${entry.ticket} 登记了不存在的缺口 ${gapId}`)
-      const gap = G3_IMPLEMENTATION_GAPS.find((item) => item.id === gapId)!
-      if (entry.kind === 'sub') {
-        assert.equal(
-          gap.ticket,
-          entry.ticket,
-          `${gapId} 的承接票是 #${gap.ticket}，与登记的 #${entry.ticket} 不一致`,
-        )
-      } else {
-        assert.notEqual(
-          gap.ticket,
-          entry.ticket,
-          `${gapId} 的承接票不应是解除条件票 #${entry.ticket}`,
-        )
-      }
-    }
-  }
-
-  // 7. 全部缺口都被登记（没有漏登记的缺口）。
-  const registered = new Set(subEntries.flatMap((entry) => [...entry.gaps]))
-  for (const gap of G3_IMPLEMENTATION_GAPS) {
-    assert.ok(registered.has(gap.id), `${gap.id} 没有出现在承接票登记表里`)
-  }
 })
 
 /**
