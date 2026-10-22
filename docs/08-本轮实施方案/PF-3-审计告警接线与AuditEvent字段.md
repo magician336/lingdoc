@@ -191,7 +191,7 @@ func (s *Service) readWithAudit(ctx context.Context, actor Actor, projectID, cap
 | 迁移两方言一致 | —— | I6 | SQLite 与 PostgreSQL 列集合一致 | down 可回退 | 迁移前后逐字比对 | 迁移彩排测试 | **PASS** |
 | PG 上普通读真 fail-open | 真实 PG 演练 | I1 | 读成功 | **实测不成立**（已转 [#387](https://github.com/magician336/lingdoc/issues/387)） | 隔离级别 | 隔离实例实测（§5 B1）；PG 端告警用例同时实测到「读失败但告警仍发出」 | **FAIL（已实测）** —— 不在本票范围 |
 
-矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-14 全部 passed（含五条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围。**PostgreSQL 端的告警注入用例已于 2026-10-23 补齐并通过**（`TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`）；`go test -race` 全仓本地仍未跑（兄弟会话并行），但 CI 的 PR gate 在代码 head `7c000321` 与基线合并 `684b4acb` 上都对本次改动的**三个包树**（`membership` / `workspace` / `workspacecore`）跑了 `go test -race -count=1` ⇒ 1228 条测试行全过、0 条 fail。
+矩阵行与 `docs/agents/development-rules.md` §一.2 的九列一一对齐。**逐行状态与证据见 [`T327-验证报告.json`](T327-验证报告.json)**：AC-327-01 至 AC-327-14 全部 passed（含五条结构断言的阴性验证与复原）；「PG 上普通读真 fail-open」一行仍为 failed，已转 [#387](https://github.com/magician336/lingdoc/issues/387)，不在本票范围。**PostgreSQL 端的告警注入用例已于 2026-10-23 补齐并通过**（`TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres`）；`go test -race` 全仓本地仍未跑（兄弟会话并行），但 CI 的 PR gate 在代码 head `7c000321` 与两次基线合并（`684b4acb`、`6b10c709`）上都对本次改动的**三个包树**（`membership` / `workspace` / `workspacecore`）跑了 `go test -race -count=1` ⇒ 1228 条测试行全过、0 条 fail。
 
 ## 5. 实施切片
 
@@ -393,7 +393,7 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 | 五条结构断言的阴性验证 | **PASS** — 去掉落库 / 迁移回填 / 去掉显式类别 / 让审计错误返回 / 去掉 PG 失败注入，各自主张变红并复原 |
 | **加列打红的夹具回归** | **PASS（修复后）** — 本机全仓跑出 29 条失败（6 处夹具：3 处手抄列清单、3 处跑迁移子集），逐处修完复跑全绿；详见 §5 B4 |
 | **本机全仓 Go 套件（123 包）** | **PASS（改动面全绿）** — `go vet` 全过；`go test` 仅剩 12 条与本票无关的既有 Windows 失败（`internal/agent/tools` 6 条 + `internal/application/service` 6 条），在 `origin/main` 基线副本上**逐条原样复现** |
-| **CI 逐 check 结论** | **PASS** — 逐 job 读 `gh pr checks` 与门禁产物，**不按 workflow 绿推断**（最终 head 上 9 个 workflow 全是 `completed/success`，但里面的重活全是 `skipping`）。三个 head 的实况：代码 head `7c000321`（reason `contribution surface changed`）仓库级矩阵真跑并全绿；基线合并 `684b4acb`（reason `the base moved under the branch; ...`）重跑 provider `-race` ⇒ `providers: success`，三个包树（`membership` / `workspace` / `workspacecore`）1228 条测试行全过、0 条 fail；最终 head（纯文档，reason `tested surface unchanged and base unchanged`）provider 与仓库级矩阵一并 **skipped（NOT RUN）**。**跳过不是通过**（门禁产物自己写着「Skipped means NOT RUN, not passed」）。覆盖绑定：provider `-race` 那次与最终 head 同 base 且只差 2 个文档；仓库级矩阵那次与最终 head 的 `*.go`、`frontend/`、`migrations/` 三条面逐字未变。**门禁不提供前端覆盖**（`frontend` 在所有 head 上都 `skipped`），前端覆盖来自独立的 Frontend workflow |
+| **CI 逐 check 结论** | **PASS** — 逐 job 读 `gh pr checks` 与门禁产物，**不按 workflow 绿推断**（某个 head 上 9 个 workflow 全是 `completed/success`，但里面的重活全是 `skipping`）。本轮四个 head 的实况见 §11 的表：代码 head `7c000321`（reason `contribution surface changed`）仓库级矩阵真跑并全绿；基线合并 `684b4acb` 与 `6b10c709`（reason `the base moved under the branch; ...`）重跑 provider `-race` ⇒ `providers: success`，三个包树（`membership` / `workspace` / `workspacecore`）1228 条测试行全过、0 条 fail；纯文档提交（reason `tested surface unchanged and base unchanged`）provider 与仓库级矩阵一并 **skipped（NOT RUN）**。**跳过不是通过**（门禁产物自己写着「Skipped means NOT RUN, not passed」）。覆盖绑定：provider `-race` 最近一次实跑在 `6b10c709`、对的是当前 base `2351edb7`，它与最终 head 只差文档；仓库级矩阵那次与最终 head 的 `*.go`、`frontend/`、`migrations/` 三条面逐字未变。**门禁不提供前端覆盖**（`frontend` 在所有 head 上都 `skipped`），前端覆盖来自独立的 Frontend workflow |
 | `go test -race ./...`（全仓本地） | **NOT RUN** — 本机有兄弟会话并行，资源会互相干扰；这一层由 CI 的 PR gate 在 Linux 上覆盖到改动面；解除条件见验证报告 |
 
 未覆盖风险：PG 行为已实测且为负（已转票）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；**夹具自持一份 schema 形状的机制仍在**（本轮修掉 6 处，但下一次加列仍会重演）。
@@ -471,33 +471,35 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 | 仓库级 Go 套件（本机全仓 123 包） | **PASS（除 12 条与本票无关的既有 Windows 失败）** —— 12 条全在 `internal/agent/tools`（6 条：MCP schema 的 `file://D:\` URI、读文件沙箱、shell stdin、skill 的可执行位与 pip/uv/ensurepip 恢复路径）与 `internal/application/service`（6 条：SQLite 临时目录被占用、skill 同类），在 `origin/main` 基线副本上**逐条原样复现**；本分支未触碰这两个包，它们也不 import 本次改动的包 |
 | 登记处 | **PASS** —— `6 parallel work faces validated`（PF-3 补到 18 条路径后与其余五面零重叠） |
 | 命名棘轮 | **PASS** —— `0/0/0` |
-| `go test -race`（全仓本地） | **NOT RUN** —— 兄弟会话并行；但 CI 的 PR gate 在代码 head `7c000321` 与基线合并 `684b4acb` 上都对本次改动的三个包树（`membership` / `workspace` / `workspacecore`）跑了 `go test -race`（`providers: success`，1228 条测试行全过、0 条 fail） |
+| `go test -race`（全仓本地） | **NOT RUN** —— 兄弟会话并行；但 CI 的 PR gate 在代码 head `7c000321` 与两次基线合并（`684b4acb`、`6b10c709`）上都对本次改动的三个包树（`membership` / `workspace` / `workspacecore`）跑了 `go test -race`（`providers: success`，1228 条测试行全过、0 条 fail） |
 
 **未覆盖风险**：本机全仓跑出的 12 条 Windows 失败说明「本地全仓绿」在 Windows 上不可得（CI 在 ubuntu 上跑同一套）；PG 端的普通读 fail-open 仍不成立（#387）；无种子规则的实际观测效果未验证；`AuditEvent` 既有 5 个不落库字段导致的读侧角色过滤缺口未修；CodeGraph 索引本轮未使用（工具不可用），取样以 `grep`/`read` 与可复现运行为准。
 
 ## 11. 基线合并与冲突处置（2026-10-23）
 
-本票从 `c4c9ac93` 分出，合并期间 `main` 前移三次。三次合并的**代码改动均为零**——`git diff 7c000321 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空——所以 §4 矩阵与证据里的每一条测试结论都仍然绑定最终 head。
+本票从 `c4c9ac93` 分出，合并期间 `main` 前移四次。四次合并的**代码改动均为零**——`git diff 7c000321 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空——所以 §4 矩阵与证据里的每一条测试结论都仍然绑定最终 head。
 
 | 合并 | 基线 | 冲突 | 处置 |
 |---|---|---|---|
 | `65b33531` | 当时的 main 尖端 | 路径图一处内容冲突 | 取本分支版本 |
 | `d380459a` | `fc3d30b2`（PF-4 的 PR #392 合入） | **登记处所有权撞车**：`workspacecore/service_facade.go` 与 `workspacecore/typed_contracts.go` 被 PF-4 声明，而 PF-3 也要改它们 | **PF-3 让出这两个文件**（路径集 20 → 18 条）。理由：PF-4 于 2026-10-22 先在 main 上声明、且仍是待施工面，登记处要求一条路径只有一个拥有者，不擅自剥离他人所有权。**但 PF-3 确实改了它们**（`readWithAudit` 接缝与 Authorize/GetProject 接线在 `service_facade.go`，AuthorizeRequest 接线在 `typed_contracts.go`），两面改动由基线合并组合在同一棵树上，合并零冲突，PF-4 之后动这两个文件时冲突会显式报出来，不会静默覆盖 |
 | `7627853` | `6e48ee10`（PF-5 的 Spec #393 合入） | 路径图 PF-5 行：main 扩到 9 条路径并加了 #393 | **取 main 版本**。它列的文件名 `internal/lingdoc/workspacecore/agent_research_model.go` 与磁盘一致，而本分支此前那一格写的是 `g2_model.go`——该文件不存在，是本分支带入的陈旧引用，合并把它暴露出来 |
+| `6b10c709` | `2351edb7`（PF-5 的施工票改纵切） | 无——main 只动了 PF-5 自己的一个文档 | 直接合并，零冲突 |
 
 顺带修掉两处陈旧路径指针（都是「同一事实的多份副本」里没跟上的那一份）：路径图 PF-5 行里的 `g2_model.go`（本分支引入）与「PF-2 的路径集」段里的 `workspacecore/g2_*.go`（main 上既有）。两者都指向不存在的文件，读者按指针找会扑空。
 
-**门禁在合并后的缩面**：门禁按「贡献面内容是否变化」决定跑什么，三个 head 三种 reason：
+**门禁在合并后的缩面**：门禁按「贡献面内容是否变化」决定跑什么，本轮四个 head 四种实况：
 
-| head | push 内容 | 门禁 reason | provider `-race` | 仓库级矩阵 |
+| head | 性质 | 门禁 reason | provider `-race` | 仓库级矩阵 |
 |---|---|---|---|---|
-| `7c000321`（代码 head） | 真正改到 Go 面 | `contribution surface changed` | **跑** ⇒ 1228 条测试行全过 | **真跑**并全绿 |
-| `684b4acb`（基线合并） | 合并 `6e48ee10` | `the base moved under the branch; the contribution is re-tested against it` | **跑** ⇒ 同样 1228 条测试行全过 | skipped |
-| `45f3808a`（最终 head） | 只改 2 个文档 | `tested surface unchanged and base unchanged` | **skipped（NOT RUN）** | skipped |
+| `7c000321` | 代码 head | `contribution surface changed` | **跑** ⇒ 1228 条测试行全过 | **真跑**并全绿 |
+| `684b4acb` | 基线合并（base `6e48ee10`） | `the base moved under the branch; the contribution is re-tested against it` | **跑** ⇒ 同样 1228 条全过 | skipped |
+| `45f3808a` | 纯文档 | `tested surface unchanged and base unchanged` | **skipped（NOT RUN）** | skipped |
+| `6b10c709` | 基线合并（base `2351edb7`） | `the base moved under the branch; the contribution is re-tested against it` | **跑** ⇒ 同样 1228 条全过 | skipped |
 
 两件必须说清的事：
 
-1. **workflow 级别会显示 `completed/success`，而里面的重活全是 `skipping`**——最终 head 上 9 个 workflow 全部「绿」，但逐 job 读 `gh pr checks` 才知道 App 的 `Format, vet, test, and build`、Frontend 的 `Test, type-check, and build`、Docker、lint、mock、F01、integration、workspace-concurrency 全是 `skipping`。门禁产物里自己写着 `Skipped means NOT RUN, not passed`。
-2. **最终 head 的 provider `-race` 也被跳过了，但覆盖没丢**：`684b4acb` 与 `45f3808a` 在同一个 base `6e48ee10` 上，两者之间只改了 2 个文档（`git diff --name-only 684b4acb 45f3808a -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空）⇒ `684b4acb` 那次 `-race` 的结论绑定最终 head。门禁的判定就是这个意思：「tested surface unchanged and base unchanged」——它认为这个面已经在这个 base 上测过了。仓库级矩阵同理：它在代码 head `7c000321` 上真跑并全绿，而 `7c000321` → 最终 head 的 `*.go`、`frontend/`、`migrations/` 三条面逐字未变。
+1. **workflow 级别会显示 `completed/success`，而里面的重活全是 `skipping`**——逐 job 读 `gh pr checks` 才知道 App 的 `Format, vet, test, and build`、Frontend 的 `Test, type-check, and build`、Docker、lint、mock、F01、integration、workspace-concurrency 全是 `skipping`。门禁产物里自己写着 `Skipped means NOT RUN, not passed`。
+2. **provider `-race` 最近一次实跑是在 `6b10c709`、对的是当前 base `2351edb7`**，它与最终 head 之间只差文档（`git diff --name-only 6b10c709 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空）⇒ 那次 `-race` 的结论绑定最终 head。仓库级矩阵同理：它在代码 head `7c000321` 上真跑并全绿，而 `7c000321` → 最终 head 的 `*.go`、`frontend/`、`migrations/` 三条面逐字未变。
 
-**门禁不提供前端覆盖**：`frontend` 在**三个** head 上都是 `skipped`——前端不在本次贡献面内。前端覆盖来自独立的 Frontend workflow（代码 head 上 `Test, type-check, and build` success）。这条容易读错，所以单列。
+**门禁不提供前端覆盖**：`frontend` 在**所有** head 上都是 `skipped`——前端不在本次贡献面内。前端覆盖来自独立的 Frontend workflow（代码 head 上 `Test, type-check, and build` success，且 `frontend/` 树在代码 head 与最终 head 之间逐字未变）。这条容易读错，所以单列。
