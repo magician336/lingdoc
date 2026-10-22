@@ -17,12 +17,46 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"gorm.io/gorm"
 )
+
+// applyAuditVersionFields applies the audit version fields migration to the
+// fixture's database when the columns are not there yet.
+//
+// The shared owner freeze fixture applies the migrations that ticket needed.
+// The audit event's version columns landed later, and every write that audits
+// fails without them. This file applies that one migration itself, and only
+// when the columns are missing, so it holds both before and after the shared
+// fixture learns about it: the shared fixture stays untouched, and the tickets
+// that share it do not collide on the same line of it.
+func applyAuditVersionFields(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var columns []struct {
+		Name string
+	}
+	if err := db.Raw("PRAGMA table_info(lingdoc_project_audits)").Scan(&columns).Error; err != nil {
+		t.Fatalf("read the audit table columns: %v", err)
+	}
+	for _, column := range columns {
+		if column.Name == "target_version" {
+			return
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", "000052_lingdoc_audit_version_fields.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(raw)).Error; err != nil {
+		t.Fatalf("apply the audit version fields migration: %v", err)
+	}
+}
 
 // ownerAvailabilityFact is the project level read outlet's payload, read as
 // the contract reads it: the wire shape, not a Go type.
@@ -84,6 +118,7 @@ func projectKeys(project workspacecore.Project) []string {
 // is going on with the Owner and how the project gets back to work.
 func TestOwnerAvailabilityOutletReportsTheFrozenOwner(t *testing.T) {
 	f := newOwnerFreezeFixture(t)
+	applyAuditVersionFields(t, f.db)
 	project := f.activeProject(t)
 	chapters := f.chapters(t, project.ID)
 	if len(chapters) == 0 {
@@ -125,6 +160,7 @@ func TestOwnerAvailabilityOutletReportsTheFrozenOwner(t *testing.T) {
 // project whose Owner may still act is not a project in trouble.
 func TestOwnerAvailabilityOutletReportsAHealthyOwner(t *testing.T) {
 	f := newOwnerFreezeFixture(t)
+	applyAuditVersionFields(t, f.db)
 	project := f.activeProject(t)
 
 	read := f.request(t, http.MethodGet, "/projects/"+project.ID+"/owner-availability",
@@ -142,6 +178,16 @@ func TestOwnerAvailabilityOutletReportsAHealthyOwner(t *testing.T) {
 	if len(availability.RecoveryPaths) != 0 {
 		t.Fatalf("a healthy project offers recovery paths: %v (%s)", availability.RecoveryPaths, read.Body.String())
 	}
+
+	// The other half of the agreement: while the Owner may still act, the
+	// permission outlet says the Owner-only entry may run.
+	permission := f.request(t, http.MethodGet, "/projects/"+project.ID+"/permissions?capability=manage",
+		"", "", f.tokens["owner-user"], 200)
+	allowed, reason := permissionReason(t, permission)
+	if !allowed || reason != "allowed" {
+		t.Fatalf("permission read outlet = allowed %v reason %q, want true / allowed (%s)",
+			allowed, reason, permission.Body.String())
+	}
 }
 
 // TestOwnerAvailabilityIsDerivedRatherThanStored is the promise that the
@@ -149,6 +195,7 @@ func TestOwnerAvailabilityOutletReportsAHealthyOwner(t *testing.T) {
 // project grows a field, and nobody has to run a repair action to clear it.
 func TestOwnerAvailabilityIsDerivedRatherThanStored(t *testing.T) {
 	f := newOwnerFreezeFixture(t)
+	applyAuditVersionFields(t, f.db)
 	project := f.activeProject(t)
 	chapters := f.chapters(t, project.ID)
 	if len(chapters) == 0 {
