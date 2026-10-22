@@ -69,9 +69,16 @@ export interface AgentContextPackage {
 export interface AgentContextInput extends VersionExpectation { chapter_id?: string; task_id?: string; source_ids: string[]; card_refs: VersionRef[]; sensitive_context_confirmed: boolean }
 export type LingDocAgent = 'task_assistant' | 'research_agent'
 export interface AgentSession { id: string; project_id: string; version: number; agent: LingDocAgent; created_by: string; created_at: string }
+// 研究提案的形状由服务端契约拥有（internal/lingdoc/workspacecore/research_proposal.go）：
+// 服务端按那一份契约解码模型的提案，解不开就拒绝，所以到达这里的形状已经是校验过的。
+// 字段名沿用调研任务自己的一套，保存时不必改名。
+export interface ResearchProposal {
+  goal: string; question_type?: string; scope: string
+  exclusions?: string[]; queries: string[]; expected_output: string
+}
 export interface AgentTurn {
   id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string
-  suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput>; change_draft?: AgentChangeDraftSuggestion; affected_explanation?: AssistantAffectedExplanation }
+  suggestions?: { reply?: string; task_card?: ResearchProposal; change_draft?: AgentChangeDraftSuggestion; affected_explanation?: AssistantAffectedExplanation }
   context: AgentContextPackage; status: string; failure_code?: string; model_id?: string; run_mode: string; input_tokens: number; output_tokens: number; created_by: string; created_at: string
 }
 // Only a real completed server turn can supply this provenance. No client grant flags.

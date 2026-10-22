@@ -259,3 +259,38 @@ test('助手两组说明各自带对象、原因与依据，且不混用影响�
  assert.equal(JSON.stringify(groups).includes('certainty'),false)
  f.close()
 })
+
+function researchProposalTurn(){return {id:'proposal-turn',project_id:'project',session_id:'session',version:2,created_by:'owner',status:'completed',agent:'research_agent',reply:'我整理了一条检索计划。',run_mode:'real_api_fake_model',model_id:'synthetic-model',user_input:'帮我找合成材料的资料',context:{project_version:7,spec_revision:3,context_revision:4,source_refs:[]},suggestions:{task_card:{goal:'弄清合成材料的定义',question_type:'定义',scope:'只查项目资料',exclusions:['不含二手综述'],queries:['合成材料 定义','合成材料 反例','synthetic material definition'],expected_output:'候选资料与反例'}}}}
+
+test('服务端校验过的提案放进可编辑表单，同义词留在查询词里，保存前不创建任何东西',async()=>{
+ const f=fixture({api:{saveResearchTask:(project,input)=>{f.calls.push({method:'saveResearchTask',args:[project,input]});return Promise.resolve({data:{...task(),goal:input.goal,question_type:input.question_type,scope:input.scope,exclusions:input.exclusions,queries:input.queries,expected_output:input.expected_output}})}}});await tick()
+ const turn=researchProposalTurn();f.state.turns.value=[turn];await tick()
+ f.state.adoptTaskSuggestion(turn);await tick()
+ assert.equal(f.state.taskForm.goal,'弄清合成材料的定义')
+ assert.equal(f.state.taskForm.queries,'合成材料 定义\n合成材料 反例\nsynthetic material definition')
+ assert.equal(f.state.taskForm.type,'定义')
+ assert.equal(f.state.taskForm.scope,'只查项目资料')
+ assert.equal(f.state.taskForm.exclusions,'不含二手综述')
+ assert.equal(f.state.taskForm.output,'候选资料与反例')
+ assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+ f.state.taskForm.assets=['asset']
+ await f.state.saveTask();await tick()
+ const saved=f.calls.find(call=>call.method==='saveResearchTask')
+ assert.ok(saved)
+ assert.deepEqual([...saved.args[1].queries],['合成材料 定义','合成材料 反例','synthetic material definition'])
+ assert.equal(saved.args[1].goal,'弄清合成材料的定义')
+ assert.deepEqual([...saved.args[1].exclusions],['不含二手综述'])
+ f.close()
+})
+
+test('被服务端拒绝的提案不进入表单，只留下读得懂的失败',async()=>{
+ const f=fixture();await tick()
+ const turn={...researchProposalTurn(),status:'failed',failure_code:'invalid_proposal',suggestions:undefined}
+ f.state.turns.value=[turn];await tick()
+ f.state.adoptTaskSuggestion(turn);await tick()
+ assert.equal(f.state.taskForm.goal,'')
+ assert.equal(f.state.taskForm.queries,'')
+ assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
+ assert.match(f.state.label('invalid_proposal'),/未通过服务端校验/)
+ f.close()
+})
