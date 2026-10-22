@@ -41,12 +41,24 @@ func (s *Service) EffectivePermission(
 			result.ReasonCode = core.ReasonAllowed
 			return nil
 		}
-		// The Owner may be unable to act at all, and then every Owner-only
-		// entry is frozen. The refusal says so, so the caller can tell a
+		// The Owner may be unable to act at all, and then the Owner-only
+		// entries are frozen. The refusal says so, so the caller can tell a
 		// frozen project from a request it was never allowed to make.
-		if authority := core.OwnerAuthorityOf(tx, p, actor.TenantID); authority.OwnerUserID != "" && !authority.Available {
-			result.ReasonCode = core.ReasonOwnerUnavailable
-			return nil
+		//
+		// Only an Owner-only capability may be reported as frozen. A refusal
+		// of any other capability is about the actor's own authority, and
+		// calling it a freeze would swallow the existing
+		// "capability_or_scope_denied" meaning.
+		//
+		// The capability may carry a "base:target" suffix; the base is the
+		// capability the authorization asks for, so the base is what decides
+		// whether the entry is an Owner-only one.
+		base, _, _ := strings.Cut(capability, ":")
+		if core.OwnerOnlyCapability(base) {
+			if authority := core.OwnerAuthorityOf(tx, p, actor.TenantID); authority.OwnerUserID != "" && !authority.Available {
+				result.ReasonCode = core.ReasonOwnerUnavailable
+				return nil
+			}
 		}
 		result.ReasonCode = "capability_or_scope_denied"
 		return nil
