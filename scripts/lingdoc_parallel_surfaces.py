@@ -275,17 +275,63 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-3 审计告警接线与 AuditEvent 字段",
         "issue": 327,
         "issues": (130,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            ("internal/lingdoc/workspacecore/machine_read_grant.go", "file"),
+            ("internal/lingdoc/workspacecore/service.go", "file"),
+            ("internal/lingdoc/workspacecore/audit_failure_alert_test.go", "file"),
+            ("internal/lingdoc/workspacecore/audit_event_version_fields_test.go", "file"),
+            ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
+            ("internal/lingdoc/membership/fixture_test.go", "file"),
+            # These fixtures hand-wrote the column list of lingdoc_project_audits.
+            # Adding two columns to that table broke them, and the failure
+            # surfaced as an opaque HTTP 500 instead of a schema error, so they
+            # now apply the production migration instead of copying the shape.
+            ("internal/lingdoc/workspace/audit_event_table_fixture_test.go", "file"),
+            ("internal/lingdoc/workspace/change_set_http_test.go", "file"),
+            ("internal/lingdoc/workspace/change_set_delivery_test.go", "file"),
+            ("internal/lingdoc/workspace/delivery_http_test.go", "file"),
+            # These two run a curated subset of the production migration chain.
+            # The subset stopped before 000052, so the audit table had no
+            # version columns and every audit write failed.
+            ("internal/lingdoc/workspace/save_chapter_policy_test.go", "file"),
+            ("internal/container/lingdoc_ruleset_delivery_e2e_test.go", "file"),
+            ("migrations/sqlite/000052_lingdoc_audit_version_fields.up.sql", "file"),
+            ("migrations/sqlite/000052_lingdoc_audit_version_fields.down.sql", "file"),
+            ("migrations/versioned/000131_lingdoc_audit_version_fields.up.sql", "file"),
+            ("migrations/versioned/000131_lingdoc_audit_version_fields.down.sql", "file"),
         ),
         "resolves": (),
         "summary": (
-            "fail-open 语义已实现，但审计失败没有接到告警源，"
-            "AuditEvent 也没有 target_version / project_revision 字段。"
-            "本面独占 model.go，PF-4 因此不得声明它。"
+            "读类 fail-open 落点共 6 处，普通读只占授权审计与机器读取；"
+            "平台事务外通道（internal/container/lingdoc.go）写失败返回 nil，"
+            "失败连错误都不产生，那条通道本轮不接。"
+            "审计事实归 AuditEvent 与 lingdoc_project_audits 表——"
+            "该表现只有 7 列，TargetVersion / ProjectRevision 需要独立列加两套迁移，"
+            "不是只改 model.go 的字段声明。"
+            "路径集按 #327 认领后的实测清单补齐（先例：PF-1 与 PF-2 同样在认领后补齐）。"
+            "pr150_migration_history_test.go 是实测补进来的：它演练一个停在 000043 之前的旧库，"
+            "当前代码写审计版本列时那个旧库缺列，种数据前必须先把审计表带到当前形状。"
+            "internal/lingdoc/workspace/ 下的三个夹具同样是实测补进来的：它们手抄了"
+            "lingdoc_project_audits 的列清单，加列后审计写失败，而失败被 HTTP 层转成 500，"
+            "看不出来是 schema 漂移；现在改为主动应用生产迁移，夹具与生产按构造一致。"
+            "另有两个跑迁移子集的夹具也补进来了：子集停在 000052 之前，审计表没有版本列。"
+            "internal/database/migration_sqlite_versioned_schema_test.go 与"
+            "internal/router/lingdoc_integration_test.go 按上面的「共享维护点」约定修改，"
+            "不登记进任何面的路径集。"
+            "**本面让出两个文件**（2026-10-23 基线合并时）："
+            "workspacecore/service_facade.go 与 workspacecore/typed_contracts.go —— "
+            "PF-4 于 2026-10-22 先在 main 上声明了它们（PR #392），而 PF-4 仍是待施工的面；"
+            "登记处要求一条路径只有一个拥有者，所以 PF-3 不再声明这两个文件。"
+            "**但 PF-3 确实改了它们**：readWithAudit 接缝与 Authorize/GetProject 的接线在 "
+            "service_facade.go，AuthorizeRequest 的接线在 typed_contracts.go。"
+            "两面的改动由基线合并组合在同一棵树上（合并零冲突），"
+            "PF-4 之后动这两个文件时冲突会显式报出来，不会静默覆盖。"
+            "本面独占 model.go 与 runtime_control.go，PF-4 因此不得声明 model.go。"
+            "本面产出文档：docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md 与 T327-验证报告.json。"
         ),
     },
     {

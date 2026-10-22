@@ -251,13 +251,15 @@ func decodeAgentJSON[T any](t *testing.T, raw json.RawMessage, err error) T {
 // The member and owner tests read those rows directly to prove what the
 // transaction did, and did not, persist.
 type auditEventRow struct {
-	ID          string `gorm:"primaryKey;size:36"`
-	ProjectID   string `gorm:"not null;index;size:36"`
-	ActorID     string `gorm:"not null;size:64"`
-	Action      string `gorm:"not null;size:64"`
-	Target      string `gorm:"not null;size:128"`
-	DetailsJSON string `gorm:"column:details_json;not null;type:text;default:'{}'"`
-	CreatedAt   time.Time
+	ID              string `gorm:"primaryKey;size:36"`
+	ProjectID       string `gorm:"not null;index;size:36"`
+	ActorID         string `gorm:"not null;size:64"`
+	Action          string `gorm:"not null;size:64"`
+	Target          string `gorm:"not null;size:128"`
+	TargetVersion   string `gorm:"column:target_version;not null;size:128;default:''"`
+	ProjectRevision int64  `gorm:"column:project_revision;not null;default:0"`
+	DetailsJSON     string `gorm:"column:details_json;not null;type:text;default:'{}'"`
+	CreatedAt       time.Time
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }

@@ -308,6 +308,31 @@ func pr150ReadMigrationHistory(t *testing.T, s *Service, a Actor, p Project, ids
 func pr150CheckSatisfiedMigration(t *testing.T, s *Service, flavor string, withSatisfied bool,
 	run func([]byte) error, reopen func() *Service) {
 	t.Helper()
+	// This test rehearses the satisfied-change-set migration on a library that
+	// stops before that migration. The current code writes the audit event's
+	// version columns, so the library has to carry the audit table's current
+	// shape before the service writes to it. The rehearsal touches another
+	// table, so bringing the audit table forward does not affect what the
+	// rehearsal proves.
+	if !s.testDB().Migrator().HasColumn(&auditEventRow{}, "TargetVersion") {
+		forward := ""
+		for _, file := range productionLingDocMigrationNames(t, flavor) {
+			if strings.Contains(file, "audit_version_fields") {
+				forward = file
+				break
+			}
+		}
+		if forward == "" {
+			t.Fatalf("the audit version fields migration is not in the %s production chain", flavor)
+		}
+		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", flavor, forward))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := run(body); err != nil {
+			t.Fatalf("bring the audit table forward: %v", err)
+		}
+	}
 	a, p, ids := pr150SeedMigrationHistory(t, s)
 	before := pr150MigrationHistorySnapshot(t, s)
 	publicBefore := pr150ReadMigrationHistory(t, s, a, p, ids)

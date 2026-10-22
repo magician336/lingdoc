@@ -334,7 +334,7 @@ func (s *Service) auditMachineRead(ctx context.Context, state machineReadSnapsho
 		return
 	}
 	// Ordinary read audit is fail-open; it cannot change the permission result.
-	_ = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+	auditErr := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
 		audit, ok := tx.(auditTransaction)
 		if !ok {
 			return ErrMachineReadDependency
@@ -346,4 +346,9 @@ func (s *Service) auditMachineRead(ctx context.Context, state machineReadSnapsho
 				"grantor_id": state.authorization.grantorID, "grant_version": state.grantVersion,
 				"decision": auditDecision(authErr)}})
 	})
+	if auditErr != nil {
+		// The alert is published after the audit transaction ended. Written
+		// inside it, the alert would vanish with the failure it reports.
+		_ = s.EmitAuditFailureAlert(ctx, Actor{TenantID: tenant, UserID: p.StorageID()}, pid, "machine.read", auditErr)
+	}
 }

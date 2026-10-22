@@ -158,16 +158,12 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (tenant_id, user_id, operation, target, key)
 		)`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
+	ensureAuditEventTable(t, db)
 	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
 		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
@@ -310,16 +306,12 @@ func TestDismissalStopsApplyingWhenTheTargetVersionChanges(t *testing.T) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (tenant_id, user_id, operation, target, key)
 		)`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
+	ensureAuditEventTable(t, db)
 	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
 		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
@@ -397,16 +389,12 @@ func TestRuleIssueWaiveOnBlockingIsRejectedAndResolveKeepsBlocking(t *testing.T)
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (tenant_id, user_id, operation, target, key)
 		)`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
+	ensureAuditEventTable(t, db)
 	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
 		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
