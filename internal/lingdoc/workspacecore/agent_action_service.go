@@ -1650,7 +1650,7 @@ func (s *Service) SelectGenerationEvidence(ctx context.Context, actor Actor, pro
 }
 
 func (s *Service) CreateAgentSession(ctx context.Context, actor Actor, projectID, agent, key string, input VersionExpectation) (json.RawMessage, int, bool, error) {
-	if agent != "task_assistant" && agent != "research_agent" {
+	if agent != AgentTaskAssistant && agent != AgentResearch {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.runAgentOperation(ctx, actor, projectID, "agent", "createAgentSession", projectID+"/"+agent, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
@@ -1930,9 +1930,13 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 	// the server stood behind. The contract also holds the proposal to the
 	// authorization of this turn: a candidate source the model was not given
 	// is refused with the rest of the proposal, not quietly dropped.
-	proposalErr := error(nil)
+	//
+	// What is refused is the proposal, not the answer: the reply the model
+	// wrote stays, and only the proposal is taken out of the suggestions.
+	proposalState := ResearchProposalStateAbsent
+	suggestions := reply.StructuredOutput
 	if modelErr == nil {
-		proposalErr = researchProposalError(started.Agent, reply.StructuredOutput, pack)
+		proposalState, suggestions = researchProposalJudgement(started.Agent, reply.StructuredOutput, pack)
 	}
 	currentPack, currentErr := s.BuildAgentContext(context.WithoutCancel(ctx), actor, projectID, input.AgentContextInput)
 	if currentErr == nil && (!sameAgentContextBasis(pack, currentPack)) {
@@ -1952,7 +1956,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		}
 		turn.Version++
 		turn.Reply = reply.Content
-		turn.Suggestions = reply.StructuredOutput
+		turn.Suggestions = suggestions
 		turn.ModelID = reply.ModelID
 		turn.RunMode = reply.RunMode
 		turn.InputTokens = reply.InputTokens
@@ -1969,19 +1973,18 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 			turn.FailureCode = agentFailureCode(modelErr)
 			turn.Reply = ""
 			turn.Suggestions = nil
-		case proposalErr != nil:
-			// The model stated a proposal the contract does not accept.
-			// The turn fails with a readable code and nothing is written:
-			// a proposal nobody can read is worse than a plain failure.
-			turn.Status = "failed"
-			turn.FailureCode = ResearchProposalFailureCode
-			turn.Reply = ""
-			turn.Suggestions = nil
 		case !validAgentMode(reply.RunMode) || strings.TrimSpace(reply.Content) == "" || reply.FinishReason == "length":
 			turn.Status = "failed"
 			turn.FailureCode = "incomplete_response"
 			turn.Reply = ""
 			turn.Suggestions = nil
+		case proposalState == ResearchProposalStateInvalid:
+			// The model stated a proposal the contract does not accept.
+			// The proposal is refused and never reaches the interface; the
+			// turn says so in a code the reader can act on. The reply stays:
+			// a broken suggestion must not cost the user their answer.
+			turn.FailureCode = ResearchProposalFailureCode
+			turn.Suggestions = suggestions
 		}
 		if err = storeStoredObject(tx, old, projectID, AgentTurnKind, turn.ID, turn.Version, turn); err != nil {
 			return err

@@ -235,20 +235,38 @@ func TestResearchProposalDoesNotBorrowTheRetrievalLevelVocabulary(t *testing.T) 
 }
 
 func TestResearchProposalStatesArePresentAbsentAndInvalid(t *testing.T) {
-	legal := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
+	legal := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
 	state, err := ResearchProposalStateForTurn(legal)
 	if err != nil || state != ResearchProposalStatePresent {
 		t.Fatalf("legal proposal is not present: %q %v", state, err)
 	}
-	absent := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	absent := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r"}`)}
 	state, err = ResearchProposalStateForTurn(absent)
 	if err != nil || state != ResearchProposalStateAbsent {
 		t.Fatalf("missing proposal is not absent: %q %v", state, err)
 	}
-	invalid := AgentTurn{Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a"],"expected_output":"o"}}`)}
+	invalid := AgentTurn{Agent: AgentResearch, Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a"],"expected_output":"o"}}`)}
 	state, err = ResearchProposalStateForTurn(invalid)
 	if err != nil || state != ResearchProposalStateInvalid {
 		t.Fatalf("broken proposal is not invalid: %q %v", state, err)
+	}
+}
+
+// A5/A6: a stored turn says which state it is in, and the refused proposal is
+// still readable as "invalid" after the fact: the server took it out of the
+// suggestions, so only the turn's own record can say that there was one.
+func TestResearchProposalStateOfAStoredTurnTellsTheThreeStatesApart(t *testing.T) {
+	present := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r","task_card":{"goal":"g","scope":"s","queries":["a","b"],"expected_output":"o"}}`)}
+	if state, err := ResearchProposalStateForTurn(present); err != nil || state != ResearchProposalStatePresent {
+		t.Fatalf("the stored turn is not present: %q %v", state, err)
+	}
+	absent := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	if state, err := ResearchProposalStateForTurn(absent); err != nil || state != ResearchProposalStateAbsent {
+		t.Fatalf("the stored turn is not absent: %q %v", state, err)
+	}
+	refused := AgentTurn{Agent: AgentResearch, Status: "completed", Reply: "r", FailureCode: ResearchProposalFailureCode, Suggestions: json.RawMessage(`{"reply":"r"}`)}
+	if state, err := ResearchProposalStateForTurn(refused); err != nil || state != ResearchProposalStateInvalid {
+		t.Fatalf("the refused proposal is not invalid: %q %v", state, err)
 	}
 }
 
@@ -492,15 +510,21 @@ func contractRendererCalls(t *testing.T, path string) int {
 }
 
 // proposalModelStub is a fake model: it answers with the structured output the
-// case needs, so the turn endpoint can be exercised without a provider.
+// case needs, so the turn endpoint can be exercised without a provider. It
+// remembers what it was asked for, so a case can see the purpose the server
+// derived.
 type proposalModelStub struct {
 	structured json.RawMessage
 	reply      string
 	calls      int
+	purposes   []string
+	agents     []string
 }
 
-func (m *proposalModelStub) Reply(_ context.Context, _ Actor, _ ModelRequest) (ModelReply, error) {
+func (m *proposalModelStub) Reply(_ context.Context, _ Actor, request ModelRequest) (ModelReply, error) {
 	m.calls++
+	m.purposes = append(m.purposes, request.Purpose)
+	m.agents = append(m.agents, request.Agent)
 	return ModelReply{Content: m.reply, StructuredOutput: m.structured, ModelID: "synthetic-model", RunMode: "real_api_fake_model", InputTokens: 100, OutputTokens: 20, FinishReason: "stop"}, nil
 }
 
@@ -567,7 +591,7 @@ func assertProposalCreatedNothing(t *testing.T, f agentFixture) {
 func TestResearchProposalReachesTheTurnAndCreatesNothing(t *testing.T) {
 	f := newAgentFixture(t, false)
 	stub := &proposalModelStub{structured: json.RawMessage(legalProposalPayload), reply: "我按你的问题整理了一条检索计划，请核对后自行保存。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-legal", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-legal", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -589,7 +613,12 @@ func TestResearchProposalReachesTheTurnAndCreatesNothing(t *testing.T) {
 
 // A6/A11: a proposal that does not decode never reaches the interface, and
 // nothing is written on the way to saying so.
-func TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything(t *testing.T) {
+//
+// What is refused is the proposal, not the answer. The turn still completes
+// and the reply the model wrote stays: a broken suggestion must not cost the
+// user their answer. The turn says in a readable code that this turn carries
+// no proposal.
+func TestInvalidResearchProposalKeepsTheReplyAndLosesTheProposal(t *testing.T) {
 	for name, payload := range map[string]string{
 		"one query":     `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`,
 		"unknown field": `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","confidence":0.9}}`,
@@ -597,26 +626,68 @@ func TestInvalidResearchProposalFailsTheTurnWithoutWritingAnything(t *testing.T)
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-invalid", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the broken proposal was not refused: %+v", name, turn)
+		turn := proposalTurn(t, f, AgentResearch, "pf5-invalid", stub)
+		if turn.Status != "completed" {
+			t.Fatalf("%s: the broken proposal failed the whole turn: %+v", name, turn)
 		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the broken proposal still reached the interface: %+v", name, turn)
+		if turn.Reply != "我整理了一条检索计划。" {
+			t.Fatalf("%s: the answer was lost with the proposal: %+v", name, turn)
+		}
+		if turn.FailureCode != ResearchProposalFailureCode {
+			t.Fatalf("%s: the refusal is not readable: %+v", name, turn)
+		}
+		raw, err := researchProposalFromSuggestions(turn.Suggestions)
+		if err != nil || !ResearchProposalAbsent(raw) {
+			t.Fatalf("%s: the broken proposal still reached the interface: %s %v", name, raw, err)
 		}
 		assertProposalCreatedNothing(t, f)
 	}
 }
 
+// A5: a turn with no proposal still answers the question. The model proposed
+// nothing, and that is not a failure: the reply stays, the turn completes,
+// and the turn carries no proposal.
+func TestAbsentResearchProposalKeepsTheReplyAndCarriesNoProposal(t *testing.T) {
+	f := newAgentFixture(t, false)
+	reply := "授权的资料里还没有合成材料的定义，我按你给的范围说明了缺口。"
+	stub := &proposalModelStub{structured: json.RawMessage(`{"reply":"` + reply + `"}`), reply: reply}
+	turn := proposalTurn(t, f, AgentResearch, "pf5-absent", stub)
+	if turn.Status != "completed" || turn.FailureCode != "" {
+		t.Fatalf("a turn without a proposal was treated as a failure: %+v", turn)
+	}
+	if turn.Reply != reply {
+		t.Fatalf("the answer was lost: %+v", turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || !ResearchProposalAbsent(raw) {
+		t.Fatalf("the turn carries a proposal it was never given: %s %v", raw, err)
+	}
+	assertProposalCreatedNothing(t, f)
+}
+
 // The assistant's editable task suggestion is a different card with its own
 // rules: this contract does not change what the assistant may answer.
+//
+// A16: the assistant's answer still completes, still carries what the model
+// said, and is not judged as a research proposal - not even by the state
+// this contract derives from the stored turn.
 func TestAssistantTaskSuggestionIsNotJudgedByTheProposalContract(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我给了一条建议。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["合成材料 定义"],"expected_output":"候选资料"}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我给了一条建议。"}
-	turn := proposalTurn(t, f, "task_assistant", "pf5-assistant", stub)
+	turn := proposalTurn(t, f, AgentTaskAssistant, "pf5-assistant", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the assistant's answer changed: %+v", turn)
+	}
+	if turn.FailureCode != "" {
+		t.Fatalf("the assistant's answer was refused by the proposal contract: %+v", turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || ResearchProposalAbsent(raw) {
+		t.Fatalf("the assistant's own suggestion was taken away: %s %v", raw, err)
+	}
+	if state, err := ResearchProposalStateForTurn(turn); err != nil || state != ResearchProposalStateAbsent {
+		t.Fatalf("the assistant's card was judged as a research proposal: %q %v", state, err)
 	}
 }
 
@@ -627,7 +698,7 @@ func TestResearchProposalCarriesItsCandidateSourcesToTheTurn(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我按你的问题整理了一条检索计划。","task_card":{"goal":"弄清合成材料的定义","scope":"只查项目资料","queries":["合成材料 定义","合成材料 反例"],"expected_output":"候选资料与反例","candidate_sources":[{"source_id":"source-1","reason":"它写明了合成材料的定义"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我按你的问题整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-sources", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-sources", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -647,7 +718,7 @@ func TestResearchProposalCarriesItsReasonsAndGapsToTheTurn(t *testing.T) {
 	f := newAgentFixture(t, false)
 	payload := `{"reply":"我按你的问题整理了一条检索计划。","task_card":{"goal":"弄清合成材料的定义","scope":"只查项目资料","queries":["合成材料 定义","合成材料 反例"],"expected_output":"候选资料与反例","reasons":["目标定成「定义」是因为用户问的就是这个词本身","范围只划到项目资料是因为公开综述尚未授权"],"gaps":[{"description":"缺一篇给出反例的对照研究","expected_evidence":"一篇标注了反例的同行评议文章"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我按你的问题整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-reasons", stub)
+	turn := proposalTurn(t, f, AgentResearch, "pf5-reasons", stub)
 	if turn.Status != "completed" {
 		t.Fatalf("the turn did not complete: %+v", turn)
 	}
@@ -665,10 +736,10 @@ func TestResearchProposalCarriesItsReasonsAndGapsToTheTurn(t *testing.T) {
 }
 
 // A13: a proposal whose reason or gap is overlong - or whose gap does not
-// say what would fill it - never reaches the interface: the turn fails with
-// a readable code, nothing is written, and no proposal shows up beside the
-// draft.
-func TestResearchProposalWithOverlongReasonOrGapFailsTheTurnWithoutWritingAnything(t *testing.T) {
+// say what would fill it - never reaches the interface: the refusal is
+// readable, nothing is written, and no proposal shows up beside the draft.
+// The answer itself stays.
+func TestResearchProposalWithOverlongReasonOrGapIsRefusedWithoutLosingTheAnswer(t *testing.T) {
 	for name, payload := range map[string]string{
 		"overlong reason":                `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","reasons":["` + strings.Repeat("长", 2000) + `"]}}`,
 		"overlong gap":                   `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","gaps":[{"description":"缺一篇反例","expected_evidence":"` + strings.Repeat("长", 2000) + `"}]}}`,
@@ -676,20 +747,15 @@ func TestResearchProposalWithOverlongReasonOrGapFailsTheTurnWithoutWritingAnythi
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-overlong", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the proposal was not refused: %+v", name, turn)
-		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the refused proposal still reached the interface: %+v", name, turn)
-		}
+		turn := proposalTurn(t, f, AgentResearch, "pf5-overlong", stub)
+		assertProposalRefused(t, name, turn, "我整理了一条检索计划。")
 		assertProposalCreatedNothing(t, f)
 	}
 }
 
 // A7: a proposal that names a source this turn was never given is refused
-// whole: the turn fails with a readable code, nothing is written, and the
-// source never reaches the interface.
+// whole: the refusal is readable, nothing is written, and the source never
+// reaches the interface. The answer the model gave stays.
 func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 	for name, payload := range map[string]string{
 		"another source of the same project": `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","candidate_sources":[{"source_id":"source-2","reason":"它看起来相关"}]}}`,
@@ -698,13 +764,8 @@ func TestResearchProposalCitingASourceOutsideTheTurnIsRefused(t *testing.T) {
 	} {
 		f := newAgentFixture(t, false)
 		stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-		turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-outside", stub)
-		if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-			t.Fatalf("%s: the unreadable candidate source was not refused: %+v", name, turn)
-		}
-		if len(turn.Suggestions) != 0 || turn.Reply != "" {
-			t.Fatalf("%s: the refused proposal still reached the interface: %+v", name, turn)
-		}
+		turn := proposalTurn(t, f, AgentResearch, "pf5-outside", stub)
+		assertProposalRefused(t, name, turn, "我整理了一条检索计划。")
 		assertProposalCreatedNothing(t, f)
 	}
 }
@@ -745,14 +806,29 @@ func TestResearchProposalCitingAnotherProjectsSourceIsRefused(t *testing.T) {
 	}
 	payload := `{"reply":"我整理了一条检索计划。","task_card":{"goal":"弄清合成材料","scope":"只查项目资料","queries":["a","b"],"expected_output":"候选资料","candidate_sources":[{"source_id":"source-2","reason":"它在另一个课题里"}]}}`
 	stub := &proposalModelStub{structured: json.RawMessage(payload), reply: "我整理了一条检索计划。"}
-	turn := proposalTurn(t, f, ResearchProposalAgent, "pf5-cross-project", stub)
-	if turn.Status != "failed" || turn.FailureCode != ResearchProposalFailureCode {
-		t.Fatalf("another project's source was accepted: %+v", turn)
-	}
-	if len(turn.Suggestions) != 0 || turn.Reply != "" {
-		t.Fatalf("the refused proposal still reached the interface: %+v", turn)
-	}
+	turn := proposalTurn(t, f, AgentResearch, "pf5-cross-project", stub)
+	assertProposalRefused(t, "another project's source", turn, "我整理了一条检索计划。")
 	assertProposalCreatedNothing(t, f)
+}
+
+// assertProposalRefused checks the shape of a turn whose proposal the
+// contract refused: the turn completes, the answer the model gave stays, the
+// proposal does not reach the interface, and the refusal is readable.
+func assertProposalRefused(t *testing.T, name string, turn AgentTurn, reply string) {
+	t.Helper()
+	if turn.Status != "completed" {
+		t.Fatalf("%s: the broken proposal failed the whole turn: %+v", name, turn)
+	}
+	if turn.Reply != reply {
+		t.Fatalf("%s: the answer was lost with the proposal: %+v", name, turn)
+	}
+	if turn.FailureCode != ResearchProposalFailureCode {
+		t.Fatalf("%s: the refusal is not readable: %+v", name, turn)
+	}
+	raw, err := researchProposalFromSuggestions(turn.Suggestions)
+	if err != nil || !ResearchProposalAbsent(raw) {
+		t.Fatalf("%s: the refused proposal still reached the interface: %s %v", name, raw, err)
+	}
 }
 
 // projectScopedSources serves a source only to the project that owns it. It

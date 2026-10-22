@@ -28,6 +28,27 @@ const (
 	ActionProposalKind  = "action_proposal"
 )
 
+// The agents a session may declare, and the shapes an answer may take.
+//
+// These words belong to the server. The model adapter refers to them instead
+// of comparing loose strings: a prompt that branches on a misspelled word
+// loses its instructions without anybody noticing, and the server would go on
+// believing the turn got the answer shape it asked for.
+//
+// The two vocabularies have different jobs and stay apart: an agent is the
+// role a session plays, a purpose is the shape the answer of that role takes.
+const (
+	AgentTaskAssistant = "task_assistant"
+	AgentResearch      = "research_agent"
+	AgentConstraint    = "constraint"
+)
+
+const (
+	AgentPurposeConversation   = "conversation"
+	AgentPurposeRuleSuggestion = "rule_suggestion"
+	AgentPurposeResearch       = "research_proposal"
+)
+
 type VersionRef struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
