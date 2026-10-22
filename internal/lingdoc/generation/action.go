@@ -36,41 +36,6 @@ const (
 	contextDroppedExcluded = "excluded_by_user"
 )
 
-// GenerationContextSelection 是用户对这次执行要纳入的可选上下文的选择。
-//
-// 它按**类别**说话：键是上下文类别，值是这一类别的条目。类别必须落在动作
-// 声明的 Plan.Context.Optional 里——客户端要求纳入一个这个动作根本不读的
-// 东西，整个请求被拒；用户要剔除一个这个动作必须用的类别，同样被拒。
-//
-// 具体条目是否真的进入模型请求，由服务端按当前授权解析。生成侧的授权判定是
-// 全有或全无：未获授权的资料会让整个请求被拒并点名，它们不会进入模型请求。
-type GenerationContextSelection struct {
-	// Include 是用户要纳入的条目，按上下文类别分列。
-	Include map[writingaction.ContextItem][]GenerationContextItem `json:"include,omitempty"`
-	// Exclude 是用户要剔除的条目，按上下文类别分列。
-	Exclude map[writingaction.ContextItem][]GenerationContextItem `json:"exclude,omitempty"`
-}
-
-// GenerationContextItem 是一个上下文条目。
-type GenerationContextItem struct {
-	// ID 是条目 ID。资料、来源与证据卡都是它自己的 ID。
-	ID string `json:"id"`
-	// Version 是条目版本。证据卡必须带版本——没有版本的证据卡无从复核。
-	Version int64 `json:"version,omitempty"`
-}
-
-// DroppedContextItem 是一个没有进入模型请求的可选上下文条目。
-//
-// 丢弃是可见的：静默丢弃会让用户以为它进去了。
-type DroppedContextItem struct {
-	// Category 是这一类上下文。
-	Category writingaction.ContextItem `json:"category"`
-	// ID 是被丢弃的条目 ID。
-	ID string `json:"id"`
-	// Reason 说明它为什么没进去。
-	Reason string `json:"reason"`
-}
-
 // isLegacyPath 判定这次请求是不是旧路径。
 //
 // 四个声明字段全部缺省 ⇒ 旧路径：自由文本说明驱动，行为逐字不变。
@@ -245,8 +210,8 @@ func applyGenerationInstruction(input *Input, request Request, plan *writingacti
 // 它返回改写后的请求与被丢掉的条目。三条规则同时成立：类别必须落在动作声明
 // 的可选上下文里，越过策略的请求被拒；这个动作必须用的类别不能被剔除；
 // 用户剔除的条目不进模型请求。
-func applyContextSelection(plan writingaction.Plan, selection GenerationContextSelection,
-	request Request) (Request, []DroppedContextItem, error) {
+func applyContextSelection(plan writingaction.Plan, selection writingaction.ContextSelection,
+	request Request) (Request, []writingaction.DroppedContextEntry, error) {
 	if err := checkContextPolicy(plan, selection); err != nil {
 		return Request{}, nil, err
 	}
@@ -267,11 +232,11 @@ func applyContextSelection(plan writingaction.Plan, selection GenerationContextS
 			cards = append(cards, EvidenceCardRef{ID: item.ID, Version: item.Version})
 		}
 	}
-	var dropped []DroppedContextItem
+	var dropped []writingaction.DroppedContextEntry
 	keptAssets := make([]string, 0, len(assets))
 	for _, id := range assets {
 		if slices.Contains(excludedAssets, id) {
-			dropped = append(dropped, DroppedContextItem{Category: writingaction.ContextAssets, ID: id,
+			dropped = append(dropped, writingaction.DroppedContextEntry{Category: writingaction.ContextAssets, ID: id,
 				Reason: contextDroppedExcluded})
 			continue
 		}
@@ -280,7 +245,7 @@ func applyContextSelection(plan writingaction.Plan, selection GenerationContextS
 	keptCards := make([]EvidenceCardRef, 0, len(cards))
 	for _, ref := range cards {
 		if slices.Contains(excludedCards, ref.ID) {
-			dropped = append(dropped, DroppedContextItem{Category: writingaction.ContextCards, ID: ref.ID,
+			dropped = append(dropped, writingaction.DroppedContextEntry{Category: writingaction.ContextCards, ID: ref.ID,
 				Reason: contextDroppedExcluded})
 			continue
 		}
@@ -311,7 +276,7 @@ func cardIDs(refs []EvidenceCardRef) []string {
 //
 // 纳入与剔除的类别都必须在这个动作的可选上下文里：客户端要求增删一个这个
 // 动作根本不读的东西，整个请求被拒。
-func checkContextPolicy(plan writingaction.Plan, selection GenerationContextSelection) error {
+func checkContextPolicy(plan writingaction.Plan, selection writingaction.ContextSelection) error {
 	for category := range selection.Include {
 		if !slices.Contains(plan.Context.Optional, category) {
 			return contextNotAllowed(plan.Action, category)
@@ -344,7 +309,7 @@ func requiredContextEmptied(plan writingaction.Plan, before []string, after []st
 }
 
 // contextItemIDs 取出一组上下文条目的 ID。
-func contextItemIDs(items []GenerationContextItem) []string {
+func contextItemIDs(items []writingaction.ContextEntry) []string {
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.ID != "" {

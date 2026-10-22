@@ -88,7 +88,7 @@ type SelectedRewriteRequest struct {
 	//
 	// 它是**指针**加 omitempty：缺省即「没选」，旧请求的 JSON 与它的摘要
 	// 值逐字不变。它只在动作路径下有意义——旧路径带上它会被拒。
-	Context *RewriteContextSelection `json:"context,omitempty"`
+	Context *writingaction.ContextSelection `json:"context,omitempty"`
 }
 
 // isLegacyPath 判定这次请求是不是旧路径。
@@ -145,7 +145,7 @@ type SelectedRewriteCandidate struct {
 	//
 	// 丢弃是可见的：静默丢弃会让用户以为它进去了。它只在发起的那一刻
 	// 有值——之后读回来的是候选本身。
-	DroppedContext []DroppedContextItem `json:"dropped_context,omitempty"`
+	DroppedContext []writingaction.DroppedContextEntry `json:"dropped_context,omitempty"`
 }
 
 type SelectedRewritePrompt struct {
@@ -399,7 +399,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
 	// 用户对可选上下文的选择先解析：类别越过策略的请求被拒；没授权的条目
 	// 被丢掉并被点名；用户剔除的条目不进模型请求。
-	var droppedContext []DroppedContextItem
+	var droppedContext []writingaction.DroppedContextEntry
 	if plan != nil && input.Context != nil {
 		includedSources, includedCards, dropped, contextErr := s.resolveRewriteContext(ctx, actor, projectID, chapterID, *plan, *input.Context)
 		if contextErr != nil {
@@ -897,7 +897,7 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 	if refErr != nil {
 		return SelectedRewriteCandidate{}, refErr
 	}
-	var dropped []DroppedContextItem
+	var dropped []writingaction.DroppedContextEntry
 	if row.DroppedContextJSON != "" {
 		if err := json.Unmarshal([]byte(row.DroppedContextJSON), &dropped); err != nil {
 			return SelectedRewriteCandidate{}, err

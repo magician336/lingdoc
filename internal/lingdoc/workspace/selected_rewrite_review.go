@@ -130,8 +130,8 @@ type ReviewReport struct {
 	// Selection 是被评审的那一段（整章范围时是整份正文）。
 	Selection RewriteSelection `json:"selection"`
 	// DroppedContext 是用户选了、但没有进入模型请求的可选上下文条目。
-	DroppedContext []DroppedContextItem `json:"dropped_context,omitempty"`
-	CreatedAt      time.Time            `json:"created_at"`
+	DroppedContext []writingaction.DroppedContextEntry `json:"dropped_context,omitempty"`
+	CreatedAt      time.Time                           `json:"created_at"`
 }
 
 // ReviewReportRequest 是发起一次语言评审的请求。
@@ -141,7 +141,7 @@ type ReviewReportRequest struct {
 	// Selection 是选段范围下的选区；整章范围不需要它。
 	Selection *RewriteSelection `json:"selection,omitempty"`
 	// Context 是用户对这次执行要纳入的可选上下文的选择。
-	Context *RewriteContextSelection `json:"context,omitempty"`
+	Context *writingaction.ContextSelection `json:"context,omitempty"`
 	// ExpectedSpecRevision 是用户看到的研究条件版本。
 	ExpectedSpecRevision int64 `json:"expected_spec_revision"`
 	// ExpectedWorkingCopyRevision 是用户看到的工作副本修订号。
@@ -332,7 +332,7 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 	// 被评审的正文里已有的来源标记仍是这次评审的依据：意见说的可能就是这些
 	// 句子。继承来的来源先并进来，再按用户的上下文选择剔除。
 	sourceIDs := stringSet(sourcemarker.IDs(target.selected))
-	var dropped []DroppedContextItem
+	var dropped []writingaction.DroppedContextEntry
 	var evidenceCards []generation.EvidenceCardRef
 	if input.Context != nil {
 		includedSources, includedCards, droppedItems, contextErr := s.resolveRewriteContext(ctx, actor, projectID, chapterID, *plan, *input.Context)

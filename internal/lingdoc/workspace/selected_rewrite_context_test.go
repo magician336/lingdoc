@@ -114,8 +114,8 @@ func TestRewriteActionAllowsSelectingItsOptionalContext(t *testing.T) {
 func TestRewriteContextSelectionRejectsCategoriesTheActionDoesNotRead(t *testing.T) {
 	service, _, model, base := contextRewriteFixture(t)
 	input := actionContextRequest(base)
-	input.Context = &RewriteContextSelection{
-		Include: map[writingaction.ContextItem][]RewriteContextItem{
+	input.Context = &writingaction.ContextSelection{
+		Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextTemplate: {{ID: "template-1"}},
 		},
 	}
@@ -133,8 +133,8 @@ func TestRewriteContextSelectionRejectsCategoriesTheActionDoesNotRead(t *testing
 func TestRewriteContextSelectionRefusesToRemoveARequiredContext(t *testing.T) {
 	service, _, model, base := contextRewriteFixture(t)
 	input := actionContextRequest(base)
-	input.Context = &RewriteContextSelection{
-		Exclude: map[writingaction.ContextItem][]RewriteContextItem{
+	input.Context = &writingaction.ContextSelection{
+		Exclude: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextTemplate: {{ID: "template-1"}},
 		},
 	}
@@ -149,11 +149,11 @@ func TestRewriteContextSelectionRefusesToRemoveARequiredContext(t *testing.T) {
 func TestRewriteContextSelectionAddsAndRemovesSources(t *testing.T) {
 	service, _, model, base := contextRewriteFixture(t)
 	input := actionContextRequest(base)
-	input.Context = &RewriteContextSelection{
-		Include: map[writingaction.ContextItem][]RewriteContextItem{
+	input.Context = &writingaction.ContextSelection{
+		Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextAssets: {{ID: "extra"}},
 		},
-		Exclude: map[writingaction.ContextItem][]RewriteContextItem{
+		Exclude: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextAssets: {{ID: "existing"}},
 		},
 	}
@@ -175,8 +175,8 @@ func TestRewriteContextSelectionAddsAndRemovesSources(t *testing.T) {
 func TestRewriteContextSelectionDropsUnauthorizedItemsAndNamesThem(t *testing.T) {
 	service, _, model, base := contextRewriteFixture(t)
 	input := actionContextRequest(base)
-	input.Context = &RewriteContextSelection{
-		Include: map[writingaction.ContextItem][]RewriteContextItem{
+	input.Context = &writingaction.ContextSelection{
+		Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextAssets: {{ID: "extra"}, {ID: "revoked"}},
 		},
 	}

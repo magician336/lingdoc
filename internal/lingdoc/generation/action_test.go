@@ -169,19 +169,19 @@ func TestGenerationActionPathRejectsInvalidDeclarations(t *testing.T) {
 func TestGenerationActionPathRejectsContextBeyondPolicy(t *testing.T) {
 	cases := []struct {
 		name    string
-		context GenerationContextSelection
+		context writingaction.ContextSelection
 		wantErr error
 	}{
-		{name: "include a category the action does not read", context: GenerationContextSelection{
-			Include: map[writingaction.ContextItem][]GenerationContextItem{
+		{name: "include a category the action does not read", context: writingaction.ContextSelection{
+			Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 				writingaction.ContextTemplate: {{ID: "template-1"}},
 			}}, wantErr: ErrContextNotAllowed},
-		{name: "exclude a category the action does not read", context: GenerationContextSelection{
-			Exclude: map[writingaction.ContextItem][]GenerationContextItem{
+		{name: "exclude a category the action does not read", context: writingaction.ContextSelection{
+			Exclude: map[writingaction.ContextItem][]writingaction.ContextEntry{
 				writingaction.ContextTemplate: {{ID: "template-1"}},
 			}}, wantErr: ErrContextNotAllowed},
-		{name: "exclude the last entry of a required category", context: GenerationContextSelection{
-			Exclude: map[writingaction.ContextItem][]GenerationContextItem{
+		{name: "exclude the last entry of a required category", context: writingaction.ContextSelection{
+			Exclude: map[writingaction.ContextItem][]writingaction.ContextEntry{
 				writingaction.ContextAssets: {{ID: "asset-1"}},
 			}}, wantErr: ErrContextRequired},
 	}
@@ -210,8 +210,8 @@ func TestGenerationActionPathKeepsExcludedContextOutOfTheModelRequest(t *testing
 	svc, repo := actionFixture("asset-1")
 	request := actionRequest()
 	request.AssetIDs = []string{"asset-1", "asset-2"}
-	request.Context = &GenerationContextSelection{
-		Exclude: map[writingaction.ContextItem][]GenerationContextItem{
+	request.Context = &writingaction.ContextSelection{
+		Exclude: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextAssets: {{ID: "asset-2"}},
 		}}
 
@@ -235,8 +235,8 @@ func TestGenerationActionPathKeepsExcludedContextOutOfTheModelRequest(t *testing
 func TestGenerationActionPathIncludesSelectedContext(t *testing.T) {
 	svc, repo := actionFixture("asset-1", "asset-2")
 	request := actionRequest()
-	request.Context = &GenerationContextSelection{
-		Include: map[writingaction.ContextItem][]GenerationContextItem{
+	request.Context = &writingaction.ContextSelection{
+		Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 			writingaction.ContextAssets: {{ID: "asset-2"}},
 		}}
 

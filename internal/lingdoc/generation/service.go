@@ -120,11 +120,11 @@ type Run struct {
 	//
 	// It is reported on the response that starts the run: a silent drop would
 	// let the user believe the context was used.
-	DroppedContext []DroppedContextItem `json:"dropped_context,omitempty"`
-	CreatedAt      time.Time            `json:"-"`
-	UpdatedAt      time.Time            `json:"-"`
-	Replayed       bool                 `json:"-"`
-	ClaimToken     string               `json:"-"`
+	DroppedContext []writingaction.DroppedContextEntry `json:"dropped_context,omitempty"`
+	CreatedAt      time.Time                           `json:"-"`
+	UpdatedAt      time.Time                           `json:"-"`
+	Replayed       bool                                `json:"-"`
+	ClaimToken     string                              `json:"-"`
 }
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
@@ -174,7 +174,7 @@ type Request struct {
 	//
 	// 它是**指针**加 omitempty：缺省即「没选」，旧请求的 JSON 与它的摘要值逐字
 	// 不变。它只在动作路径下有意义——旧路径带上它会被拒。
-	Context *GenerationContextSelection `json:"context,omitempty"`
+	Context *writingaction.ContextSelection `json:"context,omitempty"`
 }
 
 // Input is the immutable, server-resolved generation basis captured before
@@ -316,7 +316,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	}
 	// 用户对可选上下文的选择先解析：类别越过策略的请求被拒；用户剔除的条目
 	// 不进模型请求，并被点名。
-	var droppedContext []DroppedContextItem
+	var droppedContext []writingaction.DroppedContextEntry
 	if plan != nil && request.Context != nil {
 		request, droppedContext, err = applyContextSelection(*plan, *request.Context, request)
 		if err != nil {

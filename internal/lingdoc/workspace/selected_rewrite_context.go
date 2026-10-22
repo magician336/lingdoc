@@ -24,42 +24,6 @@ const (
 	rewriteContextDroppedNotAvailable = "not_available"
 )
 
-// RewriteContextSelection 是用户对这次执行要纳入的可选上下文的选择。
-//
-// 它按**类别**说话：键是上下文类别，值是这一类别的条目。类别必须落在
-// 动作声明的 Plan.Context.Optional 里——客户端要求纳入一个这个动作根本
-// 不读的东西，整个请求被拒；用户要剔除一个这个动作必须用的类别，同样
-// 被拒。
-//
-// 具体条目是否真的进入模型请求，由服务端按当前授权解析：没授权的条目
-// 不进模型请求，并在响应里被点名。丢弃是可见的，不是静默的。
-//
-// 来源归在「资料」这一类：来源是资料在授权范围内的抽取。
-type RewriteContextSelection struct {
-	// Include 是用户要纳入的条目，按上下文类别分列。
-	Include map[writingaction.ContextItem][]RewriteContextItem `json:"include,omitempty"`
-	// Exclude 是用户要剔除的条目，按上下文类别分列。
-	Exclude map[writingaction.ContextItem][]RewriteContextItem `json:"exclude,omitempty"`
-}
-
-// RewriteContextItem 是一个上下文条目。
-type RewriteContextItem struct {
-	// ID 是条目 ID。资料、来源与证据卡都是它自己的 ID。
-	ID string `json:"id"`
-	// Version 是条目版本。证据卡必须带版本——没有版本的证据卡无从复核。
-	Version int64 `json:"version,omitempty"`
-}
-
-// DroppedContextItem 是一个没有进入模型请求的可选上下文条目。
-type DroppedContextItem struct {
-	// Category 是这一类上下文。
-	Category writingaction.ContextItem `json:"category"`
-	// ID 是被丢弃的条目 ID。
-	ID string `json:"id"`
-	// Reason 说明它为什么没进去。
-	Reason string `json:"reason"`
-}
-
 // resolveRewriteContext 解析用户对可选上下文的选择。
 //
 // 三条规则同时成立：类别必须落在动作声明的可选上下文里，越过策略的请求
@@ -69,17 +33,18 @@ type DroppedContextItem struct {
 // 它只返回「要纳入什么」与「什么被丢掉」，不决定最终进模型请求的集合——
 // 那要等来源解析完才知道。
 func (s *SelectedRewriteService) resolveRewriteContext(ctx context.Context, actor Actor, projectID, chapterID string,
-	plan writingaction.Plan, selection RewriteContextSelection) ([]string, []generation.EvidenceCardRef, []DroppedContextItem, error) {
+	plan writingaction.Plan, selection writingaction.ContextSelection) ([]string, []generation.EvidenceCardRef,
+	[]writingaction.DroppedContextEntry, error) {
 	if err := checkRewriteContextPolicy(plan, selection); err != nil {
 		return nil, nil, nil, err
 	}
 	var includedSources []string
 	var includedCards []generation.EvidenceCardRef
-	var dropped []DroppedContextItem
+	var dropped []writingaction.DroppedContextEntry
 	for _, item := range selection.Include[writingaction.ContextAssets] {
 		source, err := s.sources.GetSource(ctx, actor, projectID, item.ID)
 		if err != nil || source.ProjectID != projectID || source.Status != evidence.SourceAvailable {
-			dropped = append(dropped, DroppedContextItem{Category: writingaction.ContextAssets, ID: item.ID,
+			dropped = append(dropped, writingaction.DroppedContextEntry{Category: writingaction.ContextAssets, ID: item.ID,
 				Reason: rewriteContextDroppedNotAuthorized})
 			continue
 		}
@@ -91,7 +56,7 @@ func (s *SelectedRewriteService) resolveRewriteContext(ctx context.Context, acto
 			if errors.Is(err, generation.ErrDependencyUnavailable) {
 				return nil, nil, nil, err
 			}
-			dropped = append(dropped, DroppedContextItem{Category: writingaction.ContextCards, ID: item.ID,
+			dropped = append(dropped, writingaction.DroppedContextEntry{Category: writingaction.ContextCards, ID: item.ID,
 				Reason: rewriteContextDroppedNotAuthorized})
 			continue
 		}
@@ -104,7 +69,7 @@ func (s *SelectedRewriteService) resolveRewriteContext(ctx context.Context, acto
 //
 // 纳入的类别必须在这个动作的可选上下文里；剔除的类别还必须不是这个动作
 // 必需的上下文——「这一类必须用」是执行方的事实，用户不能把它拿掉。
-func checkRewriteContextPolicy(plan writingaction.Plan, selection RewriteContextSelection) error {
+func checkRewriteContextPolicy(plan writingaction.Plan, selection writingaction.ContextSelection) error {
 	for category := range selection.Include {
 		if !slices.Contains(plan.Context.Optional, category) {
 			return rewriteContextNotAllowed(plan.Action, category)
@@ -151,7 +116,7 @@ func (s *SelectedRewriteService) authorizedSourcesOfAsset(ctx context.Context, a
 // 剔除 ID 既可以是来源 ID，也可以是资料 ID：资料 ID 把它下面的来源一并
 // 剔掉。
 func (s *SelectedRewriteService) removeRewriteExcludedSources(ctx context.Context, actor Actor, projectID string,
-	sourceIDs []string, selection *RewriteContextSelection) []string {
+	sourceIDs []string, selection *writingaction.ContextSelection) []string {
 	if selection == nil {
 		return sourceIDs
 	}
@@ -175,7 +140,7 @@ func (s *SelectedRewriteService) removeRewriteExcludedSources(ctx context.Contex
 }
 
 // removeRewriteExcludedCards 把用户剔除的证据卡从有效证据卡里去掉。
-func removeRewriteExcludedCards(refs []generation.EvidenceCardRef, selection *RewriteContextSelection) []generation.EvidenceCardRef {
+func removeRewriteExcludedCards(refs []generation.EvidenceCardRef, selection *writingaction.ContextSelection) []generation.EvidenceCardRef {
 	if selection == nil {
 		return refs
 	}
@@ -183,7 +148,7 @@ func removeRewriteExcludedCards(refs []generation.EvidenceCardRef, selection *Re
 }
 
 // contextItemIDs 取出一组上下文条目的 ID。
-func contextItemIDs(items []RewriteContextItem) []string {
+func contextItemIDs(items []writingaction.ContextEntry) []string {
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.ID != "" {
@@ -225,7 +190,7 @@ func rewriteContextRequired(action writingaction.Action, item writingaction.Cont
 // encodeDroppedContext 把被丢掉的条目编码进候选行。
 //
 // 它只在这一刻有意义：丢弃发生在发起的那一刻，之后读回来的是候选本身。
-func encodeDroppedContext(items []DroppedContextItem) string {
+func encodeDroppedContext(items []writingaction.DroppedContextEntry) string {
 	if len(items) == 0 {
 		return ""
 	}
