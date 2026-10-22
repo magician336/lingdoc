@@ -21727,7 +21727,13 @@
                               "synthetic-query-2",
                               "synthetic-synonym-query"
                             ],
-                            "expected_output": "synthetic-expected-output"
+                            "expected_output": "synthetic-expected-output",
+                            "candidate_sources": [
+                              {
+                                "source_id": "synthetic-proposal-source-id",
+                                "reason": "synthetic-candidate-reason"
+                              }
+                            ]
                           }
                         },
                         "context": {
@@ -21745,6 +21751,14 @@
                               "quoted_text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                               "locator": "synthetic-locator",
                               "model_use_allowed": false
+                            },
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
                             }
                           ],
                           "card_refs": [
@@ -21763,6 +21777,65 @@
                           "correlation_id": "synthetic-correlation-id"
                         },
                         "status": "completed",
+                        "model_id": "synthetic-model-id",
+                        "run_mode": "real_api_fake_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "created_by": "synthetic-created-by",
+                        "created_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_research_proposal_refused": {
+                    "summary": "Synthetic contract illustration only; a research proposal that named a source outside this turn's authorization is refused whole - the turn fails with a readable code, nothing is written, and no candidate source reaches the interface",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-refused-id",
+                        "project_id": "synthetic-project-id",
+                        "session_id": "synthetic-session-id",
+                        "version": 2,
+                        "agent": "research_agent",
+                        "user_input": "synthetic-user-input",
+                        "reply": "",
+                        "context": {
+                          "project_id": "synthetic-project-id",
+                          "project_version": 1,
+                          "spec_revision": 1,
+                          "context_revision": 1,
+                          "template_id": "synthetic-template-id",
+                          "template_version": "synthetic-template-version",
+                          "source_refs": [
+                            {
+                              "source_id": "synthetic-proposal-source-id",
+                              "asset_id": "synthetic-proposal-asset-id",
+                              "asset_revision": 1,
+                              "quoted_text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "locator": "synthetic-proposal-locator",
+                              "model_use_allowed": true
+                            }
+                          ],
+                          "card_refs": [
+                            {
+                              "id": "synthetic-id",
+                              "version": 1
+                            }
+                          ],
+                          "selection_reasons": [
+                            "synthetic-selection-reasons"
+                          ],
+                          "authorization_state": "synthetic-authorization-state",
+                          "output_constraints": [
+                            "synthetic-output-constraints"
+                          ],
+                          "correlation_id": "synthetic-correlation-id"
+                        },
+                        "status": "failed",
+                        "failure_code": "invalid_proposal",
                         "model_id": "synthetic-model-id",
                         "run_mode": "real_api_fake_model",
                         "input_tokens": 1,
@@ -44368,6 +44441,30 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 6000
+          },
+          "candidate_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "source_id",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
           }
         },
         "additionalProperties": false,
@@ -44379,7 +44476,7 @@
         ],
         "x-go-type": "core.ResearchProposal",
         "x-go-source": "internal/lingdoc/workspacecore/research_proposal.go",
-        "description": "调研智能体的调研提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。它永远是候选：用户自己保存才成为调研任务。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，另票收紧。"
+        "description": "调研智能体的调研提案：服务端按唯一一份契约解码过的形状（internal/lingdoc/workspacecore/research_proposal.go），解码不过就拒绝，这一轮不送达任何提案；同义词作为额外查询词并入 queries，不另立字段。候选来源是引用而不是检索产物的等级：每一份都指回这一轮授权上下文里的资料（source_id 必须在该轮 context.source_refs 里且 model_use_allowed 为真），服务端逐条比对，对不上就整份拒绝，不降级、不悄悄丢掉那一条。它永远是候选：用户自己保存才成为调研任务。助手侧那张同名卡片按自己的规则发出，尚未经这份契约校验，另票收紧。"
       },
       "AgentSuggestions": {
         "type": "object",

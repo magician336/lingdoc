@@ -2831,12 +2831,72 @@
               "intent": "提案带着目标，形状与服务端契约逐字一致。"
             },
             {
+              "path": "/data/suggestions/task_card/candidate_sources",
+              "length": 1,
+              "intent": "提案带着候选来源；每一份都指回这一轮授权上下文里的资料，服务端逐条比对过。"
+            },
+            {
               "path": "/data/model_id",
               "equals": "synthetic-model-id",
               "intent": "提案带着它来自的模型与运行模式，演示不冒充真实证据。"
             }
           ],
           "assertion": "合法提案随既有 turn 端点送达；它仍是候选，用户自己保存才成为调研任务。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "G2-RP-02",
+      "name": "提案引用上下文外的资料被拒",
+      "mode": "real_api_static_handoff",
+      "starting_state": "S1",
+      "setup": "调研智能体的一轮回答给出一份提案，其中一条候选来源引用了这一轮没有给出的资料（撤权的、别的项目的、根本没给过模型的都算）。服务端整份拒绝：这一轮失败并带读得懂的失败码，零写入，界面上不出现这条候选来源。",
+      "steps": [
+        {
+          "id": "G2-RP-02-01",
+          "operation_id": "sendAgentTurn",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "sessionID": "synthetic-research-session-id"
+            },
+            "headers": {
+              "Idempotency-Key": "g2-rp-02-research-turn-01"
+            },
+            "json": {
+              "expected_project_version": 1,
+              "expected_context_revision": 1,
+              "expected_version": 1,
+              "source_ids": [],
+              "card_refs": [],
+              "sensitive_context_confirmed": false,
+              "user_input": "synthetic-user-input"
+            }
+          },
+          "response_example": "synthetic_research_proposal_refused",
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "failed",
+              "intent": "引用拿不到的资料的提案被整份拒绝，这一轮以失败收场。"
+            },
+            {
+              "path": "/data/failure_code",
+              "equals": "invalid_proposal",
+              "intent": "失败带读得懂的失败码，不是降级，也不是悄悄丢掉那一条来源。"
+            },
+            {
+              "path": "/data/reply",
+              "equals": "",
+              "intent": "被拒的提案不留下任何建议内容，界面上不会出现这条候选来源。"
+            }
+          ],
+          "assertion": "引用上下文外的资料的提案被拒绝、零写入、界面上不出现这条来源。"
         }
       ],
       "providers": [
