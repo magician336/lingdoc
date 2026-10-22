@@ -1924,6 +1924,14 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		return nil, 0, true, ErrNotFound
 	}
 	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: "conversation", Context: pack, History: safeHistory, UserInput: input.UserInput})
+	// The research agent's proposal is checked against the one contract that
+	// owns its shape before it can become a suggestion. A proposal that does
+	// not decode is refused here, so the interface only ever sees a proposal
+	// the server stood behind.
+	proposalErr := error(nil)
+	if modelErr == nil {
+		proposalErr = researchProposalError(started.Agent, reply.StructuredOutput)
+	}
 	currentPack, currentErr := s.BuildAgentContext(context.WithoutCancel(ctx), actor, projectID, input.AgentContextInput)
 	if currentErr == nil && (!sameAgentContextBasis(pack, currentPack)) {
 		currentErr = ErrVersionConflict
@@ -1957,6 +1965,14 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		case modelErr != nil:
 			turn.Status = "failed"
 			turn.FailureCode = agentFailureCode(modelErr)
+			turn.Reply = ""
+			turn.Suggestions = nil
+		case proposalErr != nil:
+			// The model stated a proposal the contract does not accept.
+			// The turn fails with a readable code and nothing is written:
+			// a proposal nobody can read is worse than a plain failure.
+			turn.Status = "failed"
+			turn.FailureCode = ResearchProposalFailureCode
 			turn.Reply = ""
 			turn.Suggestions = nil
 		case !validAgentMode(reply.RunMode) || strings.TrimSpace(reply.Content) == "" || reply.FinishReason == "length":
