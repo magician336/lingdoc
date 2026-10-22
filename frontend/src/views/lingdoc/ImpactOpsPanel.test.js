@@ -441,10 +441,19 @@ test('the runtime and trial tabs stay reachable for on-call and trial operators'
   assert.equal(ids.includes('impacts'), true)
 })
 
-test('the runtime and trial sections stay in the rendered panel', () => {
+test('the metric blocks stay inside the runtime section and the trial section keeps its content', () => {
   const source = fs.readFileSync(new URL('./ImpactOpsPanel.vue', import.meta.url), 'utf8')
-  assert.match(source, /tab === 'runtime'/)
-  assert.match(source, /tab === 'trial'/)
-  assert.match(source, /runtimeMetricItems/)
-  assert.match(source, /runtimeCountRows/)
+  const runtimeStart = source.indexOf("tab === 'runtime'")
+  const trialStart = source.indexOf("tab === 'trial'")
+  assert.ok(runtimeStart > 0, 'the runtime section must exist')
+  assert.ok(trialStart > runtimeStart, 'the trial section must follow the runtime section')
+  // The metric blocks have to sit between the two section markers.  A plain
+  // presence check would still pass with the whole block deleted, because the
+  // script section defines the same names.
+  for (const marker of ['runtimeMetricItems', 'runtimeCountRows']) {
+    const at = source.indexOf(marker, runtimeStart)
+    assert.ok(at > runtimeStart && at < trialStart, `${marker} must live inside the runtime section`)
+  }
+  const trialSection = source.slice(trialStart, source.indexOf('</script>', trialStart))
+  assert.ok(trialSection.includes('selectedWindow'), 'the trial section must keep the trial window content')
 })

@@ -260,14 +260,16 @@ graph TD
 
 | 票 | 面 | 交付（Spec） | 文件所有权 | 零阻塞理由 |
 |---|---|---|---|---|
-| [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/api/lingdoc/g6Runtime.ts`、`g6Trial.ts`、`frontend/src/views/lingdoc/G6OpsPanel.vue`（均新增） | 后端 `g6_runtime.go`/`g6_trial.go` 与 HTTP 路由已齐，前端零文件 |
+| [#325](https://github.com/magician336/lingdoc/issues/325) | **PF-1** G6 运维与试用前端 | #145 #146 | `frontend/src/views/lingdoc/ImpactOpsPanel.vue`、`runtimeMetrics.ts`、`runtimeMetrics.test.ts`、`frontend/src/api/lingdoc/mainlineChanges.test.js`、`frontend/src/views/lingdoc/ImpactOpsPanel.test.js` | 后端 16 条路由与前端 G6 客户端都已在 main 上（`internal/lingdoc/workspace/impact_routes.go:135-182`、`api/lingdoc/mainlineChanges.ts:112-127`）；本面只补服务端已给但界面未呈现的运行指标，并给前端补契约保护 |
 | [#326](https://github.com/magician336/lingdoc/issues/326) | **PF-2** G7 AI 动作族 | #134 | `internal/lingdoc/generation/{service,application,http,store}.go`、`internal/lingdoc/workspace/{selected_rewrite,selected_rewrite_model,http}.go`、`internal/lingdoc/candidateadoption/{candidate_adoption,candidate_adoption_store,candidate_basis,candidate_adoption_http,confirmation}.go`、`internal/lingdoc/workspacecore/human_decision.go`、`internal/clienterror/catalog.go`、`internal/router/lingdoc_routes_test.go`、`frontend/src/views/lingdoc/generationAttempt.ts` | 证据那半边用 #138 已落地的生成接入，不必等 #137/#133 |
 | [#327](https://github.com/magician336/lingdoc/issues/327) | **PF-3** 审计告警接线与 AuditEvent 字段 | #130 | `internal/lingdoc/workspacecore/g6_runtime.go`、`model.go` | fail-open 语义已实现，只差接告警源 |
 | [#328](https://github.com/magician336/lingdoc/issues/328) | **PF-4** `owner_unavailable` 状态与 Owner-only 冻结 | #127 | `internal/lingdoc/workspacecore/membership.go`、`g5_owner_transfer_proof.go`、`member_lifecycle_state.go`（新增） | 修完即解除 ② 档那条实现依赖（#127 → #143） |
 | [#329](https://github.com/magician336/lingdoc/issues/329) | **PF-5** Agent research purpose | #135 #125 | `internal/lingdoc/workspace/agent_model.go`、`internal/lingdoc/workspacecore/g2_service.go`、`g2_model.go` | 上下文包后端已在 `g2_model.go` 落地，不必等 #124 的前端消费 |
 | [#330](https://github.com/magician336/lingdoc/issues/330) | **PF-6** 上下文包前端消费 | #124 | `frontend/src/api/lingdoc/g2Context.ts`、`frontend/src/views/lingdoc/ContextPackagePanel.vue`（均新增） | 后端契约已定，前端零消费 |
 
-六张票都标 `ready-for-agent`。**#326（PF-2）已被 magician336 认领**，其余五张未被认领。
+六张票都标 `ready-for-agent`。**#326（PF-2）与 #325（PF-1）已被 magician336 认领**：PF-2 仍在施工，**PF-1 已于 2026-10-22 完成**（登记处 `status` 为 `done`）。其余四张未被认领。
+
+> **PF-1 的路径集在 2026-10-22 改过**：初次登记时列的是三个**新建**文件（`g6Runtime.ts` / `g6Trial.ts` / `G6OpsPanel.vue`），前提是「G6 前端为零」。施工时核实发现该前提已过时——16 个 G6 端点客户端与两个 tab 的界面早已在 main 上，重复新建会造成两套并行实现。于是本面缩为「补真实缺口」：把服务端 `RuntimeMetrics.counts` 投影成可读的指标视图，并给 G6 前端补契约保护。**G6 前端的独立化与 Workspace 集成不在本面**，另开 [#384](https://github.com/magician336/lingdoc/issues/384)。路径集与边界以登记处 `scripts/lingdoc_parallel_surfaces.py` 为准，本表只是它的说明副本。
 
 **PF-2 的路径集是按票面实测补齐的**：初次登记时只列了 6 个文件，#326 认领后实测发现它还要改 `candidateadoption/*`、`generation/store.go`、`workspace/http.go`、`workspacecore/human_decision.go`、`clienterror/catalog.go`、`router/lingdoc_routes_test.go` —— 这些**不被任何面拥有**，即两个面会碰同一文件的撞车风险。补齐后与其余五面仍然零重叠（PF-3 独占 `workspacecore/model.go`、PF-5 独占 `workspacecore/g2_*.go`，都没冲突）。
 
@@ -277,7 +279,7 @@ graph TD
 
 **两处已知的归属约定**：
 
-- PF-1 与 PF-6 同属前端目录 → 各自**只新增文件**，不改对方文件。
+- PF-1 与 PF-6 同属前端目录 → **不得改对方文件**。注意 PF-1 已不再「只新增文件」：它在既有文件 `ImpactOpsPanel.vue` 上改指标视图，PF-6 仍只新增 `g2Context.ts` 与 `ContextPackagePanel.vue`；两面的路径集零重叠。
 - PF-3 与 PF-4 都需要 workspacecore 里的类型 → PF-3 独占 `model.go`（AuditEvent 是既有 struct，加字段必须改原处），PF-4 把 `owner_unavailable` 状态串放**独立新文件**，避开 `model.go`。
 
 ### 怎么领面
@@ -285,7 +287,7 @@ graph TD
 1. 在 tracker 上认领该面的票（`gh issue edit <票号> --add-assignee @me`）——**票是认领的原语**。
 2. 在登记处把该面的 `status` 改成 `claimed` 并填 `claimed_by`（`claimed` 必须有认领人，`available` 必须没有——两条都由校验强制；登记处与票任一不同步都算坏状态）。
 3. 跑 `python scripts/lingdoc_parallel_surfaces.py` 自检，非零退出即登记处坏了。
-4. 完成后把 `status` 改成 `done`。
+4. 完成后把 `status` 改成 `done`（**完成态不保留 `claimed_by`**——登记处只允许 `claimed` 状态带认领人，校验会拒绝其它状态带认领人；认领与完成的人记在 `summary` 里）。
 
 ## 四个缺口簇
 
@@ -311,7 +313,7 @@ graph TD
 
 ### ④ 前端与动作族
 
-- **G6 前端为零**：`frontend/src/api/lingdoc/` 23 个文件里没有任何 G6 客户端，`Workspace.vue` 无观测/告警面板。#145 #146 的后端与 HTTP 路由齐全，但值班人员与试用执行者拿不到任何界面。
+- **G6 前端已接线，但仍寄生在 G3 面板里**：16 个 G6 端点客户端与运行/试用两个 tab 早已在 main 上（`api/lingdoc/mainlineChanges.ts:112-127`、`ImpactOpsPanel.vue:55-83`），不是「零文件」。PF-1（#325）已于 2026-10-22 补上运行指标视图与前端契约保护。**未完成的是独立化与 Workspace 集成**：G6 仍寄居在「变更与运行质量」面板里，值班人员要先进入该面板再切 tab。归属 [#384](https://github.com/magician336/lingdoc/issues/384)。
 - **#134 动作族缺失**：`generation/service.go:124` 只有自由文本 `Instruction`，无 outline / continue / compress / expand / translate 的动作与各自约束（仅 rewrite 有专门服务）；「人工 / AI / AI 辅助」来源标注也未见。
 
 ### 缺口簇与施工并行面的对应

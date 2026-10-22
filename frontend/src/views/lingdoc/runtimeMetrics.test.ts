@@ -87,6 +87,24 @@ test('a metric the server never measures reads as unavailable rather than zero',
   assert.ok(decisions)
   assert.equal(decisions.total, null)
   assert.match(String(decisions.unavailableReason), /未提供/)
+  // The wording keeps the G5 attribution so the reader knows which gap this is.
+  assert.match(decisions.label, /G5/)
+  assert.match(decisions.label, /allow\/deny/)
+})
+
+test('a successful preflight is not counted as a preflight problem', () => {
+  const items = projectRuntimeMetrics({ 'preflight/success': 5, 'preflight/failed': 2 })
+  const preflight = items.find(item => item.key === 'preflight')
+  assert.equal(preflight?.total, 2)
+  assert.deepEqual(preflight?.keys, ['preflight/failed'])
+})
+
+test('a rejected preflight is a problem and also a permission rejection', () => {
+  const items = projectRuntimeMetrics({ 'preflight/rejected': 1 })
+  const preflight = items.find(item => item.key === 'preflight')
+  const rejected = items.find(item => item.key === 'permission_rejected')
+  assert.equal(preflight?.total, 1)
+  assert.equal(rejected?.total, 1)
 })
 
 test('the expanded table keeps the raw server key and labels known vocabulary', () => {

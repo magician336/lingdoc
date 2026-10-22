@@ -121,9 +121,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "resolves": (),
         "summary": (
             "G6 的运行观测、告警、暂停与试用窗口，后端与前端都已在 main 上："
-            "后端 16 条路由在 workspacecore/impact_routes.go:131-178，"
+            "后端 16 条路由在 internal/lingdoc/workspace/impact_routes.go:135-182，"
             "前端客户端在 api/lingdoc/mainlineChanges.ts:112-127，"
-            "界面在 views/lingdoc/ImpactOpsPanel.vue:55-80。"
+            "界面在 views/lingdoc/ImpactOpsPanel.vue:55-83。"
             "票面「前端零文件」的前提已过时，本面据此缩为补真实缺口："
             "把服务端 RuntimeMetrics.counts 投影成值班可读的指标视图，"
             "并给 G6 前端补一层契约保护。"
