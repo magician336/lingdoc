@@ -332,6 +332,28 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 			t.Fatalf("the rendered shape does not mention %s", name)
 		}
 	}
+	// The two renderings are complementary: the task shape is the six
+	// fields that make a research task, and the proposal shape is those
+	// six plus the proposal's three additions. The assistant's card asks
+	// for the first one only, so a rendering that grew the second's columns
+	// would change what the assistant answers.
+	task := ResearchProposalTaskShapeText()
+	for _, name := range ResearchProposalTaskFields {
+		if !strings.Contains(task, name) {
+			t.Fatalf("the rendered task shape does not mention %s", name)
+		}
+	}
+	for _, name := range ResearchProposalAdditionFields {
+		if strings.Contains(task, name) {
+			t.Fatalf("the rendered task shape carries the proposal's %s", name)
+		}
+	}
+	proposal := ResearchProposalShapeText()
+	for _, name := range ResearchProposalFields {
+		if !strings.Contains(proposal, name) {
+			t.Fatalf("the rendered proposal shape does not mention %s", name)
+		}
+	}
 	adapter := filepath.Join("..", "workspace", "agent_model.go")
 	for _, literal := range stringLiterals(t, adapter) {
 		// One field name in a prompt is a word, not a shape: the rule
@@ -357,8 +379,8 @@ func TestResearchProposalShapeHasOneOwner(t *testing.T) {
 			t.Fatalf("the prompt spells the candidate sources out again: %s", literal)
 		}
 	}
-	if calls := contractRendererCalls(t, adapter); calls < 2 {
-		t.Fatalf("the prompt does not render the contract shape: %d renderings", calls)
+	if renderings := contractRendererCalls(t, adapter); renderings["ResearchProposalTaskShapeText"] < 1 || renderings["ResearchProposalShapeText"] < 1 {
+		t.Fatalf("the prompts do not both render the contract's shape: %v", renderings)
 	}
 }
 
@@ -491,22 +513,24 @@ func stringLiterals(t *testing.T, path string) []string {
 }
 
 // contractRendererCalls counts how often the adapter builds a prompt from the
-// contract module instead of carrying its own copy of the shape.
-func contractRendererCalls(t *testing.T, path string) int {
+// contract module instead of carrying its own copy of the shape. Both
+// renderings count: the task shape for the assistant's card, the proposal
+// shape for the research agent's card.
+func contractRendererCalls(t *testing.T, path string) map[string]int {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	calls := 0
+	calls := map[string]int{}
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if ok && selector.Sel.Name == "ResearchProposalShapeText" {
-			calls++
+		if ok && (selector.Sel.Name == "ResearchProposalShapeText" || selector.Sel.Name == "ResearchProposalTaskShapeText") {
+			calls[selector.Sel.Name]++
 		}
 		return true
 	})

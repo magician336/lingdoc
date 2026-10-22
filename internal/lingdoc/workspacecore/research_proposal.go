@@ -95,19 +95,36 @@ const ResearchProposalMaximumGapDescriptionLength = 1000
 // fill it" a gap may carry.
 const ResearchProposalMaximumGapExpectedEvidenceLength = 1000
 
-// ResearchProposalFields are the field names of the shape, in the order a
-// prompt reads them. This list is the only place the shape is written down.
-var ResearchProposalFields = []string{
+// ResearchProposalTaskFields are the six fields that make a research task.
+//
+// They are the shape of the assistant's editable task suggestion too: a
+// proposal is a research task plus three additions, and the assistant's card
+// is the task part on its own. The two cards have different rules - the
+// proposal contract judges the research agent's card and does not touch the
+// assistant's - so they are rendered apart.
+var ResearchProposalTaskFields = []string{
 	researchProposalGoalField,
 	researchProposalQuestionTypeField,
 	researchProposalScopeField,
 	researchProposalExclusionsField,
 	researchProposalQueriesField,
 	researchProposalExpectedOutputField,
+}
+
+// ResearchProposalAdditionFields are the three fields a proposal adds on top
+// of the task fields: the candidate sources, the reasons and the gaps.
+//
+// They are the research agent's. The assistant's task suggestion has never
+// carried them, and asking for them would change what the assistant answers.
+var ResearchProposalAdditionFields = []string{
 	researchProposalCandidateSourcesField,
 	researchProposalReasonsField,
 	researchProposalGapsField,
 }
+
+// ResearchProposalFields are the field names of the whole shape, in the order
+// a prompt reads them. This list is the only place the shape is written down.
+var ResearchProposalFields = append(append([]string{}, ResearchProposalTaskFields...), ResearchProposalAdditionFields...)
 
 // ResearchProposalCandidateSource is one material the proposal wants to read
 // next, with the reason it wants to read it.
@@ -155,9 +172,37 @@ type ResearchProposal struct {
 	Gaps             []ResearchProposalGap             `json:"gaps"`
 }
 
-// ResearchProposalShapeText renders the shape for a prompt. A prompt that
-// spells the shape out itself is a second copy of the contract, and two copies
-// drift; the prompt asks for this rendering instead.
+// The two renderings say the queries rule in their own words, because they
+// are two different cards.
+//
+// The assistant's task suggestion has always asked for at least two queries
+// ("至少两项"), and it must keep asking for exactly that: the proposal
+// contract does not judge the assistant's card, so a wording change there
+// would change the assistant's answer without anyone deciding to change it.
+// The proposal states the same bound as "至少两条" and adds where a synonym
+// goes.
+const (
+	researchProposalTaskQueriesRule     = "至少两项"
+	researchProposalProposalQueriesRule = "至少两条（同义词并入其中）"
+)
+
+// ResearchProposalTaskShapeText renders the shape of the editable research
+// task suggestion - the six fields that make a research task - for the
+// prompt that asks for one.
+//
+// It is a rendering of its own because the task suggestion is a different
+// card from the research proposal: the assistant's card has its own rules
+// and the proposal contract does not judge it. A prompt that spells the
+// shape out itself is a second copy of the contract, and two copies drift;
+// the prompt asks for this rendering instead.
+func ResearchProposalTaskShapeText() string {
+	return renderResearchProposalShape(ResearchProposalTaskFields, researchProposalTaskQueriesRule)
+}
+
+// ResearchProposalShapeText renders the shape of a research proposal for a
+// prompt. A prompt that spells the shape out itself is a second copy of the
+// contract, and two copies drift; the prompt asks for this rendering
+// instead.
 //
 // The rendering carries the rules that belong to the shape: a proposal needs
 // at least two queries, a synonym is an extra query rather than a field of
@@ -165,22 +210,28 @@ type ResearchProposal struct {
 // the plan looks like this, and a gap says what is missing and what would
 // fill it.
 func ResearchProposalShapeText() string {
-	fields := make([]string, 0, len(ResearchProposalFields))
-	for _, name := range ResearchProposalFields {
+	return renderResearchProposalShape(ResearchProposalFields, researchProposalProposalQueriesRule)
+}
+
+// renderResearchProposalShape renders the given fields of the shape, with
+// the rules that belong to them.
+func renderResearchProposalShape(fields []string, queriesRule string) string {
+	rendered := make([]string, 0, len(fields))
+	for _, name := range fields {
 		switch name {
 		case researchProposalQueriesField:
-			fields = append(fields, name+"至少两条（同义词并入其中）")
+			rendered = append(rendered, name+queriesRule)
 		case researchProposalCandidateSourcesField:
-			fields = append(fields, name+"（每条含 "+researchProposalCandidateSourceIDField+" 与 "+researchProposalCandidateSourceReasonField+"；"+researchProposalCandidateSourceIDField+" 只能取本轮上下文给出的来源ID）")
+			rendered = append(rendered, name+"（每条含 "+researchProposalCandidateSourceIDField+" 与 "+researchProposalCandidateSourceReasonField+"；"+researchProposalCandidateSourceIDField+" 只能取本轮上下文给出的来源ID）")
 		case researchProposalReasonsField:
-			fields = append(fields, name+"（整份提案为什么这么定：目标为什么是这个目标、范围为什么划到这里）")
+			rendered = append(rendered, name+"（整份提案为什么这么定：目标为什么是这个目标、范围为什么划到这里）")
 		case researchProposalGapsField:
-			fields = append(fields, name+"（每条含 "+researchProposalGapDescriptionField+"（缺什么）与 "+researchProposalGapExpectedEvidenceField+"（期望补什么）；只有「没有来源」这种空话不算）")
+			rendered = append(rendered, name+"（每条含 "+researchProposalGapDescriptionField+"（缺什么）与 "+researchProposalGapExpectedEvidenceField+"（期望补什么）；只有「没有来源」这种空话不算）")
 		default:
-			fields = append(fields, name)
+			rendered = append(rendered, name)
 		}
 	}
-	return strings.Join(fields, "、")
+	return strings.Join(rendered, "、")
 }
 
 // ResearchProposalAbsent reports whether the raw payload states no proposal at
