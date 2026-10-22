@@ -3,7 +3,9 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/google/uuid"
 	"regexp"
 	"slices"
@@ -508,6 +510,56 @@ func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEve
 	}
 	return nil
 }
+
+// auditFailureErrorCode marks a failed audit write in the runtime event
+// model. It is a code and not the error text: the runtime event model only
+// accepts bounded codes, and an error message may carry research content.
+const auditFailureErrorCode = "audit_write_failed"
+
+// EmitAuditFailureAlert publishes one operational event for an audit write
+// that failed on a fail-open path.
+//
+// It writes on its own transaction, never the caller's: the caller's
+// transaction may be rolled back by the very failure being reported, and an
+// alert written inside it would vanish exactly when it is needed. The caller
+// therefore calls this after its own transaction has ended.
+//
+// It never changes an authorization decision and never blocks the read that
+// reported it. A failure to write the alert is logged and dropped.
+//
+// The event carries no research content and no raw error text: only the
+// failed audit action, the tenant and project aliases the runtime event model
+// already uses, and a bounded error code.
+func (s *Service) EmitAuditFailureAlert(ctx context.Context, actor Actor, projectID, auditAction string, cause error) error {
+	// Alert rules are read per project, so an event without a project scope
+	// can never match one. Publishing it would cost a transaction and change
+	// nothing.
+	if projectID == "" {
+		return nil
+	}
+	err := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+		trace := RuntimeTraceFromContext(ctx)
+		// The category is set explicitly: the operation name does not
+		// produce "audit", and an event without it can never match the
+		// "audit/failed" signal a rule is written against.
+		trace.Category = "audit"
+		trace.ErrorCode = auditFailureErrorCode
+		trace.RuntimeMode = effectiveRuntimeMode(s.runtimeMode)
+		return RecordRuntimeOperationContext(WithRuntimeTrace(ctx, trace), tx, actor,
+			Project{ID: projectID}, auditAction, "failed", 0)
+	})
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"audit_event":  "lingdoc_audit_failure",
+			"tenant_id":    actor.TenantID,
+			"project_id":   projectID,
+			"audit_action": auditAction,
+			"cause":        fmt.Sprintf("%v", cause),
+		})
+	}
+	return nil
+}
+
 func (s *Service) ListRuntimeAlerts(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlert, error) {
 	var result []RuntimeAlert
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {

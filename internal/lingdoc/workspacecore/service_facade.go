@@ -493,6 +493,37 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 	}
 	return err
 }
+
+// readWithAudit runs body in one transaction and records the read's
+// authorization decision on a fail-open path: when the audit write fails the
+// read still succeeds, and the failure is published as an operational alert
+// after the transaction has ended.
+//
+// It is deliberately not the same seam as recordAuditInTransaction. Write
+// paths must fail closed, and a caller that cannot tell the two apart would
+// have to re-implement that difference at every call site.
+func (s *Service) readWithAudit(
+	ctx context.Context,
+	actor Actor,
+	projectID, capability string,
+	options TransactionOptions,
+	body func(tx Transaction) (Project, error),
+) error {
+	var auditErr error
+	err := s.repository.Transaction(ctx, options, func(tx Transaction) error {
+		_, bodyErr := body(tx)
+		// The audit error is remembered, not returned: a failed audit write
+		// must not turn an ordinary read into a failure.
+		auditErr = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, bodyErr)
+		return bodyErr
+	})
+	if auditErr != nil {
+		// The alert is published after the transaction ended. Written inside
+		// it, the alert would vanish with the very failure it reports.
+		_ = s.EmitAuditFailureAlert(ctx, actor, projectID, capability, auditErr)
+	}
+	return err
+}
 func auditDecision(err error) string {
 	if err != nil {
 		return "deny"
@@ -530,26 +561,28 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 	// this transaction. Keep the decision and audit on one transaction, but do
 	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
 	// transaction even when SQLite permits them.
-	return s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
-		_, err := s.authorizeProject(ctx, tx, request)
-		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, request.capability(), err)
-		return err
-	})
+	return s.readWithAudit(ctx, actor, projectID, request.capability(),
+		TransactionOptions{RepeatableRead: true},
+		func(tx Transaction) (Project, error) {
+			return s.authorizeProject(ctx, tx, request)
+		})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
+	request := authorizationRequest(actor, id, AuthorizationRead, "")
 	// GetProject also records the authorization decision in the same
 	// transaction, so PostgreSQL requires a writable transaction here.
-	err := s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) (err error) {
-		request := authorizationRequest(actor, id, AuthorizationRead, "")
-		result, err = s.authorizeProject(ctx, tx, request)
-		_ = s.recordAuditInTransaction(ctx, tx, actor, id, request.capability(), err)
-		if err == nil && result.DiscardedAt != nil {
-			result.Spec = map[string]string{}
-			result.SpecFields = map[string]SpecField{}
-		}
-		return err
-	})
+	err := s.readWithAudit(ctx, actor, id, request.capability(),
+		TransactionOptions{RepeatableRead: true},
+		func(tx Transaction) (Project, error) {
+			project, authErr := s.authorizeProject(ctx, tx, request)
+			if authErr == nil && project.DiscardedAt != nil {
+				project.Spec = map[string]string{}
+				project.SpecFields = map[string]SpecField{}
+			}
+			result = project
+			return project, authErr
+		})
 	if err != nil {
 		return Project{}, err
 	}
