@@ -169,6 +169,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/selected_rewrite_action_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_continue_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_compress_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_expand_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_confirmation_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_revocation_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_context_test.go", "file"),
