@@ -308,8 +308,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-5 Agent research purpose",
         "issue": 329,
         "issues": (135, 125),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
@@ -317,9 +317,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "agent_model.go 只有 rule_suggestion 与 change_draft 两种 purpose，"
-            "没有 research 用途，所以「Agent 推荐查询词与来源并解释理由与缺口」在产品层是空的。"
-            "上下文包后端已在 g2_model.go 落地，不必等 #124 的前端消费。"
+            "「research purpose」在词汇上不存在：purpose 只有 conversation 与 rule_suggestion 两种取值，"
+            "change_draft 是模型输出的键而不是 purpose，"
+            "所以本面缺的是「一个可被服务端校验的研究提案契约」，"
+            "不是执行侧——ResearchTask / ResearchRun / ResearchResult / SearchResearch / 导入候选都已齐备。"
+            "现状是 HostAgentModel.Reply 按 request.Agent == \"research_agent\" 换一段提示词，"
+            "但模型交回来的 task_card 没有任何解码器校验，"
+            "「推荐查询词与来源并解释理由与缺口」因此没有形状、也没有边界。"
+            "2026-10-22 实测更正了两条过时断言："
+            "上下文包后端已不在 g2_model.go（该文件不存在），"
+            "它现在住在 workspace/agent_model.go 与 workspacecore 的 context_ports.go、agent_research_model.go；"
+            "不必等 #124 的前端消费（PF-6）。"
+            "2026-10-22 由 magician336 认领。"
         ),
     },
     {
