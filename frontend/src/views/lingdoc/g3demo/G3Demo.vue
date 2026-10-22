@@ -3277,7 +3277,7 @@ function exportEvidence(): void {
  * 导出体已生成、下载已触发；要拿落盘证据请用 node 脚本。
  */
 function downloadNote(): string {
-  return '下载已触发；需要落盘证据请用 node 脚本（scripts/g3demo/run-evidence.ts）落到 docs/08-本轮实施方案/'
+  return '下载已触发；需要落盘证据请用 node 脚本（scripts/impactChains/runEvidence.ts）落到 docs/08-本轮实施方案/'
 }
 
 /** 把浏览器会话还给用户。 */

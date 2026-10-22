@@ -1,16 +1,16 @@
 /**
- * G3 验收台-7 · 真实模型验收项：对真实后端跑一遍本票链路，把证据 JSON 落盘。
+ * G3 验收台-4 · 依赖图与影响任务：对真实后端跑一遍本票链路，把证据 JSON 落盘。
  *
- * 与 #238 / #239 / #240 同一形态：执行器是纯 TS、注入式 HTTP 客户端，页面与本脚本
- * 跑的是**同一份**执行器（`runner/model.ts`），所以页面上的判定与落盘的证据不会走样。
+ * 与 #238 / #239 同一形态：执行器是纯 TS、注入式 HTTP 客户端，页面与本脚本
+ * 跑的是**同一份**执行器，所以页面上的判定与落盘的证据不会走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-model.ts
- *   npx tsx scripts/g3demo/run-model.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runDependencies.ts
+ *   npx tsx scripts/impactChains/runDependencies.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080
- *   G3_EVIDENCE_OUT  证据落盘路径，默认 <repo>/docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-<日期>.json
+ *   G3_EVIDENCE_OUT  证据落盘路径，默认 <repo>/docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-<日期>.json
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -18,8 +18,8 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
+import { runDependencyChain } from '../../src/views/lingdoc/g3demo/runner/dependencies'
 import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { runModelChain } from '../../src/views/lingdoc/g3demo/runner/model'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
 
@@ -46,12 +46,12 @@ const OUT_PATH = outArg
   : resolve(
     REPO_ROOT,
     process.env.G3_EVIDENCE_OUT ??
-      `docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-${dateStamp()}.json`,
+      `docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-${dateStamp()}.json`,
   )
 
 async function main(): Promise<void> {
   // 账号文件放在系统临时目录里，**不进仓库**：口令不能落进版本库。
-  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account-t7.json'))
+  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account-t4.json'))
   const reuse = process.argv.includes('--reuse')
 
   let account: G3DemoAccount
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   }
   console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
 
-  const model = await runModelChain(chain.ctx, client, chain.token, {
+  const dependency = await runDependencyChain(chain.ctx, client, chain.token, {
     projectId: chain.project.id,
     chapters: chain.chapters.map((chapter) => ({
       id: chapter.id,
@@ -91,38 +91,28 @@ async function main(): Promise<void> {
     backend_base_url: BASE_URL,
     run_id: chain.ctx.runId,
     started_at: chain.ctx.startedAt,
-    ticket: 'G3 验收台-7：依赖真实模型的验收项',
+    ticket: 'G3 验收台-4：依赖图、影响任务与影响预览分组',
     demo_account: { username: account.username, email: account.email },
     account_reused: !registerFirst,
     backend_head: chain.ctx.head,
     identity: chain.identity,
     project: chain.project,
     chapters: chain.chapters,
-    model_available: model.modelAvailable,
-    model_unavailable_reason: model.unavailableReason,
-    model_runs: model.runs,
-    // 模型调用记录进入导出的证据，并标注为「依赖真实模型的非确定性来源」：
-    // 少了这个标注，读者会把非确定性结论当成确定性结论。
-    evidence_sources: [
-      {
-        kind: 'deterministic',
-        non_deterministic: false,
-        note: '确定性结论：状态由本轮真实调用与响应事实推出。',
-      },
-      {
-        kind: 'model_dependent',
-        non_deterministic: true,
-        depends_on: 'real_model',
-        note:
-          '非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；' +
-          '矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。',
-        runs: model.runs,
-      },
-    ],
-    ac_g3_06_old_async_result: model.ac06,
-    ac_g3_14_assistant_draft: model.ac14,
-    ac_g3_15_model_candidates: model.ac15,
-    verdicts: model.verdicts,
+    change_set: dependency.changeSet,
+    change_draft: dependency.draft,
+    dependency_edges: dependency.edges,
+    impact_assessment: dependency.assessment,
+    impact_groups: dependency.grouping,
+    impact_tasks: dependency.tasks,
+    impact_tasks_after_replay: dependency.tasksAfterReplay,
+    unassigned_completion: dependency.unassignedCompletion,
+    task_transitions: dependency.transitions,
+    dependency_decisions: dependency.decisions,
+    dependency_candidates: dependency.candidates,
+    suggested_edge: dependency.suggestedEdge,
+    suggested_target_version_confirmation_valid: dependency.suggestedTargetVersionConfirmationValid,
+    known_objects: dependency.knownObjects,
+    verdicts: dependency.verdicts,
     steps: chain.ctx.steps,
   }
 
@@ -140,21 +130,38 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log('[g3demo] 模型调用（运行标识与耗时）：')
-  for (const run of model.runs) {
+  console.log('[g3demo] 三组呈现：')
+  console.log(`  确定受影响：${dependency.grouping.definite.length} 条`)
+  console.log(`  可能受影响：${dependency.grouping.possible.length} 条`)
+  console.log(`  当前未发现影响：${dependency.grouping.unaffected.length} 个对象`)
+  console.log(`  必需对象集合：${dependency.grouping.requiredObjects.length} 个`)
+  console.log('')
+  console.log('[g3demo] 依赖候选三态（AC-G3-15）：')
+  const candidates = dependency.candidates
+  for (const decision of candidates.decisions) {
     console.log(
-      `  运行标识 ${run.runId} · 模型 ${run.modelId || '（未登记）'} · 模式 ${run.runMode || '（未登记）'} · ` +
-        `状态 ${run.status}${run.failureCode ? `（失败码 ${run.failureCode}）` : ''} · 耗时 ${run.durationMs}ms · ` +
-        `tokens ${run.inputTokens}/${run.outputTokens}`,
+      `  ${decision.decision} → HTTP ${decision.httpStatus} · status=${decision.status || '（无）'}` +
+        ` · edge_id=${decision.edgeId || '（无）'}` +
+        `${decision.code ? ` · code=${decision.code}` : ''}`,
     )
   }
-  if (!model.modelAvailable) {
-    console.log(`[g3demo] 模型不可用：${model.unavailableReason}`)
-  }
+  console.log(
+    `  拒绝不产生边：依赖边 ${candidates.edgesBeforeDecisions} → ${candidates.edgesAfterDecisions} 条` +
+      `（确认 + 修改各一条）`,
+  )
+  console.log(
+    `  同版本不再重提：新建 ${candidates.reproposal?.candidates.length ?? 0} 条 · ` +
+      `抑制 ${candidates.reproposal?.suppressed.length ?? 0} 条` +
+      `（原因 ${candidates.reproposal?.suppressed.map((item) => item.reason).join('、') || '（无）'}）`,
+  )
+  console.log(
+    `  确认时版本复检：HTTP ${candidates.staleConfirmation?.httpStatus ?? '（未执行）'} · ` +
+      `code=${candidates.staleConfirmation?.code || '（无）'}`,
+  )
   console.log('')
   console.log('[g3demo] 判定：')
-  for (const verdict of model.verdicts) {
-    console.log(`  ${verdict.id} ${verdict.holds ? '成立' : '不成立'}（矩阵状态 ${verdict.status ?? '（由规则表决定）'}）—— ${verdict.detail}`)
+  for (const verdict of dependency.verdicts) {
+    console.log(`  ${verdict.id} ${verdict.holds ? '成立' : '不成立'} —— ${verdict.detail}`)
     for (const line of verdict.evidence) {
       console.log(`      ${line}`)
     }

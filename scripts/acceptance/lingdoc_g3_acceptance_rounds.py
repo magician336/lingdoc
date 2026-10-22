@@ -15,11 +15,11 @@
 三条链各用**各的项目**：链路自己会 apply 变更集从而推进项目的上下文修订，
 共用一个项目时后一条链会撞 409「基线已漂移」。
 
-除 `run-evidence.ts`（变更集 / 故障注入 / 路线图 / 助手）与 `run-dependencies.ts`
+除 `runEvidence.ts`（变更集 / 故障注入 / 路线图 / 助手）与 `runDependencies.ts`
 （依赖图与影响任务）之外，本脚本还跑**三条独立链脚本**：稳定化与交付闭环
-（`run-stabilization.ts`）、阻断与恢复路径（`run-blocked.ts`）与真实模型验收
-（`run-model.ts`）。它们各建各的项目、各带各的判定，落进**同一轮的证据目录**，
-于是整链导出（`run-evidence.ts` 的 `buildAggregateEvidenceExport`）汇总的是
+（`runStabilization.ts`）、阻断与恢复路径（`runBlocked.ts`）与真实模型验收
+（`runModel.ts`）。它们各建各的项目、各带各的判定，落进**同一轮的证据目录**，
+于是整链导出（`runEvidence.ts` 的 `buildAggregateEvidenceExport`）汇总的是
 「这一轮真正跑过的全部链」。
 
 用法::
@@ -80,7 +80,7 @@ def run_evidence(
         raise SystemExit("npx not found on PATH")
     started = time.monotonic()
     proc = subprocess.run(
-        [npx, "tsx", "scripts/g3demo/run-evidence.ts", "--live"],
+        [npx, "tsx", "scripts/impactChains/runEvidence.ts", "--live"],
         cwd=str(ROOT / "frontend"),
         env=env,
         capture_output=True,
@@ -93,7 +93,7 @@ def run_evidence(
     print(proc.stdout[-8000:])
     if proc.returncode != 0:
         print(proc.stderr[-4000:], file=sys.stderr)
-        raise SystemExit(f"run-evidence failed rc={proc.returncode}")
+        raise SystemExit(f"runEvidence failed rc={proc.returncode}")
     return {
         "elapsed_seconds": elapsed,
         "files": sorted(p.name for p in out_dir.glob("*.json")),
@@ -109,7 +109,7 @@ def run_dependency_chain(
 ) -> dict[str, object]:
     """跑依赖候选链（独立脚本），把「验收台-4」形态的证据落进本轮目录。
 
-    整链导出（``run-evidence.ts`` 的 ``buildAggregateEvidenceExport``）汇总的是
+    整链导出（``runEvidence.ts`` 的 ``buildAggregateEvidenceExport``）汇总的是
     **证据目录里所有 ``G3-验收台-*`` 文件**。依赖候选链的判定（AC-G3-15）住在
     它自己的证据文件里，所以这一步必须**先**跑，文件落进同一个目录，整链导出
     才带得上它的判定。
@@ -130,7 +130,7 @@ def run_dependency_chain(
         [
             npx,
             "tsx",
-            "scripts/g3demo/run-dependencies.ts",
+            "scripts/impactChains/runDependencies.ts",
             "--base",
             base_url,
             "--out",
@@ -148,20 +148,20 @@ def run_dependency_chain(
     print(proc.stdout[-4000:])
     if proc.returncode != 0:
         print(proc.stderr[-4000:], file=sys.stderr)
-        raise SystemExit(f"run-dependencies failed rc={proc.returncode}")
+        raise SystemExit(f"runDependencies failed rc={proc.returncode}")
     return {"elapsed_seconds": elapsed, "file": out_path.name}
 
 
 # 独立链脚本清单：``(脚本文件名, 证据文件名模板)``。
 #
 # 这三条链各建各的项目（``runChain`` 自建账号与项目），所以它们与
-# ``run-evidence.ts`` / ``run-dependencies.ts`` 互不干扰，可以同轮跑。
+# ``runEvidence.ts`` / ``runDependencies.ts`` 互不干扰，可以同轮跑。
 # 证据文件名带轮次后缀（``-r1`` / ``-r2``）：两轮是**两次不同的运行**，
 # 同名的话整链证据里那条 ``runs[].file`` 引用会指到另一轮的文件上。
 CHAIN_SCRIPTS: tuple[tuple[str, str], ...] = (
-    ("run-stabilization.ts", "G3-验收台-5-稳定化与交付闭环证据-{date}-{round}.json"),
-    ("run-blocked.ts", "G3-验收台-6-阻断与恢复路径证据-{date}-{round}.json"),
-    ("run-model.ts", "G3-验收台-7-真实模型验收证据-{date}-{round}.json"),
+    ("runStabilization.ts", "G3-验收台-5-稳定化与交付闭环证据-{date}-{round}.json"),
+    ("runBlocked.ts", "G3-验收台-6-阻断与恢复路径证据-{date}-{round}.json"),
+    ("runModel.ts", "G3-验收台-7-真实模型验收证据-{date}-{round}.json"),
 )
 
 
@@ -173,7 +173,7 @@ def run_chain_script(
 ) -> dict[str, object]:
     """跑一条独立链脚本（真实后端），把证据落进指定路径。
 
-    调用形态与 ``run_dependency_chain`` 同一套：``npx tsx scripts/g3demo/<脚本>
+    调用形态与 ``run_dependency_chain`` 同一套：``npx tsx scripts/impactChains/<脚本>
     --base <后端> --out <证据路径>``，工作目录是 ``frontend/``。
 
     **失败不中断整轮**：某条链跑不通时把失败如实记进摘要，其余链照跑。
@@ -189,7 +189,7 @@ def run_chain_script(
         [
             npx,
             "tsx",
-            f"scripts/g3demo/{script}",
+            f"scripts/impactChains/{script}",
             "--base",
             base_url,
             "--out",

@@ -2,7 +2,7 @@
  * G3 验收台 · 真实模型链的纯逻辑单测。
  *
  * 这些断言只覆盖**不需要真实模型**就能定住的部分：候选解析、模型运行标识、
- * 非确定性结论的取值口径。真实调用由 `scripts/g3demo/run-model.ts` 实跑采证。
+ * 非确定性结论的取值口径。真实调用由 `scripts/impactChains/runModel.ts` 实跑采证。
  */
 
 import assert from 'node:assert/strict'

@@ -5,8 +5,8 @@
  * 跑的是**同一份**执行器，所以页面上的判定与落盘的证据不会走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-blocked.ts
- *   npx tsx scripts/g3demo/run-blocked.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runBlocked.ts
+ *   npx tsx scripts/impactChains/runBlocked.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080

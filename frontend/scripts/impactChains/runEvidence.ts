@@ -8,10 +8,10 @@
  * 重跑一遍只会得到同样的结论，却丢掉「哪一条结论来自哪一次运行」这件事。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-evidence.ts
- *   npx tsx scripts/g3demo/run-evidence.ts --out ../docs/08-本轮实施方案/xxx.json
- *   npx tsx scripts/g3demo/run-evidence.ts --live   # 额外跑一次真实链路并落一份本次运行导出
- *   npx tsx scripts/g3demo/run-evidence.ts --chain   # 走页面的「整链证据」口径落盘
+ *   npx tsx scripts/impactChains/runEvidence.ts
+ *   npx tsx scripts/impactChains/runEvidence.ts --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runEvidence.ts --live   # 额外跑一次真实链路并落一份本次运行导出
+ *   npx tsx scripts/impactChains/runEvidence.ts --chain   # 走页面的「整链证据」口径落盘
  *
  * 环境变量：
  *   G3_BASE_URL     后端地址，默认 http://127.0.0.1:8080

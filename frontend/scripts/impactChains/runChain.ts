@@ -7,8 +7,8 @@
  * 也能在这里被直接调用——两处跑的是同一套代码，证据不会被复制粘贴走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-chain.ts
- *   npx tsx scripts/g3demo/run-chain.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runChain.ts
+ *   npx tsx scripts/impactChains/runChain.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080

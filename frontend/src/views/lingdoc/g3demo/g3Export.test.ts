@@ -563,14 +563,14 @@ test('导出体每行同时给出「本轮运行判定出来的状态」与「�
   assert.equal(ac01.evidence_kind, 'historical_snapshot')
   // 切片行的证据位指到「链 + 判定卡 + 落证文件」，不写运行标识与 head。
   const g31 = exportBody.ac_rows.find((row) => row.id === 'G3.1')!
-  assert.match(g31.matrix_evidence, /run-stabilization\.ts/)
+  assert.match(g31.matrix_evidence, /runStabilization\.ts/)
   assert.match(g31.matrix_evidence, /判定卡 G3\.1/)
   assert.match(g31.matrix_evidence, /落证：docs\/08-本轮实施方案\//)
   assert.doesNotMatch(g31.matrix_evidence, /g3r-/)
   // 判定来源（哪条链的哪张卡）也是结构化的：AC-G3-03 的判定卡出自实时链路的故障注入段。
   const ac03 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-03')!
   assert.equal(ac03.judged_by?.card, 'AC-G3-03')
-  assert.equal(ac03.judged_by?.chain, 'run-evidence.ts')
+  assert.equal(ac03.judged_by?.chain, 'runEvidence.ts')
   assert.equal(ac03.evidence_kind, 'this_run')
   // 本轮判定过的行带运行标识与 head；没判定的行不带。
   assert.equal(ac01.run_id, 'g3r-t8-8')
@@ -684,8 +684,8 @@ test('PASS 行既没有 holds=true 判定卡、判定来源也核对不上时必
     verdicts: [],
     stale: false,
     evidence_kind: 'this_run',
-    matrix_evidence: '稳定化与交付闭环链实跑（run-stabilization.ts · 判定卡 G3.9）· 落证：x.json',
-    judged_by: { chain: 'run-stabilization.ts', card: 'G3.9' },
+    matrix_evidence: '稳定化与交付闭环链实跑（runStabilization.ts · 判定卡 G3.9）· 落证：x.json',
+    judged_by: { chain: 'runStabilization.ts', card: 'G3.9' },
   }
   // 结构化字段在，但那张卡**不在本文件里** ⇒ 核不出来 ⇒ 标出来。
   assert.equal(falsePassRows([base]).length, 1)
@@ -696,7 +696,7 @@ test('PASS 行既没有 holds=true 判定卡、判定来源也核对不上时必
   // 卡在本文件里、且 `holds=true` ⇒ 核得出来 ⇒ 不标。
   const held: G3ExportRow = {
     ...base,
-    judged_by: { chain: 'run-stabilization.ts', card: 'G3.9' },
+    judged_by: { chain: 'runStabilization.ts', card: 'G3.9' },
     verdicts: [
       {
         id: 'G3.9',

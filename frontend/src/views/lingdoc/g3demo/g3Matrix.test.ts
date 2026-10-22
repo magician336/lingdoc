@@ -226,7 +226,7 @@ test('矩阵证据位不再硬编码运行标识与 head（它们每次重跑都
   }
   // 切片七行：证据位必须指到「链 + 判定卡 + 落证文件」三样。
   for (const row of G3_SLICE_ROWS) {
-    assert.match(row.evidence, /run-[a-z]+\.ts/, `${row.id} 的证据位没有指到链脚本`)
+    assert.match(row.evidence, /run[A-Z][a-z]+\.ts/, `${row.id} 的证据位没有指到链脚本`)
     assert.match(row.evidence, new RegExp(`判定卡 ${row.id}`), `${row.id} 的证据位没有指到自己的判定卡`)
     assert.match(
       row.evidence,

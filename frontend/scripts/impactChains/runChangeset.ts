@@ -1,16 +1,18 @@
 /**
- * G3 验收台-4 · 依赖图与影响任务：对真实后端跑一遍本票链路，把证据 JSON 落盘。
+ * G3 验收台-3 · 变更集生命周期与并发保护：对真实后端跑一遍本票链路，把证据 JSON 落盘。
  *
- * 与 #238 / #239 同一形态：执行器是纯 TS、注入式 HTTP 客户端，页面与本脚本
- * 跑的是**同一份**执行器，所以页面上的判定与落盘的证据不会走样。
+ * 为什么要有一个 node 脚本：验收台的真实证据**不必**依赖浏览器自动化
+ * （本仓库没有 Playwright / Puppeteer，浏览器级 runner 成本高且本轮不新增）。
+ * 执行器是纯 TS、注入式 HTTP 客户端，所以同一份执行器既能被页面调用，
+ * 也能在这里被直接调用——两处跑的是同一套代码，证据不会被复制粘贴走样。
  *
  * 用法（在 `frontend/` 目录下）：
- *   npx tsx scripts/g3demo/run-dependencies.ts
- *   npx tsx scripts/g3demo/run-dependencies.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
+ *   npx tsx scripts/impactChains/runChangeset.ts
+ *   npx tsx scripts/impactChains/runChangeset.ts --base http://127.0.0.1:8080 --out ../docs/08-本轮实施方案/xxx.json
  *
  * 环境变量：
  *   G3_BASE_URL  后端地址，默认 http://127.0.0.1:8080
- *   G3_EVIDENCE_OUT  证据落盘路径，默认 <repo>/docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-<日期>.json
+ *   G3_EVIDENCE_OUT  证据落盘路径，默认 <repo>/docs/08-本轮实施方案/G3-验收台-3-变更集生命周期证据-<日期>.json
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -18,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
-import { runDependencyChain } from '../../src/views/lingdoc/g3demo/runner/dependencies'
+import { runChangeSetChain } from '../../src/views/lingdoc/g3demo/runner/changeset'
 import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
@@ -40,18 +42,19 @@ function dateStamp(): string {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
 }
 
+// --out 给的是相对路径时按当前工作目录解析；不给时落到仓库的 docs 目录。
 const outArg = argOf('--out')
 const OUT_PATH = outArg
   ? resolve(process.cwd(), outArg)
   : resolve(
     REPO_ROOT,
     process.env.G3_EVIDENCE_OUT ??
-      `docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-${dateStamp()}.json`,
+      `docs/08-本轮实施方案/G3-验收台-3-变更集生命周期证据-${dateStamp()}.json`,
   )
 
 async function main(): Promise<void> {
   // 账号文件放在系统临时目录里，**不进仓库**：口令不能落进版本库。
-  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account-t4.json'))
+  const accountFile = resolve(argOf('--account-file') ?? resolve(tmpdir(), 'g3demo-account.json'))
   const reuse = process.argv.includes('--reuse')
 
   let account: G3DemoAccount
@@ -74,16 +77,17 @@ async function main(): Promise<void> {
   if (!reuse) {
     writeFileSync(accountFile, `${JSON.stringify(account)}\n`, 'utf8')
   }
-  console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
 
-  const dependency = await runDependencyChain(chain.ctx, client, chain.token, {
+  console.log(`[g3demo] 前置链完成：项目 ${chain.project.id} · 章节 ${chain.chapters.map((c) => c.sectionId).join('、')}`)
+
+  const lifecycle = await runChangeSetChain(chain.ctx, client, chain.token, {
     projectId: chain.project.id,
     chapters: chain.chapters.map((chapter) => ({
       id: chapter.id,
       sectionId: chapter.sectionId,
       title: chapter.title,
     })),
-    operatorId: chain.identity.userId,
+    tenantId: chain.identity.tenantId,
   })
 
   const evidence = {
@@ -91,28 +95,39 @@ async function main(): Promise<void> {
     backend_base_url: BASE_URL,
     run_id: chain.ctx.runId,
     started_at: chain.ctx.startedAt,
-    ticket: 'G3 验收台-4：依赖图、影响任务与影响预览分组',
+    ticket: 'G3 验收台-3：变更集生命周期与并发保护',
     demo_account: { username: account.username, email: account.email },
     account_reused: !registerFirst,
     backend_head: chain.ctx.head,
     identity: chain.identity,
     project: chain.project,
     chapters: chain.chapters,
-    change_set: dependency.changeSet,
-    change_draft: dependency.draft,
-    dependency_edges: dependency.edges,
-    impact_assessment: dependency.assessment,
-    impact_groups: dependency.grouping,
-    impact_tasks: dependency.tasks,
-    impact_tasks_after_replay: dependency.tasksAfterReplay,
-    unassigned_completion: dependency.unassignedCompletion,
-    task_transitions: dependency.transitions,
-    dependency_decisions: dependency.decisions,
-    dependency_candidates: dependency.candidates,
-    suggested_edge: dependency.suggestedEdge,
-    suggested_target_version_confirmation_valid: dependency.suggestedTargetVersionConfirmationValid,
-    known_objects: dependency.knownObjects,
-    verdicts: dependency.verdicts,
+    change_sets: {
+      scoped: lifecycle.scoped,
+      concurrent: lifecycle.concurrent,
+      reversed: lifecycle.reversed,
+      reassessed: lifecycle.reassessed,
+    },
+    impact_assessment: lifecycle.assessment,
+    reverse_impact_assessment: lifecycle.reverseAssessment,
+    chapter_states: {
+      affected_before: lifecycle.affectedBefore,
+      affected_after: lifecycle.affectedAfter,
+      affected_reconfirmed: lifecycle.affectedReconfirmed,
+      unaffected_before: lifecycle.unaffectedBefore,
+      unaffected_after: lifecycle.unaffectedAfter,
+    },
+    unaffected_reason: lifecycle.unaffected,
+    context_revisions: {
+      before: lifecycle.revisionsBefore,
+      after: lifecycle.revisionsAfter,
+    },
+    impact_tasks: {
+      before: lifecycle.tasksBefore,
+      after: lifecycle.tasksAfter,
+    },
+    permission_probe: lifecycle.permissionProbe ?? null,
+    verdicts: lifecycle.verdicts,
     steps: chain.ctx.steps,
   }
 
@@ -130,41 +145,17 @@ async function main(): Promise<void> {
     )
   }
   console.log('')
-  console.log('[g3demo] 三组呈现：')
-  console.log(`  确定受影响：${dependency.grouping.definite.length} 条`)
-  console.log(`  可能受影响：${dependency.grouping.possible.length} 条`)
-  console.log(`  当前未发现影响：${dependency.grouping.unaffected.length} 个对象`)
-  console.log(`  必需对象集合：${dependency.grouping.requiredObjects.length} 个`)
-  console.log('')
-  console.log('[g3demo] 依赖候选三态（AC-G3-15）：')
-  const candidates = dependency.candidates
-  for (const decision of candidates.decisions) {
-    console.log(
-      `  ${decision.decision} → HTTP ${decision.httpStatus} · status=${decision.status || '（无）'}` +
-        ` · edge_id=${decision.edgeId || '（无）'}` +
-        `${decision.code ? ` · code=${decision.code}` : ''}`,
-    )
-  }
-  console.log(
-    `  拒绝不产生边：依赖边 ${candidates.edgesBeforeDecisions} → ${candidates.edgesAfterDecisions} 条` +
-      `（确认 + 修改各一条）`,
-  )
-  console.log(
-    `  同版本不再重提：新建 ${candidates.reproposal?.candidates.length ?? 0} 条 · ` +
-      `抑制 ${candidates.reproposal?.suppressed.length ?? 0} 条` +
-      `（原因 ${candidates.reproposal?.suppressed.map((item) => item.reason).join('、') || '（无）'}）`,
-  )
-  console.log(
-    `  确认时版本复检：HTTP ${candidates.staleConfirmation?.httpStatus ?? '（未执行）'} · ` +
-      `code=${candidates.staleConfirmation?.code || '（无）'}`,
-  )
-  console.log('')
   console.log('[g3demo] 判定：')
-  for (const verdict of dependency.verdicts) {
+  for (const verdict of lifecycle.verdicts) {
     console.log(`  ${verdict.id} ${verdict.holds ? '成立' : '不成立'} —— ${verdict.detail}`)
     for (const line of verdict.evidence) {
       console.log(`      ${line}`)
     }
+  }
+  if (lifecycle.permissionProbe) {
+    console.log(
+      `  非 Owner 权限探测：读 HTTP ${lifecycle.permissionProbe.read.status} · 应用 HTTP ${lifecycle.permissionProbe.apply.status} ${lifecycle.permissionProbe.apply.code} · 拒绝 HTTP ${lifecycle.permissionProbe.reject.status} ${lifecycle.permissionProbe.reject.code}`,
+    )
   }
   console.log('')
   console.log(`[g3demo] 后端 head：${chain.ctx.head?.commitId ?? '未读到'}`)
@@ -174,13 +165,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
-  const detail = error as {
-    step?: string
-    path?: string
-    status?: number
-    code?: string
-    runContext?: { steps: unknown[] }
-  }
+  const detail = error as { step?: string; path?: string; status?: number; code?: string; runContext?: { steps: unknown[] } }
   console.error(`[g3demo] 运行失败：${message}`)
   if (detail?.step) {
     console.error(`[g3demo] 失败步骤：${detail.step} · ${detail.path} · HTTP ${detail.status} · code=${detail.code}`)
@@ -191,9 +176,7 @@ main().catch((error: unknown) => {
   if (steps) {
     console.error('[g3demo] 已跑过的步骤：')
     for (const step of steps) {
-      console.error(
-        `  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path} → ${step.status} ${step.ok ? '' : '✗'} ${step.conclusion}`,
-      )
+      console.error(`  ${String(step.index).padStart(2, '0')} ${step.method.padEnd(4)} ${step.path} → ${step.status} ${step.ok ? '' : '✗'} ${step.conclusion}`)
     }
   }
   process.exitCode = 1
