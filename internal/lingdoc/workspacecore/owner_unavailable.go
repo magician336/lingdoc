@@ -87,6 +87,68 @@ type OwnerActionJudgement struct {
 	OwnerUserID string
 }
 
+// The ways back from a frozen project.
+//
+// They are identifiers, not sentences: the outlet names the way back, the
+// interface writes it down. A path that the product cannot offer yet is
+// simply not in the list.
+const (
+	// RecoveryRestoreTenantIdentity is the way back that changes nothing
+	// about the project: the tenant restores the Owner's identity, and the
+	// derived fact turns back by itself.
+	RecoveryRestoreTenantIdentity = "restore_tenant_identity"
+	// RecoveryTenantOwnerNomination is the way back that moves the project:
+	// the WeKnora tenant Owner nominates a successor and starts a transfer.
+	RecoveryTenantOwnerNomination = "tenant_owner_nomination"
+)
+
+// OwnerAvailability is the derived fact about a project's Owner, read at the
+// project level.
+//
+// It is the same judgement the permission read outlet asks about, answered in
+// the shape a project page and a members page can use: who the Owner is,
+// whether the Owner may still act, why, and the ways back. It is derived, so
+// it does not live on the project and it is not stored: the project payload
+// does not grow a field when the Owner lapses.
+type OwnerAvailability struct {
+	// OwnerUserID is the project's Owner.
+	OwnerUserID string `json:"owner_user_id"`
+	// Available reports whether the Owner may still act as a tenant member.
+	Available bool `json:"available"`
+	// ReasonCode names the state: ReasonAllowed or ReasonOwnerUnavailable.
+	ReasonCode string `json:"reason_code"`
+	// RecoveryPaths names the ways back while the Owner is unavailable. It
+	// is empty when the Owner may still act.
+	RecoveryPaths []string `json:"recovery_paths"`
+}
+
+// OwnerAvailabilityOf derives the project level fact about the Owner.
+//
+// It reads the same judgement the Owner-only actions are judged by, so the
+// two read outlets cannot drift apart: the permission outlet says "this entry
+// is frozen", and this one says "the Owner is unavailable and here is how the
+// project gets back to work".
+func OwnerAvailabilityOf(tx Transaction, p Project, tenant uint64) OwnerAvailability {
+	authority := OwnerAuthorityOf(tx, p, tenant)
+	availability := OwnerAvailability{
+		OwnerUserID: authority.OwnerUserID,
+		// A project without an Owner has nothing frozen: the Owner-only
+		// actions are not blocked, they are simply not this project's shape.
+		Available: true,
+		ReasonCode: ReasonAllowed,
+		// The list is never nil: a reader can tell "no way back is offered"
+		// from "the outlet did not answer".
+		RecoveryPaths: []string{},
+	}
+	if authority.OwnerUserID == "" || authority.Available {
+		return availability
+	}
+	availability.Available = false
+	availability.ReasonCode = ReasonOwnerUnavailable
+	availability.RecoveryPaths = []string{RecoveryRestoreTenantIdentity, RecoveryTenantOwnerNomination}
+	return availability
+}
+
 // JudgeOwnerAction decides one Owner-only action for one actor.
 //
 // An Owner-only action has the Owner as its only authority, so it freezes

@@ -49,6 +49,9 @@ func registerG5G7FullRoutes(group *gin.RouterGroup, routes FullWorkflowRoutePort
 	group.GET("/projects/:projectId/permissions", impactRouteRead(h, func(c *gin.Context, a core.Actor) (core.EffectivePermission, error) {
 		return routes.Members.EffectivePermission(c.Request.Context(), a, c.Param("projectId"), c.DefaultQuery("capability", "read"))
 	}))
+	group.GET("/projects/:projectId/owner-availability", impactRouteRead(h, func(c *gin.Context, a core.Actor) (core.OwnerAvailability, error) {
+		return routes.Members.OwnerAvailability(c.Request.Context(), a, c.Param("projectId"))
+	}))
 	group.GET("/projects/:projectId/members/directory", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.MemberDirectoryEntry, error) {
 		return routes.Members.ProjectMemberDirectory(c.Request.Context(), a, c.Param("projectId"))
 	}))

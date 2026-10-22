@@ -19,14 +19,21 @@ const ts = require('typescript')
 const SOURCE = new URL('./useOwnerAvailability.ts', import.meta.url)
 
 type PermissionAnswer = { data: { reason_code: string } }
+type AvailabilityAnswer = { data: { owner_user_id: string; available: boolean; reason_code: string; recovery_paths: string[] } }
 
-function load(read: (projectId: string, capability: string) => Promise<PermissionAnswer>) {
+function load(
+  read: (projectId: string, capability: string) => Promise<PermissionAnswer>,
+  availability: (projectId: string) => Promise<AvailabilityAnswer> = async () => ({
+    data: { owner_user_id: 'owner-user', available: true, reason_code: 'allowed', recovery_paths: [] },
+  }),
+) {
   const exports: Record<string, unknown> = {}
   const vue = {
     ref: (value: unknown) => ({ value }),
     computed: (fn: () => unknown) => ({ get value() { return fn() } }),
   }
   const permissions = { getEffectivePermission: read }
+  const collaboration = { getOwnerAvailability: availability }
   const js = ts.transpileModule(fs.readFileSync(SOURCE, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
@@ -35,6 +42,7 @@ function load(read: (projectId: string, capability: string) => Promise<Permissio
     require(name: string) {
       if (name === 'vue') return vue
       if (name === '@/api/lingdoc/permissions') return permissions
+      if (name === '@/api/lingdoc/collaboration') return collaboration
       throw new Error(`unexpected import ${name}`)
     },
     console,
@@ -45,6 +53,12 @@ function load(read: (projectId: string, capability: string) => Promise<Permissio
       reasonCode: { value: string }
       reason: { value: string }
       recovery: { value: string }
+      ownerUserId: { value: string }
+      ownerUnavailable: { value: boolean }
+      recoveryPaths: { value: string[] }
+      recoveryTexts: { value: string[] }
+      noticeReason: { value: string }
+      noticeRecovery: { value: string }
       refresh: () => Promise<void>
     }
   }
@@ -87,4 +101,52 @@ test('no project means no freeze', async () => {
   const availability = subject.useOwnerAvailability(() => undefined)
   await availability.refresh()
   assert.equal(availability.frozen.value, false)
+})
+
+test('the project level outlet names the Owner and the ways back', async () => {
+  const asked: string[] = []
+  const subject = load(
+    async () => ({ data: { reason_code: 'owner_unavailable' } }),
+    async (projectId) => {
+      asked.push(projectId)
+      return {
+        data: {
+          owner_user_id: 'owner-user', available: false, reason_code: 'owner_unavailable',
+          recovery_paths: ['restore_tenant_identity', 'tenant_owner_nomination'],
+        },
+      }
+    },
+  )
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.deepEqual(asked, ['project-1'], 'the project level outlet answers for the project')
+  assert.equal(availability.ownerUserId.value, 'owner-user')
+  assert.equal(availability.ownerUnavailable.value, true)
+  assert.deepEqual(availability.recoveryPaths.value, ['restore_tenant_identity', 'tenant_owner_nomination'])
+  assert.equal(availability.recoveryTexts.value.length, 2, 'every way back the outlet names has text the interface holds')
+  assert.match(availability.noticeReason.value, /owner-user/, 'the banner names the Owner who is missing')
+  assert.match(availability.noticeRecovery.value, /恢复/, 'the banner says how the project gets back to work')
+})
+
+test('a healthy project shows no project level banner', async () => {
+  const subject = load(
+    async () => ({ data: { reason_code: 'allowed' } }),
+    async () => ({ data: { owner_user_id: 'owner-user', available: true, reason_code: 'allowed', recovery_paths: [] } }),
+  )
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.equal(availability.ownerUnavailable.value, false)
+  assert.equal(availability.noticeReason.value, '')
+  assert.equal(availability.noticeRecovery.value, '')
+})
+
+test('the project level outlet failing leaves the project level banner alone', async () => {
+  const subject = load(
+    async () => ({ data: { reason_code: 'owner_unavailable' } }),
+    async () => { throw new Error('synthetic read failure') },
+  )
+  const availability = subject.useOwnerAvailability(() => 'project-1')
+  await availability.refresh()
+  assert.equal(availability.ownerUnavailable.value, false, 'the interface never claims a freeze it could not read')
+  assert.equal(availability.noticeReason.value, '')
 })

@@ -30049,6 +30049,155 @@
         "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
       }
     },
+    "/projects/{projectId}/owner-availability": {
+      "get": {
+        "operationId": "ownerAvailability",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "OwnerAvailability",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAvailabilityResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "owner_user_id": "synthetic-owner",
+                        "available": false,
+                        "reason_code": "owner_unavailable",
+                        "recovery_paths": [
+                          "restore_tenant_identity",
+                          "tenant_owner_nomination"
+                        ]
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "full_workflow_http.go",
+        "x-lingdoc-route-line": 52,
+        "x-lingdoc-service": "OwnerAvailability",
+        "x-lingdoc-go-response": "OwnerAvailability",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
     "/projects/{projectId}/members/directory": {
       "get": {
         "operationId": "projectMemberDirectory",
@@ -48722,6 +48871,55 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/EffectivePermission"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "OwnerAvailability": {
+        "type": "object",
+        "properties": {
+          "owner_user_id": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "recovery_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "owner_user_id",
+          "available",
+          "reason_code",
+          "recovery_paths"
+        ],
+        "x-go-type": "core.OwnerAvailability",
+        "x-go-source": "internal/lingdoc/workspacecore/owner_unavailable.go"
+      },
+      "OwnerAvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnerAvailability"
           },
           "request_id": {
             "type": "string"

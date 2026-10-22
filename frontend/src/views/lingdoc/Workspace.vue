@@ -46,6 +46,7 @@
     </header>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
+    <OwnerUnavailableNotice v-if="project" :reason="ownerNoticeReason" :recovery="ownerNoticeRecovery" />
     <section class="wb-notify" aria-label="通知">
       <button type="button" class="wb-notify-toggle" :aria-expanded="notifyOpen" @click="notifyOpen = !notifyOpen">
         <span class="wb-notify-title">通知</span>
@@ -825,6 +826,8 @@ const {
   frozen: ownerActionsFrozen,
   reason: ownerUnavailableReason,
   recovery: ownerRecoveryGuidance,
+  noticeReason: ownerNoticeReason,
+  noticeRecovery: ownerNoticeRecovery,
   refresh: refreshOwnerAvailability,
 } = useOwnerAvailability(() => project.value?.id)
 const memberSaving = ref(false)
