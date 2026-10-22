@@ -808,12 +808,60 @@ func newPostgresRehearsalSchema(t *testing.T, dsn string) string {
 func newPostgresMigrator(t *testing.T, dsn, schema string) *migrate.Migrate {
 	t.Helper()
 
-	migrator, err := migrate.New("file://migrations/versioned", postgresRehearsalURL(t, dsn, schema))
+	migrationURL := postgresRehearsalURL(t, dsn, schema)
+	if option := postgresEmbeddingOption(t, dsn); option != "" {
+		migrationURL = postgresRehearsalURLWithOption(t, migrationURL, option)
+	}
+	migrator, err := migrate.New("file://migrations/versioned", migrationURL)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = migrator.Close()
 	})
 	return migrator
+}
+
+// postgresEmbeddingOption 回答一件事：这条迁移链在目标服务器上能不能按
+// 「带向量扩展」的形态跑完。
+//
+// 迁移 000002 会建 vector、pg_trgm、pg_search 三个扩展和 embeddings 表。
+// 服务器给不出这些扩展时，那条迁移就会失败，而迁移链就停在那里——演练根本
+// 走不到被测的那条迁移上。链本身支持一种没有 postgres 检索的部署形态：
+// app.skip_embedding=true 让 000002 跳过它的函数体，生产启动路径就是这么选的
+// （见 internal/container/container.go：RETRIEVE_DRIVER 不含 postgres 时
+// skip_embedding 为 true）。
+//
+// 所以演练只在目标服务器**给不出**这些扩展时才用那个形态：给得出的服务器
+// 仍然跑完整的链，包括 embeddings 那条路径。
+func postgresEmbeddingOption(t *testing.T, dsn string) string {
+	t.Helper()
+
+	db, err := sql.Open("postgres", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	var available int
+	require.NoError(t, db.QueryRow(
+		"SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'pg_search')").
+		Scan(&available))
+	if available == 2 {
+		return ""
+	}
+	return "-c app.skip_embedding=true"
+}
+
+// postgresRehearsalURLWithOption 给演练用的连接串加一个服务器参数。
+//
+// lib/pq 把 options 当作启动参数交给服务器，服务器照着它设置会话变量
+// （lib/pq 的行为和 libpq 一致：options='-c search_path=...'）。
+func postgresRehearsalURLWithOption(t *testing.T, rawURL, option string) string {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	query := parsed.Query()
+	query.Set("options", option)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // openPostgresSchemaDB 打开一个只在隔离 schema 里工作的连接。
