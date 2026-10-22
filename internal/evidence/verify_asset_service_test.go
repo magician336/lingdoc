@@ -430,7 +430,7 @@ func TestT09VerificationRun(t *testing.T) {
 		raw, err := os.ReadFile(filepath.Clean(assetServiceHTTPEvidencePath))
 		if err != nil {
 			return CheckNotRun, fmt.Sprintf(
-				"没有 S4 的运行记录（读 %s 失败：%v）。产生它：go test ./internal/lingdoc/workspace/ -run TestT09SourceRoutesHTTP -count=1，"+
+				"没有 S4 的运行记录（读 %s 失败：%v）。产生它：go test ./internal/lingdoc/workspace/ -run TestSourceRoutesHTTP -count=1，"+
 					"用例全绿才会写出证据文件；有红的不写，免得旧结论被当成这一次的",
 				assetServiceHTTPEvidencePath, err)
 		}
