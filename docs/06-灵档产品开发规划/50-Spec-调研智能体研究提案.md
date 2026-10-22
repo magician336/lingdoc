@@ -1,6 +1,7 @@
 # Spec：调研智能体的研究提案
 
 > 发布副本：[Issue #393](https://github.com/magician336/lingdoc/issues/393)。由施工并行面 PF-5（[#329](https://github.com/magician336/lingdoc/issues/329)）交付。
+> 配套计划：[G2. 调研智能体的研究提案：开发计划](beta-gap-development-plans/G2-research-proposal.md)（决策记录、验收矩阵与施工票序列）
 
 ## Problem Statement
 

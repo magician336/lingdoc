@@ -346,6 +346,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # already has, because the large service module already holds
             # seven concerns and must not receive an eighth.
             ("internal/lingdoc/workspacecore/research_proposal.go", "file"),
+            ("internal/lingdoc/workspacecore/research_proposal_test.go", "file"),
             # The proposal is delivered on the existing turn endpoint and
             # consumed by the 调研面板 that already adopts an editable
             # 调研任务建议; these files are claimed so the panel may render
