@@ -124,7 +124,7 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # #391 is the owner_unavailable Spec that PF-4 delivers, for the same
 # reason: the set lists the G-line Specs, and a face may only name one it
 # actually delivers.
-G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393}
+G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393} | {451, 452, 453}
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
 # "somebody may start this right now".
@@ -490,7 +490,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
             ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
             # The 研究提案 contract: the model-output contract that owns the
@@ -580,6 +579,74 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "Agent 上下文包、Session、Turn 的后端契约已落地，"
             "但前端零消费——用户不能编辑本轮引用的卡片与资料。"
             "本面只新增文件；与 PF-1 同属前端目录，两者不得互相改对方的文件。"
+        ),
+    },    {
+        "name": "PF-10 Beta 首版验收证据生产",
+        "issue": 465,
+        "issues": (451, 452, 453),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # ---- #453（55-Spec 模型调用账本与模型切换记账）----
+            # 账本行结构、写入与读取；kind = call / switch 两行种。
+            ("internal/lingdoc/workspacecore/model_call_ledger.go", "file"),
+            ("internal/lingdoc/workspacecore/model_call_ledger_test.go", "file"),
+            # 模型调用的唯一出口：账本在这里记一行
+            # （2026-10-23 从 PF-5 移交；PF-5 已 done 且不释放路径）。
+            ("internal/lingdoc/workspace/agent_model.go", "file"),
+            # 账本表的两方言迁移（sqlite / versioned 成对，
+            # 成对性由 scripts/check_migration_pairs.sh 守）。
+            ("migrations/sqlite/000054_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/sqlite/000054_lingdoc_model_call_ledger.down.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_model_call_ledger.down.sql", "file"),
+            # ---- #452（54-Spec 真实浏览器 × 真实后端对偶执行器）----
+            # 编排器：起环境 → 跑 HTTP 侧 → 跑浏览器侧 → 比对 → 产证据。
+            ("scripts/acceptance/beta_evidence_parity.py", "file"),
+            # HTTP 侧执行器：产出一份可与浏览器侧比对的快照。
+            ("scripts/acceptance/beta_http_readback.py", "file"),
+            # 浏览器侧执行器：CDP 驱动真实前端对真实后端
+            # （连接手法照 scripts/lingdoc_mock/browser_smoke.mjs）。
+            ("scripts/acceptance/beta_browser_cdp.mjs", "file"),
+            # 守护：六件产物逐一脱敏检查 + 证据目录结构检查。
+            ("scripts/ci/test_lingdoc_beta_evidence.py", "file"),
+            # ---- #451（53-Spec Beta 首版验收执行器与证据目录）----
+            # 证据目录生成器：产出协议 §6 的六件产物（落点以协议为准）。
+            ("scripts/acceptance/beta_evidence.py", "file"),
+            # F01 执行器：只扩算子（新增的 check kind），不改文件名
+            # （文件名被 CI 触发路径、py_compile 清单、
+            # T15-执行器场景驱动.md:59,63 三处写死）。
+            ("scripts/lingdoc_mock/run_f01.py", "file"),
+            # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
+            ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
+            # F01 契约：协议 §3 的语义读回落成这里的 check（checks 数组现在 0 条）。
+            ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "Beta 首版放行路径上的第一张面：把协议 §2-§6 的人肉验收变成一条可复跑命令，"
+            "产出证据目录与模型调用账本。交付 #451 + #452 + #453 三张新 G 线 Spec。"
+            "**为什么三张合成一个面**（票面 #465 有全文）：#451 单独做是浅模块"
+            "（删掉它复杂度既不消失也不散回调用方）；「一次真实模型调用的形状」在 #452 与 #453 "
+            "各存一份是信息泄漏。合起来 interface = 「跑一次真实验收，产出证据目录与账本」。"
+            "**内部次序**：#453（账本）→ #452（对偶执行器）→ #451（证据目录）。"
+            "2026-10-23 由 magician336 认领。"
+            "**路径移交（本面从 done 面接一条）**："
+            "internal/lingdoc/workspace/agent_model.go（自 PF-5，模型调用的唯一出口）。"
+            "**三处刻意不做（记为已知残留，不越界处理）**："
+            "(1) 55-Spec 决策 5 的 run_mode / runtime_mode 词表收口**整体未做**——"
+            "定义点 internal/lingdoc/candidateadoption/candidate_shape.go 在 PF-2 的"
+            "**目录级**声明 internal/lingdoc/candidateadoption/ 内，产出点"
+            "internal/lingdoc/workspace/model_run_mode.go 属 PF-2，"
+            "另一侧 internal/lingdoc/workspacecore/runtime_control.go 由在飞 PR #446 声明的 PF-8 持有；"
+            "⇒ 本面**复用**现有 candidateadoption 的 run_mode 取值，不新增第三套词表，"
+            "词表收口待这些路径可改时再做。"
+            "(2) internal/lingdoc/workspacecore/agent_research_model.go（PF-5 持有）不在本面路径集内"
+            "——账本行靠外键关联产品动作，不需要改 AgentTurn。"
+            "(3) internal/lingdoc/generation/store.go 不在本面路径集内——PF-2 持有"
+            "internal/lingdoc/generation/ 这个**目录**；账本的来源引用改由调用方填字符串 id。"
+            "**迁移号**：sqlite 000054 / versioned 000133；#441 方案里 PF-7 预留的是同一组号，"
+            "PF-7 尚未开工，本面先取，PF-7 需改用 000055 / 000134。"
         ),
     },
 )
