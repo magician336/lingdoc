@@ -594,6 +594,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 模型调用的唯一出口：账本在这里记一行
             # （2026-10-23 从 PF-5 移交；PF-5 已 done 且不释放路径）。
             ("internal/lingdoc/workspace/agent_model.go", "file"),
+            # 组合根：把账本装到模型适配器上——不装，账本在生产里就是死的。
+            ("internal/container/lingdoc.go", "file"),
             # 账本表的两方言迁移（sqlite / versioned 成对，
             # 成对性由 scripts/check_migration_pairs.sh 守）。
             ("migrations/sqlite/000054_lingdoc_model_call_ledger.up.sql", "file"),
