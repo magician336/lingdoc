@@ -416,12 +416,20 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # and contracts/openapi.json). PF-8 only needed them to wire
             # #382/#383; that work is merged, so this face owns them again.
             #
-            # 2026-10-23: three of the four then move on to PF-13 (G4 模板目录与
-            # 版本治理, 票 #248) under #441 §1.3: service_facade.go,
-            # context_ports_test.go and contracts/openapi.json. PF-8 kept
+            # 2026-10-23: service_facade.go then moves on to PF-13 (G4 模板目录
+            # 与版本治理, 票 #248) under #441 §1.3. PF-8 kept
             # typed_contracts.go, which #248 does not touch. The return
             # condition is recorded in PF-4's summary.
+            #
+            # 2026-10-23: context_ports_test.go and contracts/openapi.json are
+            # **lent to PF-11** (票 #466 / PR #149; #149 lands first, so the
+            # owner role becomes PF-11) and are also **borrowed by PF-13**
+            # (票 #248). This face keeps the claim until #149 lands, so that
+            # no path is owned by nobody in the meantime; the handover of the
+            # owner role is recorded in PF-4's summary.
             ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
@@ -449,7 +457,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/views/lingdoc/workspaceOwnerFreeze.test.js", "file"),
         ),
         "resolves": ((127, 143),),
-        "summary": (            "2026-10-23 交面：PF-4 依 #441 §1.3 的「显式移交」形态把 3 条路径交给 PF-13 G4 模板目录与版本治理（票 #248）：internal/lingdoc/workspacecore/service_facade.go、internal/lingdoc/workspacecore/context_ports_test.go、docs/08-本轮实施方案/contracts/openapi.json。其中 context_ports_test.go 是窄口登记表（#248 要登记 TenantPermissionAuthorizer），openapi.json 要加 template-catalog 的 audit-events 路径。这 3 条出自同日 PF-8（#382）落地后还给本面的 4 条；本面保留 typed_contracts.go，因为 #248 不碰它。**归还条件**：PF-13 G4 模板目录与版本治理 交付完成（Spec #139 的验收矩阵全部 PASS 且 PR #248 合入）后，这些路径随该面一并转入 done 面；PF-4 不再声称拥有，PF-4 的 done 状态与历史证据不变。"
+        "summary": (            "2026-10-23 交面：PF-4 依 #441 §1.3 的「显式移交」形态把 1 条路径交给 PF-13 G4 模板目录与版本治理（票 #248）：internal/lingdoc/workspacecore/service_facade.go。这条出自同日 PF-8（#382）落地后还给本面的 4 条；本面保留 typed_contracts.go，因为 #248 不碰它。**归还条件**：PF-13 G4 模板目录与版本治理 交付完成（Spec #139 的验收矩阵全部 PASS 且 PR #248 合入）后，该路径随该面一并转入 done 面；PF-4 不再声称拥有，PF-4 的 done 状态与历史证据不变。"
+            "**同一批里的另两条改为借给 PF-11**（票 #466 / PR #149）：internal/lingdoc/workspacecore/context_ports_test.go 与 docs/08-本轮实施方案/contracts/openapi.json —— #149 的分支更早且已在施工，合并顺序定为 **#149 先合、owner 归 PF-11**（管理会话裁决），本面 PF-13（票 #248）改为**借用**这两条：context_ports_test.go 用来补上下文端口断言，openapi.json 用来加模板目录相关接口。本面在 #149 合入 main 之前仍持有这两条的 owner（否则路径无人拥有），#149 合入后由 PF-11 持有、本面与 PF-11 均为借用关系。**归还条件**：PF-11 或 PF-13 任一方放弃该路径时，由放弃方显式移回本面，而不是让路径无人拥有。"
 
             "owner_unavailable 状态串全仓不存在，"
             "「租户身份失效 → 冻结 Owner-only 动作 → 租户恢复后自动解冻」"
@@ -575,7 +584,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/change_draft_action.go", "file"),
         ),
         "resolves": (),
-        "summary": (            "2026-10-23 交面：PF-5 依 #441 §1.3 的「显式移交」形态把 1 条路径交给 PF-13 G4 模板目录与版本治理（票 #248）：internal/lingdoc/workspace/template_governance_runtime.go（规则治理运行时，#248 要加 TenantPermissionAuthorizer 窄口与复制审计接线）。**归还条件**：PF-13 G4 模板目录与版本治理 交付完成（Spec #139 的验收矩阵全部 PASS 且 PR #248 合入）后，该路径随该面一并转入 done 面；PF-5 不再声称拥有，PF-5 的 done 状态与历史证据不变。"
+        "summary": (            "2026-10-23 交面：PF-5 把 1 条路径**单向移交**给 PF-13 G4 模板目录与版本治理（票 #248）：internal/lingdoc/workspace/template_governance_runtime.go（规则治理运行时，#248 要加 TenantPermissionAuthorizer 窄口与复制审计接线）。**移交是单向的，本面不再声称拥有**；**归还条件**：若 PF-13 放弃该路径，由 PF-13 显式移回本面，而不是让路径无人拥有。PF-5 的 done 状态与历史证据不变。"
 
             "「research purpose」在词汇上不存在：purpose 只有 conversation 与 rule_suggestion 两种取值，"
             "change_draft 是模型输出的键而不是 purpose，"
@@ -1043,7 +1052,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "paths": (
             ("docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md", "file"),
             ("docs/08-本轮实施方案/T139-验证报告.json", "file"),
-            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("frontend/src/components/TemplateGovernancePanel.test.ts", "file"),
             ("frontend/src/components/TemplateGovernancePanel.vue", "file"),
             ("frontend/src/views/lingdoc/firstPassEntryState.test.ts", "file"),
@@ -1058,11 +1066,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/catalog_http_parity_test.go", "file"),
             ("internal/lingdoc/workspace/client_form_convergence_test.go", "file"),
             ("internal/lingdoc/workspace/template_governance_adapter_postgres_test.go", "file"),
-            ("internal/lingdoc/workspace/template_governance_adapter_test.go", "file"),
             ("internal/lingdoc/workspace/template_governance_routes.go", "file"),
             ("internal/lingdoc/workspace/template_governance_routes_test.go", "file"),
             ("internal/lingdoc/workspace/template_governance_runtime.go", "file"),
-            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
             ("internal/lingdoc/workspacecore/core_governance_ports.go", "file"),
             ("internal/lingdoc/workspacecore/ruleset_source_policy_test.go", "file"),
             ("internal/lingdoc/workspacecore/semantic_delta_full_test.go", "file"),
@@ -1084,11 +1090,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "main@275d438b（PR #472 登记 PF-7 / PF-9）→ main@015bd122（PR #473 写 PF-8 移交顺序）→ "
             "main@f0fbd487（PR #475：PF-7 把迁移号让给 #465 的 PF-10）→ main@52f5b615（PR #443 合入 PF-6）→ main@743db967（PR #478 合入 PF-6 交面）→ main@a91e3697（PR #474 合入 #465 的 PF-10 Beta 面——**#474 把 #465 的 PF-10 面正式登记进 main，实证了本面改名的必要性**：若本面仍叫 PF-10，合并后 main 会有两个同名面，登记处 loader 直接拒绝加载）。"
             "后七遍里 29 个改动文件有 28 个与前一版逐字节相同，差别只在登记处与基线。"
-            "本面从 PF-4 接了 3 条路径（service_facade.go、context_ports_test.go、contracts/openapi.json），从 PF-5 接了 1 条（template_governance_runtime.go）；PF-8 不再是移交来源。"
+            "本面从 PF-4 接了 1 条路径（service_facade.go），从 PF-5 接了 1 条（template_governance_runtime.go）；PF-8 不再是移交来源。"
+            "**另有三条路径的 owner 归 PF-11**（票 #466 / PR #149 —— #149 先合，owner 归 PF-11；管理会话裁决）：internal/lingdoc/workspacecore/context_ports_test.go（本面借用，用途：窄口登记表，补上下文端口断言）、docs/08-本轮实施方案/contracts/openapi.json（本面借用，用途：加模板目录相关接口）、internal/lingdoc/workspace/template_governance_adapter_test.go（**owner 归 PF-11**：#149 与本面各自新建，#149 侧按本面版本合成——本面版本是超集，另加 3 个用例；合入时内容以 #149 的合成为准）。这三条**不列进本面路径集**；前两条在 #149 合入 main 前由 PF-4 持有（否则路径无人拥有），合入后由 PF-11 持有。"
             "frontend/src/views/lingdoc/Workspace.vue 是保留路径（所有前端面的集成点），"
             "本 PR 触及它但不独占它，按约定不登记进任何面的路径集。"
             "本面自建的验收证据（T139-验证报告.json）也登记在本面路径集里：改了不申报是 #441 §7.3 记的偏差。"
-            "本 PR 的 30 个改动文件 = 本面登记 27 条 + 保留路径 1 条（Workspace.vue）+ 机制文件 1 条（scripts/lingdoc_parallel_surfaces.py）"
+            "本 PR 的 30 个改动文件 = 本面登记 24 条 + owner 归 PF-11 的 3 条（context_ports_test.go、contracts/openapi.json、template_governance_adapter_test.go）+ 保留路径 1 条（Workspace.vue）+ 机制文件 1 条（scripts/lingdoc_parallel_surfaces.py）"
             "+ 共享路径图 1 条（docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md）——该路径登记在 PF-8 名下，"
             "本面按 #441 §7.3「改了不申报要记录」处理：只改内容（补本面行），不夺所有权。"
             "依据票：#441（下一批面怎么切）、#248（PR）、#139（Spec）。"
