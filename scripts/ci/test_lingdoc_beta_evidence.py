@@ -866,7 +866,10 @@ class CaptureChainGuardTests(unittest.TestCase):
             runner.run()
         message = str(caught.exception)
         self.assertIn("template_id", message)
-        self.assertIn("not captured yet", message)
+        # Without the capture the contract asks the environment for the
+        # value, and the run says so before the first request.
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
         self.assertNotIn("template_id", runner.variables)
 
     def test_a_variable_the_contract_never_captures_is_called_a_precondition(self):
@@ -880,7 +883,8 @@ class CaptureChainGuardTests(unittest.TestCase):
             runner.run()
         message = str(caught.exception)
         self.assertIn("knowledge_id", message)
-        self.assertIn("execution precondition", message)
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
         self.assertNotIn("the contract captures it", message)
 
     def test_a_step_that_failed_its_status_gets_its_own_conclusion(self):
@@ -916,13 +920,19 @@ class UnblockTargetTests(unittest.TestCase):
                 "http://127.0.0.1:1/api/v1/lingdoc", "", Path(temporary))
         for outcome in outcomes:
             self.assertEqual(outcome.status, beta_evidence.NOT_RUN)
-            self.assertIn("#480", outcome.unblock, outcome.id)
+            self.assertIn("GAP-", outcome.unblock, outcome.id)
+            self.assertNotIn("#480", outcome.unblock,
+                             "a ticket number in an unblock condition drifts: "
+                             + outcome.id)
 
     def test_the_word_item_names_the_release_ticket(self):
         outcomes, _, _ = beta_evidence.word_check(None, None, None)
         for outcome in outcomes:
             self.assertEqual(outcome.status, beta_evidence.NOT_RUN)
-            self.assertIn("#480", outcome.unblock, outcome.id)
+            self.assertIn("GAP-", outcome.unblock, outcome.id)
+            self.assertNotIn("#480", outcome.unblock,
+                             "a ticket number in an unblock condition drifts: "
+                             + outcome.id)
 
     def test_the_isolated_postgresql_item_names_the_release_ticket(self):
         with tempfile.TemporaryDirectory(prefix="lingdoc-unblock-") as temporary:
@@ -930,7 +940,8 @@ class UnblockTargetTests(unittest.TestCase):
                 None, REPO_ROOT, Path(temporary), "sqlite", "")
         isolated = next(o for o in outcomes if "隔离 PostgreSQL" in o.id)
         self.assertEqual(isolated.status, beta_evidence.NOT_RUN)
-        self.assertIn("#480", isolated.unblock)
+        self.assertIn("GAP-", isolated.unblock)
+        self.assertNotIn("#480", isolated.unblock)
 
     def test_the_material_and_the_model_call_name_the_release_ticket(self):
         source = (REPO_ROOT / "scripts" / "acceptance" / "beta_evidence.py").read_text(
@@ -940,7 +951,8 @@ class UnblockTargetTests(unittest.TestCase):
             self.assertIn(marker, source)
             index = source.index(marker)
             window = source[index:index + 700]
-            self.assertIn("#480", window, marker)
+            self.assertIn("GAP-", window, marker)
+            self.assertNotIn("#480", window, marker)
 
 
 if __name__ == "__main__":
