@@ -28,6 +28,20 @@ func ensureAuditEventTable(t *testing.T, db *gorm.DB) {
 		t.Fatalf("prepare the audit table: %v", err)
 	}
 	if auditEventTableHasColumn(t, db, "target_version") {
+		// 000052 is applied, but the decision columns of 000054 (#415) may
+		// still be missing: a fixture that prepared the table before this
+		// migration existed stops here. Applying 000054 twice is harmless
+		// only if the column is absent, so the check is per column.
+		if !auditEventTableHasColumn(t, db, "tenant_id") {
+			decisionFields, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
+				"000054_lingdoc_audit_decision_fields.up.sql"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec(string(decisionFields)).Error; err != nil {
+				t.Fatalf("apply the audit decision fields migration: %v", err)
+			}
+		}
 		return
 	}
 	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
@@ -37,6 +51,14 @@ func ensureAuditEventTable(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Exec(string(migration)).Error; err != nil {
 		t.Fatalf("apply the audit version fields migration: %v", err)
+	}
+	decisionFields, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
+		"000054_lingdoc_audit_decision_fields.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(decisionFields)).Error; err != nil {
+		t.Fatalf("apply the audit decision fields migration: %v", err)
 	}
 }
 

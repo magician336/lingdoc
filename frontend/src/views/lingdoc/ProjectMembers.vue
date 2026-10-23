@@ -84,6 +84,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Asset, Chapter, Project, ProjectFunctionRole, ProjectMember, ProjectMemberInput } from '@/api/lingdoc/workspace'
+import { assetIdFromResourceScope } from './resourceScope'
 import {
   assetIdsForSelection, chapterScopesForSelection, createProjectMemberDrafts,
   hasOrphanedFunctionScopes, hasUnsupportedFunctionRoles, hasUnsupportedMemberState,
@@ -170,8 +171,8 @@ function scopeSummary(member: ProjectMember, role: string): string {
   const scopes = member.function_scopes?.[role] ?? []
   if (!scopes.length) return '未指定（无该职能的范围权限）'
   return scopes.map(scope => {
-    if (scope.startsWith('asset:')) {
-      const id = scope.slice('asset:'.length)
+    const id = assetIdFromResourceScope(scope)
+    if (id) {
       return props.assets.find(asset => asset.id === id)?.title ?? id
     }
     return props.chapters.find(chapter => chapter.id === scope)?.title ?? scope

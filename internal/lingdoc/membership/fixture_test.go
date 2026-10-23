@@ -260,6 +260,15 @@ type auditEventRow struct {
 	ProjectRevision int64  `gorm:"column:project_revision;not null;default:0"`
 	DetailsJSON     string `gorm:"column:details_json;not null;type:text;default:'{}'"`
 	CreatedAt       time.Time
+	// The five decision columns (#415). This mirror has to carry them too:
+	// the mirror exists so a test can read back what the transaction wrote,
+	// and a mirror that stops at nine columns would make a row written with
+	// the decision facts look like a row written without them.
+	TenantID   uint64 `gorm:"column:tenant_id;not null;default:0"`
+	UserID     string `gorm:"column:user_id;not null;size:64;default:''"`
+	Role       string `gorm:"column:role;not null;size:32;default:''"`
+	Capability string `gorm:"column:capability;not null;type:text;default:''"`
+	Decision   string `gorm:"column:decision;not null;size:32;default:''"`
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }

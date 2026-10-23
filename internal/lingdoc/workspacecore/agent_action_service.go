@@ -271,7 +271,7 @@ func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, 
 			return nil, 0, false, ErrDependencyUnavailable
 		}
 		var err error
-		scope, err = s.agentRuntime.Sources.CheckAssetScope(ctx, actor, projectID, sortedUniqueIDs(input.AssetIDs))
+		scope, err = s.checkAssetScope(ctx, actor, projectID, input.ChapterID, sortedUniqueIDs(input.AssetIDs))
 		if err != nil {
 			return nil, 0, false, err
 		}
@@ -498,7 +498,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			}
 		}
 		if s.agentRuntime.Sources != nil && len(task.AssetIDs) > 0 {
-			current, scopeErr := s.agentRuntime.Sources.CheckAssetScope(ctx, actor, projectID, task.AssetIDs)
+			current, scopeErr := s.checkAssetScope(ctx, actor, projectID, task.ChapterID, task.AssetIDs)
 			if scopeErr != nil || !reflect.DeepEqual(current, run.Basis.AssetVersions) {
 				run.Status = "stale"
 				run.FailureCode = "asset_scope_changed"
@@ -684,7 +684,7 @@ func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, ru
 				out.Results[i].Status = "restricted"
 				continue
 			}
-			source, readErr := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, result.SourceID)
+			source, readErr := s.readResearchSource(ctx, actor, projectID, out.Basis.ChapterID, result.SourceID)
 			if readErr != nil || source.Status != "available" || source.QuotedTextHash != result.QuotedTextHash {
 				out.Results[i].Summary = ""
 				out.Results[i].Title = ""
@@ -1634,7 +1634,7 @@ func (s *Service) SelectGenerationEvidence(ctx context.Context, actor Actor, pro
 		}
 		out.Cards = append(out.Cards, card)
 		for _, id := range card.SourceIDs {
-			source, err := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, id)
+			source, err := s.readResearchSource(ctx, actor, projectID, chapterID, id)
 			if err != nil {
 				return out, err
 			}
@@ -1740,7 +1740,7 @@ func (s *Service) BuildAgentContext(ctx context.Context, actor Actor, projectID 
 		if s.agentRuntime.Sources == nil {
 			return out, ErrDependencyUnavailable
 		}
-		source, err := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, id)
+		source, err := s.readResearchSource(ctx, actor, projectID, input.ChapterID, id)
 		if err != nil {
 			return out, err
 		}
@@ -1815,7 +1815,7 @@ func (s *Service) GetAgentTurns(ctx context.Context, actor Actor, projectID, ses
 				out[i].Status = "restricted"
 				break
 			}
-			source, readErr := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, ref.SourceID)
+			source, readErr := s.readResearchSource(ctx, actor, projectID, turn.Context.ChapterID, ref.SourceID)
 			if readErr != nil || source.Status != "available" || source.QuotedTextHash != ref.QuotedTextHash || source.AssetRevision != ref.AssetRevision {
 				out[i].Reply = ""
 				out[i].Suggestions = nil
@@ -2319,7 +2319,7 @@ func (s *Service) InspectResearchResult(ctx context.Context, actor Actor, projec
 		if s.agentRuntime.Sources == nil {
 			return result, ErrDependencyUnavailable
 		}
-		source, err := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, result.SourceID)
+		source, err := s.readResearchSource(ctx, actor, projectID, task.ChapterID, result.SourceID)
 		if err != nil {
 			return result, err
 		}
@@ -2606,7 +2606,7 @@ func (s *Service) GetProjectAssetPolicy(ctx context.Context, actor Actor, projec
 	if err := s.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return out, err
 	}
-	if _, err := s.agentRuntime.Sources.CheckAssetScope(ctx, actor, projectID, []string{assetID}); err != nil {
+	if _, err := s.checkAssetScope(ctx, actor, projectID, "", []string{assetID}); err != nil {
 		return out, err
 	}
 	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {

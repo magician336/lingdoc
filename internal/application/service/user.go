@@ -1052,14 +1052,21 @@ func (s *userService) generateTokensForTenant(
 	user *types.User,
 	activeTenantID uint64,
 ) (accessToken, refreshToken string, err error) {
+	if s.tokenRepo == nil {
+		return "", "", errors.New("auth token repository unavailable")
+	}
 	// Generate access token (expires in 24 hours)
 	accessClaims := jwt.MapClaims{
 		"user_id":   user.ID,
 		"email":     user.Email,
 		"tenant_id": activeTenantID,
-		"exp":       time.Now().Add(24 * time.Hour).Unix(),
-		"iat":       time.Now().Unix(),
-		"type":      "access",
+		// iat/exp have one-second precision. A unique jti prevents two token
+		// pairs minted for the same user in the same second from producing an
+		// identical JWT (and colliding with a just-revoked token row).
+		"jti":  uuid.NewString(),
+		"exp":  time.Now().Add(24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+		"type": "access",
 	}
 
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
@@ -1071,6 +1078,7 @@ func (s *userService) generateTokensForTenant(
 	// Generate refresh token (expires in 7 days)
 	refreshClaims := jwt.MapClaims{
 		"user_id": user.ID,
+		"jti":     uuid.NewString(),
 		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
 		"iat":     time.Now().Unix(),
 		"type":    "refresh",
@@ -1103,8 +1111,16 @@ func (s *userService) generateTokensForTenant(
 		UpdatedAt: time.Now(),
 	}
 
-	_ = s.tokenRepo.CreateToken(ctx, accessTokenRecord)
-	_ = s.tokenRepo.CreateToken(ctx, refreshTokenRecord)
+	if err := s.tokenRepo.CreateToken(ctx, accessTokenRecord); err != nil {
+		return "", "", fmt.Errorf("persist access token: %w", err)
+	}
+	if err := s.tokenRepo.CreateToken(ctx, refreshTokenRecord); err != nil {
+		accessTokenRecord.IsRevoked = true
+		if revokeErr := s.tokenRepo.UpdateToken(ctx, accessTokenRecord); revokeErr != nil {
+			return "", "", errors.Join(fmt.Errorf("persist refresh token: %w", err), fmt.Errorf("revoke orphan access token: %w", revokeErr))
+		}
+		return "", "", fmt.Errorf("persist refresh token: %w", err)
+	}
 
 	return accessToken, refreshToken, nil
 }

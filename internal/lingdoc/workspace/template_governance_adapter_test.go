@@ -110,7 +110,7 @@ func governanceAdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRunt
 		t.Fatal(err)
 	}
 	shares := adapterSharesStub{}
-	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, shares, nil, delivery.NewFixedTemplateReader())
+	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects}, shares, nil, delivery.NewFixedTemplateReader())
 	connectAggregateCapabilities(sourceRuntime, projects)
 	sourceRuntime.EnableFullWorkflowPolicy()
 	research := NewResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)

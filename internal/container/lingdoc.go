@@ -66,7 +66,7 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAuthorizationPolicy(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), authorizationPolicy, auditSink, workspacecore.AuthorizationModeEnforce)
 	projectService.InstallFaultInjection(fault)
 	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
-	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Projects: projectService, Context: projectService})
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Resources: projectService, Projects: projectService, Context: projectService})
 	// The four optional capabilities are the aggregate's own. They used to be
 	// found by the transport with a run-time type assertion on the project
 	// service, which was a back door: the assertion could hand back any
@@ -85,8 +85,10 @@ func NewLingDocWorkspaceHandler(
 	// The model-call ledger is what tells a real sample from a demo one, so the
 	// composition root installs it: without it the calls leave no trace and
 	// 「this run was a real model」 is unanswerable (55-Spec 决策 1 / 决策 4).
+	// One ledger instance for every adapter: the runtime owns it, so the
+	// agent turn and the generation run write to the same rows.
 	model := workspace.NewHostAgentModel(models,
-		workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
+		workspace.WithModelCallLedger(runtime.ModelCallLedger()))
 	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
@@ -232,6 +234,23 @@ func NewLingDocTemplateCatalog() lingdoctemplate.Reader {
 
 type workspaceAuditSink struct{ service interfaces.AuditLogService }
 
+// Record writes one authorization audit record to the platform audit log.
+//
+// The port contract is `Record(context.Context, AuditEvent) error`, and this
+// implementation used to return nil no matter what happened: a serialization
+// failure and a storage failure were both written to the log and dropped. The
+// caller therefore could not tell a recorded decision from a lost one, so
+// nothing downstream could alert, count or degrade on it (#414).
+//
+// The two real failures are returned now. The caller decides what a failed
+// write means for the operation it belongs to: the write paths fail closed
+// (a state change must never become untraceable) and the ordinary read paths
+// stay fail-open and publish an audit-failure alert instead. That difference
+// belongs to the caller, not to the sink.
+//
+// A sink with no platform audit log service is a different case: there is no
+// storage to write to, so there is no write that could fail. It stays a
+// no-op, the same convention the OpenSearch audit sink adapter uses.
 func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.AuditEvent) error {
 	if s.service == nil {
 		return nil
@@ -243,7 +262,7 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 	details, err := json.Marshal(eventDetails)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization"})
-		return nil
+		return err
 	}
 	action := types.AuditAction("rbac.lingdoc_authorized")
 	outcome := types.AuditOutcomeSuccess
@@ -252,10 +271,8 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 		outcome = types.AuditOutcomeDenied
 	}
 	if err := s.service.Log(ctx, &types.AuditLog{TenantID: event.TenantID, ActorUserID: event.UserID, ActorRole: string(event.Role), Action: action, ScopeType: "project", ScopeID: event.ProjectID, TargetType: "lingdoc_project", TargetID: event.ProjectID, Outcome: outcome, Details: types.JSON(details)}); err != nil {
-		// Authorization remains fail-open when audit storage is unavailable:
-		// the policy decision is already made and the logger preserves the
-		// operational signal without turning observability into a dependency.
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization", "tenant_id": event.TenantID, "project_id": event.ProjectID})
+		return err
 	}
 	return nil
 }

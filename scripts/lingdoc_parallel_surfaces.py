@@ -722,7 +722,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 组合根 internal/container/lingdoc.go **不**登记进本面：owner 仍是 PF-7
             # （#414 的 AuditSink 实现就在那里，PF-7 未开工且已声明它）。
             # 但本面**借用**它——在 NewHostAgentModel 那一行装上模型调用账本
-            # （不装，账本在生产里就是死的）。**本面合入 main 后该路径归还 PF-7**
+            # （不装，账本在生产里就是死的）。**该路径已于 2026-10-23 随 #509（账本写入端）合入 main，路径归还 PF-7；PF-10 不再改它**
             # （先例：PF-8 借 PF-4 的四个路径，落地后归还）。
             # **PF-7 侧的对应记录已在 main 上**（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。
             # 本面在这里装账本：workspace.NewHostAgentModel(models,
@@ -849,28 +849,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # #504 的守护测试：标识不漂（产出器里不出现票号）、标识齐全、
             # 「没跑」只有一种拼写。
             ("scripts/ci/test_lingdoc_beta_gap_ids.py", "file"),
+            # #486 的账本写入端：SourceRuntime 持有那一个账本实例，所有适配器共用它。
+            # 生成适配器所在的 workspace/generation.go 由 PF-2 持有 ⇒ 借用，不声明。
+            ("internal/lingdoc/workspace/source_runtime_gorm.go", "file"),
+            # #486 的守护测试：一次调用一行、失败也写、未注入账本不改变行为。
+            ("internal/lingdoc/workspace/generation_model_call_ledger_test.go", "file"),
+            ("internal/lingdoc/workspace/generation_model_call_ledger_table_test.go", "file"),
         ),
         "resolves": (),
-        "summary": (
-            "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），"
-            "交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。"
-            "**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，"
-            "三个连续结果串行跑在同一序列里，不为每一行另造执行路径。"
-            "**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，"
-            "不得记为已通过。"
-            "**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，"
-            "不跨票抢跑。"
-            "**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、"
-            "F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、"
-            "证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试"
-            "（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，"
-            "owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；"
-            "本面按「owner 保持拥有、借用方落地后归还」的先例借用它们"
-            "（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），"
-            "**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。"
-            "**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。"
-            "借用的改动事实记在 PF-10 侧与本面两侧。"
-        ),
+        "summary": ("Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",

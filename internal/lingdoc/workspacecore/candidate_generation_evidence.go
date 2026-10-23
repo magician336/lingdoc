@@ -97,7 +97,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 			return ctx, selected, ErrDependencyUnavailable
 		}
 		for _, id := range sortedImpactSourceIDs(usedSourceIDs) {
-			source, e := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, id)
+			source, e := s.readResearchSource(ctx, actor, projectID, chapterID, id)
 			if e != nil {
 				return ctx, selected, e
 			}

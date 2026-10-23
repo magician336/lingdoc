@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -24,6 +25,35 @@ func (s *sourceAuditSinkStub) Record(_ context.Context, event AuditEvent) error 
 func (s *projectAuthorizerStub) Authorize(context.Context, Actor, string, string) error {
 	s.calls++
 	return s.err
+}
+
+func (s *projectAuthorizerStub) AuthorizeResourceBatch(_ context.Context, _ Actor, _ string, _ AuthorizationAction, resources []ResourceRef) ([]ResourceAuthorizationDecision, error) {
+	decisions := make([]ResourceAuthorizationDecision, len(resources))
+	for i, resource := range resources {
+		decisions[i] = ResourceAuthorizationDecision{Resource: resource, Allowed: true, Reason: "allowed"}
+	}
+	return decisions, nil
+}
+
+type scopedProjectAuthorizerStub struct {
+	*projectAuthorizerStub
+	scopeErr      error
+	scopeRequests []ResourceRef
+	batchCalls    int
+}
+
+func (s *scopedProjectAuthorizerStub) AuthorizeResourceBatch(_ context.Context, _ Actor, _ string, _ AuthorizationAction, resources []ResourceRef) ([]ResourceAuthorizationDecision, error) {
+	s.batchCalls++
+	s.scopeRequests = append(s.scopeRequests, resources...)
+	decisions := make([]ResourceAuthorizationDecision, len(resources))
+	for i, resource := range resources {
+		decision := ResourceAuthorizationDecision{Resource: resource, Allowed: s.scopeErr == nil, Reason: "allowed"}
+		if s.scopeErr != nil {
+			decision.Reason = string(evidence.DenyNotAuthorized)
+		}
+		decisions[i] = decision
+	}
+	return decisions, nil
 }
 
 type assetGatewayStub struct {
@@ -58,8 +88,19 @@ func (s sourceCatalogStub) Chunk(context.Context, string) (*SourceChunk, error) 
 type sourceBindingsStub struct {
 	BindingStore
 	asset              evidence.Asset
+	assets             []evidence.Asset
 	currentKnowledgeID string
 	revisionReadCalls  int
+}
+
+func (s *sourceBindingsStub) BoundAssets(context.Context, string) ([]evidence.Asset, error) {
+	if s.assets != nil {
+		return append([]evidence.Asset(nil), s.assets...), nil
+	}
+	if s.asset.ID != "" {
+		return []evidence.Asset{s.asset}, nil
+	}
+	return nil, nil
 }
 
 func (s *sourceBindingsStub) AssetForKnowledge(context.Context, string, string) (evidence.Asset, error) {
@@ -105,7 +146,7 @@ func TestSourceServiceChecksProjectAccessBeforeResolvingAssets(t *testing.T) {
 }
 
 func TestSourceServiceRejectsPartiallyDeniedAssetsBeforeSearch(t *testing.T) {
-	projects := &projectAuthorizerStub{}
+	projects := &scopedProjectAuthorizerStub{projectAuthorizerStub: &projectAuthorizerStub{}}
 	gateway := &assetGatewayStub{result: &evidence.ResolveResult{
 		Requested: []string{"allowed-1", "revoked-2"},
 		Allowed:   []evidence.Asset{{ID: "allowed-1", KnowledgeID: "knowledge-1"}},
@@ -113,7 +154,8 @@ func TestSourceServiceRejectsPartiallyDeniedAssetsBeforeSearch(t *testing.T) {
 	}}
 	search := &knowledgeSearchStub{}
 	audit := &sourceAuditSinkStub{}
-	service := NewSourceService(projects, nil, gateway, nil, nil, nil, search, audit)
+	bindings := &sourceBindingsStub{assets: []evidence.Asset{{ID: "allowed-1"}, {ID: "revoked-2"}}}
+	service := NewSourceService(projects, bindings, gateway, nil, nil, nil, search, audit)
 
 	_, err := service.RetrieveSources(context.Background(), Actor{TenantID: 7, UserID: "writer"}, "project-1", RetrieveSourcesInput{
 		Query: "budget", AssetIDs: []string{"allowed-1", "revoked-2"},
@@ -125,11 +167,52 @@ func TestSourceServiceRejectsPartiallyDeniedAssetsBeforeSearch(t *testing.T) {
 	if len(denied.Denied) != 1 || denied.Denied[0].AssetID != "revoked-2" || denied.Denied[0].Reason != evidence.DenyNotAuthorized {
 		t.Fatalf("denied assets = %#v, want the exact refused ID and reason", denied.Denied)
 	}
-	if projects.calls != 1 || gateway.calls != 1 || search.calls != 0 {
-		t.Fatalf("project/gateway/search calls = %d/%d/%d, want 1/1/0", projects.calls, gateway.calls, search.calls)
+	if projects.calls != 1 || projects.batchCalls != 1 || gateway.calls != 1 || search.calls != 0 {
+		t.Fatalf("project/batch/gateway/search calls = %d/%d/%d/%d, want 1/1/1/0", projects.calls, projects.batchCalls, gateway.calls, search.calls)
+	}
+	if len(projects.scopeRequests) != 2 || projects.scopeRequests[0].AuthorizationResource() != "asset:allowed-1" || projects.scopeRequests[1].AuthorizationResource() != "asset:revoked-2" {
+		t.Fatalf("typed batch scope requests = %+v, want exact asset resources", projects.scopeRequests)
 	}
 	if len(audit.events) != 1 || audit.events[0].Capability != "source.retrieve" || audit.events[0].Decision != "deny" {
 		t.Fatalf("source audit = %+v", audit.events)
+	}
+}
+
+func TestSourceServiceFailsClosedWhenStructuredAssetScopeIsUnavailable(t *testing.T) {
+	gateway := &assetGatewayStub{}
+	search := &knowledgeSearchStub{}
+	service := NewSourceService(nil, nil, gateway, nil, nil, nil, search)
+
+	_, err := service.RetrieveSources(context.Background(), Actor{TenantID: 7, UserID: "reader"}, "project-1", RetrieveSourcesInput{
+		Query: "budget", AssetIDs: []string{"asset-1"},
+	})
+	if !errors.Is(err, core.ErrPermissionSchemaUnavailable) {
+		t.Fatalf("RetrieveSources() error = %v, want fail-closed permission schema error", err)
+	}
+	if gateway.calls != 0 || search.calls != 0 {
+		t.Fatalf("gateway/search calls = %d/%d, want 0/0 when resource authorization is missing", gateway.calls, search.calls)
+	}
+}
+
+func TestSourceServiceAggregatesBatchScopeDenialsBeforeGatewayAndAuditsOnce(t *testing.T) {
+	projects := &scopedProjectAuthorizerStub{projectAuthorizerStub: &projectAuthorizerStub{}, scopeErr: core.ErrNotFound}
+	bindings := &sourceBindingsStub{assets: []evidence.Asset{{ID: "asset-one"}, {ID: "asset-two"}}}
+	gateway := &assetGatewayStub{}
+	audit := &sourceAuditSinkStub{}
+	service := NewSourceService(projects, bindings, gateway, nil, nil, nil, &knowledgeSearchStub{}, audit)
+
+	_, err := service.RetrieveSources(context.Background(), Actor{TenantID: 7, UserID: "reader"}, "project-1", RetrieveSourcesInput{
+		Query: "budget", AssetIDs: []string{"asset-one", "asset-two"},
+	})
+	var denied *DeniedAssetsError
+	if !errors.As(err, &denied) || len(denied.Denied) != 2 || denied.Denied[0].Reason != evidence.DenyNotAuthorized || denied.Denied[1].Reason != evidence.DenyNotAuthorized {
+		t.Fatalf("batch denial = %#v, err=%v", denied, err)
+	}
+	if projects.batchCalls != 1 || len(projects.scopeRequests) != 2 || gateway.calls != 0 {
+		t.Fatalf("batch/assets/gateway = %d/%d/%d, want one batch of two and no gateway", projects.batchCalls, len(projects.scopeRequests), gateway.calls)
+	}
+	if len(audit.events) != 1 || audit.events[0].Capability != "source.retrieve" || audit.events[0].Decision != "deny" {
+		t.Fatalf("source audit = %+v, want one aggregate deny", audit.events)
 	}
 }
 
