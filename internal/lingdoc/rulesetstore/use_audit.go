@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -115,12 +116,20 @@ func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseA
 
 // RecordRuleSetUseInTransaction lets snapshot/export adapters commit the use
 // audit and governed artifact atomically in the same database transaction.
+//
+// It applies the same actor role criterion as Store.RecordRuleSetUse: the
+// recorded role must be a tenant role from the vocabulary owned by
+// internal/types. The role is recorded in the audit column, so a word outside
+// that vocabulary could not be attributed to a tenant role by any reader.
 func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEvent) error {
 	if tx == nil {
 		return errors.New("ruleset use audit transaction is unavailable")
 	}
 	event, err := normalizeRuleSetUseAudit(event)
 	if err != nil {
+		return err
+	}
+	if err := validateRuleSetUseAuditActorRole(event.ActorRole); err != nil {
 		return err
 	}
 	if event.Action == "check" || event.Action == "preflight" {
@@ -493,6 +502,28 @@ func normalizeRuleSetUseAudit(event template.RuleSetUseAuditEvent) (template.Rul
 		return template.RuleSetUseAuditEvent{}, ErrInvalidRuleSetUseAudit
 	}
 	return event, nil
+}
+
+// validateRuleSetUseAuditActorRole applies the tenant role vocabulary to the
+// role a rule set use audit records.
+//
+// The vocabulary has exactly one owner: internal/types, where IsValid is the
+// only judge of whether a value is a tenant role. This is the same authority
+// the audit_logs side already judges with (validateActor and recordAudit), so
+// the two write entries and the audit column share one vocabulary instead of
+// one vocabulary per writer.
+//
+// An empty role is not decided here: the event shape check in
+// normalizeRuleSetUseAudit refuses it before the vocabulary is consulted.
+// What this check owns is the word itself. A non-empty word outside the
+// vocabulary is an invalid role, and it is refused with the same sentinel
+// Store.RecordRuleSetUse returns through validateActor, so the two write
+// entries judge a recorded role the same way.
+func validateRuleSetUseAuditActorRole(role string) error {
+	if !types.TenantRole(role).IsValid() {
+		return ErrActorRoleInvalid
+	}
+	return nil
 }
 
 func validUseAction(action string) bool {
