@@ -495,8 +495,8 @@ func TestModelCallLedgerMigrationsCarryTheSameColumnsInBothDialects(t *testing.T
 		"source_id", "switched_from_model_id", "switch_reason", "affected_steps_json",
 		"created_at",
 	}
-	sqliteColumns := ledgerMigrationColumns(t, filepath.Join("..", "..", "..", "migrations", "sqlite", "000054_lingdoc_model_call_ledger.up.sql"))
-	postgresColumns := ledgerMigrationColumns(t, filepath.Join("..", "..", "..", "migrations", "versioned", "000133_lingdoc_model_call_ledger.up.sql"))
+	sqliteColumns := ledgerMigrationColumns(t, filepath.Join("..", "..", "..", "migrations", "sqlite", "000055_lingdoc_model_call_ledger.up.sql"))
+	postgresColumns := ledgerMigrationColumns(t, filepath.Join("..", "..", "..", "migrations", "versioned", "000134_lingdoc_model_call_ledger.up.sql"))
 	require.Equal(t, expected, sqliteColumns)
 	require.Equal(t, expected, postgresColumns)
 

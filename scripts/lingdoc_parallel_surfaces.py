@@ -653,10 +653,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/agent_model.go", "file"),
             # 账本表的两方言迁移（sqlite / versioned 成对，
             # 成对性由 scripts/check_migration_pairs.sh 守）。
-            ("migrations/sqlite/000054_lingdoc_model_call_ledger.up.sql", "file"),
-            ("migrations/sqlite/000054_lingdoc_model_call_ledger.down.sql", "file"),
-            ("migrations/versioned/000133_lingdoc_model_call_ledger.up.sql", "file"),
-            ("migrations/versioned/000133_lingdoc_model_call_ledger.down.sql", "file"),
+            ("migrations/sqlite/000055_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/sqlite/000055_lingdoc_model_call_ledger.down.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_model_call_ledger.down.sql", "file"),
             # ---- #452（54-Spec 真实浏览器 × 真实后端对偶执行器）----
             # 编排器：起环境 → 跑 HTTP 侧 → 跑浏览器侧 → 比对 → 产证据。
             ("scripts/acceptance/beta_evidence_parity.py", "file"),
@@ -702,8 +702,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "——账本行靠外键关联产品动作，不需要改 AgentTurn。"
             "(3) internal/lingdoc/generation/store.go 不在本面路径集内——PF-2 持有"
             "internal/lingdoc/generation/ 这个**目录**；账本的来源引用改由调用方填字符串 id。"
-            "**迁移号**：**sqlite 000054 / versioned 000133**——经管理会话核对：main 最高是 sqlite 000053 /"
-            "versioned 000132，本面接得上；**PF-7 已让到 000055 / 000134**（PF-7 尚未开工，让号成本在 PF-7 侧）。"
+            "**迁移号**：**sqlite 000055 / versioned 000134**——000054 / 000133 归 PF-7 的审计字段迁移，"
+            "而那两条路径**已随 PR #472 记录在 main 上**；登记处棘轮不许删 main 已记录的路径"
+            "（lingdoc_manifest_baseline.py）⇒ 让号方向由管理会话在 PR #475（commit 60ae2dca）修正为"
+            "「**PF-10 改号**」。迁移守护的版本常量同步到 55。"
             "迁移守护的版本常量同步到 54。"
             "**2026-10-23 已完成**（认领与完成的人是 magician336）：把 Beta 首版真实验收从人肉变成一条可复跑命令。"
             "交付三件事：① #453 模型调用账本——一张 lingdoc_model_call_ledger 表，kind 分 call / switch 两行种，"
@@ -718,7 +720,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（先例：PF-8 借 PF-4 的四个路径，落地后归还）；**PF-7 侧的对应记录由管理会话补**。"
             "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
-            "**迁移号**：本面用 sqlite 000054 / versioned 000133（PF-7 已让到 000055 / 000134）。"
+            "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，已记录在 main 上，棘轮不许删）。"
         ),
     },
     {
@@ -852,8 +854,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
             # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
-            # ⚠️ PF-10 于 2026-10-23 借用本文件（组合根装模型调用账本），合入 main 后归还；
-            # **该借用的对应记录由管理会话补在 PF-7 的票面与本面 summary。**
+            # ⚠️ 借用记录在本面的 summary 里（PF-10 于 2026-10-23 借用本文件装模型调用账本，
+            # 合入 main 后归还）；**路径所有权仍归本面**。
             ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
             ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
