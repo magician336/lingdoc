@@ -14,6 +14,8 @@
 - [G6 运维前端：指标视图与契约](G6-运维前端-指标视图与契约-20261022.md)
 - [Spec #48 代码命名规范收口：实施与验收证据](Spec-48-代码命名规范收口.md) / [验证报告](T48-验证报告.json)：命名登记表与棘轮（`211/54/205` → `0/0/0`）
 - [PF-3 审计告警接线与 AuditEvent 字段](PF-3-审计告警接线与AuditEvent字段.md) / [验证报告](T327-验证报告.json)：读类审计失败接 G6 告警源 + 审计版本字段独立列（施工并行面票 [#327](https://github.com/magician336/lingdoc/issues/327)）
+- [Spec #49 owner_unavailable 派生状态与 Owner-only 冻结：实施与验收证据](Spec-49-owner_unavailable派生状态与Owner-only冻结.md) / [验证报告](T49-验证报告.json)：判定收口到一处 + 五项 Owner 专属动作冻结与归档能力（施工并行面票 [#328](https://github.com/magician336/lingdoc/issues/328)，Spec [#391](https://github.com/magician336/lingdoc/issues/391)）
+- [G1–G7 剩余验收面盘点（2026-10-23）](G1G7-剩余验收面盘点-20261023.md)：19 张仍开放 G 线 Spec 票的剩余验收面、open 原生 blocker、平台条件面与可独立开工判定（wayfinder 票 [#437](https://github.com/magician336/lingdoc/issues/437)；**只开分支、不提 PR、不合并**）
 
 ## 当前PR复审入口
 
