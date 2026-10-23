@@ -30,7 +30,8 @@ F02_WHITE_BOX = {
     "model_generate_calls": 0,
 }
 DENIED = {"/error/code", "/error/details/denied", "/error/details/denied/0/asset_id",
-          "/error/details/denied/0", "/error/details/denied/0/reason", "/error/retryable"}
+          "/error/details/denied/0", "/error/details/denied/0/reason", "/error/retryable",
+          "{{asset.k-demo}}"}
 
 
 def provider(**kwargs):

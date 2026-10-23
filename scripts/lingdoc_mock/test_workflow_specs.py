@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import scripts.lingdoc_check_kinds as check_kinds
 from scripts.lingdoc_mock.run_f01 import (
     SCENARIOS_PATH,
     WORKFLOW_PATH,
@@ -122,16 +123,13 @@ class SpecificationLoadTest(unittest.TestCase):
         step = spec.steps[0]
         self.assertEqual((step["id"], step["actor"], step["operation_id"]),
                          ("F22-01", "u-owner", "retrieveSources"))
-        operators = []
-        for check in step["checks"]:
-            present = [name for name in ("equals", "length", "keys", "one_of") if name in check]
-            self.assertEqual(len(present), 1, check)
-            self.assertEqual(set(check), {"path", "intent", present[0]}, check)
-            operators.append(present[0])
-        # Every operator the runner knows is exercised by the one scenario that can be sent,
-        # so the machinery is not carried untested.
-        self.assertEqual(sorted(set(operators)), ["equals", "keys", "length", "one_of"])
-        self.assertEqual(len(step["checks"]), 6)
+        operators = [check_kinds.validate_check(check, "F22-01 check") for check in step["checks"]]
+        # The kinds this scenario uses are exercised by the one scenario that can be
+        # sent, so the machinery is not carried untested.  The vocabulary comes from the
+        # one authority (scripts/lingdoc_check_kinds.py), not from a list written here:
+        # a second list is how the runner and the validator drifted apart before.
+        self.assertEqual(sorted(set(operators)), ["equals", "keys", "length", "not_in", "one_of"])
+        self.assertEqual(len(step["checks"]), 7)
 
     def test_scenario_that_holds_only_prose_is_refused_as_not_executable(self):
         with self.assertRaisesRegex(WorkflowError, "F17 has no executable steps"):
