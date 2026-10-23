@@ -110,6 +110,33 @@ func usageString(u types.TokenUsage) string {
 		u.CacheWriteTokens, u.CacheMissTokens, u.CacheStatus)
 }
 
+// buildProviderTraceSection says what the provider said about the call.
+//
+// When the provider sent its own request identifier, that identifier is the
+// strongest link to the provider's own records, so it is written first. When
+// the provider sent none, the section says so plainly -- "the provider did
+// not give a request identifier" -- and lists the basis a reader can check
+// instead: the endpoint, the model, the request fingerprint, the time window
+// and the usage.
+//
+// A missing identifier is never dressed up as one, and the alternative basis
+// is written even when the identifier is there, so the two can be compared.
+func buildProviderTraceSection(call types.ProviderCall, model string, usage types.TokenUsage, observedAt time.Time) string {
+	var b strings.Builder
+	if call.RequestID != "" {
+		fmt.Fprintf(&b, "RequestID: %s\n", call.RequestID)
+		fmt.Fprintf(&b, "RequestIDHeader: %s\n", call.RequestIDHeader)
+	} else {
+		b.WriteString("RequestID: provider 未提供请求标识\n")
+	}
+	fmt.Fprintf(&b, "Endpoint: %s\n", call.Endpoint)
+	fmt.Fprintf(&b, "Model: %s\n", model)
+	fmt.Fprintf(&b, "RequestFingerprint: sha256:%s\n", call.RequestFingerprint)
+	fmt.Fprintf(&b, "ObservedAt: %s\n", observedAt.UTC().Format(time.RFC3339Nano))
+	fmt.Fprintf(&b, "Usage: %s\n", usageString(usage))
+	return b.String()
+}
+
 // logLLMDebugCall logs a complete non-stream LLM chat call.
 func logLLMDebugCall(ctx context.Context, model string, messages []Message, opts *ChatOptions, resp *types.ChatResponse, callErr error, dur time.Duration) {
 	if !logger.LLMDebugEnabled() {
@@ -148,6 +175,12 @@ func logLLMDebugCall(ctx context.Context, model string, messages []Message, opts
 			record.Sections = append(record.Sections, logger.RecordSection{Title: "Response", Content: respText.String()})
 		}
 		record.Sections = append(record.Sections, logger.RecordSection{Title: "Usage", Content: usageString(resp.Usage)})
+		if resp.ProviderCall != nil {
+			record.Sections = append(record.Sections, logger.RecordSection{
+				Title:   "Provider Trace",
+				Content: buildProviderTraceSection(*resp.ProviderCall, model, resp.Usage, time.Now()),
+			})
+		}
 	}
 
 	if callErr != nil {

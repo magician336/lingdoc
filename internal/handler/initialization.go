@@ -300,6 +300,22 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 			c.Error(errors.NewBadRequestError("Embedding模型不存在"))
 			return
 		}
+		// 与摘要模型守卫成对：Embedding 槽位只能绑 embedding 能力类型的模型行。
+		// 绑成 KnowledgeQA / Rerank / VLLM / ASR 行时，摄取与检索两侧会同时
+		// 去调用该模型的 embeddings 接口并被服务端拒绝（HTTP 400，无向量）。
+		// 这里按模型类型判定，不按模型名，换个名字就绕不过去。
+		if !types.IsEmbeddingCapableModelType(embeddingModel.Type) {
+			logger.ErrorWithFields(ctx, nil, map[string]interface{}{
+				"model_id":   req.EmbeddingModelID,
+				"model_type": string(embeddingModel.Type),
+				"kb_id":      kbIdStr,
+			})
+			_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
+				"Embedding模型类型为 %s，不能作为Embedding模型：Embedding 模型必须是向量模型，"+
+					"KnowledgeQA / Rerank / VLLM / ASR 类型的模型无法用于向量化",
+				embeddingModel.Type)))
+			return
+		}
 	}
 
 	// 更新知识库的模型ID
@@ -1672,18 +1688,21 @@ type ModelTestRequest struct {
 // actively typing a new key they want to verify. Missing or inaccessible
 // model is treated as a no-op (the connection test will fail downstream
 // with a clearer "missing apiKey" error than we could produce here).
-func (h *InitializationHandler) fillSecretsFromStoredModel(ctx context.Context, req *ModelTestRequest) {
+//
+// The stored row is returned (nil when there is none to look up) so the
+// caller can also read its TYPE: the self-check must not answer for a row
+// that cannot serve the purpose under test.
+func (h *InitializationHandler) fillSecretsFromStoredModel(
+	ctx context.Context, req *ModelTestRequest,
+) *types.Model {
 	if req == nil || req.ModelID == "" {
-		return
-	}
-	if req.APIKey != "" && req.AppSecret != "" && req.ExtraConfig != nil {
-		return
+		return nil
 	}
 	stored, err := h.modelService.GetModelByID(ctx, req.ModelID)
 	if err != nil || stored == nil {
 		logger.Warnf(ctx, "test-connection: stored model %s not found, leaving secrets empty: %v",
 			utils.SanitizeForLog(req.ModelID), err)
-		return
+		return nil
 	}
 	if req.APIKey == "" {
 		req.APIKey = stored.Parameters.APIKey
@@ -1694,6 +1713,30 @@ func (h *InitializationHandler) fillSecretsFromStoredModel(ctx context.Context, 
 	if req.ExtraConfig == nil {
 		req.ExtraConfig = stored.Parameters.ExtraConfig
 	}
+	return stored
+}
+
+// storedModelTypeRejection reports whether the stored model row a self-check
+// points at may serve the purpose under test.
+//
+// A self-check that carries only a model id must not answer for a row that
+// cannot serve the purpose: the chat self-check hard-codes the KnowledgeQA
+// type for the temporary model it builds, so an Embedding row would be
+// checked against the chat endpoint of a model that does not serve chat —
+// the check answers "connection normal, model usable" while the production
+// chat path rejects the very same row (ErrModelTypeNotChatCapable). The
+// operator then believes the model works and the failure only surfaces
+// later, far from its cause.
+//
+// A row that cannot be loaded is treated as "no stored row": the request's own
+// fields then decide, exactly as before.
+func storedModelTypeRejection(
+	stored *types.Model, allowed func(types.ModelType) bool,
+) bool {
+	if stored == nil {
+		return false
+	}
+	return !allowed(stored.Type)
 }
 
 // RemoteModelCheckRequest 兼容旧 swagger 定义。
@@ -1784,7 +1827,28 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	h.fillSecretsFromStoredModel(ctx, &req)
+	stored := h.fillSecretsFromStoredModel(ctx, &req)
+
+	// The self-check must respect the type of the row it points at: a chat
+	// connectivity test against a row whose upstream does not serve chat
+	// would report "connection normal, model usable" for a model the
+	// production chat path rejects (ErrModelTypeNotChatCapable) — and it
+	// would spend a real provider request to find that out.
+	//
+	// The verdict comes from the model's TYPE, never from its name, and it is
+	// the same rule the chat client path follows
+	// (types.IsChatCapableModelType), so both exits agree.
+	if storedModelTypeRejection(stored, types.IsChatCapableModelType) {
+		logger.ErrorWithFields(ctx, nil, map[string]interface{}{
+			"model_id":   utils.SanitizeForLog(stored.ID),
+			"model_type": string(stored.Type),
+			"purpose":    "chat",
+		})
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
+			"模型 %s 的类型为 %s，不能服务文本生成：该模型类型不支持 chat 连通性测试",
+			utils.SanitizeForLog(stored.ID), stored.Type)))
+		return
+	}
 
 	if req.ModelName == "" || req.BaseURL == "" {
 		logger.Error(ctx, "Model name and base URL are required")
@@ -1841,7 +1905,25 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	h.fillSecretsFromStoredModel(ctx, &req)
+	stored := h.fillSecretsFromStoredModel(ctx, &req)
+
+	// The mirror of the chat self-check: an embedding connectivity test
+	// against a row whose upstream does not serve embedding would report
+	// "connection normal, model usable" for a model the production embedding
+	// path rejects (ErrModelTypeNotEmbeddingCapable) — and it would spend a
+	// real provider request to find that out.
+	if storedModelTypeRejection(stored, types.IsEmbeddingCapableModelType) {
+		logger.ErrorWithFields(ctx, nil, map[string]interface{}{
+			"model_id":   utils.SanitizeForLog(stored.ID),
+			"model_type": string(stored.Type),
+			"purpose":    "embedding",
+		})
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
+			"模型 %s 的类型为 %s，不能服务向量化：该模型类型不支持 embedding 连通性测试",
+			utils.SanitizeForLog(stored.ID), stored.Type)))
+		return
+	}
+
 	if req.Source == "" {
 		req.Source = string(types.ModelSourceRemote)
 	}
