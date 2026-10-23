@@ -14,6 +14,8 @@
 - [G6 运维前端：指标视图与契约](G6-运维前端-指标视图与契约-20261022.md)
 - [Spec #48 代码命名规范收口：实施与验收证据](Spec-48-代码命名规范收口.md) / [验证报告](T48-验证报告.json)：命名登记表与棘轮（`211/54/205` → `0/0/0`）
 - [PF-3 审计告警接线与 AuditEvent 字段](PF-3-审计告警接线与AuditEvent字段.md) / [验证报告](T327-验证报告.json)：读类审计失败接 G6 告警源 + 审计版本字段独立列（施工并行面票 [#327](https://github.com/magician336/lingdoc/issues/327)）
+- [G6 运行控制后端补齐](G6-运行控制后端补齐-20261023.md)：PF-8 面一次交付 [#382](https://github.com/magician336/lingdoc/issues/382)（告警规则可读回与可停用 + 授权判定可观测）与 [#383](https://github.com/magician336/lingdoc/issues/383)（运行控制回退端点）两张后端票；**#327 已由 PR #389 在 main 上完成并关票，本面不重复交付**
+- [G6 运维面板独立化与 Workspace 集成](G6-运维面板独立化-20261023.md)：PF-8 面的前端部分（[#384](https://github.com/magician336/lingdoc/issues/384)）——G6 前端从 G3 面板里拆成独立的运行观测与试用面板
 
 ## 当前PR复审入口
 

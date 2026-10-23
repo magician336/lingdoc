@@ -146,11 +146,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
-            ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
-            ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
-            ("frontend/src/api/lingdoc/mainlineChanges.test.js", "file"),
-            ("frontend/src/views/lingdoc/ImpactOpsPanel.test.js", "file"),
+            # 2026-10-23：G6 前端独立化（PF-8 / #384）把 ImpactOpsPanel.vue、
+            # runtimeMetrics.ts、runtimeMetrics.test.ts、mainlineChanges.test.js、
+            # ImpactOpsPanel.test.js 五个路径的所有权转给了 PF-8 —— 它们随 G6 段
+            # 一起搬走了。同日口径表的代码与测试也转给 PF-8：它要随后端补上的
+            # 授权拒绝观测演进（PF-8 / #382）。本面已交面，只保留自己的方案档。
+            ("docs/08-本轮实施方案/G6-运维前端-指标视图与契约-20261022.md", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -164,6 +165,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "G6 前端的独立面板与 Workspace 集成不在本面，另开票。"
             "2026-10-22 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
+            "2026-10-23 该独立化由 PF-8（#384）完成，"
+            "本面交出 ImpactOpsPanel.vue 与两个测试文件的所有权；"
+            "同日口径表 runtimeMetrics.ts / runtimeMetrics.test.ts 也交给 PF-8"
+            "（它随后端补上的授权拒绝观测演进）。本面只保留自己的方案档。"
         ),
     },
     {
@@ -283,7 +288,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
             ("internal/lingdoc/workspacecore/machine_read_grant.go", "file"),
             ("internal/lingdoc/workspacecore/service.go", "file"),
@@ -345,7 +349,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（sqlite/000052 与 versioned/000131）。"
             "验收 AC-327-01 至 AC-327-17 全部 passed，证据见 T327-验证报告.json；"
             "合并前健康度复评 H_L 64.4 / F_R 65.0（置信度 B，无独立维度阻断项）。"
-            "**本面不释放路径**：done 状态仍占用这 18 条路径，后续面不要重复声明。"
+            "**本面不释放路径**：done 状态仍占用这 17 条路径，后续面不要重复声明。"
+            "**唯一的例外是 runtime_control.go**（2026-10-23 移交给 PF-8）："
+            "#383 的运行控制回退动作要落在同一个文件里（回退目标挂在控制项上、"
+            "白名单加 rollback），而 PF-8 是正在施工的那一面。"
+            "登记处的重叠检查是路径级的（不看 status、不看改动行），"
+            "两边同时声明就直接拒绝加载，所以本面把这个路径交出去；"
+            "本面在 main 上已交付的 #327 内容（EmitAuditFailureAlert 与 "
+            "AuditEvent 的两个独立列）原样保留，不受这次移交影响。"
             "**残留票保持开放**：#387（PostgreSQL 上普通读的 fail-open 不成立）、"
             "#414（平台事务外通道的审计写失败恒返回 nil）、"
             "#415（AuditEvent 声明字段与落库列不一致）、"
@@ -370,11 +381,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/member_records.go", "file"),
             ("internal/lingdoc/workspacecore/human_decision.go", "file"),
             ("internal/lingdoc/workspacecore/migrated_context_ports.go", "file"),
-            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
             ("internal/lingdoc/workspacecore/project_archive.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
-            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
-            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
             ("internal/lingdoc/workspacecore/membership.go", "file"),
             ("internal/lingdoc/membership/results.go", "file"),
             ("internal/lingdoc/membership/policy.go", "file"),
@@ -395,7 +403,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/router/routes_lingdoc_owner_409_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_410_test.go", "file"),
             ("docs/08-本轮实施方案/Spec-49-owner_unavailable派生状态与Owner-only冻结.md", "file"),
-            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("docs/08-本轮实施方案/contracts/validation-result.json", "file"),
             ("migrations/sqlite/000053_lingdoc_project_archive.up.sql", "file"),
             ("migrations/sqlite/000053_lingdoc_project_archive.down.sql", "file"),
@@ -480,7 +487,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
             "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
             "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
-            "**本面不释放路径**：done 状态仍占用这 48 条路径，后续面不要重复声明。"
+            "**本面不释放路径**：done 状态仍占用这 44 条路径，后续面不要重复声明。"
+            "**例外：2026-10-23 经维护者裁决，PF-8 先走，这四个路径待 PF-8 合入 main 后归还** ——"
+            "internal/lingdoc/workspacecore/service_facade.go、"
+            "internal/lingdoc/workspacecore/typed_contracts.go、"
+            "internal/lingdoc/workspacecore/context_ports_test.go 与 "
+            "docs/08-本轮实施方案/contracts/openapi.json。"
+            "PF-8 要在这四处落 #382/#383 的接线（授权拒绝观测的收敛点、"
+            "运行控制回退动作、窄口方法集登记与契约产物），"
+            "而登记处的重叠检查是路径级的：两边同时声明就直接拒绝加载。"
+            "本面在 main 上已交付的 owner_unavailable 能力不受这次让出影响；"
+            "**待 PF-8 合入 main 后，本面把这四个路径拿回来**，"
+            "届时本面在这几处的改动点需人工解一次冲突（两边都在授权判定附近）。"
         ),
     },
     {
@@ -580,6 +598,90 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "Agent 上下文包、Session、Turn 的后端契约已落地，"
             "但前端零消费——用户不能编辑本轮引用的卡片与资料。"
             "本面只新增文件；与 PF-1 同属前端目录，两者不得互相改对方的文件。"
+        ),
+    },
+    {
+        "name": "PF-8 G6 告警规则与运行控制回退",
+        "issue": 382,
+        "issues": (145, 146),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # #382-A/#382-B：告警规则的可读回与可停用（独立新文件）。
+            ("internal/lingdoc/workspacecore/runtime_alert_rule.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_alert_rule_test.go", "file"),
+            # #383：运行控制回退（验收用例独立成文件）。
+            ("internal/lingdoc/workspacecore/runtime_rollback_test.go", "file"),
+            # #382-C：授权判定可观测（独立新文件）。
+            ("internal/lingdoc/workspacecore/runtime_observation.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_observation_test.go", "file"),
+            # 拒绝的判定要带上「拒了什么能力」，所以授权策略包一层错误。
+            ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
+            # 回退目标挂在控制项上，白名单加 rollback，事件加 capability 字段。
+            ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
+            # 两个授权收敛点写拒绝观测。
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            # 运行告警规则动作是一个新操作名，登记在操作名册里。
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            # 窄口多两个方法。
+            ("internal/lingdoc/workspacecore/context_ports.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            # 操作管线的观察 holder 随操作走。
+            ("internal/lingdoc/workspacecore/operation_pipeline.go", "file"),
+            # 两个新端点。
+            ("internal/lingdoc/workspace/impact_routes.go", "file"),
+            # #384：G6 前端独立化。端点客户端各有自己的模块，界面有自己的面板。
+            ("frontend/src/api/lingdoc/runtimeControl.ts", "file"),
+            ("frontend/src/api/lingdoc/runtimeControl.test.ts", "file"),
+            ("frontend/src/api/lingdoc/trialWindow.ts", "file"),
+            ("frontend/src/api/lingdoc/trialWindow.test.ts", "file"),
+            ("frontend/src/views/lingdoc/RuntimeOpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/RuntimeOpsPanel.test.js", "file"),
+            # G6 段从这三个文件里搬走了，所以它们跟着本面的路径集走
+            # （登记处的重叠检查不看 status，done 的面仍然占着路径，
+            # 必须显式移交 —— PF-1 已交面，只保留自己的方案档）。
+            ("frontend/src/api/lingdoc/mainlineChanges.ts", "file"),
+            ("frontend/src/api/lingdoc/mainlineChanges.test.js", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ImpactOpsPanel.test.js", "file"),
+            ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
+            ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
+            # 契约产物与两份方案档。
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("docs/08-本轮实施方案/G6-运行控制后端补齐-20261023.md", "file"),
+            ("docs/08-本轮实施方案/G6-运维面板独立化-20261023.md", "file"),
+            ("docs/08-本轮实施方案/README.md", "file"),
+            ("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "本面一次交付 #382 / #383 两张后端票，另加 #384 的前端独立化。"
+            "#382：告警规则可读回（GET runtime/alert-rules）与可停用/可更新"
+            "（POST runtime/alert-rules/:ruleId/actions），停用后的规则不再产生告警；"
+            "授权拒绝落成 permission/deny 运行事件（只进事件流，不触发告警 —— "
+            "告警规则的 pause 动作会直接暂停整个课题）。"
+            "#383：运行控制新增 rollback 动作，回退经既有 reverseChangeSet 领域入口执行，"
+            "停止新写入并记录回退目标；「切回已验证配置」这一半不在本面范围。"
+            "#384：G6 前端从 G3 的变更面板里拆成自己的 RuntimeOpsPanel，"
+            "端点客户端搬进 runtimeControl.ts 与 trialWindow.ts。"
+            "**#327 已由 PR #389 在 main 上完成并关票，本面不重复交付**："
+            "AuditEvent 的 target_version / project_revision 两列与"
+            "读类审计失败接告警源（EmitAuditFailureAlert）都在 main 上，"
+            "本面只在自己的实现里删掉重复的那一半（塞 details_json 的版本、"
+            "recordAccessAuditFailOpen 接缝、audit/failed 观测）。"
+            "**本面确实改了下列已被别的面占有的文件**："
+            "internal/lingdoc/workspacecore/runtime_control.go 原属 PF-3（已交面 done），"
+            "internal/lingdoc/workspacecore/service_facade.go、typed_contracts.go、"
+            "context_ports_test.go 与 docs/08-本轮实施方案/contracts/openapi.json 原属 PF-4"
+            "（已交面 done），frontend/src/views/lingdoc/ImpactOpsPanel.vue、"
+            "ImpactOpsPanel.test.js、runtimeMetrics.ts、runtimeMetrics.test.ts 与 "
+            "frontend/src/api/lingdoc/mainlineChanges.test.js 原属 PF-1（已交面 done）——"
+            "这五个路径于 2026-10-23 从 PF-1 移交本面。"
+            "**frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点"
+            "（保留路径，不得被任一面独占）**：本面在这里加 G6 面板的挂载位，"
+            "按「共享维护点」约定不登记进任何面的路径集。"
+            "2026-10-23 由 magician336 认领；"
+            "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
 )

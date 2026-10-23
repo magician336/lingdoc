@@ -64,8 +64,10 @@ var narrowPortMethods = map[string][]string{
 		"SubmitDependencyCandidateBatch",
 	},
 	"RuntimeApplication": {
+		"ActOnRuntimeAlertRule",
 		"ControlRuntime",
 		"GetRuntimeMetrics",
+		"ListRuntimeAlertRules",
 		"ListRuntimeAlerts",
 		"ListRuntimeControls",
 		"ListRuntimeEvents",
