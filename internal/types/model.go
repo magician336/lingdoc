@@ -3,7 +3,10 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/utils"
@@ -193,6 +196,43 @@ type ModelParameters struct {
 	// WeKnoraCloud 厂商专用凭证
 	AppID     string `yaml:"app_id,omitempty"     json:"app_id,omitempty"`
 	AppSecret string `yaml:"app_secret,omitempty" json:"app_secret,omitempty"` // AES-256 加密存储，实际承载上游 API Key
+	// credentialDecryptFailure names the stored fields whose ciphertext could
+	// not be decrypted when this row was loaded.
+	//
+	// It is deliberately NOT persisted: the json tag keeps it out of the
+	// parameters column, because it describes one load, not the row. It is
+	// the observable difference between "this model has no credential" and
+	// "this model has a credential this process cannot read".
+	credentialDecryptFailure string
+}
+
+// ErrCredentialDecryptFailed is returned when a stored credential exists but
+// cannot be decrypted.
+//
+// It is a different thing from "no credential was configured": the row holds
+// ciphertext this process cannot read, because SYSTEM_AES_KEY is unset or was
+// rotated. Reporting the two the same way hides a misconfiguration until the
+// next call to the provider.
+var ErrCredentialDecryptFailed = errors.New("stored credential could not be decrypted")
+
+// CredentialDecryptError reports why the credentials of this row are
+// unusable, or nil when they are fine.
+//
+// It tells apart the two states that must not look alike:
+//
+//   - "no credential was configured" — the row holds no ciphertext at all.
+//     The operator has not entered a key yet; nothing is wrong.
+//   - "a credential exists but could not be decrypted" — the row holds
+//     enc:v1: ciphertext this process cannot decrypt. The credential IS
+//     configured and it is unusable; the row needs the key re-entered.
+//
+// The error never carries the ciphertext or any part of the key.
+func (c ModelParameters) CredentialDecryptError() error {
+	if c.credentialDecryptFailure == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s (SYSTEM_AES_KEY unset or rotated?)",
+		ErrCredentialDecryptFailed, c.credentialDecryptFailure)
 }
 
 // Per-response redaction for Model now lives in dto.NewModelResponse. The
@@ -290,20 +330,38 @@ func (c *ModelParameters) Scan(value interface{}) error {
 	if err := json.Unmarshal(b, c); err != nil {
 		return err
 	}
-	// Lenient decrypt: a row with broken ciphertext (key rotated/removed)
-	// must still load — otherwise a single failure breaks ListModels and
-	// the user can't even see which model needs re-credentialing.
+	// A credential that EXISTS but cannot be decrypted is a misconfiguration,
+	// not an unconfigured credential. The two must not look alike:
+	//
+	//   - "no credential was configured" — the row holds no ciphertext at
+	//     all. The operator has not entered a key yet; nothing is wrong.
+	//   - "a credential exists but could not be decrypted" — the row holds
+	//     enc:v1: ciphertext this process cannot read, because
+	//     SYSTEM_AES_KEY is unset or was rotated. The credential IS
+	//     configured and it is unusable; the row needs the key re-entered.
+	//
+	// The row still loads: one broken row must not hide every other model
+	// from the list endpoint. The unusable value is still blanked (a
+	// ciphertext must never travel upstream as an API key), but the failure
+	// stays observable through CredentialDecryptError and in the log.
+	var undecryptable []string
 	if plain, ok := utils.DecryptStoredSecretLenient(c.APIKey); ok {
 		c.APIKey = plain
 	} else {
-		log.Printf("[crypto] model parameters api_key: decrypt failed (SYSTEM_AES_KEY missing/rotated?), treating as unconfigured")
+		undecryptable = append(undecryptable, "api_key")
 		c.APIKey = ""
 	}
 	if plain, ok := utils.DecryptStoredSecretLenient(c.AppSecret); ok {
 		c.AppSecret = plain
 	} else {
-		log.Printf("[crypto] model parameters app_secret: decrypt failed (SYSTEM_AES_KEY missing/rotated?), treating as unconfigured")
+		undecryptable = append(undecryptable, "app_secret")
 		c.AppSecret = ""
+	}
+	if len(undecryptable) > 0 {
+		c.credentialDecryptFailure = strings.Join(undecryptable, ", ")
+		log.Printf("[crypto] model parameters %s: decrypt failed (SYSTEM_AES_KEY missing/rotated?); "+
+			"the credential is configured but unusable — this is NOT an unconfigured credential",
+			c.credentialDecryptFailure)
 	}
 	return nil
 }
