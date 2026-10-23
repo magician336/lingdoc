@@ -166,6 +166,18 @@ def git_base(root: Path) -> str:
     return ""
 
 
+def node_version() -> str:
+    """The Node version, when this machine has one.
+
+    The path of the executable is not recorded: an absolute path names the
+    machine, and the evidence is about the run, not about where it happened.
+    """
+    if not shutil.which("node"):
+        return "（本机没有 node）"
+    result = run_command(["node", "--version"])
+    return (result.stdout or "").strip() or "（node 版本没读到）"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -179,6 +191,11 @@ def short(value: Any, limit: int = 160) -> str:
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     text = " ".join(text.split())
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def cell(value: Any) -> str:
+    """One table cell: a value that never breaks the table it sits in."""
+    return short(value, 400).replace("|", "\\|")
 
 
 def relative_to_root(path: Path) -> str:
@@ -668,13 +685,13 @@ def render_readme(executor: str, head: str, base: str, run_id: str, result: str,
     lines += ["", "## 结论项", "", "| 结论项 | 状态 | 证据 |", "| --- | --- | --- |"]
     for outcome in outcomes:
         evidence = outcome.evidence or outcome.reason
-        lines.append(f"| {outcome.id} | {outcome.status} | {evidence} |")
+        lines.append(f"| {cell(outcome.id)} | {outcome.status} | {cell(evidence)} |")
     not_run = [outcome for outcome in outcomes if outcome.status == NOT_RUN]
     lines += ["", "## 未运行项", ""]
     if not_run:
         lines += ["| 未运行项 | 原因 | 解除条件 |", "| --- | --- | --- |"]
         for outcome in not_run:
-            lines.append(f"| {outcome.id} | {outcome.reason} | {outcome.unblock} |")
+            lines.append(f"| {cell(outcome.id)} | {cell(outcome.reason)} | {cell(outcome.unblock)} |")
     else:
         lines.append("（本轮没有未运行项。）")
     if known_limits:
@@ -721,7 +738,7 @@ def render_browser_check(summary: dict[str, Any], outcomes: list[Outcome]) -> st
         lines.append("- 一致：**没有比对发生**（两侧快照至少有一侧没有跑成）。")
     lines += ["", "## 本节的结论项", "", "| 结论项 | 状态 | 证据 |", "| --- | --- | --- |"]
     for outcome in outcomes:
-        lines.append(f"| {outcome.id} | {outcome.status} | {outcome.evidence or outcome.reason} |")
+        lines.append(f"| {cell(outcome.id)} | {outcome.status} | {cell(outcome.evidence or outcome.reason)} |")
     lines += ["", "## 未运行项", ""]
     not_run = [outcome for outcome in outcomes if outcome.status == NOT_RUN]
     if not_run:
@@ -889,17 +906,28 @@ def main(argv: list[str] | None = None) -> int:
             reason="本轮没有给出账本位置（--ledger-dsn 或 --ledger-sqlite）。",
             unblock="用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。"))
 
+    if not materials:
+        outcomes.append(Outcome(
+            id="合成材料哈希（协议 §2 第 1 步）", status=NOT_RUN,
+            reason="本轮没有给出 --material，合成材料的哈希没有记录。",
+            unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。"))
+
     result = overall_result(outcomes)
 
     # ---- the manifest -----------------------------------------------------
     contract = read_json(CONTRACT_PATH) or {}
-    template = {}
+    setup = contract.get("setup", {}) if isinstance(contract.get("setup"), dict) else {}
+    template = {
+        "declared": setup.get("template", ""),
+        "confirmed": False,
+        "ruleset_hash": "",
+        "note": "本轮没有对提供方执行，模板的版本与规则集摘要没有被读回确认。",
+    }
     for check in f01_report.get("checks", []):
         if check.get("path") == "/data/ruleset_hash":
             template["ruleset_hash"] = str(check.get("actual"))
-    for step in f01_report.get("steps", []):
-        if step.get("id") == "F01-02":
-            template["id"] = "template-demo"
+            template["confirmed"] = True
+            template["note"] = "模板的规则集摘要由 F01-01 读回。"
     manifest = {
         "head": head,
         "run_id": run_id,
@@ -910,7 +938,7 @@ def main(argv: list[str] | None = None) -> int:
         "environment": {
             "python": platform.python_version(),
             "platform": platform.platform(),
-            "node": shutil.which("node") or "（本机没有 node）",
+            "node": node_version(),
             "git": git_output(ROOT, "--version") or "（本机没有 git）",
         },
         "database": {
@@ -919,7 +947,9 @@ def main(argv: list[str] | None = None) -> int:
             "migrations": migration_version(arguments.db_dsn, arguments.ledger_sqlite),
         },
         "materials": materials,
-        "template": template or {"id": "（本轮没有读到模板）"},
+        "materials_status": ("本轮给出了合成材料哈希。" if materials else
+                             "本轮没有给出 --material，合成材料哈希未记录（协议 §2 第 1 步）。"),
+        "template": template,
         "model": ledger_summary(ledger_rows, ledger_reason),
         "commands": commands,
         "restart": restart_summary,
