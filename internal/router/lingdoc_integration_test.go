@@ -124,6 +124,8 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		"000051_lingdoc_review_reports.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
 		"000053_lingdoc_project_archive.up.sql",
+		// 000054 adds the audit decision columns (#415).
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -351,6 +353,8 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 		"000040_lingdoc_ruleset_use_audits.up.sql",
 		"000041_lingdoc_template_version_ruleset_ref.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
+		// 000054 adds the audit decision columns (#415).
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		script, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {

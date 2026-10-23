@@ -162,6 +162,9 @@ func applyRuleSetSQLiteSchema(t *testing.T, db *gorm.DB) {
 		"000040_lingdoc_ruleset_use_audits.up.sql", "000041_lingdoc_template_version_ruleset_ref.up.sql",
 		"000042_lingdoc_ruleset_metrics.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
+		// 000054 adds the audit decision columns (#415). Without them the
+		// audit insert of every write fails on this fixture.
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", name))
 		if err != nil {

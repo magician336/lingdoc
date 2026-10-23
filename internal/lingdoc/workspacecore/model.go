@@ -6,12 +6,15 @@ import (
 	"errors"
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
+	"gorm.io/gorm/schema"
 )
 
 // These views match the proposed HTTP contract. IDs are opaque to callers.
@@ -537,9 +540,43 @@ type auditEventRow struct {
 	ProjectRevision int64  `gorm:"column:project_revision;not null;default:0"`
 	DetailsJSON     string `gorm:"column:details_json;not null;type:text;default:'{}'"`
 	CreatedAt       time.Time
+	// The five decision columns (#415). They were declared on AuditEvent for
+	// a long time but had no column of their own: they only rode along inside
+	// details_json, and AuditEvents did not restore them, so the read side's
+	// role filter fell back to actor_id alone. They are columns now, so a
+	// reader can rebuild the decision without parsing JSON.
+	//
+	// Capability is unbounded on purpose: the capability string is
+	// "kind:resource" and the resource is caller-supplied, so a bounded
+	// column would bring back the overflow that 000046 fixed for `action`.
+	TenantID   uint64 `gorm:"column:tenant_id;not null;default:0"`
+	UserID     string `gorm:"column:user_id;not null;size:64;default:''"`
+	Role       string `gorm:"column:role;not null;size:32;default:''"`
+	Capability string `gorm:"column:capability;not null;type:text;default:''"`
+	Decision   string `gorm:"column:decision;not null;size:32;default:''"`
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }
+
+// AuditEventRowColumns returns the column names the audit event's row model
+// maps to.
+//
+// It is the model's own answer, produced by GORM's own naming strategy, so a
+// reader that checks the model against the table does not have to
+// re-implement that strategy to get the same list. The check lives in
+// internal/database (the same place as the migrations it is compared against).
+func AuditEventRowColumns() []string {
+	parsed, err := schema.Parse(&auditEventRow{}, &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		return nil
+	}
+	columns := make([]string, 0, len(parsed.Fields))
+	for _, field := range parsed.Fields {
+		columns = append(columns, field.DBName)
+	}
+	sort.Strings(columns)
+	return columns
+}
 
 type ownerTransferRow struct {
 	ID                     string `gorm:"primaryKey;size:36"`
