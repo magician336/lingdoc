@@ -85,8 +85,10 @@ func NewLingDocWorkspaceHandler(
 	// The model-call ledger is what tells a real sample from a demo one, so the
 	// composition root installs it: without it the calls leave no trace and
 	// 「this run was a real model」 is unanswerable (55-Spec 决策 1 / 决策 4).
+	// One ledger instance for every adapter: the runtime owns it, so the
+	// agent turn and the generation run write to the same rows.
 	model := workspace.NewHostAgentModel(models,
-		workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
+		workspace.WithModelCallLedger(runtime.ModelCallLedger()))
 	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
