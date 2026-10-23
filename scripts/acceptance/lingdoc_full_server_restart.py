@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Exercise the real server binary across a persistent synthetic SQLite restart."""
+"""Exercise the real server binary across a persistent synthetic restart.
+
+The persistence backend is a parameter, not a constant: the acceptance protocol
+(``docs/08-本轮实施方案/Beta首版真实验收协议.md`` §1) asks for an isolated
+PostgreSQL, while SQLite stays useful for a local diagnosis.  Either way the run
+says which driver it used, because a reader must be able to tell an
+isolated-PostgreSQL result from a local one.
+"""
 from __future__ import annotations
 
 import argparse
@@ -30,15 +37,52 @@ def free_loopback_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def server_environment(data_dir: Path, port: int, jwt_secret: str) -> dict[str, str]:
+def parse_dsn(dsn: str) -> dict[str, str]:
+    """Read the parts of a PostgreSQL DSN.
+
+    The server reads ``DB_HOST`` / ``DB_PORT`` / ``DB_USER`` / ``DB_PASSWORD`` /
+    ``DB_NAME`` rather than one DSN string, so a DSN has to be taken apart here.
+    Both spellings are accepted: a URL and the key=value form.
+    """
+    parts: dict[str, str] = {}
+    if not dsn:
+        return parts
+    if "://" in dsn:
+        remainder = dsn.split("://", 1)[1]
+        authority, _, path = remainder.partition("/")
+        if "@" in authority:
+            credentials, _, hostport = authority.rpartition("@")
+            user, _, password = credentials.partition(":")
+            parts["user"] = user
+            parts["password"] = password
+        else:
+            hostport = authority
+        host, _, port = hostport.partition(":")
+        parts["host"] = host
+        if port:
+            parts["port"] = port
+        parts["dbname"] = path.split("?", 1)[0]
+        return parts
+    for item in dsn.split():
+        key, _, value = item.partition("=")
+        parts[key.strip()] = value.strip()
+    return parts
+
+
+def server_environment(data_dir: Path, port: int, jwt_secret: str, *,
+                       db_driver: str = "sqlite", db_dsn: str = "") -> dict[str, str]:
+    """The environment the server runs in, on the requested persistence backend.
+
+    The acceptance protocol (protocol §1) asks for an isolated PostgreSQL, while
+    SQLite stays useful for a local diagnosis.  Either way the run says which
+    driver it used: a reader must be able to tell an isolated-PostgreSQL result
+    from a local one.
+    """
     env = minimal_environment()
     env.update({
         "GIN_MODE": "release",
         "SERVER_HOST": "127.0.0.1",
         "SERVER_PORT": str(port),
-        "DB_DRIVER": "sqlite",
-        "DB_PATH": str(data_dir / "lingdoc.sqlite"),
-        "RETRIEVE_DRIVER": "sqlite",
         "STORAGE_TYPE": "local",
         "LOCAL_STORAGE_BASE_DIR": str(data_dir / "files"),
         "DUCKDB_SKIP_EXTENSION_LOAD": "1",
@@ -49,6 +93,21 @@ def server_environment(data_dir: Path, port: int, jwt_secret: str) -> dict[str, 
         "WEKNORA_AUTH_DEFAULT_TENANT_MODE": "create_personal",
         "WEKNORA_TENANT_ENABLE_RBAC": "true",
     })
+    driver = (db_driver or "sqlite").strip().lower()
+    env["DB_DRIVER"] = driver
+    if driver == "postgres":
+        parts = parse_dsn(db_dsn)
+        if not parts:
+            raise RuntimeError("postgres mode needs a DSN: --db-dsn <postgres://...>")
+        env["DB_HOST"] = parts.get("host", "127.0.0.1")
+        env["DB_PORT"] = parts.get("port", "5432")
+        env["DB_USER"] = parts.get("user", "")
+        env["DB_PASSWORD"] = parts.get("password", "")
+        env["DB_NAME"] = parts.get("dbname", "")
+        env["RETRIEVE_DRIVER"] = "postgres"
+    else:
+        env["DB_PATH"] = str(data_dir / "lingdoc.sqlite")
+        env["RETRIEVE_DRIVER"] = "sqlite"
     return env
 
 
@@ -151,7 +210,8 @@ def require_project(envelope: dict, project_id: str, expected_name: str, stage: 
         raise RuntimeError(f"project readback after {stage} did not match persisted ID and name")
 
 
-def run(binary: Path, repo_root: Path, output_dir: Path) -> None:
+def run(binary: Path, repo_root: Path, output_dir: Path, *,
+        db_driver: str = "sqlite", db_dsn: str = "") -> None:
     if not binary.is_file():
         raise RuntimeError("server binary is missing")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -164,7 +224,7 @@ def run(binary: Path, repo_root: Path, output_dir: Path) -> None:
     jwt_secret = secrets.token_urlsafe(48)
     with tempfile.TemporaryDirectory(prefix="lingdoc-full-restart-") as temporary:
         data_dir = Path(temporary)
-        env = server_environment(data_dir, port, jwt_secret)
+        env = server_environment(data_dir, port, jwt_secret, db_driver=db_driver, db_dsn=db_dsn)
         first, first_log = start_server(binary, repo_root, env, output_dir / "server-before-restart.log")
         try:
             wait_until_healthy(first, base_url)
@@ -201,7 +261,8 @@ def run(binary: Path, repo_root: Path, output_dir: Path) -> None:
                     raise RuntimeError("persisted access token did not validate after restart")
                 restored = request_json(base_url, "GET", "/api/v1/lingdoc/projects/" + project_id, token=token)
                 require_project(restored, project_id, project_name, "full application restart")
-                print("PASS: server process restarted; same SQLite database, access token, and LingDoc project read back")
+                print(f"PASS: server process restarted; same {env['DB_DRIVER']} database, "
+                      "access token, and LingDoc project read back")
             finally:
                 stop_server(second, second_log)
         finally:
@@ -217,9 +278,14 @@ def main() -> int:
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--db-driver", default="sqlite", choices=("sqlite", "postgres"),
+                        help="persistence backend of this run (default sqlite)")
+    parser.add_argument("--db-dsn", default="",
+                        help="PostgreSQL DSN for --db-driver postgres")
     args = parser.parse_args()
     try:
-        run(args.binary.resolve(), args.repo_root.resolve(), args.output_dir.resolve())
+        run(args.binary.resolve(), args.repo_root.resolve(), args.output_dir.resolve(),
+            db_driver=args.db_driver, db_dsn=args.db_dsn)
     except (OSError, RuntimeError) as error:
         print(f"FAIL: full application process restart: {error}")
         return 1

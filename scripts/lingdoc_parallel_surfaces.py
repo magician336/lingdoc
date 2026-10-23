@@ -126,7 +126,11 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # actually delivers.
 #
 # #431 is the 上下文包前端消费 Spec that PF-6 delivers, for the same reason.
-G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393, 431}
+# #451 / #452 / #453 are the three Beta-first acceptance Specs that PF-10
+# delivers, for the same reason.
+G_LINE_ISSUES = (
+    frozenset(range(123, 144)) | {145, 146} | {391, 393, 431} | {451, 452, 453}
+)
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
 # "somebody may start this right now".
@@ -541,7 +545,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspace/agent_model.go", "file"),
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
             ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
             # The 研究提案 contract: the model-output contract that owns the
@@ -702,6 +705,125 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #124 保持开放**（本面只交付它的前端验收点）；"
             "本面新交付的 Spec #431 随之关闭。"
         ),
+    },    {
+        "name": "PF-10 Beta 首版验收证据生产",
+        "issue": 465,
+        "issues": (451, 452, 453),
+        "status": "done",
+        "claimed_by": "",
+        "paths": (
+            # ---- #453（55-Spec 模型调用账本与模型切换记账）----
+            # 账本行结构、写入与读取；kind = call / switch 两行种。
+            ("internal/lingdoc/workspacecore/model_call_ledger.go", "file"),
+            ("internal/lingdoc/workspacecore/model_call_ledger_test.go", "file"),
+            # 模型调用的唯一出口：账本在这里记一行
+            # （2026-10-23 从 PF-5 移交；PF-5 已 done 且不释放路径）。
+            # 组合根 internal/container/lingdoc.go **不**登记进本面：owner 仍是 PF-7
+            # （#414 的 AuditSink 实现就在那里，PF-7 未开工且已声明它）。
+            # 但本面**借用**它——在 NewHostAgentModel 那一行装上模型调用账本
+            # （不装，账本在生产里就是死的）。**本面合入 main 后该路径归还 PF-7**
+            # （先例：PF-8 借 PF-4 的四个路径，落地后归还）。
+            # **PF-7 侧的对应记录已在 main 上**（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。
+            # 本面在这里装账本：workspace.NewHostAgentModel(models,
+            # workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
+            ("internal/lingdoc/workspace/agent_model.go", "file"),
+            # 账本表的两方言迁移（sqlite / versioned 成对，
+            # 成对性由 scripts/check_migration_pairs.sh 守）。
+            ("migrations/sqlite/000055_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/sqlite/000055_lingdoc_model_call_ledger.down.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_model_call_ledger.up.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_model_call_ledger.down.sql", "file"),
+            # 迁移 schema 守护：sqlite / versioned 两套 schema 与版本常量同步
+            # （main 上已存在、本仓无面声明它——自由路径；本面改动它是为了让
+            #  000055 / 000134 两方言迁移的 schema 断言跟着账本表走）。
+            ("internal/database/migration_sqlite_versioned_schema_test.go", "file"),
+            # ---- #452（54-Spec 真实浏览器 × 真实后端对偶执行器）----
+            # 编排器：起环境 → 跑 HTTP 侧 → 跑浏览器侧 → 比对 → 产证据。
+            ("scripts/acceptance/beta_evidence_parity.py", "file"),
+            # HTTP 侧执行器：产出一份可与浏览器侧比对的快照。
+            ("scripts/acceptance/beta_http_readback.py", "file"),
+            # 浏览器侧执行器：CDP 驱动真实前端对真实后端
+            # （连接手法照 scripts/lingdoc_mock/browser_smoke.mjs）。
+            ("scripts/acceptance/beta_browser_cdp.mjs", "file"),
+            # 守护：六件产物逐一脱敏检查 + 证据目录结构检查。
+            ("scripts/ci/test_lingdoc_beta_evidence.py", "file"),
+            # ---- #451（53-Spec Beta 首版验收执行器与证据目录）----
+            # 证据目录生成器：产出协议 §6 的六件产物（落点以协议为准）。
+            ("scripts/acceptance/beta_evidence.py", "file"),
+            # F01 执行器：只扩算子（新增的 check kind），不改文件名
+            # （文件名被 CI 触发路径、py_compile 清单、
+            # T15-执行器场景驱动.md:59,63 三处写死）。
+            ("scripts/lingdoc_mock/run_f01.py", "file"),
+            # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
+            ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
+            # F01 契约：协议 §3 的语义读回落成这里的 check
+            # （steps 24 个、checks 50 条；一条 check 的断言键就是它的 kind：
+            #  equals / ref_in / readback_equals / non_empty / length /
+            #  version_bound / marked_or_absent / hash_equals）。
+            ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
+            # 协议 §6 的证据产物目录：<SHA>/<运行标识>/ 下的六件产物。
+            # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
+            # 逐文件登记会漏（本次 PR 产出了 12 个文件、2 个运行目录）。
+            ("docs/08-本轮实施方案/acceptance/beta-first/", "dir"),
+        ),
+        "resolves": (),
+        "summary": (
+            "**2026-10-23 管理会话合并前补申报（15 → 17 条）**：本 PR 改了三个未申报的路径，现已补进路径集——① `internal/database/migration_sqlite_versioned_schema_test.go`（file）：main 上已存在、本仓无面声明它（自由路径），本面改动它是为了让 000055 / 000134 两方言迁移的 schema 断言跟着账本表走；② `docs/08-本轮实施方案/acceptance/beta-first/`（**dir**）：协议 §6 的证据产物目录，用目录级声明覆盖 `<SHA>/<运行标识>/` 下的六件产物（本次 PR 产出 12 个文件、2 个运行目录，逐文件登记必然漏）。另有一处**刻意不登记**：`docs/08-本轮实施方案/下一批施工面切分方案.md`（方案档性质，只记录改动事实——先例见 PF-6 交面）。"
+            "Beta 首版放行路径上的第一张面：把协议 §2-§6 的人肉验收变成一条可复跑命令，"
+            "产出证据目录与模型调用账本。交付 #451 + #452 + #453 三张新 G 线 Spec。"
+            "**为什么三张合成一个面**（票面 #465 有全文）：#451 单独做是浅模块"
+            "（删掉它复杂度既不消失也不散回调用方）；「一次真实模型调用的形状」在 #452 与 #453 "
+            "各存一份是信息泄漏。合起来 interface = 「跑一次真实验收，产出证据目录与账本」。"
+            "**内部次序**：#453（账本）→ #452（对偶执行器）→ #451（证据目录）。"
+            "2026-10-23 由 magician336 认领。"
+            "**路径移交（本面从 done 面接一条）**："
+            "internal/lingdoc/workspace/agent_model.go（自 PF-5，模型调用的唯一出口）。"
+            "**三处刻意不做（记为已知残留，不越界处理）**："
+            "(1) 55-Spec 决策 5 的 run_mode / runtime_mode 词表收口**整体未做**——"
+            "定义点 internal/lingdoc/candidateadoption/candidate_shape.go 在 PF-2 的"
+            "**目录级**声明 internal/lingdoc/candidateadoption/ 内，产出点"
+            "internal/lingdoc/workspace/model_run_mode.go 属 PF-2，"
+            "另一侧 internal/lingdoc/workspacecore/runtime_control.go 由已交面的 PF-8 持有（PR #446）；"
+            "⇒ 本面**复用**现有 candidateadoption 的 run_mode 取值，不新增第三套词表，"
+            "词表收口待这些路径可改时再做。"
+            "(2) internal/lingdoc/workspacecore/agent_research_model.go（PF-5 持有）不在本面路径集内"
+            "——账本行靠外键关联产品动作，不需要改 AgentTurn。"
+            "(3) internal/lingdoc/generation/store.go 不在本面路径集内——PF-2 持有"
+            "internal/lingdoc/generation/ 这个**目录**；账本的来源引用改由调用方填字符串 id。"
+            "**迁移号**：**sqlite 000055 / versioned 000134**——000054 / 000133 归 PF-7 的审计字段迁移，"
+            "而那两条路径**已随 PR #472 记录在 main 上** ⇒ 按「已登记的面不再让号」的约定，"
+            "让号方向由管理会话在 PR #475（commit 60ae2dca）修正为「**PF-10 改号**」。"
+            "迁移守护的版本常量同步到 55。"
+            "**判据的精确性（2026-10-23 实测，两条机器结论 + 一条运行期结论）**："
+            "① **登记处的路径重叠检查拦不住编号争抢**——它是精确路径匹配，"
+            "两个文件名不同（000054_lingdoc_audit_decision_fields 与 "
+            "000054_lingdoc_model_call_ledger）就不算重叠"
+            "（内存级实测：把本面改回 000054/000133 后 load_and_validate() 仍 PASS）；"
+            "② **棘轮在 main 的新判据下也不拦**——基线比对现在剔除「悬空登记」"
+            "（基线里只有声明、没有实体文件的路径，撤回它不算路径损失），"
+            "PF-7 的 000054/000133 正属此类；"
+            "③ **真正的硬约束在迁移器运行期**：golang-migrate v4.19.1 的 source/iofs 对"
+            "**同版本号两个迁移文件**直接返回 ErrDuplicateMigration ⇒ 两方言各出现两个 000054 时"
+            "后端起不来（不是静默降级）。"
+            "⇒ **撞号必须在 PR 阶段靠人分开，机器不兜底**"
+            "（本文件开头的注释也写明了这一点：编号争抢是「序列的竞争」而不是「路径的竞争」）。"
+            "**2026-10-23 已完成**（认领与完成的人是 magician336）：把 Beta 首版真实验收从人肉变成一条可复跑命令。"
+            "交付三件事：① #453 模型调用账本——一张 lingdoc_model_call_ledger 表，kind 分 call / switch 两行种，"
+            "两方言迁移（sqlite/000055、versioned/000134）+ Go 行结构 + 10 个用例，账本装进组合根；"
+            "② #452 浏览器 × 后端对偶执行器——编排器 + HTTP 侧 + CDP 浏览器侧三个独立 CLI + 32 条守护测试，"
+            "真实后端 + 真实 Vite + 真实 Edge 无头跑通，10 项在「浏览器 == HTTP == 刷新后读回」三个快照上逐项相等，"
+            "注入不一致能红；③ #451 验收执行器与证据目录——run_f01.py 扩六个领域断言 check kind"
+            "（ref_in / marked_or_absent / version_bound / readback_equals / hash_equals / non_empty）、六件产物一次性产出、"
+            "脱敏守护、协议 §5 三态一字不改。"
+            "**一处跨面借用**：组合根 internal/container/lingdoc.go 的 owner 仍是 PF-7（未开工、已声明），"
+            "本面于 2026-10-23 **借用**它（装模型调用账本，一处），**本面合入 main 后该路径归还 PF-7**"
+            "（先例：PF-8 借 PF-4 的四个路径，落地后归还）；**PF-7 侧的对应记录已在 main 上**"
+            "（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。"
+            "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
+            "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
+            "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，"
+            "已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
+        ),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
@@ -834,6 +956,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
             # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
+            # ⚠️ 借用记录在本面的 summary 里（PF-10 于 2026-10-23 借用本文件装模型调用账本，
+            # 合入 main 后归还）；**路径所有权仍归本面**。
             ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
             ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
