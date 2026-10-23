@@ -19,6 +19,8 @@ package router
 import (
 	"net/http"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
 // permissionRead asks the permission read outlet for one capability and
@@ -137,6 +139,44 @@ func TestPermissionReadOutletDoesNotReachTheLapsedOwner(t *testing.T) {
 		"", "", f.tokens["owner-user"], 404)
 	if reason := errorReason(t, response); reason != "" {
 		t.Fatalf("the lapsed Owner's refusal reason = %q, want none (%s)", reason, response.Body.String())
+	}
+}
+
+// TestPermissionReadOutletNamesTheFreezeForEveryOwnerOnlyEntryCapability is
+// the enumeration the registry promises.
+//
+// The outlet answers per capability, so every capability an Owner-only entry
+// is read by has to answer with the freeze while the Owner is unavailable.
+// The list comes from the registry rather than from a hand-written one: a
+// capability registered as an Owner-only entry capability is covered here the
+// moment it is registered, and an Owner-only entry that is *not* registered
+// cannot be read as frozen at all -- which is what the registry's guard test
+// is about.
+//
+// The member is the one asking. The freeze is a fact about the project, so
+// the member working on it has to be able to read why the Owner-only entries
+// are frozen.
+func TestPermissionReadOutletNamesTheFreezeForEveryOwnerOnlyEntryCapability(t *testing.T) {
+	f := newOwnerFreezeFixture(t)
+	project := f.activeProject(t)
+	chapters := f.chapters(t, project.ID)
+	if len(chapters) == 0 {
+		t.Fatalf("activated project has no chapter: %+v", project)
+	}
+	f.addMember(t, project.ID, chapters[0].ID)
+
+	f.lapseOwner(t, project.ID)
+
+	capabilities := workspacecore.OwnerOnlyEntryCapabilities()
+	if len(capabilities) == 0 {
+		t.Fatal("the registry names no Owner-only entry capability")
+	}
+	for _, capability := range capabilities {
+		allowed, reason := permissionRead(t, f, project.ID, capability, f.tokens["member-user"])
+		if allowed || reason != "owner_unavailable" {
+			t.Fatalf("frozen project's %s read = allowed %v reason %q, want false / owner_unavailable",
+				capability, allowed, reason)
+		}
 	}
 }
 
