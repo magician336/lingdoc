@@ -92,6 +92,51 @@ def kinds_in(document: dict) -> set[str]:
     return used
 
 
+def not_enabled_yet(document: dict) -> dict[str, dict]:
+    """The kinds the F01 contract registers as known but not enabled yet.
+
+    "Known but not enabled yet" is the contract's own bookkeeping: a kind that
+    exists and works, but that no assertion uses yet.  It has to be **registered**
+    -- silence is not allowed -- and the registration says why and what releases
+    it.
+    """
+    block = document.get("check_kinds", {})
+    entries = block.get("not_in_use", []) or block.get("unmounted", []) or []
+    return {entry["kind"]: entry for entry in entries if isinstance(entry, dict) and "kind" in entry}
+
+
+#: One probe per kind: a valid check of that kind, and the payload it is judged
+#: against.  The table is keyed by the kind, and the guard asserts that it covers
+#: the vocabulary exactly -- so extending the vocabulary without a probe turns
+#: the guard red instead of leaving the new kind untested.
+PROBES: dict[str, tuple[dict, dict]] = {
+    "equals": ({"path": "/data/x", "equals": "v"}, {"data": {"x": "v"}}),
+    "length": ({"path": "/data/x", "length": 1}, {"data": {"x": ["a"]}}),
+    "keys": ({"path": "/data/x", "keys": ["a"]}, {"data": {"x": {"a": 1}}}),
+    "one_of": ({"path": "/data/x", "one_of": ["a", "b"]}, {"data": {"x": "a"}}),
+    "ref_in": ({"path": "/data/x", "ref_in": "/data/others"},
+               {"data": {"x": "s-1", "others": [{"id": "s-1"}]}}),
+    "marked_or_absent": ({"path": "/data/x", "marked_or_absent": "/statement"},
+                         {"data": {"x": {"statement": "s"}}}),
+    "version_bound": ({"path": "/data/x", "version_bound": "/data/y"},
+                      {"data": {"x": "v", "y": "v"}}),
+    "readback_equals": ({"path": "/data/x", "readback_equals": "v"}, {"data": {"x": "v"}}),
+    "hash_equals": ({"path": "/data/x", "hash_equals": {"from_step": "SYN-01"}},
+                    {"data": {"x": "h"}}),
+    "non_empty": ({"path": "/data/x", "non_empty": True}, {"data": {"x": "v"}}),
+    "http_error": ({"path": "/error", "http_error": {"code": "version_conflict"}},
+                   {"error": {"code": "version_conflict", "message": "m", "retryable": False}}),
+    "not_in": ({"path": "/data/x", "not_in": "/data/others"},
+               {"data": {"x": "s-1", "others": [{"id": "s-2"}]}}),
+    "all_non_empty": ({"path": "/data/items", "all_non_empty": True},
+                      {"data": {"items": [{"id": "a"}]}}),
+    "equals_step": ({"path": "/data/x", "equals_step": {"from_step": "SYN-01", "path": "/data/x"}},
+                    {"data": {"x": "v"}}),
+    "provenance_real": ({"path": "/data/run_mode", "provenance_real": True},
+                        {"data": {"run_mode": "real"}}),
+}
+
+
 class OneVocabularyTests(unittest.TestCase):
     """The vocabulary is declared once."""
 
@@ -126,33 +171,46 @@ class ExhaustiveVocabularyTests(unittest.TestCase):
         workflow = contract(WORKFLOW)
         scenarios = contract(SCENARIOS)
         used = kinds_in(workflow) | kinds_in(scenarios)
-        unmounted = {entry["kind"]: entry
-                     for entry in workflow.get("check_kinds", {}).get("unmounted", [])}
+        unmounted = not_enabled_yet(workflow)
         gaps = contract(GAPS)["GAPS"]
         for kind in check_kinds.KNOWN_CHECK_OPERATORS:
             if kind in used:
                 self.assertNotIn(kind, unmounted,
-                                 f"{kind} is used by the contract and also declared unmounted")
+                                 f"{kind} is used by the contract and also declared as idle")
                 continue
             self.assertIn(kind, unmounted,
                           f"the kind {kind} is idle: no assertion uses it and the contract "
-                          "does not say why")
+                          "does not register it as known but not enabled yet")
             self.assertIn(unmounted[kind]["gap"], gaps,
                           f"{kind} names a gap the registry does not hold")
 
     def test_the_unmounted_kinds_are_the_ones_the_contract_cannot_carry(self):
         workflow = contract(WORKFLOW)
         used = kinds_in(workflow) | kinds_in(contract(SCENARIOS))
-        for entry in workflow.get("check_kinds", {}).get("unmounted", []):
-            self.assertNotIn(entry["kind"], used)
+        for kind, entry in not_enabled_yet(workflow).items():
+            self.assertNotIn(kind, used)
             self.assertTrue(str(entry.get("why", "")).strip(),
-                            f"{entry['kind']} says nothing about why it is not mounted")
+                            f"{kind} says nothing about why it is not enabled yet")
 
     def test_every_assertion_of_both_contract_documents_declares_one_known_kind(self):
         for path in (WORKFLOW, SCENARIOS):
             for where, check in all_checks(contract(path)):
                 name = check_kinds.validate_check(check, f"{where} check")
                 self.assertIn(name, check_kinds.KNOWN_CHECK_OPERATORS)
+
+    def test_every_assertion_of_the_contract_names_a_kind_that_has_a_real_branch(self):
+        """All of them, not a sample: every check's kind must be judgeable.
+
+        A check whose kind has no branch would be judged by the nearest branch
+        above it, and the report would say "passed" about a different question.
+        """
+        branches = BranchCoverageTests().branch_set()
+        for path in (WORKFLOW, SCENARIOS):
+            for where, check in all_checks(contract(path)):
+                name = check_kinds.validate_check(check, f"{where} check")
+                self.assertIn(name, branches,
+                              f"the check at {where} names the kind {name}, which the runner "
+                              "has no evaluation branch for")
 
     def test_the_contract_uses_the_two_kinds_that_used_to_be_idle(self):
         used = kinds_in(contract(WORKFLOW))
@@ -171,11 +229,22 @@ class BranchCoverageTests(unittest.TestCase):
     """Every kind has an evaluation branch, and only the vocabulary's kinds have one."""
 
     #: A branch is written as ``operator == "<kind>"``; the set of those names is
-    #: the set of kinds the runner can actually judge.
+    #: the set of kinds the runner can actually judge.  Only the two dispatchers
+    #: are read, so a kind mentioned in a comment or a test is not counted as a
+    #: branch.
     BRANCH = re.compile(r'operator == "([a-z_]+)"')
+    DISPATCHERS = ("    def _evaluate_checks(", "    def _judge_domain_check(")
+
+    def dispatcher_source(self) -> str:
+        source = RUNNER_SOURCE.read_text(encoding="utf-8")
+        pieces: list[str] = []
+        for marker in self.DISPATCHERS:
+            start = source.index(marker)
+            pieces.append(source[start:start + 8000])
+        return "\n".join(pieces)
 
     def branch_set(self) -> set[str]:
-        return set(self.BRANCH.findall(RUNNER_SOURCE.read_text(encoding="utf-8")))
+        return set(self.BRANCH.findall(self.dispatcher_source()))
 
     def test_the_vocabulary_and_the_evaluation_branches_are_the_same_set(self):
         branches = self.branch_set()
@@ -185,11 +254,76 @@ class BranchCoverageTests(unittest.TestCase):
         self.assertEqual(vocabulary - branches, set(),
                          "the vocabulary declares a kind the runner has no branch for")
 
+    def test_every_kind_of_the_vocabulary_reaches_a_real_branch(self):
+        """Every kind is judged, not merely mentioned.
+
+        The table above reads the dispatchers; this one *runs* them.  A kind with
+        no branch is refused by the runner, so a probe that comes back with a
+        verdict proves the kind reached a branch -- and a kind nobody implemented
+        cannot pass this test quietly.
+        """
+        for kind in check_kinds.KNOWN_CHECK_OPERATORS:
+            with self.subTest(kind=kind):
+                verdicts = self.judge(kind)
+                self.assertTrue(verdicts,
+                                f"the kind {kind} produced no verdict; the runner refused it")
+
+    def test_the_probe_table_covers_the_vocabulary_exactly(self):
+        """Extending the vocabulary without a probe must turn this guard red."""
+        self.assertEqual(set(PROBES), set(check_kinds.KNOWN_CHECK_OPERATORS),
+                         "the probe table and the vocabulary disagree: a kind was added, "
+                         "removed or renamed without its probe following it")
+
+    def judge(self, kind: str) -> list[dict]:
+        """Judge one probe of one kind and return the verdicts the run produced."""
+        check, payload = PROBES[kind]
+        check = {**check, "intent": f"探针：{kind}"}
+        predecessor = {
+            "id": "SYN-01", "operation_id": "createProject", "expected_http": 201,
+            "request": {"path_params": {}, "headers": {}, "json": {}},
+            "capture": {}, "checks": []}
+        probe = {
+            "id": "SYN-02", "operation_id": "getProject", "expected_http": 200,
+            "request": {"path_params": {"projectId": "p-1"}, "headers": {}, "json": None},
+            "capture": {}, "checks": [check]}
+        if kind == "readback_equals":
+            # A read-back assertion is only meaningful on a step that reads after a write.
+            probe["readback_of"] = "SYN-01"
+        document = {"id": "GUARD", "steps": [predecessor, probe]}
+
+        class _Response:
+            headers = {"Content-Type": "application/json"}
+
+            def __init__(self, body: bytes, status: int) -> None:
+                self._body = body
+                self.status = status
+
+            def read(self, limit: int = 16 * 1024 * 1024) -> bytes:
+                return self._body
+
+            def close(self) -> None:
+                pass
+
+        answers = [(json.dumps({"data": {"id": "p-1", "x": "v", "y": "v", "items": [{"id": "a"}],
+                                         "others": [{"id": "s-1"}], "run_mode": "real",
+                                         "statement": "s"}}).encode("utf-8"), 201),
+                   (json.dumps(payload).encode("utf-8"), 200)]
+
+        def opener(request, timeout):
+            body, status = answers.pop(0)
+            return _Response(body, status)
+
+        runner = ScenarioRunner(contract(OPENAPI), spec_from_document(document, "guard specification"),
+                                base_url="http://127.0.0.1:4010/api/v1/lingdoc", opener=opener)
+        runner.run()
+        return runner.report("completed").get("checks", [])
+
     def _judged(self, check: dict) -> list[dict]:
+        """Judge one check that is not in the probe table (the injected ones)."""
         document = {"id": "GUARD", "steps": [{
             "id": "SYN-01", "operation_id": "getProject", "expected_http": 200,
             "request": {"path_params": {"projectId": "p-1"}, "headers": {}, "json": None},
-            "capture": {}, "checks": [check]}]}
+            "capture": {}, "checks": [{**check, "intent": check.get("intent", "注入的算子")}]}]}
 
         class _Response:
             status = 200
