@@ -977,6 +977,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/generation_retry_budget_test.go", "file"),
             # #501 的执行器单测：两步结构（同资源约束、前置不成立不得恒真 PASS、二次操作失败记 BLOCKED/FAIL）的独立新文件，不改既有的 test_workflow_*.py。
             ("scripts/lingdoc_mock/test_workflow_twostep.py", "file"),
+            # #542 的守护：账本 output_limit_tokens == 实际请求的 completion budget（读原始 JSON 账本断言），且上限按生效 profile 取值、超出 profile 上限记 limit_violation。
+            ("internal/lingdoc/workspace/acceptance_profile_limit_test.go", "file"),
+            # #542 改动的既有测试文件：原先钉死 2048 旧口径，改为断言取生效 profile 的上限。
+            ("internal/lingdoc/workspace/selected_rewrite_budget_test.go", "file"),
+            # #558 的守护：导出的写入口与 Store.RecordRuleSetUse 的角色校验口径一致；词表外取值必须转红且不写库。
+            ("internal/lingdoc/rulesetstore/use_audit_actor_role_test.go", "file"),
+            # #557 的共享解析器：审计列 actor_role 的唯一读侧兜底（刻意不持有任何词表，词只在 locale 包里）。
+            ("frontend/src/i18n/auditActorRoleLabel.ts", "file"),
+            # #557 的守护：三处读点都读同一个解析器、词表外值与空串都有确定呈现、五个 locale 键集一致。
+            ("frontend/src/i18n/auditActorRoleLabel.test.ts", "file"),
+            # #564 的守护：迁移 down 链的语义不可逆边界与守卫行为（000043/000044 守卫存在、000011/000000 的不可逆点如实标注）。
+            ("internal/database/migration_full_down_test.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
