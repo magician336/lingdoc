@@ -502,19 +502,78 @@ class CommittedManifestTests(unittest.TestCase):
         def fake_merge_base(root, ref):
             return "merge-base-sha"
 
+        def fake_files_at_ref(root, ref):
+            # The baseline path is a real file at the baseline, so withdrawing
+            # it is a genuine loss and must still be reported.  The exemption
+            # for claims that never had a file behind them must not swallow it.
+            return {"internal/base_only_path.go"}
+
+        original_files_at_ref = baseline._files_at_ref
         try:
             baseline.git_baseline_source = fake_source
             baseline._merge_base = fake_merge_base
+            baseline._files_at_ref = fake_files_at_ref
             result = baseline.compare_against_git_baseline(
                 root=Path("."), ref="origin/main")
         finally:
             baseline.git_baseline_source = original
             baseline._merge_base = original_merge_base
+            baseline._files_at_ref = original_files_at_ref
         self.assertTrue(result.compared, result.reason)
         self.assertIn("compared against", result.reason)
         # The baseline's extra path is gone from the current manifest.
         self.assertTrue(result.regressions)
         self.assertTrue(any("base_only_path" in str(r) for r in result.regressions))
+
+
+class UnbackedClaimTests(unittest.TestCase):
+    """A claim over a file the baseline never had is not a path loss.
+
+    A face may name a file it has not created yet.  Withdrawing such a claim
+    later takes nothing away -- nobody owned a real file -- so the comparison
+    must not read it as a regression.  The exemption is explicit: it is
+    passed in, never guessed, and it never covers a file that really exists.
+    """
+
+    def test_a_baseline_claim_without_a_file_behind_it_is_not_a_path_loss(self):
+        before = _faces(_face(status="claimed", claimed_by="someone",
+                               paths=("internal/never_existed.go",)))
+        after = _faces(_face(status="claimed", claimed_by="someone",
+                             paths=("internal/kept.go",)))
+        regressions = baseline.compare_faces(
+            before, after, frozenset({"internal/never_existed.go"}))
+        self.assertEqual(regressions, ())
+
+    def test_the_same_loss_is_reported_when_no_exemption_is_given(self):
+        """The exemption is passed in, not assumed: without it, the loss stands."""
+        before = _faces(_face(status="claimed", claimed_by="someone",
+                               paths=("internal/never_existed.go",)))
+        after = _faces(_face(status="claimed", claimed_by="someone",
+                             paths=("internal/kept.go",)))
+        regressions = baseline.compare_faces(before, after)
+        self.assertTrue(any(r.kind == "path-set-shrunk" for r in regressions))
+        self.assertTrue(any(r.kind == "path-unowned" for r in regressions))
+
+    def test_a_file_that_exists_at_the_baseline_is_never_unbacked(self):
+        faces = _faces(_face(status="claimed", claimed_by="someone",
+                             paths=("internal/real.go",)))
+        tracked = {"internal/real.go", "internal/other.go"}
+        self.assertEqual(baseline.unbacked_claims(faces, tracked), frozenset())
+
+    def test_a_directory_claim_is_never_treated_as_unbacked(self):
+        """Git does not track an empty directory, so a directory claim stays backed."""
+        face = {
+            "name": "PF-DIR",
+            "issue": 901,
+            "issues": (124,),
+            "status": "claimed",
+            "claimed_by": "someone",
+            "paths": (("internal/emptydir", "dir"),),
+            "resolves": (),
+            "summary": "test face",
+        }
+        faces = manifest.validate_records([face])
+        self.assertEqual(baseline.unbacked_claims(faces, set()), frozenset())
 
 
 if __name__ == "__main__":
