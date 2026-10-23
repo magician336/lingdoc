@@ -764,10 +764,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
             ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
-            ("migrations/sqlite/000055_lingdoc_audit_decision_fields.up.sql", "file"),
-            ("migrations/sqlite/000055_lingdoc_audit_decision_fields.down.sql", "file"),
-            ("migrations/versioned/000134_lingdoc_audit_decision_fields.up.sql", "file"),
-            ("migrations/versioned/000134_lingdoc_audit_decision_fields.down.sql", "file"),
+            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.down.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_audit_decision_fields.down.sql", "file"),
             # #454 的 Go 守护（1）：模型字段集合 == 表列集合。落 internal/database/
             # 是 56-Spec 决策 3 指定的位置（与被测的迁移/schema 同属一处）。
             ("internal/database/audit_event_columns_test.go", "file"),
@@ -787,11 +787,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "56-Spec 决策 3 已指定守护落 internal/database/，若 #415 另在 workspacecore/ "
             "写一份，同一条不变量就有两个 module 各写一遍（ch05 信息泄漏）。"
             "交付 Spec 是既有的 #130，不新开。"
-            "**迁移编号 000055 / 000134（2026-10-23 让号后定）**：本面原预留 000054 / 000133，"
-            "但 PF-10（#465，Beta 首版验收证据生产）已取用 000054 / 000133 建模型调用账本表"
-            "（main 最高为 000132，两者接得上）⇒ 本面让到 000055 / 000134。"
-            "**切分方案 §2.2 曾给 PF-8 预留 000055 / 000134**（回退记录落库用）——PF-8 已 done "
-            "且回退未落库 ⇒ 那个预留作废，现由本面使用；**PF-8 将来若要落库须重新取号**。"
+            "**迁移编号 000054 / 000133**：本面在登记处启用时即取用这一对号（main 最高 000132）。"
+            "**它们不许让出** —— 登记处棘轮（test_lingdoc_parallel_consistency 的"
+            "test_the_committed_manifest_does_not_regress_from_main）禁止本分支删掉 main 已记录的路径，"
+            "所以「让号」只能由**尚未合并**的那一方改：PF-10（#465）因此把它的模型调用账本表"
+            "改成 000055 / 000134。**切分方案 §2.2 曾给 PF-8 预留 000055 / 000134**（回退记录落库用）——"
+            "PF-8 已 done 且回退未落库 ⇒ 那个预留作废，现由 PF-10 使用；**PF-8 将来若要落库须重新取号**。"
             "施工时仍必须重新核对 origin/main 已占用的编号。"
             "#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
             "**`internal/container/lingdoc.go` 被 PF-10 借用（2026-10-23）**：该路径归本面（#414 的 "
