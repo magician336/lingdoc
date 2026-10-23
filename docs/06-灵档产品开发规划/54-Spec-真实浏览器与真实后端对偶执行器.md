@@ -109,3 +109,9 @@
 - **依赖边**：本 Spec **无上游**；**下游是 #53** ⇒ 原生边 `#451 blocked_by #452`（已加）。边档：验收未满足档。
 - **G4 的代码不可考**——这是本 Spec 的一条硬事实，写在决策 2 里：能复用的是**断言形状与证据体例**，不是驱动代码。别指望「照着 G4 改」。
 - **一条已存在的形态先例值得记**：仓内 `scripts/acceptance/governance_real_http.py:382` 把 G4 的 `G4-BROWSER-01` 记为 `NOT RUN`，理由「No Edge/CDP endpoint was supplied to this HTTP runner.」——**HTTP 侧执行器知道自己没跑浏览器侧**。本 Spec 的编排器要继承这份诚实：谁没跑，证据里就得写没跑。
+
+- **判定口径**：本 Spec 按 [`验收判定口径.md`](../08-本轮实施方案/验收判定口径.md) **v1** 判定——
+  **验收点 = 一个可单独核验、可单独判 PASS / FAIL / NOT RUN 的原子要求**；
+  `## User Stories` 每条 = 1 个验收点，`## Testing Decisions` 每条 = 1 个验收点（聚合条目按顿号 / 逗号切分成子项），
+  `## Implementation Decisions` **不计入点数**、只作约束引用。
+  本 Spec 的 `## Out of Scope` 与 `## Further Notes` 不计入验收点。

@@ -108,3 +108,9 @@ PF-3（[#327](https://github.com/magician336/lingdoc/issues/327)）给 `lingdoc_
 - **迁移编号水位**：sqlite 最新 `000053_lingdoc_project_archive`、versioned 最新 `000132_lingdoc_project_archive`，**两方言偏移量固定为 79**（与 PF-3 方案档 `:221` 一致）。⚠️ **注意**：PF-7（审计链完整性）已预留 `000054` / `000133`（见 #441 方案 §2.1），本 Spec 若要加迁移，**取号时必须重新核对**，两处不能撞号。
 - **一个已过期的数字**：PF-3 方案档写 `expectedSQLiteMigrationVersion` 从 51 改到 52，而当前 head 已是 **53**（`000053_lingdoc_project_archive` 已合入）。⇒ 以实际文件为准。
 - **两个整号不存在**：`migrations/sqlite/000038` 与 `migrations/versioned/000117`（up/down 都没有）⇒ 取号时不要把它们当成已用。
+
+- **判定口径**：本 Spec 按 [`验收判定口径.md`](../08-本轮实施方案/验收判定口径.md) **v1** 判定——
+  **验收点 = 一个可单独核验、可单独判 PASS / FAIL / NOT RUN 的原子要求**；
+  `## User Stories` 每条 = 1 个验收点，`## Testing Decisions` 每条 = 1 个验收点（聚合条目按顿号 / 逗号切分成子项），
+  `## Implementation Decisions` **不计入点数**、只作约束引用。
+  本 Spec 的 `## Out of Scope` 与 `## Further Notes` 不计入验收点。

@@ -113,3 +113,9 @@
 - **开工时序**：本 Spec 要动保留路径 `Workspace.vue`，按路径图约定须在**其它前端面落地后单独做一次集成** ⇒ **须等 PF-6（#330，PR #443）落地之后**。
 - **依赖边**：`#384 blocked_by #450`（已加）；本 Spec 自身**无上游**。
 - **本仓已有的「一处真相」先例**：施工并行面登记处（`scripts/lingdoc_parallel_surfaces.py`）就是一份声明式数据 + loader 校验 + 守护测试。本 Spec 的注册表沿用同一形态——**声明式数据 + 一条静态断言 + 组件测试**，不新造门禁层。
+
+- **判定口径**：本 Spec 按 [`验收判定口径.md`](../08-本轮实施方案/验收判定口径.md) **v1** 判定——
+  **验收点 = 一个可单独核验、可单独判 PASS / FAIL / NOT RUN 的原子要求**；
+  `## User Stories` 每条 = 1 个验收点，`## Testing Decisions` 每条 = 1 个验收点（聚合条目按顿号 / 逗号切分成子项），
+  `## Implementation Decisions` **不计入点数**、只作约束引用。
+  本 Spec 的 `## Out of Scope` 与 `## Further Notes` 不计入验收点。

@@ -120,3 +120,9 @@ Beta 首版真实验收的协议写得完整，**但协议要求的产物在仓�
 - **`run_f01.py` 的文件名被三处写死**（CI 触发路径、`py_compile` 清单、`docs/08-本轮实施方案/T15-执行器场景驱动.md:59,63`）⇒ 本 Spec 若重命名或拆出子模块，这三处要同步；**本 Spec 不重命名它**（扩算子即可）。
 - **依赖边**：上游是 #452（54-Spec）⇒ 原生边 `#451 blocked_by #452`（已加）。边档：验收未满足档。
 - **一个已知的仓内不一致**：`governance_real_http.py:382` 把 G4 的 `G4-BROWSER-01` 记为 `NOT RUN`，理由「No Edge/CDP endpoint was supplied to this HTTP runner.」——这说明仓内**已经有过「HTTP 与浏览器分两次跑」的形态**（54-Spec 沿用它）。
+
+- **判定口径**：本 Spec 按 [`验收判定口径.md`](../08-本轮实施方案/验收判定口径.md) **v1** 判定——
+  **验收点 = 一个可单独核验、可单独判 PASS / FAIL / NOT RUN 的原子要求**；
+  `## User Stories` 每条 = 1 个验收点，`## Testing Decisions` 每条 = 1 个验收点（聚合条目按顿号 / 逗号切分成子项），
+  `## Implementation Decisions` **不计入点数**、只作约束引用。
+  本 Spec 的 `## Out of Scope` 与 `## Further Notes` 不计入验收点。
