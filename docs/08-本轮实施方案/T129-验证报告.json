@@ -1,70 +1,70 @@
 {
   "mode": "acceptance-judgement",
   "note": "#129 G5 角色、Scope 与成员生命周期的验收证据。按《验收判定口径》v1 （口径 commit 1f195def6fb984d43876567bfe365222c34b46b5）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。",
-  "head": "967e56a641e8d4edfb014eed1ef6e0a3f96104fe",
+  "head": "da74b12fc404cbbc2668327a8ae997959addb500",
   "base": "c66d39f2",
-  "head_note": "落证 head：967e56a641e8d4edfb014eed1ef6e0a3f96104fe（PR #149 的代码候选）",
+  "head_note": "落证 head：da74b12fc404cbbc2668327a8ae997959addb500（PR #149 的代码候选）",
   "base_note": "判定所依据的共同祖先：c66d39f2（合并前分支所含的 main）。本轮把分支合到 main 的 275d438b，其间 #268 / PR #374 切出成员上下文、G2/G5 段重命名 69 个文件、PR #446 与 PR #472 改了登记处。",
   "passed": [
     {
       "id": "US-01、US-03",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestAuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery|TestMemberAssignmentsPersistCapabilityAndScopeInTransaction|TestTenantRoleMatrixCapsProjectMemberPermissions'`（退出码 0，3.2s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-01、US-03"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestAuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery|TestMemberAssignmentsPersistCapabilityAndScopeInTransaction|TestTenantRoleMatrixCapsProjectMemberPermissions'`（退出码 0，3.4s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-01、US-03"
     },
     {
       "id": "US-06、US-11、TD-01",
       "status": "passed",
-      "evidence": "`cd frontend && npm test -- src/views/lingdoc/projectMembers.test.ts src/views/lingdoc/collaborationState.test.js`（退出码 0，1.9s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-06、US-11、TD-01"
+      "evidence": "`cd frontend && npm test -- src/views/lingdoc/projectMembers.test.ts src/views/lingdoc/collaborationState.test.js`（退出码 0，1.5s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-06、US-11、TD-01"
     },
     {
       "id": "US-05、TD-05",
       "status": "passed",
-      "evidence": "`cd frontend && npm test -- src/api/lingdoc/sourceRetrievalContract.test.js`（退出码 0，0.9s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-05、TD-05"
+      "evidence": "`cd frontend && npm test -- src/api/lingdoc/sourceRetrievalContract.test.js`（退出码 0，0.9s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-05、TD-05"
     },
     {
       "id": "US-03、US-13",
       "status": "passed",
-      "evidence": "`cd frontend && npm run type-check`（退出码 0，22.9s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-03、US-13"
+      "evidence": "`cd frontend && npm run type-check`（退出码 0，22.7s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-03、US-13"
     },
     {
       "id": "US-02、US-07、US-08、US-09、US-10、TD-02、TD-04",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestFirstPassInvitationRequiresAcceptanceAndResendVersion|TestFirstPassRemoveDoesNotRestoreRevokedScopes|TestFirstPassTenantRecoveryRemainsPending'`（退出码 0，2.9s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-02、US-07、US-08、US-09、US-10、TD-02、TD-04"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestFirstPassInvitationRequiresAcceptanceAndResendVersion|TestFirstPassRemoveDoesNotRestoreRevokedScopes|TestFirstPassTenantRecoveryRemainsPending'`（退出码 0，2.8s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-02、US-07、US-08、US-09、US-10、TD-02、TD-04"
     },
     {
       "id": "US-04、US-05、US-10、TD-03",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5ResourceBatchAlignsChapterAuthorAndResearcherAssetScopes|TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets'`（退出码 0，2.8s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-04、US-05、US-10、TD-03"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5ResourceBatchAlignsChapterAuthorAndResearcherAssetScopes|TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets'`（退出码 0，2.9s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-04、US-05、US-10、TD-03"
     },
     {
       "id": "US-05、US-13、TD-03",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit|TestAuthorizationResourceBatchAuditFailureRefusesTheBatch|TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead'`（退出码 0，3.0s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-05、US-13、TD-03"
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit|TestAuthorizationResourceBatchAuditFailureRefusesTheBatch|TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead'`（退出码 0，3.1s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-05、US-13、TD-03"
     },
     {
       "id": "US-14、TD-02",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5InvitationIdempotencyVersionAndAuditRecovery|TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay'`（退出码 0，3.5s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-14、TD-02"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5InvitationIdempotencyVersionAndAuditRecovery|TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay'`（退出码 0，2.8s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-14、TD-02"
     },
     {
       "id": "US-12、TD-03",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole|TestAuditedProjectReadsPersistAndStillRejectRevokedMembers'`（退出码 0，3.6s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-12、TD-03"
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole|TestAuditedProjectReadsPersistAndStillRejectRevokedMembers'`（退出码 0，3.5s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-12、TD-03"
     },
     {
       "id": "TD-05",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestTheMemberAndOwnerPortsMatchTheServiceVerbatim|TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts'`（退出码 0，2.9s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 TD-05"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestTheMemberAndOwnerPortsMatchTheServiceVerbatim|TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts'`（退出码 0，2.9s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 TD-05"
     },
     {
       "id": "US-12、US-13、TD-03",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestReviewerMayOnlyDismissBlockingIssueInAssignedScope|TestMemberPermissionAuditFailureRollsBackBusinessWrite'`（退出码 0，3.5s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 US-12、US-13、TD-03"
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestReviewerMayOnlyDismissBlockingIssueInAssignedScope|TestMemberPermissionAuditFailureRollsBackBusinessWrite'`（退出码 0，3.0s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 US-12、US-13、TD-03"
     },
     {
       "id": "TD-01、TD-05",
       "status": "passed",
-      "evidence": "`go test -count=1 ./internal/router/ -run 'TestLingDocRealAPIThroughMainRegistration'`（退出码 0，7.3s）；落证 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe`；覆盖验收点 TD-01、TD-05"
+      "evidence": "`go test -count=1 ./internal/router/ -run 'TestLingDocRealAPIThroughMainRegistration'`（退出码 0，6.4s）；落证 head `da74b12fc404cbbc2668327a8ae997959addb500`；覆盖验收点 TD-01、TD-05"
     }
   ],
   "not_run": [
@@ -83,8 +83,8 @@
     {
       "id": "AC-129-验收文档提交自身的门禁作业",
       "status": "not_run",
-      "reason": "本判定矩阵与本 JSON 是一次只改文档的提交；仓库的工作流按「本次推送自身的差异」触发，只改文档的推送不触发那 9 个作业，其中没有 workflow_dispatch 的四个（Go Lint、LingDoc Mock、LingDoc F01 Runner、LingDoc Workspace Concurrency）在该提交上没有作业记录。按《验收判定口径》v1 §4.3，这一格是 SKIP 而非 PASS，所以它登记为 NOT RUN 而不是悄悄记成通过。",
-      "unblock": "代码候选 head `967e56a641e8d4edfb014eed1ef6e0a3f96104fe` 的 9 项 Actions 全部 success（Run IDs 39903171489–39903171549），重作业（含带一次性 postgres:17 service 的后端 closeout）在那一头上实跑过；该提交只多两份证据文档，被测代码树与 `967e56a641e8d4edfb014eed1ef6e0a3f96104fe` 逐字一致。"
+      "reason": "本判定矩阵与本 JSON 是一次只改文档的提交，它本身不承载被测代码，所以它自己的门禁作业不构成任何验收点的证据。",
+      "unblock": "代码候选 head `da74b12fc404cbbc2668327a8ae997959addb500` 的 9 项 Actions 全部 success（Run IDs 39905646213–39905646292），重作业（含带一次性 postgres:17 service 的后端 closeout）在那一头上实跑过；该提交只多两份证据文档，被测代码树与 `da74b12fc404cbbc2668327a8ae997959addb500` 逐字一致。"
     }
   ],
   "known_limits": [
@@ -95,8 +95,8 @@
     "本面从 PF-2 / PF-4 / PF-5 / PF-7 / PF-8 接过 13 条路径（登记处 `TRANSFERS` 有记录）；PF-7 / PF-9 的永久移交也写进了同一份记录，登记处只有一套记法。"
   ],
   "ci": {
-    "head": "967e56a641e8d4edfb014eed1ef6e0a3f96104fe",
-    "run_ids": "39903171489–39903171549",
+    "head": "da74b12fc404cbbc2668327a8ae997959addb500",
+    "run_ids": "39905646213–39905646292",
     "note": "候选 head 的 9 项 Actions 全部 success。"
   }
 }
