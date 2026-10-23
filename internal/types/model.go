@@ -22,6 +22,24 @@ const (
 	ModelTypeASR         ModelType = "ASR"         // ASR (Automatic Speech Recognition) model
 )
 
+// IsSummaryCapableModelType reports whether a model of the given type can
+// serve the text-generation (chat) call that a knowledge base's summary
+// stage performs.
+//
+// WeKnora reaches each model type through its own endpoint family:
+// KnowledgeQA speaks the OpenAI-compatible chat/completions protocol, while
+// Embedding, Rerank and ASR models speak the embeddings / rerank / speech
+// protocols. Binding one of those to a knowledge base's summary model makes
+// the document pipeline derive a summary sub-task that calls the chat
+// endpoint of a non-chat model — the provider answers 400 with no output and
+// the document is silently left without a summary.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsSummaryCapableModelType(modelType ModelType) bool {
+	return modelType == ModelTypeKnowledgeQA
+}
+
 // ModelStatus represents the status of the model
 type ModelStatus string
 
