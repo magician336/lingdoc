@@ -1,7 +1,7 @@
 # Beta 进度状态（唯一进度源）
 
 > **本文件是 lingdoc Beta 实施的唯一进度源。** 每批任务结束后更新它；不要另建进度表。
-> **基线**：`origin/main = bbd461ac`（PR #498 合并后）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
+> **基线**：`origin/main = 76945d3a`（#505「Beta 进度唯一状态源」合并后）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
 > **状态枚举**：代码实现 / 集成（进 main）/ 测试通过 / 验收完成（真实跑过且结论 PASS）——**四维度分别记，不合并**。
 > 另有 `NOT STARTED` / `IN PROGRESS` / `IMPLEMENTED_UNVERIFIED` / `INTEGRATED_UNVERIFIED` / `PASS` / `BLOCKED` / `UNKNOWN` / `DEFERRED`。
 
@@ -11,7 +11,7 @@
 
 | # | 任务 | 票 | 负责人 | 代码 | 集成 | 测试 | 验收 | 依赖 | 证据 | 下一步 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 账本写入端修复：F01 生成路径也写真实账本行（`ModelCallLedgerSourceGenerationRun` 接上） | 新票（管理会话开） | pf-10 | NOT STARTED | — | — | — | — | 审计 P1 / D1：写表方是 `agent_model.go:recordModelCall`（Agent 轮次）；F01-07 走 `generation.go:generationHostModel` 不写表 | pf-10 开票并实施 |
+| 1 | 账本写入端修复：F01 生成路径也写真实账本行（`ModelCallLedgerSourceGenerationRun` 接上） | 新票（管理会话开） | pf-10 | **IN PROGRESS** | — | — | — | — | 审计 P1 / D1：写表方是 `agent_model.go:recordModelCall`（Agent 轮次）；F01-07 走 `generation.go:generationHostModel` 不写表。⚠️ **`generation.go` 归 PF-2** ⇒ PF-14 借用（锁 L5）。**修法＝账本实例下沉到一处、所有适配器共用**（一个拥有者、多个调用方） | pf-10 实施中；**硬要求**：守护测试要分别断言「走生成路径 ⇒ 账本多一行」「不走 ⇒ 不多行」，且 F01 `startGeneration` 的调用**能按 `source_kind` 查到** |
 | 2 | #504 第一条：统一对偶两侧 base-url 口径 | #504（第一条） | pf-10 | IN PROGRESS | — | — | — | — | 体检新候选 A：F01 要 API 根 / HTTP 侧要服务器根，15 处字面量；守护测试保护了矛盾 | 口径已裁定＝契约 `servers[0].url` 为单一权威 |
 | 3 | #494 资料标识参数化 | #494 | pf-10 | **PASS** | **PASS** | **PASS** | NOT RUN | — | PR #498 合并提交 `bbd461ac`；守卫 `test_lingdoc_beta_knowledge_id.py` | 已完成 |
 | 4 | #504 第二条：解除条件改稳定标识 | #504（第二条） | pf-10 | **PASS** | **PASS** | **PASS** | NOT RUN | — | 同上；`acceptance/gaps.json` ＋ `test_lingdoc_beta_gap_ids.py`（9 项） | 已完成 |
@@ -29,13 +29,13 @@
 
 | 任务 | 票 | 负责人 | 状态 | 证据 / 备注 |
 |---|---|---|---|---|
-| 第二人复现口径统一（18 号 §3/§8/§9） | #483 | pf-6 | IN PROGRESS（PR #497） | 已改 3 处；PR 落后 main 6 个提交 ⇒ 需落基 |
+| 统一验收口径（11 个文件：18 号 §3/§8/§9、21-G6 草稿、G2/G4/G6 各线、**验收协议只加「= 契约当前 24 节点」的注明、门槛一字未动**、`G6-质量运行门禁.md` 23→24、GLOSSARY 与 16-术语表补「Beta 首版」范围词条、01 号蓝图） | #483 | pf-6 | **已落基待合**（PR #497，head `3ef890af`） | 逐条核实过：只改口径、不动门槛。**L6 术语表锁**由它持有 |
 | 第二人复现口径统一（21-G6 草稿 / G2-spec.md:70 / G4-development-plan.md:130） | #483 扩展 | pf-6 | NOT STARTED | 规格清点 C-1 |
 | Word / WPS 口径统一（18 号 §8 ＋ G6 全线） | #483 扩展 | pf-6 | NOT STARTED | 规格清点 C-2 |
 | F01 节点数 23→24（`G6-质量运行门禁.md:27`） | #483 扩展 | pf-6 | NOT STARTED | 规格清点 C-3（实测契约 24 条） |
 | 「Beta」vs「Beta 首版」范围对象（16-术语表 §1、01 号蓝图 §3、GLOSSARY 缺词条） | #483 扩展 | pf-6 | NOT STARTED | 规格清点 C-5 / C-9 |
-| #502 spec 落盘副本**重做**（现副本与 #482 相似度 0.87，已过期） | #491 | pf-6 | NOT STARTED | 缺「4 类新表达力」决策；kind 列表仍 8 种（应 10）；权威表述相反 |
-| 非 Beta 延期清单（用 `DEFERRED`，**不批量关票/改标签**） | — | pf-6 | NOT STARTED | 规格清点 E 节：22 项 DEFERRED ＋ 8 项不可延期 |
+| #502 spec 落盘副本**重做**（现副本与 #482 相似度 0.87，已过期） | #491 | pf-6 | **重做中** | ⚠️ **不得复用过期副本**；缺「4 类新表达力」决策、kind 列表仍 8 种（应 10）、权威表述相反（自称「以本文件为准」而 #482 说相反） |
+| 非 Beta 延期清单（**只出清单，不批量关票/改标签**） | — | pf-6 | **已落基待合**（PR #507，head `4e67849d`） | 72 张 open 票逐条判定，**55 张建议 DEFERRED**；清单首段写明「本清单只是清单，不执行任何变更」 |
 
 ## 3. 共享文件锁（一把锁同一时刻只有一个持有者）
 
@@ -45,6 +45,8 @@
 | **L2 路径图** | `docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md` | **PF-14 / pf-10**（与 L1 绑定：交面必须同时改两处） | PF-7、PF-9、PF-11、PF-13 | 无机器守护 ⇒ 静默不同步风险 |
 | **L3 契约产物** | `docs/08-本轮实施方案/contracts/openapi.json` | **PF-11 / #149**（先合者） | PF-13（#248 改借用） | — |
 | **L4 保留路径** | `frontend/src/views/lingdoc/Workspace.vue` | **PF-11 / #149** | PF-13（#248） | **保留路径：任何面不得独占**；只如实记录改动事实 |
+| **L5 生成路径** | `internal/lingdoc/workspace/generation.go` | **PF-2**（已交面） | **PF-14 借用**（账本修复必须改它：F01-07 走的就是它） | owner 仍是 PF-2；借用方在 summary 记一笔借用事实，**不得**声明进自己路径集 |
+| **L6 术语表** | `GLOSSARY.md`、`docs/06-灵档产品开发规划/16-术语表.md` | **PF-6**（PR #497） | 任何要改术语的会话 | 全仓术语的唯一权威 ⇒ 同一时刻只允许一个会话改；改完即释放 |
 
 ⇒ **各面的「实现」可并行**（代码文件互不重叠）；**「交面」必须排队**，因为交面要同时改 L1＋L2。
 
@@ -72,11 +74,11 @@
 
 | # | 项 | 状态 | 缺什么 | 是否阻塞 |
 |---|---|---|---|---|
-| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | NOT RUN（Beta 链账本 0 行） | 仓内变量名是 `LLM_*`（`LLM_PROVIDER=openai` 已是默认），需显式映射 `DASHSCOPE_API_KEY` → `LLM_API_KEY`；⚠️ **账本写入端修好前不得标 PASS** | **是**（卡 F01-07） |
+| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | NOT RUN（Beta 链账本 0 行） | 映射已定：`LLM_MODEL_NAME=qwen3.8-flash` / `LLM_BASE_URL=https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` / `LLM_API_KEY=<与 DASHSCOPE_API_KEY 同值>`。⛔ **不要写 `LLM_API_KEY=${DASHSCOPE_API_KEY}`**（`env_file` 原样传值、应用内插值只做一遍 ⇒ 会变成字面量）。`LLM_*` 在 `.env.example` 的 **D2 段**（非 D1），Go 代码不直接读，经 `config/builtin_models.yaml` 占位符生效。⚠️ **设 `LINGDOC_T10_ACCEPTANCE_PROFILE` 会把 F01 的 chat 强制成 DeepSeek** ⇒ 用 Qwen 时不要设。⚠️ **账本写入端修好前不得标 PASS，且暂不发起真实调用**（待账本修复后单独申请） | **是**（卡 F01-07） |
 | 2 | 隔离 PostgreSQL ＋ 重启读回 | NOT RUN（sqlite 那半已 PASS） | 隔离 PG 实例 | 否（后置） |
-| 3 | 两章合成材料 ＋ `--material` SHA-256 | NOT RUN（`materials=[]`） | 材料与哈希（准备中） | **是**（卡 F01-06） |
+| 3 | 两章合成材料 ＋ `--material` SHA-256 | **材料已备好**（仓外 `lingdoc-prep/`） | `synth-chapter-a`（SB-2031 薄膜，SHA-256 `4b1572b57144…`，4747 B）＋ `synth-chapter-b`（SB-4472 电解质，`29e2d8f3c2ae…`，4824 B），各 3 处可核对引用点；字节规范 UTF-8 无 BOM / 仅 LF / 末尾恰好一个换行；有 `recompute_hashes.py` 可复算 ⇒ **同一套材料必须复用，勿另造** | **是**（卡 F01-06） |
 | 4 | Word 人工检查（开/改/存/关/重开） | NOT RUN | Microsoft Word（Windows 宿主机）；主仓库已有 `_bp_check/SOURCE_snapshot.docx` ＋ 21 页渲染 | 否 |
-| 5 | WeKnora 真实接入 / 处理 / 检索 | NOT RUN，**本机可能恒 BLOCKED** | 仓外一次性脚本 `env_facts.py` **已不在机器上**；**docreader 解析接口从未真调过** | **是**（卡 F01-06） |
+| 5 | WeKnora 真实接入 / 处理 / 检索 | NOT RUN，**本机可能恒 BLOCKED** | 端点已定位：上传 `POST /api/v1/knowledge-bases/{id}/knowledge/file`（`routes_knowledge.go:73`、`handler/knowledge.go:254`，multipart 字段 `file`）；解析状态表 `knowledges.parse_status`＝`completed`（`types/knowledge.go:43-64`），`GET /api/v1/knowledge/:id`；检索 `POST /api/v1/knowledge-bases/{id}/hybrid-search`（`routes_knowledge.go:229`）。三个容器**本机全在跑**。⚠️ `env_facts.py` **已不在机器上**（要重写：幂等标识必须**与时间无关**＝固定标题前缀＋文件 SHA-256，否则每次造新知识、id 每次变；输出须按 starting_state 裁剪，否则 `load_state.py` 的 `preflight()` 在首个写请求前退 1）；⚠️ **docreader 解析接口从未真调过**；⚠️ **真实解析必经 remote embedding ⇒ 真实验证会触发真实外部调用 ⇒ 须先修账本并取得授权** | **是**（卡 F01-06） |
 | 6 | 第二人独立复现 | NOT RUN（记录项） | 第二个开发者 | 否（不阻塞） |
 
 ## 7. 本批（第一批）完成汇报
@@ -94,3 +96,13 @@
 3. 随后集中执行真实 Qwen / WeKnora / 隔离 PostgreSQL / Word 验收。
 4. 第二人复现登记为未完成项，不阻塞首版。
 5. 最后 #490 放行结论表，逐项 PASS / FAIL / NOT RUN / BLOCKED ＋ 解除条件。
+
+## 9. 第二批进展（2026-10-23 17:00 后）
+
+- **已合并**：#505（`docs/BETA_STATUS.md` 唯一进度源，合并提交 `76945d3a`）、#498（`bbd461ac`）。
+- **已落基待合**：#497（口径统一 11 文件，head `3ef890af`）、#507（DEFERRED 清单，head `4e67849d`）—— 两者 CI 在重跑。
+- **锁表增至 6 把**：新增 **L5**（`internal/lingdoc/workspace/generation.go`，owner=PF-2、PF-14 借用；账本修复必须改它）与 **L6**（`GLOSSARY.md` ＋ `16-术语表.md`，术语唯一权威，当前由 #497 持有）。
+- **#503（PF-7）已按指示拆开**：20 → 18 个文件，**登记处与路径图已摘出** ⇒ 不占 L1/L2；交面另开票排队。
+- **账本修复（放行链第 1 项）进行中**：pf-10 已定位到 `generation.go` 归 PF-2 的冲突并改为借用形态；修法＝**账本实例下沉到一处、所有适配器共用**（一个拥有者、多个调用方）。**硬要求已下达**：守护测试要分别断言「走生成路径 ⇒ 账本多一行」「不走 ⇒ 不多行」，且 F01 `startGeneration` 的调用能按 `source_kind` 查到。
+- **环境侧已就绪的部分**：两章合成材料 ＋ SHA-256（可复用，勿另造）、Qwen 三行映射（注意 `${}` 插值坑）、WeKnora 三个端点与 `env_facts.py` 实现规格、隔离 PG 口径＝**独立库名不碰 dev 库**（还差：本轮专用隔离库、迁移到 134（dev 停在 122）、当前 head 二进制（仓外 exe 是 09-27 旧构建）、DSN、6 个 DB 环境变量）。
+- **⚠️ 暂停待授权项（尚未执行）**：真实 Qwen 调用、任何不可逆操作、需要改验收门槛的改动。
