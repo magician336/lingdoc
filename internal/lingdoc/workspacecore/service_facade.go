@@ -365,6 +365,9 @@ func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, request A
 		return err
 	}
 	err := s.authorizer.AuthorizeTenant(tx, request)
+	if err != nil {
+		noteAuthorizationDenial(ctx, request, err)
+	}
 	if s.mode == AuthorizationModeLog {
 		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
 	}
@@ -378,6 +381,9 @@ func (s *Service) authorizeProject(ctx context.Context, tx Transaction, request 
 		return Project{}, err
 	}
 	project, err := s.authorizer.AuthorizeProject(tx, request)
+	if err != nil {
+		noteAuthorizationDenial(ctx, request, err)
+	}
 	if s.mode == AuthorizationModeLog {
 		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
 	}
@@ -558,6 +564,8 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 	if err != nil {
 		return err
 	}
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	// Authorization checks append their decision to the project audit log in
 	// this transaction. Keep the decision and audit on one transaction, but do
 	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
@@ -571,6 +579,8 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	request := authorizationRequest(actor, id, AuthorizationRead, "")
 	// GetProject also records the authorization decision in the same
 	// transaction, so PostgreSQL requires a writable transaction here.
@@ -592,6 +602,8 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 }
 func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
 	var result []Project
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if !validActor(actor) {
 			return ErrNotFound
