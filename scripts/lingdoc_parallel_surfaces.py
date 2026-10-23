@@ -229,7 +229,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/database/migration_sqlite_candidate_shape_test.go", "file"),
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
-            ("internal/router/lingdoc_routes_test.go", "file"),
+            # internal/router/lingdoc_routes_test.go moved to PF-8 on 2026-10-23:
+            # PF-8's #382/#383 delivery added a comment there (the two new G6
+            # endpoints do not move this composition's route count). The
+            # registry's overlap check is path-level, so a path has to move to
+            # the face that changed it -- one-way, and this face does not
+            # claim it again.
             # internal/container/lingdoc_test.go moved to PF-4 on 2026-10-23:
             # it holds the production composition's route-count assertion, and
             # PF-4's archive endpoint adds a route to that composition. PF-2
@@ -278,6 +283,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "Spec #134 随之关闭。两张残留票保持开放："
             "#385（动作表按目标范围给动作、执行按管道分）、"
             "#386（两处手抄迁移子集夹具）。"
+            "**2026-10-23 一条路径一次性移交给 PF-8**："
+            "internal/router/lingdoc_routes_test.go —— PF-8 在 PR #446 里给它加了一条注释"
+            "（说明两个新 G6 端点不改变这张路由数量快照），"
+            "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交。"
+            "移交是单向的，本面不再声称拥有它（本面路径集 55 → 54 条）。"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
@@ -393,7 +403,19 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # Moved from PF-2 on 2026-10-23: the production composition's
             # route-count assertion follows the archive endpoint this face
             # adds. PF-2 is closed and no longer building.
-            ("internal/container/lingdoc_test.go", "file"),
+            # 2026-10-23: this file moved on to PF-8, which added the comment
+            # that says why the two new G6 endpoints do not move this
+            # composition's route count. The registry's overlap check is
+            # path-level, so a path has to move to the face that changed it.
+            #
+            # 2026-10-23: PF-8 gave the four paths below back after it landed
+            # (service_facade.go / typed_contracts.go / context_ports_test.go
+            # and contracts/openapi.json). PF-8 only needed them to wire
+            # #382/#383; that work is merged, so this face owns them again.
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
@@ -487,8 +509,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
             "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
             "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
-            "**本面不释放路径**：done 状态仍占用这 44 条路径，后续面不要重复声明。"
-            "**例外：2026-10-23 经维护者裁决，PF-8 先走，这四个路径待 PF-8 合入 main 后归还** ——"
+            "**本面不释放路径**：done 状态仍占用这 47 条路径，后续面不要重复声明。"
+            "**2026-10-23 经维护者裁决，PF-8 先走，本面让出四个路径** ——"
             "internal/lingdoc/workspacecore/service_facade.go、"
             "internal/lingdoc/workspacecore/typed_contracts.go、"
             "internal/lingdoc/workspacecore/context_ports_test.go 与 "
@@ -497,8 +519,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "运行控制回退动作、窄口方法集登记与契约产物），"
             "而登记处的重叠检查是路径级的：两边同时声明就直接拒绝加载。"
             "本面在 main 上已交付的 owner_unavailable 能力不受这次让出影响；"
-            "**待 PF-8 合入 main 后，本面把这四个路径拿回来**，"
-            "届时本面在这几处的改动点需人工解一次冲突（两边都在授权判定附近）。"
+            "**2026-10-23 PF-8 随 PR #446 合入 main 后，这四个路径已归还本面**"
+            "（本面路径集 44 → 47 条）。"
+            "**2026-10-23 另有一条路径一次性移交给 PF-8**："
+            "internal/container/lingdoc_test.go —— PF-8 在 PR #446 里给它加了一条注释"
+            "（说明两个新 G6 端点不改变这张路由数量快照），"
+            "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交，"
+            "移交是单向的，本面不再声称拥有它。"
+            "**将来本面若要动那四个路径或这一条，需人工解一次冲突**"
+            "（PF-4 与 PF-8 都在授权判定附近改过代码，"
+            "冲突会显式报出来，不会静默覆盖）。"
         ),
     },
     {
@@ -604,8 +634,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-8 G6 告警规则与运行控制回退",
         "issue": 382,
         "issues": (145, 146),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             # #382-A/#382-B：告警规则的可读回与可停用（独立新文件）。
             ("internal/lingdoc/workspacecore/runtime_alert_rule.go", "file"),
@@ -619,13 +649,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
             # 回退目标挂在控制项上，白名单加 rollback，事件加 capability 字段。
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
-            # 两个授权收敛点写拒绝观测。
-            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
-            # 运行告警规则动作是一个新操作名，登记在操作名册里。
-            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
             # 窄口多两个方法。
             ("internal/lingdoc/workspacecore/context_ports.go", "file"),
-            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
             # 操作管线的观察 holder 随操作走。
             ("internal/lingdoc/workspacecore/operation_pipeline.go", "file"),
             # 两个新端点。
@@ -647,11 +672,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
             ("frontend/src/views/lingdoc/runtimeMetrics.test.ts", "file"),
             # 契约产物与两份方案档。
-            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("docs/08-本轮实施方案/G6-运行控制后端补齐-20261023.md", "file"),
             ("docs/08-本轮实施方案/G6-运维面板独立化-20261023.md", "file"),
             ("docs/08-本轮实施方案/README.md", "file"),
             ("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md", "file"),
+            # 2026-10-23：从 PF-2（done）与 PF-4（done）接过来的两条路径。
+            # 本面在 PR #446 里给这两处各加了一条注释（说明两个新 G6 端点
+            # 不改变这两张路由数量快照），而登记处的重叠检查是路径级的
+            # ——改了别面的路径就必须显式移交。上游
+            # 「下一批施工面切分方案.md」§7.3 把这两条记为本 PR 的未申报改动，
+            # 这里补齐申报。
+            ("internal/router/lingdoc_routes_test.go", "file"),
+            ("internal/container/lingdoc_test.go", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -669,18 +701,39 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "读类审计失败接告警源（EmitAuditFailureAlert）都在 main 上，"
             "本面只在自己的实现里删掉重复的那一半（塞 details_json 的版本、"
             "recordAccessAuditFailOpen 接缝、audit/failed 观测）。"
-            "**本面确实改了下列已被别的面占有的文件**："
+            "**本面确实改了下列已被别的面占有的文件**（登记处的重叠检查是路径级的，"
+            "改了别面的路径就必须显式移交）："
             "internal/lingdoc/workspacecore/runtime_control.go 原属 PF-3（已交面 done），"
-            "internal/lingdoc/workspacecore/service_facade.go、typed_contracts.go、"
-            "context_ports_test.go 与 docs/08-本轮实施方案/contracts/openapi.json 原属 PF-4"
-            "（已交面 done），frontend/src/views/lingdoc/ImpactOpsPanel.vue、"
+            "frontend/src/views/lingdoc/ImpactOpsPanel.vue、"
             "ImpactOpsPanel.test.js、runtimeMetrics.ts、runtimeMetrics.test.ts 与 "
             "frontend/src/api/lingdoc/mainlineChanges.test.js 原属 PF-1（已交面 done）——"
-            "这五个路径于 2026-10-23 从 PF-1 移交本面。"
+            "这六个路径于 2026-10-23 移交本面，**其中 PF-1 的五个前端路径本面保留**"
+            "（G6 段搬走时跟着搬的，口径表也随后端补的 permission/deny 观测演进）；"
+            "internal/router/lingdoc_routes_test.go 原属 PF-2（已交面 done）、"
+            "internal/container/lingdoc_test.go 原属 PF-4（已交面 done）——"
+            "这两条于 2026-10-23 移交本面（本面给这两处各加了一条注释，"
+            "说明两个新 G6 端点不改变那两张路由数量快照；上游"
+            "「下一批施工面切分方案.md」§7.3 把它们记为本 PR 的未申报改动，此处补齐申报）。"
+            "**2026-10-23 交面**：PF-8 随 PR #446 合入 main，本面 status 改 done。"
+            "同时**把从 PF-4 借来的四个路径归还**"
+            "（internal/lingdoc/workspacecore/service_facade.go、"
+            "internal/lingdoc/workspacecore/typed_contracts.go、"
+            "internal/lingdoc/workspacecore/context_ports_test.go 与 "
+            "docs/08-本轮实施方案/contracts/openapi.json）——"
+            "PF-8 只是借用它们来落 #382/#383 的接线，接线已合入 main，"
+            "而 PF-4 的 summary 当初写明「待 PF-8 合入 main 后归还」；"
+            "本面路径集 30 → 28 条。"
+            "**本面还改了一条不在任何路径集里的路径**："
+            "docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md"
+            "（PF-3 的方案档）——本面给它补了一段「2026-10-23 后续状态另标」"
+            "（PF-3 的路径集 18 → 17 条，让出 runtime_control.go 给本面）；"
+            "该文件属方案档性质，本面不把它登记进路径集，只在这里记录改动事实。"
             "**frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点"
             "（保留路径，不得被任一面独占）**：本面在这里加 G6 面板的挂载位，"
             "按「共享维护点」约定不登记进任何面的路径集。"
-            "2026-10-23 由 magician336 认领；"
+            "**Spec #145 与 #146 保持开放**：本面只交付各自的一部分"
+            "（「切回已验证配置」等仍需领域写路径支持）。"
+            "2026-10-23 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
