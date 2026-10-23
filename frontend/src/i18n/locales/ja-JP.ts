@@ -4345,7 +4345,13 @@ export default {
           generic: '監査ログの読み込みに失敗しました'
         },
         actorRole: {
-          system_admin: 'システム管理者'
+          owner: 'オーナー',
+          admin: '管理者',
+          contributor: '編集者',
+          viewer: '閲覧者',
+          system_admin: 'システム管理者',
+          platform_api_key: 'プラットフォーム API キー',
+          unknown: '不明なロール'
         },
         columns: {
           time: '日時',
