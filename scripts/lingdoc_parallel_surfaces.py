@@ -647,7 +647,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 但本面**借用**它——在 NewHostAgentModel 那一行装上模型调用账本
             # （不装，账本在生产里就是死的）。**本面合入 main 后该路径归还 PF-7**
             # （先例：PF-8 借 PF-4 的四个路径，落地后归还）。
-            # **PF-7 侧的对应记录由管理会话补。**
+            # **PF-7 侧的对应记录已在 main 上**（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。
             # 本面在这里装账本：workspace.NewHostAgentModel(models,
             # workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
             ("internal/lingdoc/workspace/agent_model.go", "file"),
@@ -706,7 +706,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而那两条路径**已随 PR #472 记录在 main 上**；登记处棘轮不许删 main 已记录的路径"
             "（lingdoc_manifest_baseline.py）⇒ 让号方向由管理会话在 PR #475（commit 60ae2dca）修正为"
             "「**PF-10 改号**」。迁移守护的版本常量同步到 55。"
-            "迁移守护的版本常量同步到 54。"
             "**2026-10-23 已完成**（认领与完成的人是 magician336）：把 Beta 首版真实验收从人肉变成一条可复跑命令。"
             "交付三件事：① #453 模型调用账本——一张 lingdoc_model_call_ledger 表，kind 分 call / switch 两行种，"
             "两方言迁移（sqlite/000055、versioned/000134）+ Go 行结构 + 10 个用例，账本装进组合根；"
@@ -717,7 +716,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "脱敏守护、协议 §5 三态一字不改。"
             "**一处跨面借用**：组合根 internal/container/lingdoc.go 的 owner 仍是 PF-7（未开工、已声明），"
             "本面于 2026-10-23 **借用**它（装模型调用账本，一处），**本面合入 main 后该路径归还 PF-7**"
-            "（先例：PF-8 借 PF-4 的四个路径，落地后归还）；**PF-7 侧的对应记录由管理会话补**。"
+            "（先例：PF-8 借 PF-4 的四个路径，落地后归还）；**PF-7 侧的对应记录已在 main 上**"
+            "（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。"
             "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
             "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，已记录在 main 上，棘轮不许删）。"
