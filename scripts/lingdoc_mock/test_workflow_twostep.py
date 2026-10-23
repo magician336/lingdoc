@@ -385,11 +385,13 @@ class TwoStepNegativeControlTest(unittest.TestCase):
 class F01SequenceUnchangedTest(unittest.TestCase):
     """The shape change does not touch the F01 sequence."""
 
-    def test_the_f01_sequence_still_has_its_24_nodes_and_no_two_step_relation(self):
+    def test_the_f01_sequence_still_has_its_nodes_and_no_two_step_relation(self):
         spec = load_spec(WORKFLOW_PATH)
-        self.assertEqual(len(spec.steps), 24)
+        self.assertEqual(len(spec.steps), 28)
         self.assertEqual([step["id"] for step in spec.steps if step["id"] != "F01-03b"],
-                         [f"F01-{number:02d}" for number in range(1, 24)])
+                         [f"F01-{number:02d}" for number in range(1, 7)]
+                         + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
+                         + [f"F01-{number:02d}" for number in range(7, 24)])
         for step in spec.steps:
             self.assertNotIn("after_step", step, step["id"])
 
@@ -405,14 +407,15 @@ class F01SequenceUnchangedTest(unittest.TestCase):
             requests.append(request)
             if step["id"] == "F01-23":
                 return FakeResponse(file_bytes, 200, step["expected_binary"]["content_type"])
-            payload = json.loads(json.dumps(step["reference_response"]))
+            reference = step.get("reference_response")
+            payload = json.loads(json.dumps(reference)) if reference else {}
             if step["id"] == "F01-22":
                 payload["data"]["file_sha256"] = digest
             return FakeResponse(json.dumps(payload, ensure_ascii=False).encode("utf-8"), step["expected_http"])
 
         runner.client.opener = opener
         result = runner.run()
-        self.assertEqual(result["completed_steps"], 24)
+        self.assertEqual(result["completed_steps"], 28)
         for step in result["steps"]:
             self.assertEqual(set(step), {"id", "operation_id", "http_status", "content_type"}
                              | ({"observation"} if step.get("observation") else set()))

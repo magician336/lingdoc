@@ -510,6 +510,11 @@ def check_acceptance(previous,candidate,request,result):
 
 def check_trace(steps):
     project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={};activation_reads={}
+    # The model-use consent chain moves three versions at once: the project
+    # version, the context revision and the asset revision.  The trace has to
+    # carry them, or the contract would claim a consent that is pinned to a
+    # revision nobody can name.
+    context_revision=None;asset_revision=0;policy_change_sets={}
     for step in steps:
         oid=step['operation_id'];req=step['request'];body=req['json']
         response=step.get('reference_response');data=response['data'] if response else None
@@ -524,7 +529,7 @@ def check_trace(steps):
             seen[signature]=(copy.deepcopy(body),copy.deepcopy(data))
         if oid=='createProject':
             assert data['project_version']==1 and data['spec_revision']==0 and data['status']=='draft'
-            project_version=1;spec_revision=0
+            project_version=1;spec_revision=0;context_revision=data['current_context_revision']
         elif oid=='saveSpec':
             assert body['expected_spec_revision']==spec_revision
             spec_revision+=1;project_version+=1
@@ -540,7 +545,32 @@ def check_trace(steps):
             assert body['expected_spec_revision']==spec_revision
             project_version+=1
             assert data['project_version']==project_version and data['status']=='active'
+            context_revision=data['current_context_revision']
         elif oid=='listChapters': chapters={c['id']:copy.deepcopy(c) for c in data}
+        elif oid=='bindAsset':
+            # The asset revision is the anchor the consent is pinned to: the
+            # proposal must name the revision that is current right now.
+            asset_revision=data['asset_revision']
+        elif oid=='createChangeDraftPostPolicyProposal':
+            assert body['confirmed'] is True,'the consent proposal must be confirmed'
+            assert body['expected_version']==asset_revision,'the consent must be pinned to the current asset revision'
+            assert body['expected_context_revision']==context_revision,'the consent must name the current context revision'
+            assert body['policy']['model_use_allowed'] is True,'the consent this chain exists for is the model-use one'
+            assert body['policy']['scope'] in {'personal','project','team'}
+            assert body['policy']['purpose'].strip(),'a model-use consent needs a purpose'
+            policy_change_sets[data['id']]='draft'
+        elif oid=='assessChangeSet':
+            assert policy_change_sets.get(req['path_params']['changeSetId'])=='draft','only a draft may be assessed'
+            policy_change_sets[req['path_params']['changeSetId']]='assessed'
+        elif oid=='applyChangeSet':
+            assert policy_change_sets.get(req['path_params']['changeSetId'])=='assessed','only an assessed change set may be applied'
+            policy_change_sets[req['path_params']['changeSetId']]='applied'
+            project_version+=1;context_revision+=1;asset_revision+=1
+        elif oid=='getProjectAssetPolicy':
+            assert data['model_use_allowed'] is True,'the consent record must carry the model-use consent'
+            assert data['asset_revision']==asset_revision,'the consent must be pinned to the current asset revision'
+            assert data['version']==asset_revision
+            assert data['context_revision']==context_revision
         elif oid=='startGeneration':
             assert body['expected_spec_revision']==spec_revision
             assert body['expected_chapter_version_id']==chapters[body['chapter_id']]['current_version_id']
@@ -573,7 +603,7 @@ def check_trace(steps):
                 assert ch['review_items']==latest['review_items'] and ch['body_markdown']==latest['body_markdown']
                 assert ch['confirmation']==confirmations[ch['chapter_id']],'frozen confirmation differs from actual confirmation'
             check_frozen(data)
-    assert project_version==8 and spec_revision==1
+    assert project_version==9 and spec_revision==1
 
 check_trace(resolved)
 release_examples=ops['prepareRelease']['responses']['201']['content']['application/json']['examples']
