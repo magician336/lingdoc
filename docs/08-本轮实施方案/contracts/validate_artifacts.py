@@ -301,6 +301,9 @@ def check_scenario_step(scenario,index,step):
         assert isinstance(step['readback_of'],str) and step['readback_of'].strip(),where+' readback_of must name an earlier step'
         assert operation_methods[step['operation_id']]=='get',where+' readback step must use GET'
         assert step.get('checks'),where+' readback step must declare at least one check'
+    if 'after_step' in step:
+        assert isinstance(step['after_step'],str) and step['after_step'].strip(),where+' after_step must name an earlier step'
+        assert step.get('checks'),where+' after_step step must declare at least one check'
     response=ops[step['operation_id']]['responses'][str(step['expected_http'])]
     if 'response_example' in step:
         assert step['response_example'] in response['content']['application/json']['examples'],where
@@ -331,6 +334,22 @@ def check_scenario_step(scenario,index,step):
 # 谁是「调用者」这件事也得有出处：契约里只有所有者（canonical fixture 的立项人）和起点状态
 # 声明的协作者两种名字，别的地方冒出来的名字是这个校验器要拦住的那种笔误。
 ACTORS={'u-owner'}|{name for state in cases['starting_states'] for name in state['project'].get('members',[])}
+def check_same_resource(step,earlier,where):
+    """The two steps of a two-step requirement must reach the same resource.
+
+    "Same resource" is machine-checkable here: the two requests name the same
+    path coordinates -- the same keys, and the same values (the same captured
+    variable, or the same literal).  Without this, a step could declare that it
+    asserts the consequence of an operation that touched a different resource
+    altogether, and the report would read it as a fact about this one.
+    """
+    mine=(step.get('request') or {}).get('path_params') or {}
+    theirs=(earlier.get('request') or {}).get('path_params') or {}
+    assert set(mine)==set(theirs),where+' after_step must name a step on the same resource (path parameters differ: '+str(sorted(mine))+' against '+str(sorted(theirs))+')'
+    for name,value in mine.items():
+        assert value==theirs[name],where+' after_step must name a step on the same resource (path parameter '+name+' differs: '+repr(value)+' against '+repr(theirs[name])+')'
+
+
 def check_scenario(scenario):
     observation=scenario.get('white_box_observation')
     if observation is not None:
@@ -360,6 +379,11 @@ def check_scenario(scenario):
             assert earlier is not None,step['id']+' readback_of must name an earlier step'
             assert operation_methods[earlier['operation_id']]!='get',\
                 step['id']+' readback_of must name an earlier write step'
+        if 'after_step' in step:
+            earlier=next((candidate for candidate in steps[:index-1]
+                          if candidate.get('id')==step['after_step']),None)
+            assert earlier is not None,step['id']+' after_step must name an earlier step'
+            check_same_resource(step,earlier,step['id'])
     state=next((item for item in cases['starting_states'] if item['id']==scenario.get('starting_state')),None)
     if state and scenario.get('steps') and all('request' in step for step in scenario['steps']):
         available={'project.id'}
@@ -705,6 +729,13 @@ def replace_flow_kind(check):
         if name in check_kinds.KNOWN_CHECK_OPERATORS:
             del check[name]
     check['not_a_kind_at_all']=64
+# 「先操作、再断言」的两步结构：先后、同资源、必须带断言，三条各留一个反例。
+# 反例从契约里真实那条两步场景（F24）改出来，改完必须被拒。
+F24=next(s for s in cases['scenarios'] if s['id']=='F24')
+def f24_step(index):
+    return copy.deepcopy(F24['steps'][index])
+F05_WRITE=copy.deepcopy(next(step for step in next(s for s in cases['scenarios'] if s['id']=='F05')['steps']
+                             if step['operation_id']=='saveChapter'))
 for label,action in [
     ('workflow_check_with_an_unknown_kind',mutate_flow_check(replace_flow_kind)),
     ('workflow_check_with_an_unknown_key_next_to_a_known_kind',
@@ -753,6 +784,20 @@ for label,action in [
      lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
                             'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],
                                           capture={'f08.missing':'/data/not_a_field'})]})),
+    ('scenario_after_step_needs_a_check',
+     lambda:check_scenario_step(F24,3,{**f24_step(2),'checks':[]})),
+    ('scenario_after_step_must_name_an_earlier_step',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[f24_step(0),f24_step(2)]})),
+    ('scenario_after_step_must_reach_the_same_resource',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[
+         {**f24_step(1),'id':'F24-90'},
+         {**f24_step(2),'after_step':'F24-90',
+          'request':{**f24_step(2)['request'],
+                     'path_params':{'projectId':'{f24.other_project}'}}}]})),
+    ('scenario_after_step_must_reach_the_same_coordinates',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[
+         {**F05_WRITE,'id':'F24-90'},
+         {**f24_step(2),'after_step':'F24-90'}]})),
 ]:
     must_reject(label,action)
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'

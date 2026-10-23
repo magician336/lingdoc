@@ -12,10 +12,19 @@ ALTER TABLE users
 ALTER TABLE knowledge_bases
     ADD COLUMN IF NOT EXISTS rerank_model_id VARCHAR(64);
 
+-- MySQL's "UPDATE ... JOIN ... SET" has no PostgreSQL equivalent; the
+-- PostgreSQL spelling of the same statement is "UPDATE ... SET ... FROM ...
+-- WHERE".  The join predicate and the filter are carried over unchanged, so
+-- the rows this statement touches are exactly the rows it touched before.
+--
+-- NOTE: the join key below ("m.id = k.id") joins two independently generated
+-- UUID primary keys (models.id and knowledges.id), so it matches almost
+-- nothing.  That is a separate semantic question from the syntax fix and is
+-- tracked on its own issue; it is deliberately NOT changed here.
 UPDATE models m
-JOIN knowledges k ON m.id = k.id
-SET m.tenant_id = 0
-WHERE m.tenant_id = k.tenant_id;
+SET tenant_id = 0
+FROM knowledges k
+WHERE m.id = k.id AND m.tenant_id = k.tenant_id;
 
 -- Drop index on content_hash
 DROP INDEX IF EXISTS idx_chunks_content_hash;
