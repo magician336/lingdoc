@@ -16,9 +16,11 @@ import (
 // state to repair.
 //
 // This file holds the judgement and the doorways to it together: the answer
-// itself (OwnerAuthorityOf, JudgeOwnerAction), the doorways the writes take
-// (ownerFreezeRefusal, ownerDecisionInTransaction) and the list of the
-// capabilities whose entries only the Owner may use (OwnerOnlyCapability).
+// itself (OwnerAuthorityOf, JudgeOwnerAction) and the doorways the writes
+// take (OwnerFreezeRefusal, ownerDecisionInTransaction). The list of the
+// entries only the Owner may use lives next door, in
+// owner_capability_registry.go, because it is the enumeration rather than the
+// judgement.
 //
 // A second copy of the same conditions is a second answer to the same question,
 // and the two answers drift apart -- that is exactly what the inline copy in
@@ -173,29 +175,31 @@ func JudgeOwnerAction(tx Transaction, p Project, actor Actor) OwnerActionJudgeme
 	return OwnerActionJudgement{Allowed: true, ReasonCode: ReasonAllowed, OwnerUserID: authority.OwnerUserID}
 }
 
-// OwnerOnlyCapability reports whether the capability names an entry only
-// the Owner may use.
+// OwnerFreezeRefusal refuses an Owner-only write while the project's Owner
+// may not act, and names the freeze.
 //
-// Two capabilities name such entries: "manage", the capability the interface
-// reads for the Owner-only decisions (the activation, the template upgrade,
-// the change set apply and reject and the archive), and "ops-control", the
-// runtime control only the Owner may use, which the formal export is judged
-// by.
+// It is the doorway every Owner-only write takes, and it is exported because
+// the owner transfer is an Owner-only write too and it lives in another
+// package: the freeze has to be named there as well, and a second copy of
+// the judgement would be a second answer to the same question.
 //
-// A refusal of any other capability is about the actor's own authority, not
-// about a freeze, and saying it is a freeze would swallow the existing
-// "capability_or_scope_denied" meaning.
+// The refusal is the one the action has always answered with: it wraps
+// ErrNotFound, so every caller that asks "is this the resource I cannot
+// reach?" keeps its answer, and it names the freeze in the optional details,
+// so a caller can also tell "the Owner's tenant identity has lapsed" from
+// "you are not the Owner".
 //
-// Adding a new Owner-only action means adding its capability here in the same
-// change: a capability that is Owner-only but missing from this list answers a
-// refusal with the actor's own lack of authority, and the interface cannot
-// tell "the Owner is unavailable" from "you may not".
-func OwnerOnlyCapability(capability string) bool {
-	switch capability {
-	case string(AuthorizationManage), string(AuthorizationOpsControl):
-		return true
-	}
-	return false
+// It stays silent when the action is not frozen: the ordinary authorization
+// then answers with its own reason.
+func OwnerFreezeRefusal(
+	ctx context.Context,
+	repository Repository,
+	actor Actor,
+	projectID string,
+) error {
+	return repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		return ownerFreezeRefusal(tx, actor, projectID)
+	})
 }
 
 // requireOwnerDecision refuses an Owner-only decision while the project's
@@ -212,9 +216,7 @@ func OwnerOnlyCapability(capability string) bool {
 // It sits beside the judgement it asks: the decision and the doorway that
 // serves it are one thing to look at.
 func (s *Service) requireOwnerDecision(ctx context.Context, actor Actor, projectID string) error {
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		return ownerFreezeRefusal(tx, actor, projectID)
-	})
+	return OwnerFreezeRefusal(ctx, s.repository, actor, projectID)
 }
 
 // ownerFreezeRefusal refuses an Owner-only action while the project's Owner
