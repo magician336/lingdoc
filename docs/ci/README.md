@@ -191,21 +191,24 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 
 ### 5.2 新口径（`cancel-in-progress: false`）下的实测
 
-本 PR 自己就是新口径的样本：它推了两个 commit，两个 run 都在同一个 concurrency group 里。
+新口径下的样本就是本 PR 自己：同一个 PR 连推多个 head，每个 head 的门禁都在**同一个 concurrency group** 里依次跑。
 
 | run id | head | 排队(s) | 其中 concurrency 等待(s) | 运行(s) | 合计(s) | conclusion |
 | --- | --- | --- | --- | --- | --- | --- |
-| 40024991786 | `e9dc083d`（第一个 commit） | 2 | 0 | 1144 | 1146 | success |
-| 40025077061 | `9caffeca`（第二个 commit） | 1107 | 1107 | 611 | 1718 | success |
+| 40024991786 | `e9dc083d` | 2 | 0 | 1144 | 1146 | success |
+| 40025077061 | `9caffeca` | 1107 | 1107 | 611 | 1718 | success |
+| 40028688178 | `382ec325` | 2 | 0 | 826 | 828 | success |
 
-第二个 head 的门禁**等了 18 分 27 秒**才开工。这不是 runner 供给不足——它是排在**前一个 head 的门禁后面**（实测 run 状态先是 `pending`，前者结束后才转 `in_progress`）。
+（表中列的是本 PR 的**前三个 head** 的 run。同一个 PR 的第 N 个 head 排队多久，取决于它前面还有几个 head 的门禁在排队。）
+
+第二个 head 的门禁**等了 18 分 27 秒**才开工。这不是 runner 供给不足——它是排在**前一个 head 的门禁后面**（实测 run 状态先是 `pending`，前者结束后才转 `in_progress`）。第三个 head 前面没有未完成的门禁，所以排队只有 2 秒。
 
 **这就是 `cancel-in-progress: false` 的确切代价**：新 head 的门禁要等前一个 head 的门禁跑完。因此：
 
 - 一个 PR 推 N 次 head ⇒ 门禁**串行**跑 N 次，当前 head 的门禁最后跑完。
 - 实测一次全量门禁约 10–19 分钟（见下），所以推 3 次 head 约等于多等 10–19 分钟。
 
-第二次的运行时长（611 s）比第一次（1144 s）短，是因为前一个 run 把 Go 的构建缓存焐热了——串行的代价因此小于「N × 单次时长」。
+后一次的运行时长（611 s、826 s）比第一次（1144 s）短，是因为前一个 run 把 Go 的构建缓存焐热了——串行的代价因此小于「N × 单次时长」。
 
 ### 5.3 旧口径（`cancel-in-progress: true`）下的样本
 
@@ -237,7 +240,7 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 ### 5.4 局限（如实标注）
 
 - **5.3 的样本量是 10 个 run**，且集中在**同一天、同一批 PR**（多为 `docs/139-f0107-gap-545`、`chore/registry-pf14-paths`、`fix/534-delayed-retry-budget`）。它覆盖的是**常规改动**的门禁成本；`scripts/acceptance/**` 一类改动会额外触发 `LingDoc Interface Integration`（拉 PostgreSQL 17 service），量级另计（见 #539）。
-- **新口径的样本量只有 2 个 run**（本 PR 自己的两个 head），且都在同一天、同一个 PR、同一种改动类型（治理类改动 ⇒ 强制全量）。它们不能代表一般情况。
+- **新口径的样本量很小**（本 PR 自己的前三个 head，共 3 个 run），且都在同一天、同一个 PR、同一种改动类型（治理类改动 ⇒ 强制全量）。它们不能代表一般情况。
 - **全量门禁的成本由「治理类改动强制全量」决定，而不是本票的改动决定。** `lingdoc_gate_decision.py` 的口径是「governance changed; the whole scope is tested」，所以任何 `scripts/ci/**` 或 `.github/workflows/**` 的改动都会跑 provider `go test -race`（实测 883 s）＋ 前端（实测 136 s）。本票的 `cancel-in-progress` 改动**不增加**任何测试量。
 - 运行时长最大值（1217 秒）来自 PR #536 的 head `06c69372`（run `40002984905`）——**票面把它记为「长期 `in_progress`、排不上队」，但它最终跑完并变绿了**：排队 8 秒、运行 1217 秒。也就是说那次观测到的是「排队 + 长运行」叠在一起被人读成了「排不上队」，而不是永远排不上。
 - **runner 供给紧张时的排队时长仍未被任何样本覆盖。** 本基线只回答「供给正常时的成本是多少」，不回答「供给最差时会排多久」。这是保留项，不是已解决的问题。
