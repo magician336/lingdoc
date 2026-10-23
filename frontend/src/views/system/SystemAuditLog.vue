@@ -60,8 +60,8 @@
                   {{ row.actor_user_id ? auditActorLabel(row.actor_user_id) :
                     t('system.globalSettings.audit.systemActor') }}
                 </span>
-                <span v-if="row.actor_role" class="audit-actor-role">
-                  {{ auditActorRoleLabel(row.actor_role) }}
+                <span class="audit-actor-role">
+                  {{ formatAuditActorRole(row.actor_role) }}
                 </span>
               </div>
             </template>
@@ -182,6 +182,7 @@ import {
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import { AUDIT_ACTION_I18N_ROOTS } from '@/i18n/auditActionRegistry'
 import { auditActionLabel } from '@/i18n/auditActionLabel'
+import { auditActorRoleLabel } from '@/i18n/auditActorRoleLabel'
 import { useAuthStore } from '@/stores/auth'
 
 interface AuditDetailField {
@@ -287,10 +288,10 @@ function auditActorLabel(userId: string): string {
   return userId.slice(0, 8)
 }
 
-function auditActorRoleLabel(role: string): string {
-  const key = `system.globalSettings.audit.actorRole.${role}`
-  if (te(key)) return t(key)
-  return role
+// The audit column `actor_role` is resolved by the shared resolver, so this
+// table and the tenant audit drawer read the same value the same way.
+function formatAuditActorRole(role: string): string {
+  return auditActorRoleLabel({ te, t }, role)
 }
 
 function auditDetailsObject(row: AuditLog): Record<string, unknown> | null {
@@ -406,11 +407,10 @@ function formatAuditDateTime(s: string | undefined): string {
 }
 
 function auditActorDisplay(row: AuditLog): string {
-  if (!row.actor_user_id) {
-    return t('system.globalSettings.audit.systemActor')
-  }
-  const name = auditActorLabel(row.actor_user_id)
-  return row.actor_role ? `${name} (${auditActorRoleLabel(row.actor_role)})` : name
+  const name = row.actor_user_id
+    ? auditActorLabel(row.actor_user_id)
+    : t('system.globalSettings.audit.systemActor')
+  return `${name} (${formatAuditActorRole(row.actor_role)})`
 }
 
 function auditSummaryFields(row: AuditLog): AuditDetailField[] {

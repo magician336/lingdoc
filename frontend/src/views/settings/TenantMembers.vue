@@ -436,8 +436,8 @@
                       {{ row.actor_user_id ? actorDisplayName(row.actor_user_id) :
                         $t('tenantMember.audit.systemActor') }}
                     </span>
-                    <span v-if="row.actor_role" class="audit-actor-role">
-                      {{ $t('tenantMember.role.' + row.actor_role) }}
+                    <span class="audit-actor-role">
+                      {{ formatAuditActorRole(row.actor_role) }}
                     </span>
                   </div>
                 </template>
@@ -521,6 +521,7 @@ import { copyWithToast } from '@/utils/clipboard'
 import { useAuthStore } from '@/stores/auth'
 import { AUDIT_ACTION_I18N_ROOTS } from '@/i18n/auditActionRegistry'
 import { auditActionLabel } from '@/i18n/auditActionLabel'
+import { auditActorRoleLabel } from '@/i18n/auditActorRoleLabel'
 import {
   listMembers,
   updateMemberRole,
@@ -542,7 +543,7 @@ import {
   type AuditOutcome,
 } from '@/api/tenant/auditLog'
 
-const { t, tm, locale } = useI18n()
+const { t, tm, te, locale } = useI18n()
 const authStore = useAuthStore()
 
 /** 悬停层限制在视口内，内容由内部滚动 */
@@ -1059,6 +1060,12 @@ function auditOutcomeTheme(o: AuditOutcome): 'success' | 'danger' | 'default' {
 // 无法命中 tenantMember.audit.action['rbac.*'] — 必须用 tm + 字面量键。
 function formatAuditAction(action: AuditAction): string {
   return auditActionLabel({ tm }, AUDIT_ACTION_I18N_ROOTS.tenantMember, action)
+}
+
+// 审计列 actor_role 走共享解析器：这一列的语义只有一处定义，
+// 租户审计抽屉与平台审计日志因此对同一个值给出同一种含义。
+function formatAuditActorRole(role: string): string {
+  return auditActorRoleLabel({ te, t }, role)
 }
 
 // Resolve a user id to a display label: prefer current页的 members，

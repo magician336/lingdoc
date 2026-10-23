@@ -3000,7 +3000,13 @@ export default {
           outcome: '结果'
         },
         actorRole: {
-          system_admin: '系统管理员'
+          owner: '所有者',
+          admin: '管理员',
+          contributor: '编辑',
+          viewer: '访客',
+          system_admin: '系统管理员',
+          platform_api_key: '平台 API 密钥',
+          unknown: '未知角色'
         },
         errors: {
           generic: '加载审计日志失败'
