@@ -16,6 +16,8 @@
 - [PF-3 审计告警接线与 AuditEvent 字段](PF-3-审计告警接线与AuditEvent字段.md) / [验证报告](T327-验证报告.json)：读类审计失败接 G6 告警源 + 审计版本字段独立列（施工并行面票 [#327](https://github.com/magician336/lingdoc/issues/327)）
 - [G6 运行控制后端补齐](G6-运行控制后端补齐-20261023.md)：PF-8 面一次交付 [#382](https://github.com/magician336/lingdoc/issues/382)（告警规则可读回与可停用 + 授权判定可观测）与 [#383](https://github.com/magician336/lingdoc/issues/383)（运行控制回退端点）两张后端票；**#327 已由 PR #389 在 main 上完成并关票，本面不重复交付**
 - [G6 运维面板独立化与 Workspace 集成](G6-运维面板独立化-20261023.md)：PF-8 面的前端部分（[#384](https://github.com/magician336/lingdoc/issues/384)）——G6 前端从 G3 面板里拆成独立的运行观测与试用面板
+- [Spec #49 owner_unavailable 派生状态与 Owner-only 冻结：实施与验收证据](Spec-49-owner_unavailable派生状态与Owner-only冻结.md) / [验证报告](T49-验证报告.json)：判定收口到一处 + 五项 Owner 专属动作冻结 + 归档能力（施工并行面票 [#328](https://github.com/magician336/lingdoc/issues/328)，Spec [#391](https://github.com/magician336/lingdoc/issues/391)）
+- [验收判定口径 v1](验收判定口径.md)：一条验收点是什么（原子可核验要求）、判定表六列与模板、机器 PASS 谓词与失败条件、NOT RUN 登记与解除条件、产物与权威顺序、签收规则、引用纪律（裁决票 [#439](https://github.com/magician336/lingdoc/issues/439)；**判定表逐张填满的施工另走票**）
 
 ## 当前PR复审入口
 
