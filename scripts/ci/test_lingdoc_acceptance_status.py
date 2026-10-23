@@ -532,9 +532,12 @@ class RealReportTests(unittest.TestCase):
         self.json_entries = [entry for entry in self.entries
                              if entry["shape"] == "json-entry"]
         self.document = json.loads(self.REPORT.read_text(encoding="utf-8"))
-        self.carried = [row for row in self.document.get("passed", [])
-                        + self.document.get("not_run", [])
-                        if row.get("matrix_status") == status.DEFERRED_MANUAL]
+        # The carried rows are counted the way the guard counts them: **every**
+        # object of the document, not only the two lists the report uses today.
+        # A row that moves into another list must not make the two disagree.
+        self.carried = [obj for _where, obj in status.walk_objects(self.document)
+                        if isinstance(obj, dict)
+                        and obj.get("matrix_status") == status.DEFERRED_MANUAL]
 
     def test_the_real_report_is_in_the_repository(self):
         self.assertTrue(self.REPORT.is_file(),
