@@ -193,6 +193,16 @@ type ChatResponse struct {
 	FinishReason     string        `json:"finish_reason,omitempty"`
 	Usage            TokenUsage    `json:"usage"`
 
+	// ProviderCall carries what the provider said about this call: its own
+	// request identifier when it sent one, the endpoint the request went to,
+	// and a fingerprint of the request body.
+	//
+	// It is the provider-side half of a call's trace. The product-side half --
+	// which model, which product action, how many tokens -- lives in the model
+	// call ledger, and the two halves are joined by the ledger row, not by a
+	// second record of the same call.
+	ProviderCall *ProviderCall `json:"-"`
+
 	// AnswerStreamed reports whether the user-facing answer text was already
 	// streamed live to the final-answer UI area during this round (i.e. the
 	// model answered with plain content). When true, the natural-stop branch
@@ -205,6 +215,29 @@ type ChatResponse struct {
 	// chunks were streamed, so the natural-stop branch can close the same
 	// stream with a Done marker. Empty when AnswerStreamed is false.
 	AnswerEventID string `json:"-"`
+}
+
+// ProviderCall is what the provider said about one call.
+//
+// It holds three facts and nothing else: the provider's own identifier for the
+// request, the endpoint the request went to, and a fingerprint of the request
+// body.
+//
+// The fingerprint is a digest, not the body. A record that a reviewer has to
+// read must not carry the prompt, and a prompt may quote material the reader
+// has no right to see.
+type ProviderCall struct {
+	// RequestID is the provider's own identifier for the request. It is empty
+	// when the provider did not send one -- and empty means exactly that, not
+	// "we did not look".
+	RequestID string
+	// RequestIDHeader names the response header the identifier came from, so a
+	// reader knows which field to look for. Empty when no identifier was sent.
+	RequestIDHeader string
+	// Endpoint is the URL the request went to, without its query string.
+	Endpoint string
+	// RequestFingerprint is the lowercase hex SHA-256 of the request body.
+	RequestFingerprint string
 }
 
 // Response type
