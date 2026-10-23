@@ -953,6 +953,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/delivery/actor_role_vocabulary_guard_test.go", "file"),
             # #534 的守护：延迟重排路径与正常路径共用同一个重试上限（同一常量，不新增第二份数值）。
             ("internal/lingdoc/workspace/generation_retry_budget_test.go", "file"),
+            # #501 的执行器单测：两步结构（同资源约束、前置不成立不得恒真 PASS、二次操作失败记 BLOCKED/FAIL）的独立新文件，不改既有的 test_workflow_*.py。
+            ("scripts/lingdoc_mock/test_workflow_twostep.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
