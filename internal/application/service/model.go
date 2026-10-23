@@ -23,6 +23,10 @@ import (
 // ErrModelNotFound is returned when a model cannot be found in the repository
 var ErrModelNotFound = errors.New("model not found")
 
+// ErrModelTypeNotChatCapable is returned when a model that cannot serve a
+// text-generation call is asked for a chat client.
+var ErrModelTypeNotChatCapable = errors.New("model type cannot serve text generation")
+
 // modelService implements the model service interface
 type modelService struct {
 	repo          interfaces.ModelRepository
@@ -610,6 +614,27 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 	if model == nil {
 		logger.Error(ctx, "Chat model not found")
 		return nil, ErrModelNotFound
+	}
+
+	// A chat client only works against a model whose upstream speaks the
+	// text-generation protocol. An Embedding / Rerank / ASR row does not:
+	// building a client for it yields a call the provider rejects (HTTP 400,
+	// no output), so the failure shows up far from its cause — a document
+	// without a summary, or a generation run that failed for no visible
+	// reason.
+	//
+	// The verdict is taken from the model TYPE, never from the model name: a
+	// name check would be bypassed by renaming the model. It is the same rule
+	// the knowledge-base summary guard uses (types.IsSummaryCapableModelType),
+	// so both paths agree on which models may serve a generation call.
+	if !types.IsChatCapableModelType(model.Type) {
+		logger.ErrorWithFields(ctx, ErrModelTypeNotChatCapable, map[string]interface{}{
+			"model_id":   model.ID,
+			"model_name": model.Name,
+			"model_type": string(model.Type),
+		})
+		return nil, fmt.Errorf("%w: model %q has type %q, which cannot serve text generation",
+			ErrModelTypeNotChatCapable, model.ID, model.Type)
 	}
 
 	logger.Infof(ctx, "Getting chat model: %s, source: %s", model.Name, model.Source)

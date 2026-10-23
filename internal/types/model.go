@@ -43,6 +43,28 @@ func IsSummaryCapableModelType(modelType ModelType) bool {
 	return modelType == ModelTypeKnowledgeQA
 }
 
+// IsChatCapableModelType reports whether a model of the given type can serve a
+// chat (text-generation) call.
+//
+// It is the rule the chat client path follows, and it is the same rule the
+// knowledge-base summary guard follows, plus one type: a VLLM row is a
+// multimodal model whose upstream speaks the OpenAI-compatible
+// chat/completions protocol, and the query-understand fallback loads it
+// through the chat client
+// (internal/application/service/chat_pipeline/query_understand.go). Narrowing
+// this set to KnowledgeQA alone would break that path.
+//
+// Embedding, Rerank and ASR models speak the embeddings / rerank / speech
+// protocols. Building a chat client for one of them produces a call the
+// provider rejects (HTTP 400, no output), so the failure surfaces far from
+// its cause.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsChatCapableModelType(modelType ModelType) bool {
+	return IsSummaryCapableModelType(modelType) || modelType == ModelTypeVLLM
+}
+
 // ModelStatus represents the status of the model
 type ModelStatus string
 
