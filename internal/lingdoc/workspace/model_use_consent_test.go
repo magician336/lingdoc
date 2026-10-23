@@ -3,6 +3,9 @@ package workspace
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
@@ -46,6 +49,39 @@ type modelUseConsentFixture struct {
 // fixture is made by the allow-all test authorizer.
 type modelUseConsentShares struct{ interfaces.KBShareService }
 
+// applyProductionG2ObjectMigration creates the object store tables the way
+// production does: the statements come from the production migration
+// (migrations/sqlite/000037_lingdoc_full_workflow.up.sql), not from a copy of
+// its DDL written into this file.  A fixture that carries its own copy of a
+// production schema is exactly the shape that breaks when the schema moves.
+func applyProductionG2ObjectMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "migrations", "sqlite", "000037_lingdoc_full_workflow.up.sql")
+	script, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the production migration: %v", err)
+	}
+	wanted := map[string]bool{
+		"CREATE TABLE lingdoc_g2_objects":         true,
+		"CREATE TABLE lingdoc_g2_object_versions": true,
+	}
+	applied := 0
+	for _, statement := range strings.Split(string(script), ";") {
+		trimmed := strings.TrimSpace(statement)
+		for prefix := range wanted {
+			if strings.HasPrefix(trimmed, prefix) {
+				if err := db.Exec(trimmed).Error; err != nil {
+					t.Fatalf("apply the production migration statement: %v", err)
+				}
+				applied++
+			}
+		}
+	}
+	if applied != len(wanted) {
+		t.Fatalf("生产迁移里的 g2 对象表建表语句 = %d 条, want %d 条（迁移形状变了？）", applied, len(wanted))
+	}
+}
+
 func newModelUseConsentFixture(t *testing.T) modelUseConsentFixture {
 	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
@@ -54,14 +90,7 @@ func newModelUseConsentFixture(t *testing.T) modelUseConsentFixture {
 		deliveryMethodChapter(),
 	)
 	ensureImpactRouteTables(t, db)
-	for _, ddl := range []string{
-		`CREATE TABLE IF NOT EXISTS lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
-		`CREATE TABLE IF NOT EXISTS lingdoc_g2_object_versions(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id,version))`,
-	} {
-		if err := db.Exec(ddl).Error; err != nil {
-			t.Fatalf("seed g2 object tables: %v", err)
-		}
-	}
+	applyProductionG2ObjectMigration(t, db)
 	if err := db.Exec("UPDATE lingdoc_projects SET current_context_revision = ? WHERE id = ?", 1, "project-1").Error; err != nil {
 		t.Fatalf("seed context revision: %v", err)
 	}
