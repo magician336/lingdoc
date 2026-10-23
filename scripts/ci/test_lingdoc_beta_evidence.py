@@ -56,6 +56,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -810,6 +811,60 @@ class CaptureChainGuardTests(unittest.TestCase):
         self.assertIn("/api/v1", message)
         self.assertNotIn("variable is not captured yet", message)
         self.assertEqual(sent, [])
+
+    def test_the_http_side_takes_the_api_root_the_contract_names(self):
+        """One shape on both sides, and the contract is where it comes from.
+
+        The HTTP side used to want the server root while the F01 side wanted
+        the API root, so no single base URL could satisfy both.  Now the
+        contract's ``servers[0].url`` is the only authority: the HTTP side
+        derives its API root from it, and the two sides agree on one value.
+        """
+        import beta_http_readback as http_side
+
+        contract = json.loads(http_side.CONTRACT_PATH.read_text(encoding="utf-8"))
+        expected = urlsplit(contract["servers"][0]["url"]).path.rstrip("/")
+        self.assertEqual(http_side.API_ROOT_PATH, expected)
+        # The API root is accepted; the server root is refused by name.
+        self.assertEqual(
+            http_side.normalize_base_url("http://127.0.0.1:8080" + expected),
+            "http://127.0.0.1:8080" + expected)
+        with self.assertRaises(Exception) as caught:
+            http_side.normalize_base_url("http://127.0.0.1:8080")
+        self.assertIn(expected, str(caught.exception))
+
+    def test_both_sides_judge_the_same_base_url_the_same_way(self):
+        """The regression gate: one base URL, one verdict, on both sides."""
+        import beta_http_readback as http_side
+
+        # The one value both sides are given: the API root the contract names.
+        api_root = "https://provider.test" + http_side.API_ROOT_PATH
+        server = "https://provider.test"
+
+        answered = {"count": 0}
+
+        def opener(request, timeout):
+            answered["count"] += 1
+            if answered["count"] == 1:
+                return _SelfTestResponse({"data": {"id": "t-9"}}, status=200)
+            return _SelfTestResponse({"data": {"id": "p-1"}}, status=201)
+
+        # The F01 side accepts the API root ...
+        openapi = {"servers": [{"url": api_root}], "paths": self.OPENAPI["paths"]}
+        runner = ScenarioRunner(openapi, self.specification(),
+                                base_url=api_root, opener=opener)
+        runner.run()
+        self.assertEqual(runner.variables.get("template_id"), "t-9")
+
+        # ... and refuses the server root.
+        with self.assertRaises(WorkflowError):
+            ScenarioRunner(openapi, self.specification(),
+                           base_url=server,
+                           opener=lambda request, timeout: self.fail("no request")).run()
+        # The HTTP side agrees with it on both values.
+        self.assertEqual(http_side.normalize_base_url(api_root), api_root)
+        with self.assertRaises(Exception):
+            http_side.normalize_base_url(server)
 
     def test_the_right_base_url_captures_the_variable(self):
         answered = {"count": 0}

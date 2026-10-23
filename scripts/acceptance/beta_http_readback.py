@@ -36,7 +36,7 @@ What this file never does
 
 Usage
 -----
-    python scripts/acceptance/beta_http_readback.py --base-url <URL> --out <http.json>
+    python scripts/acceptance/beta_http_readback.py --base-url <API ROOT> --out <http.json>
     python scripts/acceptance/beta_http_readback.py --list-items
 """
 from __future__ import annotations
@@ -49,9 +49,60 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# --------------------------------------------------------------------------
+# The base URL: one shape, taken from the contract.
+#
+# The OpenAPI contract says where the LingDoc API lives
+# (``servers[0].url``).  That is the single authority for the base URL on
+# both sides of the dual runner: the F01 executor and this HTTP side take the
+# **API root** (``http://host:port``).  The server root -- the
+# address without that path -- is *derived* from it, because a few paths
+# (``/health``, ``/api/v1/auth/...``) live outside the API root.
+# --------------------------------------------------------------------------
+ROOT = Path(__file__).resolve().parents[2]
+CONTRACT_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
+
+
+def contract_api_root_path() -> str:
+    """The path part of the contract's API root."""
+    document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    servers = document.get("servers") or []
+    if not servers or not isinstance(servers[0].get("url"), str):
+        raise RunnerError(f"the OpenAPI contract {CONTRACT_PATH} has no server URL")
+    path = urlsplit(servers[0]["url"]).path.rstrip("/")
+    if not path:
+        raise RunnerError(f"the OpenAPI contract's server URL has no path: {servers[0]['url']}")
+    return path
+
+
+API_ROOT_PATH = contract_api_root_path()
+
+
+def normalize_base_url(base_url: str) -> str:
+    """The base URL as the contract names it: the API root.
+
+    One shape, one place.  A base URL that stops short of the API root would
+    make every request answer 404, and the run would look like a pass with
+    nothing behind it -- so it is refused by name instead.
+    """
+    trimmed = base_url.rstrip("/")
+    if not trimmed.endswith(API_ROOT_PATH):
+        raise RunnerError(
+            f"--base-url must be the API root the contract names ({API_ROOT_PATH}); "
+            f"got {trimmed!r}. The F01 executor takes the same address, so the two "
+            f"sides of the dual runner cannot disagree about it.")
+    return trimmed
+
+
+def server_root(api_root: str) -> str:
+    """The server root, derived from the API root."""
+    return api_root[: -len(API_ROOT_PATH)]
+
 
 # --------------------------------------------------------------------------
 # The compared item set.
@@ -117,7 +168,7 @@ def envelope_data(payload: Any) -> Any:
     return payload
 
 
-def request(base_url: str, method: str, path: str, *, token: str = "",
+def request(api_root: str, method: str, path: str, *, token: str = "",
             payload: Any = None, key: str = "",
             expected: int | tuple[int, ...] = 200,
             timeout: float = 30.0) -> tuple[int, Any]:
@@ -135,7 +186,7 @@ def request(base_url: str, method: str, path: str, *, token: str = "",
         headers["Authorization"] = "Bearer " + token
     if key:
         headers["Idempotency-Key"] = key
-    req = urllib.request.Request(base_url + path, data=body, headers=headers, method=method)
+    req = urllib.request.Request(api_root + path, data=body, headers=headers, method=method)
     status = 0
     raw = b""
     try:
@@ -160,24 +211,24 @@ def request(base_url: str, method: str, path: str, *, token: str = "",
     return status, data
 
 
-def health(base_url: str, timeout: float = 5.0) -> bool:
+def health(api_root: str, timeout: float = 5.0) -> bool:
     try:
-        with urllib.request.urlopen(base_url + "/health", timeout=timeout) as response:
+        with urllib.request.urlopen(server_root(api_root) + "/health", timeout=timeout) as response:
             return response.status == 200
     except (urllib.error.URLError, TimeoutError, OSError):
         return False
 
 
-def register_login(base_url: str, email: str, password: str, *, timeout: float) -> str:
+def register_login(api_root: str, email: str, password: str, *, timeout: float) -> str:
     """Register (once) and log in an isolated account.  Returns the token."""
     suffix = uuid.uuid4().hex[:12]
     username = "beta452-" + suffix
-    status, registration = request(base_url, "POST", "/api/v1/auth/register", payload={
+    status, registration = request(server_root(api_root), "POST", "/api/v1/auth/register", payload={
         "username": username, "email": email, "password": password,
     }, expected=(200, 201), timeout=timeout)
     if status not in (200, 201):
         raise RunnerError("isolated registration was rejected")
-    _, login = request(base_url, "POST", "/api/v1/auth/login", payload={
+    _, login = request(server_root(api_root), "POST", "/api/v1/auth/login", payload={
         "email": email, "password": password,
     }, timeout=timeout)
     token = login.get("token") if isinstance(login, dict) else None
@@ -186,10 +237,10 @@ def register_login(base_url: str, email: str, password: str, *, timeout: float) 
     return token
 
 
-def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
+def create_and_activate(api_root: str, token: str, *, timeout: float) -> str:
     """Create a project, give it a spec, activate it, author and confirm its chapters."""
     suffix = uuid.uuid4().hex[:8]
-    _, created = request(base_url, "POST", "/api/v1/lingdoc/projects", token=token,
+    _, created = request(api_root, "POST", "/projects", token=token,
                          key="beta452-project-" + suffix,
                          payload={"name": "Beta 452 parity " + suffix, "template_id": "template-demo"},
                          expected=(200, 201), timeout=timeout)
@@ -197,7 +248,7 @@ def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
     if not isinstance(project, dict) or not project.get("id"):
         raise RunnerError("project creation did not return a project id")
     project_id = str(project["id"])
-    _, spec_response = request(base_url, "PUT", f"/api/v1/lingdoc/projects/{project_id}/spec",
+    _, spec_response = request(api_root, "PUT", f"/projects/{project_id}/spec",
                                token=token, key="beta452-spec-" + suffix,
                                payload={"expected_spec_revision": 0, "fields": {
                                    "research_subject": "Beta 452 dual runner subject",
@@ -205,19 +256,19 @@ def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
                                timeout=timeout)
     spec_project = envelope_data(spec_response)
     project_version = int(spec_project.get("project_version", 0)) if isinstance(spec_project, dict) else 0
-    _, receipt_response = request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/activation-read",
+    _, receipt_response = request(api_root, "POST", f"/projects/{project_id}/activation-read",
                                   token=token, payload={"expected_project_version": project_version},
                                   expected=(200, 201), timeout=timeout)
     receipt = envelope_data(receipt_response)
     receipt_id = receipt.get("id") if isinstance(receipt, dict) else None
     if not receipt_id:
         raise RunnerError("activation read did not return a receipt")
-    request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/activate", token=token,
+    request(api_root, "POST", f"/projects/{project_id}/activate", token=token,
             key="beta452-activate-" + suffix,
             payload={"expected_spec_revision": 1, "expected_project_version": project_version,
                      "reviewed_project_version": project_version, "activation_read_id": receipt_id},
             timeout=timeout)
-    _, chapters_response = request(base_url, "GET", f"/api/v1/lingdoc/projects/{project_id}/chapters",
+    _, chapters_response = request(api_root, "GET", f"/projects/{project_id}/chapters",
                                    token=token, timeout=timeout)
     chapters = envelope_data(chapters_response)
     if not isinstance(chapters, list) or not chapters:
@@ -228,8 +279,8 @@ def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
             continue
         section = chapter.get("section_id")
         body = "Beta 452 dual runner body for section " + str(section) + "."
-        _, saved = request(base_url, "POST",
-                           f"/api/v1/lingdoc/projects/{project_id}/chapters/{chapter_id}/versions",
+        _, saved = request(api_root, "POST",
+                           f"/projects/{project_id}/chapters/{chapter_id}/versions",
                            token=token, key="beta452-save-" + str(section) + "-" + suffix,
                            payload={"expected_chapter_version_id": None, "expected_spec_revision": 1,
                                     "body_markdown": body, "source_ids": []},
@@ -238,8 +289,8 @@ def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
         current_id = saved_data.get("current_version_id") if isinstance(saved_data, dict) else None
         if not current_id:
             raise RunnerError(f"chapter {section} did not return a current version")
-        request(base_url, "POST",
-                f"/api/v1/lingdoc/projects/{project_id}/chapters/{chapter_id}/confirmations",
+        request(api_root, "POST",
+                f"/projects/{project_id}/chapters/{chapter_id}/confirmations",
                 token=token, key="beta452-confirm-" + str(section) + "-" + suffix,
                 payload={"expected_chapter_version_id": current_id, "expected_spec_revision": 1,
                          "review_decisions": []},
@@ -247,7 +298,7 @@ def create_and_activate(base_url: str, token: str, *, timeout: float) -> str:
     return project_id
 
 
-def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: float,
+def prepare_delivery(api_root: str, token: str, project_id: str, *, timeout: float,
                      not_run: list[dict[str, str]]) -> None:
     """Run the delivery check, freeze a snapshot and start the export.
 
@@ -256,7 +307,7 @@ def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: flo
     cannot run, that fact is recorded in ``not_run`` instead of silently
     producing an empty snapshot.
     """
-    _, project_response = request(base_url, "GET", f"/api/v1/lingdoc/projects/{project_id}",
+    _, project_response = request(api_root, "GET", f"/projects/{project_id}",
                                   token=token, timeout=timeout)
     project = envelope_data(project_response)
     project_version = project.get("project_version") if isinstance(project, dict) else None
@@ -264,7 +315,7 @@ def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: flo
         raise RunnerError("project readback omitted project_version")
 
     try:
-        request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/checks", token=token,
+        request(api_root, "POST", f"/projects/{project_id}/checks", token=token,
                 payload={"expected_project_version": project_version}, timeout=timeout)
     except RunnerError as error:
         not_run.append({
@@ -274,7 +325,7 @@ def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: flo
         })
 
     try:
-        _, freeze = request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/releases",
+        _, freeze = request(api_root, "POST", f"/projects/{project_id}/releases",
                              token=token, key="beta452-freeze-" + uuid.uuid4().hex[:10],
                              payload={"expected_project_version": project_version},
                              expected=(200, 201), timeout=timeout)
@@ -292,7 +343,7 @@ def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: flo
         return
 
     try:
-        request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/releases/{snapshot_id}/exports",
+        request(api_root, "POST", f"/projects/{project_id}/releases/{snapshot_id}/exports",
                 token=token, key="beta452-export-" + uuid.uuid4().hex[:10],
                 payload={"format": "docx"}, expected=(200, 201, 202), timeout=timeout)
     except RunnerError as error:
@@ -303,7 +354,7 @@ def prepare_delivery(base_url: str, token: str, project_id: str, *, timeout: flo
         })
 
 
-def read_items(base_url: str, token: str, project_id: str, *, timeout: float,
+def read_items(api_root: str, token: str, project_id: str, *, timeout: float,
                not_run: list[dict[str, str]]) -> dict[str, Any]:
     """Read the delivery state and turn it into the comparable item set.
 
@@ -313,14 +364,14 @@ def read_items(base_url: str, token: str, project_id: str, *, timeout: float,
     the same server-ordered lists.
     """
     items: dict[str, Any] = {}
-    _, project_response = request(base_url, "GET", f"/api/v1/lingdoc/projects/{project_id}",
+    _, project_response = request(api_root, "GET", f"/projects/{project_id}",
                                   token=token, timeout=timeout)
     project = envelope_data(project_response)
     project_version = project.get("project_version") if isinstance(project, dict) else None
     if not isinstance(project_version, int):
         raise RunnerError("project readback omitted project_version")
 
-    _, releases_response = request(base_url, "GET", f"/api/v1/lingdoc/projects/{project_id}/releases",
+    _, releases_response = request(api_root, "GET", f"/projects/{project_id}/releases",
                                    token=token, timeout=timeout)
     releases = envelope_data(releases_response)
     release_items = releases.get("items") if isinstance(releases, dict) else None
@@ -340,7 +391,7 @@ def read_items(base_url: str, token: str, project_id: str, *, timeout: float,
         return items
     snapshot = release_items[0]
 
-    _, exports_response = request(base_url, "GET", f"/api/v1/lingdoc/projects/{project_id}/exports",
+    _, exports_response = request(api_root, "GET", f"/projects/{project_id}/exports",
                                   token=token, timeout=timeout)
     exports = envelope_data(exports_response)
     export_items = exports.get("items") if isinstance(exports, dict) else None
@@ -390,7 +441,7 @@ def read_items(base_url: str, token: str, project_id: str, *, timeout: float,
                            "the HTTP side so the artifact carries file_sha256.",
             })
 
-    _, check_response = request(base_url, "POST", f"/api/v1/lingdoc/projects/{project_id}/checks",
+    _, check_response = request(api_root, "POST", f"/projects/{project_id}/checks",
                                  token=token, payload={"expected_project_version": project_version},
                                  timeout=timeout)
     current = envelope_data(check_response)
@@ -411,13 +462,13 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None, int]:
-    base_url = args.base_url.rstrip("/")
+    api_root = normalize_base_url(args.base_url)
     not_run: list[dict[str, str]] = []
     email = args.email
     password = args.password
     project_id = args.project_id
 
-    if not health(base_url):
+    if not health(api_root):
         # Not reachable: every item is NOT RUN with an unblock condition.
         # Reporting a green snapshot here would be a silent skip.
         for item in ITEM_KEYS:
@@ -445,12 +496,12 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None
         email = f"beta452-{uuid.uuid4().hex[:12]}@example.com"
     if not password:
         password = "Beta452-" + secrets.token_hex(8)
-    token = register_login(base_url, email, password, timeout=args.timeout)
+    token = register_login(api_root, email, password, timeout=args.timeout)
     if not project_id:
-        project_id = create_and_activate(base_url, token, timeout=args.timeout)
+        project_id = create_and_activate(api_root, token, timeout=args.timeout)
 
-    prepare_delivery(base_url, token, project_id, timeout=args.timeout, not_run=not_run)
-    items = read_items(base_url, token, project_id, timeout=args.timeout, not_run=not_run)
+    prepare_delivery(api_root, token, project_id, timeout=args.timeout, not_run=not_run)
+    items = read_items(api_root, token, project_id, timeout=args.timeout, not_run=not_run)
     not_run.extend(model_gated_not_run())
 
     snapshot = {
@@ -459,10 +510,10 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None
         "items": items,
         "status": "PASS" if items else "NOT RUN",
         "not_run": not_run,
-        "base_url": base_url,
+        "base_url": api_root,
     }
     handoff = {
-        "base_url": base_url,
+        "base_url": api_root,
         "email": email,
         "password": password,
         "project_id": project_id,
@@ -475,7 +526,9 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--base-url", help="Base URL of the real LingDoc backend, e.g. http://127.0.0.1:8080")
+    parser.add_argument("--base-url",
+                        help="API root of the real LingDoc backend, as the OpenAPI contract "
+                             f"names it (e.g. http://127.0.0.1:8080{API_ROOT_PATH})")
     parser.add_argument("--out", help="Where to write the HTTP-side snapshot JSON")
     parser.add_argument("--context", help="Identity/project hand-off file written by a previous run")
     parser.add_argument("--context-out", help="Where to write the hand-off file for the browser side")
