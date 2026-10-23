@@ -2112,7 +2112,7 @@ async function searchSources() {
   deniedRows.value = []
   const query = sourceQuery.value.trim()
   try {
-    const result = await retrieveSources(project.value.id, query, assets.value.map(item => item.id))
+    const result = await retrieveSources(project.value.id, query, assets.value.map(item => item.id), chapter.value?.id)
     sources.value = result.data
     searchedQuery.value = query
     closeSourceContext()

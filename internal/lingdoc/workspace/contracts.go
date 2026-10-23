@@ -57,15 +57,17 @@ type SourceApplicationService interface {
 
 // ProjectAuthorizer is the minimal workspace access port needed by asset and
 // source use cases. It deliberately does not call source authorization itself.
-//
-// It is the same port as core.CapabilityAuthorizer: the owner of the
-// authorization language declares it, and this alias keeps the transport's
-// own name for it.
-type ProjectAuthorizer = core.CapabilityAuthorizer
+// The project owner declares both capability and resource decision ports.
+type ProjectAuthorizer = core.AssetUseAuthorizer
 
 type RetrieveSourcesInput struct {
 	Query    string   `json:"query"`
 	AssetIDs []string `json:"asset_ids"`
+	// ChapterID carries the G2 operation's already-selected chapter scope into
+	// the same resource authorization used by HTTP retrieval. HTTP callers do
+	// not receive chapter authority merely by supplying this field; core checks
+	// current project membership and the chapter scope in its transaction.
+	ChapterID string `json:"chapter_id,omitempty"`
 }
 
 type AccessStatus struct {
@@ -78,7 +80,8 @@ type AccessStatus struct {
 // DeniedAssetsError preserves item-level authorization reasons for the HTTP
 // adapter while keeping Gin/HTTP response types out of the application layer.
 type DeniedAssetsError struct {
-	Denied []evidence.DeniedAsset
+	Denied         []evidence.DeniedAsset
+	RequestedCount int
 }
 
 func (e *DeniedAssetsError) Error() string { return "one or more requested assets are unavailable" }

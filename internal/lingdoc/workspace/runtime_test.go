@@ -34,7 +34,7 @@ func newMembershipService(service *core.Service, repository core.Repository) *me
 func newTestHandler(db *gorm.DB, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService) *Handler {
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, shares, knowledge, delivery.NewFixedTemplateReader())
 	service := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(ProjectPorts{Authorizer: service, Projects: service, Context: service})
+	runtime.ConnectProjects(ProjectPorts{Authorizer: service, Resources: service, Projects: service, Context: service})
 	connectAggregateCapabilities(runtime, service)
 	deps := HandlerDependencies{
 		Projects:    service,

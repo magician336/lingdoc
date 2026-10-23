@@ -46,6 +46,7 @@ func clientFormContract() []struct {
 		{core.ErrConsentRequired, 422, "confirmation_required", "请明确核对范围并确认该操作。", false},
 		{core.ErrEvidenceIncomplete, 422, "evidence_incomplete", "证据卡、原文定位或当前版本尚不完整。", false},
 		{core.ErrOutcomeUnknown, 409, "outcome_unknown", "原操作结果尚待核对，请勿重复执行。", false},
+		{core.ErrPermissionSchemaUnavailable, 500, "permission_schema_unavailable", "权限服务未正确配置，请联系管理员。", false},
 		{core.ErrDependencyUnavailable, 503, "dependency_unavailable", "资料或模型能力暂不可用。", true},
 		{core.ErrSemanticBatchStagingRequired, 400, "invalid_request", "关联主张与证据卡请分两次正式变更：先应用主张，再按新主张版本复核并提交证据卡变更。", false},
 		{core.ErrRevisionNotStable, 422, "context_unstable", "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。", false},

@@ -20,9 +20,25 @@ func init() {
 type stubAuthTokenRepo struct {
 	tokens         map[string]*types.AuthToken
 	revokedUserIDs []string
+	createCalls    int
+	failCreateAt   int
+	createErr      error
 }
 
-func (s *stubAuthTokenRepo) CreateToken(context.Context, *types.AuthToken) error { return nil }
+func (s *stubAuthTokenRepo) CreateToken(_ context.Context, token *types.AuthToken) error {
+	s.createCalls++
+	if s.createErr != nil && (s.failCreateAt == 0 || s.createCalls == s.failCreateAt) {
+		return s.createErr
+	}
+	if s.failCreateAt > 0 && s.createCalls == s.failCreateAt {
+		return errors.New("injected token persistence failure")
+	}
+	if s.tokens == nil {
+		s.tokens = map[string]*types.AuthToken{}
+	}
+	s.tokens[token.Token] = token
+	return nil
+}
 func (s *stubAuthTokenRepo) GetTokenByValue(_ context.Context, tokenValue string) (*types.AuthToken, error) {
 	token, ok := s.tokens[tokenValue]
 	if !ok {
@@ -41,9 +57,15 @@ func (s *stubAuthTokenRepo) GetTokenByID(_ context.Context, id string) (*types.A
 func (s *stubAuthTokenRepo) GetTokensByUserID(context.Context, string) ([]*types.AuthToken, error) {
 	return nil, nil
 }
-func (s *stubAuthTokenRepo) UpdateToken(context.Context, *types.AuthToken) error { return nil }
-func (s *stubAuthTokenRepo) DeleteToken(context.Context, string) error           { return nil }
-func (s *stubAuthTokenRepo) DeleteExpiredTokens(context.Context) error           { return nil }
+func (s *stubAuthTokenRepo) UpdateToken(_ context.Context, token *types.AuthToken) error {
+	if s.tokens == nil {
+		s.tokens = map[string]*types.AuthToken{}
+	}
+	s.tokens[token.Token] = token
+	return nil
+}
+func (s *stubAuthTokenRepo) DeleteToken(context.Context, string) error { return nil }
+func (s *stubAuthTokenRepo) DeleteExpiredTokens(context.Context) error { return nil }
 func (s *stubAuthTokenRepo) RevokeTokensByUserID(_ context.Context, userID string) error {
 	s.revokedUserIDs = append(s.revokedUserIDs, userID)
 	return nil
@@ -146,6 +168,56 @@ func TestValidateTokenRejectsRefreshToken(t *testing.T) {
 	_, _, err = svc.ValidateToken(ctx, legacyRefresh)
 	if err == nil || err.Error() != "refresh token cannot be used as access token" {
 		t.Fatalf("ValidateToken(legacy refresh in DB) err = %v, want refresh rejection", err)
+	}
+}
+
+func TestGenerateTokensMintsUniqueSameSecondJWTsAndRequiresPersistence(t *testing.T) {
+	ctx := context.Background()
+	user := &types.User{ID: "user-1", Email: "user@example.invalid", TenantID: 1}
+	tokenRepo := &stubAuthTokenRepo{tokens: map[string]*types.AuthToken{}}
+	svc := newAuthTestUserService(tokenRepo)
+
+	// Start just after a Unix-second boundary so both quick issuances exercise
+	// the exact same iat value that previously made JWT strings collide.
+	nextSecond := time.Now().Truncate(time.Second).Add(time.Second + 25*time.Millisecond)
+	time.Sleep(time.Until(nextSecond))
+	firstAccess, _, err := svc.generateTokensForTenant(ctx, user, 1)
+	if err != nil {
+		t.Fatalf("first token pair: %v", err)
+	}
+	secondAccess, _, err := svc.generateTokensForTenant(ctx, user, 1)
+	if err != nil {
+		t.Fatalf("second token pair: %v", err)
+	}
+	firstClaims := jwt.MapClaims{}
+	if _, _, err := new(jwt.Parser).ParseUnverified(firstAccess, firstClaims); err != nil {
+		t.Fatal(err)
+	}
+	secondClaims := jwt.MapClaims{}
+	if _, _, err := new(jwt.Parser).ParseUnverified(secondAccess, secondClaims); err != nil {
+		t.Fatal(err)
+	}
+	if firstClaims["iat"] != secondClaims["iat"] {
+		t.Fatalf("test did not exercise same-second issuance: first iat=%v second iat=%v", firstClaims["iat"], secondClaims["iat"])
+	}
+	if firstAccess == secondAccess || firstClaims["jti"] == "" || firstClaims["jti"] == secondClaims["jti"] {
+		t.Fatalf("same-second access tokens are not uniquely identified: first=%v second=%v", firstClaims["jti"], secondClaims["jti"])
+	}
+	for _, token := range []string{firstAccess, secondAccess} {
+		if _, _, err := svc.ValidateToken(ctx, token); err != nil {
+			t.Fatalf("issued access token did not validate: %v", err)
+		}
+	}
+
+	failingRepo := &stubAuthTokenRepo{tokens: map[string]*types.AuthToken{}, failCreateAt: 2}
+	failingService := newAuthTestUserService(failingRepo)
+	if access, refresh, err := failingService.generateTokensForTenant(ctx, user, 1); err == nil || access != "" || refresh != "" {
+		t.Fatalf("token persistence failure returned credentials: access=%q refresh=%q err=%v", access, refresh, err)
+	}
+	for _, token := range failingRepo.tokens {
+		if token.TokenType == "access_token" && !token.IsRevoked {
+			t.Fatalf("orphan access token left active after refresh persistence failure: %+v", token)
+		}
 	}
 }
 

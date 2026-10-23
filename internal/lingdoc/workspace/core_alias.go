@@ -41,6 +41,10 @@ type BindTemplateCopyRuleSetInput = core.BindTemplateCopyRuleSetInput
 type TemplateSectionChange = core.TemplateSectionChange
 type CoreProjectAuthorizer = core.ProjectAuthorizer
 type AuthorizationMode = core.AuthorizationMode
+type AuthorizationAction = core.AuthorizationAction
+type ResourceKind = core.ResourceKind
+type ResourceRef = core.ResourceRef
+type ResourceAuthorizationDecision = core.ResourceAuthorizationDecision
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
@@ -72,15 +76,25 @@ const (
 	AuthorizationModeLog      = core.AuthorizationModeLog
 	AuthorizationModeEnforce  = core.AuthorizationModeEnforce
 	AuthorizationModeRollback = core.AuthorizationModeRollback
+	AuthorizationResearch     = core.AuthorizationResearch
+	ResourceChapter           = core.ResourceChapter
+	ResourceAsset             = core.ResourceAsset
 )
 
 var (
-	ErrNotFound            = core.ErrNotFound
-	ErrInvalidRequest      = core.ErrInvalidRequest
-	ErrInvalidState        = core.ErrInvalidState
-	ErrVersionConflict     = core.ErrVersionConflict
-	ErrDependencyDecided   = core.ErrDependencyDecided
-	ErrIdempotencyConflict = core.ErrIdempotencyConflict
-	ErrRequestInProgress   = core.ErrRequestInProgress
-	ErrSourceUnavailable   = core.ErrSourceUnavailable
+	ErrNotFound                    = core.ErrNotFound
+	ErrInvalidRequest              = core.ErrInvalidRequest
+	ErrInvalidState                = core.ErrInvalidState
+	ErrVersionConflict             = core.ErrVersionConflict
+	ErrDependencyDecided           = core.ErrDependencyDecided
+	ErrIdempotencyConflict         = core.ErrIdempotencyConflict
+	ErrRequestInProgress           = core.ErrRequestInProgress
+	ErrSourceUnavailable           = core.ErrSourceUnavailable
+	ErrPermissionSchemaUnavailable = core.ErrPermissionSchemaUnavailable
 )
+
+func NewChapterResourceRef(id string) (ResourceRef, error) { return core.NewChapterResourceRef(id) }
+func NewAssetResourceRef(id string) (ResourceRef, error)   { return core.NewAssetResourceRef(id) }
+func NewAssetResourceRefForChapter(id, chapterID string) (ResourceRef, error) {
+	return core.NewAssetResourceRefForChapter(id, chapterID)
+}

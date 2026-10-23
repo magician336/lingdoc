@@ -6735,6 +6735,19 @@
                       },
                       "request_id": "req-demo"
                     }
+                  },"asset_not_found": {
+                    "summary": "全部资料不存在或不属于当前项目（反枚举收敛）",
+                    "value": {
+                      "error": {
+                        "code": "asset_not_found",
+                        "message": "资料不存在或不属于当前项目。",
+                        "retryable": false,
+                        "details": {
+                          "denied": [{"asset_id": "a-unbound", "reason": "not_found"}]
+                        }
+                      },
+                      "request_id": "req-demo"
+                    }
                   }
                 }
               }
@@ -6862,6 +6875,22 @@
                               "asset_id": "a-bound-but-unauthorized",
                               "reason": "not_authorized"
                             }
+                          ]
+                        }
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },"asset_access_denied": {
+                    "summary": "资料拒绝原因混合或只有部分资料不存在；整次拒绝",
+                    "value": {
+                      "error": {
+                        "code": "asset_access_denied",
+                        "message": "请求中存在未获授权、不可用或不存在的资料，未开始处理。",
+                        "retryable": false,
+                        "details": {
+                          "denied": [
+                            {"asset_id": "a-unbound", "reason": "not_found"},
+                            {"asset_id": "a-processing", "reason": "not_ready"}
                           ]
                         }
                       },
@@ -41108,6 +41137,11 @@
       "RetrieveSources": {
         "type": "object",
         "properties": {
+          "chapter_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "可选的当前章节上下文。服务端在当前项目事务中重验章节归属与成员 Scope；提供该字段本身不授予资料或章节权限。"
+          },
           "query": {
             "type": "string",
             "minLength": 1

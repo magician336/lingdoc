@@ -3,8 +3,9 @@ package workspacecore
 import (
 	"context"
 	"errors"
-	"github.com/Tencent/WeKnora/internal/types"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func TestTypedRunnerExtendedMutationStillRequiresHumanDecision(t *testing.T) {
@@ -42,6 +43,19 @@ func TestTypedExtendedAuthorizationRetainsResourceWithoutCapabilityParsing(t *te
 	}
 	if len(policy.projects) != 1 || policy.projects[0] != request {
 		t.Fatalf("requests=%+v", policy.projects)
+	}
+}
+
+func TestAuthorizeRequestCommitsDenyAuditBeforeReturningDecision(t *testing.T) {
+	audit := &auditSinkStub{}
+	service := NewServiceWithAudit(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit)
+	request := authorizationRequest(Actor{TenantID: 1, UserID: "missing"}, "p", AuthorizationRead, "")
+	err := service.AuthorizeRequest(context.Background(), request)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("authorization result = %v, want not found", err)
+	}
+	if len(audit.events) != 1 || audit.events[0].Decision != "deny" || audit.events[0].Capability != "read" {
+		t.Fatalf("typed authorization audit = %+v, want one committed deny decision", audit.events)
 	}
 }
 

@@ -48,7 +48,7 @@ type originalFetcher interface {
 // the existing WeKnora services. It never creates a second RAG/index pipeline.
 type ResearchAdapter struct {
 	db        *gorm.DB
-	projects  core.CapabilityAuthorizer
+	projects  core.AssetUseAuthorizer
 	sources   SourceApplicationService
 	shares    interfaces.KBShareService
 	knowledge interfaces.KnowledgeService
@@ -56,7 +56,7 @@ type ResearchAdapter struct {
 	fetcher   originalFetcher
 }
 
-func NewResearchAdapter(db *gorm.DB, projects core.CapabilityAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *ResearchAdapter {
+func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *ResearchAdapter {
 	return &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
 }
 func researchCallerContext(ctx context.Context, actor core.Actor) context.Context {
@@ -79,31 +79,50 @@ func researchTextHash(text string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (r *ResearchAdapter) ReadResearchSource(ctx context.Context, actor core.Actor, projectID, sourceID string) (core.ResearchSource, error) {
+	return r.readResearchSource(ctx, actor, projectID, "", sourceID)
+}
+
+// ReadResearchSourceForChapter reads one research source under an explicit
+// chapter scope. The function scope is checked before the excerpt is fetched.
+func (r *ResearchAdapter) ReadResearchSourceForChapter(ctx context.Context, actor core.Actor, projectID, chapterID, sourceID string) (core.ResearchSource, error) {
+	if strings.TrimSpace(chapterID) == "" || strings.TrimSpace(chapterID) != chapterID {
+		return core.ResearchSource{}, core.ErrInvalidRequest
+	}
+	return r.readResearchSource(ctx, actor, projectID, chapterID, sourceID)
+}
+
+func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Actor, projectID, chapterID, sourceID string) (core.ResearchSource, error) {
 	if r.db == nil || r.sources == nil || r.projects == nil {
 		return core.ResearchSource{}, core.ErrDependencyUnavailable
 	}
 	ctx = researchCallerContext(ctx, actor)
-	source, err := r.sources.GetSource(ctx, actor, projectID, sourceID)
-	if err != nil {
-		return core.ResearchSource{}, err
-	}
 	assets, err := r.sources.ListAssets(ctx, actor, projectID)
 	if err != nil {
 		return core.ResearchSource{}, err
 	}
+	var chunk types.Chunk
+	if err = r.db.WithContext(ctx).Where("id = ?", sourceID).First(&chunk).Error; err != nil {
+		return core.ResearchSource{}, core.ErrSourceUnavailable
+	}
 	var asset evidence.Asset
 	for _, item := range assets {
-		if item.ID == source.AssetID {
+		if item.KnowledgeID == chunk.KnowledgeID {
 			asset = item
 			break
 		}
 	}
-	if asset.ID == "" || asset.AssetRevision != source.AssetRevision {
+	if asset.ID == "" {
 		return core.ResearchSource{}, core.ErrSourceUnavailable
 	}
-	var chunk types.Chunk
-	if err = r.db.WithContext(ctx).Where("id = ? AND knowledge_id = ?", sourceID, asset.KnowledgeID).First(&chunk).Error; err != nil {
+	if err = r.authorizeAssetScope(ctx, actor, projectID, chapterID, []string{asset.ID}); err != nil {
 		return core.ResearchSource{}, err
+	}
+	source, err := r.sources.GetSource(ctx, actor, projectID, sourceID)
+	if err != nil {
+		return core.ResearchSource{}, err
+	}
+	if source.AssetID != asset.ID || asset.AssetRevision != source.AssetRevision {
+		return core.ResearchSource{}, core.ErrSourceUnavailable
 	}
 	stable := false
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
@@ -133,6 +152,18 @@ func (r *ResearchAdapter) modelUseAllowed(ctx context.Context, actor core.Actor,
 }
 
 func (r *ResearchAdapter) CheckAssetScope(ctx context.Context, actor core.Actor, projectID string, assetIDs []string) ([]core.ProjectAssetVersion, error) {
+	return r.checkAssetScope(ctx, actor, projectID, "", assetIDs)
+}
+
+// CheckAssetScopeForChapter checks the asset scope under an explicit chapter.
+func (r *ResearchAdapter) CheckAssetScopeForChapter(ctx context.Context, actor core.Actor, projectID, chapterID string, assetIDs []string) ([]core.ProjectAssetVersion, error) {
+	if strings.TrimSpace(chapterID) == "" || strings.TrimSpace(chapterID) != chapterID {
+		return nil, core.ErrInvalidRequest
+	}
+	return r.checkAssetScope(ctx, actor, projectID, chapterID, assetIDs)
+}
+
+func (r *ResearchAdapter) checkAssetScope(ctx context.Context, actor core.Actor, projectID, chapterID string, assetIDs []string) ([]core.ProjectAssetVersion, error) {
 	if r.projects == nil || r.sources == nil {
 		return nil, core.ErrDependencyUnavailable
 	}
@@ -154,12 +185,65 @@ func (r *ResearchAdapter) CheckAssetScope(ctx context.Context, actor core.Actor,
 	out := make([]core.ProjectAssetVersion, 0, len(sorted))
 	for _, id := range sorted {
 		asset, ok := allowed[id]
-		if !ok || asset.ProcessingState != evidence.AssetStateReady {
+		if !ok {
 			return nil, core.ErrSourceUnavailable
 		}
 		out = append(out, core.ProjectAssetVersion{AssetID: id, AssetRevision: asset.AssetRevision})
 	}
+	if err = r.authorizeAssetScope(ctx, actor, projectID, chapterID, sorted); err != nil {
+		return nil, err
+	}
+	for _, id := range sorted {
+		if allowed[id].ProcessingState != evidence.AssetStateReady {
+			return nil, core.ErrSourceUnavailable
+		}
+	}
 	return out, nil
+}
+
+// authorizeAssetScope asks the project's own resource batch authorization
+// whether these assets may be used in this scope, and with which chapter.
+//
+// The batch is one decision for the whole set: a caller that checked them one
+// by one would learn the same answer several times and could disagree with
+// itself halfway through.
+func (r *ResearchAdapter) authorizeAssetScope(ctx context.Context, actor core.Actor, projectID, chapterID string, assetIDs []string) error {
+	if r.projects == nil {
+		return core.ErrPermissionSchemaUnavailable
+	}
+	refs := make([]ResourceRef, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		var ref ResourceRef
+		var err error
+		if chapterID == "" {
+			ref, err = NewAssetResourceRef(id)
+		} else {
+			ref, err = NewAssetResourceRefForChapter(id, chapterID)
+		}
+		if err != nil {
+			return core.ErrInvalidRequest
+		}
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return core.ErrInvalidRequest
+	}
+	decisions, err := r.projects.AuthorizeResourceBatch(ctx, actor, projectID, AuthorizationResearch, refs)
+	if err != nil {
+		return err
+	}
+	if len(decisions) != len(refs) {
+		return core.ErrPermissionSchemaUnavailable
+	}
+	for i, decision := range decisions {
+		if decision.Resource != refs[i] {
+			return core.ErrPermissionSchemaUnavailable
+		}
+		if !decision.Allowed {
+			return core.ErrSourceUnavailable
+		}
+	}
+	return nil
 }
 func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, query string) ([]core.ResearchResult, string, error) {
 	if r.projects == nil || r.sources == nil {
@@ -175,12 +259,12 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 	}
 	out := []core.ResearchResult{}
 	if len(task.AssetIDs) > 0 {
-		sources, err := r.sources.RetrieveSources(ctx, actor, projectID, RetrieveSourcesInput{Query: query, AssetIDs: task.AssetIDs})
+		sources, err := r.sources.RetrieveSources(ctx, actor, projectID, RetrieveSourcesInput{Query: query, AssetIDs: task.AssetIDs, ChapterID: task.ChapterID})
 		if err != nil {
 			return out, "real", err
 		}
 		for _, source := range sources {
-			current, err := r.ReadResearchSource(ctx, actor, projectID, source.ID)
+			current, err := r.readResearchSource(ctx, actor, projectID, task.ChapterID, source.ID)
 			if err != nil {
 				return out, "real", err
 			}
