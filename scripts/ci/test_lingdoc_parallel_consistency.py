@@ -51,29 +51,6 @@ def _faces(*records):
     return manifest.validate_records(list(records))
 
 
-
-def _drop_transfer_record(source: str, path: str) -> str:
-    """Remove the handover record for ``path`` from a manifest source.
-
-    A manifest that records a handover has to stay consistent with its path
-    sets, so a fixture that moves a path has to move its record too.
-    """
-    lines = source.split("\n")
-    out: list[str] = []
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        if line.strip() == "{" and index + 1 < len(lines) and f'"{path}"' in lines[index + 1]:
-            index += 1
-            while index < len(lines) and lines[index].strip() != "},":
-                index += 1
-            index += 1
-            continue
-        out.append(line)
-        index += 1
-    return "\n".join(out)
-
-
 class StatusRegressionTests(unittest.TestCase):
     """A claimed or finished face may not be undone silently."""
 
@@ -486,11 +463,6 @@ class CommittedManifestTests(unittest.TestCase):
             '("internal/lingdoc/workspacecore/runtime_control.go", "file"),',
             '("internal/base_only_path.go", "file"),',
         )
-        # The fabricated baseline must still be a valid manifest: the handover
-        # record for the path it replaces goes with it, because that is what
-        # the path was handed over for.
-        baseline_source = _drop_transfer_record(
-            baseline_source, "internal/lingdoc/workspacecore/runtime_control.go")
 
         def fake_source(root, ref, path):
             if ref == "HEAD":

@@ -144,235 +144,6 @@ RESERVED_PATHS = (
     ("frontend/src/views/lingdoc/Workspace.vue", "file"),
 )
 
-#: Every path one face handed to another.
-#:
-#: A path has exactly one owner at any time, so a handover is one-way and
-#: one-time: the receiving face owns the path afterwards, and the
-#: handing-over face no longer claims it.  This record is the trail of that
-#: move, so the ownership history of a path is readable from one place instead
-#: of from the prose in the summaries.
-#:
-#: The loader checks the record against the two path sets -- see
-#: ``_check_transfers``.
-TRANSFERS: tuple[Mapping[str, Any], ...] = (
-    {
-        "path": "frontend/src/api/lingdoc/mainlineChanges.test.js",
-        "from": "PF-1 G6 运维与试用前端",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 384,
-        "date": "2026-10-23",
-        "why": "授权判定进入运行观测会影响既有客户端断言",
-    },
-    {
-        "path": "frontend/src/views/lingdoc/ImpactOpsPanel.test.js",
-        "from": "PF-1 G6 运维与试用前端",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 384,
-        "date": "2026-10-23",
-        "why": "同上",
-    },
-    {
-        "path": "frontend/src/views/lingdoc/ImpactOpsPanel.vue",
-        "from": "PF-1 G6 运维与试用前端",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 384,
-        "date": "2026-10-23",
-        "why": "G6 前端独立化，告警规则可读回与停用要落在界面上",
-    },
-    {
-        "path": "frontend/src/views/lingdoc/runtimeMetrics.test.ts",
-        "from": "PF-1 G6 运维与试用前端",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 384,
-        "date": "2026-10-23",
-        "why": "同上",
-    },
-    {
-        "path": "frontend/src/views/lingdoc/runtimeMetrics.ts",
-        "from": "PF-1 G6 运维与试用前端",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 384,
-        "date": "2026-10-23",
-        "why": "运行指标要能显示放行 / 拒绝",
-    },
-    {
-        "path": "internal/container/lingdoc_test.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 382,
-        "date": "2026-10-23",
-        "why": "生产装配的路由数量断言随 PF-8 的新端点变化",
-    },
-    {
-        "path": "internal/lingdoc/membership/fixture_test.go",
-        "from": "PF-3 审计告警接线与 AuditEvent 字段",
-        "to": "PF-7 审计链完整性",
-        "ticket": 415,
-        "date": "2026-10-23",
-        "why": "同上（镜像行模型）",
-    },
-    {
-        "path": "internal/lingdoc/membership/policy.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-9 Owner 冻结归因",
-        "ticket": 420,
-        "date": "2026-10-23",
-        "why": "同上（读出口的能力判定）",
-    },
-    {
-        "path": "internal/lingdoc/membership/results.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-9 Owner 冻结归因",
-        "ticket": 420,
-        "date": "2026-10-23",
-        "why": "同上",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/model.go",
-        "from": "PF-3 审计告警接线与 AuditEvent 字段",
-        "to": "PF-7 审计链完整性",
-        "ticket": 415,
-        "date": "2026-10-23",
-        "why": "PF-7 要给 AuditEvent 补字段的结构体与行模型",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/owner_unavailable.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-9 Owner 冻结归因",
-        "ticket": 420,
-        "date": "2026-10-23",
-        "why": "PF-9 要改 Owner 专属能力的枚举与判定",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/runtime_control.go",
-        "from": "PF-3 审计告警接线与 AuditEvent 字段",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 383,
-        "date": "2026-10-23",
-        "why": "PF-8 的运行控制回退动作要落在同一个文件里",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/service.go",
-        "from": "PF-3 审计告警接线与 AuditEvent 字段",
-        "to": "PF-7 审计链完整性",
-        "ticket": 415,
-        "date": "2026-10-23",
-        "why": "同上（写入与读回两处）",
-    },
-    {
-        "path": "internal/router/lingdoc_routes_test.go",
-        "from": "PF-2 G7 AI 动作族",
-        "to": "PF-8 G6 告警规则与运行控制回退",
-        "ticket": 382,
-        "date": "2026-10-23",
-        "why": "PF-8 在这里加了一条说明新端点不改变路由数量的注释",
-    },
-    {
-        "path": "docs/08-本轮实施方案/contracts/openapi.json",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "frontend/src/api/lingdoc/workspace.ts",
-        "from": "PF-2 G7 AI 动作族",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "frontend/src/views/lingdoc/ProjectMembers.vue",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspace/client_form_contract_test.go",
-        "from": "PF-2 G7 AI 动作族",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspace/http.go",
-        "from": "PF-2 G7 AI 动作族",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspace/candidate_oneconn_test.go",
-        "from": "PF-2 G7 AI 动作族",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "PR #149 给 ProjectPorts 增了 Resources 字段，这个夹具是它的构造点",
-    },
-    {
-        "path": "internal/lingdoc/workspace/agent_model.go",
-        "from": "PF-5 Agent research purpose",
-        "to": "PF-10 Beta 首版验收证据生产",
-        "ticket": 465,
-        "date": "2026-10-23",
-        "why": "模型调用的唯一出口；PF-10 装模型调用账本时改了它（随 PR #474 合入 main）",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/agent_action_service.go",
-        "from": "PF-5 Agent research purpose",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/agent_research_model.go",
-        "from": "PF-5 Agent research purpose",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/context_ports_test.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/migrated_context_ports.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/permission_policy.go",
-        "from": "PF-8 G6 告警规则与运行控制回退",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-    {
-        "path": "internal/lingdoc/workspacecore/typed_contracts.go",
-        "from": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
-        "to": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "ticket": 466,
-        "date": "2026-10-23",
-        "why": "G5 成员范围（Spec #129 / PR #149）改到这条路径",
-    },
-)
-
 # The parallel work faces.  Declarative data -- see the module docstring.
 PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
     {
@@ -444,14 +215,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/selected_rewrite_context_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_context.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_unsupported_reference_test.go", "file"),
-            # 2026-10-23: 移交给 PF-11（G5 角色 Scope 与成员生命周期 / #129，面票 #466）：
-            # PR #149 给 ProjectPorts 增了 Resources 字段，这个夹具是它的构造点；
-            # 登记处的重叠检查是路径级的，改了别面的路径就必须显式移交。
-            # 移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。
+            ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
+            # These two files are changed by this branch but were left out of
+            # the path set, so their edits were not covered by the overlap
+            # check at all.  Claimed here for that reason only.
+            ("internal/lingdoc/workspace/client_form_contract_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_inherited_sources_test.go", "file"),
             # The lifecycle-stage / validity split gets its own assertion file.
             ("internal/lingdoc/workspace/selected_rewrite_lifecycle_test.go", "file"),
+            ("internal/lingdoc/workspace/http.go", "file"),
             ("internal/lingdoc/workspace/generation.go", "file"),
             ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
@@ -491,6 +264,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/api/lingdoc/generationAction.ts", "file"),
             ("frontend/src/api/lingdoc/generationAction.test.ts", "file"),
             ("frontend/src/api/lingdoc/candidateAdoption.ts", "file"),
+            ("frontend/src/api/lingdoc/workspace.ts", "file"),
             ("frontend/src/api/lingdoc/writingAction.ts", "file"),
             ("frontend/src/components/LingDocCandidateAdoptionDialog.vue", "file"),
             ("frontend/src/components/LingDocCandidateAdoptionDialog.test.js", "file"),
@@ -522,9 +296,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交。"
             "移交是单向的，本面不再声称拥有它（本面路径集 55 → 54 条）。"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
-
-            "**2026-10-23 移交给 PF-11**（frontend/src/api/lingdoc/workspace.ts、internal/lingdoc/workspace/client_form_contract_test.go、internal/lingdoc/workspace/http.go、internal/lingdoc/workspace/candidate_oneconn_test.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
-            "⇒ 本面路径集 54 → 50 条。"
         ),
     },
     {
@@ -625,6 +396,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/context_revision.go", "file"),
             ("internal/lingdoc/workspacecore/member_records.go", "file"),
             ("internal/lingdoc/workspacecore/human_decision.go", "file"),
+            ("internal/lingdoc/workspacecore/migrated_context_ports.go", "file"),
             ("internal/lingdoc/workspacecore/project_archive.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
             ("internal/lingdoc/workspacecore/membership.go", "file"),
@@ -645,6 +417,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # and contracts/openapi.json). PF-8 only needed them to wire
             # #382/#383; that work is merged, so this face owns them again.
             ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
@@ -666,6 +441,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/composables/useOwnerAvailability.ts", "file"),
             ("frontend/src/composables/useOwnerAvailability.test.ts", "file"),
             ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
+            ("frontend/src/views/lingdoc/ProjectMembers.vue", "file"),
             ("frontend/src/views/lingdoc/ProjectArchivePanel.vue", "file"),
             ("frontend/src/views/lingdoc/ProjectArchivePanel.test.ts", "file"),
             ("frontend/src/views/lingdoc/workspaceOwnerFreeze.test.js", "file"),
@@ -737,8 +513,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
             "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
             "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
-            "**本面不释放其余路径**：done 状态仍占用剩下的 39 条路径，后续面不要重复声明——"
-            "2026-10-23 按 §1.3 的显式移交交出去五条给 PF-11（见下），交出的是这五条、不是全部。"
+            "**本面不释放路径**：done 状态仍占用这 44 条路径，后续面不要重复声明。"
             "**2026-10-23 经维护者裁决，PF-8 先走，本面让出四个路径** ——"
             "internal/lingdoc/workspacecore/service_facade.go、"
             "internal/lingdoc/workspacecore/typed_contracts.go、"
@@ -762,9 +537,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**将来本面若要动那四个路径或这一条，需人工解一次冲突**"
             "（PF-4 与 PF-8 都在授权判定附近改过代码，"
             "冲突会显式报出来，不会静默覆盖）。"
-
-            "**2026-10-23 移交给 PF-11**（docs/08-本轮实施方案/contracts/openapi.json、frontend/src/views/lingdoc/ProjectMembers.vue、internal/lingdoc/workspacecore/context_ports_test.go、internal/lingdoc/workspacecore/migrated_context_ports.go、internal/lingdoc/workspacecore/typed_contracts.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
-            "⇒ 本面路径集 44 → 39 条。"
         ),
     },
     {
@@ -774,6 +546,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
+            ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
+            ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
             # The 研究提案 contract: the model-output contract that owns the
             # shape of a research proposal.  It is a module of its own,
             # alongside the two model-output contracts the agent surface
@@ -800,42 +574,50 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "「research purpose」在词汇上不存在：purpose 只有 conversation 与 rule_suggestion 两种"
-            "取值，change_draft 是模型输出的键而不是 purpose，所以本面缺的是「一个可被服务端校验的研究提案契约」，不是执行侧——Re"
-            "searchTask / ResearchRun / ResearchResult / SearchResearch / 导入候选都已齐备。"
-            "现状是 HostAgentModel.Reply 按 request.Agent == \"research_agent\" 换一段提示词，但模"
-            "型交回来的 task_card 没有任何解码器校验，「推荐查询词与来源并解释理由与缺口」因此没有形状、也没有边界。"
-            "2026-10-22 实测更正了两条过时断言：上下文包后端已不在 g2_model.go（该文件不存在），它现在住在 workspace/a"
-            "gent_model.go 与 workspacecore 的 context_ports.go、agent_research_model."
-            "go；不必等 #124 的前端消费（PF-6）。2026-10-22 由 magician336 认领。"
-            "同日补交一张 G 线 Spec #393（调研智能体的研究提案，文档 docs/06-灵档产品开发规划/50-Spec-调研智能体研究提案."
-            "md）：研究提案的形状由一份服务端契约拥有并校验，候选来源必须可追溯到该轮的授权上下文，提案永远是候选（不自动成为调研任务、导入候选、证据卡"
-            "或研究主张）。路径集同日从 3 条扩到 9 条（新增研究提案契约模块与前端四处），因为该 Spec 的答案要真正被看到。"
-            "2026-10-23 再扩到 11 条：#404 的词汇归一把两个文件里的裸字符串换成了服务端常量——internal/lingdoc/wo"
-            "rkspacecore/change_draft_action.go（助手草稿校验的两处 agent 比较）与 internal/lingd"
-            "oc/workspace/template_governance_runtime.go（rule_suggestion 用途的两处 agen"
-            "t / purpose 比较）。这两个文件原先不被任何面拥有，所以没有所有权冲突；登记进来是为了让路径集与实际改动一致，路径图那一份副本同步"
-            "改成 11 条。2026-10-23 复审后再扩到 12 条：新增 frontend/src/api/lingdoc/agentApi.ty"
-            "pes.test.ts（前端类型层用例，防止 task_card 被类型成一份更严的形状、从而对助手轮次谎报）；路径图那一份副本同步改成 1"
-            "2 条。2026-10-23 完成本面：四张纵切票 #401（一条最小研究提案纵切）、#402（候选来源必须可追溯）、#403（理由与缺口）"
-            "、#404（三态收口与用途派生）随 PR #417 合入 main（合并提交 1b784a4f），Spec 票 #393 与四张施工票随之关"
-            "闭，面票 #329 也随交面 PR 关闭。"
-            "交付内容：研究提案的形状由一份服务端契约独占（提示词从它渲染，助手那张同名卡片按另一张卡渲染）、候选来源必须对得上该轮授权上下文（对不上即拒"
-            "、不降级）、理由与缺口由结构强制、坏提案响亮失败但不连累那一轮的问答复、用途由服务端按会话 agent 派生（客户端不新增请求字段，幂等摘要"
-            "钉死不变）。两轴 code-review（Spec 轴 / Standards 轴）都判 FAIL，12 条发现与 3 处记账全部修完，按最"
-            "终代码复审判 PASS（12 条中 11 已解决、1 条部分、3 处记账全解决、无新增 P0/P1），复审后小修再修 5 条。"
+            "「research purpose」在词汇上不存在：purpose 只有 conversation 与 rule_suggestion 两种取值，"
+            "change_draft 是模型输出的键而不是 purpose，"
+            "所以本面缺的是「一个可被服务端校验的研究提案契约」，"
+            "不是执行侧——ResearchTask / ResearchRun / ResearchResult / SearchResearch / 导入候选都已齐备。"
+            "现状是 HostAgentModel.Reply 按 request.Agent == \"research_agent\" 换一段提示词，"
+            "但模型交回来的 task_card 没有任何解码器校验，"
+            "「推荐查询词与来源并解释理由与缺口」因此没有形状、也没有边界。"
+            "2026-10-22 实测更正了两条过时断言："
+            "上下文包后端已不在 g2_model.go（该文件不存在），"
+            "它现在住在 workspace/agent_model.go 与 workspacecore 的 context_ports.go、agent_research_model.go；"
+            "不必等 #124 的前端消费（PF-6）。"
+            "2026-10-22 由 magician336 认领。"
+            "同日补交一张 G 线 Spec #393（调研智能体的研究提案，文档 "
+            "docs/06-灵档产品开发规划/50-Spec-调研智能体研究提案.md）："
+            "研究提案的形状由一份服务端契约拥有并校验，"
+            "候选来源必须可追溯到该轮的授权上下文，"
+            "提案永远是候选（不自动成为调研任务、导入候选、证据卡或研究主张）。"
+            "路径集同日从 3 条扩到 9 条（新增研究提案契约模块与前端四处），"
+            "因为该 Spec 的答案要真正被看到。"
+            "2026-10-23 再扩到 11 条：#404 的词汇归一把两个文件里的裸字符串"
+            "换成了服务端常量——internal/lingdoc/workspacecore/change_draft_action.go"
+            "（助手草稿校验的两处 agent 比较）与 internal/lingdoc/workspace/template_governance_runtime.go"
+            "（rule_suggestion 用途的两处 agent / purpose 比较）。这两个文件原先"
+            "不被任何面拥有，所以没有所有权冲突；登记进来是为了让路径集与实际"
+            "改动一致，路径图那一份副本同步改成 11 条。"
+            "2026-10-23 复审后再扩到 12 条：新增 frontend/src/api/lingdoc/agentApi.types.test.ts"
+            "（前端类型层用例，防止 task_card 被类型成一份更严的形状、从而对助手轮次谎报）；"
+            "路径图那一份副本同步改成 12 条。"
+            "2026-10-23 完成本面：四张纵切票 #401（一条最小研究提案纵切）、"
+            "#402（候选来源必须可追溯）、#403（理由与缺口）、#404（三态收口与用途派生）"
+            "随 PR #417 合入 main（合并提交 1b784a4f），Spec 票 #393 与四张施工票随之关闭，"
+            "面票 #329 也随交面 PR 关闭。"
+            "交付内容：研究提案的形状由一份服务端契约独占（提示词从它渲染，"
+            "助手那张同名卡片按另一张卡渲染）、候选来源必须对得上该轮授权上下文"
+            "（对不上即拒、不降级）、理由与缺口由结构强制、坏提案响亮失败但不连累那一轮的问答复、"
+            "用途由服务端按会话 agent 派生（客户端不新增请求字段，幂等摘要钉死不变）。"
+            "两轴 code-review（Spec 轴 / Standards 轴）都判 FAIL，12 条发现与 3 处记账全部修完，"
+            "按最终代码复审判 PASS（12 条中 11 已解决、1 条部分、3 处记账全解决、无新增 P0/P1），"
+            "复审后小修再修 5 条。"
             "验收矩阵 18 行全 PASS，引用的 26 个 Go 用例名与 11 条前端用例标题逐条复核零缺失。"
-            "**本面不释放其余路径**：done 状态仍占用剩下的 9 条路径，后续面不要重复声明；2026-10-23 按 §1.3 的显式移交交出去"
-            "三条（见下），交出的是这三条、不是全部。保持开放的：Spec #135 与 #125——本面只交付 research 能力里的「研究提案契约"
-            "」这一部分，未关闭；#124（上下文包前端消费）归 PF-6，其面票 #330 仍未认领；#385 / #386 是 PF-2 的残留票，与"
-            "本面无关。**2026-10-23 移交给 PF-10**（internal/lingdoc/workspace/agent_model.g"
-            "o）：模型调用的唯一出口，PF-10 装模型调用账本时改了它（随 PR #474 合入 main）；移交是单向的，本面不再声称拥有（记录见 "
-            "TRANSFERS）。**2026-10-23 移交给 PF-11**（internal/lingdoc/workspacecore/age"
-            "nt_action_service.go、internal/lingdoc/workspacecore/agent_research_mod"
-            "el.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，"
-            "本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
-            "⇒ 本面路径集 12 → 9 条（一条交给 PF-10、两条交给 PF-11）。"
-            ""
+            "**本面不释放路径**：done 状态仍占用这 12 条路径，后续面不要重复声明。"
+            "保持开放的：Spec #135 与 #125——本面只交付 research 能力里的"
+            "「研究提案契约」这一部分，未关闭；#124（上下文包前端消费）归 PF-6，"
+            "其面票 #330 仍未认领；#385 / #386 是 PF-2 的残留票，与本面无关。"
         ),
     },
     {
@@ -1106,9 +888,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/runtime_observation.go", "file"),
             ("internal/lingdoc/workspacecore/runtime_observation_test.go", "file"),
             # 拒绝的判定要带上「拒了什么能力」，所以授权策略包一层错误。
-            # 2026-10-23: 移交给 PF-11（G5 角色 Scope 与成员生命周期 / #129，面票 #466）：
-            # 登记处的重叠检查是路径级的；改了别面的路径就必须显式移交。
-            # 移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。
+            ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
             # 回退目标挂在控制项上，白名单加 rollback，事件加 capability 字段。
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             # 窄口多两个方法。
@@ -1209,9 +989,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（「切回已验证配置」等仍需领域写路径支持）。"
             "2026-10-23 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
-
-            "**2026-10-23 移交给 PF-11**（internal/lingdoc/workspacecore/permission_policy.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
-            "⇒ 本面路径集 28 → 27 条。"
         ),
     },
     {
@@ -1222,17 +999,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             # 从 PF-3 永久移交（3）：#415 要给 AuditEvent 补字段并让行模型与表列一致。
-            # 2026-10-23: 移交给 PF-11（G5 角色 Scope 与成员生命周期 / #129，面票 #466）：
-            # 登记处的重叠检查是路径级的；改了别面的路径就必须显式移交。
-            # 移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。
+            ("internal/lingdoc/workspacecore/model.go", "file"),
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
-            ("internal/container/lingdoc.go", "file"),
-            ("internal/lingdoc/workspacecore/model.go", "file"),
             # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
-            # PF-10 于 2026-10-23 借用本文件装模型调用账本（已随 PR #474 合入 main 并归还）；
-            # 该路径此后于 2026-10-23 移交给 PF-11（G5 角色 Scope 与成员生命周期 /
-            # #129，面票 #466），**路径所有权现归 PF-11**（记录见 TRANSFERS）。
+            # ⚠️ 借用记录在本面的 summary 里（PF-10 于 2026-10-23 借用本文件装模型调用账本，
+            # 合入 main 后归还）；**路径所有权仍归本面**。
+            ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
             ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
             ("migrations/sqlite/000054_lingdoc_audit_decision_fields.down.sql", "file"),
@@ -1247,27 +1020,28 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "本面从 PF-3 永久接过三条路径（workspacecore/model.go、workspacecore/service.go、memb"
-            "ership/fixture_test.go）——依据票 #415：AuditEvent 声明的字段要真落库、读侧角色过滤要生效，这三条是它"
-            "的实现落点。2026-10-23 永久移交，**不归还**（PF-3 已交面且不再需要它们）⇒ PF-3 路径集 17 → 14 条。"
-            "本面另含 #454（56-Spec，测试夹具与生产 schema 同源）：它的 Go 守护落 internal/database/、Pyth"
-            "on 守护落 scripts/ci/ —— 与 #415 合成一个面的机制理由是「同一条不变量（模型字段集合 == 表列集合）只有一个拥有者"
-            "」：56-Spec 决策 3 已指定守护落 internal/database/，若 #415 另在 workspacecore/ 写一份，"
-            "同一条不变量就有两个 module 各写一遍（ch05 信息泄漏）。交付 Spec 是既有的 #130，不新开。"
+            "本面从 PF-3 永久接过三条路径（workspacecore/model.go、workspacecore/service.go、"
+            "membership/fixture_test.go）——依据票 #415：AuditEvent 声明的字段要真落库、"
+            "读侧角色过滤要生效，这三条是它的实现落点。2026-10-23 永久移交，**不归还**"
+            "（PF-3 已交面且不再需要它们）⇒ PF-3 路径集 17 → 14 条。"
+            "本面另含 #454（56-Spec，测试夹具与生产 schema 同源）：它的 Go 守护落 "
+            "internal/database/、Python 守护落 scripts/ci/ —— 与 #415 合成一个面的"
+            "机制理由是「同一条不变量（模型字段集合 == 表列集合）只有一个拥有者」："
+            "56-Spec 决策 3 已指定守护落 internal/database/，若 #415 另在 workspacecore/ "
+            "写一份，同一条不变量就有两个 module 各写一遍（ch05 信息泄漏）。"
+            "交付 Spec 是既有的 #130，不新开。"
             "**迁移编号 000054 / 000133**：本面在登记处启用时即取用这一对号（main 最高 000132）。"
-            "**它们不许让出** —— 登记处棘轮（test_lingdoc_parallel_consistency 的 test_the_commi"
-            "tted_manifest_does_not_regress_from_main）禁止本分支删掉 main 已记录的路径，所以「让号」只能由"
-            "**尚未合并**的那一方改：PF-10（#465）因此把它的模型调用账本表改成 000055 / 000134。"
-            "**切分方案 §2.2 曾给 PF-8 预留 000055 / 000134**（回退记录落库用）——PF-8 已 done 且回退未落库 "
-            "⇒ 那个预留作废，现由 PF-10 使用；**PF-8 将来若要落库须重新取号**。施工时仍必须重新核对 origin/main 已占用的编号。"
+            "**它们不许让出** —— 登记处棘轮（test_lingdoc_parallel_consistency 的"
+            "test_the_committed_manifest_does_not_regress_from_main）禁止本分支删掉 main 已记录的路径，"
+            "所以「让号」只能由**尚未合并**的那一方改：PF-10（#465）因此把它的模型调用账本表"
+            "改成 000055 / 000134。**切分方案 §2.2 曾给 PF-8 预留 000055 / 000134**（回退记录落库用）——"
+            "PF-8 已 done 且回退未落库 ⇒ 那个预留作废，现由 PF-10 使用；**PF-8 将来若要落库须重新取号**。"
+            "施工时仍必须重新核对 origin/main 已占用的编号。"
             "#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
-            "**`internal/container/lingdoc.go` 的三段归属**：本面从 PF-4 永久持有它（#414 的 AuditS"
-            "ink 实现就在那里）→ 2026-10-23 PF-10（#465）在组合根装模型调用账本时借用它一处（按「owner 保持拥有、借用方落"
-            "地后归还」的先例）→ 随 PR #474 合入 main 后归还本面 ⇒ **该路径仍归本面**。"
-            "**2026-10-23 管理会话终裁，本面保留 owner**：PF-11（面票 #466，PR #149）改过 internal/con"
-            "tainer/lingdoc.go 与 internal/lingdoc/workspacecore/model.go 两条路径，按「已登记"
-            "且票面已写明 owner 的面优先保留 owner，后来的移交改为借用」，**这两条路径仍归本面**，PF-11 侧只记借用事实（lingd"
-            "oc.go 装成员生命周期相关装配、model.go 改角色 Scope 字段）⇒ 本面路径集 8 → 10 条。"
+            "**`internal/container/lingdoc.go` 被 PF-10 借用（2026-10-23）**：该路径归本面（#414 的 "
+            "AuditSink 实现就在那里），PF-10（#465）在组合根装模型调用账本时改了它一处。"
+            "按「owner 保持拥有、借用方落地后归还」的先例（PF-8 借 PF-4 的四个路径，落地后归还），"
+            "**该路径仍归本面，PF-10 合入 main 后归还**；PF-10 侧已记同一笔借用。"
         ),
     },
     {
@@ -1301,105 +1075,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "不是新设计。交付 Spec 是既有的 #127，不新开。"
             "已有原生边 #420 blocked_by #127、#421 blocked_by #127（③ 档验收未满足）："
             "依赖方向正确且上游契约已冻结 ⇒ 本面今天就能开工。"
-        ),
-    },
-    {
-        "name": "PF-11 G5 角色 Scope 与成员生命周期交付",
-        "issue": 466,
-        "issues": (129,),
-        "status": "done",
-        "claimed_by": "",
-        "paths": (
-            ("docs/06-灵档产品开发规划/16-术语表.md", "file"),
-            ("docs/06-灵档产品开发规划/26-Spec-G5角色Scope与成员生命周期.md", "file"),
-            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
-            ("docs/08-本轮实施方案/Spec-129-成员角色Scope生命周期验收矩阵.md", "file"),
-            ("docs/08-本轮实施方案/T129-验证报告.json", "file"),
-            ("frontend/src/api/lingdoc/sourceRetrievalContract.test.js", "file"),
-            ("frontend/src/api/lingdoc/workspace.ts", "file"),
-            ("frontend/src/views/lingdoc/ProjectMembers.vue", "file"),
-            ("frontend/src/views/lingdoc/collaborationState.test.js", "file"),
-            ("frontend/src/views/lingdoc/collaborationState.ts", "file"),
-            ("frontend/src/views/lingdoc/projectMembers.test.ts", "file"),
-            ("frontend/src/views/lingdoc/projectMembers.ts", "file"),
-            ("frontend/src/views/lingdoc/resourceScope.ts", "file"),
-            ("internal/application/service/user.go", "file"),
-            ("internal/application/service/user_auth_token_test.go", "file"),
-            ("internal/lingdoc/membership/invitation_lifecycle_test.go", "file"),
-            ("internal/lingdoc/membership/lifecycle.go", "file"),
-            ("internal/lingdoc/membership/resource_scope_test.go", "file"),
-            ("internal/lingdoc/workspace/agent_change_draft_edit_test.go", "file"),
-            ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
-            ("internal/lingdoc/workspace/client_form_contract_test.go", "file"),
-            ("internal/lingdoc/workspace/contracts.go", "file"),
-            ("internal/lingdoc/workspace/core_alias.go", "file"),
-            ("internal/lingdoc/workspace/delivery_gate_test.go", "file"),
-            ("internal/lingdoc/workspace/delivery_propagation_test.go", "file"),
-            ("internal/lingdoc/workspace/fault_injection_http_test.go", "file"),
-            ("internal/lingdoc/workspace/full_workflow_delivery_regression_test.go", "file"),
-            ("internal/lingdoc/workspace/http.go", "file"),
-            ("internal/lingdoc/workspace/http_test.go", "file"),
-            ("internal/lingdoc/workspace/project_ports.go", "file"),
-            ("internal/lingdoc/workspace/provenance_single_connection_test.go", "file"),
-            ("internal/lingdoc/workspace/research_adapter.go", "file"),
-            ("internal/lingdoc/workspace/research_adapter_test.go", "file"),
-            ("internal/lingdoc/workspace/research_provider_http_test.go", "file"),
-            ("internal/lingdoc/workspace/runtime_test.go", "file"),
-            ("internal/lingdoc/workspace/source_runtime_gorm.go", "file"),
-            ("internal/lingdoc/workspace/source_service.go", "file"),
-            ("internal/lingdoc/workspace/source_service_test.go", "file"),
-            ("internal/lingdoc/workspace/template_governance_adapter_test.go", "file"),
-            ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
-            ("internal/lingdoc/workspacecore/agent_action_service_test.go", "file"),
-            ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
-            ("internal/lingdoc/workspacecore/candidate_generation_evidence.go", "file"),
-            ("internal/lingdoc/workspacecore/chapter_asset_scope.go", "file"),
-            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
-            ("internal/lingdoc/workspacecore/migrated_context_ports.go", "file"),
-            ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
-            ("internal/lingdoc/workspacecore/project_state.go", "file"),
-            ("internal/lingdoc/workspacecore/project_state_test.go", "file"),
-            ("internal/lingdoc/workspacecore/research_source_scope.go", "file"),
-            ("internal/lingdoc/workspacecore/service_facade_test.go", "file"),
-            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
-            ("internal/lingdoc/workspacecore/typed_contracts_regression_test.go", "file"),
-            ("internal/router/lingdoc_integration_test.go", "file"),
-        ),
-        "resolves": ((129, 130), (129, 133), (129, 143)),
-        "summary": (
-            "G5 角色、Scope 与成员生命周期（Spec #129，PR #149）：ProjectMember 双轴模型、章节与资料范围授权、邀请"
-            "与生命周期状态，以及成员上下文切出（#268 / PR #374）之后的调用归属适配。"
-            "2026-10-23 由 magician336 认领（面票 #466），同日完成交面：随 PR #149 合入 main，登记处 stat"
-            "us 改 done、claimed_by 清空（完成态不保留认领人，认领与完成的人记在 summary 里）。"
-            "本面持有 12 条从别面移交过来的路径（PF-2 四条、PF-4 五条、PF-5 两条、PF-8 一条），移交记录见 TRANSFERS。"
-            "**借用而不接管的三处**（管理会话 2026-10-23 终裁：已登记且票面已写明 owner 的面优先保留 owner，后来的移交改为借"
-            "用）：① PF-7（#460，available）的 internal/container/lingdoc.go（本面在这里装成员生命周期相"
-            "关装配）与 internal/lingdoc/workspacecore/model.go（本面改角色 Scope 字段）——owner 保"
-            "持 PF-7，本面只记借用事实（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的 lingdoc.go）；② 保留路径"
-            " frontend/src/views/lingdoc/Workspace.vue 不归任何面，本面在里面加了成员面板的挂载位，只记录改动事"
-            "实，不声明它；③ 机制文件不归任何面：登记处自己（scripts/lingdoc_parallel_surfaces.py）与本面新写的两个"
-            "守卫脚本（scripts/ci/test_lingdoc_parallel_transfers.py、scripts/ci/test_lin"
-            "gdoc_parallel_consistency.py）——面改的是「登记动作」，不是「路径所有权」（先例：PF-6 交面时对方案档的处理）。"
-            "本面还改了 PF-8 声明在路径集里的路径图（docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md）——路径图是多个面共同维"
-            "护的说明副本，本面在其上维护 PF-11 的说明段，不登记进本面路径集。"
-            "本面自己的路径集是 54 条，其中两份是本轮的验收证据文档（docs/08-本轮实施方案/Spec-129-成员角色Scope生命周期验收矩"
-            "阵.md 与 T129-验证报告.json）。"
-            "tracker 上 #129 的原生 blocker 边是 #130、#133、#143 三条；路径图票面提到的另外若干票是语义边，不是 t"
-            "racker 原生边。**NOT RUN 的部分不随交面关闭**：真实浏览器多账号成员操作、外部真实 KB 检索、负责人最终审批三项已另落一"
-            "张开放票承接，逐条写明原因与解除条件。"
-            "**同名文件的合成归属**：`internal/lingdoc/workspace/template_governance_adapter_test.go` "
-            "由本面与 PR #248（#139 模板目录与版本治理）各自新建（add/add），**owner 归本面**。"
-            "实测（2026-10-23）：`main` 与本分支的该文件都是 10 个测试函数，本面只改了一行"
-            "（`ProjectPorts{...}` 补 `Resources: projects`）；#248 分支上是同一文件的 13 个测试函数"
-            "（本面的 10 个 + 它新增的 3 个：`TestTemplateGovernanceCatalogManagerProjectionDistinguishesRoleDenialFromStorageFailure`、"
-            "`TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically`、"
-            "`TestTemplateGovernanceRejectedCatalogCopyRecordsFailureAfterRollback`）。"
-            "那 3 个新测试调用 `CanManageTemplateCatalog`——**#248 自有的 G4 生产 API，main 上没有**"
-            "（它定义在 #248 分支的 `internal/lingdoc/workspace/template_governance_runtime.go`）"
-            "⇒ 合成后的文件在本面里编译不过（`go vet`：`r.CanManageTemplateCatalog undefined`）。"
-            "⇒ **合成在 #248 侧完成**：本 PR 合入 main 后，#248 只需在那一个 `ProjectPorts{...}` "
-            "字面量补 `Resources: projects`（本面的 `ProjectPorts.Resources` 届时已在 main），"
-            "它的 13 个测试函数即是并集；owner 仍归本面，#248 侧记借用事实。"
         ),
     },
 )
@@ -1570,72 +1245,8 @@ def _check_reserved(faces: Sequence[ParallelFace], reserved: Sequence[PathClaim]
                     )
 
 
-
-def _check_transfers(faces: Sequence[ParallelFace],
-                     transfers: Sequence[Mapping[str, Any]]) -> None:
-    """Every recorded handover must still hold.
-
-    A path has exactly one owner at any time, so a handover is one-way and
-    one-time.  The record names the face that gave the path away and the face
-    that took it, and the loader checks three things against the two path sets:
-
-    1. both faces exist, and the face that gave the path away is not building
-       it any more -- a face that is being worked on may not hand a path over
-       while it still owns the work;
-    2. the face that gave the path away does not claim the path today;
-    3. the face that took it owns the path today.
-
-    A path may be handed over more than once -- a face borrows a path and
-    gives it back -- so the records are a trail and only the **last** record
-    for a path has to hold today.
-    """
-    by_name = {face.name: face for face in faces}
-    last: dict[str, int] = {}
-    for index, record in enumerate(transfers):
-        for field in ("path", "from", "to"):
-            if field not in record:
-                raise ParallelSurfaceManifestError(
-                    f"TRANSFERS[{index}]: missing field {field!r}"
-                )
-        path = str(record["path"])
-        for field in ("from", "to"):
-            if str(record[field]) not in by_name:
-                raise ParallelSurfaceManifestError(
-                    f"TRANSFERS[{index}]: {field} face {record[field]!r} is not a face"
-                )
-        last[path] = index
-
-    for index, record in enumerate(transfers):
-        path = str(record["path"])
-        giver = by_name[str(record["from"])]
-        taker = by_name[str(record["to"])]
-        claim = PathClaim(path=path, kind="file")
-        if giver.status == "claimed":
-            raise ParallelSurfaceManifestError(
-                f"TRANSFERS[{index}]: face {giver.name!r} is being worked on and "
-                f"may not hand {path!r} over"
-            )
-        if any(existing.overlaps(claim) for existing in giver.paths):
-            raise ParallelSurfaceManifestError(
-                f"TRANSFERS[{index}]: face {giver.name!r} still claims {path!r} "
-                f"after handing it over"
-            )
-        if index == last[path] and not any(existing.overlaps(claim)
-                                           for existing in taker.paths):
-            raise ParallelSurfaceManifestError(
-                f"TRANSFERS[{index}]: face {taker.name!r} does not own {path!r} "
-                f"after taking it over"
-            )
-
-
 def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[ParallelFace, ...]:
-    """Validate raw manifest records into faces, or raise.
-
-    This is the shape check: the records are well formed and no two faces
-    claim the same path.  The handover records are checked by
-    ``load_and_validate``, because they only mean something next to a path set
-    they describe.
-    """
+    """Validate raw manifest records into faces, or raise."""
     faces = tuple(_face_from_record(entry, index) for index, entry in enumerate(records))
 
     seen: set[str] = set()
@@ -1650,22 +1261,9 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[ParallelFace
 
 
 def load_and_validate(root: Path | None = None,
-                      records: Sequence[Mapping[str, Any]] | None = None,
-                      transfers: Sequence[Mapping[str, Any]] | None = None
-                      ) -> tuple[ParallelFace, ...]:
-    """Load the committed manifest and validate it.
-
-    The handover records are checked here rather than in
-    ``validate_records``: they only mean something next to the path sets they
-    describe, so a caller that validates records on their own -- a test, a
-    baseline read out of git history -- is not asked about handovers it did not
-    bring with it.
-    """
-    faces = validate_records(PARALLEL_FACES if records is None else records)
-    if transfers is None:
-        transfers = globals().get("TRANSFERS", ())
-    _check_transfers(faces, transfers)
-    return faces
+                      records: Sequence[Mapping[str, Any]] | None = None) -> tuple[ParallelFace, ...]:
+    """Load the committed manifest and validate it."""
+    return validate_records(PARALLEL_FACES if records is None else records)
 
 
 def main() -> int:
