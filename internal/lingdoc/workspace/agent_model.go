@@ -140,8 +140,14 @@ func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request co
 				return core.ModelReply{}, generation.ErrAcceptanceBudgetUnavailable
 			}
 		}
+		// The completion budget of the request is the profile's output
+		// ceiling -- the same number the ledger records as
+		// output_limit_tokens, and the same number the check after the
+		// response uses. A request that asked for less would leave the
+		// ledger describing a call that was never made, and the ceiling
+		// would be a number nobody could check the request against.
 		options = acceptanceGenerationChatOptions()
-		options.MaxCompletionTokens = 2048
+		options.MaxCompletionTokens = acceptanceOutputMax(m.budget.profileName())
 	}
 	started := time.Now()
 	response, callErr := selected.Chat(types.WithLLMCallMetadata(modelCtx, "lingdoc_"+request.Agent+"_"+request.Purpose, request.Context.CorrelationID), messages, options)
@@ -164,7 +170,12 @@ func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request co
 			_ = reservation.unknown("usage_unknown")
 			return core.ModelReply{}, errors.Join(core.ErrOutcomeUnknown, generation.ErrAcceptanceOutcomeUnknown)
 		}
-		violated := response.Usage.PromptTokens > generationAcceptanceInputMax || response.Usage.CompletionTokens > generationAcceptanceOutputMax
+		// The ceiling the answer is measured against is the profile's
+		// ceiling, not another profile's constant: an answer over the
+		// profile's ceiling is a limit violation, and it has to be
+		// recorded as one.
+		profile := m.budget.profileName()
+		violated := response.Usage.PromptTokens > acceptanceInputMax(profile) || response.Usage.CompletionTokens > acceptanceOutputMax(profile)
 		status := "response_received"
 		if violated {
 			status = "limit_violation"
