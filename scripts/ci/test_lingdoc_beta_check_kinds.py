@@ -2,7 +2,7 @@
 
 What this file guards
 ---------------------
-The contract's assertions are the Beta release's only machine judgement.  Three
+The contract's assertions are the Beta release's only machine judgement.  Four
 things have to stay true, and each of them used to be false somewhere:
 
 *There is one vocabulary.*  The kinds used to live in three places -- the runner,
@@ -11,14 +11,28 @@ second copy is a defect, so these tests read the vocabulary from the one
 authority (``scripts/lingdoc_check_kinds.py``) and prove that the runner, the
 validator and the report's wording all read *that* one.
 
-*Every kind is used, and every assertion is judgeable.*  A kind nobody uses is
-idle expression power; an assertion that names no kind, or two, or a key no kind
-declares, is an expectation nobody can judge.  The first is a hole in the
-contract, the second is a hole in the machinery.
+*Every kind has an evaluation branch, and only the kinds in the vocabulary have
+one.*  This is the quiet one.  The domain kinds used to end in a fallthrough: a
+kind nobody handled was judged as ``non_empty``.  The structural kinds used to
+end in ``else: # one_of``.  Either way the report said "passed" about an
+expectation nobody judged -- the assertion looked evaluated while it had been
+answered by a different question.  The runner now refuses a kind it has no
+branch for, and these tests hold both ends of that: the vocabulary and the
+branch set are the same set, and the refusal really happens (a kind with no
+branch is injected and watched being refused).
 
-*A broken expectation turns red.*  An assertion that cannot fail proves nothing.
-So every new kind is driven against its own reference response with the
-expectation broken on purpose, and the run has to say "failed".
+*Every assertion of the contract declares exactly one known kind.*  A check that
+names no kind, two kinds, or a kind together with a key no kind declares is an
+expectation nobody can judge.  The contract's own assertions used to be checked
+only when the runner reached them -- so a broken one stayed invisible until the
+day it ran.
+
+*No kind may sit idle.*  A kind nobody uses is expression power nobody
+exercises, and it used to happen that ``keys`` and ``one_of`` were implemented
+and never used.  Every kind must be used by one of the two contract documents,
+or be registered as known but not enabled yet in the F01 contract's
+``check_kinds`` block -- with a reason and a follow-up.  Silent idleness is not
+allowed.
 
 Where this file lives
 ---------------------
@@ -33,13 +47,14 @@ from pathlib import Path
 import re
 import sys
 import unittest
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 import scripts.lingdoc_check_kinds as check_kinds  # noqa: E402
 from scripts.lingdoc_mock import run_f01  # noqa: E402
-from scripts.lingdoc_mock.run_f01 import ScenarioRunner, spec_from_document  # noqa: E402
+from scripts.lingdoc_mock.run_f01 import ScenarioRunner, WorkflowError, spec_from_document  # noqa: E402
 
 CONTRACTS = REPO_ROOT / "docs" / "08-本轮实施方案" / "contracts"
 WORKFLOW = CONTRACTS / "workflow.json"
@@ -150,6 +165,71 @@ class ExhaustiveVocabularyTests(unittest.TestCase):
         for kind in check_kinds.KNOWN_CHECK_OPERATORS:
             self.assertTrue(any(kind in name for name in names),
                             f"the operator table has no case for the kind {kind}")
+
+
+class BranchCoverageTests(unittest.TestCase):
+    """Every kind has an evaluation branch, and only the vocabulary's kinds have one."""
+
+    #: A branch is written as ``operator == "<kind>"``; the set of those names is
+    #: the set of kinds the runner can actually judge.
+    BRANCH = re.compile(r'operator == "([a-z_]+)"')
+
+    def branch_set(self) -> set[str]:
+        return set(self.BRANCH.findall(RUNNER_SOURCE.read_text(encoding="utf-8")))
+
+    def test_the_vocabulary_and_the_evaluation_branches_are_the_same_set(self):
+        branches = self.branch_set()
+        vocabulary = set(check_kinds.KNOWN_CHECK_OPERATORS)
+        self.assertEqual(branches - vocabulary, set(),
+                         "the runner judges a kind the vocabulary does not declare")
+        self.assertEqual(vocabulary - branches, set(),
+                         "the vocabulary declares a kind the runner has no branch for")
+
+    def _judged(self, check: dict) -> list[dict]:
+        document = {"id": "GUARD", "steps": [{
+            "id": "SYN-01", "operation_id": "getProject", "expected_http": 200,
+            "request": {"path_params": {"projectId": "p-1"}, "headers": {}, "json": None},
+            "capture": {}, "checks": [check]}]}
+
+        class _Response:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            def read(self, limit: int = 16 * 1024 * 1024) -> bytes:
+                return json.dumps({"data": {"x": "v"}}).encode("utf-8")
+
+            def close(self) -> None:
+                pass
+
+        runner = ScenarioRunner(contract(OPENAPI), spec_from_document(document, "guard specification"),
+                                base_url="http://127.0.0.1:4010/api/v1/lingdoc",
+                                opener=lambda request, timeout: _Response())
+        runner.run()
+        return runner.report("completed").get("checks", [])
+
+    def test_a_domain_kind_without_a_branch_is_refused_instead_of_silently_judged(self):
+        # The defect this closes: a domain kind nobody handled used to be judged as
+        # non_empty, and the report said "passed" about a different question.
+        kind = check_kinds.CheckKind("a_kind_without_a_branch", "domain", True,
+                                      lambda value, at: None)
+        with patch.object(check_kinds, "KNOWN_CHECK_OPERATORS",
+                          check_kinds.KNOWN_CHECK_OPERATORS + (kind.name,)), \
+             patch.dict(check_kinds.CHECK_KINDS, {kind.name: kind}, clear=False), \
+             patch.object(sys.modules[run_f01.__name__], "DOMAIN_CHECK_OPERATORS",
+                          run_f01.DOMAIN_CHECK_OPERATORS + (kind.name,)):
+            with self.assertRaisesRegex(WorkflowError, "no evaluation branch"):
+                self._judged({"path": "/data/x", kind.name: True, "intent": "没有分支的 kind"})
+
+    def test_a_structural_kind_without_a_branch_is_refused_instead_of_silently_judged(self):
+        # The same defect on the structural side: the kinds used to end in
+        # "else: one_of".
+        kind = check_kinds.CheckKind("a_structural_kind_without_a_branch", "structural", False,
+                                      lambda value, at: None)
+        with patch.object(check_kinds, "KNOWN_CHECK_OPERATORS",
+                          check_kinds.KNOWN_CHECK_OPERATORS + (kind.name,)), \
+             patch.dict(check_kinds.CHECK_KINDS, {kind.name: kind}, clear=False):
+            with self.assertRaisesRegex(WorkflowError, "no evaluation branch"):
+                self._judged({"path": "/data/x", kind.name: True, "intent": "没有分支的 kind"})
 
 
 class UnknownKindTests(unittest.TestCase):
