@@ -423,10 +423,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
             ("internal/router/routes_lingdoc_owner_test.go", "file"),
-            ("internal/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_407_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_408_test.go", "file"),
-            ("internal/router/routes_lingdoc_owner_409_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_410_test.go", "file"),
             ("docs/08-本轮实施方案/Spec-49-owner_unavailable派生状态与Owner-only冻结.md", "file"),
             ("docs/08-本轮实施方案/contracts/validation-result.json", "file"),
@@ -513,7 +511,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
             "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
             "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
-            "**本面不释放路径**：done 状态仍占用这 44 条路径，后续面不要重复声明。"
+            "**本面不释放路径**：done 状态仍占用这 42 条路径，后续面不要重复声明。"
             "**2026-10-23 经维护者裁决，PF-8 先走，本面让出四个路径** ——"
             "internal/lingdoc/workspacecore/service_facade.go、"
             "internal/lingdoc/workspacecore/typed_contracts.go、"
@@ -529,6 +527,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "membership/policy.go、membership/results.go）——依据票 #420（Owner 专属入口能力 → "
             "读出口能力的对应关系）与 #421（写侧冻结归因）；PF-9 = #461。移交是单向的，本面不再声称拥有"
             "这三条 ⇒ 路径集 47 → 44 条。"
+            "**2026-10-23 PF-9 开工时再移交两条**：internal/router/routes_lingdoc_owner_read_outlet_test.go 与 "
+            "internal/router/routes_lingdoc_owner_409_test.go —— PF-9 指派里那三条 "
+            "internal/lingdoc/router/… 写错了前缀（该目录不存在），真实路径在本面手里，"
+            "而 PF-9 要在这两张断言文件上加断言 ⇒ 显式单向移交 ⇒ 路径集 44 → 42 条。"
+            "internal/router/routes_lingdoc.go **留在本面**（PF-9 不改它）。"
             "**2026-10-23 另有一条路径一次性移交给 PF-8**："
             "internal/container/lingdoc_test.go —— PF-8 在 PR #446 里给它加了一条注释"
             "（说明两个新 G6 端点不改变这张路由数量快照），"
@@ -1100,17 +1103,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-9 Owner 冻结归因",
         "issue": 461,
         "issues": (127,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             # 从 PF-4 永久移交（3）：#420 要改 Owner 专属能力的枚举与判定。
             ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
             ("internal/lingdoc/membership/policy.go", "file"),
             ("internal/lingdoc/membership/results.go", "file"),
-            # 无主直接拥有（3）：Owner 路由与两张断言文件。
-            ("internal/lingdoc/router/routes_lingdoc.go", "file"),
-            ("internal/lingdoc/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
-            ("internal/lingdoc/router/routes_lingdoc_owner_409_test.go", "file"),
+            # 从 PF-4 永久移交（2）：两张 HTTP 断言文件——本面在它们上面加断言。
+            ("internal/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
+            ("internal/router/routes_lingdoc_owner_409_test.go", "file"),
             # 本面新增（3）：入口能力的枚举登记处 + 同名测试 + 旁路断言。
             ("internal/lingdoc/workspacecore/owner_capability_registry.go", "file"),
             ("internal/lingdoc/workspacecore/owner_capability_registry_test.go", "file"),
@@ -1127,6 +1129,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "不是新设计。交付 Spec 是既有的 #127，不新开。"
             "已有原生边 #420 blocked_by #127、#421 blocked_by #127（③ 档验收未满足）："
             "依赖方向正确且上游契约已冻结 ⇒ 本面今天就能开工。"
+            "**2026-10-23 由 magician336 认领**，同日开工。"
+            "**开工时实测更正了路径集里的三处前缀（异议已记在票面 #461 与 PR 正文）**："
+            "指派的三条是 internal/lingdoc/router/…，而 internal/lingdoc/router/ "
+            "**这个目录不存在**——真实位置是 internal/router/，那三个文件（routes_lingdoc.go、"
+            "routes_lingdoc_owner_read_outlet_test.go、routes_lingdoc_owner_409_test.go）"
+            "由 PF-4 拥有。修正前缀后与 PF-4 撞车 ⇒ 按登记处「路径在两面之间移交是合法的、"
+            "单向的」与棘轮「done 面可释放路径」：本面永久接过**两张断言文件**"
+            "（本面在它们上面加断言），**internal/router/routes_lingdoc.go 留在 PF-4**"
+            "（本面不改它）⇒ PF-4 路径集 44 → 42 条，本面 9 → 8 条。"
+            "三条错前缀路径是「悬空登记」（基线里只有声明、没有实体文件），"
+            "按基线模块的新判据撤回它不算路径损失 ⇒ 棘轮不拦。"
         ),
     },
 )

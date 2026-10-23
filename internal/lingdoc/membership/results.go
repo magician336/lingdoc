@@ -322,6 +322,23 @@ func (s *Service) saveMemberPermissions(
 	return body, status, replayed, err
 }
 
+// requireOwnerDecision refuses an owner transfer while the project's Owner
+// may not act, and names the freeze.
+//
+// The transfer is an Owner-only write like the five decisions in the
+// workspace core, so it carries the same freeze. The ordinary authorization
+// alone does not say so: it answers a lapsed Owner with a plain "not found",
+// which is exactly the answer the caller cannot act on. The gate is asked
+// before the operation runs, because the operation's own authorization is
+// what refuses first.
+//
+// It stays silent for anybody but the Owner. The tenant Owner who recovers a
+// stranded project is not the project's Owner, so the freeze is not their
+// reason for being refused, and the recovery keeps working.
+func (s *Service) requireOwnerDecision(ctx context.Context, actor core.Actor, projectID string) error {
+	return core.OwnerFreezeRefusal(ctx, s.repository, actor, projectID)
+}
+
 // TransferOwner atomically promotes an existing project member and demotes the
 // current owner, clearing the new owner's function axis as required by the
 // project permission model.
@@ -339,6 +356,11 @@ func (s *Service) TransferOwner(
 		input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 ||
 		input.NewOwnerUserID == actor.UserID {
 		return nil, 0, false, core.ErrInvalidRequest
+	}
+	// The transfer is the Owner's own decision, so it freezes while the
+	// Owner's identity has lapsed, and the refusal says why.
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
 	}
 	body, status, replayed, err := s.runner.Run(ctx, actor, core.OperationSpec{
 		Name:    core.OperationTransferOwner,
@@ -429,6 +451,12 @@ func (s *Service) RequestOwnerTransfer(
 	input.ToUserID = strings.TrimSpace(input.ToUserID)
 	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
 		return nil, 0, false, core.ErrInvalidRequest
+	}
+	// The request is the Owner's own decision, so it freezes while the
+	// Owner's identity has lapsed, and the refusal says why. A stranded
+	// project is recovered by the tenant Owner, not by the unavailable Owner.
+	if err := s.requireOwnerDecision(ctx, actor, projectID); err != nil {
+		return nil, 0, false, err
 	}
 	return s.runner.Run(ctx, actor, core.OperationSpec{
 		Name:    core.OperationRequestOwnerTransfer,
