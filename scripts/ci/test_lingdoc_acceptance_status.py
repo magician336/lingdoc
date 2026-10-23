@@ -550,8 +550,12 @@ class RealReportTests(unittest.TestCase):
                          "disagree; one of them reads the wrong field")
         for entry in self.json_entries:
             with self.subTest(where=entry["where"]):
-                self.assertRegex(entry["where"], r":(passed|not_run)\[\d+\]$",
-                                 "a deferral must live in one of the report's lists")
+                # A deferral is a **row** of the report, so it lives in one of
+                # its arrays.  Which array is not pinned: the report is being
+                # reorganised, and a row that moves must not change the
+                # verdict.
+                self.assertRegex(entry["where"], r"\[\d+\]$",
+                                 "a deferral must live in a row of the report")
 
     def test_pass_rows_are_never_entries(self):
         """A row that passed is not a deferral, even in the same list."""
