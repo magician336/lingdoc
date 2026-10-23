@@ -143,6 +143,17 @@ class VocabularyTests(unittest.TestCase):
         self.assertNotEqual(status.DEFERRED_MANUAL, "DEFERRED")
         self.assertIn("DEFERRED", read(status.PROGRESS_SOURCE))
 
+    def test_the_judgement_rules_say_which_json_field_is_which(self):
+        """The rule document has to name the two JSON status fields.
+
+        ``status`` is the run fact and ``matrix_status`` is the matrix
+        registration.  A document that leaves the two unexplained is how the
+        JSON half of this rule went unenforced in the first place.
+        """
+        text = read(status.JUDGEMENT_RULES)
+        self.assertIn("`status` ＝ **运行事实**", text)
+        self.assertIn("`matrix_status` ＝ **矩阵登记状态**", text)
+
 
 class MergeGateTests(unittest.TestCase):
     """The pull request gate: a carried deferral does not block the merge."""
@@ -294,6 +305,102 @@ class InjectionTests(unittest.TestCase):
     def test_a_row_that_is_not_deferred_manual_is_not_an_entry(self):
         self._matrix("| US-01 | NOT RUN | 解除条件：跑完整链（跟进票 #523） |")
         self.assertEqual(status.deferred_manual_entries(self.root), [])
+
+
+class MatrixStatusJsonTests(unittest.TestCase):
+    """The JSON half must read the shape the real reports use.
+
+    A row of an acceptance report carries **two** status words: the run fact
+    (``status``) and the matrix registration (``matrix_status``).  A deferral
+    is a *matrix registration*, so it is written in ``matrix_status`` -- and
+    a guard that reads only ``status`` misses every entry written that way.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="lingdoc-matrix-status-"))
+        (self.root / "docs").mkdir()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _report(self, document: dict) -> list[dict]:
+        (self.root / "docs" / "report.json").write_text(
+            json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return status.deferred_manual_entries(self.root)
+
+    def test_the_vocabulary_reads_the_matrix_status_field(self):
+        self.assertIn("matrix_status", status.STATUS_FIELDS)
+        self.assertIn("status", status.STATUS_FIELDS)
+
+    def test_a_matrix_status_deferral_without_its_carriers_is_caught(self):
+        """The real shape: the run did not happen, the matrix carries it."""
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03 真人浏览器完整链",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "executed": False,
+            "reason": "本轮未在真实浏览器执行该链",
+        }]})
+        self.assertEqual(len(entries), 1, "the matrix_status deferral was not found")
+        self.assertIn("缺少解除条件", entries[0]["problems"])
+        self.assertIn("缺少跟进票号（#NNN）", entries[0]["problems"])
+
+    def test_a_matrix_status_deferral_with_its_carriers_is_accepted(self):
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03 真人浏览器完整链",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "ticket": "#523",
+            "unblock": "解除条件：按 #523 的验收步骤在真实浏览器跑完该链（跟进票 #523）",
+        }]})
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["problems"], [])
+
+    def test_a_follow_up_issue_field_carries_the_ticket(self):
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "follow_up_issue": "#523",
+            "unblock_condition": "#523 关闭且证据满足",
+        }]})
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["problems"], [])
+
+    def test_a_document_level_follow_up_issue_carries_the_ticket(self):
+        """A report may name the ticket once at the top and leave it off the rows."""
+        entries = self._report({
+            "follow_up_issue": "#246",
+            "not_run": [{
+                "id": "AC-04-03",
+                "status": "not_run",
+                "matrix_status": "DEFERRED_MANUAL",
+                "unblock": "解除条件：按 #246 的步骤补齐证据",
+            }],
+        })
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["problems"], [])
+
+    def test_a_run_fact_alone_is_not_a_deferral(self):
+        """``status: not_run`` is the run fact; it carries no matrix registration."""
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03",
+            "status": "not_run",
+            "reason": "本轮未在真实浏览器执行该链",
+        }]})
+        self.assertEqual(entries, [])
+
+    def test_a_matrix_status_deferral_is_found_next_to_other_rows(self):
+        entries = self._report({"not_run": [
+            {"id": "AC-01", "status": "not_run", "matrix_status": "NOT RUN"},
+            {"id": "AC-02", "status": "not_run", "matrix_status": "DEFERRED_MANUAL",
+             "ticket": "#523", "unblock": "解除条件：按 #523 跑完整链"},
+            {"id": "AC-03", "status": "passed", "matrix_status": "PASS"},
+        ]})
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["problems"], [])
+        self.assertTrue(entries[0]["where"].endswith("not_run[1]"),
+                        f"the wrong row was reported: {entries[0]['where']}")
 
 
 if __name__ == "__main__":

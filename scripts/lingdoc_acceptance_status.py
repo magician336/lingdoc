@@ -46,6 +46,22 @@ missing.  The guard test injects both violations and checks that they are
 caught, because a rule that only fires on the historical inventory is
 decoration.
 
+Two status words, and they are not the same thing
+-------------------------------------------------
+An acceptance row carries two of them, and the guard reads both:
+
+* **the run fact** (``status`` in JSON) -- what this run actually did
+  (``not_run``, ``passed``, ``failed``);
+* **the matrix registration** (``matrix_status`` in JSON, the 判定状态 column
+  in a matrix) -- what the acceptance matrix says about the row (``PASS`` /
+  ``FAIL`` / ``NOT RUN`` / ``DEFERRED_MANUAL``).
+
+``DEFERRED_MANUAL`` is a **matrix registration**, not a run fact: a run
+either happened or it did not, and what got carried is the row.  A guard
+that reads only one of the two fields silently misses every entry written in
+the other shape -- which is exactly how the JSON half of this rule stayed
+unenforced until the real reports were read.
+
 Where this file lives
 ---------------------
 In ``scripts/`` and not in ``scripts/ci/``: that directory belongs to the
@@ -124,6 +140,20 @@ UNBLOCK_MARKERS = ("解除条件", "unblock")
 #: judgement rules' own comparison table) declares no such column and is not
 #: scanned -- a rule document has to be able to name the word.
 STATUS_COLUMNS = ("判定状态", "验收", "状态")
+
+#: The JSON fields that carry a status word.  ``status`` is the **run fact**
+#: ("what this run did"); ``matrix_status`` is the **matrix registration**
+#: ("what the acceptance matrix says about the row"); ``判定状态`` is the
+#: judgement rules' own Chinese column name.  ``DEFERRED_MANUAL`` is a matrix
+#: registration, so the guard has to read the field a document actually uses
+#: -- reading only one of them misses every entry written in the other.
+STATUS_FIELDS = ("status", "matrix_status", "判定状态")
+
+#: The JSON fields that carry the **release condition** of a deferral.
+UNBLOCK_FIELDS = ("unblock", "unblock_condition", "release_condition")
+
+#: The JSON fields that carry the **follow-up ticket** of a deferral.
+TICKET_FIELDS = ("ticket", "follow_up_issue")
 
 
 # --- reading a status ------------------------------------------------------
@@ -299,21 +329,50 @@ def _markdown_entries(path: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _first_text(obj: Mapping[str, Any], fields: tuple[str, ...]) -> str:
+    """The first non-empty value among ``fields`` of one object."""
+    for field in fields:
+        value = obj.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
 def _json_entries(path: Path) -> list[dict[str, Any]]:
-    """The ``DEFERRED_MANUAL`` objects of one JSON document."""
+    """The ``DEFERRED_MANUAL`` objects of one JSON document.
+
+    A row of an acceptance report carries **two** status words, and they are
+    not the same thing:
+
+    * ``status`` is the **run fact** -- what this run actually did
+      (``not_run``, ``passed``, ``failed`` ...);
+    * ``matrix_status`` is the **matrix registration** -- what the
+      acceptance matrix says about the row (``PASS`` / ``FAIL`` /
+      ``NOT RUN`` / ``DEFERRED_MANUAL``).
+
+    ``DEFERRED_MANUAL`` is a **matrix registration**, not a run fact: a run
+    either happened or it did not, and what got carried is the row.  The
+    guard reads **both** fields, because which field a document uses depends
+    on the shape it follows -- and a guard that only reads one of them
+    silently misses every entry written in the other shape.
+
+    The two carriers are read from the row first and from the document root
+    second: a report may carry the follow-up ticket once at the top
+    (``follow_up_issue``) and leave it off every row.
+    """
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return []
+    root = document if isinstance(document, Mapping) else {}
+    root_ticket = _first_text(root, TICKET_FIELDS)
     entries: list[dict[str, Any]] = []
     for where, obj in walk_objects(document):
-        status = obj.get("status")
-        if status is None:
-            status = obj.get("判定状态")
-        if normalize_status(status) != DEFERRED_MANUAL:
+        if not any(normalize_status(obj.get(field)) == DEFERRED_MANUAL
+                   for field in STATUS_FIELDS):
             continue
-        condition = str(obj.get("unblock") or obj.get("release_condition") or "")
-        ticket = str(obj.get("ticket") or condition)
+        condition = _first_text(obj, UNBLOCK_FIELDS)
+        ticket = _first_text(obj, TICKET_FIELDS) or root_ticket or condition
         entries.append({
             "where": f"{path.as_posix()}:{where}",
             "shape": "json-entry",
@@ -328,8 +387,10 @@ def deferred_manual_entries(root: Path | None = None) -> list[dict[str, Any]]:
     """Every ``DEFERRED_MANUAL`` entry in the repository's acceptance material.
 
     Two shapes are recognised: a markdown table row whose status cell reads
-    ``DEFERRED_MANUAL``, and a JSON object whose status does.  Each entry
-    reports where it is, what it carries, and what it is missing.
+    ``DEFERRED_MANUAL``, and a JSON object whose status does -- in either
+    the ``status`` (run fact) or the ``matrix_status`` (matrix registration)
+    field.  Each entry reports where it is, what it carries, and what it is
+    missing.
     """
     base = Path(root) if root is not None else REPO_ROOT
     entries: list[dict[str, Any]] = []
