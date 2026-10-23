@@ -119,6 +119,12 @@ PATH_TABLES = {
         "scripts/acceptance/**",
         "internal/container/lingdoc*",
         "internal/router/lingdoc*",
+        # The PostgreSQL migration rehearsals live in internal/database and
+        # only run where a PostgreSQL service exists -- this job.  A change to
+        # a migration has to reach this gate, or the rehearsal keeps skipping
+        # and the PostgreSQL side of the migration has no pull-request
+        # evidence at all.
+        "internal/database/**",
         ".github/workflows/lingdoc-interface-integration.yml",
     ),
 }

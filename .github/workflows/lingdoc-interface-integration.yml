@@ -89,6 +89,27 @@ jobs:
           python-version: '3.12'
       - name: Test closeout matrix helpers
         run: python -m unittest discover -s scripts/acceptance -p 'test_*.py' -v
+      # The migration rehearsals are the only place where the PostgreSQL side
+      # of migrations/versioned is exercised against a real server.  The
+      # pull-request gate runs internal/database too, but without a
+      # PostgreSQL service those cases skip themselves -- so the dialect
+      # differences (a CHECK constraint can be dropped and added in place on
+      # PostgreSQL, while SQLite needs a table rebuild) and the atomicity of
+      # the migration would never be checked on a pull request.  This job
+      # already has a PostgreSQL service and a DSN, so the rehearsals run
+      # here for real.
+      #
+      # The pattern is the whole PostgreSQL surface: every case in
+      # internal/database that needs the server is named TestPostgres*, so a
+      # future rehearsal joins this run without anyone editing the pattern.
+      # Without LINGDOC_TEST_POSTGRES_DSN the cases skip themselves and say
+      # why -- a skip is never counted as a pass.
+      #
+      # It runs before the closeout sweep on purpose: the closeout step is the
+      # long one, and a rehearsal that only runs after it would lose its
+      # evidence whenever the sweep is slow or times out.
+      - name: Rehearse PostgreSQL migration upgrades and rollbacks
+        run: go test -count=1 -v -run '^TestPostgres' ./internal/database/...
       - name: Run backend closeout against isolated PostgreSQL
         run: >-
           python scripts/acceptance/lingdoc_backend_closeout.py
