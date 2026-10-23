@@ -1340,6 +1340,19 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "tracker 上 #129 的原生 blocker 边是 #130、#133、#143 三条；路径图票面提到的另外若干票是语义边，不是 t"
             "racker 原生边。**NOT RUN 的部分不随交面关闭**：真实浏览器多账号成员操作、外部真实 KB 检索、负责人最终审批三项已另落一"
             "张开放票承接，逐条写明原因与解除条件。"
+            "**同名文件的合成归属**：`internal/lingdoc/workspace/template_governance_adapter_test.go` "
+            "由本面与 PR #248（#139 模板目录与版本治理）各自新建（add/add），**owner 归本面**。"
+            "实测（2026-10-23）：`main` 与本分支的该文件都是 10 个测试函数，本面只改了一行"
+            "（`ProjectPorts{...}` 补 `Resources: projects`）；#248 分支上是同一文件的 13 个测试函数"
+            "（本面的 10 个 + 它新增的 3 个：`TestTemplateGovernanceCatalogManagerProjectionDistinguishesRoleDenialFromStorageFailure`、"
+            "`TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically`、"
+            "`TestTemplateGovernanceRejectedCatalogCopyRecordsFailureAfterRollback`）。"
+            "那 3 个新测试调用 `CanManageTemplateCatalog`——**#248 自有的 G4 生产 API，main 上没有**"
+            "（它定义在 #248 分支的 `internal/lingdoc/workspace/template_governance_runtime.go`）"
+            "⇒ 合成后的文件在本面里编译不过（`go vet`：`r.CanManageTemplateCatalog undefined`）。"
+            "⇒ **合成在 #248 侧完成**：本 PR 合入 main 后，#248 只需在那一个 `ProjectPorts{...}` "
+            "字面量补 `Resources: projects`（本面的 `ProjectPorts.Resources` 届时已在 main），"
+            "它的 13 个测试函数即是并集；owner 仍归本面，#248 侧记借用事实。"
         ),
     },
 )
