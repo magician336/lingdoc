@@ -623,8 +623,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-6 上下文包前端消费",
         "issue": 330,
         "issues": (124, 431),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             ("frontend/src/api/lingdoc/agentContext.ts", "file"),
             ("frontend/src/api/lingdoc/agentContext.test.ts", "file"),
@@ -668,9 +668,42 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "在飞的 PF-6，本面已把 #434 票面更正完：票面顶部补更正指针、"
             "正文那一处路径同步改成 agentContext.ts）；该文件属方案档性质，"
             "本面不把它登记进路径集，只在这里记录改动事实。"
+            "**本面还改了 PF-8 声明在路径集里的路径图**"
+            "（docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md）——路径图是多个面"
+            "共同维护的说明副本，PF-8 已声明它且已交面；本面在其上维护 PF-6 的"
+            "说明段（合并上游时解了三轮文本冲突，按「以 main 为骨架、把本面事实"
+            "叠加上去」处理）。本面**不**把它登记进路径集：登记处的重叠检查是"
+            "路径级的，而 PF-8 已交面且「done 状态仍占用路径」，重复声明会被"
+            "loader 直接拒绝——所以这里只记录改动事实，不动 PF-8 的 claim。"
             "**集成归属另落一张票**：面板的挂载与浏览器端到端验收归 #476"
             "（原记在 #384 票面，但该票已随 PF-8 交面关闭，它交付的是 G6 "
             "运维面板的集成、不含本面）。"
+            "**2026-10-23 交面**：本面随 PR #443 合入 main（合并提交 "
+            "52f5b615，合并时间 05:18:33Z），登记处 status 改 done、"
+            "claimed_by 清空（完成态不保留认领人，认领与完成的人记在 summary 里）。"
+            "交付四件事：① 上下文包门面上线（agentContext.ts）——契约类型由"
+            "传输层独家拥有、本面只读不改不复制；意图（用户勾了什么）与事实"
+            "（服务端组装了什么）是两个不可互换的类型；卡片状态按 id 与 version "
+            "双重对齐，对不上显示「状态未知」而不是回退；选择理由按服务端原文"
+            "逐条透传，不解析成条目映射。② 上下文包面板上线"
+            "（ContextPackagePanel.vue）——事实区只由预览结果刷新，增删之后必须"
+            "重新预览，预览失败或版本冲突即清空事实区，面板不自行判断"
+            "「要不要确认」；身份（agent / sessionKey）一变即按硬时序清空意图与事实。"
+            "③ ADR 0013 记下三条不可变契约，权威术语表 §5 补「上下文包」词条。"
+            "④ 修登记处基线比对的一处误报：比较前剔除基线里「文件在基线提交中"
+            "根本不存在」的 file claim——这类登记从未对应真实文件，撤下它不损失"
+            "所有权；豁免显式传入，目录 claim 不豁免，基线里真实存在的文件被撤下"
+            "仍照报。"
+            "验收矩阵 36 行：34 PASS / 1 N/A（不接触模型调用）/ 1 NOT RUN"
+            "（浏览器端到端——面板未挂载，集成归 #476）；两轴代码评审判 FAIL 的"
+            "六条已全部修完并各自有阴性验证；合并前健康度复评 H_L 70.8 / F_R 75.0"
+            "（置信度 B，无维度阻断项，最低 2/5 的两项同指「同一件事有两个拥有者」）。"
+            "**残留票保持开放**：#432（选择理由没有结构化映射）、#433（低风险"
+            "状态卡免额外确认在服务端不成立）、#434（研究面板里有一份重复的上下文"
+            "构造）、#435（前端契约类型落后服务端两个字段）；"
+            "**集成票 #476 保持开放**（面板挂进 Workspace + 浏览器端到端）；"
+            "**Spec #124 保持开放**（本面只交付它的前端验收点）；"
+            "本面新交付的 Spec #431 随之关闭。"
         ),
     },    {
         "name": "PF-10 Beta 首版验收证据生产",
@@ -700,6 +733,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("migrations/sqlite/000055_lingdoc_model_call_ledger.down.sql", "file"),
             ("migrations/versioned/000134_lingdoc_model_call_ledger.up.sql", "file"),
             ("migrations/versioned/000134_lingdoc_model_call_ledger.down.sql", "file"),
+            # 迁移 schema 守护：sqlite / versioned 两套 schema 与版本常量同步
+            # （main 上已存在、本仓无面声明它——自由路径；本面改动它是为了让
+            #  000055 / 000134 两方言迁移的 schema 断言跟着账本表走）。
+            ("internal/database/migration_sqlite_versioned_schema_test.go", "file"),
             # ---- #452（54-Spec 真实浏览器 × 真实后端对偶执行器）----
             # 编排器：起环境 → 跑 HTTP 侧 → 跑浏览器侧 → 比对 → 产证据。
             ("scripts/acceptance/beta_evidence_parity.py", "file"),
@@ -724,9 +761,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #  equals / ref_in / readback_equals / non_empty / length /
             #  version_bound / marked_or_absent / hash_equals）。
             ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
+            # 协议 §6 的证据产物目录：<SHA>/<运行标识>/ 下的六件产物。
+            # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
+            # 逐文件登记会漏（本次 PR 产出了 12 个文件、2 个运行目录）。
+            ("docs/08-本轮实施方案/acceptance/beta-first/", "dir"),
         ),
         "resolves": (),
         "summary": (
+            "**2026-10-23 管理会话合并前补申报（15 → 17 条）**：本 PR 改了三个未申报的路径，现已补进路径集——① `internal/database/migration_sqlite_versioned_schema_test.go`（file）：main 上已存在、本仓无面声明它（自由路径），本面改动它是为了让 000055 / 000134 两方言迁移的 schema 断言跟着账本表走；② `docs/08-本轮实施方案/acceptance/beta-first/`（**dir**）：协议 §6 的证据产物目录，用目录级声明覆盖 `<SHA>/<运行标识>/` 下的六件产物（本次 PR 产出 12 个文件、2 个运行目录，逐文件登记必然漏）。另有一处**刻意不登记**：`docs/08-本轮实施方案/下一批施工面切分方案.md`（方案档性质，只记录改动事实——先例见 PF-6 交面）。"
             "Beta 首版放行路径上的第一张面：把协议 §2-§6 的人肉验收变成一条可复跑命令，"
             "产出证据目录与模型调用账本。交付 #451 + #452 + #453 三张新 G 线 Spec。"
             "**为什么三张合成一个面**（票面 #465 有全文）：#451 单独做是浅模块"
@@ -741,7 +783,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "定义点 internal/lingdoc/candidateadoption/candidate_shape.go 在 PF-2 的"
             "**目录级**声明 internal/lingdoc/candidateadoption/ 内，产出点"
             "internal/lingdoc/workspace/model_run_mode.go 属 PF-2，"
-            "另一侧 internal/lingdoc/workspacecore/runtime_control.go 由在飞 PR #446 声明的 PF-8 持有；"
+            "另一侧 internal/lingdoc/workspacecore/runtime_control.go 由已交面的 PF-8 持有（PR #446）；"
             "⇒ 本面**复用**现有 candidateadoption 的 run_mode 取值，不新增第三套词表，"
             "词表收口待这些路径可改时再做。"
             "(2) internal/lingdoc/workspacecore/agent_research_model.go（PF-5 持有）不在本面路径集内"
