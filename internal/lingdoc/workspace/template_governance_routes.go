@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"strconv"
+
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
@@ -19,6 +21,7 @@ func RegisterTemplateGovernanceRoutes(group *gin.RouterGroup, runtime *TemplateG
 	catalog := group.Group("/template-catalog")
 	catalog.GET("/replay-fixtures", h.listReplayFixtures)
 	catalog.GET("/profiles", h.listProfiles)
+	catalog.GET("/profiles/:templateId/audit-events", h.listAuditHistory)
 	catalog.POST("/profiles", h.createProfile)
 	catalog.GET("/profiles/:templateId/versions", h.listVersions)
 	catalog.POST("/profiles/:templateId/versions", h.saveDraft)
@@ -91,6 +94,36 @@ func (h governanceRoutesHandler) listReplayFixtures(c *gin.Context) {
 	}
 	sendGovernanceOK(c, 200, out, false)
 }
+func (h governanceRoutesHandler) listAuditHistory(c *gin.Context) {
+	actor, ok := h.actor(c, false)
+	if !ok {
+		return
+	}
+	filter := governance.AuditHistoryFilter{Limit: 0}
+	if raw := c.Query("after_id"); raw != "" {
+		cursor, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || cursor == 0 {
+			sendGovernanceError(c, governance.ErrInvalidRequest)
+			return
+		}
+		filter.AfterID = cursor
+	}
+	if raw := c.Query("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil {
+			sendGovernanceError(c, governance.ErrInvalidRequest)
+			return
+		}
+		filter.Limit = limit
+	}
+	out, err := h.runtime.Service().ListAuditHistory(c.Request.Context(), actor, c.Param("templateId"), filter)
+	if err != nil {
+		sendGovernanceError(c, err)
+		return
+	}
+	sendGovernanceOK(c, 200, out, false)
+}
+
 func (h governanceRoutesHandler) listProfiles(c *gin.Context) {
 	actor, ok := h.actor(c, false)
 	if !ok {

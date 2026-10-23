@@ -104,6 +104,9 @@ func operationSave(tx *gorm.DB, identity operationRow, request, result, basis an
 	return nil
 }
 func recordAudit(tx *gorm.DB, actor Actor, action Action, target, reason string, details any) error {
+	return recordAuditOutcome(tx, actor, action, target, reason, "success", details)
+}
+func recordAuditOutcome(tx *gorm.DB, actor Actor, action Action, target, reason, outcome string, details any) error {
 	raw, err := json.Marshal(map[string]any{"reason": reason, "target_ref": target, "details": details})
 	if err != nil {
 		return err
@@ -116,7 +119,103 @@ func recordAudit(tx *gorm.DB, actor Actor, action Action, target, reason string,
 	if len(auditTarget) > 64 {
 		auditTarget = digestText(target)
 	}
-	return tx.Exec(query, actor.TenantID, actor.UserID, actor.Role, "lingdoc.template."+string(action), "template_governance", auditTarget, "success", string(raw), "lingdoc_template", auditTarget, time.Now().UTC()).Error
+	return tx.Exec(query, actor.TenantID, actor.UserID, actor.Role, "lingdoc.template."+string(action), "template_governance", auditTarget, outcome, string(raw), "lingdoc_template", auditTarget, time.Now().UTC()).Error
+}
+
+// A rejected catalog mutation has already rolled back when this runs. Its
+// receipt is written in a separate bounded transaction so a stale version,
+// failed replay, missing source, or recently revoked actor cannot erase the
+// denial trail. Current-version metadata is best-effort and is included only
+// when the actor can still read it; the minimal receipt uses the authenticated
+// request identity and never widens that actor's read access. An unverified
+// claimed identity remains an error and cannot author an attributed receipt.
+func (s *Service) auditCatalogFailure(ctx context.Context, actor Actor, action Action, id, version, reason string, cause error) error {
+	return s.auditCatalogFailureWithDetails(ctx, actor, action, id, version, reason, cause, nil)
+}
+
+func (s *Service) auditCatalogFailureWithDetails(ctx context.Context, actor Actor, action Action, id, version, reason string, cause error, extra map[string]any) error {
+	if cause == nil || errors.Is(cause, ErrUnverifiedActor) {
+		return nil
+	}
+	if err := s.ready(actor); err != nil {
+		return fmt.Errorf("catalog failure receipt unavailable: %w", err)
+	}
+	if !identifier.MatchString(id) || (version != "" && !identifier.MatchString(version)) {
+		// A malformed target cannot be safely attributed to a catalog object.
+		// This is an intentional non-write, not a failed receipt persistence;
+		// preserve the original request rejection without reporting a storage error.
+		return nil
+	}
+	ledgerCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	details := map[string]any{"error_code": catalogFailureCode(cause), "template_id": id, "version": version}
+	for key, value := range extra {
+		details[key] = value
+	}
+	if version != "" {
+		metadataErr := s.withTx(ledgerCtx, func(tx *gorm.DB) error {
+			if err := s.ports.Authorizer.AuthorizeTemplate(ledgerCtx, tx, actor, ActionRead, id); err != nil {
+				return err
+			}
+			canManage, err := s.ports.Authorizer.CanManageTemplateCatalog(ledgerCtx, tx, actor)
+			if err != nil {
+				return err
+			}
+			current, err := loadVersion(tx, actor, id, version)
+			if err != nil {
+				if errors.Is(err, ErrNotFound) {
+					return nil
+				}
+				return err
+			}
+			if canManage || current.State != template.RuleSetDraft {
+				details["current_revision"] = current.Revision
+				details["content_hash"] = current.ContentHash
+				details["ruleset_hash"] = current.RulesetHash
+			}
+			return nil
+		})
+		if metadataErr != nil {
+			details["current_version_metadata_unavailable"] = true
+		}
+	}
+	if !validReason(reason) {
+		reason = "rejected request without valid governance reason"
+	}
+	target := id
+	if version != "" {
+		target += "/" + version
+	}
+	if err := s.withTx(ledgerCtx, func(tx *gorm.DB) error {
+		return recordAuditOutcome(tx, actor, action, target, reason, "failure", details)
+	}); err != nil {
+		return fmt.Errorf("persist catalog failure receipt: %w", err)
+	}
+	return nil
+}
+func catalogFailureCode(err error) string {
+	switch {
+	case errors.Is(err, ErrPermissionDenied):
+		return "permission_denied"
+	case errors.Is(err, ErrInvalidRequest):
+		return "invalid_request"
+	case errors.Is(err, ErrVersionConflict):
+		return "version_conflict"
+	case errors.Is(err, ErrIdempotencyConflict):
+		return "idempotency_conflict"
+	case errors.Is(err, ErrInvalidState):
+		return "invalid_state"
+	case errors.Is(err, ErrReplayRequired):
+		return "replay_required"
+	case errors.Is(err, ErrSourceUnavailable):
+		return "source_unavailable"
+	case errors.Is(err, ErrNotFound):
+		return "not_found"
+	case errors.Is(err, ErrUnauthorized):
+		return "unauthorized"
+	default:
+		return "operation_failed"
+	}
 }
 func loadProfile(tx *gorm.DB, actor Actor, id string) (Profile, error) {
 	var row profileRow

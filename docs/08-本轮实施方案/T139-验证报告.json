@@ -1,0 +1,295 @@
+{
+  "mode": "real",
+  "note": "Spec #139 G4 模板目录与版本治理的验收证据；按《验收判定口径》v1 记录。",
+  "head": "0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c",
+  "head_tree": "0fbb6fa9ee3b0bc21330d0400c402d7009833189",
+  "base": "3c65618ba8328b5ed7c1bbf5edde6cab104ff4ab",
+  "head_note": "产品与测试候选：实现、测试与契约都在这一个提交上（0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c，父提交 = main@a91e3697，即落基八的落证；面号已由 PF-10 改为 PF-13，登记处与路径图在证据提交里改），其中含两处门禁修复：PG 夹具去 G4 编号命名、两处 gofmt，均不改产品行为；证据文档（判定矩阵、本报告、登记处移交）在其后的提交。落基九（main@0ec51042）、落基十（main@bbd461ac）、落基十一（main@81d0b099）与落基十二（main@3c65618b）只动基线，本面 24 条路径的产品代码逐字节未变（git diff 0131b8eb HEAD -- <24 条路径> 命中两处且都不是产品漂移：internal/lingdoc/workspacecore/context_ports_test.go 的 main 侧行号位移——本面增量逐行相同，与 internal/lingdoc/workspace/template_governance_routes_test.go 的本轮收尾新增用例）。",
+  "base_note": "本面按此基线落基：本会话内 main 前移七次（PR #446 合入、PR #472 登记 PF-7 / PF-9、PR #473 写 PF-8 移交顺序、PR #475 让 #465 的 PF-10 取迁移号、PR #443 合入 PF-6 上下文包前端消费、PR #478 合入 PF-6 交面、PR #474 合入 #465 的 PF-10 Beta 面），本面因此落基八遍；语义重做的起点是 main@041ebe0f，第二遍在 05fa6b6f（29 个改动文件里 24 个三方合并干净、冲突面 5 个文件），第三遍在 275d438b（29 个文件里 28 个与第二遍逐字节相同、三方合并零冲突），第四遍在 015bd122（29 个文件里 28 个与第三遍逐字节相同、三方合并零冲突），第五遍在 f0fbd487（同样 28 个逐字节相同、零冲突），第六遍在 52f5b615（main 也改了登记处与路径图：登记处三方合并自动成功、路径图一处冲突手解，30 个文件里 28 个逐字节相同），第七遍在 743db967（PF-6 的交面 PR 同样改这两个共享文件：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同），第八遍在 a91e3697（#474 把 #465 的 PF-10 面登记进 main：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同，loader 校验 11 个面）。八遍的语义增量完全一致。落基十一（main@81d0b099，PR #149 与 PR #503 合入后）与落基十二（main@3c65618b，PR #520/#521/#522 合入后）都是纯基线合并（git merge origin/main，合并零冲突）：main 侧改动全在 internal/types/、internal/lingdoc/generation/、internal/application/service/，不与本面 24 条路径相交，本面产品代码与候选 0131b8eb 逐字节相同，候选不变。",
+  "caliber": "v1",
+  "caliber_commit": "1f195def6fb984d43876567bfe365222c34b46b5",
+  "acceptance_point_count": 31,
+  "passed": [
+    {
+      "id": "US-01",
+      "status": "pass",
+      "evidence": "`TestCatalogLifecycleReplayRestartAndCopyGates`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogLifecycleReplayRestartAndCopyGates$' -count=1`；head `0131b8eb`",
+      "note": "同键重试走幂等收据，不新建第二个档案。"
+    },
+    {
+      "id": "US-02",
+      "status": "pass",
+      "evidence": "`TestCatalogLifecycleReplayRestartAndCopyGates`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogLifecycleReplayRestartAndCopyGates$' -count=1`；head `0131b8eb`",
+      "note": "草稿与已发布版本是两条独立状态线。"
+    },
+    {
+      "id": "US-03",
+      "status": "pass",
+      "evidence": "`TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites$' -count=1`；head `0131b8eb`",
+      "note": "结构错误与旧 revision 都在发布前被拒。"
+    },
+    {
+      "id": "US-04",
+      "status": "pass",
+      "evidence": "`TestCatalogPublicReadHidesDraftSourcesAndTenantWideRecallImpact`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogPublicReadHidesDraftSourcesAndTenantWideRecallImpact$' -count=1`；head `0131b8eb`",
+      "note": "非管理员拿到的是公开投影：草稿来源标识与他项目的影响列表不出现。"
+    },
+    {
+      "id": "US-05",
+      "status": "pass",
+      "evidence": "`TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites$' -count=1`；head `0131b8eb`",
+      "note": "错误在发布前回滚，草稿不变。"
+    },
+    {
+      "id": "US-06",
+      "status": "pass",
+      "evidence": "`TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities$' -count=1`；head `0131b8eb`",
+      "note": "正反例都真跑；缺 fixture 或期望不符即拒绝发布。"
+    },
+    {
+      "id": "US-07",
+      "status": "pass",
+      "evidence": "`TestCatalogLifecycleReplayRestartAndCopyGates`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogLifecycleReplayRestartAndCopyGates$' -count=1`；head `0131b8eb`",
+      "note": "已发布版本的内容与哈希不可原地改写。"
+    },
+    {
+      "id": "US-08",
+      "status": "pass",
+      "evidence": "`TestCatalogHTTPProductionDatabaseParity`；`go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1`；head `0131b8eb`",
+      "note": "SQLite 变体在当前 head 跑通；PostgreSQL 变体见 not_run[] 的 AC-04-02（CI 无可跑位置）。"
+    },
+    {
+      "id": "US-09",
+      "status": "pass",
+      "evidence": "`TestCatalogHTTPProductionDatabaseParity`；`go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1`；head `0131b8eb`",
+      "note": "选择器同时展示内容哈希与规则集哈希，并声明「来源类型不代表官方认证」。"
+    },
+    {
+      "id": "US-10",
+      "status": "pass",
+      "evidence": "`TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory$' -count=1`；head `0131b8eb`",
+      "note": "撤回后新复制被拒，既有副本仍可读。"
+    },
+    {
+      "id": "US-11",
+      "status": "pass",
+      "evidence": "`TestCatalogAuditFailureIsAtomicAndRecallKeepsHistory`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogAuditFailureIsAtomicAndRecallKeepsHistory$' -count=1`；head `0131b8eb`",
+      "note": "影响项目列表对租户管理员可见；非管理员项目负责人只拿到原因与处置建议。"
+    },
+    {
+      "id": "US-12",
+      "status": "pass",
+      "evidence": "`TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory$' -count=1`；head `0131b8eb`",
+      "note": "源模板变化不改写既有副本的哈希。"
+    },
+    {
+      "id": "US-13",
+      "status": "pass",
+      "evidence": "`TestTemplateAuditHistoryIsAdminOnlyAndTenantScoped`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateAuditHistoryIsAdminOnlyAndTenantScoped$' -count=1`；head `0131b8eb`",
+      "note": "治理审计历史有只读出口，仅租户管理员、按模板与课题范围；复制成功收据与项目同事务写入。"
+    },
+    {
+      "id": "US-14",
+      "status": "pass",
+      "evidence": "`TestCatalogConcurrentConditionalEditAndRuleSetWithdrawal`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogConcurrentConditionalEditAndRuleSetWithdrawal$' -count=1`；head `0131b8eb`",
+      "note": "条件更新保证并发下唯一成功者。"
+    },
+    {
+      "id": "US-15",
+      "status": "pass",
+      "evidence": "前端用例「catalog loading, failure and empty result remain distinct in the project chooser」；`npx tsx --test src/views/lingdoc/firstPassEntryState.test.ts`；head `0131b8eb`",
+      "note": "加载中 / 读取失败 / 空目录 / 旧选择失效四种状态互斥；失败时仍显示错误而不是「没有模板」。"
+    },
+    {
+      "id": "TD-01",
+      "status": "pass",
+      "evidence": "`TestCatalogHTTPProductionDatabaseParity`；`go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1`；head `0131b8eb`",
+      "note": "走生产 HTTP handler 与生产 runtime；不是直接调 store。"
+    },
+    {
+      "id": "TD-02.1",
+      "status": "pass",
+      "evidence": "`TestCurrentAuthorityIdentityStrictBodyAndReplay`；`go test ./internal/lingdoc/workspace/ -run '^TestCurrentAuthorityIdentityStrictBodyAndReplay$' -count=1`；head `0131b8eb`",
+      "note": "身份取自认证上下文，不接受请求体里的 user_id。"
+    },
+    {
+      "id": "TD-02.2",
+      "status": "pass",
+      "evidence": "`TestCatalogLifecycleReplayRestartAndCopyGates`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogLifecycleReplayRestartAndCopyGates$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-02.3",
+      "status": "pass",
+      "evidence": "`TestCatalogLifecycleReplayRestartAndCopyGates`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogLifecycleReplayRestartAndCopyGates$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-02.4",
+      "status": "pass",
+      "evidence": "`TestCatalogHTTPProductionDatabaseParity`；`go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-02.5",
+      "status": "pass",
+      "evidence": "`TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically$' -count=1`；head `0131b8eb`",
+      "note": "复制成功审计与项目同事务；审计写失败则整个创建回滚。"
+    },
+    {
+      "id": "TD-02.6",
+      "status": "pass",
+      "evidence": "`TestTemplateAuditHistoryIsAdminOnlyAndTenantScoped`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateAuditHistoryIsAdminOnlyAndTenantScoped$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-02.7",
+      "status": "pass",
+      "evidence": "`TestCatalogAuditFailureIsAtomicAndRecallKeepsHistory`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogAuditFailureIsAtomicAndRecallKeepsHistory$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-03.1",
+      "status": "pass",
+      "evidence": "`TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogRejectsInvalidReplayHashesStatesAndStaleWrites$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-03.2",
+      "status": "pass",
+      "evidence": "`TestPublishChecksFullSourceReferencesBeforeReplayForNonManagerPublisher`；`go test ./internal/lingdoc/templategovernance/ -run '^TestPublishChecksFullSourceReferencesBeforeReplayForNonManagerPublisher$' -count=1`；head `0131b8eb`",
+      "note": "发布预检读完整原始版本，不用公开投影做来源校验。"
+    },
+    {
+      "id": "TD-03.3",
+      "status": "pass",
+      "evidence": "`TestCatalogConcurrentConditionalEditAndRuleSetWithdrawal`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogConcurrentConditionalEditAndRuleSetWithdrawal$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-03.4",
+      "status": "pass",
+      "evidence": "`TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory$' -count=1`；head `0131b8eb`",
+      "note": "—"
+    },
+    {
+      "id": "TD-03.5",
+      "status": "pass",
+      "evidence": "`TestReaderCannotSeeUnpublishedCatalogDraft`；`go test ./internal/lingdoc/workspace/ -run '^TestReaderCannotSeeUnpublishedCatalogDraft$' -count=1`；head `0131b8eb`",
+      "note": "HTTP 仍回 404 反枚举，治理审计记 permission_denied。"
+    },
+    {
+      "id": "TD-03.6",
+      "status": "pass",
+      "evidence": "`TestCatalogRejectedMutationAuditsFailureWithoutChangingDraft`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogRejectedMutationAuditsFailureWithoutChangingDraft$' -count=1`；head `0131b8eb`",
+      "note": "收据写失败会作为错误返回，不静默丢弃。"
+    },
+    {
+      "id": "TD-04",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#524",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
+      "ticket": "#524",
+      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）——生产成员态 PostgreSQL 用例在真实 PG 环境与 CI 作业位置上跑通、证据落盘并回填本报告与验收矩阵对应行",
+      "unblock_condition": "#524 关闭且证据满足：生产成员态 PostgreSQL 用例在真实 PG 环境与 CI 作业位置上跑通、证据落盘并回填本报告与验收矩阵对应行",
+      "evidence": "",
+      "note": "判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL；状态定义见验收协议，另由独立 PR 落地），实测事实仍为 NOT RUN（生产成员态 PG 用例未跑），不得写成已通过。解除条件 = 跟进票 #524 关闭且证据满足。PG 侧在 CI 里没有可跑的位置（票 #360，已由 PR #463 实现）：app.yml 无 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database。本条只隔离 SQL 投影：SQLite 侧的投影与幂等/并发门由 TestCatalogHTTPProductionDatabaseParity（SQLite 变体）等用例跑通；生产成员态的 PG 用例见 internal/lingdoc/workspace/template_governance_adapter_postgres_test.go:117（TestPostgresTemplateCatalogVisibilityUsesProductionMembership）。矩阵 PG 侧登记 NOT RUN（AC-04-01/02/04）。SQLite 等价路径不替代生产成员态的真实 PG 证据（票 #524 明写）。"
+    },
+    {
+      "id": "TD-05",
+      "status": "pass",
+      "evidence": "前端用例「catalog choice exposes exact version, scope, origin and hashes without official claim」；`npx tsx --test src/views/lingdoc/firstPassEntryState.test.ts`；head `0131b8eb`",
+      "note": "前端只测读状态与呈现，不复制服务端状态机；面板另有 TemplateGovernancePanel.test.ts 覆盖错误事件与旧响应作废。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-04-01 PG 侧迁移演练（SQLite/PostgreSQL 对称）",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#524",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
+      "ticket": "#524",
+      "unblock_condition": "#524 关闭且证据满足",
+      "reason": "CI 里没有能跑 PG 迁移演练的位置：app.yml 跑 internal/database 但没有 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database（票 #360，已由在飞 PR #463 实现）。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
+      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。PR #463 合入后，go test ./internal/database/... 在带 postgres:17 service 的 job 里执行"
+    },
+    {
+      "id": "AC-04-02 internal/lingdoc/workspace 的 PostgreSQL 变体（TestCatalogHTTPProductionDatabaseParity/postgres）",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#524",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
+      "ticket": "#524",
+      "unblock_condition": "#524 关闭且证据满足",
+      "reason": "lingdoc-interface-integration.yml 虽设了 LINGDOC_TEST_POSTGRES_DSN，但不跑 internal/lingdoc/workspace 包；该子测试在 CI 里会静默 SKIP。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过。SQLite 等价路径不替代生产成员态的真实 PG 证据（票 #524 明写）",
+      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。在带 LINGDOC_TEST_POSTGRES_DSN 的 job 里执行 go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1"
+    },
+    {
+      "id": "AC-04-03 真人浏览器完整链（模板目录 → 版本列表 → 版本详情 → 授权来源检查 → 发布 → 导出）",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#523",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/523",
+      "ticket": "#523",
+      "unblock_condition": "#523 关闭且证据满足：按步骤命名的截图落仓外证据目录、控制台无错误、关键请求与响应摘要、人工判定结论，并回填本条目的证据路径（保留条目本身，不删除）；证据不含密钥",
+      "reason": "本轮未在真实浏览器执行该链；本机 Docker engine pipe 不存在，Hosted CI 的 HTTP/数据库测试不等于浏览器验收。按现行验收协议门槛，矩阵判定状态记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过。DEFERRED_MANUAL 的状态定义见验收协议（另由独立 PR 落地），本报告只使用状态名",
+      "unblock": "解除条件：按 #523 的验收步骤在真实浏览器跑完该链并把证据绑到当前 head（跟进票 #523）。在带 postgres:17 的本地栈用真实浏览器跑完该链，并把截图与读回写进 T139-验证报告.json 的 passed[]"
+    },
+    {
+      "id": "AC-04-04 本机 Docker 下的隔离 PostgreSQL 17 连续三轮实跑",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#524",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
+      "ticket": "#524",
+      "unblock_condition": "#524 关闭且证据满足",
+      "reason": "本轮本机 Docker daemon 不可用，无法在本机重复 PG 17 的三轮连续实跑。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
+      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。Docker 可用时在 postgres:17 容器里执行 go test -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' -count=3"
+    },
+    {
+      "id": "AC-04-05 按 diff 内容缩面而跳过的 CI 作业",
+      "status": "not_run",
+      "matrix_status": "DEFERRED_MANUAL",
+      "executed": false,
+      "follow_up_issue": "#524",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
+      "ticket": "#524",
+      "unblock_condition": "#524 关闭且证据满足",
+      "reason": "门禁按最后一次推送的 diff 内容分级；纯文档/CI 提交会让测试类作业整条 SKIPPED（SKIPPED 不等于跑过）。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
+      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。最后一次推送包含 .go 改动，或 reopen 本 PR 让门禁按整个 PR 的 range 计算"
+    }
+  ],
+  "known_limits": [
+    "本表按《验收判定口径》v1 判定；口径 commit = 1f195def6fb984d43876567bfe365222c34b46b5",
+    "语义覆盖无人背书：机器只证明「有对应且跑得通的测试」，不证明「该测试真的覆盖这条验收点」（口径 v1 §7 明写的代价）。",
+    "治理审计历史的读出口只对租户管理员开放；非管理员项目负责人只能看到来源模板的召回原因与处置建议，看不到影响项目列表。",
+    "本 PR 的产品与测试候选为 0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c（tree 0fbb6fa9ee3b0bc21330d0400c402d7009833189）；基线 main a91e36974f9ecea522f441d17035ca8bdebbc2cc。",
+    "本轮按当前 main 重做这一面：逐提交 rebase 会与段三的改名（T369 弱语义名清理、T365 编号命名收口）和 clienterror 形态迁移（#262）逐个相撞，实测会丢掉 6 个提交的语义。",
+    "落基做了十遍（本会话内 main 前移九次）：第一遍落在 main@041ebe0f 上（语义重做的起点）；2026-10-23 11:13 main 合入 PR #446（PF-8）后前移到 05fa6b6f，重做第二遍——29 个改动文件里 24 个三方合并干净，冲突面只有 5 个文件（登记处、contracts/openapi.json、workspacecore/context_ports_test.go、workspacecore/service_facade.go、Workspace.vue），逐个手解后再跑全量验证，候选 4681d01；11:39 main 又合入 PR #472（登记 PF-7 / PF-9）前移到 275d438b，落基第三遍——这次 main 只碰了登记处与路径图，29 个文件里 28 个与第二遍逐字节相同，三方合并零冲突，候选即 2dc7115；11:59 main 又合入 PR #473（按切分方案 §5 把 PF-8 的移交顺序写进面 summary）前移到 015bd122，落基第四遍——同样只碰登记处与路径图，三方合并零冲突，29 个文件里 28 个与第三遍逐字节相同，候选即 7a2a121；12:40 main 又合入 PR #475（PF-7 把迁移号让给 #465 的 PF-10）前移到 f0fbd487，落基第五遍——同样只碰登记处，三方合并零冲突，29 个文件里 28 个与落基四逐字节相同，候选即 13744c35；13:18 main 又合入 PR #443（PF-6 上下文包前端消费）前移到 52f5b615，落基第六遍——main 也改了登记处与路径图这两个共享文件，登记处三方合并自动成功（PF-6 与本面两个面都在），路径图一处冲突手解（保留 main 的「PF-6 已认领」措辞 + 本面的 PF-13 附注，面数统一为十个面），30 个文件里 28 个与落基五逐字节相同，候选即 b4c5e239；13:46 main 又合入 PR #478（PF-6 交面：登记处 status 改 done + 路径图同步）前移到 743db967，落基第七遍——PF-6 的交面 PR 同样改这两个共享文件，登记处三方合并自动成功（PF-6 与本面两个面都在），路径图两处冲突手解（取 main 的「PF-6 已完成、矛盾 C1 已消除」措辞 + 本面的 PF-13 附注，面数统一为十个面），30 个文件里 28 个与落基六逐字节相同，候选即 ec31b729；14:13 main 又合入 PR #474（#465「PF-10 Beta 首版验收证据生产」登记进登记处）前移到 a91e3697，落基第八遍——#474 把 #465 的 PF-10 面正式登记进 main，实证了改名的必要性（若本面仍叫 PF-10，合并后 main 会有两个同名面，loader 直接拒绝加载）；登记处三方合并自动成功（main 的 PF-10 与本面 PF-13 两个面都在，loader 校验 11 面 validated），路径图两处冲突手解（取 main 的 PF-10 事实 + 本面的 PF-13 附注，面数统一为十一个面），30 个文件里 28 个与落基七逐字节相同，候选即 0131b8eb；15:19 main 又合入 PR #493（PF-10 的 F01 捕获链诊断——改的全是 PF-10 路径集内的文件，登记处与路径图都没被 main 改动）前移到 0ec51042，落基第九遍——这次用 git merge origin/main 落基（不改写历史、不 force push），合并零冲突，本面 30 个改动文件与上一遍逐字节相同（只有基线变了，候选仍是 0131b8eb）；16:40 main 又合入 PR #498（#494 资料标识参数化）前移到 bbd461ac，落基第十遍——合并零冲突，但按管理会话裁决把登记处与路径图交还共享文件锁（当前持有者 PF-14），本 PR 净差集由 30 个文件缩到 28 个（只留代码、测试、契约产物与验收证据），登记处 PF-13 的登记与路径图面表行改在交面票 PR-2 落。十遍的语义增量完全一致。",
+    "第三遍与第四遍只重跑了与登记处/格式相关的校验（登记处 10 面 validated、票面一致性 32 tests OK、命名登记处 80 tests OK、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0）；Go 三包与前端的测试结果（4.000s / 41.864s / 284.901s 与前端三件套）沿用第二遍，因为第三遍与第四遍的 26 个产品/测试/契约文件分别与第二遍、第三遍候选逐字节相同。",
+    "面号由 PF-10 改为 PF-13：管理会话预审发现 PF-10 已被 #465「PF-10 Beta 首版验收证据生产」（在飞 PR #474）占用；登记处 loader 拒绝同名面（duplicate face name），两个同名面同时进 main 会让登记处加载失败 ⇒ 按管理会话维护的面号分配表改为 PF-13，登记处 name、PF-4 / PF-5 的移交记录、本面 summary 与路径图面表行同步改名。本地绿 ≠ 合并安全：改名之前本地的 loader 与 354 个测试全过（分支上只有一个 PF-10），冲突只在合并后出现在 main 上。",
+    "F01 的 base-url 口径（管理会话 2026-10-23 实测，影响本 PR 的读法）：F01 的 base-url 必须是含 /api/v1/lingdoc 的 API 根；给服务器根时每个请求都 404，表现为「变量未捕获」这类次生错误 ⇒ 判某个 F01 步骤是否真的坏了之前，先核对 base-url 口径。本 PR 的 LingDoc F01 Runner 检查在这一轮为 pass。",
+    "本 PR 是 Beta「模板规则」那条线在 main 上从「演示」变「真实」的唯一来源（管理会话审计结论）：main 的组合根把模板目录装成 FixedDemoReader（internal/lingdoc/template/contract.go），真实目录在本 PR（internal/lingdoc/templategovernance/catalog.go 等）⇒ 合并优先级高。本 PR 只带代码、测试、契约产物与验收证据，不被共享文件锁挡住。",
+    "面号改名的必要性已被实证：2026-10-23 14:13 PR #474 合入 main，把 #465「PF-10 Beta 首版验收证据生产」正式登记进登记处 ⇒ 若本面仍叫 PF-10，合并后 main 就会有两个同名面，登记处 loader 直接拒绝加载、main 加载失败。改名后的登记处（PF-1~PF-10 + PF-13 共 11 个面）经 loader 校验通过。",
+    "第七遍落基时 PF-6 的交面 PR（#478）同样改了登记处与路径图：登记处三方合并自动成功（两个面都在，loader 校验 10 面 validated），路径图两处冲突手解（取 main 的「PF-6 已完成、矛盾 C1 已消除」措辞 + 本面的 PF-13 附注，面数统一为十个面）。本会话内 main 前移六次、共享文件被撞六次——这不是一次性事故而是常态：登记处与路径图是所有面共享的文件，合并时若人工仓促解决，最坏结果会丢一个面（登记处直接加载失败）⇒ 本面每次都把这两个文件留在自己的改动集里，并由机器校验兜底（loader 必须打印 10 个面 validated + 门禁第一步的 362 个测试 + 登记处相对 origin/main 不得回退的基线守护）。",
+    "第六遍落基时登记处与路径图都撞了 main（PF-6 / PR #443 也改了这两个共享文件）：登记处三方合并自动成功（两个面都在，loader 校验 10 面 validated），路径图一处冲突手解（保留 main 的「PF-6 已认领」措辞 + 本面的 PF-13 附注，面数统一为十个面）。登记处与路径图是所有面共享的文件，任何面的 PR 都会与下一个面撞；合并时若人工仓促解决，最坏结果会丢一个面（登记处直接加载失败）⇒ 本面把这两个文件都留在自己的改动集里，由机器校验兜底（python scripts/lingdoc_parallel_surfaces.py 必须打印 10 个面 validated + 门禁第一步的 358 个测试）。",
+    "本面不再改登记处与路径图（按管理会话的拆分裁决）：scripts/lingdoc_parallel_surfaces.py（登记处）与 docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md（路径图）是所有面共享的文件，当前由 PF-14 持 L1/L2 锁 ⇒ 本 PR（PR-1）把两者的内容恢复成 origin/main 的版本，净差集由 30 个文件缩到 28 个（= 本面路径 24 条 + owner 归 PF-11 的 3 条 + 保留路径 Workspace.vue 1 条）；登记处 PF-13 的登记（24 条路径 + 借用说明 + PF-4 / PF-5 的移交记录）与路径图面表行改在交面票 PR-2 落（排队等 L1/L2 释放）。⇒ 本 PR 对这两个共享文件的净改动为零。",
+    "路径所有权：本面依 #441 §1.3 从 PF-4 接过 service_facade.go 一条、从 PF-5 接过 template_governance_runtime.go 一条（登记处的移交记录随交面票 PR-2 落，本 PR 不碰登记处）；frontend/src/views/lingdoc/Workspace.vue 是保留路径，本 PR 借用：只记改动事实，不独占。service_facade.go 只由本面拿（PF-4 交出，无冲突），template_governance_runtime.go 由 PF-5 单向移交本面（PF-5 的 summary 记了移交与归还条件）。",
+    "合并顺序裁决（管理会话，2026-10-23）：本面与 #149（PF-11）动了同一批路径，#149 分支更早且已在施工 ⇒ owner 归 PF-11（#149 先合），本面改为借用。三条：workspacecore/context_ports_test.go（本面借用，补上下文端口断言）、contracts/openapi.json（本面借用，加模板目录相关接口）、workspace/template_governance_adapter_test.go（owner 归 PF-11，内容由 #149 侧按本面版本合成——本面版本是超集、另加 3 个用例，合入时以 #149 的合成为准）。这三条不列进本面路径集 ⇒ PF-13 登记 24 条（登记本身在交面票 PR-2 落）。前两条在 #149 合入 main 前由 PF-4 持有（否则路径无人拥有），合入后由 PF-11 持有。",
+    "候选 7a2a121 含两处门禁修复：把 PG 夹具里残留的 G4 编号标识符（g4PostgresCatalogFixture）去编号化（命名登记处的 legacy 私有标识符棘轮基线是 0，不允许新增债，故改标识符而不是把债登记进登记处），并修了两处 gofmt（import 分组、行尾逗号）；两处都不改产品行为，31 个验收点结论不变。",
+    "门禁在本轮实测为绿的部分：scripts/ci 全套 354 tests OK、命名登记处 80 tests OK（棘轮 0/0/0）、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0、三包 go test 全绿、前端 test/type-check/build 全绿；尚未跑的是新 head 的 CI 作业与真人浏览器链。",
+    "PR #446（PF-8）已于 2026-10-23 11:13 合入 main（05fa6b6f）：它的 PF-8 面把 service_facade.go / typed_contracts.go / context_ports_test.go / contracts/openapi.json 还回 PF-4。本面已在新 main 上重做并按新归属重算移交，不再与 #446 并行冲突；它对 Workspace.vue 的改动（RuntimeOpsPanel）与本面共存。",
+    "PR #472（登记 PF-7 / PF-9）于 2026-10-23 11:39 合入 main（275d438b）：它只碰了登记处与路径图，登记处新增两个面并永久移交 6 条路径，与本面 PF-13 的 27 条路径无交集（登记处 10 面 validated）。本面据此第三次落基。PR #473 于 11:59 合入（015bd122），同样只改 PF-8 的面 summary，本面据此第四次落基；PR #475 于 12:40 合入（f0fbd487），改的是 PF-7 的面 summary（把迁移号让给 #465 的 PF-10），本面据此第五次落基；PR #443 于 13:18 合入（52f5b615，PF-6 上下文包前端消费），同样改了登记处与路径图，本面据此第六次落基（登记处自动合并、路径图一处冲突手解）；PR #478 于 13:46 合入（743db967，PF-6 交面：登记处 status 改 done + 路径图同步），同样改这两个共享文件，本面据此第七次落基（登记处自动合并、路径图两处冲突手解）；PR #474 于 14:13 合入（a91e3697，#465 的 PF-10 Beta 面登记进登记处），同样改这两个共享文件，本面据此第八次落基（登记处自动合并、路径图两处冲突手解，loader 校验 11 个面）。六次登记处变更都不与本面 PF-13 的 27 条路径相交。",
+    "AC-04-03（真人浏览器完整链）按现行验收协议门槛记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过；实测事实仍为未执行（executed=false，条目保留在 not_run[] 里）。解除条件 = 跟进票 #523 关闭且证据满足（见 not_run[] 的 AC-04-03 条目 follow_up_issue 与 unblock_condition 字段）。",
+    "TD-04 与矩阵 PG 侧（AC-04-01/02/04/05、本机 Docker 三轮 AC-04-04）同样按现行验收协议门槛记为 DEFERRED_MANUAL：代码侧条件已满足、环境验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过；实测事实仍为未运行（executed=false，条目保留在 not_run[] 里，TD-04 的 status 仍为 not_run）。解除条件 = 跟进票 #524 关闭且证据满足（票 #360 + PR #463 已实现 CI 的 PG 作业位置，本票是「把能力用起来并留证」）。SQLite 等价路径不替代生产成员态的真实 PG 证据。代码合并不等于 Beta 首版验收通过；完整 Beta 验收仍依据正式验收标准判定。",
+    "DEFERRED_MANUAL 的两层判定（状态定义见 PR #525）：它只解除代码合并这一层阻塞，仍然阻塞 Beta 首版放行（协议 §6 的主流程阻塞集含它）。因此本表里的 AC-04-03、TD-04 与 PG 侧四条虽然不阻塞代码合并，但不得被读成 Beta 放行已通过；代码合并不等于 Beta 首版验收通过，完整 Beta 验收仍依据正式验收标准判定。",
+    "词表漂移（真实代码项）：governance.Actor.Role 仍是无类型 string（governance.Actor 是 rulesetstore.Actor 的类型别名，internal/lingdoc/templategovernance/model.go:18；rulesetstore.Actor.Role 见 internal/lingdoc/rulesetstore/store.go:59-63）。把 Role 收成 types.TenantRole 不改变 API 契约的字段形状（该结构不跨 HTTP 边界，contracts/openapi.json 无此字段），但会连带改动 rulesetstore 包、internal/container/lingdoc.go（登记处属 PF-7）、internal/router/lingdoc_routes_test.go（属 PF-8）与 internal/lingdoc/workspace/template_governance_adapter_test.go（属 PF-11），并牵动 rulesetstore 既有取值（如 tenant_admin）不在 types.TenantRole 的四个合法值内 ⇒ 属跨包契约变更，本 PR 不改，另开票处理。本 PR 在本面路径内补了运行期断言：治理 seam 拒绝非法角色取值，且身份不可归属时不以该身份署名写收据（TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt）。"
+  ]
+}
