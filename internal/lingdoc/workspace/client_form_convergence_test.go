@@ -72,6 +72,7 @@ func convergedFormContract() []struct {
 		{governance.ErrUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
 		{governance.ErrModelUnavailable, 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", false},
 		{governance.ErrUnauthorized, 403, "template_governance_authorization_unavailable", "目录治理授权不可用。", false},
+		{governance.ErrAuditHistoryForbidden, 403, "forbidden", "仅当前租户目录管理员可读取治理审计历史。", false},
 		{governance.ErrSourceUnavailable, 403, "source_access_denied", "来源已不可用或无当前授权。", false},
 		{governance.ErrNotFound, 404, "not_found", "资源不存在或不可访问。", false},
 		{governance.ErrInvalidRequest, 400, "invalid_request", "请求字段不符合约定。", false},

@@ -16912,6 +16912,150 @@
         "x-delivery-phase": "core"
       }
     },
+    "/template-catalog/profiles/{templateId}/audit-events": {
+      "get": {
+        "operationId": "listTemplateCatalogAuditHistory",
+        "tags": [
+          "template-governance"
+        ],
+        "summary": "读取模板档案发布、撤回、召回和复制审计历史",
+        "description": "只返回当前租户内该模板档案的治理事件；每次读取均重验当前成员身份与目录管理权限。非当前目录管理员拒绝访问。使用递减审计 ID 游标分页，limit 最大 100。",
+        "parameters": [
+          {
+            "name": "templateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "after_id",
+            "in": "query",
+            "required": false,
+            "description": "排他递减游标；传入上一页 next_after_id。",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按审计 ID 递减返回的当前租户模板治理历史。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "events"
+                      ],
+                      "properties": {
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "actor_user_id",
+                              "actor_role",
+                              "action",
+                              "target_type",
+                              "target_id",
+                              "outcome",
+                              "details",
+                              "created_at"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "actor_user_id": {
+                                "type": "string"
+                              },
+                              "actor_role": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string"
+                              },
+                              "target_type": {
+                                "type": "string"
+                              },
+                              "target_id": {
+                                "type": "string"
+                              },
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "success",
+                                  "failure"
+                                ]
+                              },
+                              "details": {
+                                "type": "object",
+                                "additionalProperties": true
+                              },
+                              "created_at": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            }
+                          }
+                        },
+                        "next_after_id": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "存在下一页时返回；作为 after_id 传入下一次请求。"
+                        }
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "模板标识、游标或 limit 无效。"
+          },
+          "401": {
+            "description": "未认证。"
+          },
+          "403": {
+            "description": "当前成员不是目录管理员，或当前权限无法读取完整审计详情。"
+          },
+          "404": {
+            "description": "模板不存在或当前租户不可访问。"
+          },
+          "500": {
+            "description": "读取治理审计历史失败。"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+
     "/template-catalog/replay-fixtures": {
       "get": {
         "operationId": "listReplayFixtures",
