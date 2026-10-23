@@ -162,9 +162,14 @@ func noteAuthorizationDenial(ctx context.Context, request AuthorizationRequest, 
 		// would double the count the duty officer reads.
 		return
 	}
-	holder.Add(RuntimeObservation{Kind: RuntimeObservationAuthorizationDenial, Actor: request.Actor,
-		ProjectID: request.ProjectID, Capability: capability,
-		ErrorCode: runtimeErrorCode(err), Reason: err.Error()})
+	holder.Add(RuntimeObservation{
+		Kind:       RuntimeObservationAuthorizationDenial,
+		Actor:      request.Actor,
+		ProjectID:  request.ProjectID,
+		Capability: capability,
+		ErrorCode:  runtimeErrorCode(err),
+		Reason:     err.Error(),
+	})
 }
 
 // runtimeErrorCode answers the stable code of a failure, for the event stream.
