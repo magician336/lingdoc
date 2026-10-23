@@ -21,6 +21,7 @@ import path from 'node:path'
 import test from 'node:test'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import type { AgentContextInput, AgentContextPackage, AgentSourceRef, EvidenceCard, VersionRef } from '@/api/lingdoc/agentApi'
 import type { ContextFacts, ContextIntent, ContextPackageClient } from '@/api/lingdoc/agentContext'
 
@@ -28,7 +29,6 @@ const require = createRequire(import.meta.url)
 const here = path.dirname(fileURLToPath(import.meta.url))
 const frontend = path.resolve(here, '../../..')
 const frontendRequire = Module.createRequire(path.join(frontend, 'package.json'))
-const ts = frontendRequire('typescript')
 const compiler = frontendRequire('@vue/compiler-sfc')
 const vue = frontendRequire('vue')
 const { renderToString } = frontendRequire('@vue/server-renderer')
@@ -259,6 +259,8 @@ function makeServer() {
 function panelProps(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     projectId: 'project-1',
+    agent: 'task_assistant',
+    sessionKey: 'session-1',
     intent: intentOf(),
     availableCards: [],
     ...overrides,
@@ -465,6 +467,117 @@ test('宿主更新了版本基线 ⇒ 面板下一次预览就用新基线，不
   assert.equal(state.requests[1].expected_project_version, 9, '预览必须带宿主当前的那份基线')
 })
 
+test('事实区显示服务端的关联标识', async () => {
+  const { client, state } = makeServer()
+  state.pkg = contextPackage({ correlation_id: 'corr-431' })
+
+  const html = await renderPanel(panelProps({ client }))
+
+  assert.match(html, /corr-431/, '关联标识要显示出来')
+  assert.match(html, /data-correlation-id="corr-431"/, '关联标识要落在界面上')
+})
+
+test('面板标出这一轮是哪个助手、哪个会话', async () => {
+  const { client } = makeServer()
+  const html = await renderPanel(panelProps({
+    client,
+    agent: 'research_agent',
+    sessionKey: 'session-42',
+  }))
+
+  assert.match(html, /research_agent/, '助手机别要显示出来：否则无从判断这一轮是谁的')
+  assert.match(html, /session-42/, '会话标识要显示出来')
+  assert.match(html, /data-agent="research_agent"/, '助手机别要落在界面上')
+  assert.match(html, /data-session-key="session-42"/, '会话标识要落在界面上')
+})
+
+/**
+ * 换会话的用例：第二个会话的预览先按住不放，好看清「切会话」这一瞬间的状态。
+ *
+ * 按住不放是必要的：预览一回来事实区就有内容了，「清空」这件事就看不出来了。
+ */
+function sessionSwitchSetup(agent: string, sessionKey: string) {
+  const { state } = makeServer()
+  state.pkg = contextPackage({ card_refs: [{ id: 'card-1', version: 3 }] })
+  state.cards = [evidenceCard('card-1', 3, 'CONFIRMED')]
+
+  let releaseSecond: (() => void) | undefined
+  const client: ContextPackageClient = {
+    previewAgentContext: async (_projectId: string, input: AgentContextInput) => {
+      state.previewCalls += 1
+      state.requests.push({ ...input })
+      if (state.previewCalls === 2) {
+        await new Promise<void>(resolve => { releaseSecond = resolve })
+      }
+      return { data: state.pkg }
+    },
+    listEvidenceCards: async () => ({ data: state.cards }),
+  }
+
+  const props = vue.reactive(panelProps({
+    client,
+    agent,
+    sessionKey,
+    intent: intentOf({ card_refs: [{ id: 'card-1', version: 3 }] }),
+  })) as Record<string, any>
+  const opened = openPanel(props)
+  return { panelState: opened.state, emitted: opened.emitted, props, server: state, releaseSecond: () => releaseSecond?.() }
+}
+
+test('换会话（助手机别变了）⇒ 意图与事实一并清空，新预览不带上一会话的勾选', async () => {
+  const { panelState, props, server, releaseSecond } = sessionSwitchSetup('task_assistant', 'session-1')
+  await panelState.settle()
+
+  assert.equal(server.previewCalls, 1, '打开面板先预览一次')
+  assert.deepEqual(panelState.intent.value.card_refs, [{ id: 'card-1', version: 3 }])
+  assert.equal(panelState.facts.value?.groups.cards.length, 1, '先有一轮事实，清空才有意义')
+
+  props.agent = 'research_agent'
+  await vue.nextTick()
+
+  assert.equal(panelState.facts.value, null, '换会话后事实区清空')
+  assert.deepEqual(panelState.intent.value.card_refs, [], '换会话后意图一并清空')
+
+  releaseSecond()
+  await panelState.settle()
+
+  assert.equal(server.previewCalls, 2, '换会话后重新预览一次')
+  assert.deepEqual(server.requests[1].card_refs, [], '新预览不带上一会话的勾选')
+  assert.deepEqual(panelState.intent.value.card_refs, [], '新会话从空范围开始')
+})
+
+test('换会话（会话标识变了）⇒ 同样清空意图与事实', async () => {
+  const { panelState, props, server, releaseSecond } = sessionSwitchSetup('task_assistant', 'session-1')
+  await panelState.settle()
+  assert.equal(panelState.facts.value?.groups.cards.length, 1)
+
+  props.sessionKey = 'session-2'
+  await vue.nextTick()
+
+  assert.equal(panelState.facts.value, null, '换会话后事实区清空')
+  assert.deepEqual(panelState.intent.value.card_refs, [], '换会话后意图一并清空')
+
+  releaseSecond()
+  await panelState.settle()
+
+  assert.equal(server.previewCalls, 2, '换会话后重新预览一次')
+  assert.deepEqual(server.requests[1].card_refs, [], '新预览不带上一会话的勾选')
+})
+
+test('两个助手的会话不合并：面板只显示当前助手这一轮', async () => {
+  const { client } = makeServer()
+  const first = await renderPanel(panelProps({ client, agent: 'task_assistant', sessionKey: 'session-1' }))
+  const second = await renderPanel(panelProps({ client, agent: 'research_agent', sessionKey: 'session-2' }))
+
+  assert.match(first, /data-agent="task_assistant"/)
+  assert.match(first, /data-session-key="session-1"/)
+  assert.doesNotMatch(first, /research_agent/, '任务助手那一轮不得显示调研助手的身份')
+
+  assert.match(second, /data-agent="research_agent"/)
+  assert.match(second, /data-session-key="session-2"/)
+  assert.doesNotMatch(second, /data-agent="task_assistant"/, '两个助手的会话不合并')
+})
+
 test('面板不引传输层：只依赖门面模块', () => {
   const specifiers = [...panelSourceText.matchAll(/from\s+['"]([^'"]+)['"]/g)].map(match => match[1])
   assert.deepEqual(
@@ -476,6 +589,66 @@ test('面板不引传输层：只依赖门面模块', () => {
     [...new Set(specifiers)].sort(),
     ['@/api/lingdoc/agentContext', 'vue'],
     '面板的依赖集只有 vue 与门面模块',
+  )
+})
+
+/**
+ * 面板 <script setup> 块里的源码。
+ *
+ * 静态断言读的是**源码**而不是编译产物：编译产物会把类型擦掉，那正是要守住的
+ * 东西（面板自己写的那份没有类型的对齐规则）。
+ */
+const panelScriptBlock = /<script setup lang="ts">([\s\S]*?)<\/script>/.exec(panelSourceText)?.[1] ?? ''
+
+const panelScriptAst = ts.createSourceFile(
+  'ContextPackagePanel.ts',
+  panelScriptBlock,
+  ts.ScriptTarget.ES2022,
+  true,
+)
+
+/**
+ * 面板里按 id **且** version 双重对齐的实现。
+ *
+ * 一条规则写两遍，两边就会漂：事实区那份有类型、意图区那份没有。所以这里静态地
+ * 找「同一个 `&&` 里同时比较 id 与 version」的表达式——那就是这条规则的手写形状。
+ */
+function idVersionAlignmentRules(sourceFile: ts.SourceFile): string[] {
+  const found: string[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+    ) {
+      const text = node.getText(sourceFile).replace(/\s+/g, ' ')
+      if (text.includes('===') && /\.id\b/.test(text) && /\.version\b/.test(text)) {
+        found.push(text.slice(0, 160))
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return found
+}
+
+/** 面板从门面模块导入的名字（值导入与类型导入都算）。 */
+function facadeImportedNames(): string[] {
+  return [
+    ...panelSourceText.matchAll(
+      /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]@\/api\/lingdoc\/agentContext['"]/g,
+    ),
+  ].flatMap(match => match[1].split(',').map(name => name.trim()).filter(Boolean))
+}
+
+test('意图区复用门面的对齐函数：面板里没有第二份 id+version 对齐实现', () => {
+  assert.deepEqual(
+    idVersionAlignmentRules(panelScriptAst),
+    [],
+    '面板不得自己写一份「按 id 且 version 对齐」的规则：意图区要复用门面的对齐函数',
+  )
+  assert.ok(
+    facadeImportedNames().includes('alignCardStatuses'),
+    '意图区必须调用门面的对齐函数，而不是自己判一次「候选清单里有没有这个版本」',
   )
 })
 

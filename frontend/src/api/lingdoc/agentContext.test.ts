@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 import { fileURLToPath } from 'node:url'
 import type { AgentContextPackage, AgentSourceRef, EvidenceCard } from './agentApi'
-import type { ContextFacts, ContextIntent, ContextPackageClient } from './agentContext'
+import type { ContextCardSummary, ContextFacts, ContextIntent, ContextPackageClient } from './agentContext'
 
 /**
  * 上下文包门面的用例契约。
@@ -29,6 +29,20 @@ import type { ContextFacts, ContextIntent, ContextPackageClient } from './agentC
 type Assert<T extends true> = T
 export type IntentAndFactsFieldsAreDisjoint = Assert<
   Extract<keyof ContextIntent, keyof ContextFacts> extends never ? true : false
+>
+
+/**
+ * 候选卡摘要的状态取值与服务端那张卡**一模一样**：一个不多，一个不少。
+ *
+ * 少了会被 `?? status` 那类兜底悄悄透出去；多了一个拼错的状态就混了进来。这条
+ * 断言的硬门是类型检查器——`vue-tsc` 会在类型检查阶段挡住它。
+ */
+export type CandidateSummaryStatusMatchesServerUnion = Assert<
+  [ContextCardSummary['status']] extends [EvidenceCard['status']]
+    ? [EvidenceCard['status']] extends [ContextCardSummary['status']]
+      ? true
+      : false
+    : false
 >
 
 // 对外契约在仓库根下，前端目录可能被单独 checkout，所以读不到时显式 skip。
@@ -204,10 +218,54 @@ test('请求体按服务端契约逐字段构造，敏感上下文不由面板�
     t.skip(`读不到对外契约（${CONTRACT.pathname}），跳过字段名对照`)
     return
   }
+  const contractProperties = contractInputProperties()
+  for (const key of Object.keys(request)) {
+    assert.equal(
+      contractProperties.includes(key),
+      true,
+      `请求体的 ${key} 必须来自服务端契约：契约里没有的键不得出现在请求体里`,
+    )
+  }
+  assert.equal(contractProperties.includes('task_id'), true, '契约里有 task_id，只是这一轮没有值')
+})
+
+test('请求体的键就是意图里有值的那些字段：没有值的可选字段不进', () => {
+  const { context } = loadAgentContext()
+  const bare = context.buildContextRequest(context.createIntent(BASIN))
+
   assert.deepEqual(
-    Object.keys(request).sort(),
-    contractInputProperties().sort(),
-    '请求体的字段名必须与服务端契约逐字对齐',
+    Object.keys(bare).sort(),
+    [
+      'card_refs',
+      'expected_context_revision',
+      'expected_project_version',
+      'expected_version',
+      'sensitive_context_confirmed',
+      'source_ids',
+    ],
+    '意图里没有 chapter_id / task_id ⇒ 请求体里不得有这两个键',
+  )
+  assert.equal('chapter_id' in bare, false, '没有值就不写这个键')
+  assert.equal('task_id' in bare, false, '没有值就不写这个键')
+
+  const filled = context.buildContextRequest(
+    context.createIntent({ ...BASIN, chapter_id: 'chapter-1', task_id: 'task-1' }),
+  )
+  assert.equal(filled.chapter_id, 'chapter-1', '有值才写这个键')
+  assert.equal(filled.task_id, 'task-1', '有值才写这个键')
+  assert.deepEqual(
+    Object.keys(filled).sort(),
+    [
+      'card_refs',
+      'chapter_id',
+      'expected_context_revision',
+      'expected_project_version',
+      'expected_version',
+      'sensitive_context_confirmed',
+      'source_ids',
+      'task_id',
+    ],
+    '有值的可选字段进请求体',
   )
 })
 
@@ -269,7 +327,37 @@ test('对齐按包里的卡片顺序来，每张卡各占一行', () => {
   assert.deepEqual(rows.map(row => row.status), ['STALE', 'CONFIRMED', undefined])
 })
 
-test('事实分成卡片、来源、理由、版本基线、权限五组', () => {
+test('对齐规则只有一份：证据卡与候选卡摘要走出同一个结果', () => {
+  const { context } = loadAgentContext()
+  const refs = [{ id: 'card-1', version: 3 }, { id: 'card-2', version: 1 }]
+  const cards = [evidenceCard('card-1', 3, 'CONFIRMED'), evidenceCard('card-2', 1, 'STALE')]
+  const summaries = [
+    { id: 'card-1', version: 3, status: 'CONFIRMED' as const },
+    { id: 'card-2', version: 1, status: 'STALE' as const },
+  ]
+
+  const fromCards = context.alignCardStatuses(refs, cards)
+  const fromSummary = context.alignCardStatuses(refs, summaries)
+
+  assert.deepEqual(
+    fromSummary,
+    fromCards,
+    '证据卡与候选卡摘要对齐出同一个结果：这条规则只有一个拥有者',
+  )
+  assert.deepEqual(fromSummary.map(row => row.status), ['CONFIRMED', 'STALE'])
+})
+
+test('候选卡摘要的状态取值与服务端那张卡一致，不是裸字符串', () => {
+  const { context } = loadAgentContext()
+  const summaries = [{ id: 'card-1', version: 3, status: 'CONFIRMED' as const }]
+
+  const rows = context.alignCardStatuses([{ id: 'card-1', version: 3 }], summaries)
+
+  assert.equal(rows[0].state, 'known')
+  assert.equal(rows[0].status, 'CONFIRMED')
+})
+
+test('事实分成卡片、来源、理由、版本基线、权限、关联标识六组', () => {
   const { context } = loadAgentContext()
   const pkg = contextPackage({
     card_refs: [{ id: 'card-1', version: 3 }],
@@ -282,7 +370,7 @@ test('事实分成卡片、来源、理由、版本基线、权限五组', () =>
 
   assert.deepEqual(
     Object.keys(facts.groups).sort(),
-    ['authorization', 'cards', 'reasons', 'sources', 'version_baseline'],
+    ['authorization', 'cards', 'correlation', 'reasons', 'sources', 'version_baseline'],
   )
   assert.equal(facts.groups.cards.length, 1)
   assert.equal(facts.groups.cards[0].status, 'CONFIRMED')
@@ -293,6 +381,23 @@ test('事实分成卡片、来源、理由、版本基线、权限五组', () =>
   assert.equal(facts.groups.version_baseline.template_version, '2')
   assert.equal(facts.groups.authorization.authorization_state, 'granted')
   assert.deepEqual(facts.groups.authorization.output_constraints, ['不得编造出处'])
+})
+
+test('事实里带关联标识：服务端的 correlation_id 原样透传，不加工', () => {
+  const { context } = loadAgentContext()
+  const pkg = contextPackage({ correlation_id: 'corr-431' })
+  const facts = context.groupContextFacts(pkg, [])
+
+  assert.equal(
+    facts.groups.correlation.correlation_id,
+    'corr-431',
+    '关联标识按服务端原值透传',
+  )
+  assert.equal(
+    facts.groups.correlation.correlation_id,
+    pkg.correlation_id,
+    '关联标识不得被前端改写、补前缀或截断',
+  )
 })
 
 test('版本基线给出项目版本、规范修订、上下文修订、章节版本、任务版本与模板版本', () => {
@@ -532,6 +637,23 @@ function exportedNames(sourceFile: ts.SourceFile): string[] {
   return names
 }
 
+/** 模块导出的**类型**声明（接口与类型别名）——值导出不算。 */
+function exportedTypeNames(sourceFile: ts.SourceFile): string[] {
+  const names: string[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
+      hasExportModifier(node) &&
+      node.name
+    ) {
+      names.push(node.name.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return names
+}
+
 /** 模块里 `export * from ...` 的出现：星号导出会把契约类型一并带走。 */
 function starExports(sourceFile: ts.SourceFile): string[] {
   const found: string[] = []
@@ -621,13 +743,34 @@ test('契约类型由传输层拥有：门面不重新声明它们', () => {
   }
 })
 
-test('门面不导出契约类型本身', () => {
+test('门面不导出契约类型本身，也不重新声明契约的形状', () => {
   const sourceFile = parseModule(AGENT_CONTEXT_FILE)
   const exported = exportedNames(sourceFile)
   for (const name of CONTRACT_TYPE_NAMES) {
     assert.equal(exported.includes(name), false, `门面不得导出 ${name}`)
   }
   assert.deepEqual(starExports(sourceFile), [], '星号导出会把传输层的契约类型一并带走')
+
+  // 名字可以改，形状不能重写：门面自己声明的导出类型若与某个契约类型同形，
+  // 那就是契约的第二份声明——名字不一样也拦得住。（别名不是重新声明：一个
+  // `type X = EvidenceCard` 只是指过去，形状仍然只有传输层那一份，不在这条规则
+  // 的射程里。）
+  const { checker, moduleFile } = moduleTypeChecker()
+  const apiFile = agentApiSourceFile()
+  for (const contractName of CONTRACT_TYPE_NAMES) {
+    const contractShape = shapeOf(checker, apiFile, contractName)
+    for (const exportedName of exportedTypeNames(moduleFile)) {
+      const declaration = findTypeDeclaration(moduleFile, exportedName)
+      assert.ok(declaration, `模块里找不到导出的类型 ${exportedName}`)
+      if (aliasOfContractType(declaration, CONTRACT_TYPE_NAMES)) continue
+      const shape = shapeOf(checker, moduleFile, exportedName)
+      assert.equal(
+        sameShape(shape, contractShape),
+        false,
+        `门面导出的 ${exportedName} 与契约类型 ${contractName} 同形：不得重新声明契约形状`,
+      )
+    }
+  }
 })
 
 test('选择理由不做字符串匹配：模块里没有针对理由文本的匹配或解析', () => {
@@ -697,6 +840,44 @@ function moduleTypeChecker(): { checker: ts.TypeChecker; moduleFile: ts.SourceFi
     .find(file => file.fileName.replace(/\\/g, '/').endsWith('/agentContext.ts'))
   assert.ok(moduleFile, '类型检查器必须读得到门面模块')
   return { checker, moduleFile }
+}
+
+/** 类型检查器读到的传输层模块。 */
+function agentApiSourceFile(): ts.SourceFile {
+  moduleTypeChecker()
+  const file = typeProgram
+    ?.getSourceFiles()
+    .find(item => item.fileName.replace(/\\/g, '/').endsWith('/agentApi.ts'))
+  assert.ok(file, '类型检查器必须读得到传输层模块')
+  return file
+}
+
+/** 某个类型在类型检查器眼里的字段名（排序后）：这就是它的「形状」。 */
+function shapeOf(checker: ts.TypeChecker, file: ts.SourceFile, typeName: string): string[] {
+  const declaration = findTypeDeclaration(file, typeName)
+  assert.ok(declaration, `文件里找不到类型 ${typeName}`)
+  const type = checker.getTypeAtLocation(declaration)
+  return checker.getPropertiesOfType(type).map(symbol => symbol.getName()).sort()
+}
+
+/** 两个形状是不是同一份：字段名集合相同，且都不是空的。 */
+function sameShape(left: string[], right: string[]): boolean {
+  if (left.length === 0 || right.length === 0) return false
+  return left.length === right.length && left.every((name, index) => name === right[index])
+}
+
+/**
+ * 这个类型是不是某个契约类型的**别名**（只是指过去，没有把形状写出来）。
+ *
+ * 别名不是重新声明：`type ContextEvidenceCard = EvidenceCard` 只是给契约类型
+ * 起个本地名字，形状仍然只有传输层那一份。重新声明是把成员一个个写出来——
+ * 那种形状相同就要拦。
+ */
+function aliasOfContractType(declaration: ts.Declaration, contractNames: string[]): boolean {
+  if (!ts.isTypeAliasDeclaration(declaration)) return false
+  const type = declaration.type
+  if (!ts.isTypeReferenceNode(type)) return false
+  return contractNames.includes(type.typeName.getText())
 }
 
 /** 类型检查器读到的某个类型的字段名。 */

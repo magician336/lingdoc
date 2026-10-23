@@ -95,19 +95,38 @@ export const withoutSource = (intent: ContextIntent, sourceId: string): ContextI
  * 把意图变成服务端契约的请求体：字段名逐字对齐 `AgentContextInput`。
  *
  * `sensitive_context_confirmed` 恒为 false：面板不代用户确认敏感上下文，授权
- * 结论由服务端按当前授权给。可选字段即使没有值也留着键——契约里列了这些字段，
- * 空值在发到服务端之前就被丢掉，请求体的字段集合因此与服务端契约逐字一致。
+ * 结论由服务端按当前授权给。
+ *
+ * 可选字段**没有值就不进请求体**：意图里没有的 `chapter_id` / `task_id` 不会
+ * 以 `undefined` 的形式出现在请求里。请求体的键因此是「意图里有值的那些字段」
+ * 的子集，且每一个键都来自服务端契约——契约里没有的键，前端不会自己造。
  */
 export const buildContextRequest = (intent: ContextIntent): AgentContextInput => ({
   expected_project_version: intent.expected_project_version,
   expected_context_revision: intent.expected_context_revision,
   expected_version: intent.expected_version,
-  chapter_id: intent.chapter_id,
-  task_id: intent.task_id,
+  ...(intent.chapter_id === undefined ? {} : { chapter_id: intent.chapter_id }),
+  ...(intent.task_id === undefined ? {} : { task_id: intent.task_id }),
   source_ids: [...intent.source_ids],
   card_refs: intent.card_refs.map(ref => ({ ...ref })),
   sensitive_context_confirmed: false,
 })
+
+/**
+ * 一张卡在清单里的**摘要**：对齐一条「按 id 且 version 双重对齐」的规则只用到这三样。
+ *
+ * 这不是证据卡契约的第二份：证据卡有二十来个字段，其中只有 id、version 与业务
+ * 状态参与对齐。宿主给面板的就是这份摘要（面板不引传输层，拿不到整张卡），事实区
+ * 拿到的证据卡是它的超集——同一条规则吃得下这两种形状，所以对齐规则只有一份。
+ *
+ * `status` 直接取服务端那张卡的业务状态，不另立一份字符串字面量联合：多写一个
+ * 取值就多一处会漂的地方。
+ */
+export interface ContextCardSummary {
+  id: string
+  version: number
+  status: EvidenceCard['status']
+}
 
 /**
  * 一张卡在服务端当前的状态。
@@ -131,10 +150,11 @@ export type ContextCardStatus =
  * 的值。
  *
  * `cards` 是 `undefined` 表示清单没读到：那时每一张卡都是「状态未知（清单读不到）」。
+ * 清单可以是证据卡，也可以是候选卡摘要——这条规则只有一个拥有者，就是这里。
  */
 export const alignCardStatuses = (
   refs: VersionRef[],
-  cards: EvidenceCard[] | undefined,
+  cards: ContextCardSummary[] | undefined,
 ): ContextCardStatus[] =>
   refs.map(ref => {
     if (cards === undefined) {
@@ -151,10 +171,10 @@ export const alignCardStatuses = (
   })
 
 /**
- * 服务端组装好的那一份，分成五组可展示的事实。
+ * 服务端组装好的那一份，分成六组可展示的事实。
  *
- * 版本基线与权限两组是服务端包里那几个字段的投影（`Pick` 自契约类型），不是
- * 第二份契约：服务端加了字段，这里跟着契约走，不必再记一份。
+ * 版本基线、权限与关联标识三组是服务端包里那几个字段的投影（`Pick` 自契约类型），
+ * 不是第二份契约：服务端加了字段，这里跟着契约走，不必再记一份。
  */
 export interface ContextFactGroups {
   /** 这一轮带了哪几张卡，以及它们在服务端的当前状态。 */
@@ -176,6 +196,8 @@ export interface ContextFactGroups {
   >
   /** 授权结论与产出约束，由服务端给出。 */
   authorization: Pick<AgentContextPackage, 'authorization_state' | 'output_constraints'>
+  /** 这一轮的关联标识：服务端给的追踪 id，原样透传。 */
+  correlation: Pick<AgentContextPackage, 'correlation_id'>
 }
 
 /**
@@ -190,7 +212,7 @@ export interface ContextFacts {
 }
 
 /**
- * 把服务端组装好的那一份分成五组可展示的事实。
+ * 把服务端组装好的那一份分成六组可展示的事实。
  *
  * 来源保持服务端给的顺序；理由保持服务端给的条数与顺序。理由是不透明字符串，
  * 这里原样透传——不按理由的文本去配对条目，也不按文本筛卡片。
@@ -219,6 +241,9 @@ export const groupContextFacts = (
     authorization: {
       authorization_state: pkg.authorization_state,
       output_constraints: [...pkg.output_constraints],
+    },
+    correlation: {
+      correlation_id: pkg.correlation_id,
     },
   },
 })
