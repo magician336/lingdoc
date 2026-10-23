@@ -45,6 +45,7 @@ RETIRED_SCRIPTS = (
 KNOWN_SCRIPTS = {
     "lingdoc_gate_concepts.py": "the documented vocabulary of the decision",
     "lingdoc_gate_decision.py": "the decision itself",
+    "lingdoc_gate_queue_state.py": "the queued-or-running judgement of the pull request gate",
     "lingdoc_gate_surfaces.py": "the gate surface manifest",
     "lingdoc_required_checks.py": "the names the branch ruleset demands",
     "check_lingdoc_routes.py": "the route contract checker",

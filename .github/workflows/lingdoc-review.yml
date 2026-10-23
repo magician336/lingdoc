@@ -13,7 +13,19 @@ permissions:
 
 concurrency:
   group: lingdoc-review-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A new push must not cancel the run that is already waiting for a runner.
+  # The merge authorisation is a green gate on the *current* head, so
+  # cancelling the only verification of a head destroys exactly the
+  # invariant the release depends on.  Every head therefore runs its own
+  # gate: an old run's result is meaningless for the current head, but it
+  # is harmless, and it will not fail to run at all.
+  #
+  # The cost is that an old run still occupies a runner.  This repository
+  # has few pull requests and each pushes a bounded number of heads, so the
+  # cost is acceptable here.  See issue #550, and
+  # scripts/ci/lingdoc_gate_queue_state.py for the machine-readable
+  # "queued or running" judgement this policy needs.
+  cancel-in-progress: false
 
 jobs:
   gate:
