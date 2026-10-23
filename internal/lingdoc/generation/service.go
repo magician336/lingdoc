@@ -443,6 +443,27 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	return run, nil
 }
 
+// runIDKey carries the generation run id through the context.
+//
+// The run id is what a ledger row has to name, and the generation input
+// cannot carry it: the input's digest is part of the idempotent replay
+// contract, so a new field would change every historical request digest
+// and turn a replay into a conflict.  The context does not enter the
+// digest, so it is the safe place for it.
+type runIDKey struct{}
+
+// WithRunID puts the generation run id into the context.
+func WithRunID(ctx context.Context, runID string) context.Context {
+	return context.WithValue(ctx, runIDKey{}, runID)
+}
+
+// RunIDFromContext returns the generation run id the context carries, or
+// the empty string when there is none.
+func RunIDFromContext(ctx context.Context) string {
+	runID, _ := ctx.Value(runIDKey{}).(string)
+	return runID
+}
+
 // Execute processes one queued run. A conditional claim prevents duplicate
 // workers from invoking the model for the same run.
 func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
@@ -456,7 +477,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		}
 		return run, err
 	}
-	workCtx, cancel := context.WithCancel(ctx)
+	workCtx, cancel := context.WithCancel(WithRunID(ctx, run.ID))
 	stopHeartbeat := make(chan struct{})
 	heartbeatDone := make(chan struct{})
 	go func() {
