@@ -52,7 +52,7 @@ func NewGenerationApplication(
 	service := generation.NewServiceWithAccessPolicy(
 		accessPolicy, inputs,
 		generationSourceValidator{reviewer: workspace.sourceReviewerForGateway(workspace.generationGateway())},
-		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
+		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr, ledger: workspace.modelCallLedger}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	service.Evidence = generationEvidenceValidator{selector: workspace.evidenceSelector}
 	service.RequireHumanInitiation = true
@@ -351,12 +351,63 @@ type generationHostModel struct {
 	templates           core.TemplateReader
 	acceptanceBudget    *generationAcceptanceBudget
 	acceptanceConfigErr error
+	// ledger is the model-call ledger this adapter writes one row per
+	// provider call to.  It is the same instance the agent adapter uses,
+	// so one real model call leaves one row whichever path made it.
+	ledger core.ModelCallLedger
 }
 
 type generatedDraftPayload struct {
 	BodyMarkdown string   `json:"body_markdown"`
 	SourceIDs    []string `json:"source_ids"`
 	ReviewItems  []string `json:"review_items"`
+}
+
+// recordGenerationModelCall leaves one ledger row for the provider call this
+// generation made.
+//
+// It fills the same shared facts every other adapter fills, so the row says
+// the same things wherever the call came from: the provider and the model are
+// the ones that actually answered, and the run id says which generation run
+// the call belongs to.
+func (m generationHostModel) recordGenerationModelCall(ctx context.Context, input generation.Input, models []*types.Model, modelID string, options *chat.ChatOptions, response *types.ChatResponse, callErr error) error {
+	if m.ledger == nil {
+		return nil
+	}
+	facts := modelCallFacts{
+		tenantID:   input.Actor.TenantID,
+		projectID:  input.Workspace.ProjectID,
+		provider:   modelProvider(models, modelID),
+		modelID:    modelID,
+		runMode:    m.RunMode(),
+		status:     core.ModelCallLedgerStatusSucceeded,
+		sourceKind: core.ModelCallLedgerSourceGenerationRun,
+		sourceID:   generation.RunIDFromContext(ctx),
+	}
+	if response != nil {
+		facts.inputTokens = response.Usage.PromptTokens
+		facts.outputTokens = response.Usage.CompletionTokens
+	}
+	if callErr != nil || response == nil {
+		facts.status = core.ModelCallLedgerStatusFailed
+		facts.errorCode = core.ModelCallFailureCode(callErr)
+	}
+	if options != nil {
+		raw, marshalErr := json.Marshal(options)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		facts.parameters = string(raw)
+	}
+	if m.acceptanceBudget != nil {
+		// The same budget semantics the agent path records: what was reserved
+		// for this call and what it actually consumed.
+		facts.reservedNanoUSD = generationAcceptancePerCall
+		if response != nil && response.Usage.PromptTokens >= 0 && response.Usage.CompletionTokens >= 0 {
+			facts.actualNanoUSD = actualDeepSeekCost(response.Usage.PromptTokens, response.Usage.CompletionTokens)
+		}
+	}
+	return recordModelCallRow(ctx, m.ledger, facts)
 }
 
 // RunMode 说这个适配器会不会真的调用 provider。
@@ -486,6 +537,13 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		options = acceptanceGenerationChatOptions()
 	}
 	response, callErr := model.Chat(types.WithLLMCallMetadata(modelContext, "lingdoc_generation", ""), messages, options)
+	// One row per provider call, whatever the outcome: the tokens were spent
+	// either way, and a call nobody can account for is exactly what this
+	// ledger exists to prevent.  The row names the generation run that
+	// caused it, so the run can be found again from the ledger.
+	if ledgerErr := m.recordGenerationModelCall(ctx, input, models, modelID, options, response, callErr); ledgerErr != nil {
+		return generation.Draft{}, errors.Join(ledgerErr, core.ErrOutcomeUnknown)
+	}
 	if reservation != nil {
 		if callErr != nil {
 			_ = reservation.unknown("outcome_unknown")
