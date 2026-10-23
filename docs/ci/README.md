@@ -38,7 +38,7 @@ concurrency:
 
 1. **与放行链一致。** 每个 head 各自跑完一次门禁。旧 head 的 run 对当前 head 没有意义，但**无害**；而它不会再因为一次新 push 而**没跑成**。
 2. **不引入自托管 runner。** 那需要部署侧提供机器，当前 `total_count = 0`，不在本仓可自助解决的范围内。
-3. **代价可接受。** 旧 run 仍会占住 runner。本仓 PR 数量少、每个 PR 推 head 次数有限，这个代价在本仓可接受（量化见 §5）。
+3. **代价可接受，而且可量化。** 旧 run 不是和新 run **抢** runner，而是**挡在**新 run 前面：同一个 PR 的新 head 与旧 head 在**同一个 concurrency group** 里，新 head 的门禁要等旧 head 的门禁跑完才开工。实测这个等待是 **1107 秒**（见 §5.2）。本仓 PR 数量少、每个 PR 推 head 次数有限，这个代价在本仓可接受。
 
 **没有**因此改动任何测试覆盖：`SKIPPED` 仍不等于跑过（#482 / AC-04-05）；ruleset 对「当前 head 门禁真绿」的要求**未变**；`runs-on`、job 的触发条件**未动**。
 
@@ -109,6 +109,8 @@ stdout 是一个 JSON 对象：
 
 推新 head 之前先跑一次这个判据：`queued` 时再推是纯粹的浪费（而且在旧口径下还会取消掉正在排队的那一次验证）。
 
+在新口径下，`queued` 有两种成因：**等 runner**（供给问题）与**等前一个 head 的门禁**（concurrency group 排队）。两者的处置一样：**等，不要推**。要区分它们看 `evidence.run.status`：`pending` 是后者（等前一个 head），`queued` 是前者（等 runner）。
+
 ### 3.6 实跑样本
 
 判据脚本对本 PR 自己的一次实跑（PR #562，run `40024991786`，判定时刻 `2026-10-23T21:12:19Z`）：
@@ -176,7 +178,38 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 
 ## 5. 容量基线（AC-3）
 
-数据来源：`gh api` 取 `LingDoc Review` 的 run 与 job 记录（`created_at` / `started_at` / `completed_at`）。样本 = 2026-10-23 18:24Z–21:07Z 之间最近 10 个门禁 run，全部 `conclusion=success`。
+数据来源：`gh api` 取 `LingDoc Review` 的 run 与 job 记录（`created_at` / `started_at` / `completed_at`）。
+
+### 5.1 「排队时长」有两个来源
+
+「run 建好 → 门禁 job 开始」这段时间里可能包含两件事：
+
+- **runner 供给排队**：等 GitHub 分配一台 hosted runner。
+- **concurrency group 等待**：同一个 PR 的上一个 head 的门禁还在跑，新 head 的 run 在同一个 concurrency group 里排队，等前一个结束。
+
+两者表现为同一个时间差，所以下表里的「排队时长」是**两者之和**。判据脚本把它们分开：`evidence.run.status` 为 `pending` 说明它在等 concurrency group，为 `queued` 说明它在等 runner；`evidence.gate_job.started_at` 为 `null` 说明两者都还没到。
+
+### 5.2 新口径（`cancel-in-progress: false`）下的实测
+
+本 PR 自己就是新口径的样本：它推了两个 commit，两个 run 都在同一个 concurrency group 里。
+
+| run id | head | 排队(s) | 其中 concurrency 等待(s) | 运行(s) | 合计(s) | conclusion |
+| --- | --- | --- | --- | --- | --- | --- |
+| 40024991786 | `e9dc083d`（第一个 commit） | 2 | 0 | 1144 | 1146 | success |
+| 40025077061 | `9caffeca`（第二个 commit） | 1107 | 1107 | 611 | 1718 | success |
+
+第二个 head 的门禁**等了 18 分 27 秒**才开工。这不是 runner 供给不足——它是排在**前一个 head 的门禁后面**（实测 run 状态先是 `pending`，前者结束后才转 `in_progress`）。
+
+**这就是 `cancel-in-progress: false` 的确切代价**：新 head 的门禁要等前一个 head 的门禁跑完。因此：
+
+- 一个 PR 推 N 次 head ⇒ 门禁**串行**跑 N 次，当前 head 的门禁最后跑完。
+- 实测一次全量门禁约 10–19 分钟（见下），所以推 3 次 head 约等于多等 10–19 分钟。
+
+第二次的运行时长（611 s）比第一次（1144 s）短，是因为前一个 run 把 Go 的构建缓存焐热了——串行的代价因此小于「N × 单次时长」。
+
+### 5.3 旧口径（`cancel-in-progress: true`）下的样本
+
+样本 = 2026-10-23 18:24Z–21:07Z 之间最近 10 个门禁 run，全部 `conclusion=success`。
 
 | 分量 | 定义 | 样本取值 | 中位数 | 最大 |
 | --- | --- | --- | --- | --- |
@@ -184,12 +217,30 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 | **运行时长** | 门禁 job `started_at` → `completed_at` | 71 … 1217 秒 | ≈110 秒 | 1217 秒（20 分 17 秒） |
 | **合计** | run `created_at` → 门禁 job `completed_at` | 73 … 1225 秒 | ≈117 秒 | 1225 秒 |
 
-### 局限（必须一起读）
+逐 run 明细：
 
-- **这批样本的排队时长都在 2–8 秒，说明采样窗口内 hosted runner 供给良好。这不证明排队问题不存在。** 排队时长是**供给依赖**的：供给紧张时队列会显著变长，而 #550 观察到的正是那种时刻。基线描述的是「供给正常时」的成本，不是「供给最差时」的成本。
-- 样本量 **10 个 run**，且集中在**同一一天、同一批 PR**（多为 `docs/139-f0107-gap-545`、`chore/registry-pf14-paths`、`fix/534-delayed-retry-budget`）。它覆盖的是**常规改动**的门禁成本；`scripts/acceptance/**` 一类改动会额外触发 `LingDoc Interface Integration`（拉 PostgreSQL 17 service），量级另计（见 #539）。
-- 运行时长的最大值（1217 秒）来自 PR #536 的 head `06c69372`（run `40002984905`）——**票面把它记为「长期 `in_progress`、排不上队」，但它最终跑完并变绿了**：排队 8 秒、运行 1217 秒。也就是说，那次观测到的是「排队 + 长运行」叠在一起被人读成了「排不上队」，而不是永远排不上。
-- 容量结论的边界：**门禁从「排队开始」到「变绿」的成本，正常供给下是 1–2 分钟量级；供给紧张时排队时长是未知的变量，本基线没有覆盖它。** 这是保留项，不是已解决的问题。
+| run id | head branch | 排队(s) | 运行(s) | 合计(s) | conclusion |
+| --- | --- | --- | --- | --- | --- |
+| 40024380522 | docs/139-f0107-gap-545 | 2 | 71 | 73 | success |
+| 40022872106 | chore/registry-pf14-paths | 3 | 106 | 109 | success |
+| 40022852013 | docs/139-f0107-gap-545 | 2 | 115 | 117 | success |
+| 40022230426 | docs/139-f0107-gap-545 | 3 | 83 | 86 | success |
+| 40020678358 | fix/534-delayed-retry-budget | 3 | 885 | 888 | success |
+| 40019689822 | feat/535-role-vocabulary | 2 | 354 | 356 | success |
+| 40018775028 | fix/543-generation-error-text | 3 | 337 | 340 | success |
+| 40018345183 | chore/139-pg17-acceptance | 2 | 111 | 113 | success |
+| 40017909687 | fix/534-delayed-retry-budget | 3 | 669 | 672 | success |
+| 40016064550 | chore/139-pg17-acceptance | 3 | 93 | 96 | success |
+
+⚠️ **这 10 个样本采集于旧口径**：每次 push 都会取消上一个 run，所以后一个 head 从不需要等前一个 head——它们的排队时长里**没有** concurrency 等待。**因此 5.3 的排队时长不能代表新口径的成本**；新口径的成本见 5.2。
+
+### 5.4 局限（如实标注）
+
+- **5.3 的样本量是 10 个 run**，且集中在**同一天、同一批 PR**（多为 `docs/139-f0107-gap-545`、`chore/registry-pf14-paths`、`fix/534-delayed-retry-budget`）。它覆盖的是**常规改动**的门禁成本；`scripts/acceptance/**` 一类改动会额外触发 `LingDoc Interface Integration`（拉 PostgreSQL 17 service），量级另计（见 #539）。
+- **新口径的样本量只有 2 个 run**（本 PR 自己的两个 head），且都在同一天、同一个 PR、同一种改动类型（治理类改动 ⇒ 强制全量）。它们不能代表一般情况。
+- **全量门禁的成本由「治理类改动强制全量」决定，而不是本票的改动决定。** `lingdoc_gate_decision.py` 的口径是「governance changed; the whole scope is tested」，所以任何 `scripts/ci/**` 或 `.github/workflows/**` 的改动都会跑 provider `go test -race`（实测 883 s）＋ 前端（实测 136 s）。本票的 `cancel-in-progress` 改动**不增加**任何测试量。
+- 运行时长最大值（1217 秒）来自 PR #536 的 head `06c69372`（run `40002984905`）——**票面把它记为「长期 `in_progress`、排不上队」，但它最终跑完并变绿了**：排队 8 秒、运行 1217 秒。也就是说那次观测到的是「排队 + 长运行」叠在一起被人读成了「排不上队」，而不是永远排不上。
+- **runner 供给紧张时的排队时长仍未被任何样本覆盖。** 本基线只回答「供给正常时的成本是多少」，不回答「供给最差时会排多久」。这是保留项，不是已解决的问题。
 
 ## 6. 边界
 
