@@ -363,6 +363,76 @@ func TestQwenProfileRefusesOversizedInputBeforeTheProvider(t *testing.T) {
 	}
 }
 
+// The DB row's money columns follow the profile too.
+//
+// Under the Qwen profile there is no price basis, so both money columns are 0
+// and the MEANING of that 0 lives in the JSON ledger ("cost_basis":
+// "not_applicable"). Under the DeepSeek profile the row keeps its own
+// per-call amount, byte for byte.
+func TestQwenProfileLedgerRowCarriesNoMoneyAndDeepSeekKeepsItsOwn(t *testing.T) {
+	budget := qwenBudget(t)
+	stub := &qwenCountingChat{response: &types.ChatResponse{
+		Content:      `{"body_markdown":"受控执行结论 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`,
+		FinishReason: "stop",
+		Usage:        types.TokenUsage{PromptTokens: 320, CompletionTokens: 128, TotalTokens: 448},
+	}}
+	ledger := &recordingModelCallLedger{}
+	service := &acceptanceModelServiceStub{models: []*types.Model{qwenApprovedModel()}, chatModel: stub}
+	host := generationHostModel{models: service, templates: core.ContractDemoTemplate{},
+		acceptanceBudget: budget, ledger: ledger}
+
+	if _, err := host.Generate(context.Background(), acceptanceGenerationInput()); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if len(ledger.entries) != 1 {
+		t.Fatalf("ledger rows = %d, want exactly 1", len(ledger.entries))
+	}
+	row := ledger.entries[0]
+	if row.ReservedNanoUSD != 0 || row.ActualNanoUSD != 0 {
+		t.Fatalf("a profile without a price basis must reserve and consume no money: %d/%d",
+			row.ReservedNanoUSD, row.ActualNanoUSD)
+	}
+	if row.Provider != acceptancebudget.QwenProvider {
+		t.Fatalf("row provider = %q, want %q (taken from the model row that answered)", row.Provider, acceptancebudget.QwenProvider)
+	}
+	if row.ModelID != "qwen-1" {
+		t.Fatalf("row model id = %q, want the approved model row", row.ModelID)
+	}
+	if row.SourceKind != core.ModelCallLedgerSourceGenerationRun {
+		t.Fatalf("row source kind = %q, want %q", row.SourceKind, core.ModelCallLedgerSourceGenerationRun)
+	}
+	if row.InputTokens != 320 || row.OutputTokens != 128 {
+		t.Fatalf("row tokens = %d/%d, want the provider's 320/128", row.InputTokens, row.OutputTokens)
+	}
+
+	// The priced profile keeps its own amount: the change to the reserved
+	// column must not silently zero the DeepSeek path.
+	t.Setenv(generationAcceptanceProfileEnv, generationAcceptanceProfile)
+	deepSeekLedger := &recordingModelCallLedger{}
+	deepSeekStub := &acceptanceChatStub{response: &types.ChatResponse{
+		Content:      `{"body_markdown":"受控执行结论 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`,
+		FinishReason: "stop",
+		Usage:        types.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+	}}
+	deepSeekService := &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: deepSeekStub}
+	deepSeekHost := generationHostModel{models: deepSeekService, templates: core.ContractDemoTemplate{},
+		acceptanceBudget: &generationAcceptanceBudget{profile: generationAcceptanceProfile, ledgerPath: filepath.Join(t.TempDir(), "round.json")},
+		ledger:           deepSeekLedger}
+	if _, err := deepSeekHost.Generate(context.Background(), acceptanceGenerationInput()); err != nil {
+		t.Fatalf("DeepSeek Generate() error = %v", err)
+	}
+	if len(deepSeekLedger.entries) != 1 {
+		t.Fatalf("DeepSeek ledger rows = %d, want 1", len(deepSeekLedger.entries))
+	}
+	deepSeekRow := deepSeekLedger.entries[0]
+	if deepSeekRow.ReservedNanoUSD != generationAcceptancePerCall {
+		t.Fatalf("DeepSeek reserved amount = %d, want %d", deepSeekRow.ReservedNanoUSD, generationAcceptancePerCall)
+	}
+	if deepSeekRow.ActualNanoUSD != actualDeepSeekCost(100, 50) {
+		t.Fatalf("DeepSeek actual amount = %d, want %d", deepSeekRow.ActualNanoUSD, actualDeepSeekCost(100, 50))
+	}
+}
+
 // A model row that is not the approved Qwen model is refused, and the
 // provider is not reached.
 func TestQwenProfileRefusesAModelRowItDidNotApprove(t *testing.T) {
