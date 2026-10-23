@@ -124,7 +124,9 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # #391 is the owner_unavailable Spec that PF-4 delivers, for the same
 # reason: the set lists the G-line Specs, and a face may only name one it
 # actually delivers.
-G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393}
+#
+# #431 is the 上下文包前端消费 Spec that PF-6 delivers, for the same reason.
+G_LINE_ISSUES = frozenset(range(123, 144)) | {145, 146} | {391, 393, 431}
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
 # "somebody may start this right now".
@@ -617,18 +619,55 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
     {
         "name": "PF-6 上下文包前端消费",
         "issue": 330,
-        "issues": (124,),
-        "status": "available",
-        "claimed_by": "",
+        "issues": (124, 431),
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
-            ("frontend/src/api/lingdoc/g2Context.ts", "file"),
+            ("frontend/src/api/lingdoc/agentContext.ts", "file"),
+            ("frontend/src/api/lingdoc/agentContext.test.ts", "file"),
             ("frontend/src/views/lingdoc/ContextPackagePanel.vue", "file"),
+            ("frontend/src/views/lingdoc/ContextPackagePanel.test.ts", "file"),
+            ("docs/08-本轮实施方案/PF-6-上下文包前端消费.md", "file"),
+            ("docs/08-本轮实施方案/T431-验证报告.json", "file"),
         ),
         "resolves": (),
         "summary": (
-            "Agent 上下文包、Session、Turn 的后端契约已落地，"
-            "但前端零消费——用户不能编辑本轮引用的卡片与资料。"
+            "上下文包、Session、Turn 的后端契约已落地"
+            "（AgentContextPackage 在 workspacecore/agent_research_model.go，"
+            "预览与轮次端点在 workspace/agent_routes.go）。"
+            "**2026-10-23 实测更正了票面「前端零消费」这句过时断言**："
+            "研究面板（PF-5 已交付的文件）里已有一份上下文表单与一处预览，"
+            "显示来源定位、资料版本、模型使用许可与输出约束——"
+            "**卡片、选择理由、卡片状态三样都没有**；"
+            "增删只发生在表单多选框上，界面从不复述服务端的组装结果。"
             "本面只新增文件；与 PF-1 同属前端目录，两者不得互相改对方的文件。"
+            "**2026-10-23 由 magician336 认领**，同日补交一张 G 线 Spec #431"
+            "（上下文包的前端消费，文档 "
+            "docs/06-灵档产品开发规划/51-Spec-上下文包前端消费.md）："
+            "上下文包的契约类型由已有的传输层模块拥有，本面只读不改、不复制第二份；"
+            "意图（用户勾了什么）与事实（服务端组装了什么）是两个不可互换的类型，"
+            "事实区只由预览结果刷新，增删之后必须重新预览；"
+            "卡片状态按 id 与 version 双重对齐，对不上显示「状态未知」而不是回退；"
+            "选择理由按服务端原文逐条展示，前端不把它解析成条目映射。"
+            "**2026-10-23 施工前实测修正了路径名**："
+            "最初登记的两个实现文件里，API 模块名以交付批次代号开头"
+            "（原名 g2Context.ts），而命名登记表把 ^[gGtT]\\d 判为编号命名——"
+            "实测新增该文件会让守护测试报「breaks numbered but is not declared "
+            "in the registry」并以退出码 1 失败，"
+            "而改名后的 agentContext.ts 不报；"
+            "PF-1 当年也把登记的 g6Runtime.ts 改成了 runtimeMetrics.ts，是同一类修正。"
+            "两个测试文件同时从 .test.js 改成 .test.ts"
+            "（仓内前端测试的主流形态，且已有组件用 .test.ts 的先例）。"
+            "路径集 4 -> 6 条：另两条是本面的开发计划与验证报告。"
+            "**本面还改了一条不在任何路径集里的路径**："
+            "docs/08-本轮实施方案/下一批施工面切分方案.md（M-1 清单里那条"
+            "「#434 票面写的 g2Context.ts 是旧名」——那份方案档明确把这条指给"
+            "在飞的 PF-6，本面已把 #434 票面更正完：票面顶部补更正指针、"
+            "正文那一处路径同步改成 agentContext.ts）；该文件属方案档性质，"
+            "本面不把它登记进路径集，只在这里记录改动事实。"
+            "**集成归属另落一张票**：面板的挂载与浏览器端到端验收归 #476"
+            "（原记在 #384 票面，但该票已随 PF-8 交面关闭，它交付的是 G6 "
+            "运维面板的集成、不含本面）。"
         ),
     },
     {
