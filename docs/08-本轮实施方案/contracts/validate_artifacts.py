@@ -64,6 +64,9 @@ def validate(schema,value,label):
 for schema in normalized['components']['schemas'].values(): Draft7Validator.check_schema(schema)
 ops={}
 operation_methods={}
+# 节点可以声明它怎么检索：keyword_only（本节点不依赖向量语义召回）/ vector_required
+# （本节点确实需要向量检索，在受控窗口里是 NOT RUN）。词表是封闭的。
+RETRIEVAL_MODES=('keyword_only','vector_required')
 for path,item in spec['paths'].items():
     for method,op in item.items():
         assert method in {'get','post','put','patch','delete'}
@@ -293,10 +296,23 @@ def check_flow_checks(step,where,examples_by_step):
         else: tied+=1
     return tied,unresolved
 
+def check_retrieval_mode(step,where):
+    """A step may say how it retrieves; the vocabulary is closed.
+
+    The two values mean opposite things for a controlled window: "keyword_only"
+    says the node can be judged there, "vector_required" says it cannot.  A
+    third word would say nothing, so the contract refuses it here rather than
+    leaving it to the reader.
+    """
+    mode=step.get('retrieval')
+    if mode is None: return
+    assert mode in RETRIEVAL_MODES,where+' retrieval 只能是 '+' / '.join(RETRIEVAL_MODES)+' 之一'
+
 def check_scenario_step(scenario,index,step):
     global scenario_steps,scenario_steps_with_requests,check_references
     where=step.get('id') or f"{scenario['id']} step {index}"
     assert step['operation_id'] in ops,where+' names an operation the OpenAPI document does not have'
+    check_retrieval_mode(step,where)
     if 'readback_of' in step:
         assert isinstance(step['readback_of'],str) and step['readback_of'].strip(),where+' readback_of must name an earlier step'
         assert operation_methods[step['operation_id']]=='get',where+' readback step must use GET'
@@ -432,6 +448,7 @@ RUNTIME_VARIABLES={'knowledge_id':'k-runtime-placeholder'}
 env=dict(RUNTIME_VARIABLES);resolved=[]
 for step in flow['steps']:
     op=ops[step['operation_id']]
+    check_retrieval_mode(step,step['id'])
     request=expand(step['request'],env)
     for p in op.get('parameters',[]):
         bucket=request['path_params'] if p['in']=='path' else request['headers'] if p['in']=='header' else {}
@@ -798,6 +815,11 @@ for label,action in [
      lambda:check_scenario({**copy.deepcopy(F24),'steps':[
          {**F05_WRITE,'id':'F24-90'},
          {**f24_step(2),'after_step':'F24-90'}]})),
+    ('scenario_step_with_an_unknown_retrieval_mode',
+     mutate_step(lambda s:s.update(retrieval='vector_whenever'))),
+    ('workflow_step_with_an_unknown_retrieval_mode',
+     lambda:check_retrieval_mode({**copy.deepcopy(next(s for s in flow['steps'] if s['id']=='F01-07')),
+                                  'retrieval':'vector_whenever'},'F01-07')),
 ]:
     must_reject(label,action)
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
