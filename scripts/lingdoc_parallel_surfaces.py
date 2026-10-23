@@ -905,6 +905,56 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/run_scenario.py", "file"),
             ("scripts/lingdoc_mock/test_workflow_specs.py", "file"),
             ("scripts/lingdoc_mock/test_workflow_scenario.py", "file"),
+            # #533 的对称类型谓词（embedding 能力判定）与它的落点：词表唯一，不新增第二份类型词表。
+            ("internal/types/model.go", "file"),
+            # #533 的守护：谓词的对称性（chat 侧放行集合不变、embedding 侧只放行 Embedding）。
+            ("internal/types/model_embedding_capable_test.go", "file"),
+            # #533 的两个 embedding 出口守卫：建 embedder 之前 fail-closed，跨租户出口同守卫。
+            ("internal/application/service/model.go", "file"),
+            # #533 的守护：两个 embedding 服务出口（provider 请求数 = 0 的断言来自进程内桩）。
+            ("internal/application/service/model_embedding_type_guard_test.go", "file"),
+            # #533 的建库/改库守卫：embedding_model_id 指向的行必须确实 embedding-capable（与 summary_model_id 守卫成对）。
+            ("internal/application/service/knowledgebase.go", "file"),
+            # #533 的守护：建库与改库两条路径的 embedding 模型类型校验。
+            ("internal/application/service/knowledgebase_embedding_model_guard_test.go", "file"),
+            # #533 的连接自检守卫：chat 自检读已存行的 Type，非 chat 能力不发任何请求；embedding 自检镜像同一守卫；改库同守卫。
+            ("internal/handler/initialization.go", "file"),
+            # #533 的守护：chat 连接自检对非 chat 模型 0 请求。
+            ("internal/handler/initialization_model_type_guard_test.go", "file"),
+            # #533 的守护：embedding 连接自检的镜像守卫。
+            ("internal/handler/initialization_embedding_model_guard_test.go", "file"),
+            # #535 的权威位置、审计列语义、判定规则与第二段裁定清单。
+            ("docs/08-本轮实施方案/T535-租户角色词表收敛.md", "file"),
+            # #535 的唯一租户角色词表：IsValid 是唯一判定入口。
+            ("internal/types/tenant_member.go", "file"),
+            # #535 的守护：词表四层（定义唯一、无第二份同值判定、读取方不越权、写入方受守护）。
+            ("internal/types/tenant_role_vocabulary_guard_test.go", "file"),
+            # #535 的 Actor.Role 语义与三处按词表判定（validateActor / GetVersionForBinding / recordAudit）。
+            ("internal/lingdoc/rulesetstore/store.go", "file"),
+            # #535 消灭第二份同值判定：裸字面量 owner/admin 改为引用权威词表成员。
+            ("internal/lingdoc/rulesetstore/tenant_authorizer.go", "file"),
+            # #535 的守护：rulesetstore 侧的词表唯一性。
+            ("internal/lingdoc/rulesetstore/actor_role_vocabulary_guard_test.go", "file"),
+            # #535 的测试夹具：漂移的角色字面量改为引用权威词表成员。
+            ("internal/lingdoc/rulesetstore/store_test.go", "file"),
+            # #535 的测试夹具：漂移的角色字面量改为引用权威词表成员。
+            ("internal/lingdoc/rulesetstore/store_postgres_test.go", "file"),
+            # #535 的测试夹具：漂移的角色字面量改为引用权威词表成员。
+            ("internal/lingdoc/rulesetstore/audit_page_test.go", "file"),
+            # #535 的测试夹具：漂移的角色字面量改为引用权威词表成员。
+            ("internal/lingdoc/rulesetstore/metrics_test.go", "file"),
+            # #535 的守护：templategovernance 侧的词表唯一性与写侧守护。
+            ("internal/lingdoc/templategovernance/actor_role_vocabulary_guard_test.go", "file"),
+            # #535 的审计列语义注释：审计里记的 Role 到底是什么。
+            ("internal/lingdoc/template/ruleset_use_audit.go", "file"),
+            # #535 的审计列语义注释：交付侧读到的 Role 的含义。
+            ("internal/lingdoc/delivery/export.go", "file"),
+            # #535 的守护：delivery 侧的词表唯一性。
+            ("internal/lingdoc/delivery/actor_role_vocabulary_guard_test.go", "file"),
+            # #534 的守护：延迟重排路径与正常路径共用同一个重试上限（同一常量，不新增第二份数值）。
+            ("internal/lingdoc/workspace/generation_retry_budget_test.go", "file"),
+            # #501 的执行器单测：两步结构（同资源约束、前置不成立不得恒真 PASS、二次操作失败记 BLOCKED/FAIL）的独立新文件，不改既有的 test_workflow_*.py。
+            ("scripts/lingdoc_mock/test_workflow_twostep.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -942,7 +992,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "且该包目前零生产调用点（git grep materiallingest 只命中包内与文档）⇒ "
             "**验收路径改用 F01 执行器现有的 --knowledge-id 注入**（F01-06 的契约节点已有 {{knowledge_id}} 与"
             "「processing_state=ready」断言，不需要新增契约节点）。"
-            "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"),
+            "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"
+            "**2026-10-24 跨面借用三条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：① **#535** 改动了 **PF-13** 拥有的 internal/lingdoc/templategovernance/{model.go, storage.go, catalog_test.go, catalog_postgres_test.go} 四个文件⇒ 本面借用 PF-13 的这四条路径；② **#534** 改动了 **L5（owner 属 PF-2）** 的 internal/lingdoc/workspace/generation.go⇒ 本面借用 PF-2 的这一条路径；③ **#534** 改动了 **PF-2 目录级声明内** 的 internal/lingdoc/generation/tasks.go 与 internal/lingdoc/generation/tasks_test.go⇒ 本面借用 PF-2 的这两条路径；本面只**新增**那条守护测试文件 internal/lingdoc/workspace/generation_retry_budget_test.go。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",

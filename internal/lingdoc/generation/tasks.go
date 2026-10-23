@@ -21,7 +21,7 @@ type generationTaskPayload struct {
 	RunID    string `json:"run_id"`
 }
 
-// generationTaskMaxRetry is the retry budget one queued generation run gets.
+// GenerationTaskMaxRetry is the retry budget one queued generation run gets.
 //
 // The budget is a delivery concern, not a business rule. A generation run
 // that failed can be issued again by the user, so the queue must not spend 25
@@ -30,7 +30,13 @@ type generationTaskPayload struct {
 // total) is the same budget the knowledge-base summary tasks already use
 // (internal/application/service/knowledge_summary_refresh.go:131,
 // knowledge_post_process.go:582).
-const generationTaskMaxRetry = 3
+//
+// The budget is exported because two enqueue paths must state it: the normal
+// path (EnqueueTask) and the delayed reschedule path
+// (workspace.generationTaskEnqueuer.EnqueueGenerationAfter) put the same
+// task type on the same queue. One definition, two callers, one number — a
+// path that states its own budget is a second number waiting to drift.
+const GenerationTaskMaxRetry = 3
 
 // EnqueueTask schedules a durable generation-run ID, never prompt text,
 // credentials, or source content. The immutable input is read from the run
@@ -46,7 +52,7 @@ func EnqueueTask(_ context.Context, enqueuer interfaces.TaskEnqueuer, tenantID u
 	_, err = enqueuer.Enqueue(
 		asynq.NewTask(types.TypeLingDocGeneration, encoded),
 		asynq.Queue(types.QueueSummary),
-		asynq.MaxRetry(generationTaskMaxRetry),
+		asynq.MaxRetry(GenerationTaskMaxRetry),
 	)
 	return err
 }
@@ -74,7 +80,7 @@ var upstreamStatusPattern = regexp.MustCompile(`status (\d{3})`)
 //     two 4xx worth repeating.
 //
 // Everything else stays retryable: the budget is bounded
-// (generationTaskMaxRetry), so an unknown failure costs a few attempts and
+// (GenerationTaskMaxRetry), so an unknown failure costs a few attempts and
 // then lands in the dead-letter queue where an operator can read it.
 func taskFailureRetryable(err error) bool {
 	if err == nil {
