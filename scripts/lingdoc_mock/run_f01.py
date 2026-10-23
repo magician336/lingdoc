@@ -932,9 +932,15 @@ class ScenarioRunner:
             found, subject = self._resolve_subject(check["path"], payload)
             held = bool(found and subject in REAL_PROVENANCE_VALUES)
             return held, subject, list(REAL_PROVENANCE_VALUES), found
-        # non_empty
-        found, actual = self._resolve_subject(check["path"], payload)
-        return bool(found and self._is_marked(actual)), actual, True, found
+        if operator == "non_empty":
+            found, actual = self._resolve_subject(check["path"], payload)
+            return bool(found and self._is_marked(actual)), actual, True, found
+        # No kind may fall through to another kind's meaning.  A kind that reaches
+        # this point would be judged by the nearest branch above it -- and the report
+        # would say "passed" about an expectation nobody judged.  So an unhandled
+        # kind is refused here, loudly.
+        raise WorkflowError(f"{step['id']}: the runner has no evaluation branch for the "
+                            f"check kind {operator}")
 
     def _evaluate_checks(self, step: dict[str, Any], payload: Any,
                          status: int | None = None) -> list[dict[str, Any]]:
@@ -966,8 +972,14 @@ class ScenarioRunner:
                     held = isinstance(actual, (list, str, dict)) and len(actual) == expected
                 elif operator == "keys":
                     held = isinstance(actual, dict) and sorted(actual) == sorted(expected)
-                else:  # one_of
+                elif operator == "one_of":
                     held = actual in expected
+                else:
+                    # A structural kind with no branch would be judged by the nearest
+                    # branch above it -- and the report would say "passed" about an
+                    # expectation nobody judged.  So an unhandled kind is refused.
+                    raise WorkflowError(f"{step['id']}: the runner has no evaluation branch "
+                                        f"for the check kind {operator}")
             recorded.append({
                 "step_id": step["id"],
                 "path": check["path"],
