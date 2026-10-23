@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
@@ -265,7 +266,38 @@ func sourceErrorStatus(err error) (int, string, string, any, bool) {
 	for _, item := range denied.Denied {
 		items = append(items, map[string]string{"asset_id": item.AssetID, "reason": string(item.Reason)})
 	}
-	return 422, "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。", map[string]any{"denied": items}, true
+	allDenied := denied.RequestedCount == 0 || len(denied.Denied) >= denied.RequestedCount
+	allSame := len(denied.Denied) > 0
+	firstReason := evidence.DenyReason("")
+	for i, item := range denied.Denied {
+		if i == 0 {
+			firstReason = item.Reason
+		} else if item.Reason != firstReason {
+			allSame = false
+		}
+	}
+	details := map[string]any{"denied": items}
+	if !allSame {
+		return 422, "asset_access_denied", "请求中存在未获授权、不可用或不存在的资料，未开始处理。", details, true
+	}
+	switch firstReason {
+	case evidence.DenyNotFound:
+		if !allDenied {
+			return 422, "asset_access_denied", "请求中存在未获授权、不可用或不存在的资料，未开始处理。", details, true
+		}
+		return 404, "asset_not_found", "资料不存在或不属于当前项目。", details, true
+	case evidence.DenyNotAuthorized:
+		if allDenied {
+			return 403, "asset_not_authorized", "当前成员无权读取所请求的资料。", details, true
+		}
+		// A mixed request remains an all-or-nothing retrieval rejection. Preserve
+		// the established 422 code while still identifying each denied asset.
+		return 422, "asset_not_authorized", "当前成员无权读取所请求的资料。", details, true
+	case evidence.DenyNotReady:
+		return 422, "asset_not_ready", "资料尚未就绪，未开始处理。", details, true
+	default:
+		return 422, "asset_access_denied", "请求中的资料不可用，未开始处理。", details, true
+	}
 }
 
 func identity(c *gin.Context) (Actor, bool) {

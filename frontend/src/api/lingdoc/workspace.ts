@@ -639,8 +639,8 @@ export const rejectChangeSet = (projectId: string, changeSetId: string, key: str
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>
   post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))
-export const retrieveSources = (id: string, query: string, assetIds: string[]) =>
-  post<Result<Source[]>>(`${base}/${segment(id)}/retrieval`, { query, asset_ids: assetIds })
+export const retrieveSources = (id: string, query: string, assetIds: string[], chapterId?: string) =>
+  post<Result<Source[]>>(`${base}/${segment(id)}/retrieval`, { query, asset_ids: assetIds, ...(chapterId ? { chapter_id: chapterId } : {}) })
 export const getSource = (projectId: string, sourceId: string) =>
   get<Result<Source>>(`${base}/${segment(projectId)}/sources/${segment(sourceId)}`)
 export const getSourceContext = (projectId: string, sourceId: string) =>

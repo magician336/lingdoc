@@ -918,3 +918,49 @@ func TestServiceRollbackAndSourceBoundaryWithNonSQLStorage(t *testing.T) {
 		t.Fatalf("malformed marker: %v", err)
 	}
 }
+
+// TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit pins the
+// aggregate shadow-audit shape of a resource batch: one aggregate decision
+// record and one aggregate shadow record, never one record per resource.
+func TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit(t *testing.T) {
+	audit := &auditSinkStub{}
+	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	assets := []ResourceRef{
+		{Kind: ResourceAsset, ID: "asset-one"},
+		{Kind: ResourceAsset, ID: "asset-two"},
+		{Kind: ResourceAsset, ID: "asset-three"},
+	}
+	decisions, err := service.AuthorizeResourceBatch(context.Background(), actor, "p", AuthorizationResearch, assets)
+	if err != nil || len(decisions) != len(assets) {
+		t.Fatalf("batch decisions=%+v err=%v", decisions, err)
+	}
+	for _, decision := range decisions {
+		if !decision.Allowed {
+			t.Fatalf("owner asset decision = %+v, want allowed", decision)
+		}
+	}
+	if len(audit.events) != 2 {
+		t.Fatalf("audit events = %+v, want one aggregate decision and one aggregate shadow event", audit.events)
+	}
+	capabilities := map[string]int{}
+	for _, event := range audit.events {
+		capabilities[event.Capability]++
+	}
+	if capabilities["research:asset-batch"] != 1 || capabilities["shadow:research:asset-batch"] != 1 {
+		t.Fatalf("batch audit capabilities = %+v, want only aggregate records", capabilities)
+	}
+}
+
+// TestAuthorizationResourceBatchAuditFailureRefusesTheBatch pins the batch's
+// audit boundary: the aggregate audit row is written on the decision's own
+// transaction, so a failed audit write refuses the batch instead of handing
+// the caller a decision nobody recorded.
+func TestAuthorizationResourceBatchAuditFailureRefusesTheBatch(t *testing.T) {
+	service := NewServiceWithAudit(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, failingAuditSink{})
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	assets := []ResourceRef{{Kind: ResourceAsset, ID: "asset-one"}}
+	if _, err := service.AuthorizeResourceBatch(context.Background(), actor, "p", AuthorizationResearch, assets); err == nil {
+		t.Fatal("batch authorization succeeded despite a failed audit write")
+	}
+}
