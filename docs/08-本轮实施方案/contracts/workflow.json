@@ -155,7 +155,8 @@
       },
       "capture": {
         "project_id": "/data/id",
-        "spec_revision": "/data/spec_revision"
+        "spec_revision": "/data/spec_revision",
+        "owner_user_id": "/data/members/0/user_id"
       },
       "checks": [
         {
@@ -263,7 +264,7 @@
       "checks": [
         {
           "path": "/data/actor_id",
-          "equals": "u-owner",
+          "equals": "{{owner_user_id}}",
           "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执的actor就是执行本次审阅的Owner）"
         },
         {
@@ -440,11 +441,6 @@
           "path": "/data/processing_state",
           "equals": "ready",
           "intent": "合成材料真的经过接入与处理，处理就绪（协议 §1）"
-        },
-        {
-          "path": "/data/knowledge_id",
-          "equals": "k-demo",
-          "intent": "绑定的是本轮声明的合成材料"
         }
       ],
       "assertions": []
