@@ -308,16 +308,20 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/machine_read_grant.go", "file"),
             ("internal/lingdoc/workspacecore/audit_failure_alert_test.go", "file"),
             ("internal/lingdoc/workspacecore/audit_event_version_fields_test.go", "file"),
+            ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
             # These fixtures hand-wrote the column list of lingdoc_project_audits.
             # Adding two columns to that table broke them, and the failure
             # surfaced as an opaque HTTP 500 instead of a schema error, so they
             # now apply the production migration instead of copying the shape.
+            ("internal/lingdoc/workspace/audit_event_table_fixture_test.go", "file"),
             ("internal/lingdoc/workspace/change_set_http_test.go", "file"),
             ("internal/lingdoc/workspace/change_set_delivery_test.go", "file"),
             ("internal/lingdoc/workspace/delivery_http_test.go", "file"),
             # These two run a curated subset of the production migration chain.
             # The subset stopped before 000052, so the audit table had no
             # version columns and every audit write failed.
+            ("internal/lingdoc/workspace/save_chapter_policy_test.go", "file"),
+            ("internal/container/lingdoc_ruleset_delivery_e2e_test.go", "file"),
             ("migrations/sqlite/000052_lingdoc_audit_version_fields.up.sql", "file"),
             ("migrations/sqlite/000052_lingdoc_audit_version_fields.down.sql", "file"),
             ("migrations/versioned/000131_lingdoc_audit_version_fields.up.sql", "file"),
@@ -325,17 +329,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "**2026-10-23 本面再交出一条路径给 PF-7**（#460）："
-            "internal/lingdoc/workspacecore/pr150_migration_history_test.go —— "
-            "PF-7 给审计表加五列（#415）后，那个用例要把审计表补到 000054 的形状。"
-            "移交形态是单向的，本面不再声称拥有它。"
-            "**2026-10-23 本面再交出三条夹具路径给 PF-7**（#460）："
-            "internal/lingdoc/workspace/audit_event_table_fixture_test.go、"
-            "internal/lingdoc/workspace/save_chapter_policy_test.go 与 "
-            "internal/container/lingdoc_ruleset_delivery_e2e_test.go —— PF-7 给审计表加五列"
-            "（#415），这三处夹具的迁移清单必须带上那条迁移，否则审计写会因缺列而失败。"
-            "移交形态是单向的（改了就归你），本面不再声称拥有它们。"
-            "**残留票 #414 与 #415 由 PF-7 交付**（本面只记账，不重复实现）。"
             "读类 fail-open 落点共 6 处，普通读只占授权审计与机器读取；"
             "平台事务外通道（internal/container/lingdoc.go）写失败返回 nil，"
             "失败连错误都不产生，那条通道本轮不接。"
@@ -429,6 +422,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
             ("internal/lingdoc/workspace/full_workflow_http.go", "file"),
             ("internal/router/routes_lingdoc.go", "file"),
+            ("internal/router/routes_lingdoc_owner_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_407_test.go", "file"),
             ("internal/router/routes_lingdoc_owner_408_test.go", "file"),
@@ -454,10 +448,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": ((127, 143),),
         "summary": (
-            "**2026-10-23 本面交出一条夹具路径给 PF-7**（#460）："
-            "internal/router/routes_lingdoc_owner_test.go —— PF-7 给审计表加五列（#415），"
-            "该夹具的迁移清单必须带上那条迁移，否则审计写会因缺列而失败。"
-            "移交形态是单向的，本面不再声称拥有它。"
             "owner_unavailable 状态串全仓不存在，"
             "「租户身份失效 → 冻结 Owner-only 动作 → 租户恢复后自动解冻」"
             "只能用「再提名一次」代替。这是 66 条原生依赖里唯一一条"
@@ -927,6 +917,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("docs/08-本轮实施方案/G6-运行控制后端补齐-20261023.md", "file"),
             ("docs/08-本轮实施方案/G6-运维面板独立化-20261023.md", "file"),
             ("docs/08-本轮实施方案/README.md", "file"),
+            ("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md", "file"),
             # 2026-10-23：从 PF-2（done）与 PF-4（done）接过来的两条路径。
             # 本面在 PR #446 里给这两处各加了一条注释（说明两个新 G6 端点
             # 不改变这两张路由数量快照），而登记处的重叠检查是路径级的
@@ -938,7 +929,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "**2026-10-23 交出路径图**（G1-G7-Spec-完成路径图.md）给 PF-8 的下一个施工面 —— 它、面表与登记处是同一份事实的三处副本，谁改面表谁拥有它；PF-8 已交面，本面不再声称拥有它。"
             "本面一次交付 #382 / #383 两张后端票，另加 #384 的前端独立化。"
             "#382：告警规则可读回（GET runtime/alert-rules）与可停用/可更新"
             "（POST runtime/alert-rules/:ruleId/actions），停用后的规则不再产生告警；"
@@ -1005,27 +995,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-7 审计链完整性",
         "issue": 460,
         "issues": (130,),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "available",
+        "claimed_by": "",
         "paths": (
-            # 从 PF-3 永久移交（1）：迁移史的用例要把审计表补到 000054 的形状。
-            ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
-            # 面表的说明副本（路径图）：谁改面表谁拥有它。PF-8 已交面，
-            # 2026-10-23 交到本面（PF-6 / PF-10 的交面也改过它）。
-            ("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md", "file"),
-            # # 本面新增验收用例（2）：审计决策字段的落库与读回、平台审计 sink 返错。
-            # # 夹具路径（5）：给审计表加五列后，这些夹具的迁移清单必须带上 000054，
-            # # 否则审计写会因缺列而失败。audit_event_table_fixture_test.go、
-            # # save_chapter_policy_test.go 与 lingdoc_ruleset_delivery_e2e_test.go 由 PF-3 永久移交，
-            # # routes_lingdoc_owner_test.go 由 PF-4 永久移交；
-            # # lingdoc_integration_test.go 原先无主，直接归本面。
-            ("internal/lingdoc/workspacecore/audit_decision_fields_test.go", "file"),
-            ("internal/container/workspace_audit_sink_test.go", "file"),
-            ("internal/lingdoc/workspace/audit_event_table_fixture_test.go", "file"),
-            ("internal/lingdoc/workspace/save_chapter_policy_test.go", "file"),
-            ("internal/router/lingdoc_integration_test.go", "file"),
-            ("internal/container/lingdoc_ruleset_delivery_e2e_test.go", "file"),
-            ("internal/router/routes_lingdoc_owner_test.go", "file"),
             # 从 PF-3 永久移交（3）：#415 要给 AuditEvent 补字段并让行模型与表列一致。
             ("internal/lingdoc/workspacecore/model.go", "file"),
             ("internal/lingdoc/workspacecore/service.go", "file"),
@@ -1048,22 +1020,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
-            "**2026-10-23 本面再从 PF-3 永久接过一条路径**："
-            "internal/lingdoc/workspacecore/pr150_migration_history_test.go —— "
-            "PF-7 给审计表加五列（#415）后，那个用例要把审计表补到 000054 的形状。"
-            "⇒ 路径集 18 → 19 条。"
-            "**2026-10-23 本面接过路径图**（G1-G7-Spec-完成路径图.md，原属 PF-8）：它、面表与登记处是同一份事实的三处副本，谁改面表谁拥有它 ⇒ 路径集 17 → 18 条。"
-            "**2026-10-23 由 magician336 认领**（登记处 status 改 claimed、claimed_by 写 magician336）。"
-            "本面交付 #414（平台事务外通道的审计写失败恒返回 nil）与 #415（AuditEvent 的五个决策字段不落库，"
-            "读侧角色过滤因此失效）两张票，另含 #454（56-Spec 夹具与生产 schema 同源）的两个守护测试。"
-            "**路径来源**：从 PF-3 永久接过三条夹具路径（audit_event_table_fixture_test.go、"
-            "save_chapter_policy_test.go、lingdoc_ruleset_delivery_e2e_test.go），"
-            "从 PF-4 永久接过一条（routes_lingdoc_owner_test.go），"
-            "lingdoc_integration_test.go 原先无主直接归本面 ⇒ 路径集 10 → 17 条。"
-            "**迁移编号 000054 / 000133 是本面的**（已重新核对 origin/main：sqlite 最高 000055、versioned 最高 000134，"
-            "中间这一对是空的；PF-10 的 000055 / 000134 已合入 main，不许让号）。"
-            "**#454 的更大范围不在本面**：把全部手抄 schema 的夹具迁成「应用生产迁移」是后续，"
-            "本面只交付两个守护与本表所列夹具的迁移清单补齐。"
             "本面从 PF-3 永久接过三条路径（workspacecore/model.go、workspacecore/service.go、"
             "membership/fixture_test.go）——依据票 #415：AuditEvent 声明的字段要真落库、"
             "读侧角色过滤要生效，这三条是它的实现落点。2026-10-23 永久移交，**不归还**"
