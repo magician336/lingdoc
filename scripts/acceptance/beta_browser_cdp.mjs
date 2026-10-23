@@ -265,10 +265,10 @@ class CdpSession {
   }
 }
 
-function itemsFromExtraction(raw, notRun) {
+function itemsFromExtraction(raw, not_run) {
   const items = {}
   if (!raw || !raw.found) {
-    notRun.push({
+    not_run.push({
       item: 'browser_snapshot_digest_matches_http',
       reason: 'The delivery panel rendered no frozen snapshot to read.',
       unblock: 'Freeze a delivery snapshot for this project (delivery check -> freeze), then re-run the browser side.',
@@ -286,7 +286,7 @@ function itemsFromExtraction(raw, notRun) {
   if (raw.export_id) {
     items.browser_export_id_matches_http = String(raw.export_id).slice(0, ID_PREFIX)
   } else {
-    notRun.push({
+    not_run.push({
       item: 'browser_export_id_matches_http',
       reason: 'The delivery panel rendered no export artifact under the frozen snapshot.',
       unblock: 'Generate a DOCX export for the frozen snapshot, then re-run the browser side.',
@@ -295,7 +295,7 @@ function itemsFromExtraction(raw, notRun) {
   if (raw.export_sha) {
     items.browser_export_sha_matches_http = String(raw.export_sha).slice(0, SHA_PREFIX)
   } else {
-    notRun.push({
+    not_run.push({
       item: 'browser_export_sha_matches_http',
       reason: 'The delivery panel rendered no file hash for the export artifact.',
       unblock: 'Let the DOCX render finish so the artifact carries a file hash, then re-run the browser side.',
@@ -304,7 +304,7 @@ function itemsFromExtraction(raw, notRun) {
   return items
 }
 
-async function readDelivery(session, timeoutMs, notRun) {
+async function readDelivery(session, timeoutMs, not_run) {
   // The delivery drawer only opens for an active project, and its button is
   // labelled 交付 (frontend/src/views/lingdoc/Workspace.vue:37).
   await session.waitFor(
@@ -332,11 +332,11 @@ async function readDelivery(session, timeoutMs, notRun) {
   }
 
   const raw = await session.evaluate(`(${extractDelivery.toString()})()`)
-  return itemsFromExtraction(raw, notRun)
+  return itemsFromExtraction(raw, not_run)
 }
 
 async function runBrowserSide(args) {
-  const notRun = []
+  const not_run = []
   const base = String(args.url || '').replace(/\/+$/, '')
   if (!base) throw new Error('--url is required')
   const context = args.context && existsSync(args.context)
@@ -412,13 +412,13 @@ async function runBrowserSide(args) {
     await session.waitFor("document.body.innerText.includes('交付') || document.body.innerText.includes('课题')", 'the workspace', timeoutMs)
 
     // 3. Read the delivery panel, then read it again after a reload.
-    const first = await readDelivery(session, timeoutMs, notRun)
+    const first = await readDelivery(session, timeoutMs, not_run)
     await session.call('Page.reload', {})
     await session.waitFor("Boolean(localStorage.getItem('weknora_token'))", 'the reloaded app', timeoutMs)
     const afterReload = await readDelivery(session, timeoutMs, [])
 
     for (const item of Object.keys(MODEL_GATED_ITEMS)) {
-      notRun.push({ item, ...MODEL_GATED_ITEMS[item] })
+      not_run.push({ item, ...MODEL_GATED_ITEMS[item] })
     }
     const snapshot = {
       source: 'browser',
@@ -426,7 +426,7 @@ async function runBrowserSide(args) {
       items: first,
       after_reload: { at: nowIso(), items: afterReload },
       status: Object.keys(first).length ? 'PASS' : 'NOT RUN',
-      not_run: notRun,
+      not_run: not_run,
       url: base,
     }
     if (session.browserErrors.length) {
@@ -473,17 +473,17 @@ async function main() {
   try {
     snapshot = await runBrowserSide(args)
   } catch (error) {
-    const notRun = Object.keys(MODEL_GATED_ITEMS).map((item) => ({ item, ...MODEL_GATED_ITEMS[item] }))
+    const not_run = Object.keys(MODEL_GATED_ITEMS).map((item) => ({ item, ...MODEL_GATED_ITEMS[item] }))
     for (const item of ITEM_KEYS) {
-      if (notRun.some((entry) => entry.item === item)) continue
-      notRun.push({
+      if (not_run.some((entry) => entry.item === item)) continue
+      not_run.push({
         item,
         reason: 'The browser side did not complete: ' + (error && error.message ? error.message : String(error)),
         unblock: 'Start the real front end (npm run dev in frontend/) and the real backend, then re-run the browser side.',
       })
     }
     snapshot = { source: 'browser', at: nowIso(), items: {}, after_reload: { at: nowIso(), items: {} },
-      status: 'NOT RUN', not_run: notRun }
+      status: 'not_run', not_run: not_run }
     code = 2
   }
   writeFileSync(args.out, JSON.stringify(snapshot, null, 2) + '\n', 'utf8')
