@@ -1,14 +1,13 @@
 {
   "mode": "static-and-suite",
   "note": "PF-6 上下文包的前端消费（票 #330，Spec #431）。两件事：把服务端组装好的上下文包原样显示出来（卡片、选择理由、版本基线、卡片状态、权限态），并允许在发出请求前增删引用的卡片。设计要点：契约类型由已有的传输层模块拥有，本面只读不改、不复制第二份；意图（用户勾了什么）与事实（服务端组装了什么）是两个不可互换的类型，事实区只由预览结果刷新；卡片状态按 id 且 version 双重对齐，对不上显示状态未知而不回退；选择理由按服务端原文逐条透传，前端不解析成条目映射。交付物是四个新文件：前端 API 门面模块 agentContext.ts、面板组件 ContextPackagePanel.vue，及各自的测试；不改服务端、不改任何既有前端文件、不改 agentApi.ts。",
-  "head": "1ce6043e",
+  "head": "10c099d746c40a150fa161f3cc700b2238cb623a",
   "base": "883ba6d5",
-  "head_note": "证据绑定 1ce6043e（最后一个改代码的提交）。两轴评审判 FAIL 后已派返工，返工提交会改代码 ⇒ 届时 head 要更新，并重跑本报告的每条命令。",
+  "head_note": "证据绑定 10c099d746c40a150fa161f3cc700b2238cb623a（两轴评审判 FAIL 之后的返工提交：面板加会话维度、对齐规则归一、关联标识落地、可选键不再恒写、状态类型收紧）。此后的提交只动文档与证据档；核对命令：git diff 10c099d746c40a150fa161f3cc700b2238cb623a <当前 head> -- frontend/ scripts/ 应为空。",
   "base_note": "origin/main 在本面施工期间前移，基线取最后一次核对时的 883ba6d5。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
   "commands": [
-    "cd frontend && npx tsx --test src/api/lingdoc/agentContext.test.ts  → tests 24 / pass 24 / fail 0",
-    "cd frontend && npx tsx --test src/views/lingdoc/ContextPackagePanel.test.ts  → tests 12 / pass 12 / fail 0",
-    "cd frontend && npm test  → tests 1693 / pass 1692 / fail 0 / skipped 1（既有 skip，非本面引入）",
+    "cd frontend && npx tsx --test src/api/lingdoc/agentContext.test.ts src/views/lingdoc/ContextPackagePanel.test.ts  → tests 46 / pass 46 / fail 0",
+    "cd frontend && npm test  → tests 1703 / pass 1702 / fail 0 / skipped 1（既有 skip，不在本面两个文件里）",
     "cd frontend && npm run type-check（vue-tsc --build）  → 退出码 0，零错误",
     "python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'  → Ran 358 tests / OK",
     "python scripts/lingdoc_manifest_baseline.py  → OK（6 baseline face(s), 6 current face(s), 3 baseline claim(s) without a file behind them）",
@@ -35,7 +34,7 @@
     {
       "id": "AC-431-04",
       "status": "PASS",
-      "evidence": "门面用例「卡片状态按 id 且 version 双重对齐，版本不等就是状态未知」；面板用例「卡片版本与上下文包对不上 ⇒ 显示状态未知（版本已变），不回退到别的状态」。"
+      "evidence": "门面用例「卡片状态按 id 且 version 双重对齐，版本不等就是状态未知」；面板用例「卡片版本与上下文包对不上 ⇒ 显示状态未知（版本已变），不回退到别的状态」。返工后意图区与事实区共用门面的同一个对齐函数，规则只有一份。"
     },
     {
       "id": "AC-431-05",
@@ -89,13 +88,13 @@
     },
     {
       "id": "AC-431-15",
-      "status": "TODO",
-      "evidence": "两轴代码评审判 FAIL：两轴评审在 2026-10-23 复核本面时判出该行未成立（会话维度缺失 / 关联标识未渲染），返工中，本行暂记 TODO。"
+      "status": "PASS",
+      "evidence": "面板用例「换会话（助手机别变了）⇒ 意图与事实一并清空，新预览不带上一会话的勾选」——面板新增必填 prop `agent` 与 `sessionKey`，身份一变即按硬时序清空。"
     },
     {
       "id": "AC-431-16",
-      "status": "TODO",
-      "evidence": "两轴代码评审判 FAIL：两轴评审在 2026-10-23 复核本面时判出该行未成立（会话维度缺失 / 关联标识未渲染），返工中，本行暂记 TODO。"
+      "status": "PASS",
+      "evidence": "同 AC-431-15；面板状态里没有跨助手/跨会话的数据，面板头部显示「助手：… · 会话：…」，界面上可判。"
     },
     {
       "id": "AC-431-17",
@@ -119,8 +118,8 @@
     },
     {
       "id": "AC-431-21",
-      "status": "TODO",
-      "evidence": "两轴代码评审判 FAIL：两轴评审在 2026-10-23 复核本面时判出该行未成立（会话维度缺失 / 关联标识未渲染），返工中，本行暂记 TODO。"
+      "status": "PASS",
+      "evidence": "门面用例「事实分成卡片、来源、理由、版本基线、权限五组」+ 第六组 `correlation`；面板用例「事实区显示服务端的关联标识」。关联标识从服务端包原样透传，不加工。"
     },
     {
       "id": "AC-431-22",
@@ -145,7 +144,7 @@
     {
       "id": "AC-431-26",
       "status": "PASS",
-      "evidence": "门面用例「请求体按服务端契约逐字段构造」——运行时字段集合与服务端契约逐字一致（8 个键），改名即红。"
+      "evidence": "门面用例「请求体的键就是意图里有值的那些字段：没有值的可选字段不进」——请求体的每个键都在服务端契约里，且没有值的可选字段不进（返工后语义已从「运行时 8 个键逐字相同」改为这一条）。"
     },
     {
       "id": "AC-431-27",
@@ -184,8 +183,8 @@
     },
     {
       "id": "AC-431-34",
-      "status": "TODO",
-      "evidence": "两轴代码评审判 FAIL：两轴评审在 2026-10-23 复核本面时判出该行未成立（会话维度缺失 / 关联标识未渲染），返工中，本行暂记 TODO。"
+      "status": "PASS",
+      "evidence": "面板用例「换会话（助手机别变了）⇒ 意图与事实一并清空，新预览不带上一会话的勾选」与「换会话（会话标识变了）⇒ 同样清空意图与事实」。"
     },
     {
       "id": "AC-431-35",
@@ -257,8 +256,12 @@
       "detail": "门禁按贡献面缩面：本 PR 的贡献面含 frontend/ 与 scripts/ ⇒ 前端 verify（npm test + type-check + build）与 governance-scripts 档位会真跑，provider（Go）档位按路径缩面跳过——跳过是 NOT RUN，不是通过。逐 job 结论见 PR body。"
     },
     {
-      "id": "TWO-AXIS-REVIEW-FAIL",
-      "detail": "两轴代码评审（Standards / Spec）在 2026-10-23 判 FAIL，报出六条（面板缺会话维度、切会话后意图不清空、卡片状态出现第二个拥有者、status 类型是裸字符串、correlation_id 未落地、可选键恒写）。已派返工，返工完成后本报告的 TODO 行转 PASS。"
+      "id": "TWO-AXIS-REVIEW-FAIL-REMEDIATED",
+      "detail": "两轴代码评审（Standards / Spec）曾在 2026-10-23 判 FAIL，报出六条：面板缺会话维度、切会话后意图不清空、卡片状态出现第二个拥有者、status 是裸字符串、correlation_id 未落地、可选键恒写。六条已全部修掉并各自有阴性验证：切会话不清空、面板自己写第二份对齐、请求体恒写可选键、事实区不显示关联标识，四条探针逐条贴过真实失败输出；守护「门面不导出契约类型本身」同时从按名字判定加强为按形状判定（换个名字重新声明也拦，别名与 Pick 投影不拦）。"
+    },
+    {
+      "id": "SESSION-SEEDING-CHOICE",
+      "detail": "切会话后 selectedCards 清成空数组，不从新 props.intent.card_refs 重新播种——依据是验收矩阵第 34 行「新会话从空范围开始」。若集成时希望新会话沿用宿主自己给的勾选，改一行即可，但那会让「意图与事实一并清空」不再字面成立。"
     }
   ]
 }

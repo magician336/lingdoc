@@ -81,13 +81,13 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 | 12 | US12 版本变了的卡标为状态未知 | 面板事实区·卡片状态 | 对齐键是 id + version | 显示「状态未知（版本已变）」 | 不回退到任何缓存值 | N/A | `agentContext.test.ts` 对齐用例 | PASS |
 | 13 | US13 预览失败不残留旧范围 | 面板整体 | 失败即清空 | 事实区为空 + 错误提示 | 不保留上一次成功的包 | N/A | `ContextPackagePanel.test.ts` | PASS |
 | 14 | US14 版本冲突提示基线已变 | 面板整体 | 409 ⇒ 清空 + 提示 | 显示「基线已变」 | 不自动重试 | N/A | `ContextPackagePanel.test.ts` | PASS |
-| 15 | US15 两种助手的会话不合并 | 面板 props | 面板按助手机别承载 | 各自独立 | 不跨助手合并任何一轮 | N/A | 由集成步保证；本面面板不持有跨助手状态 | TODO |
-| 16 | US16 面板只显示当前助手的轮次 | 面板 props | 同上 | 同上 | 同上 | N/A | 同上 | TODO |
+| 15 | US15 两种助手的会话不合并 | 面板 props 的 `agent` / `sessionKey` | 面板按助手机别与会话身份承载 | 各自独立 | 不跨助手合并任何一轮 | N/A | 面板用例「换会话（助手机别变了）⇒ 意图与事实一并清空，新预览不带上一会话的勾选」 | PASS |
+| 16 | US16 面板只显示当前助手的轮次 | 面板 props 的 `agent` / `sessionKey` | 面板状态里没有跨助手/跨会话的数据 | 同上 | 同上 | N/A | 同上；面板头部显示「助手：… · 会话：…」 | PASS |
 | 17 | US17 理由按服务端原话显示 | 面板事实区·理由 | 不解析成条目映射 | 逐条原文 | 后端改措辞不影响显示 | N/A | `agentContext.test.ts`（断言不做字符串匹配） | PASS |
 | 18 | US18 敏感请求前先看到范围 | 面板整体 | 面板用 `sensitive_context_confirmed: false` 预览 | 面板显示 `requires_confirmation` | 前端不自行判定要不要确认 | N/A | `agentContext.test.ts` 预览入参用例 | PASS |
 | 19 | US19 面板不扩大访问 | 面板整体 | 事实只来自服务端 | 服务端没给的就不显示 | 前端不做本地放行判断 | N/A | `agentContext.test.ts` + 面板断言 | PASS |
 | 20 | US20 撤权后受限内容不残留 | 面板整体 | 不缓存上一轮的包 | 撤权后重新预览，包里没有它 | 旧包不留在屏上 | N/A | `ContextPackagePanel.test.ts` | PASS |
-| 21 | US21 显示关联标识 | 面板事实区 | 显示包里的 `correlation_id` | 原样显示 | — | N/A | `agentContext.test.ts` 分组用例 | TODO |
+| 21 | US21 显示关联标识 | 面板事实区 | 显示包里的 `correlation_id` | 原样显示 | — | N/A | `agentContext.test.ts` 分组用例 | PASS |
 | 22 | US22 轮次范围可与记录对照 | 面板整体 | 面板展示的那份与轮次里存的那份同源 | 两者来自同一份服务端包 | — | N/A | 本面只负责展示；对照属集成步 | PASS |
 | 23 | US23 前端契约只有一个拥有者 | `agentContext.ts` | 契约类型由 `agentApi.ts` 拥有 | 本面不重新声明 | 出现第二份定义即失败 | N/A | `agentContext.test.ts` 静态断言 | PASS |
 | 24 | US24 视图只经一个门面 | 面板 | 面板不导入 `agentApi.ts` | 依赖链单向 | 出现反向依赖即失败 | N/A | `ContextPackagePanel.test.ts` 静态断言 | PASS |
@@ -100,7 +100,7 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 | 31 | 权限场景：撤权后重新预览 | 面板 | 服务端决定可见性 | 包里没有受限条目 | 面板不显示 | N/A | `ContextPackagePanel.test.ts` | PASS |
 | 32 | 权限场景：授权结论为需确认 | 面板 | 原样显示 | 显示 `requires_confirmation` | 前端不代为确认 | N/A | `agentContext.test.ts` | PASS |
 | 33 | 恢复场景：预览失败后重试成功 | 面板 | 重试由用户发起 | 新包显示 | 失败期间事实区为空 | N/A | `ContextPackagePanel.test.ts` | PASS |
-| 34 | 恢复场景：切会话后重来 | 面板 | 意图与事实一并清空 | 新会话从空范围开始 | 不带上一会话的意图 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 34 | 恢复场景：切会话后重来 | 面板 | 意图与事实一并清空 | 新会话从空范围开始 | 不带上一会话的意图 | N/A | `ContextPackagePanel.test.ts` | PASS |
 | 35 | 环境限制：真实模型链路 | — | 本面不接触模型调用 | — | — | — | **N/A**（不接触模型调用） | N/A |
 | 36 | 环境限制：浏览器端到端 | — | 面板需集成后才可见 | — | — | — | **NOT RUN**（集成归保留路径，本面无入口可验） | NOT RUN |
 
