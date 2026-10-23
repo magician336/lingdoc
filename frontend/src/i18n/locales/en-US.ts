@@ -4345,7 +4345,13 @@ export default {
           generic: 'Failed to load audit log'
         },
         actorRole: {
-          system_admin: 'System Admin'
+          owner: 'Owner',
+          admin: 'Admin',
+          contributor: 'Contributor',
+          viewer: 'Viewer',
+          system_admin: 'System Admin',
+          platform_api_key: 'Platform API Key',
+          unknown: 'Unknown Role'
         },
         columns: {
           time: 'Time',
