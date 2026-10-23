@@ -207,9 +207,16 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
         readback_of = _optional_string(step.get("readback_of"), f"{where} readback_of")
         if readback_of is not None and not step.get("checks"):
             raise WorkflowError(f"{where} readback step must declare at least one check")
+        after_step = _optional_string(step.get("after_step"), f"{where} after_step")
+        if after_step is not None and not step.get("checks"):
+            # A step that declares what a previous step caused has to say what it
+            # expects; a step with no expectation asserts nothing about the
+            # consequence, and the relation would be decoration.
+            raise WorkflowError(f"{where} a step that follows another must declare at least one check")
         validated.append({**step, "id": step_id, "operation_id": operation_id,
                           "actor": _optional_string(actor, f"{where} actor"),
                           **({"readback_of": readback_of} if readback_of is not None else {}),
+                          **({"after_step": after_step} if after_step is not None else {}),
                           "request": _request_definition(step, where),
                           "checks": _check_definitions(step, where),
                           "assertions": _assertion_texts(step, where)})
@@ -582,6 +589,10 @@ class ScenarioRunner:
         self.step_results: list[dict[str, Any]] = []
         self.failures: list[dict[str, Any]] = []
         self.check_results: list[dict[str, Any]] = []
+        # What each step of this run amounted to: "succeeded", "failed" or
+        # "blocked".  A step that follows another may only assert its consequence
+        # when the step it follows succeeded.
+        self.step_outcomes: dict[str, str] = {}
         # The responses of this run, kept so that a check may compare against another
         # step's answer (the export record's hash against the downloaded bytes).
         self.responses: dict[str, Any] = {}
@@ -705,9 +716,11 @@ class ScenarioRunner:
         self.failures = []
         self.check_results = []
         self.responses = {}
+        self.step_outcomes = {}
         self.active_step = None
         self.aborted_at = None
         self._validate_readbacks()
+        self._validate_after_steps()
         self._check_base_url_scope()
         self._preflight_required_variables()
         completed = 0
@@ -719,6 +732,30 @@ class ScenarioRunner:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
             method, path_template = self.operations[operation_id]
             request_spec = _request_definition(step, step["id"])
+            unmet = self._unmet_precondition(step)
+            if unmet is not None:
+                # The step this one asserts about did not hold.  Judging the expectation
+                # anyway is how a two-step expectation becomes true no matter what
+                # happened, so the step is not executed and its expectations are not
+                # judged: the run records that it is blocked.
+                self.failures.append({"step_id": step["id"], "operation_id": operation_id,
+                                      "kind": "precondition_unmet", "after_step": unmet,
+                                      "node_kind": "blocked",
+                                      "intent": "这一步断言的是前一步造成的后果；前一步没有成立，"
+                                                "所以这一步的断言不得求值"})
+                self.step_outcomes[step["id"]] = "blocked"
+                step_results.append({
+                    "id": step["id"],
+                    "operation_id": operation_id,
+                    "expected_http": step.get("expected_http"),
+                    "node_kind": "blocked",
+                    "http_status": None,
+                    "content_type": None,
+                    **({"after_step_observation": self._after_step_observation(step)}
+                       if step.get("after_step") else {}),
+                })
+                print(f"{step['id']} BLOCKED {operation_id} (precondition {unmet} did not hold)")
+                continue
             try:
                 path_params = substitute(request_spec.get("path_params", {}), self.variables)
                 query = substitute(request_spec.get("query", {}), self.variables)
@@ -739,6 +776,10 @@ class ScenarioRunner:
                 self.failures.append({"step_id": step["id"], "operation_id": operation_id, "kind": "http_status",
                                       "expected": expected_status, "actual": status,
                                       "intent": "该操作按契约返回声明的状态码"})
+                # The step answered, but not as the contract said.  A step that others
+                # depend on therefore did not hold: what follows it must not be judged
+                # as if it had.
+                self.step_outcomes[step["id"]] = "failed"
             else:
                 if operation_id in {"getGeneration", "getExport"}:
                     payload = self._poll_terminal(step, method, url, headers, payload, actor_token)
@@ -746,16 +787,27 @@ class ScenarioRunner:
                 if operation_id == "downloadExport" and 200 <= status < 300:
                     self._verify_download(step, payload, response_headers)
                 completed += 1
+                self.step_outcomes[step["id"]] = "succeeded"
                 step_results.append({
                     "id": step["id"],
                     "operation_id": operation_id,
                     "http_status": status,
                     "content_type": header_value(response_headers, "Content-Type"),
                     **({"observation": self._readback_observation(step)} if step.get("readback_of") else {}),
+                    **({"after_step_observation": self._after_step_observation(step),
+                        "expected_http": step.get("expected_http"),
+                        "node_kind": self._node_kind(step)}
+                       if step.get("after_step") else {}),
                 })
             # Checks are read even when the status was not the declared one: "it answered
             # 403 with source_access_denied" is a more useful failure than "it answered 403".
+            judged_from = len(self.check_results)
             self.check_results.extend(self._evaluate_checks(step, payload, status))
+            if any(check["status"] != "passed" for check in self.check_results[judged_from:]):
+                # The step answered as the contract said, but its own expectation did
+                # not hold.  Whatever follows it asserts the consequence of something
+                # that did not happen, so it must not be judged as if it had.
+                self.step_outcomes[step["id"]] = "failed"
             if status == expected_status:
                 print(f"{step['id']} PASS {operation_id} HTTP {status}")
 
@@ -793,6 +845,81 @@ class ScenarioRunner:
             source_method, _ = source_operation
             if source_method == "GET":
                 raise WorkflowError(f"{step['id']}: readback_of must name an earlier write step")
+
+    def _validate_after_steps(self) -> None:
+        """Require each declared successor to follow an earlier step on the same resource.
+
+        The shape says two things at once: *this step happens after that step*, and
+        *it is about the same resource*.  The second half is what makes the
+        expectation mean something -- an expectation about a different resource proves
+        nothing about the operation that preceded it, and the machine would not know.
+        """
+        positions = {step["id"]: index for index, step in enumerate(self.spec.steps)}
+        for index, step in enumerate(self.spec.steps):
+            after = step.get("after_step")
+            if after is None:
+                continue
+            source_index = positions.get(after)
+            if source_index is None:
+                raise WorkflowError(f"{step['id']}: after_step names a step this specification "
+                                    f"does not have: {after}")
+            if source_index >= index:
+                raise WorkflowError(f"{step['id']}: after_step must name an earlier step")
+            self._require_same_resource(step, self.spec.steps[source_index])
+
+    def _require_same_resource(self, step: dict[str, Any], source: dict[str, Any]) -> None:
+        """Both steps must address the same resource, by the same coordinates.
+
+        "Same resource" is one fact here, and the machine checks it: the path
+        parameters name the same keys, and the same values (the same captured
+        variable, or the same literal).  The other half of the relation -- that
+        the named step comes earlier -- is checked by ``_validate_after_steps``.
+
+        Without this one, an expectation about a different resource would be read
+        as a consequence of the operation that preceded it, and nothing in the
+        report would say so.
+        """
+        mine = (step.get("request") or {}).get("path_params") or {}
+        theirs = (source.get("request") or {}).get("path_params") or {}
+        if set(mine) != set(theirs):
+            raise WorkflowError(f"{step['id']}: after_step must name a step on the same resource "
+                                f"(path parameters differ: {sorted(mine)} against {sorted(theirs)})")
+        for name, value in mine.items():
+            if value != theirs[name]:
+                raise WorkflowError(f"{step['id']}: after_step must name a step on the same resource "
+                                    f"(path parameter {name} differs: {value!r} against {theirs[name]!r})")
+
+    def _unmet_precondition(self, step: dict[str, Any]) -> str | None:
+        """The earlier step this step depends on, when that step did not hold.
+
+        "Did not hold" is not "was not reached": a step that was blocked, failed or
+        never ran leaves the successor without the fact it asserts about.
+        """
+        after = step.get("after_step")
+        if after is None:
+            return None
+        if self.step_outcomes.get(after) == "succeeded":
+            return None
+        return after
+
+    @staticmethod
+    def _node_kind(step: dict[str, Any]) -> str:
+        """What kind of outcome this node is, so a reader can tell them apart.
+
+        ``success`` -- the node was supposed to answer 2xx, and it did.
+        ``expected_refusal`` -- the node was supposed to be refused, and it was.
+        """
+        expected = step.get("expected_http") or 200
+        return "expected_refusal" if expected >= 400 else "success"
+
+    @staticmethod
+    def _after_step_observation(step: dict[str, Any]) -> dict[str, str]:
+        return {
+            "kind": "after_step",
+            "request_step_id": step["id"],
+            "after_step": step["after_step"],
+            "operation_id": step["operation_id"],
+        }
 
     @staticmethod
     def _readback_observation(step: dict[str, Any]) -> dict[str, str]:
