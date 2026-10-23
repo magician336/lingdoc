@@ -503,7 +503,13 @@
           "intent": "绑定资料的响应恰好带这六个字段：处理状态、资料标识与所属项目都在，没有多余也没有少（协议 §1）"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "failure_state": {
+        "state": "资料被撤权 ⇒ 403 source_access_denied（不得泄露内容）",
+        "expressed_by": "http_error",
+        "mounted_at": "contracts/scenarios.json 的 F07-step1（403 source_access_denied）",
+        "why_not_here": "F01 序列内的失败态要靠「先操作同一资源、再断言」的两步结构（先撤权、再取内容），由 #501 落地（GAP-FAILURE-PATH-NODES）。"
+      }
     },
     {
       "id": "F01-07",
@@ -798,7 +804,13 @@
           "intent": "新版本继承review_items；项目版本增加到4。（采纳产生了新的正文版本）"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "failure_state": {
+        "state": "采纳已被取代或已过期的候选 ⇒ 409 stale_input",
+        "expressed_by": "http_error",
+        "mounted_at": "contracts/scenarios.json 的 F06-step5（409 stale_input）",
+        "why_not_here": "同上：两步结构由 #501 落地（GAP-FAILURE-PATH-NODES）。"
+      }
     },
     {
       "id": "F01-12",
@@ -924,7 +936,13 @@
           "intent": "章节正文非空（协议 §3）"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "failure_state": {
+        "state": "同基线双写 ⇒ 409 version_conflict（要显式冲突，不静默覆盖）",
+        "expressed_by": "http_error",
+        "mounted_at": "contracts/scenarios.json 的 F05-04（409 version_conflict）",
+        "why_not_here": "同上（GAP-FAILURE-PATH-NODES）。"
+      }
     },
     {
       "id": "F01-14",
@@ -1733,7 +1751,13 @@
           "intent": "导出的是本轮冻结的那一份快照"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "failure_state": {
+        "state": "快照过期 ⇒ 409 stale_input；前置检查未过 ⇒ 422 preflight_blocked（导出失败要显式失败，产物不冒充）",
+        "expressed_by": "http_error",
+        "mounted_at": "contracts/scenarios.json 的 F11-10（409 stale_input）与 F10-05（422 preflight_blocked）",
+        "why_not_here": "同上（GAP-FAILURE-PATH-NODES）。"
+      }
     },
     {
       "id": "F01-22",
@@ -1784,7 +1808,13 @@
           "intent": "文件hash在真实测试中由实际文件字节比较；本参考trace的零hash仅为占位，不能当实物证据。（导出记录里的哈希是 64 位十六进制；它与真实字节的比较由 F01-23 的 hash_equals 完成）"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "failure_state": {
+        "state": "导出产物失败 ⇒ 终态 status=failed（不得冒充 verified）",
+        "expressed_by": "one_of",
+        "mounted_at": "契约的终态取值词表（/data/status：verified / failed）",
+        "why_not_here": "失败终态与失败路径不同：它仍是成功响应里的一个取值，用 one_of 表达，不需要两步结构。"
+      }
     },
     {
       "id": "F01-23",
