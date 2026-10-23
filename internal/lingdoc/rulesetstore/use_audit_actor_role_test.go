@@ -194,7 +194,6 @@ func TestRuleSetUseWriteEntriesKeepTheTenantRoleInsideTheVocabulary(t *testing.T
 	ctx := context.Background()
 
 	for _, role := range tenantRolesInsideTheVocabulary {
-		role := role
 		t.Run(role, func(t *testing.T) {
 			exported := newRoleGuardFixture(t, true)
 			event := exported.event
