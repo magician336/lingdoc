@@ -51,7 +51,7 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	// no in-memory proposal object is used as the persisted readback source.
 	runtime := NewGORMSourceRuntime(f.db, ProjectPorts{}, adapterSharesStub{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(f.db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewResearchAdapter(f.db, projects, runtime, adapterSharesStub{}, nil, nil)})

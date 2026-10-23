@@ -3,12 +3,11 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"github.com/Tencent/WeKnora/internal/clienterror"
-	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -451,7 +450,7 @@ var (
 	ErrIdempotencyConflict         = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
 	ErrRequestInProgress           = clienterror.New(clienterror.Form{Status: 409, Code: "request_in_progress", Message: "原请求仍在提交，请稍后用相同操作键重试。", Retryable: true, RetryAfter: 1}, "request_in_progress")
 	ErrSourceUnavailable           = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料不可用或未获授权。", Retryable: false}, "source_access_denied")
-	ErrPermissionSchemaUnavailable = errors.New("permission_schema_unavailable")
+	ErrPermissionSchemaUnavailable = clienterror.New(clienterror.Form{Status: 500, Code: "permission_schema_unavailable", Message: "权限服务未正确配置，请联系管理员。", Retryable: false}, "permission_schema_unavailable")
 )
 
 type projectRow struct {

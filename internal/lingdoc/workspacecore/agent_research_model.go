@@ -519,6 +519,14 @@ type SourceReader interface {
 	ReadResearchSource(context.Context, Actor, string, string) (ResearchSource, error)
 	CheckAssetScope(context.Context, Actor, string, []string) ([]ProjectAssetVersion, error)
 }
+
+// ChapterSourceReader preserves chapter-function scopes when a research
+// operation has an explicit chapter. Adapters that do not implement this
+// stronger seam are not allowed to fall back to project-wide reads.
+type ChapterSourceReader interface {
+	ReadResearchSourceForChapter(context.Context, Actor, string, string, string) (ResearchSource, error)
+	CheckAssetScopeForChapter(context.Context, Actor, string, string, []string) ([]ProjectAssetVersion, error)
+}
 type AgentModel interface {
 	Reply(context.Context, Actor, ModelRequest) (ModelReply, error)
 }

@@ -172,7 +172,7 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 		if target != "" && memberHasScope(m, "author", target) {
 			return p, nil
 		}
-		if slices.Contains(m.FunctionRoles, "researcher") && (target != "" && memberHasScope(m, "researcher", target) || target == "" && (p.Status == "draft" || len(m.FunctionScopes["researcher"]) > 0)) {
+		if slices.Contains(m.FunctionRoles, "researcher") && (target != "" && memberHasScope(m, "researcher", target) || target == "" && len(m.FunctionScopes["researcher"]) > 0) {
 			return p, nil
 		}
 	case "evidence-confirm":
@@ -188,7 +188,11 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 			return p, nil
 		}
 	case "issue-dismiss-blocking":
-		if memberHasScope(m, "reviewer", target) || memberHasScope(m, "reviewer", "asset:"+target) || memberHasScope(m, "reviewer", "delivery:"+target) {
+		assetScope := ""
+		if ref, err := NewAssetResourceRef(target); err == nil {
+			assetScope = ref.AuthorizationResource()
+		}
+		if memberHasScope(m, "reviewer", target) || memberHasScope(m, "reviewer", assetScope) || memberHasScope(m, "reviewer", "delivery:"+target) {
 			return p, nil
 		}
 	case "issue-resolve", "issue-dismiss", "issue-waive":

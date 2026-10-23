@@ -13,6 +13,8 @@ import core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 type ProjectPorts struct {
 	// Authorizer 回答「这个人此刻能不能做这件事」。
 	Authorizer core.CapabilityAuthorizer
+	// Resources authorizes source batches in the project owner's transaction.
+	Resources core.ResourceBatchAuthorizer
 	// Projects 是项目上下文的那条口。
 	Projects core.ProjectApplication
 	// Context 回答「章节此刻的生成上下文是什么」。

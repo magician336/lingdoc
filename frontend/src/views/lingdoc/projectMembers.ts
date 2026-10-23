@@ -1,4 +1,5 @@
 import type { ProjectMember, ProjectMemberInput, ProjectFunctionRole } from '@/api/lingdoc/workspace'
+import { assetIdFromResourceScope, assetResourceScope, isAssetResourceScope } from './resourceScope'
 
 export const projectFunctionRoles: ProjectFunctionRole[] = ['author', 'researcher', 'reviewer', 'observer']
 
@@ -21,13 +22,13 @@ export function createProjectMemberDrafts(members: ProjectMember[]): ProjectMemb
 }
 
 export function chapterScopesForSelection(scopes: string[] = [], chapterIds?: string[]): string[] {
-  if (!chapterIds) return scopes.filter(scope => !scope.startsWith('asset:') && !scope.startsWith('delivery:'))
+  if (!chapterIds) return scopes.filter(scope => !isAssetResourceScope(scope) && !scope.startsWith('delivery:'))
   const knownChapters = new Set(chapterIds)
   return scopes.filter(scope => knownChapters.has(scope))
 }
 
 export function setChapterScopes(scopes: string[] = [], selectedChapterIds: string[], chapterIds?: string[]): string[] {
-  const editableChapters = new Set(chapterIds ?? scopes.filter(scope => !scope.startsWith('asset:') && !scope.startsWith('delivery:')))
+  const editableChapters = new Set(chapterIds ?? scopes.filter(scope => !isAssetResourceScope(scope) && !scope.startsWith('delivery:')))
   return [...new Set([
     ...scopes.filter(scope => !editableChapters.has(scope)),
     ...selectedChapterIds,
@@ -35,13 +36,16 @@ export function setChapterScopes(scopes: string[] = [], selectedChapterIds: stri
 }
 
 export function assetIdsForSelection(scopes: string[] = []): string[] {
-  return scopes.filter(scope => scope.startsWith('asset:')).map(scope => scope.slice('asset:'.length))
+  return scopes.flatMap(scope => {
+    const assetId = assetIdFromResourceScope(scope)
+    return assetId ? [assetId] : []
+  })
 }
 
 export function setAssetScopes(scopes: string[] = [], selectedAssetIds: string[]): string[] {
   return [...new Set([
-    ...scopes.filter(scope => !scope.startsWith('asset:')),
-    ...selectedAssetIds.map(id => `asset:${id}`),
+    ...scopes.filter(scope => !isAssetResourceScope(scope)),
+    ...selectedAssetIds.map(assetResourceScope),
   ])]
 }
 
@@ -84,11 +88,11 @@ export function effectiveCapabilitySummary(member: ProjectMember): string {
     capabilities.push(chapters.length ? `可撰写 ${chapters.length} 个指定章节` : 'Author 未配置章节范围，不能撰写章节')
   }
   if (roles.has('researcher')) {
-    const assets = (scopes.researcher ?? []).filter(scope => scope.startsWith('asset:'))
+    const assets = (scopes.researcher ?? []).filter(isAssetResourceScope)
     capabilities.push(assets.length ? `可使用 ${assets.length} 项指定资料` : 'Researcher 未配置资料范围，不能使用项目资料')
   }
   if (roles.has('reviewer')) {
-    const chapters = (scopes.reviewer ?? []).filter(scope => !scope.startsWith('asset:') && !scope.startsWith('delivery:'))
+    const chapters = (scopes.reviewer ?? []).filter(scope => !isAssetResourceScope(scope) && !scope.startsWith('delivery:'))
     capabilities.push(chapters.length ? `可评审 ${chapters.length} 个指定章节` : 'Reviewer 未配置章节范围，不能执行章节评审')
   }
   if (roles.has('observer')) capabilities.push('Observer 职能自身仅提供只读能力')

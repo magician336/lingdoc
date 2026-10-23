@@ -39,7 +39,8 @@ function request(method,url,body,config){
 const requestMock={get:(url,config)=>request('GET',url,undefined,config),post:(url,body,config)=>request('POST',url,body,config),put:(url,body,config)=>request('PUT',url,body,config)}
 function compile(filename,source,resolve){const item=new Module(filename);item.paths=Module._nodeModulePaths(deps.directory);item.require=resolve||deps.load;item._compile(ts.transpileModule(source??fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,filename);return item.exports}
 const api=compile(path.join(frontend,'src/api/lingdoc/collaboration.ts'),undefined,id=>id==='@/utils/request'?requestMock:deps.load(id))
-const state=compile(path.join(__dirname,'collaborationState.ts'))
+const resourceScope=compile(path.join(__dirname,'resourceScope.ts'))
+const state=compile(path.join(__dirname,'collaborationState.ts'),undefined,id=>id==='./resourceScope'?resourceScope:deps.load(id))
 const source=path.join(__dirname,'ProjectCollaborationPanel.vue'),parsed=compiler.parse(fs.readFileSync(source,'utf8'))
 assert.deepEqual(parsed.errors,[])
 const script=compiler.compileScript(parsed.descriptor,{id:'g5-ui-test'})

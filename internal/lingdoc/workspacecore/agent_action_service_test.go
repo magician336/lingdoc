@@ -15,8 +15,10 @@ import (
 )
 
 type testSourceReader struct {
-	sources map[string]ResearchSource
-	denied  map[string]bool
+	sources              map[string]ResearchSource
+	denied               map[string]bool
+	checkedChapterScopes []string
+	readChapterScopes    []string
 }
 
 func (r *testSourceReader) ReadResearchSource(_ context.Context, _ Actor, projectID, id string) (ResearchSource, error) {
@@ -28,6 +30,10 @@ func (r *testSourceReader) ReadResearchSource(_ context.Context, _ Actor, projec
 		return ResearchSource{}, ErrNotFound
 	}
 	return source, nil
+}
+func (r *testSourceReader) ReadResearchSourceForChapter(ctx context.Context, actor Actor, projectID, chapterID, id string) (ResearchSource, error) {
+	r.readChapterScopes = append(r.readChapterScopes, chapterID)
+	return r.ReadResearchSource(ctx, actor, projectID, id)
 }
 func (r *testSourceReader) CheckAssetScope(_ context.Context, _ Actor, _ string, ids []string) ([]ProjectAssetVersion, error) {
 	out := []ProjectAssetVersion{}
@@ -45,6 +51,10 @@ func (r *testSourceReader) CheckAssetScope(_ context.Context, _ Actor, _ string,
 		}
 	}
 	return out, nil
+}
+func (r *testSourceReader) CheckAssetScopeForChapter(ctx context.Context, actor Actor, projectID, chapterID string, ids []string) ([]ProjectAssetVersion, error) {
+	r.checkedChapterScopes = append(r.checkedChapterScopes, chapterID)
+	return r.CheckAssetScope(ctx, actor, projectID, ids)
 }
 
 type testSearcher struct {
@@ -175,6 +185,39 @@ func (f agentFixture) task(t *testing.T) ResearchTask {
 	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-approve-task", ConfirmationInput{VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "用户确认查询范围"})
 	return decodeAgentJSON[ResearchTask](t, raw, err)
 }
+
+// TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead pins the
+// chapter scope: it reaches the task's asset authorization and the run's
+// source re-read, so a chapter-scoped research operation never falls back to a
+// project-wide read.
+func TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead(t *testing.T) {
+	f := newAgentFixture(t, false)
+	input := SaveResearchTaskInput{
+		VersionExpectation: f.expectation(0), ChapterID: f.chapter.ID,
+		Goal: "章节限定的合成调研", Scope: "当前章节指定资料", Queries: []string{"定义", "限制"}, AssetIDs: []string{"asset-1"},
+	}
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "research-chapter-scope-task", input)
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	if len(f.source.checkedChapterScopes) == 0 || f.source.checkedChapterScopes[len(f.source.checkedChapterScopes)-1] != f.chapter.ID {
+		t.Fatalf("task asset authorization did not receive chapter scope %q: %v", f.chapter.ID, f.source.checkedChapterScopes)
+	}
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "research-chapter-scope-approve", ConfirmationInput{
+		VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "合成测试确认章节范围",
+	})
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "research-chapter-scope-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "completed" || run.Basis.ChapterID != f.chapter.ID {
+		t.Fatalf("chapter-scoped run did not preserve its chapter basis: %+v", run)
+	}
+	if _, err = f.svc.GetResearchRun(context.Background(), f.owner, f.project.ID, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.source.readChapterScopes) == 0 || f.source.readChapterScopes[len(f.source.readChapterScopes)-1] != f.chapter.ID {
+		t.Fatalf("run source re-read did not receive chapter scope %q: %v", f.chapter.ID, f.source.readChapterScopes)
+	}
+}
+
 func (f agentFixture) anchor(t *testing.T, sourceID, key string) SourceAnchor {
 	t.Helper()
 	source := f.source.sources[sourceID]

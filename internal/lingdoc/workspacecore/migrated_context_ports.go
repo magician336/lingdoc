@@ -71,6 +71,18 @@ type CapabilityAuthorizer interface {
 	Authorize(ctx context.Context, actor Actor, projectID, capability string) error
 }
 
+// ResourceBatchAuthorizer owns the resource decision language and its stable
+// read/audit transaction. Source consumers receive it explicitly at assembly.
+type ResourceBatchAuthorizer interface {
+	AuthorizeResourceBatch(context.Context, Actor, string, AuthorizationAction, []ResourceRef) ([]ResourceAuthorizationDecision, error)
+}
+
+// AssetUseAuthorizer is the complete port for source and research consumers.
+type AssetUseAuthorizer interface {
+	CapabilityAuthorizer
+	ResourceBatchAuthorizer
+}
+
 // GenerationContextApplication 读回一个章节的生成上下文。
 //
 // 它只带一个操作：生成这一门语言里，生成输入的组装只需要「章节此刻的生成上下文」。

@@ -217,6 +217,13 @@ var narrowPortMethods = map[string][]string{
 	"CapabilityAuthorizer": {
 		"Authorize",
 	},
+	"ResourceBatchAuthorizer": {
+		"AuthorizeResourceBatch",
+	},
+	"AssetUseAuthorizer": {
+		"Authorize",
+		"AuthorizeResourceBatch",
+	},
 	"GenerationContextApplication": {
 		"GenerationContext",
 	},
@@ -422,6 +429,7 @@ func aggregateMethodSignatures(t *testing.T, directory string) map[string]string
 func portMethodSignatures(t *testing.T, directory string) map[string]map[string]string {
 	t.Helper()
 	ports := map[string]map[string]string{}
+	embedded := map[string][]string{}
 	for _, name := range narrowPortFiles {
 		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, 0)
 		if err != nil {
@@ -444,6 +452,9 @@ func portMethodSignatures(t *testing.T, directory string) map[string]map[string]
 				methods := map[string]string{}
 				for _, element := range iface.Methods.List {
 					if len(element.Names) == 0 {
+						if name, ok := element.Type.(*ast.Ident); ok {
+							embedded[typed.Name.Name] = append(embedded[typed.Name.Name], name.Name)
+						}
 						continue
 					}
 					function, ok := element.Type.(*ast.FuncType)
@@ -455,6 +466,28 @@ func portMethodSignatures(t *testing.T, directory string) map[string]map[string]
 				ports[typed.Name.Name] = methods
 			}
 		}
+	}
+	// Interface composition must not hide an aggregate capability from this
+	// structural gate. Expand embedded local ports before comparing contracts.
+	var expand func(string, map[string]bool)
+	expand = func(name string, visiting map[string]bool) {
+		if visiting[name] {
+			t.Fatalf("cyclic embedded port %s", name)
+		}
+		visiting[name] = true
+		for _, parent := range embedded[name] {
+			if _, ok := ports[parent]; !ok {
+				t.Fatalf("unrecorded embedded port %s in %s", parent, name)
+			}
+			expand(parent, visiting)
+			for method, signature := range ports[parent] {
+				ports[name][method] = signature
+			}
+		}
+		delete(visiting, name)
+	}
+	for name := range ports {
+		expand(name, map[string]bool{})
 	}
 	return ports
 }

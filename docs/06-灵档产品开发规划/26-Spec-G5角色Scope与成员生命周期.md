@@ -32,6 +32,7 @@
 - Permit Admin to manage members and configuration but not evidence confirmation, content confirmation, ChangeSet application or export.
 - Permit function-role combinations such as Admin + Author; capability is the union subject to tenant ceiling, resource authorization and scope.
 - Interpret empty non-Owner function scope as no write access. Owner has full capability through governance role and does not use function scope.
+- Keep capability summaries target-specific: `research:<chapterId>` describes chapter work, not project-wide `research`. A chapter Author may reread only assets already referenced by that current formal chapter; a caller-provided chapter ID does not grant use of unrelated materials. New material research requires its explicit approved Researcher asset scope. Source permissions and versions are still checked at use time.
 - Beta invitation eligibility is current-tenant `active` membership only. Cross-tenant and unregistered invitations are out of Beta.
 - Invitation expiry is 3 days. Resend creates a new invitation version. Acceptance uses the current valid version and rechecks tenant identity, project state and scope.
 - Beta member-management UI supports member list, invitation, roles, chapter scope, asset scope, suspension, removal and pending-restoration recovery. Knowledge-base, template and delivery scope remain backend-only.
