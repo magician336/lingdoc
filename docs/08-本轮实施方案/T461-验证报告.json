@@ -1,0 +1,84 @@
+{
+  "mode": "static-and-suite",
+  "note": "PF-9 Owner 冻结归因（票 #420 读侧按能力聚合 + #421 写侧冻结归因；面票 #461；交付 Spec #127，既有，不新开）。本表按《验收判定口径》v1 判定；口径 commit = 1f195def6fb984d43876567bfe365222c34b46b5；本表验收点总数 = 11（原子验收点口径：9 条 PASS + 2 条 NOT RUN；另两条是工具类 NOT RUN 记账，不计入验收点）。交付两件事：① 「Owner 专属入口能力」的枚举收口到一处（internal/lingdoc/workspacecore/owner_capability_registry.go），OwnerOnlyCapability 由它派生而不是内联 switch，守护测试用 go/ast 扫 internal/lingdoc/ 全树，把「取 Owner-only 决策的函数」与登记表双向比对；读出口按登记表的读能力逐个回答 owner_unavailable。② 转让这条 Owner 专属写路径此前不在冻结闸门内——身份已失效的 Owner 仍能发起转让（实测 HTTP 201），被拒时也只有朴素 not_found——现在两种转让形状都先过同一道闸门，拒绝带 owner_unavailable，租户 Owner 的旁路恢复不受影响。**本表只记本面交付的那几条验收点**；Spec #127 的完整判定矩阵由票 #458 承担（19 张 Spec 各一份），两份不重叠。",
+  "head": "4758610d",
+  "base": "a91e3697",
+  "head_note": "证据产出于 4758610d 这棵树（代码 head）。其后的提交只改证据档与文档副本：`git diff 4758610d <最终 head> -- '*.go' '*.py' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
+  "base_note": "origin/main 在本轮开工时的尖端（a91e3697，含 PF-10 交面）。本面从该基线起分支，未合并其他分支。",
+  "passed": [
+    {
+      "id": "AC-420-01 读出口对登记的每个 Owner 专属入口能力都回答 owner_unavailable",
+      "status": "passed",
+      "evidence": "`TestPermissionReadOutletNamesTheFreezeForEveryOwnerOnlyEntryCapability`；`go test ./internal/router/ -run TestPermissionReadOutletNamesTheFreezeForEveryOwnerOnlyEntryCapability`；head `4758610d`。断言遍历 core.OwnerOnlyEntryCapabilities()（当前 manage 与 ops-control）逐个断言读出口给出 owner_unavailable，而不是写死一份能力清单——登记表新增一个读能力，这个用例就自动覆盖它。"
+    },
+    {
+      "id": "AC-420-02 非 Owner-only 能力仍给 capability_or_scope_denied",
+      "status": "passed",
+      "evidence": "`TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities`（HTTP 层，write 与 review 仍给 capability_or_scope_denied）+ `TestOwnerOnlyCapabilityKeepsOrdinaryRefusalsOrdinary`（单元层，write/read/review/evidence-write/confirm/change-assess/issue-resolve 一律不是 Owner-only 能力）；`go test ./internal/router/ -run TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities` 与 `go test ./internal/lingdoc/workspacecore/ -run TestOwnerOnlyCapabilityKeepsOrdinaryRefusalsOrdinary`；head `4758610d`。"
+    },
+    {
+      "id": "AC-420-03 新增 Owner 专属入口而其能力未登记时，枚举检查必须红",
+      "status": "passed",
+      "evidence": "`TestOwnerOnlyEntryRegistryCoversEveryOwnerOnlyEntry`（用 go/ast 扫 internal/lingdoc/ 全树找每个取 Owner-only 决策的函数，与登记表双向比对：代码里有而登记表没有 ⇒ 报「冻结读不到」；登记表有而代码里没有 ⇒ 报「白登记」）+ `TestOwnerOnlyEntryGuardFindsAnUnregisteredEntry`（守护自证会红：把登记表换成缺项，比较器必须报出那条未登记入口）；`go test ./internal/lingdoc/workspacecore/ -run 'TestOwnerOnlyEntry'`；head `4758610d`。"
+    },
+    {
+      "id": "AC-420-04 OwnerOnlyCapability 由登记表派生，不是内联 switch",
+      "status": "passed",
+      "evidence": "`TestOwnerOnlyCapabilityComesFromTheRegistry`；`go test ./internal/lingdoc/workspacecore/ -run TestOwnerOnlyCapabilityComesFromTheRegistry`；head `4758610d`。登记表 ownerOnlyEntries 是枚举的唯一一份，OwnerOnlyEntryCapabilities() 与 OwnerOnlyCapability() 都由它派生；用例把当前读能力集合写死为 {manage, ops-control}，登记表一变这里就红。"
+    },
+    {
+      "id": "AC-421-01 身份已失效的 Owner 不能发起转让，拒绝带 owner_unavailable 且状态码与错误码不变",
+      "status": "passed",
+      "evidence": "`TestOwnerUnavailableTransferIsAttributable`（HTTP 契约层：POST /projects/{id}/owner-transfer ⇒ 404 + details.reason_code=owner_unavailable + code 仍是 not_found）+ `TestOwnerTransferRefusesTheUnavailableOwnerAndNamesTheFreeze`（服务层，两种转让形状）；`go test ./internal/router/ -run TestOwnerUnavailableTransferIsAttributable` 与 `go test ./internal/lingdoc/membership/ -run TestOwnerTransferRefusesTheUnavailableOwnerAndNamesTheFreeze`；head `4758610d`。"
+    },
+    {
+      "id": "AC-421-02 非 Owner 的拒绝仍不带冻结原因",
+      "status": "passed",
+      "evidence": "`TestOwnerTransferRefusalDoesNotNameTheFreezeForANonOwner`；`go test ./internal/lingdoc/membership/ -run TestOwnerTransferRefusalDoesNotNameTheFreezeForANonOwner`；head `4758610d`。断言 errors.Is(err, core.ErrOwnerUnavailable) 为假——冻结不是他们被拒的原因。"
+    },
+    {
+      "id": "AC-421-03 租户 Owner 的旁路恢复不受冻结闸门影响",
+      "status": "passed",
+      "evidence": "`TestOwnerTransferKeepsTheTenantOwnerRecovery`（本面新增）+ `TestTenantOwnerCanRecoverTransferWhenOwnerIsInactive`（既有，未回归）；`go test ./internal/lingdoc/membership/ -run 'TestOwnerTransferKeepsTheTenantOwnerRecovery|TestTenantOwnerCanRecoverTransferWhenOwnerIsInactive'`；head `4758610d`。"
+    },
+    {
+      "id": "AC-421-04 四种身份失效形态的 HTTP 拒绝形态逐条钉住",
+      "status": "passed",
+      "evidence": "`TestOwnerUnavailableRefusalShapePerLapseForm`（四个子用例：项目成员停用 / 租户角色降权 / 租户成员停用 / 租户成员被移除），每个子用例都断言状态码与响应体形态——写拒绝带不带 reason_code、Owner 的两个读出口可达不可达、成员读出口是否仍给出冻结与恢复路径；`go test ./internal/router/ -run TestOwnerUnavailableRefusalShapePerLapseForm`；head `4758610d`。"
+    },
+    {
+      "id": "AC-420-05 判定内核仍只有一份（冻结闸门导出给另一个包复用，不复制判定）",
+      "status": "passed",
+      "evidence": "`TestOwnerAvailabilityJudgementHasOneImplementation`（PF-4 既有守护，本面未改其形状）+ `TestOwnerOnlyEntryRegistryCoversEveryOwnerOnlyEntry`（本面新增，保证每一处取 Owner-only 决策的地方都在登记表上）；`go test ./internal/lingdoc/workspacecore/ -run 'TestOwnerAvailabilityJudgementHasOneImplementation|TestOwnerOnlyEntryRegistryCoversEveryOwnerOnlyEntry'`；head `4758610d`。判定本体仍在 workspacecore/owner_unavailable.go，membership 包调用导出的 OwnerFreezeRefusal，不另写一份条件。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-421-06 租户侧收回身份形态（租户成员停用 / 移除）的写侧归因也要带 owner_unavailable",
+      "reason": "该形态的请求在 transport 认证层就被拒（实测 403 'Forbidden: not a member of the target workspace'），请求进不到工作区，域内任何归因都不可达——这不是实现选择，是接缝位置。要让它成立必须改 transport 的对外 403 形状（裸 {\"error\":\"...\"} ⇒ 带 details.reason_code 的信封），那是**对外契约变更**，需要 Spec 变更；本面被限定「交付 Spec #127，不新开」。实测证据见 TestOwnerUnavailableRefusalShapePerLapseForm 的第三、四个子用例。",
+      "unblock": "管理会话裁决采用票 #421 的方向 2 并批准 Spec 变更（把 403 的对外形状写成带 details.reason_code 的信封，并允许认证层就「被拒者恰是本项目 Owner 且 Owner 不可用」补原因），且 transport 层在带项目上下文的接缝上落地该形状；届时按新用例名判定。"
+    },
+    {
+      "id": "AC-421-07 四种形态的 HTTP 拒绝形态写进既有 Spec 的仓内副本",
+      "reason": "票 #421 方向 1 的判据原文要求把四种形态逐条写进 docs/06-灵档产品开发规划/49-Spec-…md 与 known_limits。本面把形态写进了本表的 known_limits 与票面，**没有改 Spec 正文**——Spec 是契约，改它属于契约变更，而本面被限定交付既有 Spec #127、不新开、且方向未裁决。",
+      "unblock": "管理会话裁决票 #421 的方向后，随该方向的 Spec 变更一并把四种形态写进对应 Spec 的仓内副本；本条随之退出 NOT RUN。"
+    },
+    {
+      "id": "go test ./... （全仓）",
+      "reason": "已跑，失败项与基线逐条一致（非本轮引入）：本机 Windows 上 internal/agent/tools 5 处与 internal/application/service 6 处为既有环境失败（缺 /bin/bash 等），与基线 e1cff741 对照一致；本面改动涉及的三个包（internal/lingdoc/membership、internal/lingdoc/workspacecore、internal/router）全绿，见 passed[]。",
+      "unblock": "在有 bash 的 POSIX 环境上跑 go test ./...，且 internal/agent/tools 与 internal/application/service 的 11 处用例全绿。"
+    },
+    {
+      "id": "golangci-lint / make lint",
+      "reason": "本机未装该工具链；CI 以 --new-from-rev 跑（需 PR 基线）。本轮以 `go vet ./internal/lingdoc/... ./internal/router/...`（exit 0）与 `gofmt -l ./internal/lingdoc ./internal/router ./scripts`（无输出）作为格式与静态检查判据。",
+      "unblock": "CI 的 LingDoc PR gate 在本 PR 上跑通（golangci-lint --new-from-rev=origin/main）。"
+    }
+  ],
+  "known_limits": [
+    "**票面 #420 / #421 的两处前提被实测推翻，本面按实测形态记账。**① 票 #421 的表格把「租户角色降权」列为「冻结闸门 / 能拿到 owner_unavailable」——实测该形态的**写**拒绝来自 transport 的租户天花板（403 'Forbidden: insufficient workspace role'），根本到不了冻结闸门；写拒绝不带原因，只有读侧给得出 owner_unavailable。票面引用的那个既有测试自己就写着「that refusal is the transport's own and it does not change here. The read side is where the freeze is named」。② 票 #421 方向 1 的判据原文说「停用形态下写拒绝仍是朴素 404，但**项目级出口仍给出冻结事实与恢复路径**」——实测租户成员停用/移除形态下，**Owner 的两个读出口同样被 transport 拒（403）**，项目级出口拿不到冻结事实与恢复路径；能读到的是项目里的其他成员与租户管理员。两处修正已写进票面 #421 的正文与本 PR 正文。",
+    "**#421 的层内部分是真修复，不只是归因。**转让此前不在冻结闸门内：身份已失效的 Owner（项目成员身份停用、租户身份仍在）**仍能发起转让**——把闸门摘掉实测得到 HTTP 201 与 status=pending 的转让单。本面在两种转让形状前加同一道闸门后，该请求变成 404 + owner_unavailable。断言会红：撤掉闸门后 `TestOwnerUnavailableTransferIsAttributable` 与 `TestOwnerTransferRefusesTheUnavailableOwnerAndNamesTheFreeze` 都失败（前者报 got 201 want 404）。",
+    "**本面路径集与管理会话的指派不同（9 → 8 条），异议已提出。**指派里的三条 `internal/lingdoc/router/…` 写错了前缀——该目录**不存在**，真实位置是 `internal/router/`，那三个文件由 PF-4 拥有。修正前缀后与 PF-4 撞车（登记处直接拒加载），按「路径在两面之间移交是合法的、单向的」与棘轮「done 面可释放路径」：本面永久接过**两张断言文件**（本面在它们上面加断言），`internal/router/routes_lingdoc.go` 留在 PF-4（本面不改它）⇒ PF-4 44 → 42 条、本面 9 → 8 条。三条错前缀路径属「悬空登记」（基线里只有声明、没有实体文件），按基线模块的新判据撤回它不算路径损失 ⇒ 棘轮不拦（实测 `lingdoc_manifest_baseline.py` 输出 OK，基线比对含 13 条无实体文件的声明）。",
+    "**语义覆盖无人背书（口径 §4.1 的明写代价）。**本表的 PASS 只证明「有对应且跑得通的测试」，不证明「该测试真的覆盖这条验收点」。机器能证明的谓词是三件套齐备 + 命令在当前 head 跑通 + 证据绑 head + 无静默 SKIP。",
+    "**方向 2 的「层内精确版」与「全量版」不是同一件事。**本面交付的是层内精确版：凡请求能到达工作区的写路径，转让与五项决策现在共用同一道闸门与同一份判定。租户侧收回身份的两种形态要在 transport 层补原因，属对外契约变更，见 not_run[] 的 AC-421-06 与另落的开放票。"
+  ]
+}
