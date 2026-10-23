@@ -36,6 +36,18 @@
       "item": "浏览器端到端 / 三方一致性实测",
       "title": "浏览器端到端与三方一致性（浏览器 = HTTP = 刷新后读回）",
       "unblock": "让 HTTP 侧与浏览器侧都跑成后重跑本脚本"
+    },
+    "GAP-PROVENANCE-FIELD": {
+      "ticket": "#499",
+      "item": "表达力缺口 ④",
+      "title": "OpenAPI 未声明 provenance 字段，逐段真实溯源挂不上节点断言",
+      "unblock": "由 OpenAPI 的拥有面在 openapi.json 里声明 provenance 字段后，把 contracts/workflow.json 的 F01-09 挂上 provenance_real 断言，并解除本标识"
+    },
+    "GAP-FAILURE-PATH-NODES": {
+      "ticket": "#499",
+      "item": "表达力缺口 ①",
+      "title": "F01 契约的 24 个节点里没有 4xx 节点，序列内的失败态要靠两步结构",
+      "unblock": "由 #501 落地「先操作同一资源、再断言」的两步结构后，把 4xx 节点挂进 contracts/workflow.json，并解除本标识"
     }
   }
 }

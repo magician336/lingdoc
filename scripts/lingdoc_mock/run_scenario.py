@@ -395,15 +395,35 @@ def redactions_from(loader: StateLoader) -> dict[str, str]:
     return redactions
 
 
+#: How every kind is said in the report.  The vocabulary itself comes from the one
+#: authority (scripts/lingdoc_check_kinds.py); this table only says it in the report's
+#: own words, and the guard test checks that it covers every kind the authority knows.
+EXPECTATION_PHRASES = {
+    "equals": "期望等于 {expected}",
+    "length": "期望长度 {expected}",
+    "keys": "期望键集 {expected}",
+    "one_of": "期望属于 {expected}",
+    "ref_in": "期望出现在 {expected} 的 id 里",
+    "marked_or_absent": "期望被标记或不存在（标记位置 {expected}）",
+    "version_bound": "期望与 {expected} 绑定",
+    "readback_equals": "期望读回等于 {expected}",
+    "hash_equals": "期望哈希与 {expected} 一致",
+    "non_empty": "期望非空",
+    "http_error": "期望是失败路径且错误信封为 {expected}",
+    "not_in": "期望不在 {expected} 的 id 里",
+    "all_non_empty": "期望集合里的每一项都非空",
+    "equals_step": "期望与另一步的 {expected} 一致",
+    "provenance_real": "期望是真实来源",
+}
+
+
 def expectation_text(check: dict[str, Any]) -> str:
     """Say an expectation the way the report's reader has to read it."""
     expected = json.dumps(check["expected"], ensure_ascii=False)
-    return {
-        "equals": f"期望等于 {expected}",
-        "length": f"期望长度 {expected}",
-        "keys": f"期望键集 {expected}",
-        "one_of": f"期望属于 {expected}",
-    }[check["operator"]]
+    template = EXPECTATION_PHRASES.get(check["operator"])
+    if template is None:
+        raise KeyError(f"the report has no wording for the check kind {check['operator']}")
+    return template.format(expected=expected)
 
 
 def step_verdicts(spec, runner: ScenarioRunner) -> list[dict[str, Any]]:
