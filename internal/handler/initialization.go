@@ -286,7 +286,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 			"model_type": string(llmModel.Type),
 			"kb_id":      kbIdStr,
 		})
-		c.Error(errors.NewBadRequestError(fmt.Sprintf(
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
 			"LLM模型类型为 %s，不能作为摘要模型：摘要模型必须是文本生成类型，Embedding / Rerank / ASR 类型的模型无法用于摘要",
 			llmModel.Type)))
 		return
