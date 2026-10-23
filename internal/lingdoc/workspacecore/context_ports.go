@@ -78,6 +78,8 @@ type RuntimeApplication interface {
 	GetRuntimeMetrics(ctx context.Context, actor Actor, projectID string) (RuntimeMetrics, error)
 	ListRuntimeAlerts(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlert, error)
 	SaveRuntimeAlertRule(ctx context.Context, actor Actor, projectID, key string, input RuntimeAlertRule) (json.RawMessage, int, bool, error)
+	ListRuntimeAlertRules(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlertRule, error)
+	ActOnRuntimeAlertRule(ctx context.Context, actor Actor, projectID, ruleID, key string, input RuntimeAlertRuleActionInput) (json.RawMessage, int, bool, error)
 }
 
 // TrialApplication 是试验：试验窗口、样本、试验报告与试验决策。

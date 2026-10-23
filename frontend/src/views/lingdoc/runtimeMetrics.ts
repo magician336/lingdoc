@@ -48,11 +48,18 @@ export const RUNTIME_METRIC_SPECS: readonly RuntimeMetricSpec[] = [
   { key: 'export_loss', label: '导出损失', categories: '*', statuses: ['loss'] },
   { key: 'dependency_unavailable', label: '外部依赖不可用', categories: ['dependency'], statuses: ['unavailable'] },
   {
-    key: 'permission_decisions',
-    label: 'G5 授权判定（allow/deny）',
+    key: 'authorization_denial',
+    label: '授权判定被拒（G5）',
+    categories: ['permission'],
+    statuses: ['deny'],
+    note: '服务端只记录被拒绝的授权判定；放行是常态、不单独记录，因此这一项只能数拒绝、算不出放行率。拒绝也不触发告警规则——值班请看完整事件流。',
+  },
+  {
+    key: 'authorization_allow',
+    label: '授权放行（G5）',
     categories: [],
     statuses: [],
-    unavailableReason: '服务端运行事件没有记录授权判定结果，后端未提供该项观测。',
+    unavailableReason: '服务端运行事件只记录被拒绝的授权判定，没有记录放行；后端未提供该项观测。',
   },
 ]
 
@@ -73,6 +80,7 @@ export const RUNTIME_CATEGORY_LABELS: Readonly<Record<string, string>> = {
   download: '下载',
   audit: '审计',
   dependency: '外部依赖',
+  permission: '权限判定',
 }
 
 /** 运行事件状态的中文名。 */
@@ -87,6 +95,7 @@ export const RUNTIME_STATUS_LABELS: Readonly<Record<string, string>> = {
   unavailable: '不可用',
   revoked: '已撤权',
   loss: '损失',
+  deny: '拒绝',
 }
 
 export interface RuntimeMetricValue {

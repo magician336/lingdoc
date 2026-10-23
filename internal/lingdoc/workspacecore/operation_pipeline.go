@@ -184,6 +184,12 @@ func runOperationCore(
 	op, target, key := string(spec.Name), spec.Target, spec.Key
 	body, projectID := spec.Body, spec.Request.ProjectID
 
+	// The observation holder travels with the operation: a refusal rolls the
+	// operation's transaction back, so the refusal is written **after** that
+	// transaction ended.
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
+
 	outcome, err := operationcore.Run(ctx, operationcore.Request[Actor, Transaction, Project]{
 		Identity: operationcore.Identity[Actor]{
 			Actor:     actor,
