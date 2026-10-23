@@ -366,10 +366,18 @@ def run_restart_part(server_binary: Path | None, repo_root: Path, work_dir: Path
                      db_driver: str, db_dsn: str) -> tuple[list[Outcome], dict[str, Any]]:
     """Restart the real server and read the project back."""
     outcomes: list[Outcome] = []
-    summary: dict[str, Any] = {"driver": db_driver, "script": relative_to_root(RESTART_SCRIPT)}
+    driver = db_driver or "sqlite"
+    summary: dict[str, Any] = {"driver": driver, "script": relative_to_root(RESTART_SCRIPT)}
+    if driver != "postgres":
+        # The protocol asks for an isolated PostgreSQL; a SQLite run is a local
+        # diagnosis.  It is worth having, and it is not the protocol's gate.
+        outcomes.append(Outcome(
+            id="重启后读回：协议 §1 的隔离 PostgreSQL", status=NOT_RUN,
+            reason=f"本轮的后端是 {driver}；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
+            unblock="用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"))
     if server_binary is None or not Path(server_binary).is_file():
         outcomes.append(Outcome(
-            id="重启后读回：项目、章节、来源绑定与交付文件", status=NOT_RUN,
+            id="重启后读回：同一个项目、访问令牌与持久化", status=NOT_RUN,
             reason="没有给出可用的 --server-binary，重启没有发生。",
             unblock="用 `make build` 产出服务端二进制，并以 --server-binary <路径> 重跑本脚本。"))
         return outcomes, summary
@@ -384,14 +392,14 @@ def run_restart_part(server_binary: Path | None, repo_root: Path, work_dir: Path
     summary["output"] = (result.stdout or "").strip()[-2000:]
     if result.returncode != 0:
         outcomes.append(Outcome(
-            id="重启后读回：项目、章节、来源绑定与交付文件", status=FAILED,
+            id="重启后读回：同一个项目、访问令牌与持久化", status=FAILED,
             evidence=f"重启脚本以退出码 {result.returncode} 结束：{summary['output']}",
             reason=f"重启后读回失败：{summary['output']}",
             unblock="按重启脚本的输出修正环境（数据库、迁移、端口）后重跑本脚本。"))
         return outcomes, summary
     outcomes.append(Outcome(
-        id="重启后读回：项目、章节、来源绑定与交付文件", status=HELD,
-        evidence=summary["output"] or "重启后读回了同一个项目。"))
+        id="重启后读回：同一个项目、访问令牌与持久化", status=HELD,
+        evidence=f"后端 {driver}；{summary['output'] or '重启后读回了同一个项目。'}"))
     return outcomes, summary
 
 
@@ -808,9 +816,19 @@ def main(argv: list[str] | None = None) -> int:
             reconfigure(encoding="utf-8", errors="replace")
     arguments = parse_arguments(argv)
     head = arguments.head or git_head(ROOT)
+    if not head:
+        print("beta_evidence FAILED: no head to bind this run to; pass --head <sha> or run it "
+              "inside a git worktree.", file=sys.stderr)
+        return 1
     base = git_base(ROOT)
     run_id = arguments.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = arguments.out or (EVIDENCE_ROOT / head / run_id)
+    if out_dir.is_dir() and any(entry.is_file() for entry in out_dir.iterdir()):
+        # Two runs of the same head must not overwrite each other: the run id is
+        # what tells them apart, so reusing one has to be an explicit choice.
+        print(f"beta_evidence FAILED: {relative_to_root(out_dir)} already holds a run; "
+              "pick another --run-id instead of overwriting it.", file=sys.stderr)
+        return 1
     work_dir = Path(arguments.work_dir) if arguments.work_dir else Path(tempfile.mkdtemp(prefix="beta-evidence-"))
     work_dir.mkdir(parents=True, exist_ok=True)
     commands: list[str] = []
