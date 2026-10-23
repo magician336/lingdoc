@@ -258,7 +258,7 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 | | 自动化约束 | 5 | 5 | 命名棘轮 + 登记处自检 + 票面一致性检测 + `scripts/ci` 358 项 |
 | 证据反馈恢复 | 未知发现 | 3 | 4 | 本轮靠实测抓出四处：票面过时断言、两处陈旧指针、命名违规、门禁把「撤下悬空登记」误判成抹除路径 |
 | | 失败/权限/恢复测试 | 3 | 4 | 36 行矩阵 + 46 条用例 + **20 条阴性验证**（门面 9、面板 5、检测器 2、两轴评审返工新增 4）逐条贴过真实失败输出；**已验证**（原为待验证） |
-| | CI/观测/回退 | 4 | 4 | 门禁在本次 head 上全绿（run `39886819150`）：前端 verify（npm test + type-check + build）真跑；本 PR 改了 `scripts/`，触发 `scope.backend=true` ⇒ provider 档位（`go test -race -count=1` + `go vet`）也真跑并通过；另有 8 个 job 按贡献面跳过，记 NOT RUN 不是通过 |
+| | CI/观测/回退 | 4 | 4 | 门禁在本次 head 上全绿：前端 verify（npm test + type-check + build）真跑；本 PR 改了 `scripts/`，触发 `scope.backend=true` ⇒ provider 档位（`go test -race -count=1` + `go vet`）也真跑并通过；另有 8 个 job 按贡献面跳过，记 NOT RUN 不是通过。已实测两轮（run `39886819150` 对 head `74917e68`、run `39888822533` 对 head `e7d702d1`），当轮的 run id 与 base 以 PR body 为准 |
 
 维度得分：复杂性控制 9.4｜模块深度与边界 15.2｜演化式设计 10.0｜战略执行 11.6｜一致性与显然性 12.6｜证据反馈恢复 12.0 ⇒ **70.8**（Δ +3.4）
 

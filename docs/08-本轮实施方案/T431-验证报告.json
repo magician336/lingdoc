@@ -2,9 +2,9 @@
   "mode": "static-and-suite",
   "note": "PF-6 上下文包的前端消费（票 #330，Spec #431）。两件事：把服务端组装好的上下文包原样显示出来（卡片、选择理由、版本基线、卡片状态、权限态），并允许在发出请求前增删引用的卡片。设计要点：契约类型由已有的传输层模块拥有，本面只读不改、不复制第二份；意图（用户勾了什么）与事实（服务端组装了什么）是两个不可互换的类型，事实区只由预览结果刷新；卡片状态按 id 且 version 双重对齐，对不上显示状态未知而不回退；选择理由按服务端原文逐条透传，前端不解析成条目映射。交付物是四个新文件：前端 API 门面模块 agentContext.ts、面板组件 ContextPackagePanel.vue，及各自的测试；不改服务端、不改任何既有前端文件、不改 agentApi.ts。",
   "head": "10c099d746c40a150fa161f3cc700b2238cb623a",
-  "base": "80a1863df6f93fb6678d903fb6819cd25704bca0",
+  "base": "c66d39f2c25ebfeb29a75e1d5acc2fb7c3550958",
   "head_note": "证据绑定 10c099d746c40a150fa161f3cc700b2238cb623a（两轴评审判 FAIL 之后的返工提交：面板加会话维度、对齐规则归一、关联标识落地、可选键不再恒写、状态类型收紧）。此后的提交只动文档与证据档；核对命令：git diff 10c099d746c40a150fa161f3cc700b2238cb623a <当前 head> -- frontend/ scripts/ 应为空。",
-  "base_note": "基线取门禁实测用的 base（PR #443 的 baseRefOid）80a1863df6f93fb6678d903fb6819cd25704bca0，与 git merge-base origin/main HEAD 一致；CI 的 diff_range 与此一致（scope.json: diff_range = 80a1863d...74917e68）。origin/main 在本面施工期间前移过，883ba6d5 是更早一次本地核对时的基线。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
+  "base_note": "基线取 PR #443 的 baseRefOid，即 git merge-base origin/main HEAD。main 在本面施工期间多次前移（80a1863d → c66d39f2），每次前移后本面都把最新 main 合进分支并重跑门禁，让门禁的 diff_range 右端绑定当前 head；当前值见 base 字段，当轮的具体值以 PR body 为准。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
   "commands": [
     "cd frontend && npx tsx --test src/api/lingdoc/agentContext.test.ts src/views/lingdoc/ContextPackagePanel.test.ts  → tests 46 / pass 46 / fail 0",
     "cd frontend && npm test  → tests 1703 / pass 1702 / fail 0 / skipped 1（既有 skip，不在本面两个文件里）",
@@ -15,33 +15,41 @@
     "python scripts/lingdoc_naming_registry.py  → 209 code files, 251 numbered identifiers, 0 legacy files against a baseline of 0/0/0",
     "python scripts/lingdoc_parallel_surfaces.py  → 6 parallel work faces validated",
     "gh pr checks 443 --repo magician336/lingdoc  → 退出码 0（无 pending、无 failure）",
-    "gh run download 39886819150 --repo magician336/lingdoc --name lingdoc-checks-39886819150-1  → 逐字段核对 reason / surface / base / tested_sha"
+    "gh run download <run-id> --repo magician336/lingdoc --name lingdoc-checks-<run-id>-1  → 逐字段核对 reason / surface / base / tested_sha"
   ],
   "ci": {
-    "run": "39886819150",
-    "workflow": ".github/workflows/lingdoc-review.yml（作业名 LingDoc PR gate）",
-    "conclusion": "success（12m51s）",
-    "tested_sha": "7bdceb15b655be32032ec75f2e57b557ac1d071d",
-    "tested_sha_note": "这是 GitHub 为 PR #443 计算的 test merge commit，父提交为 80a1863d（base）+ 74917e68（本 head）⇒ 门禁结论覆盖本次 head，不是只覆盖基线。",
-    "base": "80a1863df6f93fb6678d903fb6819cd25704bca0",
-    "surface": "./internal/lingdoc/... ./internal/evidence/... ./internal/models/acceptancebudget/... ./cmd/acceptance-budget-reconcile/... frontend",
-    "reason": "contribution surface changed",
-    "undecided": false,
-    "boundary": "Automated checks only; not consumer approval, a live-model run, or product acceptance.",
+    "method": "门禁结论按 head 绑定，权威值在 PR body 的门禁小节——PR body 改动不触发 CI，因此它总能绑到当前 head；本段记方法与实测历史，不重复当轮的具体 run id 与 base。复跑命令：gh pr checks 443 --repo magician336/lingdoc（退出码 0 = 无 pending 无 failure）；gh run download <run-id> --repo magician336/lingdoc --name lingdoc-checks-<run-id>-1 后逐字段核对 result.json / gate-conclusion.json / scope.json / validation-result.json。",
+    "tested_sha_note": "result.json 的 tested_sha 是 GitHub 为本 PR 计算的 test merge commit，不是 head 本身：它的第二个 parent 才是被测 head，第一个 parent 是门禁 checkout 时的 main 头。核对命令：git log --format='%H %P' -1 <tested_sha>。实测两轮都是「第二个 parent = 本轮 head」⇒ 结论覆盖该 head，不是只覆盖基线。",
+    "field_checklist": [
+      {"field": "result.json: ciscripts / scope / contracts / providers / frontend", "expect": "五档全 success"},
+      {"field": "gate-conclusion.json: reason", "expect": "非空（实测 'contribution surface changed'）"},
+      {"field": "gate-conclusion.json: surface", "expect": "等于 scope.json 的 provider_packages 加 frontend"},
+      {"field": "gate-conclusion.json: base", "expect": "等于 PR 的 baseRefOid，也等于 git merge-base origin/main HEAD"},
+      {"field": "gate-conclusion.json: undecided", "expect": "false（判定已决）"},
+      {"field": "gate-conclusion.json: boundary", "expect": "'Automated checks only; not consumer approval, a live-model run, or product acceptance.'"},
+      {"field": "scope.json: diff_range", "expect": "<base>...<被测 head>，右端必须等于本轮 head"},
+      {"field": "scope.json: changed_paths", "expect": "13 条：4 个前端文件 + 3 个脚本 + 6 个文档"}
+    ],
+    "verified_runs": [
+      {"run": "39886819150", "head": "74917e68", "conclusion": "success（12m51s）", "tested_sha": "7bdceb15b655be32032ec75f2e57b557ac1d071d"},
+      {"run": "39888822533", "head": "e7d702d1", "conclusion": "success（13m）", "tested_sha": "b6793a383203f8c79ff02fd0e586ad66d6393109"}
+    ],
+    "stability_note": "CI 的判定输入是 base..head 的 changed_paths 集合（本面 13 条）。本文件此后的提交只动 docs/08-本轮实施方案/ 下的文档，不改变该集合 ⇒ 判定与所跑的检查集合不变，结论沿用；但 base 与 run id 会随 main 前移与新一轮 CI 变化，以 PR body 为准。",
+    "provider_note": "本 PR 改了 scripts/ ⇒ scope.backend=true ⇒ run_providers=true ⇒ provider 档位（go test -race -count=1 + go vet）在四个 provider 包上实跑并通过。实测这一档不按「有没有改 Go 文件」缩面——判断它跑不跑要读 scope.json，不能凭 diff 推断。",
     "steps": [
       {"name": "Test CI scope scripts", "outcome": "success", "detail": "scripts/ci 全量 unittest"},
-      {"name": "Select checks and check diff whitespace", "outcome": "success", "detail": "scope.json: contracts / backend / frontend 均 true，run_providers=true；diff_range = 80a1863d...74917e68；changed_paths 13 条与本面 diff 一致"},
+      {"name": "Select checks and check diff whitespace", "outcome": "success", "detail": "scope.json: contracts / backend / frontend 均 true，run_providers=true；changed_paths 13 条与本面 diff 一致"},
       {"name": "Validate contract examples and reference trace", "outcome": "success", "detail": "validation-result.json: result=PASS，route_parity=PASS（registered_operations 95 = frontend_calls 95）"},
-      {"name": "Test and vet existing LingDoc provider packages", "outcome": "success", "detail": "go test -race -count=1 跑四个 provider 包；go-test.jsonl 末尾 ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 340.399s；go-vet.log 零输出"},
-      {"name": "Test, type-check and build frontend", "outcome": "success", "detail": "frontend-tests.log: tests 1703 / pass 1702 / fail 0 / skipped 1（与本地逐项一致）；type-check 零错误；build 35.23s"}
+      {"name": "Test and vet existing LingDoc provider packages", "outcome": "success", "detail": "go test -race -count=1 跑四个 provider 包；go-test.jsonl 末尾 ok github.com/Tencent/WeKnora/internal/lingdoc/workspace（两轮分别 340.399s / 457.708s）；go-vet.log 零输出"},
+      {"name": "Test, type-check and build frontend", "outcome": "success", "detail": "frontend-tests.log: tests 1703 / pass 1702 / fail 0 / skipped 1（与本地逐项一致）；type-check 零错误；build 成功"}
     ],
     "other_workflows": [
-      {"workflow": "frontend.yml", "job": "Test, type-check, and build", "conclusion": "pass（2m46s，run 39886819173）"},
-      {"workflow": "frontend.yml", "job": "Docker multi-stage image", "conclusion": "pass（1m25s，run 39886819173）"}
+      {"workflow": "frontend.yml", "job": "Test, type-check, and build", "conclusion": "pass（run 39886819173 与 39888822440 两轮均 pass）"},
+      {"workflow": "frontend.yml", "job": "Docker multi-stage image", "conclusion": "pass（run 39886819173 与 39888822440 两轮均 pass）"}
     ],
     "not_run_jobs": ["F01 runner regression", "Format, vet, test, and build", "T06 fixed mock and request consumer", "detect lint modules", "frontend", "golangci-lint", "integration", "workspace-concurrency"],
     "not_run_note": "这 8 个 job 按贡献面跳过。跳过是 NOT RUN，不是通过。",
-    "evidence_artifact": "run 39886819150 的 lingdoc-checks-39886819150-1：gate-conclusion.json / result.json / scope.json / validation-result.json / go-test.jsonl / go-vet.log / frontend-tests.log / frontend-types.log / frontend-build.log"
+    "evidence_artifact": "run <id> 的 lingdoc-checks-<id>-1：gate-conclusion.json / result.json / scope.json / validation-result.json / go-test.jsonl / go-vet.log / frontend-tests.log / frontend-types.log / frontend-build.log"
   },
   "passed": [
     {
@@ -281,7 +289,7 @@
     },
     {
       "id": "CI-COVERAGE",
-      "detail": "门禁按贡献面缩面。本 PR 的贡献面含 frontend/ 与 scripts/ ⇒ 前端 verify（npm test + type-check + build）与 governance-scripts 档位真跑；scripts/ 的改动同时触发 scope.backend=true ⇒ provider 档位（go test -race -count=1 + go vet）也真跑并通过。PR gate run 39886819150 的 result.json 五档全 success（ciscripts / scope / contracts / providers / frontend），tested_sha 7bdceb15 是 head 74917e68 与 base 80a1863d 的 test merge commit（第二个 parent 即本 head）⇒ 结论覆盖本次 head。逐 job 结论见 ci 段与 PR body；被跳过的 8 个 job 记 NOT RUN，不是通过。"
+      "detail": "门禁按贡献面缩面。本 PR 的贡献面含 frontend/ 与 scripts/ ⇒ 前端 verify（npm test + type-check + build）与 governance-scripts 档位真跑；scripts/ 的改动同时触发 scope.backend=true ⇒ provider 档位（go test -race -count=1 + go vet）也真跑并通过。已实测两轮（run 39886819150 对 head 74917e68、run 39888822533 对 head e7d702d1），result.json 五档全 success（ciscripts / scope / contracts / providers / frontend），tested_sha 的第二个 parent 即当轮 head ⇒ 结论覆盖该 head。被跳过的 8 个 job 记 NOT RUN，不是通过。逐 job 结论与当轮 run id 以 PR body 为准。"
     },
     {
       "id": "TWO-AXIS-REVIEW-FAIL-REMEDIATED",
