@@ -1844,7 +1844,7 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 			"model_type": string(stored.Type),
 			"purpose":    "chat",
 		})
-		c.Error(errors.NewBadRequestError(fmt.Sprintf(
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
 			"模型 %s 的类型为 %s，不能服务文本生成：该模型类型不支持 chat 连通性测试",
 			utils.SanitizeForLog(stored.ID), stored.Type)))
 		return
@@ -1918,7 +1918,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 			"model_type": string(stored.Type),
 			"purpose":    "embedding",
 		})
-		c.Error(errors.NewBadRequestError(fmt.Sprintf(
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
 			"模型 %s 的类型为 %s，不能服务向量化：该模型类型不支持 embedding 连通性测试",
 			utils.SanitizeForLog(stored.ID), stored.Type)))
 		return
