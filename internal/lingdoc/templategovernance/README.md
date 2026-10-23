@@ -8,6 +8,43 @@ Production composition must supply current transaction-aware Authorizer and
 rulesetstore.Authorizer ports. Nil ports fail closed. Actor identity/role comes
 from authenticated server context, never a browser body.
 
+`ListProfiles` and `ListVersions` return the public projection to an authenticated
+non-manager: drafts and source IDs are hidden, and recall projections omit
+tenant-wide affected project IDs. In the production runtime, `CanManageTemplateCatalog`
+uses `TenantPermissionInTransaction` to return an explicit role-ceiling decision
+after `freshActor` verifies the current identity and membership. Membership and
+storage errors propagate instead of being inferred from a not-found error.
+
+Workspace catalog copies require a `TemplateCopyAuditRecorder`. A successful
+copy records `ActionCopy` with the exact profile/version, project-copy identity,
+reason, and content/RuleSet/source-policy hashes on the same project transaction;
+an audit failure rolls back the project and idempotency receipt. A rejected copy
+records its failure receipt after that project transaction rolls back when a
+valid target can be attributed. If resolution succeeded before a success-audit
+write failed, the receipt names the resolved template/version and attempted
+project ID, with `audit_persistence_failed`; it is not mislabeled as an ordinary
+copy rejection. Missing recorder adapters fail closed. Failure-receipt storage
+errors are joined to the original rejection and returned. An empty, malformed,
+or otherwise unattributable template ID is deliberately not written to the
+catalog ledger, and that non-write does not replace the original rejection with
+a misleading storage error.
+
+`GET /api/v1/lingdoc/template-catalog/profiles/:templateId/audit-events`
+provides paginated lifecycle history for the current tenant's template profile.
+It rechecks current membership and catalog-management authority in the same
+read transaction; only a current tenant catalog manager receives full event
+details. `after_id` is an exclusive descending ID cursor and `limit` is bounded
+to 100. The endpoint reads the governance audit scope directly, rather than
+relying on the generic tenant feed's unscoped-only filter.
+
+Failure receipts distinguish `permission_denied` from a missing catalog object,
+while the HTTP denial may still use 404 to prevent enumeration. A recently
+revoked member can leave a minimal receipt attributed to the authenticated
+request identity; protected version metadata is omitted when read permission
+is gone. A caller/actor mismatch or invalid identity claim is marked
+`ErrUnverifiedActor`: the request remains rejected and cannot author a receipt
+in the claimed actor's name.
+
 Apply SQLiteDDL/PostgreSQLDDL through the application's versioned migration
 runner; NewService does not auto-migrate. ResolveForCopy receives the caller's
 project transaction and rechecks the published template and live RuleSet gates.
@@ -59,18 +96,20 @@ rule and suggestion edits separate and prevents editing during submissions.
 Parent must return current_snapshot_id and exact RuleSet metadata for project
 basis; absent identity/version/hash disables model request.
 
-API routes are /api/v1/lingdoc/template-catalog/profiles and nested
+API routes include /api/v1/lingdoc/template-catalog/profiles and nested
 profiles/:id/versions/:version/{publish,withdraw,recall}, rule-definitions,
 rulesets/:id/versions/:version/{publish,withdraw,recall}, and
+profiles/:id/audit-events, and
 projects/:projectId/rule-suggestions/:runId/{accept,reject}.
 All use the existing Result<T> envelope and Idempotency-Key header.
 
-Validation: ROOT's first serial G4 domain run recorded 48 PASS / 2 PostgreSQL
-SKIP across three packages. The later shared fake-mode compatibility test needs
-ROOT's final focused check. Seven frontend state tests and Vue SFC
-parse/script/template compile passed using existing read-only repo dependencies.
-Full frontend type-check, real browser interaction, real PostgreSQL and real
-model/Word acceptance are separate checks and have not been established here.
+Historical snapshot from the initial G4 domain run (not evidence for the
+current PR head): 48 PASS / 2 PostgreSQL SKIP across three packages, plus seven
+frontend state tests and Vue SFC parse/script/template compilation. Later
+integrated PostgreSQL, frontend, and browser evidence is tracked by the
+[#139 acceptance matrix](../../../docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md);
+consult its SHA binding and per-row status before making any current-head claim.
+Real model/Word and research acceptance remain separate from software tests.
 
 
 Actual production composition is now provided by
@@ -116,9 +155,11 @@ Source-free and same-tenant currently authorized contexts use the real G2
 BuildAgentContext and injected shared G2AgentModel/budget once. Unconfigured
 models remain unavailable; real_api_fake_model remains explicitly simulated.
 
-New runtime/policy/lifecycle tests are pending ROOT's serial Go run. Production
-PostgreSQL, remote shares, paid-model behavior and browser/E2E acceptance are
-not established by the earlier 48-test domain evidence.
+The earlier 48-test domain run did not establish runtime/policy/lifecycle
+coverage, production PostgreSQL, remote shares, paid-model behavior, or
+browser/E2E acceptance. Subsequent evidence and its limits are recorded in the
+[#139 acceptance matrix](../../../docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md);
+the historical run must not be read as the status of the current PR head.
 
 
 The frozen delivery chain now carries the project RuleSetSnapshot,
@@ -152,8 +193,9 @@ rules remain nonbinding until human acceptance creates an unpublished existing
 RuleSet-store draft. BindingOverride.remove_parameter_keys supports reviewed
 inverse ChangeSets, with unknown/duplicate/delete-plus-edit keys rejected.
 
-Final branch-local frontend static check: Vue SFC parse/script/template PASS;
-7 state behavior tests PASS using existing read-only dependencies. Go files
-are frozen for ROOT's serial complete compile/test run. No real paid model,
-real PostgreSQL, remote-share transaction reader, browser E2E, publishing,
-remote PR, or merge was performed by this branch.
+This paragraph describes the initial branch-local frontend check only: Vue SFC
+parse/script/template and seven state behavior tests passed, while the full Go
+run was still pending. It is historical, not current-head evidence. For later
+PostgreSQL, lifecycle, UI and CI runs, use the SHA-bound [#139 acceptance
+matrix](../../../docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md). This repository
+documentation does not claim paid-model/Word or real research acceptance.

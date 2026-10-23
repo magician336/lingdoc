@@ -13,11 +13,51 @@ export function publishedChoices(versions: TemplateCatalogVersion[]) {
   return [...unique.values()]
 }
 
+export function catalogNoticeForView(loading: boolean, error: string, publishedCount: number, emptyMessage?: string) {
+  if (loading) return '正在读取已发布模板目录，暂不能确认其他可用版本。'
+  if (error) return error
+  if (publishedCount === 0) return emptyMessage || '目录已读取：暂无其他已发布模板；仍可使用明确标为内部演示的两章模板。'
+  return ''
+}
+
+export function templateChoiceLabel(version: TemplateCatalogVersion) {
+  return `${version.definition.name || version.template_id} · ${version.version} · ${version.scope}`
+}
+
+export function templateChoiceDescription(version: TemplateCatalogVersion) {
+  return `适用范围：${version.scope} · 来源：${version.source_type} · 整理者：${version.curator}。内容哈希：${version.content_hash}；规则集哈希：${version.ruleset_hash}。来源类型不代表官方认证。`
+}
+
 export function resolveTemplateChoice(key: string, versions: TemplateCatalogVersion[]) {
   if (key === 'template-demo@1') return { template_id: 'template-demo', template_version: '1' }
   const chosen = versions.find(v => v.state === 'published' && `${v.template_id}@${v.version}` === key)
   if (!chosen) throw new Error('所选模板版本已不可用，请刷新目录并重新选择；未改用演示模板。')
   return { template_id: chosen.template_id, template_version: chosen.version }
+}
+
+// The source template is read separately from the immutable project copy.
+// Never display a late or mismatched catalog response as this project's status.
+export class CatalogIntegrityError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CatalogIntegrityError'
+  }
+}
+
+export function recallNoticeForProject(project: Project, version: TemplateCatalogVersion) {
+  if (version.template_id !== project.template_id || version.version !== project.template_version) throw new CatalogIntegrityError('来源模板与当前课题不匹配')
+  if (version.state !== 'recalled') return null
+  if (!version.recall) throw new CatalogIntegrityError('召回记录缺失')
+  return version.recall
+}
+
+export function templateStatusErrorFor(error: unknown, isDemo: boolean) {
+  if (error instanceof CatalogIntegrityError) {
+    return `模板目录完整性校验失败：${error.message}。已停止展示来源状态，请重新读取并联系管理员。`
+  }
+  return isDemo
+    ? '演示模板状态暂不可读，不能确认当前目录状态；请稍后重试。'
+    : '当前来源模板状态暂不可读，不能据此认定没有召回；请重新读取。'
 }
 
 const roles: Record<string, string> = { owner: '课题所有者', admin: '课题管理员', member: '成员', author: '写作者', researcher: '调研者', reviewer: '评审者', observer: '观察者' }
