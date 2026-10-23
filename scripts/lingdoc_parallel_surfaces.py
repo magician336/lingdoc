@@ -989,6 +989,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/i18n/auditActorRoleLabel.test.ts", "file"),
             # #564 的守护：迁移 down 链的语义不可逆边界与守卫行为（000043/000044 守卫存在、000011/000000 的不可逆点如实标注）。
             ("internal/database/migration_full_down_test.go", "file"),
+            # #545 的守护：F01 契约补 model-use 许可节点后，F01-07 不手工插数据即返回 202；撤销/未建立时仍返回 422（不得默认放行）；许可记录与 asset_revision 的绑定（revision 前进后旧同意不再放行）。
+            ("internal/lingdoc/workspace/model_use_consent_test.go", "file"),
+            # #546 的受控窗口核验：按验收预算账本核对窗口内 embedding 调用行数；出现 embedding 行则整个受控窗口判失败（不得当作「已通过检索」）。
+            ("scripts/lingdoc_mock/controlled_window_check.py", "file"),
+            # #546 的守护：契约声明「本节点只走关键词检索」的节点确实不产生 embedding 请求；节点未声明检索方式、或声明与实际不符时的处理。
+            ("scripts/ci/test_lingdoc_controlled_window.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
