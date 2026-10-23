@@ -122,16 +122,28 @@ def _path_set(face: manifest.ParallelFace) -> frozenset[str]:
 def compare_faces(
     baseline: Sequence[manifest.ParallelFace],
     current: Sequence[manifest.ParallelFace],
+    unbacked: frozenset[str] = frozenset(),
 ) -> tuple[Regression, ...]:
     """Find every way ``current`` goes backwards from ``baseline``.
 
     The comparison is deliberately asymmetric: growth is always allowed, and
     only the specific backwards moves listed in the module docstring are
     reported.
+
+    ``unbacked`` names the paths the baseline claimed but that no file at the
+    baseline ever backed -- a face may name a file it has not created yet.
+    Withdrawing such a claim is not a path loss: nobody owned a real file, so
+    nothing was taken away.  Claims over files that *do* exist at the baseline
+    are never exempt, so a genuine loss is still reported.
     """
     baseline_by_issue = {face.issue: face for face in baseline}
     current_by_issue = {face.issue: face for face in current}
     regressions: list[Regression] = []
+
+    def backed(face: manifest.ParallelFace) -> frozenset[str]:
+        return frozenset(
+            claim.path for claim in face.paths if claim.path not in unbacked
+        )
 
     # The union of all paths, before and after.  A path that is in the union
     # now is owned by somebody; a path that left the union is owned by
@@ -139,7 +151,7 @@ def compare_faces(
     # one face to another and stays in the union.
     baseline_union: set[str] = set()
     for face in baseline:
-        baseline_union |= _path_set(face)
+        baseline_union |= backed(face)
     current_union: set[str] = set()
     for face in current:
         current_union |= _path_set(face)
@@ -191,7 +203,7 @@ def compare_faces(
         # released by a finished face (allowed) or lost by a live one (a
         # regression) -- and it is also reported below as unowned, so it is
         # only reported here when the face is still live.
-        old_paths = _path_set(old)
+        old_paths = backed(old)
         new_paths = _path_set(new)
         released = old_paths - new_paths
         lost = {path for path in released if path not in current_union}
@@ -280,6 +292,36 @@ def _merge_base(root: Path, ref: str) -> str | None:
     return _git_output(root, "merge-base", "HEAD", ref)
 
 
+def _files_at_ref(root: Path, ref: str) -> set[str] | None:
+    """Every file tracked at ``ref``; ``None`` when git cannot say."""
+    listing = _git_output(root, "ls-tree", "-r", "--name-only", ref)
+    if listing is None:
+        return None
+    return set(listing.splitlines())
+
+
+def unbacked_claims(
+    faces: Sequence[manifest.ParallelFace],
+    tracked: set[str],
+) -> frozenset[str]:
+    """The file claims that no file at the baseline ever backed.
+
+    A face may name a file it has not created yet -- that is what the path
+    set of an unstarted face looks like.  Such a claim does not own anything
+    real, so withdrawing it later is not a path loss.
+
+    Only **file** claims qualify.  A directory claim is backed by the files
+    inside it, and git does not track an empty directory at all, so a
+    directory claim is never treated as unbacked.
+    """
+    names: set[str] = set()
+    for face in faces:
+        for claim in face.paths:
+            if claim.kind == "file" and claim.path not in tracked:
+                names.add(claim.path)
+    return frozenset(names)
+
+
 def compare_against_git_baseline(
     root: Path | None = None,
     ref: str = "origin/main",
@@ -346,13 +388,19 @@ def compare_against_git_baseline(
                    "the comparison did not happen",
         )
     current_faces = manifest.load_and_validate()
-    regressions = compare_faces(baseline_faces, current_faces)
+    # A claim the baseline made over a file that never existed there owns
+    # nothing, so withdrawing it is not a path loss.  Claims over files that
+    # do exist at the baseline are not exempt: a real loss stays reported.
+    tracked = _files_at_ref(root, ref)
+    unbacked = unbacked_claims(baseline_faces, tracked) if tracked is not None else frozenset()
+    regressions = compare_faces(baseline_faces, current_faces, unbacked)
     return Comparison(
         regressions=regressions,
         compared=True,
         reason=f"compared against {ref}:{relative_path} "
                f"({len(baseline_faces)} baseline face(s), "
-               f"{len(current_faces)} current face(s))",
+               f"{len(current_faces)} current face(s), "
+               f"{len(unbacked)} baseline claim(s) without a file behind them)",
     )
 
 
