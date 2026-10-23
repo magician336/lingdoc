@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -22,7 +23,7 @@ type testAuthorizer struct {
 }
 
 func (a testAuthorizer) AuthorizeRuleSet(_ context.Context, _ *gorm.DB, actor Actor, _ Action, _ *template.RuleSet) error {
-	if !a.allow || actor.Role != "tenant_admin" {
+	if !a.allow || actor.Role != string(types.TenantRoleAdmin) {
 		return errors.New("permission denied")
 	}
 	return nil
@@ -32,7 +33,7 @@ func TestStorePersistsImmutableVersionsTransitionsAndAudit(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("v1")
 
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
@@ -85,7 +86,7 @@ func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("v-use-audit")
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
 		t.Fatal(err)
@@ -148,7 +149,7 @@ func TestGetVersionForBindingReadsPublishedVersionOnCallerTransaction(t *testing
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("v1")
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
 		t.Fatal(err)
@@ -188,7 +189,7 @@ func TestConcurrentRuleSetWithdrawWaitsForBindingTransaction(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("v1")
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
 		t.Fatal(err)
@@ -255,13 +256,13 @@ func TestStoreIsTenantScopedAndAuthorizationFailsClosed(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("v1")
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
 		t.Fatal(err)
 	}
 
-	otherTenant := Actor{TenantID: 2, UserID: "admin-2", Role: "tenant_admin"}
+	otherTenant := Actor{TenantID: 2, UserID: "admin-2", Role: string(types.TenantRoleAdmin)}
 	if _, err := store.GetVersion(ctx, otherTenant, draft.ID, draft.Version); !errors.Is(err, ErrRuleSetNotFound) {
 		t.Fatalf("cross-tenant read error = %v, want ErrRuleSetNotFound", err)
 	}
@@ -278,7 +279,7 @@ func TestStoreIsTenantScopedAndAuthorizationFailsClosed(t *testing.T) {
 func TestStoreRollsBackRuleSetWhenAuditWriteFails(t *testing.T) {
 	db := openStoreTestDB(t, false)
 	store := NewStore(db, testAuthorizer{allow: true})
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	if err := store.CreateDraft(context.Background(), actor, testDraft("v1")); err == nil {
 		t.Fatal("CreateDraft succeeded without the required audit table")
 	}
@@ -294,7 +295,7 @@ func TestStoreRollsBackRuleSetWhenAuditWriteFails(t *testing.T) {
 func TestStoreBoundsAuditTargetForMaximumRuleSetIdentity(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft(strings.Repeat("v", 64))
 	draft.ID = strings.Repeat("r", 64)
 
@@ -336,7 +337,7 @@ func TestStoreListsVersionsNewestFirstAndKeepsDraftHashServerOwned(t *testing.T)
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: string(types.TenantRoleAdmin)}
 
 	older := testDraft("v1")
 	if err := store.CreateDraft(ctx, actor, older); err != nil {
