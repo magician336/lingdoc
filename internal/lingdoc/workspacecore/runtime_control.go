@@ -23,50 +23,74 @@ type RuntimeScope struct {
 	Value string `json:"value"`
 }
 type RuntimeControl struct {
-	ID               string       `json:"id"`
-	ProjectID        string       `json:"project_id"`
-	Scope            RuntimeScope `json:"scope"`
-	Version          int64        `json:"version"`
-	Status           string       `json:"status"`
-	ActorID          string       `json:"actor_id"`
-	Reason           string       `json:"reason"`
-	SnapshotID       string       `json:"snapshot_id,omitempty"`
-	ExportID         string       `json:"export_id,omitempty"`
-	RecoveryVerified bool         `json:"recovery_verified"`
-	UpdatedAt        time.Time    `json:"updated_at"`
+	ID               string                 `json:"id"`
+	ProjectID        string                 `json:"project_id"`
+	Scope            RuntimeScope           `json:"scope"`
+	Version          int64                  `json:"version"`
+	Status           string                 `json:"status"`
+	ActorID          string                 `json:"actor_id"`
+	Reason           string                 `json:"reason"`
+	SnapshotID       string                 `json:"snapshot_id,omitempty"`
+	ExportID         string                 `json:"export_id,omitempty"`
+	RecoveryVerified bool                   `json:"recovery_verified"`
+	RollbackTo       *RuntimeRollbackTarget `json:"rollback_to,omitempty"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
+
+// RuntimeRollbackInput is what a rollback asks for.
+//
+// The change set is the **action**: it names the proposal to invert. The
+// template version and the ruleset hash are the **target**: they name the
+// configuration the rollback points at.
+type RuntimeRollbackInput struct {
+	ChangeSetID     string `json:"change_set_id,omitempty"`
+	TemplateVersion string `json:"template_version,omitempty"`
+	RulesetHash     string `json:"ruleset_hash,omitempty"`
+}
+
+// RuntimeRollbackTarget is the configuration a control record points at.
+type RuntimeRollbackTarget struct {
+	TemplateVersion string `json:"template_version,omitempty"`
+	RulesetHash     string `json:"ruleset_hash,omitempty"`
+}
+
 type RuntimeControlInput struct {
-	ExpectedVersion int64        `json:"expected_version"`
-	Scope           RuntimeScope `json:"scope"`
-	Action          string       `json:"action"`
-	Reason          string       `json:"reason"`
-	SnapshotID      string       `json:"snapshot_id,omitempty"`
-	ExportID        string       `json:"export_id,omitempty"`
+	ExpectedVersion int64                 `json:"expected_version"`
+	Scope           RuntimeScope          `json:"scope"`
+	Action          string                `json:"action"`
+	Reason          string                `json:"reason"`
+	SnapshotID      string                `json:"snapshot_id,omitempty"`
+	ExportID        string                `json:"export_id,omitempty"`
+	Rollback        *RuntimeRollbackInput `json:"rollback,omitempty"`
 }
 type RuntimeEvent struct {
-	ID              string    `json:"id"`
-	Origin          string    `json:"origin"`
-	TenantAlias     string    `json:"tenant_alias"`
-	ProjectAlias    string    `json:"project_alias"`
-	CorrelationID   string    `json:"correlation_id"`
-	CausationID     string    `json:"causation_id,omitempty"`
-	RequestID       string    `json:"request_id,omitempty"`
-	TaskID          string    `json:"task_id,omitempty"`
-	ChangeSetID     string    `json:"changeset_id,omitempty"`
-	ImpactTaskID    string    `json:"impact_task_id,omitempty"`
-	SnapshotID      string    `json:"snapshot_id,omitempty"`
-	ExportID        string    `json:"export_id,omitempty"`
-	TemplateVersion string    `json:"template_version,omitempty"`
-	RulesetHash     string    `json:"ruleset_hash,omitempty"`
-	ContextRevision int64     `json:"context_revision"`
-	TargetRevision  int64     `json:"target_revision"`
-	RuntimeMode     string    `json:"runtime_mode"`
-	Category        string    `json:"resource_category"`
-	Status          string    `json:"status"`
-	ErrorCode       string    `json:"error_code,omitempty"`
-	DurationMS      int64     `json:"duration_ms"`
-	QueueDepth      int64     `json:"queue_depth,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string `json:"id"`
+	Origin          string `json:"origin"`
+	TenantAlias     string `json:"tenant_alias"`
+	ProjectAlias    string `json:"project_alias"`
+	CorrelationID   string `json:"correlation_id"`
+	CausationID     string `json:"causation_id,omitempty"`
+	RequestID       string `json:"request_id,omitempty"`
+	TaskID          string `json:"task_id,omitempty"`
+	ChangeSetID     string `json:"changeset_id,omitempty"`
+	ImpactTaskID    string `json:"impact_task_id,omitempty"`
+	SnapshotID      string `json:"snapshot_id,omitempty"`
+	ExportID        string `json:"export_id,omitempty"`
+	TemplateVersion string `json:"template_version,omitempty"`
+	RulesetHash     string `json:"ruleset_hash,omitempty"`
+	ContextRevision int64  `json:"context_revision"`
+	TargetRevision  int64  `json:"target_revision"`
+	RuntimeMode     string `json:"runtime_mode"`
+	Category        string `json:"resource_category"`
+	Status          string `json:"status"`
+	ErrorCode       string `json:"error_code,omitempty"`
+	// Capability names the capability a decision was made on. It is set on
+	// the events that record one refused capability, so that the value of a
+	// denial can be told apart from the value of a state change.
+	Capability string    `json:"capability,omitempty"`
+	DurationMS int64     `json:"duration_ms"`
+	QueueDepth int64     `json:"queue_depth,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 type RuntimeAlertRule struct {
 	ID            string       `json:"id"`
@@ -75,6 +99,12 @@ type RuntimeAlertRule struct {
 	Action        string       `json:"action"`
 	ResponsibleID string       `json:"responsible_id"`
 	Scope         RuntimeScope `json:"scope"`
+	// Version is the optimistic-concurrency version of the rule. It is the
+	// version an operator has to name when they act on the rule.
+	Version int64 `json:"version"`
+	// Status is ACTIVE or DISABLED. A disabled rule stays in the list, with
+	// its history, but it no longer reacts to runtime events.
+	Status string `json:"status"`
 }
 type RuntimeAlert struct {
 	ID            string    `json:"id"`
@@ -207,6 +237,8 @@ func RuntimeGate(tx Transaction, actor Actor, p Project, operation, mode string)
 	return nil
 }
 func (s *Service) CheckRuntimeOperation(ctx context.Context, actor Actor, projectID, operation, mode string) error {
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
@@ -215,11 +247,99 @@ func (s *Service) CheckRuntimeOperation(ctx context.Context, actor Actor, projec
 		return RuntimeGate(tx, actor, p, operation, effectiveRuntimeMode(s.runtimeMode))
 	})
 }
+
+// runtimeControlScopeAllowed applies the scope rule that pause, resume and
+// rollback share.
+//
+// A project scope belongs to the project's owner; every other scope belongs
+// to the tenant's managers. A scope that names something else is not found,
+// not forbidden: the answer must not leak what exists.
+func (s *Service) runtimeControlScopeAllowed(ctx context.Context, tx Transaction, actor Actor, p Project, projectID string, scope RuntimeScope) error {
+	if scope.Kind == "project" {
+		if scope.Value != projectID || !projectOwner(p, actor.UserID) {
+			return ErrNotFound
+		}
+		return nil
+	}
+	if err := s.authorizeTenant(ctx, tx, authorizationRequest(actor, "", AuthorizationTenantManage, "")); err != nil {
+		return err
+	}
+	if scope.Kind == "tenant" && scope.Value != strconv.FormatUint(actor.TenantID, 10) {
+		return ErrNotFound
+	}
+	if scope.Kind == "runtime_mode" && !validRuntimeMode(scope.Value) {
+		return ErrInvalidRequest
+	}
+	if !runtimeScopeMatches(scope, actor, p, scope.Value) && scope.Kind != "runtime_mode" {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// runtimeRollbackTargetReadable answers whether the configuration a rollback
+// pointed at is still readable.
+//
+// This face records the target and stops new writes; it does not switch the
+// project onto the old configuration. So the only configuration the project
+// demonstrably still carries is its current one, and a target that names
+// something else cannot be verified as readable. The resume is refused
+// rather than resumed into a configuration nobody checked.
+func runtimeRollbackTargetReadable(target *RuntimeRollbackTarget, p Project) error {
+	if target == nil {
+		return nil
+	}
+	if target.TemplateVersion != "" && target.TemplateVersion != p.TemplateVersion {
+		return ErrRuntimeRecoveryRequired
+	}
+	if target.RulesetHash != "" {
+		if p.TemplateCopy == nil || target.RulesetHash != p.TemplateCopy.RulesetHash {
+			return ErrRuntimeRecoveryRequired
+		}
+	}
+	return nil
+}
+
+// prepareRuntimeRollback runs the part of a rollback that cannot live inside
+// the control's own transaction.
+//
+// The inverse change set goes through the existing domain entry point
+// (ReverseChangeSet), so no revision pointer, template pointer or published
+// file is written by hand. It is an operation with a transaction of its own,
+// which is why it cannot run inside the control write: SQLite uses a single
+// pooled connection and a nested write transaction would deadlock.
+//
+// The scope and the owner are checked **before** the inverse runs, so that an
+// unauthorized caller cannot make the domain change and only then be
+// refused.
+func (s *Service) prepareRuntimeRollback(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) error {
+	if err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
+		if err != nil {
+			return err
+		}
+		return s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope)
+	}); err != nil {
+		return err
+	}
+	if input.Rollback.ChangeSetID == "" {
+		return nil
+	}
+	if _, _, _, err := s.ReverseChangeSet(ctx, actor, projectID, input.Rollback.ChangeSetID, key+".reverse"); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) (json.RawMessage, int, bool, error) {
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	if input.ExpectedVersion < 0 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"pause", "resume"}, input.Action) || !slices.Contains([]string{"tenant", "project", "template_version", "ruleset_hash", "runtime_mode"}, input.Scope.Kind) || input.Scope.Value == "" {
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
+	if input.ExpectedVersion < 0 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"pause", "resume", "rollback"}, input.Action) || !slices.Contains([]string{"tenant", "project", "template_version", "ruleset_hash", "runtime_mode"}, input.Scope.Kind) || input.Scope.Value == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if input.Action == "rollback" && (input.Rollback == nil || (input.Rollback.ChangeSetID == "" && input.Rollback.TemplateVersion == "" && input.Rollback.RulesetHash == "")) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	var checked Project
@@ -239,24 +359,14 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			return nil, 0, false, err
 		}
 	}
+	if input.Action == "rollback" {
+		if err := s.prepareRuntimeRollback(ctx, actor, projectID, key, input); err != nil {
+			return nil, 0, false, err
+		}
+	}
 	return runOperation(s, ctx, actor, operationInput(operationRuntimeControl, projectID+"/"+input.Scope.Kind+"/"+input.Scope.Value, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeControl], error) {
-		if input.Scope.Kind == "project" {
-			if input.Scope.Value != projectID || !projectOwner(p, actor.UserID) {
-				return operationResult[RuntimeControl]{}, ErrNotFound
-			}
-		} else {
-			if err := s.authorizeTenant(ctx, tx, authorizationRequest(actor, "", AuthorizationTenantManage, "")); err != nil {
-				return operationResult[RuntimeControl]{}, err
-			}
-			if input.Scope.Kind == "tenant" && input.Scope.Value != strconv.FormatUint(actor.TenantID, 10) {
-				return operationResult[RuntimeControl]{}, ErrNotFound
-			}
-			if input.Scope.Kind == "runtime_mode" && !validRuntimeMode(input.Scope.Value) {
-				return operationResult[RuntimeControl]{}, ErrInvalidRequest
-			}
-			if !runtimeScopeMatches(input.Scope, actor, p, input.Scope.Value) && input.Scope.Kind != "runtime_mode" {
-				return operationResult[RuntimeControl]{}, ErrNotFound
-			}
+		if err := s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope); err != nil {
+			return operationResult[RuntimeControl]{}, err
 		}
 		if input.Action == "resume" && p.ProjectVersion != checked.ProjectVersion {
 			return operationResult[RuntimeControl]{}, ErrVersionConflict
@@ -284,6 +394,11 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		if input.Action == "resume" && (version == 0 || previous.Status != "PAUSED") {
 			return operationResult[RuntimeControl]{}, ErrInvalidState
 		}
+		if input.Action == "resume" {
+			if err := runtimeRollbackTargetReadable(previous.RollbackTo, p); err != nil {
+				return operationResult[RuntimeControl]{}, err
+			}
+		}
 		next := RuntimeControl{ID: previous.ID, ProjectID: recordProject, Scope: input.Scope, Version: version + 1, Status: "PAUSED", ActorID: actor.UserID, Reason: input.Reason, UpdatedAt: time.Now().UTC()}
 		if next.ID == "" {
 			next.ID = uuid.NewString()
@@ -293,6 +408,15 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			next.RecoveryVerified = true
 			next.SnapshotID = input.SnapshotID
 			next.ExportID = input.ExportID
+			next.RollbackTo = previous.RollbackTo
+		}
+		if input.Action == "rollback" {
+			// The rollback stops new writes and records the configuration it
+			// points at. It does not touch the published template, the frozen
+			// snapshot, the historical files or the confirmed audits: the
+			// domain change went through the inverse change set, and this
+			// record is the runtime's own bookkeeping.
+			next.RollbackTo = &RuntimeRollbackTarget{TemplateVersion: input.Rollback.TemplateVersion, RulesetHash: input.Rollback.RulesetHash}
 		}
 		if version == 0 {
 			err = store.InsertRuntimeRecord(actor.TenantID, recordProject, "control", recordKey, 1, next)
@@ -302,7 +426,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		if err != nil {
 			return operationResult[RuntimeControl]{}, err
 		}
-		if err := recordAuditEvent(tx, actor, projectID, "runtime."+input.Action, next.ID, map[string]any{"scope": next.Scope, "version": next.Version, "recovery_verified": next.RecoveryVerified, "snapshot_id": next.SnapshotID, "export_id": next.ExportID}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "runtime."+input.Action, next.ID, map[string]any{"scope": next.Scope, "version": next.Version, "recovery_verified": next.RecoveryVerified, "snapshot_id": next.SnapshotID, "export_id": next.ExportID, "rollback_to": next.RollbackTo}); err != nil {
 			return operationResult[RuntimeControl]{}, err
 		}
 		return operationResult[RuntimeControl]{Value: next, Status: operationStatusOK}, nil
@@ -310,6 +434,8 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 }
 func (s *Service) ListRuntimeControls(ctx context.Context, actor Actor, projectID string) ([]RuntimeControl, error) {
 	var result []RuntimeControl
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
@@ -336,7 +462,7 @@ func (s *Service) ListRuntimeControls(ctx context.Context, actor Actor, projectI
 var runtimeSafeCode = regexp.MustCompile(`^[a-zA-Z0-9_.:/-]{1,128}$`)
 
 func validRuntimeEvent(event RuntimeEvent) bool {
-	if event.CorrelationID == "" || event.DurationMS < 0 || event.QueueDepth < 0 || !validRuntimeMode(event.RuntimeMode) || !slices.Contains([]string{"request", "task", "changeset", "impact_task", "validation", "stabilization", "preflight", "snapshot", "export", "download", "audit", "dependency"}, event.Category) || !slices.Contains([]string{"success", "rejected", "conflict", "failed", "retry", "stale", "duplicate", "unavailable", "revoked", "loss"}, event.Status) {
+	if event.CorrelationID == "" || event.DurationMS < 0 || event.QueueDepth < 0 || !validRuntimeMode(event.RuntimeMode) || !slices.Contains([]string{"request", "task", "changeset", "impact_task", "validation", "stabilization", "preflight", "snapshot", "export", "download", "audit", "dependency", "permission"}, event.Category) || !slices.Contains([]string{"success", "rejected", "conflict", "failed", "retry", "stale", "duplicate", "unavailable", "revoked", "loss", "deny"}, event.Status) {
 		return false
 	}
 	for _, value := range []string{event.CorrelationID, event.CausationID, event.RequestID, event.TaskID, event.ChangeSetID, event.ImpactTaskID, event.SnapshotID, event.ExportID, event.TemplateVersion, event.RulesetHash, event.ErrorCode} {
@@ -382,6 +508,8 @@ func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID
 }
 func (s *Service) ListRuntimeEvents(ctx context.Context, actor Actor, projectID, correlationID string) ([]RuntimeEvent, error) {
 	var result []RuntimeEvent
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
@@ -441,7 +569,7 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	if !runtimeSafeCode.MatchString(input.Signal) || input.ResponsibleID == "" || !slices.Contains([]string{"P0", "P1", "P2", "P3"}, input.Severity) || !slices.Contains([]string{"notify", "retry", "pause", "block_export", "rollback", "human_confirm"}, input.Action) {
+	if !validRuntimeAlertRule(input) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return runOperation(s, ctx, actor, operationInput(operationRuntimeAlertRule, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeAlertRule], error) {
@@ -449,7 +577,9 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 		if !ok {
 			return operationResult[RuntimeAlertRule]{}, ErrInvalidState
 		}
-		input.ID = uuid.NewString()
+		input.ID = newRuntimeAlertRuleID()
+		input.Status = runtimeAlertRuleActive
+		input.Version = 1
 		if input.Scope.Kind == "" {
 			input.Scope = RuntimeScope{Kind: "project", Value: p.ID}
 		}
@@ -471,7 +601,10 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 	})
 }
 func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEvent) error {
-	store := tx.(runtimeTransaction)
+	store, ok := tx.(runtimeTransaction)
+	if !ok {
+		return nil
+	}
 	rows, err := store.ListRuntimeRecords(actor.TenantID, p.ID, "alert_rule")
 	if err != nil {
 		return err
@@ -480,6 +613,12 @@ func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEve
 		var rule RuntimeAlertRule
 		if err := json.Unmarshal([]byte(row.BodyJSON), &rule); err != nil {
 			return err
+		}
+		// A rule that was turned off does not react any more. It stays in
+		// the list, with its history, so that the operator can see it and
+		// turn it on again.
+		if rule.Status == runtimeAlertRuleDisabled {
+			continue
 		}
 		if rule.Signal != event.Status && rule.Signal != event.Category+"/"+event.Status && rule.Signal != event.ErrorCode {
 			continue
@@ -567,6 +706,8 @@ func (s *Service) EmitAuditFailureAlert(
 
 func (s *Service) ListRuntimeAlerts(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlert, error) {
 	var result []RuntimeAlert
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err

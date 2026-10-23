@@ -63,6 +63,10 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	// from a handler assembled with no ports at all, which never had the
 	// machine read endpoints - the production composition root always had
 	// them. The project archive entry adds one route of its own.
+	// The G6 alert rule endpoints are not in this count: the impact center
+	// route family (which carries them) is registered by the full workflow
+	// handler, and this composition does not wire it. The production
+	// composition's own count is asserted in internal/container/lingdoc_test.go.
 	if got := len(engine.Routes()); got != 79 {
 		t.Fatalf("registered %d LingDoc routes, want 79", got)
 	}

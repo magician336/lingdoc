@@ -27693,7 +27693,9 @@
                         "scope": {
                           "kind": "tenant",
                           "value": "synthetic-value"
-                        }
+                        },
+                        "version": 1,
+                        "status": "ACTIVE"
                       },
                       "request_id": "synthetic-contract-example",
                       "meta": {
@@ -27819,6 +27821,145 @@
             }
           }
         },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      },
+      "get": {
+        "operationId": "listRuntimeAlertRules",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "ListRuntimeAlertRules",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullRuntimeAlertRuleListResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-id",
+                          "signal": "synthetic-signal",
+                          "severity": "P1",
+                          "action": "notify",
+                          "responsible_id": "synthetic-responsible-id",
+                          "scope": {
+                            "kind": "tenant",
+                            "value": "synthetic-value"
+                          },
+                          "version": 1,
+                          "status": "ACTIVE"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 152,
+        "x-lingdoc-service": "ListRuntimeAlertRules",
+        "x-lingdoc-go-response": "[]RuntimeAlertRule",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
         "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
       }
     },
@@ -38058,6 +38199,182 @@
           }
         }
       }
+    },
+    "/projects/{projectId}/runtime/alert-rules/{ruleId}/actions": {
+      "post": {
+        "operationId": "actOnRuntimeAlertRule",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "ActOnRuntimeAlertRule",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "The alert rule identifier; it is the record key of the rule inside the project."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeAlertRuleActionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "signal": "synthetic-signal",
+                        "severity": "P1",
+                        "action": "notify",
+                        "responsible_id": "synthetic-responsible-id",
+                        "scope": {
+                          "kind": "tenant",
+                          "value": "synthetic-value"
+                        },
+                        "version": 1,
+                        "status": "ACTIVE"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 155,
+        "x-lingdoc-service": "ActOnRuntimeAlertRule",
+        "x-lingdoc-go-response": "RuntimeAlertRule",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeAlertRuleActionInput"
+              },
+              "example": {
+                "expected_version": 1,
+                "operation": "disable",
+                "reason": "synthetic-reason"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -46606,6 +46923,17 @@
           },
           "scope": {
             "$ref": "#/components/schemas/RuntimeScope"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
           }
         },
         "additionalProperties": false,
@@ -46615,7 +46943,9 @@
           "severity",
           "action",
           "responsible_id",
-          "scope"
+          "scope",
+          "version",
+          "status"
         ],
         "x-go-type": "core.RuntimeAlertRule",
         "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
@@ -48534,6 +48864,9 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "rollback_to": {
+            "$ref": "#/components/schemas/RuntimeRollbackTarget"
           }
         },
         "additionalProperties": false,
@@ -48589,7 +48922,8 @@
             "type": "string",
             "enum": [
               "pause",
-              "resume"
+              "resume",
+              "rollback"
             ]
           },
           "reason": {
@@ -48600,6 +48934,9 @@
           },
           "export_id": {
             "type": "string"
+          },
+          "rollback": {
+            "$ref": "#/components/schemas/RuntimeRollbackInput"
           }
         },
         "additionalProperties": false,
@@ -48708,6 +49045,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "capability": {
+            "type": "string",
+            "description": "The capability a decision was made on. It is set on the events that record one refused capability."
           }
         },
         "additionalProperties": false,
@@ -50702,6 +51043,19 @@
           },
           "scope": {
             "$ref": "#/components/schemas/RuntimeScope"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -53559,6 +53913,139 @@
           "review_decisions"
         ],
         "additionalProperties": false
+      },
+      "RuntimeAlertRuleActionInput": {
+        "type": "object",
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "enable",
+              "update"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "signal": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+            ]
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "notify",
+              "retry",
+              "pause",
+              "block_export",
+              "rollback",
+              "human_confirm"
+            ],
+            "description": "The disposition the rule asks for. It is the rule's own action; the decision about the rule is the operation."
+          },
+          "responsible_id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/RuntimeScope"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expected_version",
+          "operation",
+          "reason"
+        ],
+        "x-go-type": "core.RuntimeAlertRuleActionInput",
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_alert_rule.go"
+      },
+      "RuntimeAlertRuleActionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RuntimeAlertRule"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "FullRuntimeAlertRuleListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeAlertRule"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "RuntimeRollbackTarget": {
+        "type": "object",
+        "properties": {
+          "template_version": {
+            "type": "string"
+          },
+          "ruleset_hash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "x-go-type": "core.RuntimeRollbackTarget",
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
+      },
+      "RuntimeRollbackInput": {
+        "type": "object",
+        "properties": {
+          "change_set_id": {
+            "type": "string",
+            "description": "The change set to invert. The inverse goes through the existing reverse change set entry point."
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "ruleset_hash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "x-go-type": "core.RuntimeRollbackInput",
+        "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
       }
     }
   },

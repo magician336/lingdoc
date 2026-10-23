@@ -58,6 +58,23 @@ var permissionRoles = map[string]types.TenantRole{
 	"issue-dismiss-blocking": types.TenantRoleContributor,
 }
 
+// authorizationDecisionError carries the capability that was refused.
+//
+// The refusal itself stays ErrNotFound: the policy refuses to tell a caller
+// whether a project exists, and that must not change. The wrapper only adds
+// the capability, so that an observer can say *what* was refused without the
+// decision leaking anything new to the caller.
+//
+// Unwrap keeps errors.Is(err, ErrNotFound) true, which a great deal of the
+// workspace relies on.
+type authorizationDecisionError struct {
+	capability string
+	err        error
+}
+
+func (e authorizationDecisionError) Error() string { return e.err.Error() }
+func (e authorizationDecisionError) Unwrap() error { return e.err }
+
 func authorizeCurrentTenant(tx Transaction, request AuthorizationRequest) error {
 	actor := request.Actor
 	if err := legacyAuthorizeTenant(tx, actor); err != nil {
@@ -73,7 +90,7 @@ func authorizeCurrentTenant(tx Transaction, request AuthorizationRequest) error 
 		return err
 	}
 	if role != "" && (!role.IsValid() || !role.HasPermission(required)) {
-		return ErrNotFound
+		return authorizationDecisionError{capability: request.capability(), err: ErrNotFound}
 	}
 	return nil
 }
@@ -119,7 +136,7 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 	}
 	m, ok := projectMember(p, actor.UserID)
 	if !ok || m.Status != "" && m.Status != "active" {
-		return Project{}, ErrNotFound
+		return Project{}, authorizationDecisionError{capability: request.capability(), err: ErrNotFound}
 	}
 	governance := governanceRole(m)
 	if p.DiscardedAt != nil && (base != "read" || governance != "owner") {
@@ -127,7 +144,7 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 	}
 	if target != "" && (base == "write" || base == "confirm" || base == "review") {
 		if _, err := tx.Chapter(projectID, target); err != nil {
-			return Project{}, ErrNotFound
+			return Project{}, authorizationDecisionError{capability: request.capability(), err: ErrNotFound}
 		}
 	}
 	// Delivery reads retain the contributor tenant floor without granting writes.
@@ -183,5 +200,5 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 			return p, nil
 		}
 	}
-	return Project{}, ErrNotFound
+	return Project{}, authorizationDecisionError{capability: request.capability(), err: ErrNotFound}
 }

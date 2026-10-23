@@ -75,6 +75,11 @@ func TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed(t *testing.T)
 // named here for the same reason the others are: an endpoint that appears
 // without being declared is reported by name, and an endpoint that is dropped
 // is reported by name too. The routes that were already there are unchanged.
+// The G6 runtime endpoints (the alert rule read-back and the alert rule
+// action entry, PF-8 / #382) are **not** in this surface: the impact center
+// route family that carries them is registered by RegisterFullRoutes, and
+// this composition registers the core families and the machine read only.
+// So this snapshot's count does not move when that family gains endpoints.
 func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
 	templates := NewLingDocTemplateCatalog()
 	composed, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil, nil, templates)
