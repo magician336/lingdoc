@@ -402,7 +402,14 @@ func (m generationHostModel) recordGenerationModelCall(ctx context.Context, inpu
 	if m.acceptanceBudget != nil {
 		// The same budget semantics the agent path records: what was reserved
 		// for this call and what it actually consumed.
-		facts.reservedNanoUSD = generationAcceptancePerCall
+		//
+		// The reserved amount follows the ACTIVE PROFILE. A profile without a
+		// price basis (the controlled Qwen path) reserves no money at all:
+		// writing another profile's per-call amount here would put a
+		// DeepSeek-priced number on a Qwen row, and a wrong amount is worse
+		// than an amount that is explicitly not computed. The JSON ledger
+		// carries the meaning ("cost_basis": "not_applicable").
+		facts.reservedNanoUSD = acceptanceReservedPerCall(activeAcceptanceProfile())
 		if response != nil && response.Usage.PromptTokens >= 0 && response.Usage.CompletionTokens >= 0 {
 			facts.actualNanoUSD = actualDeepSeekCost(response.Usage.PromptTokens, response.Usage.CompletionTokens)
 		}
