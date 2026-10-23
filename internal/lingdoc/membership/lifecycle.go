@@ -40,7 +40,7 @@ func (s *Service) InviteProjectMember(
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return core.OperationOutcome{}, core.ErrVersionConflict
 		}
-		if p.DiscardedAt != nil || p.Status == "archived" {
+		if p.Archived() {
 			return core.OperationOutcome{}, core.ErrInvalidState
 		}
 		m := input.Assignment
@@ -134,7 +134,7 @@ func (s *Service) AcceptProjectInvitation(
 		if err != nil {
 			return err
 		}
-		if p.DiscardedAt != nil {
+		if p.Archived() {
 			return core.ErrInvalidState
 		}
 		v, err := s.records.Get(ctx, tx, pid, "invitation", id, &checked)
@@ -177,6 +177,9 @@ func (s *Service) AcceptProjectInvitation(
 		p, err := port.Project(actor.TenantID, pid)
 		if err != nil {
 			return core.OperationOutcome{}, err
+		}
+		if p.Archived() {
+			return core.OperationOutcome{}, core.ErrInvalidState
 		}
 		var invitation core.MemberInvitation
 		version, err := s.records.Get(ctx, tx, pid, "invitation", id, &invitation)

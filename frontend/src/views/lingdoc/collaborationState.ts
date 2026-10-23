@@ -1,5 +1,6 @@
 import type { Project,Chapter,Asset } from '@/api/lingdoc/workspace'
 import type { CollaborationMember,MemberAssignment,MemberStateAction } from '@/api/lingdoc/collaboration'
+import { assetResourceScope } from './resourceScope'
 export const functionRoles=[{id:'author',label:'写作者'},{id:'researcher',label:'调研者'},{id:'reviewer',label:'复核者'},{id:'observer',label:'观察者'}]
 const knownRoles=new Set(functionRoles.map(role=>role.id))
 export const cloneValue=<T>(value:T):T=>JSON.parse(JSON.stringify(value))
@@ -27,7 +28,7 @@ export interface ScopeOption {id:string;label:string}
 export function resourceOptions(project:Project,chapters:Chapter[],assets:Asset[]):ScopeOption[]{
  const options:ScopeOption[]=[]
  if(project.status!=='draft')for(const chapter of chapters.filter(chapter=>chapter.project_id===project.id))options.push({id:chapter.id,label:`章节 · ${chapter.title}`})
- for(const asset of assets.filter(asset=>asset.project_id===project.id))options.push({id:`asset:${asset.id}`,label:`资料 · ${asset.title}`})
+ for(const asset of assets.filter(asset=>asset.project_id===project.id))options.push({id:assetResourceScope(asset.id),label:`资料 · ${asset.title}`})
  return options.filter((option,index)=>options.findIndex(other=>other.id===option.id)===index)
 }
 export interface AssignmentDraft {

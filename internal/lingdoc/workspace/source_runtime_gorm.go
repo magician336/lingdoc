@@ -34,6 +34,7 @@ func (r *SourceRuntime) ModelCallLedger() core.ModelCallLedger {
 
 type SourceRuntime struct {
 	authorizer   core.CapabilityAuthorizer
+	resources    core.ResourceBatchAuthorizer
 	projects     core.ProjectApplication
 	context      core.GenerationContextApplication
 	bindings     *evidence.Bindings
@@ -80,13 +81,14 @@ func NewGORMSourceRuntime(db *gorm.DB, projectPorts ProjectPorts, shares interfa
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SourceRuntime{db: db, authorizer: projectPorts.Authorizer, projects: projectPorts.Projects, context: projectPorts.Context, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit, modelCallLedger: core.NewGORMModelCallLedger(db)}
+	return &SourceRuntime{db: db, authorizer: projectPorts.Authorizer, resources: projectPorts.Resources, projects: projectPorts.Projects, context: projectPorts.Context, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit, modelCallLedger: core.NewGORMModelCallLedger(db)}
 }
 
 // ConnectProjects is called only at composition time to connect the mutually
 // dependent project authorization and current source-recheck ports.
 func (r *SourceRuntime) ConnectProjects(projectPorts ProjectPorts) {
 	r.authorizer = projectPorts.Authorizer
+	r.resources = projectPorts.Resources
 	r.projects = projectPorts.Projects
 	r.context = projectPorts.Context
 }
@@ -119,7 +121,26 @@ func (r *SourceRuntime) generationGateway() evidence.AssetGateway {
 	return r.gateway
 }
 func (r *SourceRuntime) application() *SourceService {
-	return NewSourceServiceWithReviewer(r.authorizer, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
+	return NewSourceServiceWithReviewer(sourceAssetAuthorizer{capabilities: r.authorizer, resources: r.resources}, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
+}
+
+type sourceAssetAuthorizer struct {
+	capabilities core.CapabilityAuthorizer
+	resources    core.ResourceBatchAuthorizer
+}
+
+func (a sourceAssetAuthorizer) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
+	if a.capabilities == nil {
+		return core.ErrPermissionSchemaUnavailable
+	}
+	return a.capabilities.Authorize(ctx, actor, projectID, capability)
+}
+
+func (a sourceAssetAuthorizer) AuthorizeResourceBatch(ctx context.Context, actor Actor, projectID string, action AuthorizationAction, resources []ResourceRef) ([]ResourceAuthorizationDecision, error) {
+	if a.resources == nil {
+		return nil, core.ErrPermissionSchemaUnavailable
+	}
+	return a.resources.AuthorizeResourceBatch(ctx, actor, projectID, action, resources)
 }
 func (r *SourceRuntime) ListAssets(ctx context.Context, a Actor, p string) ([]evidence.Asset, error) {
 	return r.application().ListAssets(ctx, a, p)

@@ -31,11 +31,23 @@ func (p *adapterProjectsStub) Authorize(_ context.Context, _ Actor, _ string, ca
 	return nil
 }
 
+func (p *adapterProjectsStub) AuthorizeResourceBatch(_ context.Context, _ Actor, _ string, _ AuthorizationAction, resources []ResourceRef) ([]ResourceAuthorizationDecision, error) {
+	decisions := make([]ResourceAuthorizationDecision, len(resources))
+	for i, resource := range resources {
+		decisions[i] = ResourceAuthorizationDecision{Resource: resource, Allowed: !p.denied, Reason: "allowed"}
+		if p.denied {
+			decisions[i].Reason = "not_authorized"
+		}
+	}
+	return decisions, nil
+}
+
 type adapterSourcesStub struct {
 	SourceApplicationService
 	assets         []evidence.Asset
 	retrievalCalls int
 	input          RetrieveSourcesInput
+	getSourceCalls int
 }
 
 func (s *adapterSourcesStub) ListAssets(context.Context, Actor, string) ([]evidence.Asset, error) {
@@ -45,6 +57,10 @@ func (s *adapterSourcesStub) RetrieveSources(_ context.Context, _ Actor, _ strin
 	s.retrievalCalls++
 	s.input = input
 	return []evidence.Source{}, nil
+}
+func (s *adapterSourcesStub) GetSource(context.Context, Actor, string, string) (evidence.Source, error) {
+	s.getSourceCalls++
+	return evidence.Source{}, nil
 }
 
 type adapterWebStub struct {
@@ -105,12 +121,39 @@ func TestResearchAdapterUsesExistingRetrievalScopeAndRejectsDeniedAsset(t *testi
 	if _, err = adapter.CheckAssetScope(context.Background(), actor, "project", []string{"allowed-asset", "revoked-asset"}); !errors.Is(err, core.ErrSourceUnavailable) {
 		t.Fatalf("partial denied scope accepted: %v", err)
 	}
-	if _, _, err = adapter.SearchResearch(context.Background(), actor, "project", core.ResearchTask{AssetIDs: []string{"allowed-asset"}}, "当前查询"); err != nil || sources.retrievalCalls != 1 || !reflect.DeepEqual(sources.input.AssetIDs, []string{"allowed-asset"}) || projects.capability != "research" {
+	task := core.ResearchTask{ChapterID: "chapter-one", AssetIDs: []string{"allowed-asset"}}
+	if _, _, err = adapter.SearchResearch(context.Background(), actor, "project", task, "当前查询"); err != nil || sources.retrievalCalls != 1 || !reflect.DeepEqual(sources.input.AssetIDs, []string{"allowed-asset"}) || sources.input.ChapterID != task.ChapterID || projects.capability != "research:chapter-one" {
 		t.Fatalf("existing retrieval seam missed: %v calls=%d input=%+v", err, sources.retrievalCalls, sources.input)
 	}
+	if _, err = adapter.CheckAssetScopeForChapter(context.Background(), actor, "project", task.ChapterID, task.AssetIDs); err != nil {
+		t.Fatalf("chapter-author asset scope check rejected an authorized chapter task: %v", err)
+	}
 	projects.denied = true
-	if _, _, err = adapter.SearchResearch(context.Background(), actor, "project", core.ResearchTask{AssetIDs: []string{"allowed-asset"}}, "拒绝查询"); !errors.Is(err, core.ErrNotFound) || sources.retrievalCalls != 1 {
+	if _, _, err = adapter.SearchResearch(context.Background(), actor, "project", task, "拒绝查询"); !errors.Is(err, core.ErrNotFound) || sources.retrievalCalls != 1 {
 		t.Fatalf("authorization happened after retrieval: %v calls=%d", err, sources.retrievalCalls)
+	}
+}
+
+// TestSourceReadChecksFunctionScopeBeforeReturningExcerpt pins the order of
+// the research read: the function scope is decided before the excerpt is
+// fetched, so a denied scope never reaches the source.
+func TestSourceReadChecksFunctionScopeBeforeReturningExcerpt(t *testing.T) {
+	db := adapterTestDB(t)
+	if err := db.AutoMigrate(&types.Chunk{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&types.Chunk{ID: "scoped-source", KnowledgeID: "knowledge-one"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	projects := &adapterProjectsStub{denied: true}
+	sources := &adapterSourcesStub{assets: []evidence.Asset{{ID: "asset-one", KnowledgeID: "knowledge-one", AssetRevision: 3, ProcessingState: evidence.AssetStateReady}}}
+	adapter := NewResearchAdapter(db, projects, sources, nil, nil, nil)
+	actor := core.Actor{TenantID: 7, UserID: "scoped-author", Role: types.TenantRoleContributor}
+	if _, err := adapter.ReadResearchSourceForChapter(context.Background(), actor, "project", "chapter-one", "scoped-source"); !errors.Is(err, core.ErrSourceUnavailable) {
+		t.Fatalf("unauthorized chapter source read error=%v, want source unavailable", err)
+	}
+	if sources.getSourceCalls != 0 {
+		t.Fatalf("source excerpt was fetched %d times before function-scope authorization", sources.getSourceCalls)
 	}
 }
 func TestWebSearchAdapterUsesTenantProviderAndKeepsSummaryLowerTier(t *testing.T) {

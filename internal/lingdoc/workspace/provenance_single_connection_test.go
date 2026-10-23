@@ -37,7 +37,7 @@ func newNativeProvenanceFixture(t *testing.T) nativeProvenanceFixture {
 	t.Cleanup(cancel)
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, adapterSharesStub{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: NewResearchAdapter(db, projects, runtime, adapterSharesStub{}, nil, nil), Actions: NewAgentActionExecutor(projects, runtime, nil)})

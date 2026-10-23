@@ -66,7 +66,7 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAuthorizationPolicy(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), authorizationPolicy, auditSink, workspacecore.AuthorizationModeEnforce)
 	projectService.InstallFaultInjection(fault)
 	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
-	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Projects: projectService, Context: projectService})
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Resources: projectService, Projects: projectService, Context: projectService})
 	// The four optional capabilities are the aggregate's own. They used to be
 	// found by the transport with a run-time type assertion on the project
 	// service, which was a back door: the assertion could hand back any

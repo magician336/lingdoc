@@ -9,6 +9,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -223,6 +224,9 @@ func (s *SourceService) GetSource(ctx context.Context, actor Actor, projectID, s
 func (s *SourceService) RetrieveSources(
 	ctx context.Context, actor Actor, projectID string, input RetrieveSourcesInput,
 ) ([]evidence.Source, error) {
+	if s.projects == nil {
+		return nil, core.ErrPermissionSchemaUnavailable
+	}
 	if err := s.projects.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return nil, err
 	}
@@ -237,13 +241,88 @@ func (s *SourceService) RetrieveSources(
 	if input.Query == "" || !hasAssetID {
 		return nil, ErrInvalidRequest
 	}
-	resolved, err := s.gateway.ResolveAllowed(ctx, projectID, evidenceActor(actor), input.AssetIDs)
+	if input.ChapterID != strings.TrimSpace(input.ChapterID) {
+		return nil, ErrInvalidRequest
+	}
+	if s.bindings == nil {
+		return nil, ErrSourceUnavailable
+	}
+	requested := make([]string, 0, len(input.AssetIDs))
+	requestedSeen := make(map[string]struct{}, len(input.AssetIDs))
+	for _, id := range input.AssetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := requestedSeen[id]; exists {
+			continue
+		}
+		requestedSeen[id] = struct{}{}
+		requested = append(requested, id)
+	}
+	assets, err := s.bindings.BoundAssets(ctx, projectID)
+	if err != nil {
+		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
+		return nil, err
+	}
+	bound := make(map[string]evidence.Asset, len(assets))
+	for _, asset := range assets {
+		bound[asset.ID] = asset
+	}
+	refs := make([]ResourceRef, 0, len(requested))
+	refIDs := make([]string, 0, len(requested))
+	deniedByProjectScope := make([]evidence.DeniedAsset, 0)
+	for _, id := range requested {
+		if _, ok := bound[id]; !ok {
+			deniedByProjectScope = append(deniedByProjectScope, evidence.DeniedAsset{AssetID: id, Reason: evidence.DenyNotFound})
+			continue
+		}
+		var ref ResourceRef
+		if input.ChapterID == "" {
+			ref, err = NewAssetResourceRef(id)
+		} else {
+			ref, err = NewAssetResourceRefForChapter(id, input.ChapterID)
+		}
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		refs = append(refs, ref)
+		refIDs = append(refIDs, id)
+	}
+	if len(refs) > 0 {
+		decisions, authErr := s.projects.AuthorizeResourceBatch(ctx, actor, projectID, AuthorizationResearch, refs)
+		if authErr != nil {
+			s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", authErr)
+			return nil, authErr
+		}
+		if len(decisions) != len(refs) {
+			return nil, core.ErrPermissionSchemaUnavailable
+		}
+		for i, decision := range decisions {
+			if decision.Resource != refs[i] {
+				return nil, core.ErrPermissionSchemaUnavailable
+			}
+			if !decision.Allowed {
+				reason := evidence.DenyNotAuthorized
+				if decision.Reason == string(evidence.DenyNotFound) {
+					reason = evidence.DenyNotFound
+				}
+				deniedByProjectScope = append(deniedByProjectScope, evidence.DeniedAsset{AssetID: refIDs[i], Reason: reason})
+			}
+		}
+	}
+	if len(deniedByProjectScope) > 0 {
+		err := &DeniedAssetsError{Denied: deniedByProjectScope, RequestedCount: len(requested)}
+		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
+		return nil, err
+	}
+	resolved, err := s.gateway.ResolveAllowed(ctx, projectID, evidenceActor(actor), requested)
 	if err != nil {
 		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
 		return nil, err
 	}
 	if len(resolved.Denied) > 0 {
-		err := &DeniedAssetsError{Denied: resolved.Denied}
+		err := &DeniedAssetsError{Denied: resolved.Denied, RequestedCount: len(requested)}
 		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
 		return nil, err
 	}

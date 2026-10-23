@@ -283,14 +283,14 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	request := httptest.NewRequest(http.MethodPost, "/api/lingdoc/projects/project-1/retrieval", strings.NewReader(`{"query":"budget","asset_ids":["asset-private"]}`)).WithContext(ctx)
+	request := httptest.NewRequest(http.MethodPost, "/api/lingdoc/projects/project-1/retrieval", strings.NewReader(`{"query":"budget","asset_ids":["asset-private"],"chapter_id":"chapter-one"}`)).WithContext(ctx)
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusForbidden, response.Body.String())
 	}
-	if !sources.called || sources.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) || sources.projectID != "project-1" || sources.input.Query != "budget" || len(sources.input.AssetIDs) != 1 || sources.input.AssetIDs[0] != "asset-private" {
+	if !sources.called || sources.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) || sources.projectID != "project-1" || sources.input.Query != "budget" || sources.input.ChapterID != "chapter-one" || len(sources.input.AssetIDs) != 1 || sources.input.AssetIDs[0] != "asset-private" {
 		t.Fatalf("source use case input = called:%v actor:%#v project:%q input:%#v", sources.called, sources.actor, sources.projectID, sources.input)
 	}
 	var body struct {
