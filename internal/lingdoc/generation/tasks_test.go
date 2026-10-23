@@ -104,7 +104,7 @@ func TestEnqueueTaskStatesTheRetryBudgetExplicitly(t *testing.T) {
 			queue = opt.Value().(string)
 		}
 	}
-	assert.Equal(t, generationTaskMaxRetry, maxRetry,
+	assert.Equal(t, GenerationTaskMaxRetry, maxRetry,
 		"the task must state its retry budget instead of inheriting asynq's default of 25")
 	assert.NotEqual(t, 25, maxRetry, "asynq's default budget must not be in force")
 	assert.Equal(t, types.QueueSummary, queue)
