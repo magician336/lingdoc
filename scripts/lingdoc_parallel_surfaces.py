@@ -298,13 +298,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("internal/lingdoc/workspacecore/model.go", "file"),
             ("internal/lingdoc/workspacecore/machine_read_grant.go", "file"),
-            ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/workspacecore/audit_failure_alert_test.go", "file"),
             ("internal/lingdoc/workspacecore/audit_event_version_fields_test.go", "file"),
             ("internal/lingdoc/workspacecore/pr150_migration_history_test.go", "file"),
-            ("internal/lingdoc/membership/fixture_test.go", "file"),
             # These fixtures hand-wrote the column list of lingdoc_project_audits.
             # Adding two columns to that table broke them, and the failure
             # surfaced as an opaque HTTP 500 instead of a schema error, so they
@@ -351,6 +348,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "PF-4 之后动这两个文件时冲突会显式报出来，不会静默覆盖。"
             "本面独占 model.go 与 runtime_control.go，PF-4 因此不得声明 model.go。"
             "本面产出文档：docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md 与 T327-验证报告.json。"
+            "**2026-10-23 永久移交三条路径给 PF-7**（workspacecore/model.go、workspacecore/service.go、"
+            "membership/fixture_test.go）——依据票 #415（AuditEvent 声明字段与落库列一致、读侧角色过滤生效）；"
+            "PF-7 = #460。移交是单向的，本面不再声称拥有这三条，也不再需要它们 ⇒ 路径集 17 → 14 条。"
             "**本面已完成**（2026-10-23，认领与完成的人是 magician336）："
             "PR #389 已合入 main（合并提交 5c31fc9b），票 #327 随之关闭。"
             "交付两件事：读类审计写入失败接到 G6 告警源"
@@ -383,7 +383,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
-            ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
             ("internal/lingdoc/workspacecore/owner_unavailable_single_source_test.go", "file"),
             ("internal/lingdoc/workspacecore/change_draft_edit.go", "file"),
             ("internal/lingdoc/workspacecore/chapter_review.go", "file"),
@@ -394,8 +393,6 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/project_archive.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
             ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/membership/results.go", "file"),
-            ("internal/lingdoc/membership/policy.go", "file"),
             ("internal/lingdoc/membership/ports.go", "file"),
             ("internal/lingdoc/membership/ports_test.go", "file"),
             ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
@@ -509,7 +506,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**Spec #127 保持开放**：本面交付了它「Owner 租户身份失效 ⇒ 冻结」这一支"
             "（实现决策 2/3/8 与对应的测试决策），转让流程、受让人角色清空、前任降级与 Beta 旁路"
             "由既有实现承担，不在本面范围；#143 同样保持开放（本面只交付了立项确认的冻结部分）。"
-            "**本面不释放路径**：done 状态仍占用这 47 条路径，后续面不要重复声明。"
+            "**本面不释放路径**：done 状态仍占用这 44 条路径，后续面不要重复声明。"
             "**2026-10-23 经维护者裁决，PF-8 先走，本面让出四个路径** ——"
             "internal/lingdoc/workspacecore/service_facade.go、"
             "internal/lingdoc/workspacecore/typed_contracts.go、"
@@ -521,6 +518,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "本面在 main 上已交付的 owner_unavailable 能力不受这次让出影响；"
             "**2026-10-23 PF-8 随 PR #446 合入 main 后，这四个路径已归还本面**"
             "（本面路径集 44 → 47 条）。"
+            "**2026-10-23 永久移交三条路径给 PF-9**（workspacecore/owner_unavailable.go、"
+            "membership/policy.go、membership/results.go）——依据票 #420（Owner 专属入口能力 → "
+            "读出口能力的对应关系）与 #421（写侧冻结归因）；PF-9 = #461。移交是单向的，本面不再声称拥有"
+            "这三条 ⇒ 路径集 47 → 44 条。"
             "**2026-10-23 另有一条路径一次性移交给 PF-8**："
             "internal/container/lingdoc_test.go —— PF-8 在 PR #446 里给它加了一条注释"
             "（说明两个新 G6 端点不改变这张路由数量快照），"
@@ -735,6 +736,80 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（「切回已验证配置」等仍需领域写路径支持）。"
             "2026-10-23 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
+        ),
+    },
+    {
+        "name": "PF-7 审计链完整性",
+        "issue": 460,
+        "issues": (130,),
+        "status": "available",
+        "claimed_by": "",
+        "paths": (
+            # 从 PF-3 永久移交（3）：#415 要给 AuditEvent 补字段并让行模型与表列一致。
+            ("internal/lingdoc/workspacecore/model.go", "file"),
+            ("internal/lingdoc/workspacecore/service.go", "file"),
+            ("internal/lingdoc/membership/fixture_test.go", "file"),
+            # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
+            ("internal/container/lingdoc.go", "file"),
+            # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
+            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.down.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/versioned/000133_lingdoc_audit_decision_fields.down.sql", "file"),
+            # #454 的 Go 守护（1）：模型字段集合 == 表列集合。落 internal/database/
+            # 是 56-Spec 决策 3 指定的位置（与被测的迁移/schema 同属一处）。
+            ("internal/database/audit_event_columns_test.go", "file"),
+            # #454 的 Python 守护（1）：形态扫描（有没有手抄 CREATE TABLE 列清单、
+            # 硬编码迁移文件名、手改的迁移版本常量）。名字不带编号（命名登记表规则）。
+            ("scripts/ci/test_lingdoc_fixture_schema_source.py", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "本面从 PF-3 永久接过三条路径（workspacecore/model.go、workspacecore/service.go、"
+            "membership/fixture_test.go）——依据票 #415：AuditEvent 声明的字段要真落库、"
+            "读侧角色过滤要生效，这三条是它的实现落点。2026-10-23 永久移交，**不归还**"
+            "（PF-3 已交面且不再需要它们）⇒ PF-3 路径集 17 → 14 条。"
+            "本面另含 #454（56-Spec，测试夹具与生产 schema 同源）：它的 Go 守护落 "
+            "internal/database/、Python 守护落 scripts/ci/ —— 与 #415 合成一个面的"
+            "机制理由是「同一条不变量（模型字段集合 == 表列集合）只有一个拥有者」："
+            "56-Spec 决策 3 已指定守护落 internal/database/，若 #415 另在 workspacecore/ "
+            "写一份，同一条不变量就有两个 module 各写一遍（ch05 信息泄漏）。"
+            "交付 Spec 是既有的 #130，不新开。迁移编号 000054 / 000133 是预留，"
+            "**施工时必须重新核对 origin/main 已占用的编号**（PF-3 用 000052 / 000131，"
+            "PF-4 用 000053 / 000132）。#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
+        ),
+    },
+    {
+        "name": "PF-9 Owner 冻结归因",
+        "issue": 461,
+        "issues": (127,),
+        "status": "available",
+        "claimed_by": "",
+        "paths": (
+            # 从 PF-4 永久移交（3）：#420 要改 Owner 专属能力的枚举与判定。
+            ("internal/lingdoc/workspacecore/owner_unavailable.go", "file"),
+            ("internal/lingdoc/membership/policy.go", "file"),
+            ("internal/lingdoc/membership/results.go", "file"),
+            # 无主直接拥有（3）：Owner 路由与两张断言文件。
+            ("internal/lingdoc/router/routes_lingdoc.go", "file"),
+            ("internal/lingdoc/router/routes_lingdoc_owner_read_outlet_test.go", "file"),
+            ("internal/lingdoc/router/routes_lingdoc_owner_409_test.go", "file"),
+            # 本面新增（3）：入口能力的枚举登记处 + 同名测试 + 旁路断言。
+            ("internal/lingdoc/workspacecore/owner_capability_registry.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_capability_registry_test.go", "file"),
+            ("internal/lingdoc/membership/owner_bypass_test.go", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "本面从 PF-4 永久接过三条路径（workspacecore/owner_unavailable.go、"
+            "membership/policy.go、membership/results.go）——依据票 #420：五项 Owner 专属动作"
+            "在读侧共用 manage，需要一个显式的「入口能力 → 读出口能力」对应关系；"
+            "#421 补写侧更早鉴权处的归因。2026-10-23 永久移交，**不归还**（PF-4 已交面）"
+            "⇒ PF-4 路径集 47 → 44 条。owner_unavailable 的判定语义已由 PF-4 落地并冻结"
+            "（owner_unavailable.go + 两处出口已在 main）⇒ 本面补的是已定义行为的接缝，"
+            "不是新设计。交付 Spec 是既有的 #127，不新开。"
+            "已有原生边 #420 blocked_by #127、#421 blocked_by #127（③ 档验收未满足）："
+            "依赖方向正确且上游契约已冻结 ⇒ 本面今天就能开工。"
         ),
     },
 )
