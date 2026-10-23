@@ -566,7 +566,21 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			_ = reservation.unknown("usage_unknown")
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}
-		if response.Usage.PromptTokens > generationAcceptanceInputMax || response.Usage.CompletionTokens > generationAcceptanceOutputMax {
+		// The ceiling the answer is measured against is the ceiling of the
+		// ACTIVE PROFILE -- the same number the request asked for and the same
+		// number the shared budget ledger measures this very answer against.
+		// A ceiling read from another profile's constant would let the two
+		// ledgers give opposite answers about one and the same answer: one
+		// says the call was over the ceiling, the other says it was not, and
+		// the reader of both cannot tell which one is true.
+		//
+		// The profile is read the same way the input precheck above reads it,
+		// so one profile decides both ends of the request.
+		//
+		// reservation != nil implies m.acceptanceBudget != nil: the
+		// reservation is only taken inside that branch.
+		profile := m.acceptanceBudget.profileName()
+		if response.Usage.PromptTokens > acceptanceInputMax(profile) || response.Usage.CompletionTokens > acceptanceOutputMax(profile) {
 			_ = reservation.complete("limit_violation", response.Usage.PromptTokens, response.Usage.CompletionTokens, response.FinishReason, true)
 			return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 		}
