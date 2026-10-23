@@ -83,7 +83,7 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --run 40022872106
 | `pending` | `the gate is queued behind an earlier run of the same pull request` | 等**前一个 head 的门禁**跑完（concurrency group 排队） |
 | `queued` | `the gate is queued and waiting for a runner` | 等 **runner 分配**（供给问题） |
 
-机器可读的判别字段是 `evidence.run.status`；人读的是 `reason`。两者指的是同一件事：`pending` 是后者（等前一个 head），`queued` 是前者（等 runner）。
+机器可读的判别字段是 `evidence.run.status`；人读的是 `reason`。两者指的是同一件事：`pending` 是**等前一个 head 的门禁**，`queued` 是**等 runner**。
 
 **记录优先级：job 记录优先于聚合 check-run。** job 记录（`/actions/runs/{id}/jobs`）是 runner 分配的记录；聚合 check-run（`/commits/{sha}/check-runs`）是汇总视角。二者不一致时以 job 为准——票面记录的「聚合 check `in_progress` 但同一次 run 的所有 job 都已 completed」正是这种不一致。
 
@@ -106,6 +106,8 @@ stdout 是一个 JSON 对象：
 | `exit_code` | 与进程退出码一致 |
 
 `evidence` 里每个字段的取值是 GitHub 的原始值；**字段不存在时写作 `<absent>`**，与「值为 `null`」区分开。
+
+> **打印前 stdout 会被重配为 UTF-8（`errors="replace"`）。** 答案里带着 GitHub 原文的 job / workflow 名，其中可能有当前控制台代码页编码不了的字符（Windows 默认 GBK，`gh` 的输出里就有 `✓`＝U+2713）。不重配的话，`print(json.dumps(..., ensure_ascii=False))` 会抛 `UnicodeEncodeError`，进程以**退出码 1** 结束——而退出码 1 会被调用方读成「门禁说不行」，又是一次假结论。捕获侧一直是 `encoding="utf-8", errors="replace"`，没有动过。
 
 ### 3.4 退出码
 
