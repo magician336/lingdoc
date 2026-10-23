@@ -676,7 +676,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/run_f01.py", "file"),
             # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
             ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
-            # F01 契约：协议 §3 的语义读回落成这里的 check（checks 数组现在 0 条）。
+            # F01 契约：协议 §3 的语义读回落成这里的 check
+            # （steps 24 个、checks 50 条；一条 check 的断言键就是它的 kind：
+            #  equals / ref_in / readback_equals / non_empty / length /
+            #  version_bound / marked_or_absent / hash_equals）。
             ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
         ),
         "resolves": (),
