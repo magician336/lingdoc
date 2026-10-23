@@ -27664,7 +27664,9 @@
                         "scope": {
                           "kind": "tenant",
                           "value": "synthetic-value"
-                        }
+                        },
+                        "version": 1,
+                        "status": "ACTIVE"
                       },
                       "request_id": "synthetic-contract-example",
                       "meta": {
