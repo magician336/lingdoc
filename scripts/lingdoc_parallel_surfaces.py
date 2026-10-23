@@ -843,6 +843,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # #494 的守护测试：资料标识参数化（入口 → 绑定动作，无第二处硬编码，
             # 不传则明确报错，阴性验证）。
             ("scripts/ci/test_lingdoc_beta_knowledge_id.py", "file"),
+            # #504 的缺口登记表：稳定标识 → 票号/条目的**唯一**绑定处。
+            # 代码与产物只引用标识（GAP-…），票号变了只改这一份文件。
+            ("docs/08-本轮实施方案/acceptance/gaps.json", "file"),
+            # #504 的守护测试：标识不漂（产出器里不出现票号）、标识齐全、
+            # 「没跑」只有一种拼写。
+            ("scripts/ci/test_lingdoc_beta_gap_ids.py", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -862,6 +868,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "本面按「owner 保持拥有、借用方落地后归还」的先例借用它们"
             "（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），"
             "**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。"
+            "**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。"
             "借用的改动事实记在 PF-10 侧与本面两侧。"
         ),
     },
