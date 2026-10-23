@@ -4,7 +4,7 @@
   "head": "0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c",
   "head_tree": "0fbb6fa9ee3b0bc21330d0400c402d7009833189",
   "base": "3c65618ba8328b5ed7c1bbf5edde6cab104ff4ab",
-  "head_note": "产品与测试候选：实现、测试与契约都在这一个提交上（0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c，父提交 = main@a91e3697，即落基八的落证；面号已由 PF-10 改为 PF-13，登记处与路径图在证据提交里改），其中含两处门禁修复：PG 夹具去 G4 编号命名、两处 gofmt，均不改产品行为；证据文档（判定矩阵、本报告、登记处移交）在其后的提交。落基九（main@0ec51042）、落基十（main@bbd461ac）、落基十一（main@81d0b099）与落基十二（main@3c65618b）只动基线，本面 24 条路径的产品代码逐字节未变（git diff 0131b8eb HEAD -- <24 条路径> 命中两处且都不是产品漂移：internal/lingdoc/workspacecore/context_ports_test.go 的 main 侧行号位移——本面增量逐行相同，与 internal/lingdoc/workspace/template_governance_routes_test.go 的本轮收尾新增用例）。",
+  "head_note": "产品与测试候选：实现、测试与契约都在这一个提交上（0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c，父提交 = main@a91e3697，即落基八的落证；面号已由 PF-10 改为 PF-13，登记处与路径图在证据提交里改），其中含两处门禁修复：PG 夹具去 G4 编号命名、两处 gofmt，均不改产品行为；证据文档（判定矩阵、本报告、登记处移交）在其后的提交。落基九（main@0ec51042）、落基十（main@bbd461ac）、落基十一（main@81d0b099）与落基十二（main@3c65618b）只动基线，本面 24 条路径的产品代码逐字节未变（git diff 0131b8eb HEAD -- <24 条路径> 命中两处且都不是产品漂移：internal/lingdoc/workspacecore/context_ports_test.go 的 main 侧行号位移——本面增量逐行相同，与 internal/lingdoc/workspace/template_governance_routes_test.go 的本轮收尾新增用例）。 2026-10-24 增补（票 #524 的 PG 侧真实验收）：TD-04 / AC-04-01 / AC-04-02 / AC-04-04 四条判 PASS，其落证 head 是 19d9df9c（main，含已合入的 PR #248），不是 0131b8eb —— PG 相关代码在 0131b8eb..19d9df9c 之间变过 33 个文件；而 git diff 7270e69e..19d9df9c 在 PG 路径上为空、且 7270e69e（PR #248 head）是 19d9df9c 的祖先 ⇒ 同一份证据对 PR #248 的 head 与 main 同时成立。其余 27 条仍绑 0131b8eb（产品与测试候选）。",
   "base_note": "本面按此基线落基：本会话内 main 前移七次（PR #446 合入、PR #472 登记 PF-7 / PF-9、PR #473 写 PF-8 移交顺序、PR #475 让 #465 的 PF-10 取迁移号、PR #443 合入 PF-6 上下文包前端消费、PR #478 合入 PF-6 交面、PR #474 合入 #465 的 PF-10 Beta 面），本面因此落基八遍；语义重做的起点是 main@041ebe0f，第二遍在 05fa6b6f（29 个改动文件里 24 个三方合并干净、冲突面 5 个文件），第三遍在 275d438b（29 个文件里 28 个与第二遍逐字节相同、三方合并零冲突），第四遍在 015bd122（29 个文件里 28 个与第三遍逐字节相同、三方合并零冲突），第五遍在 f0fbd487（同样 28 个逐字节相同、零冲突），第六遍在 52f5b615（main 也改了登记处与路径图：登记处三方合并自动成功、路径图一处冲突手解，30 个文件里 28 个逐字节相同），第七遍在 743db967（PF-6 的交面 PR 同样改这两个共享文件：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同），第八遍在 a91e3697（#474 把 #465 的 PF-10 面登记进 main：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同，loader 校验 11 个面）。八遍的语义增量完全一致。落基十一（main@81d0b099，PR #149 与 PR #503 合入后）与落基十二（main@3c65618b，PR #520/#521/#522 合入后）都是纯基线合并（git merge origin/main，合并零冲突）：main 侧改动全在 internal/types/、internal/lingdoc/generation/、internal/application/service/，不与本面 24 条路径相交，本面产品代码与候选 0131b8eb 逐字节相同，候选不变。",
   "caliber": "v1",
   "caliber_commit": "1f195def6fb984d43876567bfe365222c34b46b5",
@@ -186,49 +186,50 @@
     },
     {
       "id": "TD-04",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
+      "status": "pass",
+      "matrix_status": "PASS",
       "executed": false,
       "follow_up_issue": "#524",
       "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
       "ticket": "#524",
       "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）——生产成员态 PostgreSQL 用例在真实 PG 环境与 CI 作业位置上跑通、证据落盘并回填本报告与验收矩阵对应行",
       "unblock_condition": "#524 关闭且证据满足：生产成员态 PostgreSQL 用例在真实 PG 环境与 CI 作业位置上跑通、证据落盘并回填本报告与验收矩阵对应行",
-      "evidence": "",
-      "note": "判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL；状态定义见验收协议，另由独立 PR 落地），实测事实仍为 NOT RUN（生产成员态 PG 用例未跑），不得写成已通过。解除条件 = 跟进票 #524 关闭且证据满足。PG 侧在 CI 里没有可跑的位置（票 #360，已由 PR #463 实现）：app.yml 无 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database。本条只隔离 SQL 投影：SQLite 侧的投影与幂等/并发门由 TestCatalogHTTPProductionDatabaseParity（SQLite 变体）等用例跑通；生产成员态的 PG 用例见 internal/lingdoc/workspace/template_governance_adapter_postgres_test.go:117（TestPostgresTemplateCatalogVisibilityUsesProductionMembership）。矩阵 PG 侧登记 NOT RUN（AC-04-01/02/04）。SQLite 等价路径不替代生产成员态的真实 PG 证据（票 #524 明写）。"
+      "evidence": "`TestPostgresCatalogSchemaLifecycleAndAuditRollback`；`TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything` 等 5 个 `TestPostgres*`；`go test -count=1 -v -run '^TestPostgres' ./internal/database/...`；`go test -count=3 -v -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' ./internal/lingdoc/templategovernance/`；head `19d9df9c`",
+      "note": "四个面（对称迁移／重启读回／并发发布／幂等重试）均在隔离 PostgreSQL 17.11 上实跑通过（容器 lingdoc-pg17-iso、镜像 postgres:17-alpine、命名卷 lingdoc-pg17-iso-vol、库 lingdoc_pg17_iso、账号 lingdoc_iso、127.0.0.1:55432；既有 WeKnora-*／coforge-* 容器与库零改动）。PG 服务端日志可见故障注入确实发生（lingdoc_selected_rewrites_origin_check 约束冲突、deny_template_audit() 的 audit unavailable、parity_deny_copy_fn() 的 synthetic audit failure）⇒ 不是空跑。本条的落证 head 是 19d9df9c，不是 0131b8eb（PG 相关代码在 0131b8eb..19d9df9c 之间变过 33 个文件 ⇒ 不能继续绑 0131b8eb；而 git diff 7270e69e..19d9df9c 在 PG 路径上为空、且 7270e69e（PR #248 head）是 19d9df9c 的祖先 ⇒ 同一份证据对 PR #248 的 head 与 main 同时成立）。取证报告与 16 份原始输出在仓外 D:\\wt\\lingdoc-pg17-acceptance\\（不入仓）；重跑步骤见报告 §7。",
+      "follow_up_ticket": "#524"
     },
     {
       "id": "TD-05",
       "status": "pass",
       "evidence": "前端用例「catalog choice exposes exact version, scope, origin and hashes without official claim」；`npx tsx --test src/views/lingdoc/firstPassEntryState.test.ts`；head `0131b8eb`",
       "note": "前端只测读状态与呈现，不复制服务端状态机；面板另有 TemplateGovernancePanel.test.ts 覆盖错误事件与旧响应作废。"
-    }
-  ],
-  "not_run": [
+    },
     {
       "id": "AC-04-01 PG 侧迁移演练（SQLite/PostgreSQL 对称）",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
-      "executed": false,
-      "follow_up_issue": "#524",
-      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
-      "ticket": "#524",
-      "unblock_condition": "#524 关闭且证据满足",
-      "reason": "CI 里没有能跑 PG 迁移演练的位置：app.yml 跑 internal/database 但没有 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database（票 #360，已由在飞 PR #463 实现）。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
-      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。PR #463 合入后，go test ./internal/database/... 在带 postgres:17 service 的 job 里执行"
+      "status": "pass",
+      "matrix_status": "PASS",
+      "evidence": "`go test -count=1 -v -run '^TestPostgres' ./internal/database/...`（5 项 TestPostgres* 全 PASS，ok 28.768s）；`go test -count=1 -v ./internal/database/...`（23 项全 PASS、0 项 SKIP，ok 30.526s）；head `19d9df9c`",
+      "note": "SQLite/PG 成对用例在同一进程内同跑（TestSQLiteLegacyDatabaseUpgradeAndRollbackKeepsEverything ↔ TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything、TestSQLiteLegacyUpgradeFailureLeavesNoHalfMigratedState ↔ TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState、TestSQLiteGenerationDigestVersionMigrationGoesUpAndDown ↔ TestPostgresGenerationDigestVersionMigrationGoesUpAndDown、TestSQLiteLegacyRewriteValidityUpgradeAndRollback ↔ TestPostgresLegacyRewriteValidityUpgradeAndRollback、TestSQLiteSelectedRewriteActionShapeMigrationGoesUpAndDown ↔ TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown，外加 TestAuditEventColumnsAreTheSameInBothDialects 显式断言两方言列定义一致）⇒ 对称迁移真的被演练，不是只跑 PG 一侧。PG 服务端日志可见故障注入确实发生（lingdoc_selected_rewrites_origin_check 约束冲突、deny_template_audit() 的 audit unavailable）⇒ 不是空跑。环境：隔离 PostgreSQL 17.11（容器 lingdoc-pg17-iso、镜像 postgres:17-alpine、命名卷 lingdoc-pg17-iso-vol、库 lingdoc_pg17_iso、账号 lingdoc_iso、127.0.0.1:55432；既有 WeKnora-*／coforge-* 容器与库零改动）。旧表述「CI 里没有能跑 PG 的位置」已被推翻：#360 的修法（PR #463）已落地——CI 的 PG 作业在 lingdoc-interface-integration.yml:63-73（postgres:17 service）与 :111-112（go test -count=1 -v -run '^TestPostgres' ./internal/database/...），本机跑的就是同一条命令。本条落证 head 为 19d9df9c（PG 路径代码在 0131b8eb..19d9df9c 之间变过 33 个文件 ⇒ 不能沿用 0131b8eb）。取证报告与 16 份原始输出在仓外 D:\\wt\\lingdoc-pg17-acceptance\\（不入仓）；重跑步骤见报告 §7。",
+      "follow_up_ticket": "#524"
     },
     {
       "id": "AC-04-02 internal/lingdoc/workspace 的 PostgreSQL 变体（TestCatalogHTTPProductionDatabaseParity/postgres）",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
-      "executed": false,
-      "follow_up_issue": "#524",
-      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
-      "ticket": "#524",
-      "unblock_condition": "#524 关闭且证据满足",
-      "reason": "lingdoc-interface-integration.yml 虽设了 LINGDOC_TEST_POSTGRES_DSN，但不跑 internal/lingdoc/workspace 包；该子测试在 CI 里会静默 SKIP。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过。SQLite 等价路径不替代生产成员态的真实 PG 证据（票 #524 明写）",
-      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。在带 LINGDOC_TEST_POSTGRES_DSN 的 job 里执行 go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1"
+      "status": "pass",
+      "matrix_status": "PASS",
+      "evidence": "`TestCatalogHTTPProductionDatabaseParity/postgres`；`go test -count=1 -v -run '^TestCatalogHTTPProductionDatabaseParity$' ./internal/lingdoc/workspace/`（postgres 子测试 PASS 1.01s、sqlite 子测试 PASS 0.91s，整包 ok 2.653s）；`TestPostgresTemplateCatalogVisibilityUsesProductionMembership`（PASS 0.70s）；head `19d9df9c`",
+      "note": "CI 里会静默 SKIP 的那一个不再 SKIP：DSN 未设即 t.Skip（internal/lingdoc/workspace/template_governance_adapter_postgres_test.go:27-30），本轮 $env:LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55432 user=lingdoc_iso password=<合成口令> dbname=lingdoc_pg17_iso sslmode=disable' 已设 ⇒ 子测试真跑并通过。生产成员态用例（票 #524 正文点名的那条）在真实 tenant_members 行上跑生产 TemplateGovernanceRuntime（同文件 :117）⇒ owner/viewer 可见性由生产成员态判定，不是 SQL 投影。环境：隔离 PostgreSQL 17.11（容器 lingdoc-pg17-iso、镜像 postgres:17-alpine、命名卷 lingdoc-pg17-iso-vol、库 lingdoc_pg17_iso、账号 lingdoc_iso、127.0.0.1:55432；既有 WeKnora-*／coforge-* 容器与库零改动）。本条落证 head 为 19d9df9c。",
+      "follow_up_ticket": "#524"
     },
+    {
+      "id": "AC-04-04 本机 Docker 下的隔离 PostgreSQL 17 连续三轮实跑",
+      "status": "pass",
+      "matrix_status": "PASS",
+      "evidence": "`go test -count=3 -v -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' ./internal/lingdoc/templategovernance/`（3× PASS，ok 1.519s；另有 -count=1 单跑对照 PASS 0.73s）；head `19d9df9c`",
+      "note": "隔离环境：隔离 PostgreSQL 17.11（容器 lingdoc-pg17-iso、镜像 postgres:17-alpine、命名卷 lingdoc-pg17-iso-vol、库 lingdoc_pg17_iso、账号 lingdoc_iso、127.0.0.1:55432；既有 WeKnora-*／coforge-* 容器与库零改动）。既有 WeKnora-*／coforge-* 容器与库零改动（只做过 docker ps 列表）。用例覆盖面（internal/lingdoc/templategovernance/catalog_postgres_test.go:22）：生产迁移 000115_lingdoc_rule_sets → 建表 → 草稿 → 发布 → 重开新连接池读回（重启读回）→ 幂等重试 → 并发发布只成一次 → 触发器注入审计失败验证整体回滚。PG 服务端日志可见对应的故障注入确实发生（deny_template_audit() 的 audit unavailable、parity_deny_copy_fn() 的 synthetic audit failure）。本条落证 head 为 19d9df9c。",
+      "follow_up_ticket": "#524"
+    }
+  ],
+  "not_run": [
     {
       "id": "AC-04-03 真人浏览器完整链（模板目录 → 版本列表 → 版本详情 → 授权来源检查 → 发布 → 导出）",
       "status": "not_run",
@@ -242,28 +243,17 @@
       "unblock": "解除条件：按 #523 的验收步骤在真实浏览器跑完该链并把证据绑到当前 head（跟进票 #523）。在带 postgres:17 的本地栈用真实浏览器跑完该链，并把截图与读回写进 T139-验证报告.json 的 passed[]"
     },
     {
-      "id": "AC-04-04 本机 Docker 下的隔离 PostgreSQL 17 连续三轮实跑",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
-      "executed": false,
-      "follow_up_issue": "#524",
-      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
-      "ticket": "#524",
-      "unblock_condition": "#524 关闭且证据满足",
-      "reason": "本轮本机 Docker daemon 不可用，无法在本机重复 PG 17 的三轮连续实跑。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
-      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。Docker 可用时在 postgres:17 容器里执行 go test -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' -count=3"
-    },
-    {
       "id": "AC-04-05 按 diff 内容缩面而跳过的 CI 作业",
       "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
+      "matrix_status": "NOT RUN",
       "executed": false,
       "follow_up_issue": "#524",
       "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
       "ticket": "#524",
-      "unblock_condition": "#524 关闭且证据满足",
-      "reason": "门禁按最后一次推送的 diff 内容分级；纯文档/CI 提交会让测试类作业整条 SKIPPED（SKIPPED 不等于跑过）。判定状态＝代码侧条件满足、环境验收未完成（DEFERRED_MANUAL），实测事实仍为未运行，不得写成已通过",
-      "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通生产成员态用例并回填证据（跟进票 #524）。最后一次推送包含 .go 改动，或 reopen 本 PR 让门禁按整个 PR 的 range 计算"
+      "unblock_condition": "在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。",
+      "reason": "属 CI 侧观测面，本机无 GitHub Actions 运行观测面：#360 的修法（PR #463）已落地，lingdoc-interface-integration.yml:63-73 带 postgres:17 service、:111-112 跑 PG 迁移演练；但该作业是否真的跑/被跳过，只能由一次真实 CI run 的 job 记录证明（scripts/ci/lingdoc_gate_surfaces.py:292-319 的路径表 + lingdoc-interface-integration.yml:60 的 if 条件）。本机只用仓内同一判定模块做了两次可复现推演（Case A：diff 仅触及本矩阵与本报告 ⇒ job_lingdoc_interface_integration_integration=false（PG 演练作业被跳过）；Case B：diff 触及 internal/database/**、internal/lingdoc/**、internal/container/lingdoc* 等 20 个文件 ⇒ 同一键为 true（作业被纳入）），判定模块自己的输出写着「Selection only; not a test result or an approval.」⇒ 该推演只能用来写解除条件，不能充当本条的证据。本机结果不得冒充本条通过。",
+      "unblock": "在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。",
+      "follow_up_ticket": "#524"
     }
   ],
   "known_limits": [
@@ -290,6 +280,8 @@
     "AC-04-03（真人浏览器完整链）按现行验收协议门槛记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过；实测事实仍为未执行（executed=false，条目保留在 not_run[] 里）。解除条件 = 跟进票 #523 关闭且证据满足（见 not_run[] 的 AC-04-03 条目 follow_up_issue 与 unblock_condition 字段）。",
     "TD-04 与矩阵 PG 侧（AC-04-01/02/04/05、本机 Docker 三轮 AC-04-04）同样按现行验收协议门槛记为 DEFERRED_MANUAL：代码侧条件已满足、环境验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过；实测事实仍为未运行（executed=false，条目保留在 not_run[] 里，TD-04 的 status 仍为 not_run）。解除条件 = 跟进票 #524 关闭且证据满足（票 #360 + PR #463 已实现 CI 的 PG 作业位置，本票是「把能力用起来并留证」）。SQLite 等价路径不替代生产成员态的真实 PG 证据。代码合并不等于 Beta 首版验收通过；完整 Beta 验收仍依据正式验收标准判定。",
     "DEFERRED_MANUAL 的两层判定（状态定义见 PR #525）：它只解除代码合并这一层阻塞，仍然阻塞 Beta 首版放行（协议 §6 的主流程阻塞集含它）。因此本表里的 AC-04-03、TD-04 与 PG 侧四条虽然不阻塞代码合并，但不得被读成 Beta 放行已通过；代码合并不等于 Beta 首版验收通过，完整 Beta 验收仍依据正式验收标准判定。",
-    "词表漂移（真实代码项）：governance.Actor.Role 仍是无类型 string（governance.Actor 是 rulesetstore.Actor 的类型别名，internal/lingdoc/templategovernance/model.go:18；rulesetstore.Actor.Role 见 internal/lingdoc/rulesetstore/store.go:59-63）。把 Role 收成 types.TenantRole 不改变 API 契约的字段形状（该结构不跨 HTTP 边界，contracts/openapi.json 无此字段），但会连带改动 rulesetstore 包、internal/container/lingdoc.go（登记处属 PF-7）、internal/router/lingdoc_routes_test.go（属 PF-8）与 internal/lingdoc/workspace/template_governance_adapter_test.go（属 PF-11），并牵动 rulesetstore 既有取值（如 tenant_admin）不在 types.TenantRole 的四个合法值内 ⇒ 属跨包契约变更，本 PR 不改，另开票处理。本 PR 在本面路径内补了运行期断言：治理 seam 拒绝非法角色取值，且身份不可归属时不以该身份署名写收据（TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt）。"
+    "词表漂移（真实代码项）：governance.Actor.Role 仍是无类型 string（governance.Actor 是 rulesetstore.Actor 的类型别名，internal/lingdoc/templategovernance/model.go:18；rulesetstore.Actor.Role 见 internal/lingdoc/rulesetstore/store.go:59-63）。把 Role 收成 types.TenantRole 不改变 API 契约的字段形状（该结构不跨 HTTP 边界，contracts/openapi.json 无此字段），但会连带改动 rulesetstore 包、internal/container/lingdoc.go（登记处属 PF-7）、internal/router/lingdoc_routes_test.go（属 PF-8）与 internal/lingdoc/workspace/template_governance_adapter_test.go（属 PF-11），并牵动 rulesetstore 既有取值（如 tenant_admin）不在 types.TenantRole 的四个合法值内 ⇒ 属跨包契约变更，本 PR 不改，另开票处理。本 PR 在本面路径内补了运行期断言：治理 seam 拒绝非法角色取值，且身份不可归属时不以该身份署名写收据（TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt）。",
+    "带 vector／pg_search 扩展的 PG 迁移链两侧都还没有证据：隔离实例只有 pg_trgm，没有 vector／pg_search，因此演练走 app.skip_embedding=true 分支（internal/database/migration_candidate_shape_upgrade_test.go:835-850）；实测不带该参数时 000002_embeddings.up.sql 直接失败（ERROR: extension \"vector\" is not available），带则 NOTICE: Skipping migration embeddings (app.skip_embedding=true)。CI 的 postgres:17 service 同样不内置 vector／pg_search ⇒ 两侧走同一条 skip 分支，但这条路径两边都没验过。解除条件：换成带 pgvector 的镜像（或在现有 PG 上安装 vector／pg_search）后重跑 go test -count=1 -v -run '^TestPostgres' ./internal/database/... 并全绿 ⇒ 建议单独开票。",
+    "AC-04-05 属 CI 侧观测面、本机不可取证：它的证据形态是一次真实 GitHub Actions run 的 job 记录（作业被缩面跳过的结论 ＋ scope 作业发布的 artifact）；本机只能用仓内同一个判定模块做「选择结论」推演，判定模块自己的输出写着「Selection only; not a test result or an approval.」⇒ 不能充当该条的证据。跟票 #524；本机不可解除。"
   ]
 }
