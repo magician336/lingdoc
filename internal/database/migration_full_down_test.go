@@ -146,6 +146,7 @@ func TestPostgresFullDownChainReachesNilVersionWithoutResidualTables(t *testing.
 	version, dirty, err = released.Version()
 	require.ErrorIs(t, err, migrate.ErrNilVersion,
 		"down 链走完之后必须没有版本了（版本表是空的）")
+	require.Equal(t, uint(0), version, "没有版本 = 版本号 0")
 	require.False(t, dirty)
 
 	// --- 7. 不留残骸 ---------------------------------------------------------
