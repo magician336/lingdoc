@@ -1,0 +1,23 @@
+{
+  "mode": "beta-first-restart-readback",
+  "note": "重启读回的证据（协议 §2 第 5 步）。总结果：NOT RUN。启动配方与版本按本次 SHA 与环境核对，不继承历史 PASS。",
+  "head": "adc29852fa5c035747635d2671418ca51fd55d0e",
+  "base": "1dd3a24ceca6058d2721e28b38fffabdb21560e0",
+  "head_note": "本轮绑定的代码 head：adc29852fa5c035747635d2671418ca51fd55d0e。",
+  "base_note": "基线 1dd3a24ceca6058d2721e28b38fffabdb21560e0。",
+  "passed": [
+    {
+      "id": "重启后读回：同一个项目、访问令牌与持久化",
+      "status": "held",
+      "evidence": "后端 sqlite；NOTE: server shutdown on Windows exited with code 1 (TerminateProcess semantics, not a graceful shutdown); the readback assertions still decide the scenario\nPASS: server process restarted; same sqlite database, access token, and LingDoc project read back\nNOTE: server shutdown on Windows exited with code 1 (TerminateProcess semantics, not a graceful shutdown); the readback assertions still decide the scenario"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "重启后读回：协议 §1 的隔离 PostgreSQL",
+      "reason": "本轮的后端是 sqlite；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
+      "unblock": "用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"
+    }
+  ],
+  "known_limits": []
+}
