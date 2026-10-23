@@ -895,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=NOT_RUN,
                 reason=ledger_reason,
-                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000054 / 000133 已应用）后重跑本脚本。"))
+                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000055 / 000134 已应用）后重跑本脚本。"))
         else:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=HELD,
