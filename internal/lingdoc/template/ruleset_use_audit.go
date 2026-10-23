@@ -10,9 +10,16 @@ import (
 // published RuleSet; EffectiveRulesetHash also includes template and project
 // overrides used by the evaluator.
 type RuleSetUseAuditEvent struct {
-	ID                   string    `json:"id"`
-	TenantID             uint64    `json:"tenant_id"`
-	ActorID              string    `json:"actor_id"`
+	ID       string `json:"id"`
+	TenantID uint64 `json:"tenant_id"`
+	ActorID  string `json:"actor_id"`
+	// ActorRole is the tenant role the operator held when the governed RuleSet
+	// was consumed. It is the value stored in the actor_role column of both
+	// lingdoc_ruleset_use_audits and audit_logs, so it means "the tenant role
+	// the operator held at that moment" -- not a project role, not a
+	// governance role and not a function role. Its value comes from the tenant
+	// role vocabulary owned by internal/types (types.TenantRole); a value
+	// outside that vocabulary is refused by the writers rather than stored.
 	ActorRole            string    `json:"actor_role"`
 	ProjectID            string    `json:"project_id"`
 	Action               string    `json:"action"`

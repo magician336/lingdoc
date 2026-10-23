@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,6 +28,21 @@ func ObserveOperationReplay(ctx context.Context, onReplay func()) context.Contex
 
 var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,79}$`)
 
+// ready states whether an actor can be attributed to a governance operation.
+//
+// The role is NOT judged against the tenant role vocabulary here, and that is
+// deliberate. The outward form of "the caller claimed a role the vocabulary
+// does not define" is already decided by the application layer: it rejects
+// such a claim as an unverified identity (governance.ErrUnverifiedActor
+// joined with the not-found shape, so the answer does not enumerate what
+// exists). Refusing it here first would replace that with "authorization
+// unavailable" and change a contract an existing test pins.
+//
+// The vocabulary still guards this package, at the point that matters: a role
+// outside it cannot reach the audit column, because recordAuditOutcome checks
+// it before the INSERT. A reader that has to judge a role asks
+// types.TenantRole.IsValid -- the one judge of membership in the vocabulary
+// owned by internal/types.
 func (s *Service) ready(actor Actor) error {
 	if s == nil || s.db == nil {
 		return ErrUnavailable
@@ -106,7 +122,17 @@ func operationSave(tx *gorm.DB, identity operationRow, request, result, basis an
 func recordAudit(tx *gorm.DB, actor Actor, action Action, target, reason string, details any) error {
 	return recordAuditOutcome(tx, actor, action, target, reason, "success", details)
 }
+
+// recordAuditOutcome writes the governance audit row.
+//
+// The row's actor_role column means "the tenant role the operator held at
+// that moment". This is the last point before the INSERT, so it also guards
+// the callers that reach an audit row without passing through ready: a role
+// outside the vocabulary must never reach the column.
 func recordAuditOutcome(tx *gorm.DB, actor Actor, action Action, target, reason, outcome string, details any) error {
+	if !types.TenantRole(actor.Role).IsValid() {
+		return ErrUnauthorized
+	}
 	raw, err := json.Marshal(map[string]any{"reason": reason, "target_ref": target, "details": details})
 	if err != nil {
 		return err

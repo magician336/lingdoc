@@ -7,13 +7,18 @@ package generation
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
 	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	"github.com/Tencent/WeKnora/internal/types"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
@@ -464,6 +469,59 @@ func RunIDFromContext(ctx context.Context) string {
 	return runID
 }
 
+// The facts the user-visible acceptance messages need, taken from the one
+// place that owns them.
+//
+// The acceptance vocabulary lives in acceptancebudget: the model a profile
+// may call and the token ceilings it allows are declared there, and the
+// reservation, the ledger and the model selection all read them from there.
+// This file asks for the two facts the messages need and never writes a
+// second copy of either -- a message that named its own model and its own
+// ceiling would be a second vocabulary, and it would go stale the moment a
+// profile changed.
+//
+// The profile is read at the moment the message is written, because the
+// adapter reads the same variable at the moment it reserves: a process can
+// arm a profile between two calls, and the message has to describe the
+// profile that was in force for THAT call.
+//
+// With no profile armed the authority answers with the original DeepSeek
+// profile's values, so an unarmed process keeps saying exactly what it said
+// before this change -- and these two failures cannot even happen without a
+// profile, because the adapter only checks the model and the ceiling when
+// one is armed.
+func armedAcceptanceProfile() string {
+	return strings.TrimSpace(os.Getenv(acceptancebudget.ProfileEnv))
+}
+
+// acceptanceApprovedModelText names the model the armed profile may call.
+func acceptanceApprovedModelText() string {
+	return acceptancebudget.ProfileApprovedModel(armedAcceptanceProfile())
+}
+
+// acceptanceOutputLimitText names the output ceiling of the armed profile.
+func acceptanceOutputLimitText() string {
+	_, outputMax, _ := acceptancebudget.ProfileTokenLimits(armedAcceptanceProfile())
+	return formatTokenCount(outputMax)
+}
+
+// formatTokenCount renders a token count the way these messages have always
+// written it: with a thousands separator (6,000), not 6000.
+func formatTokenCount(count int) string {
+	digits := strconv.Itoa(count)
+	if len(digits) <= 3 {
+		return digits
+	}
+	grouped := make([]byte, 0, len(digits)+len(digits)/3)
+	for index := range len(digits) {
+		if index > 0 && (len(digits)-index)%3 == 0 {
+			grouped = append(grouped, ',')
+		}
+		grouped = append(grouped, digits[index])
+	}
+	return string(grouped)
+}
+
 // Execute processes one queued run. A conditional claim prevents duplicate
 // workers from invoking the model for the same run.
 func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
@@ -546,13 +604,13 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 			// terminal and non-retryable until the ledger is reconciled.
 			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, ErrGenerationIncomplete):
-			failure = RunError{Code: "generation_incomplete", Message: "本轮输出达到 6,000 token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。", Retryable: false}
+			failure = RunError{Code: "generation_incomplete", Message: fmt.Sprintf("本轮输出达到 %s token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。", acceptanceOutputLimitText()), Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceBudgetExceeded):
 			failure = RunError{Code: "generation_budget_exceeded", Message: "本轮验收预算已到上限或输入超限，系统未继续请求模型。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceBudgetUnavailable):
 			failure = RunError{Code: "generation_budget_unavailable", Message: "本轮预算账本不可用，模型调用已阻止。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceModelMismatch):
-			failure = RunError{Code: "generation_model_mismatch", Message: "验收模式未找到唯一且符合条件的 deepseek-flash 配置；未调用模型。", Retryable: false}
+			failure = RunError{Code: "generation_model_mismatch", Message: fmt.Sprintf("验收模式未找到唯一且符合条件的 %s 配置；未调用模型。", acceptanceApprovedModelText()), Retryable: false}
 		}
 		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, status, failure)
 		if storeErr != nil {

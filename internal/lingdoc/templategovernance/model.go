@@ -15,6 +15,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// Actor identifies the tenant member a governance operation is performed as.
+//
+// Role is the tenant role the member held when the operation was requested.
+// Its value comes from the tenant role vocabulary owned by internal/types
+// (types.TenantRole), and IsValid is the only judge of membership in it.
+//
+// The value is not decoration: the audit rows this package writes record it
+// in audit_logs.actor_role. The column therefore means "the tenant role the
+// operator held at that moment" -- not a project role, not a governance
+// role, not a function role. A value outside the vocabulary would put a word
+// into that column that no reader can interpret, so the service refuses it
+// rather than writing it.
 type Actor = rulesetstore.Actor
 type Action string
 
@@ -147,15 +159,19 @@ type AuditHistoryFilter struct {
 	Limit   int
 }
 type AuditEvent struct {
-	ID          uint64          `json:"id"`
-	ActorUserID string          `json:"actor_user_id"`
-	ActorRole   string          `json:"actor_role"`
-	Action      string          `json:"action"`
-	TargetType  string          `json:"target_type"`
-	TargetID    string          `json:"target_id"`
-	Outcome     string          `json:"outcome"`
-	Details     json.RawMessage `json:"details"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID          uint64 `json:"id"`
+	ActorUserID string `json:"actor_user_id"`
+	// ActorRole is read back from audit_logs.actor_role. It means "the tenant
+	// role the operator held at that moment", taken from the tenant role
+	// vocabulary owned by internal/types. It is not a project role, not a
+	// governance role and not a function role.
+	ActorRole  string          `json:"actor_role"`
+	Action     string          `json:"action"`
+	TargetType string          `json:"target_type"`
+	TargetID   string          `json:"target_id"`
+	Outcome    string          `json:"outcome"`
+	Details    json.RawMessage `json:"details"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 type AuditHistoryPage struct {
 	Events      []AuditEvent `json:"events"`

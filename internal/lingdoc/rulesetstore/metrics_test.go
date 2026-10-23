@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -20,7 +21,7 @@ import (
 func TestRuleSetMetricsP95P99PersistenceAndHTTPReadback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, path := openMetricsDatabase(t)
-	actor := Actor{TenantID: 1, UserID: "owner", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "owner", Role: string(types.TenantRoleAdmin)}
 	if err := db.Exec("INSERT INTO lingdoc_projects(id, tenant_id) VALUES (?, ?)", "project-metrics", actor.TenantID).Error; err != nil {
 		t.Fatal(err)
 	}

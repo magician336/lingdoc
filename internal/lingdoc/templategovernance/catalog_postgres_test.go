@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -76,7 +77,7 @@ func TestPostgresCatalogSchemaLifecycleAndAuditRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	auth := &testAuth{allow: true}
-	actor := Actor{TenantID: 1, UserID: "owner", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "owner", Role: string(types.TenantRoleAdmin)}
 	store := rulesetstore.NewStore(db, auth)
 	set := template.RuleSet{ID: "grant-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{{RuleID: "goal-present", DefinitionID: "presence", DefinitionVersion: "1", Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: "warning", TriggerScenes: []string{"write_check", "preflight"}, Enabled: true, Owner: "rules-admin"}}}
 	if err := store.CreateDraft(context.Background(), actor, set); err != nil {

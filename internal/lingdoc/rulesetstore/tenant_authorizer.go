@@ -6,6 +6,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 )
 
@@ -16,11 +17,15 @@ var ErrRuleSetAccessDenied = clienterror.New(clienterror.Form{Status: 403, Code:
 // TenantMembershipAuthorizer rechecks the active tenant membership inside the
 // RuleSet transaction. Reads are available to active members; governance writes
 // are limited to tenant owners and admins.
+//
+// The membership role it reads is a tenant role, so it is judged with the
+// tenant role vocabulary owned by internal/types rather than with a second
+// list of role words spelled out here.
 type TenantMembershipAuthorizer struct{}
 
 func (TenantMembershipAuthorizer) AuthorizeRuleSet(_ context.Context, tx *gorm.DB, actor Actor, action Action, _ *template.RuleSet) error {
 	var membership struct {
-		Role string `gorm:"column:role"`
+		Role types.TenantRole `gorm:"column:role"`
 	}
 	err := tx.Table("tenant_members").
 		Select("role").
@@ -35,7 +40,8 @@ func (TenantMembershipAuthorizer) AuthorizeRuleSet(_ context.Context, tx *gorm.D
 	if action == ActionRead {
 		return nil
 	}
-	if membership.Role != "owner" && membership.Role != "admin" {
+	if !membership.Role.IsValid() ||
+		(membership.Role != types.TenantRoleOwner && membership.Role != types.TenantRoleAdmin) {
 		return ErrRuleSetAccessDenied
 	}
 	return nil
