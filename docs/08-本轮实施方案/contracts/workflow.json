@@ -51,7 +51,7 @@
   "failure_states": {
     "how_expressed": "失败态用「失败路径节点 + http_error 断言」表达：失败响应必须真的是错误状态码，且错误信封的 code 与契约声明的一致（光有错误体不算失败路径）。",
     "where_they_are": "contracts/scenarios.json 已有的失败路径节点上：F05-04 的 409 version_conflict、F06 的 409 stale_input、F07 的 403 source_access_denied、F11-10 的 409 stale_input、F12-04 的 409 version_conflict、F22-01 的 422 asset_not_authorized。",
-    "why_not_in_this_sequence": "F01 这 24 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容），那两步结构由 #501 落地。",
+    "why_not_in_this_sequence": "F01 这 24 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容）；该结构已由 #501 落地（形状与用例见 contracts/scenarios.json 的 F24），但 F01 序列的节点数由验收协议 §2 钉死（24 个节点 = 原 23 个业务步骤 + F01-03b 前置），4xx 节点仍未挂进本序列 ⇒ GAP-FAILURE-PATH-NODES 未解除。",
     "until_then": "涉及失败态的放行要求一律登记为未完成项（NOT RUN），不得记为已通过；解除条件见 acceptance/gaps.json 的 GAP-FAILURE-PATH-NODES。",
     "gap": "GAP-FAILURE-PATH-NODES"
   },

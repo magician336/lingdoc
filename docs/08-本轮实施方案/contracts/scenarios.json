@@ -2381,6 +2381,84 @@
       ]
     },
     {
+      "id": "F24",
+      "name": "成员撤权后同一资源不再放行",
+      "starting_state": "S2",
+      "setup": "项目里有一名协作者（u-member）。Owner 把协作者从项目成员名单里去掉，这就是撤权动作；撤权之后，同一个协作者再读同一个项目必须被拒。撤权之前那一次读必须放行，否则「被拒」可能是因为协作者本来就进不来，断言就成了恒真。",
+      "steps": [
+        {
+          "id": "F24-01",
+          "operation_id": "getProject",
+          "actor": "u-member",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "capture": {
+            "f24.project_version": "/data/project_version"
+          },
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "active",
+              "intent": "放行时拿到的是项目本身（状态是 active），不是错误信封"
+            },
+            {
+              "path": "/data/members",
+              "non_empty": true,
+              "intent": "项目带着成员名单回来：这一步读到的是项目，而不是一个空壳"
+            }
+          ],
+          "assertion": "撤权之前，同一个协作者读同一个项目必须放行：这一步是反向对照，说明后面的拒绝来自撤权，而不是协作者本来就进不来。",
+          "response_example": "success"
+        },
+        {
+          "id": "F24-02",
+          "operation_id": "saveMembers",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {
+              "Idempotency-Key": "f24-revoke-0001"
+            },
+            "json": {
+              "expected_project_version": "{{f24.project_version}}",
+              "collaborator_user_ids": []
+            }
+          },
+          "assertion": "Owner 把协作者从项目成员名单里去掉：这一步是撤权动作本身，它必须真的生效；它没生效，后一步的断言就没有依据，不得被求值。",
+          "response_example": "success"
+        },
+        {
+          "id": "F24-03",
+          "operation_id": "getProject",
+          "actor": "u-member",
+          "expected_http": 404,
+          "after_step": "F24-02",
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "checks": [
+            {
+              "path": "/error/code",
+              "non_empty": true,
+              "intent": "这次拒绝是显式的：响应是带错误码的错误信封，不是把项目照常返回（错误码是哪一支由归因票决定，这里只断言「被拒」这个事实）"
+            }
+          ],
+          "assertion": "撤权之后，同一个协作者再读同一个项目必须被拒：拒绝是撤权造成的，不是别的原因。",
+          "response_example": "not_found"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
       "id": "G7-01-chapter-read-write",
       "name": "G7-01 现有章节接口读写基线",
       "starting_state": "S1",
