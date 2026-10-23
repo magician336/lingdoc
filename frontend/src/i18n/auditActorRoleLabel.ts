@@ -5,12 +5,14 @@
  * platform-side values `system_admin` / `platform_api_key` that the platform
  * audit writer pins).
  *
- * Two surfaces read that column: the tenant settings audit drawer and the
- * platform audit log. They used to disagree about what to show when the value
- * was outside the vocabulary -- one fell back to the untranslated i18n key
- * (`tenantMember.role.system_admin`), the other to the raw English word
- * (`system_admin`). The same value therefore meant two different things on two
- * screens, and neither of them said "unknown".
+ * Three surfaces read that column: the tenant settings audit drawer, the
+ * platform audit log, and the permission evidence desk. They used to disagree
+ * about what to show when the value was outside the vocabulary -- one fell
+ * back to the untranslated i18n key (`tenantMember.role.system_admin`), one to
+ * the raw English word (`system_admin`), and one showed the raw English word
+ * for every value and a hard-coded Chinese word for the empty one. The same
+ * value therefore meant two different things on two screens, and none of them
+ * said "unknown" except by accident.
  *
  * This module is the one place that decides how a value becomes a label. It
  * holds no vocabulary of its own: the words live in the locale bundles under
