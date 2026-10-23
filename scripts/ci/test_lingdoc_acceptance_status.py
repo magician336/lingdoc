@@ -402,6 +402,126 @@ class MatrixStatusJsonTests(unittest.TestCase):
         self.assertTrue(entries[0]["where"].endswith("not_run[1]"),
                         f"the wrong row was reported: {entries[0]['where']}")
 
+    def test_an_empty_row_ticket_is_not_papered_over_by_the_document_one(self):
+        """A row that *has* a ticket field and left it empty lost its ticket.
+
+        The document-level ticket covers rows that name no ticket at all; it
+        must not hide the row that says ``"ticket": ""``.
+        """
+        entries = self._report({
+            "follow_up_issue": "#246",
+            "not_run": [{
+                "id": "AC-04-03",
+                "status": "not_run",
+                "matrix_status": "DEFERRED_MANUAL",
+                "ticket": "",
+                "unblock": "解除条件：跑完整链",
+            }],
+        })
+        self.assertEqual(len(entries), 1)
+        self.assertIn("缺少跟进票号（#NNN）", entries[0]["problems"])
+
+    def test_an_empty_follow_up_issue_is_not_papered_over_by_the_document_one(self):
+        """Same rule for the other ticket field: ``follow_up_issue: ""`` is an
+        emptied field, not an absent one."""
+        entries = self._report({
+            "follow_up_issue": "#246",
+            "not_run": [{
+                "id": "AC-04-03",
+                "status": "not_run",
+                "matrix_status": "DEFERRED_MANUAL",
+                "follow_up_issue": "",
+                "unblock": "解除条件：跑完整链",
+            }],
+        })
+        self.assertEqual(len(entries), 1)
+        self.assertIn("缺少跟进票号（#NNN）", entries[0]["problems"])
+
+    def test_a_missing_ticket_is_caught_even_without_a_document_ticket(self):
+        """The negative case the guard has to catch, with nothing to fall back on."""
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "unblock": "解除条件：跑完整链",
+        }]})
+        self.assertEqual(len(entries), 1)
+        self.assertIn("缺少跟进票号（#NNN）", entries[0]["problems"])
+
+    def test_a_missing_release_condition_is_caught(self):
+        """The other carrier: the ticket alone does not make an entry valid."""
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "ticket": "#523",
+            "reason": "本轮未在真实浏览器执行该链",
+        }]})
+        self.assertEqual(len(entries), 1)
+        self.assertIn("缺少解除条件", entries[0]["problems"])
+
+    def test_the_entry_names_the_acceptance_point(self):
+        """The point is what a report and a matrix row are counted by."""
+        entries = self._report({"not_run": [{
+            "id": "AC-04-03 真人浏览器完整链（模板目录 → 导出）",
+            "status": "not_run",
+            "matrix_status": "DEFERRED_MANUAL",
+            "ticket": "#523",
+            "unblock": "解除条件：按 #523 跑完整链",
+        }]})
+        self.assertEqual(entries[0]["point"], "AC-04-03")
+
+
+class RealReportTests(unittest.TestCase):
+    """The real report on ``main`` is the fixture -- no synthesis needed.
+
+    ``docs/08-本轮实施方案/T139-验证报告.json`` is in the repository: six
+    acceptance points are carried, one of them in the matrix and in the
+    report.  The guard has to recognise every one of them.
+    """
+
+    REPORT = REPO_ROOT / "docs" / "08-本轮实施方案" / "T139-验证报告.json"
+
+    def setUp(self) -> None:
+        self.entries = status.deferred_manual_entries(REPO_ROOT)
+        self.json_entries = [entry for entry in self.entries
+                             if entry["shape"] == "json-entry"]
+
+    def test_the_real_report_is_in_the_repository(self):
+        self.assertTrue(self.REPORT.is_file(),
+                        "the real report is not on main; the fixture is gone")
+
+    def test_the_real_report_is_recognised(self):
+        """Six carried acceptance points, in the places they really sit."""
+        self.assertEqual(len(self.json_entries), 6,
+                         f"the real report's deferrals were not found: {self.json_entries}")
+        places = sorted(entry["where"].rsplit(":", 1)[-1] for entry in self.json_entries)
+        self.assertEqual(places, ["not_run[0]", "not_run[1]", "not_run[2]",
+                                  "not_run[3]", "not_run[4]", "passed[29]"])
+
+    def test_every_deferral_in_the_real_report_carries_both_carriers(self):
+        for entry in self.json_entries:
+            with self.subTest(where=entry["where"]):
+                self.assertEqual(entry["problems"], [],
+                                 f"{entry['where']} lost its carriers")
+                self.assertRegex(entry["ticket"], r"#\d+")
+                self.assertIn("解除条件", entry["unblock"])
+
+    def test_the_real_report_names_its_points(self):
+        points = sorted(entry["point"] for entry in self.json_entries)
+        self.assertEqual(points, ["AC-04-01", "AC-04-02", "AC-04-03",
+                                   "AC-04-04", "AC-04-05", "TD-04"])
+
+    def test_the_points_are_counted_once_although_they_appear_twice(self):
+        """A point shows up as a matrix row and as a report object."""
+        points = status.deferred_manual_points(REPO_ROOT)
+        self.assertEqual(len(points), len(set(points)))
+        for point in ("AC-04-01", "AC-04-03", "TD-04"):
+            self.assertIn(point, points)
+        self.assertLess(len(points), len(self.entries),
+                        "the records and the points are the same number; "
+                        "the dedup does nothing")
+
 
 if __name__ == "__main__":
     unittest.main()

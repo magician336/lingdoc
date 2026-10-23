@@ -51,7 +51,8 @@ Two status words, and they are not the same thing
 An acceptance row carries two of them, and the guard reads both:
 
 * **the run fact** (``status`` in JSON) -- what this run actually did
-  (``not_run``, ``passed``, ``failed``);
+  (``not_run``, ``passed``, ``failed``).  It is a **fact**: it is never
+  rewritten to make a gate pass, and no gate reads it as a verdict;
 * **the matrix registration** (``matrix_status`` in JSON, the 判定状态 column
   in a matrix) -- what the acceptance matrix says about the row (``PASS`` /
   ``FAIL`` / ``NOT RUN`` / ``DEFERRED_MANUAL``).
@@ -147,6 +148,11 @@ STATUS_COLUMNS = ("判定状态", "验收", "状态")
 #: judgement rules' own Chinese column name.  ``DEFERRED_MANUAL`` is a matrix
 #: registration, so the guard has to read the field a document actually uses
 #: -- reading only one of them misses every entry written in the other.
+#:
+#: ``status`` is a **fact** (``not_run`` / ``passed`` / ``failed``): it says
+#: what the run did.  It is never rewritten to make a gate pass.  Only
+#: ``matrix_status`` -- the acceptance matrix's own verdict about the row --
+#: can be ``DEFERRED_MANUAL``.
 STATUS_FIELDS = ("status", "matrix_status", "判定状态")
 
 #: The JSON fields that carry the **release condition** of a deferral.
@@ -322,6 +328,7 @@ def _markdown_entries(path: Path) -> list[dict[str, Any]]:
             entries.append({
                 "where": f"{path.as_posix()}:{number}",
                 "shape": "markdown-row",
+                "point": _point_of(cells[0]) if cells else "",
                 "unblock": condition,
                 "ticket": condition,
                 "problems": deferred_manual_problems(condition, condition),
@@ -338,6 +345,49 @@ def _first_text(obj: Mapping[str, Any], fields: tuple[str, ...]) -> str:
     return ""
 
 
+def _names(obj: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
+    """Whether the object has one of ``fields`` at all -- empty or not.
+
+    The difference matters for the ticket: a row that says ``"ticket": ""``
+    is a row whose ticket was **forgotten**, and a document-level ticket must
+    not paper over it.  A row that has no such field at all is covered by the
+    document's ticket.
+    """
+    return any(field in obj for field in fields)
+
+
+def _ticket_of(obj: Mapping[str, Any], document_ticket: str, condition: str) -> str:
+    """The follow-up ticket of one deferral.
+
+    The order is fixed, and every step is a place a ticket may live:
+
+    1. the row's own ``ticket`` / ``follow_up_issue``;
+    2. the document's top-level ``follow_up_issue`` / ``ticket`` -- but
+       **only** when the row names no ticket field at all.  A row that has
+       the field and left it empty has lost its ticket, and the document's
+       must not hide that;
+    3. the release-condition text, which quotes the ticket in prose.
+    """
+    own = _first_text(obj, TICKET_FIELDS)
+    if own:
+        return own
+    if not _names(obj, TICKET_FIELDS) and document_ticket:
+        return document_ticket
+    return condition
+
+
+def _point_of(raw: Any) -> str:
+    """The acceptance-point coordinate of an entry.
+
+    The matrix writes the short coordinate (``AC-04-03``); the report writes
+    the same coordinate followed by the point's title
+    (``AC-04-03 真人浏览器完整链（…）``).  The leading token is what the two
+    share, so it is what a report and a matrix row are counted by.
+    """
+    text = str(raw or "").strip()
+    return text.split(" ", 1)[0].strip() if text else ""
+
+
 def _json_entries(path: Path) -> list[dict[str, Any]]:
     """The ``DEFERRED_MANUAL`` objects of one JSON document.
 
@@ -345,7 +395,8 @@ def _json_entries(path: Path) -> list[dict[str, Any]]:
     not the same thing:
 
     * ``status`` is the **run fact** -- what this run actually did
-      (``not_run``, ``passed``, ``failed`` ...);
+      (``not_run``, ``passed``, ``failed`` ...).  It is a fact and is never
+      rewritten to make a gate pass;
     * ``matrix_status`` is the **matrix registration** -- what the
       acceptance matrix says about the row (``PASS`` / ``FAIL`` /
       ``NOT RUN`` / ``DEFERRED_MANUAL``).
@@ -355,27 +406,24 @@ def _json_entries(path: Path) -> list[dict[str, Any]]:
     guard reads **both** fields, because which field a document uses depends
     on the shape it follows -- and a guard that only reads one of them
     silently misses every entry written in the other shape.
-
-    The two carriers are read from the row first and from the document root
-    second: a report may carry the follow-up ticket once at the top
-    (``follow_up_issue``) and leave it off every row.
     """
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return []
     root = document if isinstance(document, Mapping) else {}
-    root_ticket = _first_text(root, TICKET_FIELDS)
+    document_ticket = _first_text(root, TICKET_FIELDS)
     entries: list[dict[str, Any]] = []
     for where, obj in walk_objects(document):
         if not any(normalize_status(obj.get(field)) == DEFERRED_MANUAL
                    for field in STATUS_FIELDS):
             continue
         condition = _first_text(obj, UNBLOCK_FIELDS)
-        ticket = _first_text(obj, TICKET_FIELDS) or root_ticket or condition
+        ticket = _ticket_of(obj, document_ticket, condition)
         entries.append({
             "where": f"{path.as_posix()}:{where}",
             "shape": "json-entry",
+            "point": _point_of(obj.get("id")),
             "unblock": condition,
             "ticket": ticket,
             "problems": deferred_manual_problems(condition, ticket),
@@ -389,8 +437,8 @@ def deferred_manual_entries(root: Path | None = None) -> list[dict[str, Any]]:
     Two shapes are recognised: a markdown table row whose status cell reads
     ``DEFERRED_MANUAL``, and a JSON object whose status does -- in either
     the ``status`` (run fact) or the ``matrix_status`` (matrix registration)
-    field.  Each entry reports where it is, what it carries, and what it is
-    missing.
+    field.  Each entry reports where it is, which acceptance point it is,
+    what it carries, and what it is missing.
     """
     base = Path(root) if root is not None else REPO_ROOT
     entries: list[dict[str, Any]] = []
@@ -399,3 +447,20 @@ def deferred_manual_entries(root: Path | None = None) -> list[dict[str, Any]]:
     for path in sorted(base.glob("docs/**/*.json")):
         entries.extend(_json_entries(path))
     return entries
+
+
+def deferred_manual_points(root: Path | None = None) -> list[str]:
+    """The acceptance points that carry a ``DEFERRED_MANUAL`` entry.
+
+    One acceptance point shows up twice: once as a row of the matrix and once
+    as an object of the report.  The **records** are therefore more than the
+    **points**, and a count that confuses the two overstates the rule's
+    reach.  The point is the leading coordinate (``AC-04-03``), which both
+    shapes write.
+    """
+    points: list[str] = []
+    for entry in deferred_manual_entries(root):
+        point = entry.get("point") or ""
+        if point and point not in points:
+            points.append(point)
+    return points
