@@ -574,10 +574,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
-            ("frontend/src/api/lingdoc/g2Context.ts", "file"),
-            ("frontend/src/api/lingdoc/g2Context.test.js", "file"),
+            ("frontend/src/api/lingdoc/agentContext.ts", "file"),
+            ("frontend/src/api/lingdoc/agentContext.test.ts", "file"),
             ("frontend/src/views/lingdoc/ContextPackagePanel.vue", "file"),
-            ("frontend/src/views/lingdoc/ContextPackagePanel.test.js", "file"),
+            ("frontend/src/views/lingdoc/ContextPackagePanel.test.ts", "file"),
+            ("docs/08-本轮实施方案/PF-6-上下文包前端消费.md", "file"),
+            ("docs/08-本轮实施方案/T431-验证报告.json", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -598,6 +600,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "事实区只由预览结果刷新，增删之后必须重新预览；"
             "卡片状态按 id 与 version 双重对齐，对不上显示「状态未知」而不是回退；"
             "选择理由按服务端原文逐条展示，前端不把它解析成条目映射。"
+            "**2026-10-23 施工前实测修正了路径名**："
+            "最初登记的两个实现文件里，API 模块名以交付批次代号开头"
+            "（原名 g2Context.ts），而命名登记表把 ^[gGtT]\\d 判为编号命名——"
+            "实测新增该文件会让守护测试报「breaks numbered but is not declared "
+            "in the registry」并以退出码 1 失败，"
+            "而改名后的 agentContext.ts 不报；"
+            "PF-1 当年也把登记的 g6Runtime.ts 改成了 runtimeMetrics.ts，是同一类修正。"
+            "两个测试文件同时从 .test.js 改成 .test.ts"
+            "（仓内前端测试的主流形态，且已有组件用 .test.ts 的先例）。"
+            "路径集 4 -> 6 条：另两条是本面的开发计划与验证报告。"
         ),
     },
 )
