@@ -849,6 +849,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # #504 的守护测试：标识不漂（产出器里不出现票号）、标识齐全、
             # 「没跑」只有一种拼写。
             ("scripts/ci/test_lingdoc_beta_gap_ids.py", "file"),
+            # #486 的账本写入端：SourceRuntime 持有那一个账本实例，所有适配器共用它。
+            # 生成适配器所在的 workspace/generation.go 由 PF-2 持有 ⇒ 借用，不声明。
+            ("internal/lingdoc/workspace/source_runtime_gorm.go", "file"),
+            # #486 的守护测试：一次调用一行、失败也写、未注入账本不改变行为。
+            ("internal/lingdoc/workspace/generation_model_call_ledger_test.go", "file"),
         ),
         "resolves": (),
         "summary": (
@@ -868,7 +873,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "本面按「owner 保持拥有、借用方落地后归还」的先例借用它们"
             "（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），"
             "**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。"
-            "**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。"
+            "**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。"            "**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。"
             "借用的改动事实记在 PF-10 侧与本面两侧。"
         ),
     },

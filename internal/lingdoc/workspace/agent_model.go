@@ -261,51 +261,105 @@ func (m *HostAgentModel) recordModelCall(ctx context.Context, actor core.Actor, 
 	if m.ledger == nil {
 		return nil
 	}
-	entry := core.ModelCallLedgerEntry{
-		TenantID:   actor.TenantID,
-		ProjectID:  request.Context.ProjectID,
-		Provider:   modelProvider(outcome.models, outcome.modelID),
-		ModelID:    outcome.modelID,
-		RunMode:    rewriteRunMode(outcome.models, outcome.modelID),
-		DurationMS: outcome.durationMS,
-		Status:     core.ModelCallLedgerStatusSucceeded,
-		SourceKind: modelCallSourceKind(request.Purpose),
-		SourceID:   request.Context.CorrelationID,
+	facts := modelCallFacts{
+		tenantID:   actor.TenantID,
+		projectID:  request.Context.ProjectID,
+		provider:   modelProvider(outcome.models, outcome.modelID),
+		modelID:    outcome.modelID,
+		runMode:    rewriteRunMode(outcome.models, outcome.modelID),
+		durationMS: outcome.durationMS,
+		status:     core.ModelCallLedgerStatusSucceeded,
+		sourceKind: modelCallSourceKind(request.Purpose),
+		sourceID:   request.Context.CorrelationID,
 	}
 	if outcome.response != nil {
-		entry.InputTokens = outcome.response.Usage.PromptTokens
-		entry.OutputTokens = outcome.response.Usage.CompletionTokens
+		facts.inputTokens = outcome.response.Usage.PromptTokens
+		facts.outputTokens = outcome.response.Usage.CompletionTokens
 	}
 	if outcome.callErr != nil || outcome.response == nil {
-		// A call that did not answer is a failure with its error code, never a
-		// success: a retry must not look like a first success.
-		entry.Status = core.ModelCallLedgerStatusFailed
-		entry.ErrorCode = core.ModelCallFailureCode(outcome.callErr)
+		facts.status = core.ModelCallLedgerStatusFailed
+		facts.errorCode = core.ModelCallFailureCode(outcome.callErr)
 	}
 	if outcome.options != nil {
 		raw, marshalErr := json.Marshal(outcome.options)
 		if marshalErr != nil {
 			return marshalErr
 		}
-		entry.ParametersJSON = string(raw)
+		facts.parameters = string(raw)
 	}
 	if m.budget != nil {
 		// The budget columns carry the acceptance ledger's semantics: what was
 		// reserved for this call and what it actually consumed. The ledger
 		// records the budget; it does not enforce it.
-		entry.ReservedNanoUSD = generationAcceptancePerCall
+		facts.reservedNanoUSD = generationAcceptancePerCall
 		if outcome.response != nil && outcome.response.Usage.PromptTokens >= 0 && outcome.response.Usage.CompletionTokens >= 0 {
-			entry.ActualNanoUSD = actualDeepSeekCost(outcome.response.Usage.PromptTokens, outcome.response.Usage.CompletionTokens)
+			facts.actualNanoUSD = actualDeepSeekCost(outcome.response.Usage.PromptTokens, outcome.response.Usage.CompletionTokens)
 		}
+	}
+	return recordModelCallRow(ctx, m.ledger, facts)
+}
+
+// modelCallFacts is what one model call actually did, in the shape the ledger
+// records.
+//
+// It is the shared vocabulary of every adapter that calls a provider: the
+// agent turn and the generation run fill this same structure, and one shared
+// writer turns it into a row.  One writer is what keeps "one real model call
+// leaves one row" true no matter which adapter made the call.
+type modelCallFacts struct {
+	tenantID         uint64
+	projectID        string
+	provider         string
+	modelID          string
+	runMode          string
+	durationMS       int64
+	status           string
+	errorCode        string
+	parameters       string
+	sourceKind       string
+	sourceID         string
+	inputTokens      int
+	outputTokens     int
+	reservedNanoUSD int64
+	actualNanoUSD   int64
+}
+
+// recordModelCallRow leaves one ledger row for one model call.
+//
+// The provider and the parameters are taken from what was actually sent, not
+// from a second configuration beside it: a ledger that could disagree with the
+// request would be the very kind of untrustworthy record this ledger exists to
+// remove.
+//
+// The row is written without the caller's cancellation: the provider was
+// called and the tokens were spent, and that does not un-happen because the
+// caller hung up.  A call whose cost nobody can account for is exactly what
+// this ledger exists to prevent.
+func recordModelCallRow(ctx context.Context, ledger core.ModelCallLedger, facts modelCallFacts) error {
+	if ledger == nil {
+		return nil
+	}
+	entry := core.ModelCallLedgerEntry{
+		TenantID:        facts.tenantID,
+		ProjectID:       facts.projectID,
+		Provider:        facts.provider,
+		ModelID:         facts.modelID,
+		RunMode:         facts.runMode,
+		ParametersJSON:  facts.parameters,
+		InputTokens:     facts.inputTokens,
+		OutputTokens:    facts.outputTokens,
+		ReservedNanoUSD: facts.reservedNanoUSD,
+		ActualNanoUSD:   facts.actualNanoUSD,
+		DurationMS:      facts.durationMS,
+		Status:          facts.status,
+		ErrorCode:       facts.errorCode,
+		SourceKind:      facts.sourceKind,
+		SourceID:        facts.sourceID,
 	}
 	if !candidateadoption.ValidRunMode(candidateadoption.RunMode(entry.RunMode)) {
 		return core.ErrInvalidRequest
 	}
-	// The row is written without the caller's cancellation: the provider was
-	// called and the tokens were spent, and that does not un-happen because the
-	// caller hung up. A call whose cost nobody can account for is exactly what
-	// this ledger exists to prevent.
-	return m.ledger.RecordModelCall(context.WithoutCancel(ctx), entry)
+	return ledger.RecordModelCall(context.WithoutCancel(ctx), entry)
 }
 
 // modelProvider returns the provider of the model this call actually used.
