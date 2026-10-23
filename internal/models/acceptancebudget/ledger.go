@@ -53,12 +53,26 @@ type Budget struct {
 }
 
 type Ledger struct {
-	SchemaVersion      int       `json:"schema_version"`
-	Profile            string    `json:"profile"`
-	MaxCalls           int       `json:"max_calls"`
-	InputMaxTokens     int       `json:"input_max_tokens"`
-	OutputMaxTokens    int       `json:"output_max_tokens"`
-	MaxConcurrency     int       `json:"max_concurrency"`
+	SchemaVersion   int    `json:"schema_version"`
+	Profile         string `json:"profile"`
+	MaxCalls        int    `json:"max_calls"`
+	InputMaxTokens  int    `json:"input_max_tokens"`
+	OutputMaxTokens int    `json:"output_max_tokens"`
+	// TotalMaxTokens is the ceiling of input plus output of ONE request.
+	// It is 0 in a ledger written before the ceiling existed, which reads as
+	// "the sum was not limited separately".
+	TotalMaxTokens int `json:"total_max_tokens,omitempty"`
+	MaxConcurrency int `json:"max_concurrency"`
+	// CostBasis names what the money columns of this ledger MEAN.
+	//
+	// It is the difference between "this call cost nothing" and "this
+	// ledger computes no amount". A ledger without a price basis writes 0 in
+	// the money columns because nothing was priced, and a reader who does not
+	// see the basis would read that 0 as a price.
+	//
+	// It is empty in a ledger written before the basis existed, which reads
+	// as the DeepSeek peak-USD basis those ledgers were written under.
+	CostBasis          string    `json:"cost_basis,omitempty"`
 	FXReserveCNYPerUSD int       `json:"usd_to_cny_reserve_rate"`
 	MaxReserveNanoCNY  int64     `json:"max_reserve_nano_cny"`
 	ReservedNanoCNY    int64     `json:"reserved_nano_cny"`
@@ -71,13 +85,31 @@ type Ledger struct {
 }
 
 type Request struct {
-	Number          int                               `json:"number"`
-	Model           string                            `json:"model"`
-	Status          string                            `json:"status"`
-	InputUpperBound int                               `json:"input_upper_bound_tokens"`
-	OutputLimit     int                               `json:"output_limit_tokens"`
-	InputTokens     int                               `json:"input_tokens,omitempty"`
-	OutputTokens    int                               `json:"output_tokens,omitempty"`
+	Number          int    `json:"number"`
+	Model           string `json:"model"`
+	Status          string `json:"status"`
+	InputUpperBound int    `json:"input_upper_bound_tokens"`
+	OutputLimit     int    `json:"output_limit_tokens"`
+	InputTokens     int    `json:"input_tokens,omitempty"`
+	OutputTokens    int    `json:"output_tokens,omitempty"`
+	// TotalTokens is the total token count the provider reported.
+	//
+	// It is 0 when the provider reported no total; the input and output
+	// counters are then the provider's own numbers and the total is their
+	// sum. It is never an estimate of a request nobody made.
+	TotalTokens int `json:"total_tokens,omitempty"`
+	// UsageStatus says whether the token counters came from the provider.
+	//
+	// "reported" means they are the provider's numbers. "unavailable" means
+	// the provider reported no usage: the counters are then empty, because
+	// an estimate written as an actual usage is a false record.
+	//
+	// It is empty in a ledger written before the status existed, which reads
+	// as "reported" -- those ledgers only ever recorded provider numbers.
+	UsageStatus string `json:"usage_status,omitempty"`
+	// CostBasis names what this request's money columns mean. See the
+	// ledger-level field of the same name.
+	CostBasis       string                            `json:"cost_basis,omitempty"`
 	ReservedNanoCNY int64                             `json:"reserved_nano_cny"`
 	ActualNanoCNY   int64                             `json:"actual_nano_cny,omitempty"`
 	ReservedNanoUSD int64                             `json:"reserved_nano_usd,omitempty"`
@@ -85,6 +117,18 @@ type Request struct {
 	FinishReason    string                            `json:"finish_reason,omitempty"`
 	CreatedAt       time.Time                         `json:"created_at"`
 	Reconciliation  *EmbeddingHTTPErrorReconciliation `json:"reconciliation,omitempty"`
+}
+
+// Usage is the token usage one provider call reported.
+//
+// Reported says whether the provider answered with usage at all. A call whose
+// provider reported nothing carries no counters: the ledger records
+// "unavailable" instead of an estimate.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+	Reported     bool
 }
 
 type Reservation struct {
@@ -115,10 +159,16 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	if b == nil || !SupportedProfile(b.profile) || !filepath.IsAbs(b.ledgerPath) {
 		return nil, ErrUnavailable
 	}
-	if inputUpperBound < 0 || inputUpperBound > InputMax || outputLimit < 0 || outputLimit > OutputMax {
+	inputMax, outputMax, totalMax := ProfileTokenLimits(b.profile)
+	if inputUpperBound < 0 || inputUpperBound > inputMax || outputLimit < 0 || outputLimit > outputMax {
 		return nil, ErrInputTooLarge
 	}
-	if model == QwenEmbeddingFlash && b.profile != CostOnlyProfile {
+	if inputUpperBound+outputLimit > totalMax {
+		return nil, ErrInputTooLarge
+	}
+	// The profile's model allowlist is the gate: a model the profile does not
+	// approve never reaches the provider, whatever the caller asked for.
+	if !ProfileAllowsModel(b.profile, model) {
 		return nil, ErrWrongModel
 	}
 	reserveNanoCNY, reserveNanoUSD, err := reserveAmounts(model, inputUpperBound, outputLimit)
@@ -160,6 +210,7 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 		Status:          "in_flight",
 		InputUpperBound: inputUpperBound,
 		OutputLimit:     outputLimit,
+		CostBasis:       ProfileCostBasis(b.profile),
 		ReservedNanoCNY: reserveNanoCNY,
 		ReservedNanoUSD: reserveNanoUSD,
 		CreatedAt:       time.Now().UTC(),
@@ -174,7 +225,27 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	return &Reservation{budget: b, lockPath: lockPath, lock: lock, requestNum: request.Number, model: model}, nil
 }
 
+// Complete records the outcome of one call whose provider reported its usage.
+//
+// The token counters it writes are the provider's own numbers, and the money
+// it writes is computed from the profile's price basis.
 func (r *Reservation) Complete(status string, inputTokens, outputTokens int, finishReason string, block bool) error {
+	return r.CompleteUsage(status, Usage{
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalTokens:  inputTokens + outputTokens,
+		Reported:     true,
+	}, finishReason, block)
+}
+
+// CompleteUsage records the outcome of one call together with the usage the
+// provider reported.
+//
+// The counters are written as they are given. Reported says whether they came
+// from the provider: a call whose provider reported no usage is recorded as
+// "unavailable", and the caller leaves the counters empty rather than filling
+// them with an estimate.
+func (r *Reservation) CompleteUsage(status string, usage Usage, finishReason string, block bool) error {
 	if r == nil || r.finished || r.lock == nil {
 		return ErrUnavailable
 	}
@@ -191,9 +262,21 @@ func (r *Reservation) Complete(status string, inputTokens, outputTokens int, fin
 		r.release()
 		return ErrBlocked
 	}
+	inputTokens, outputTokens := usage.InputTokens, usage.OutputTokens
+	totalTokens := usage.TotalTokens
+	if totalTokens <= 0 && usage.Reported {
+		// The provider reported no total of its own: the total is the sum of
+		// the two counters it did report. It is arithmetic on reported
+		// numbers, not an estimate of the request.
+		totalTokens = inputTokens + outputTokens
+	}
+	if !usage.Reported {
+		totalTokens = 0
+	}
 	actualNanoCNY, actualNanoUSD, costErr := actualAmounts(r.model, inputTokens, outputTokens)
+	_, _, totalMax := ProfileTokenLimits(r.budget.profile)
 	if costErr != nil || inputTokens < 0 || outputTokens < 0 || inputTokens > request.InputUpperBound ||
-		outputTokens > request.OutputLimit {
+		outputTokens > request.OutputLimit || inputTokens+outputTokens > totalMax {
 		block = true
 		status = "limit_violation"
 		if costErr != nil {
@@ -203,6 +286,12 @@ func (r *Reservation) Complete(status string, inputTokens, outputTokens int, fin
 	request.Status = status
 	request.InputTokens = inputTokens
 	request.OutputTokens = outputTokens
+	request.TotalTokens = totalTokens
+	if usage.Reported {
+		request.UsageStatus = UsageStatusReported
+	} else {
+		request.UsageStatus = UsageStatusUnavailable
+	}
 	request.FinishReason = finishReason
 	request.ActualNanoCNY = actualNanoCNY
 	request.ActualNanoUSD = actualNanoUSD
@@ -227,8 +316,20 @@ func (r *Reservation) Complete(status string, inputTokens, outputTokens int, fin
 	return nil
 }
 
+// Unknown records a call whose outcome could not be confirmed.
+//
+// A profile with a price basis keeps charging the full reserved upper bound:
+// that is the priced profile's rule and its reconciliation depends on it. A
+// profile without a price basis writes no counters at all, because the
+// estimate of a request whose usage nobody saw is not a usage.
 func (r *Reservation) Unknown(status string) error {
-	return r.Complete(status, r.upperInputBound(), 0, "", true)
+	if r == nil {
+		return ErrUnavailable
+	}
+	if !ProfilePriced(r.budget.profile) {
+		return r.CompleteUsage(status, Usage{Reported: false}, "", true)
+	}
+	return r.CompleteUsage(status, Usage{InputTokens: r.upperInputBound(), Reported: false}, "", true)
 }
 
 func (r *Reservation) CancelNoCall() error {
@@ -279,6 +380,11 @@ func reserveAmounts(model string, inputUpperBound, outputLimit int) (int64, int6
 	case DeepSeekModel:
 		usd := int64(inputUpperBound)*DeepSeekInputNanoUSDPerToken + int64(outputLimit)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
+	case QwenChatModel:
+		// The Qwen profile has no price basis: no amount is computed here.
+		// The 0 is recorded under the "not_applicable" cost basis, so it
+		// reads as "not computed" and never as "the call was free".
+		return 0, 0, nil
 	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputLimit != 0 {
 			return 0, 0, ErrWrongModel
@@ -298,6 +404,10 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	case DeepSeekModel:
 		usd := int64(inputTokens)*DeepSeekInputNanoUSDPerToken + int64(outputTokens)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
+	case QwenChatModel:
+		// No price basis: the actual amount is not computed, and the ledger
+		// says so through its cost basis.
+		return 0, 0, nil
 	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputTokens != 0 {
 			return 0, 0, ErrWrongModel
@@ -309,27 +419,44 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	}
 }
 
-func SupportedProfile(profile string) bool { return profile == Profile || profile == CostOnlyProfile }
+func SupportedProfile(profile string) bool {
+	return profile == Profile || profile == CostOnlyProfile || profile == QwenProfile
+}
 
 // ProfileLimits retains the original six-call profile and makes zero an explicit
 // no-count-limit value for the separately authorized cost-only profile.
+//
+// The Qwen profile is the third shape: it allows exactly one call and no
+// money at all. Its nano-CNY ceiling is 0 because the profile computes no
+// amount -- the zero is "no price basis", not "no budget".
 func ProfileLimits(profile string) (calls int, nanoCNY int64, backstopCNY int) {
-	if profile == CostOnlyProfile {
+	switch profile {
+	case CostOnlyProfile:
 		return 0, CostOnlyMaxBudgetNanoCNY, 20
+	case QwenProfile:
+		return QwenMaxCalls, 0, 0
+	default:
+		return MaxCalls, MaxBudgetNanoCNY, HumanBackstopCNY
 	}
-	return MaxCalls, MaxBudgetNanoCNY, HumanBackstopCNY
 }
 
 func freshLedger(profile string) Ledger {
 	calls, budget, _ := ProfileLimits(profile)
+	inputMax, outputMax, totalMax := ProfileTokenLimits(profile)
+	fxReserve := int(DeepSeekBudgetFXNanoCNYPerUSD)
+	if !ProfilePriced(profile) {
+		fxReserve = 0
+	}
 	return Ledger{
 		SchemaVersion:      ledgerVersion,
 		Profile:            profile,
 		MaxCalls:           calls,
-		InputMaxTokens:     InputMax,
-		OutputMaxTokens:    OutputMax,
+		InputMaxTokens:     inputMax,
+		OutputMaxTokens:    outputMax,
+		TotalMaxTokens:     totalMax,
 		MaxConcurrency:     MaxConcurrency,
-		FXReserveCNYPerUSD: int(DeepSeekBudgetFXNanoCNYPerUSD),
+		CostBasis:          ProfileCostBasis(profile),
+		FXReserveCNYPerUSD: fxReserve,
 		MaxReserveNanoCNY:  budget,
 		Requests:           []Request{},
 	}
@@ -369,9 +496,16 @@ func migrateLedgerProfile(ledger Ledger, target string) (Ledger, bool) {
 
 func validLedger(ledger Ledger, profile string) bool {
 	calls, budget, _ := ProfileLimits(profile)
+	inputMax, outputMax, totalMax := ProfileTokenLimits(profile)
+	costBasis := ProfileCostBasis(profile)
+	fxReserve := int(DeepSeekBudgetFXNanoCNYPerUSD)
+	if !ProfilePriced(profile) {
+		fxReserve = 0
+	}
 	if !SupportedProfile(profile) || ledger.SchemaVersion != ledgerVersion || ledger.Profile != profile || ledger.MaxCalls != calls ||
-		ledger.InputMaxTokens != InputMax || ledger.OutputMaxTokens != OutputMax || ledger.MaxConcurrency != MaxConcurrency ||
-		ledger.FXReserveCNYPerUSD != int(DeepSeekBudgetFXNanoCNYPerUSD) || ledger.MaxReserveNanoCNY != budget ||
+		ledger.InputMaxTokens != inputMax || ledger.OutputMaxTokens != outputMax || ledger.MaxConcurrency != MaxConcurrency ||
+		ledger.FXReserveCNYPerUSD != fxReserve || ledger.MaxReserveNanoCNY != budget ||
+		!validLedgerTotalMax(ledger, profile, totalMax) || !validLedgerCostBasis(ledger.CostBasis, profile, costBasis) ||
 		(calls > 0 && len(ledger.Requests) > calls) || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > budget ||
 		ledger.ActualNanoCNY < 0 || ledger.ActualNanoCNY > ledger.ReservedNanoCNY || ledger.ReservedNanoUSD < 0 ||
 		ledger.ActualNanoUSD < 0 || ledger.ActualNanoUSD > ledger.ReservedNanoUSD {
@@ -379,14 +513,18 @@ func validLedger(ledger Ledger, profile string) bool {
 	}
 	var reserveCNY, actualCNY, reserveUSD, actualUSD int64
 	for index, request := range ledger.Requests {
-		if request.Model == QwenEmbeddingFlash && profile != CostOnlyProfile {
+		if !ProfileAllowsModel(profile, request.Model) {
 			return false
 		}
 		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
 			return false
 		}
-		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > InputMax ||
-			request.OutputLimit < 0 || request.OutputLimit > OutputMax || request.InputTokens < 0 || request.OutputTokens < 0 {
+		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > inputMax ||
+			request.OutputLimit < 0 || request.OutputLimit > outputMax || request.InputTokens < 0 || request.OutputTokens < 0 ||
+			request.TotalTokens < 0 || request.InputTokens+request.OutputTokens > totalMax {
+			return false
+		}
+		if !validUsageStatus(request.UsageStatus) || !validLedgerCostBasis(request.CostBasis, profile, costBasis) {
 			return false
 		}
 		expectedCNY, expectedUSD, err := reserveAmounts(request.Model, request.InputUpperBound, request.OutputLimit)
@@ -409,6 +547,39 @@ func validLedger(ledger Ledger, profile string) bool {
 		actualUSD += request.ActualNanoUSD
 	}
 	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD && consistentRecordedCosts(ledger)
+}
+
+// validLedgerTotalMax accepts the token ceiling of the profile.
+//
+// A ledger written before the ceiling existed carries 0, which reads as "the
+// sum was not limited separately". The Qwen profile has no such legacy
+// ledgers, so it insists on the ceiling it was created with.
+func validLedgerTotalMax(ledger Ledger, profile string, totalMax int) bool {
+	if ledger.TotalMaxTokens == totalMax {
+		return true
+	}
+	return profile != QwenProfile && ledger.TotalMaxTokens == 0
+}
+
+// validLedgerCostBasis accepts the cost basis of the profile.
+//
+// An empty basis is a ledger written before the basis existed; it reads as
+// the priced basis those ledgers were written under. A profile without a
+// price basis has no legacy ledgers and must carry its own basis.
+func validLedgerCostBasis(recorded, profile, costBasis string) bool {
+	if recorded == costBasis {
+		return true
+	}
+	return profile != QwenProfile && recorded == ""
+}
+
+func validUsageStatus(status string) bool {
+	switch status {
+	case "", UsageStatusReported, UsageStatusUnavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasUnresolved(ledger Ledger) bool {
