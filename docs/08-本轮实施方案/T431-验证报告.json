@@ -2,12 +2,12 @@
   "mode": "static-and-suite",
   "note": "PF-6 上下文包的前端消费（票 #330，Spec #431）。两件事：把服务端组装好的上下文包原样显示出来（卡片、选择理由、版本基线、卡片状态、权限态），并允许在发出请求前增删引用的卡片。设计要点：契约类型由已有的传输层模块拥有，本面只读不改、不复制第二份；意图（用户勾了什么）与事实（服务端组装了什么）是两个不可互换的类型，事实区只由预览结果刷新；卡片状态按 id 且 version 双重对齐，对不上显示状态未知而不回退；选择理由按服务端原文逐条透传，前端不解析成条目映射。交付物是四个新文件：前端 API 门面模块 agentContext.ts、面板组件 ContextPackagePanel.vue，及各自的测试；不改服务端、不改任何既有前端文件、不改 agentApi.ts。",
   "head": "10c099d746c40a150fa161f3cc700b2238cb623a",
-  "base": "041ebe0f5fce6966bd540f0a973e407c20f48d43",
+  "base": "05fa6b6f2eaea6a520e794b3ffada88d9d3bcabd",
   "head_note": "证据绑定 10c099d746c40a150fa161f3cc700b2238cb623a（两轴评审判 FAIL 之后的返工提交：面板加会话维度、对齐规则归一、关联标识落地、可选键不再恒写、状态类型收紧）。此后的提交只动文档与证据档；核对命令：git diff 10c099d746c40a150fa161f3cc700b2238cb623a <当前 head> -- frontend/ scripts/ 应为空。",
-  "base_note": "基线取 PR #443 的 baseRefOid，即 git merge-base origin/main HEAD。main 在本面施工期间多次前移（80a1863d → c66d39f2），每次前移后本面都把最新 main 合进分支并重跑门禁，让门禁的 diff_range 右端绑定当前 head；当前值见 base 字段，当轮的具体值以 PR body 为准。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
+  "base_note": "基线取 PR #443 的 baseRefOid，即 git merge-base origin/main HEAD。main 在本面施工期间多次前移（80a1863d → c66d39f2 → 041ebe0f → 05fa6b6f），每次前移后本面都把最新 main 合进分支并重跑门禁，让门禁的 diff_range 右端绑定当前 head；当前值见 base 字段，当轮的具体值以 PR body 为准。最后一次前移带进的是 PF-8 交面（PR #446），它改了登记处与路径图：登记处自动合并成功（PF-6 块完好，仍是 claimed + 6 条路径），路径图有三处文本冲突，按「以 main 为骨架、把 PF-6 的事实叠加上去」解决——PF-6 与 PF-8 各自的面表行都保留，段落里「仍未认领」改为「已认领」。并入 PF-8 的九个前端用例后，本地前端全量由 1703 涨到 1712。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
   "commands": [
     "cd frontend && npx tsx --test src/api/lingdoc/agentContext.test.ts src/views/lingdoc/ContextPackagePanel.test.ts  → tests 46 / pass 46 / fail 0",
-    "cd frontend && npm test  → tests 1703 / pass 1702 / fail 0 / skipped 1（既有 skip，不在本面两个文件里）",
+    "cd frontend && npm test  → tests 1712 / pass 1711 / fail 0 / skipped 1（既有 skip，不在本面两个文件里；计数随 main 前移变化——并入 PF-8 的九个新用例后由 1703 涨到 1712）",
     "cd frontend && npm run type-check（vue-tsc --build）  → 退出码 0，零错误",
     "python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'  → Ran 358 tests / OK",
     "python scripts/lingdoc_manifest_baseline.py  → OK（6 baseline face(s), 6 current face(s), 3 baseline claim(s) without a file behind them）",
@@ -42,7 +42,7 @@
       {"name": "Select checks and check diff whitespace", "outcome": "success", "detail": "scope.json: contracts / backend / frontend 均 true，run_providers=true；changed_paths 13 条与本面 diff 一致"},
       {"name": "Validate contract examples and reference trace", "outcome": "success", "detail": "validation-result.json: result=PASS，route_parity=PASS（registered_operations 95 = frontend_calls 95）"},
       {"name": "Test and vet existing LingDoc provider packages", "outcome": "success", "detail": "go test -race -count=1 跑四个 provider 包；go-test.jsonl 末尾 ok github.com/Tencent/WeKnora/internal/lingdoc/workspace（两轮分别 340.399s / 457.708s）；go-vet.log 零输出"},
-      {"name": "Test, type-check and build frontend", "outcome": "success", "detail": "frontend-tests.log: tests 1703 / pass 1702 / fail 0 / skipped 1（与本地逐项一致）；type-check 零错误；build 成功"}
+      {"name": "Test, type-check and build frontend", "outcome": "success", "detail": "frontend-tests.log 的 tests / pass / fail / skipped 四项与本地逐项一致（计数随 main 前移变化，权威值见 PR body）；type-check 零错误；build 成功"}
     ],
     "other_workflows": [
       {"workflow": "frontend.yml", "job": "Test, type-check, and build", "conclusion": "pass（run 39886819173 与 39888822440 两轮均 pass）"},
