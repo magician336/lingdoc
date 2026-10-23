@@ -157,9 +157,9 @@ func TestTheContractStartGenerationNodeIsFoundBySourceKind(t *testing.T) {
 	}
 	var document struct {
 		Steps []struct {
-			ID           string `json:"id"`
-			OperationID  string `json:"operation_id"`
-			Request      struct {
+			ID          string `json:"id"`
+			OperationID string `json:"operation_id"`
+			Request     struct {
 				JSON map[string]any `json:"json"`
 			} `json:"request"`
 		} `json:"steps"`

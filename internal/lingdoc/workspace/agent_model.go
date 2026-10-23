@@ -307,19 +307,19 @@ func (m *HostAgentModel) recordModelCall(ctx context.Context, actor core.Actor, 
 // writer turns it into a row.  One writer is what keeps "one real model call
 // leaves one row" true no matter which adapter made the call.
 type modelCallFacts struct {
-	tenantID         uint64
-	projectID        string
-	provider         string
-	modelID          string
-	runMode          string
-	durationMS       int64
-	status           string
-	errorCode        string
-	parameters       string
-	sourceKind       string
-	sourceID         string
-	inputTokens      int
-	outputTokens     int
+	tenantID        uint64
+	projectID       string
+	provider        string
+	modelID         string
+	runMode         string
+	durationMS      int64
+	status          string
+	errorCode       string
+	parameters      string
+	sourceKind      string
+	sourceID        string
+	inputTokens     int
+	outputTokens    int
 	reservedNanoUSD int64
 	actualNanoUSD   int64
 }
