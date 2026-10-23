@@ -276,6 +276,21 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("LLM模型不存在"))
 		return
 	}
+	// 摘要模型必须能生成文本：Embedding / Rerank / ASR 类型的模型没有
+	// chat 接口，一旦写入 summary_model_id，文档处理阶段会派生出摘要子任务
+	// 去调用 chat/completions 并被服务端拒绝（HTTP 400，无输出）。
+	// 这里按模型类型判定，不按模型名，换个名字就绕不过去。
+	if !types.IsSummaryCapableModelType(llmModel.Type) {
+		logger.ErrorWithFields(ctx, nil, map[string]interface{}{
+			"model_id":   req.LLMModelID,
+			"model_type": string(llmModel.Type),
+			"kb_id":      kbIdStr,
+		})
+		_ = c.Error(errors.NewBadRequestError(fmt.Sprintf(
+			"LLM模型类型为 %s，不能作为摘要模型：摘要模型必须是文本生成类型，Embedding / Rerank / ASR 类型的模型无法用于摘要",
+			llmModel.Type)))
+		return
+	}
 
 	// Embedding模型仅在需要时验证（RAG检索启用时）
 	if req.EmbeddingModelID != "" {
