@@ -700,6 +700,16 @@ func (e generationTaskEnqueuer) EnqueueGenerationAfter(_ context.Context, tenant
 	if err != nil {
 		return err
 	}
-	_, err = e.tasks.Enqueue(asynq.NewTask(types.TypeLingDocGeneration, payload), asynq.Queue(types.QueueSummary), asynq.ProcessIn(delay))
+	// The delayed reschedule enqueues the same task type on the same queue as
+	// the normal path, so it states the same retry budget. Without it this
+	// task would inherit asynq's default of 25 retries and turn one throttled
+	// run into 25 real provider calls, burning the acceptance budget and
+	// blocking every later node of the round.
+	_, err = e.tasks.Enqueue(
+		asynq.NewTask(types.TypeLingDocGeneration, payload),
+		asynq.Queue(types.QueueSummary),
+		asynq.MaxRetry(generation.GenerationTaskMaxRetry),
+		asynq.ProcessIn(delay),
+	)
 	return err
 }
