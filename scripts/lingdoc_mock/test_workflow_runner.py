@@ -62,6 +62,10 @@ class WorkflowRunnerTest(unittest.TestCase):
             ROOT / "docs/08-本轮实施方案/contracts/openapi.json",
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
             sleep=lambda _: None,
+            # The contract takes the material identifier from the environment
+            # (F01-06 binds {{knowledge_id}}); this run traces the contract's
+            # own reference responses, so the identifier is the reference one.
+            variables={"knowledge_id": "k-demo"},
         )
         file_bytes = b"synthetic F01 export bytes; not a real DOCX"
         digest = hashlib.sha256(file_bytes).hexdigest()

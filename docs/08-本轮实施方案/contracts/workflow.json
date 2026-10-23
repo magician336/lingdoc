@@ -13,7 +13,7 @@
     "actor": "u-owner",
     "tenant": "isolated-test-tenant",
     "template": "template-demo",
-    "ready_knowledge": "k-demo",
+    "ready_knowledge": "必须由运行时提供：F01-06 绑定资料用的是 {{knowledge_id}}，执行器用 --knowledge-id <真实标识> 注入；没有默认值，不提供时执行器在发出第一个请求前就报错（不得回退到演示标识）。",
     "model_adapter": "固定候选输出，并使用实际返回来源ID；真实模型另做质量验证。",
     "renderer": "完整验收时必须使用真实导出器。"
   },
@@ -414,7 +414,7 @@
           "Idempotency-Key": "f01-bind-0001"
         },
         "json": {
-          "knowledge_id": "k-demo"
+          "knowledge_id": "{{knowledge_id}}"
         }
       },
       "expected_http": 201,

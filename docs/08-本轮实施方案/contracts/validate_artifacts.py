@@ -259,7 +259,12 @@ def expand(x,env):
     match=re.fullmatch(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',x)
     if match: return env[match[1]]
     return re.sub(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',lambda m:str(env[m[1]]),x)
-env={};resolved=[]
+# A contract may take a value from the environment instead of capturing it
+# (the material identifier at F01-06 is one).  This validator checks the
+# *shape* of a request, so a placeholder of the right type is enough to
+# expand against; the run is where the real value comes from.
+RUNTIME_VARIABLES={'knowledge_id':'k-runtime-placeholder'}
+env=dict(RUNTIME_VARIABLES);resolved=[]
 for step in flow['steps']:
     op=ops[step['operation_id']]
     request=expand(step['request'],env)

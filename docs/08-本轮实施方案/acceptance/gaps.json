@@ -1,0 +1,41 @@
+{
+  "_note": "The gaps the Beta release needs, named by a stable identifier.  The ticket that owns a gap changes; the identifier does not.  Code and evidence quote the identifier, never the ticket number, so a renumbering changes this file alone.",
+  "GAPS": {
+    "GAP-MODEL-CREDENTIAL": {
+      "ticket": "#480",
+      "item": "缺口 2",
+      "title": "真实模型凭据（参数、预算、真实授权来源）",
+      "unblock": "给真实模型凭据后重跑本脚本"
+    },
+    "GAP-ISOLATED-PG": {
+      "ticket": "#480",
+      "item": "缺口 3",
+      "title": "隔离 PostgreSQL 环境（协议 §1）",
+      "unblock": "用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本"
+    },
+    "GAP-MATERIAL-HASH": {
+      "ticket": "#480",
+      "item": "缺口 4",
+      "title": "同一套两章材料及其 SHA-256",
+      "unblock": "用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本"
+    },
+    "GAP-WORD-CHECK": {
+      "ticket": "#480",
+      "item": "缺口 5",
+      "title": "Word/WPS 人工检查表（五个必填字段）",
+      "unblock": "填写 word-check.md 里的五个必填字段并用 --word-check <该文件> 重跑本脚本"
+    },
+    "GAP-WEKNORA-INGEST": {
+      "ticket": "#480",
+      "item": "缺口 7",
+      "title": "WeKnora 真实接入 / 处理 / 检索",
+      "unblock": "让材料真的经过 WeKnora 的接入、处理与检索后重跑本脚本"
+    },
+    "GAP-BROWSER-END-TO-END": {
+      "ticket": "#480",
+      "item": "浏览器端到端 / 三方一致性实测",
+      "title": "浏览器端到端与三方一致性（浏览器 = HTTP = 刷新后读回）",
+      "unblock": "让 HTTP 侧与浏览器侧都跑成后重跑本脚本"
+    }
+  }
+}
