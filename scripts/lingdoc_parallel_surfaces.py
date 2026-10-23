@@ -524,7 +524,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交。"
             "移交是单向的，本面不再声称拥有它（本面路径集 55 → 54 条）。"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
-        
+
             "**2026-10-23 移交给 PF-11**（frontend/src/api/lingdoc/workspace.ts、internal/lingdoc/workspace/client_form_contract_test.go、internal/lingdoc/workspace/http.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
         ),
     },
@@ -777,7 +777,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**将来本面若要动那四个路径或这一条，需人工解一次冲突**"
             "（PF-4 与 PF-8 都在授权判定附近改过代码，"
             "冲突会显式报出来，不会静默覆盖）。"
-        
+
             "**2026-10-23 移交给 PF-11**（docs/08-本轮实施方案/contracts/openapi.json、frontend/src/views/lingdoc/ProjectMembers.vue、internal/lingdoc/workspacecore/context_ports_test.go、internal/lingdoc/workspacecore/migrated_context_ports.go、internal/lingdoc/workspacecore/typed_contracts.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
         ),
     },
@@ -865,7 +865,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "保持开放的：Spec #135 与 #125——本面只交付 research 能力里的"
             "「研究提案契约」这一部分，未关闭；#124（上下文包前端消费）归 PF-6，"
             "其面票 #330 仍未认领；#385 / #386 是 PF-2 的残留票，与本面无关。"
-        
+
             "**2026-10-23 移交给 PF-11**（internal/lingdoc/workspacecore/agent_action_service.go、internal/lingdoc/workspacecore/agent_research_model.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
         ),
     },
@@ -993,7 +993,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（「切回已验证配置」等仍需领域写路径支持）。"
             "2026-10-23 由 magician336 认领并完成；"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
-        
+
             "**2026-10-23 移交给 PF-11**（internal/lingdoc/workspacecore/permission_policy.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
         ),
     },
@@ -1040,7 +1040,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "交付 Spec 是既有的 #130，不新开。迁移编号 000054 / 000133 是预留，"
             "**施工时必须重新核对 origin/main 已占用的编号**（PF-3 用 000052 / 000131，"
             "PF-4 用 000053 / 000132）。#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
-        
+
             "**2026-10-23 移交给 PF-11**（internal/container/lingdoc.go、internal/lingdoc/workspacecore/model.go）：PR #149 的 G5 成员范围改动触碰了这些路径，登记处的重叠检查是路径级的，改了别面的路径就必须显式移交；移交是单向的，本面不再声称拥有（记录见 TRANSFERS）。归还条件：若 PF-11 放弃其中任一路径，由 PF-11 显式移回本面，而不是让路径无人拥有。"
         ),
     },

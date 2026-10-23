@@ -964,4 +964,3 @@ func TestAuthorizationResourceBatchAuditFailureRefusesTheBatch(t *testing.T) {
 		t.Fatal("batch authorization succeeded despite a failed audit write")
 	}
 }
-

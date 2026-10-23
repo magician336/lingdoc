@@ -20,13 +20,13 @@ import (
 // the member and owner service (w.member), and a row is read through the
 // fixture's own database handle (w.db).
 
-// g5RecordRow mirrors the workspace's own record row so the test can compare
+// memberRecordRow mirrors the workspace's own record row so the test can compare
 // the invitation record before and after a denied acceptance.
 //
 // The workspace's row type is unexported and the member context reaches
 // records through its own storage port, so the test states the columns it
 // compares.
-type g5RecordRow struct {
+type memberRecordRow struct {
 	ProjectID   string `gorm:"primaryKey"`
 	Kind        string `gorm:"primaryKey"`
 	ID          string `gorm:"primaryKey"`
@@ -34,9 +34,9 @@ type g5RecordRow struct {
 	PayloadJSON string
 }
 
-func (g5RecordRow) TableName() string { return "lingdoc_g5_records" }
+func (memberRecordRow) TableName() string { return "lingdoc_g5_records" }
 
-// g5DiscardAfterReadRepository discards the project at the moment the test
+// discardAfterReadRepository discards the project at the moment the test
 // chooses: either before the acceptance starts, or after the read-only
 // preflight transaction has returned.
 //
@@ -50,7 +50,7 @@ func (g5RecordRow) TableName() string { return "lingdoc_g5_records" }
 // workspace's record port asserts on the production transaction type that the
 // member context cannot satisfy from outside the workspace module. The
 // discarded project is the production-reachable form of the same fact.
-type g5DiscardAfterReadRepository struct {
+type discardAfterReadRepository struct {
 	core.Repository
 	db        *gorm.DB
 	projectID string
@@ -58,7 +58,7 @@ type g5DiscardAfterReadRepository struct {
 	fired     bool
 }
 
-func (r *g5DiscardAfterReadRepository) Transaction(ctx context.Context, options core.TransactionOptions, fn func(core.Transaction) error) error {
+func (r *discardAfterReadRepository) Transaction(ctx context.Context, options core.TransactionOptions, fn func(core.Transaction) error) error {
 	if err := r.Repository.Transaction(ctx, options, fn); err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (r *g5DiscardAfterReadRepository) Transaction(ctx context.Context, options 
 }
 
 // discard writes the discarded timestamp into the project row.
-func (r *g5DiscardAfterReadRepository) discard() error {
+func (r *discardAfterReadRepository) discard() error {
 	return r.db.Exec("UPDATE lingdoc_projects SET discarded_at = ? WHERE id = ?",
 		time.Now().UTC(), r.projectID).Error
 }
@@ -177,7 +177,7 @@ func TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay(t *testing.T) {
 				}
 				p = authReviewProject(t, w, owner, p.ID)
 			}
-			var invitationBefore g5RecordRow
+			var invitationBefore memberRecordRow
 			if err := db.Where("project_id=? AND kind='invitation' AND id=?", p.ID, invitation.ID).Take(&invitationBefore).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -196,7 +196,7 @@ func TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay(t *testing.T) {
 				return n
 			}
 			auditsBefore, operationsBefore := count("lingdoc_project_audits"), count("lingdoc_operations")
-			discarding := &g5DiscardAfterReadRepository{Repository: core.NewGORMRepository(w.db),
+			discarding := &discardAfterReadRepository{Repository: core.NewGORMRepository(w.db),
 				db: w.db, projectID: p.ID, afterRead: stage == "after-preflight"}
 			w.useRepository(discarding)
 			if stage != "after-preflight" {
@@ -211,7 +211,7 @@ func TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay(t *testing.T) {
 			if after.DiscardedAt == nil || after.ProjectVersion != p.ProjectVersion || !reflect.DeepEqual(after.Members, p.Members) {
 				t.Fatalf("acceptance changed archived project: before=%+v after=%+v", p, after)
 			}
-			var invitationAfter g5RecordRow
+			var invitationAfter memberRecordRow
 			if err := db.Where("project_id=? AND kind='invitation' AND id=?", p.ID, invitation.ID).Take(&invitationAfter).Error; err != nil {
 				t.Fatal(err)
 			}

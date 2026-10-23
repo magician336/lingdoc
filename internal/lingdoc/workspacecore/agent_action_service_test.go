@@ -185,6 +185,7 @@ func (f agentFixture) task(t *testing.T) ResearchTask {
 	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-approve-task", ConfirmationInput{VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "用户确认查询范围"})
 	return decodeAgentJSON[ResearchTask](t, raw, err)
 }
+
 // TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead pins the
 // chapter scope: it reaches the task's asset authorization and the run's
 // source re-read, so a chapter-scoped research operation never falls back to a
