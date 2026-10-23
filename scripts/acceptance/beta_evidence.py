@@ -296,6 +296,23 @@ def check_outcomes(report: dict[str, Any]) -> list[Outcome]:
             status=HELD if check.get("status") == "passed" else FAILED,
             evidence=(f"{check.get('intent')}｜期望 {short(check.get('expected'))}｜"
                       f"实际 {short(check.get('actual'))}")))
+    # A step whose HTTP status did not match the contract never reaches
+    # ``steps``: the runner records the steps that answered as the contract
+    # said.  Its failure therefore lives in ``failures`` and nowhere else, so
+    # without this loop the one step that broke the sequence would have no
+    # conclusion at all -- the run would stop on the derived "variable not
+    # captured" error and the real reason would be lost.  This is the same
+    # shape as the "silent skip is a FAIL" rule: what did not happen has to
+    # say so.
+    reported = {step.get("id") for step in report.get("steps", [])}
+    for step_id, failure in failures.items():
+        if step_id in reported:
+            continue
+        outcomes.append(Outcome(
+            id=f"{step_id} {failure.get('operation_id', '')}".strip(),
+            status=FAILED,
+            evidence=(f"契约声明 HTTP {failure.get('expected')}，实际 {failure.get('actual')}；"
+                      f"该步没有完成，它后面的步骤没有执行。")))
     return outcomes
 
 
