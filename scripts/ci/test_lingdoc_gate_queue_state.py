@@ -174,6 +174,84 @@ class FinishedTests(unittest.TestCase):
         self.assertFalse(result["passed"])
 
 
+class NoCheckRunYetTests(unittest.TestCase):
+    """The third observation form: the aggregate gate has produced no
+    check-run yet.
+
+    A workflow run that has not started has neither a job record nor a
+    check-run.  That is not "the gate did not run" and it is certainly not
+    "the gate passed": it is a gate that has not started.
+    """
+
+    def _run(self, status):
+        return {"id": 40032315607, "name": queue_state.GATE_WORKFLOW_NAME,
+                "status": status, "conclusion": None,
+                "created_at": "2026-10-23T22:14:31Z",
+                "run_started_at": "2026-10-23T22:14:31Z"}
+
+    def test_a_waiting_run_without_a_check_run_is_queued(self):
+        """The run is waiting, so the gate has not started: it is queued."""
+        for status in ("queued", "pending", "waiting", "requested"):
+            with self.subTest(status=status):
+                result = queue_state.judge(None, [], [], self._run(status))
+                self.assertEqual(result["verdict"], queue_state.VERDICT_QUEUED)
+                self.assertTrue(result["queued"])
+                self.assertFalse(result["passed"])
+                self.assertFalse(result["failed"])
+
+    def test_it_says_the_aggregate_gate_has_not_produced_a_check_run(self):
+        result = queue_state.judge(None, [], [], self._run("pending"))
+        self.assertIn("has not produced a check-run yet", result["reason"])
+        self.assertIn("queued", result["reason"])
+
+    def test_the_two_kinds_of_wait_have_different_reasons(self):
+        """Both waits are queued; the reason says which one it is.
+
+        ``pending`` waits behind an earlier run of the same pull request;
+        ``queued`` waits for a runner.  The reaction is the same -- push
+        nothing -- but a reader must be told which wait this is, otherwise
+        the reason cannot tell "the queue is long" from "the previous head
+        is still running".
+        """
+        behind = queue_state.judge(None, [], [], self._run("pending"))
+        for_runner = queue_state.judge(None, [], [], self._run("queued"))
+        self.assertEqual(behind["verdict"], queue_state.VERDICT_QUEUED)
+        self.assertEqual(for_runner["verdict"], queue_state.VERDICT_QUEUED)
+        self.assertNotEqual(behind["reason"], for_runner["reason"])
+        self.assertIn("behind an earlier run", behind["reason"])
+        self.assertIn("waiting for a runner", for_runner["reason"])
+
+    def test_a_waiting_run_is_never_read_as_green(self):
+        """The trap this form sets: nothing here may look like a pass."""
+        result = queue_state.judge(None, [], [], self._run("pending"))
+        self.assertFalse(result["passed"])
+        self.assertNotEqual(result["verdict"], queue_state.VERDICT_PASSED)
+        self.assertNotEqual(result["verdict"], queue_state.VERDICT_FAILED)
+
+    def test_a_running_run_without_a_check_run_is_missing(self):
+        """The run has started, so the gate's state cannot be established."""
+        result = queue_state.judge(None, [], [], self._run("in_progress"))
+        self.assertEqual(result["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(result["passed"])
+
+    def test_a_finished_run_without_a_check_run_is_missing(self):
+        result = queue_state.judge(None, [], [], self._run("completed"))
+        self.assertEqual(result["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(result["passed"])
+
+    def test_no_run_at_all_is_missing(self):
+        result = queue_state.judge(None, [], [], None)
+        self.assertEqual(result["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(result["passed"])
+
+    def test_a_run_without_a_waiting_state_is_missing(self):
+        """A run that does not say it is waiting does not make the gate
+        queued: the data does not say, so the verdict stays ``missing``."""
+        result = queue_state.judge(None, [], [], self._run(""))
+        self.assertEqual(result["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(result["passed"])
+
+
 class UndecidedTests(unittest.TestCase):
     """Data that does not say must not be read as green."""
 
@@ -272,6 +350,17 @@ class StubApi:
         return self.check_records
 
 
+class _FakeStdout(io.StringIO):
+    """A stdout that records how it was asked to encode."""
+
+    def __init__(self):
+        super().__init__()
+        self.reconfigured = None
+
+    def reconfigure(self, **options):
+        self.reconfigured = options
+
+
 class CommandLineTests(unittest.TestCase):
     """The command prints one machine-readable answer."""
 
@@ -336,6 +425,116 @@ class CommandLineTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertEqual(answer["verdict"], queue_state.VERDICT_MISSING)
         self.assertFalse(answer["passed"])
+
+    def test_a_waiting_gate_run_without_a_check_run_reads_as_queued(self):
+        """The third observation form, end to end.
+
+        The gate's workflow run has not started: the other workflows of the
+        head are done, the gate has no check-run yet.  The answer is "queued",
+        and it is never "passed".
+        """
+        api = StubApi(
+            pull={"head": {"sha": "abc123"}},
+            runs=[{"id": 40032315607,
+                   "name": queue_state.GATE_WORKFLOW_NAME,
+                   "status": "pending", "conclusion": None}],
+            jobs=[],
+            checks=[])
+        code, answer = self._run(["--pr", "550"], api)
+        self.assertEqual(code, 0)
+        self.assertEqual(answer["verdict"], queue_state.VERDICT_QUEUED)
+        self.assertTrue(answer["queued"])
+        self.assertFalse(answer["passed"])
+        self.assertIn("has not produced a check-run yet", answer["reason"])
+
+    def test_the_two_kinds_of_wait_are_told_apart_by_the_run_status(self):
+        """``evidence.run.status`` is the machine-readable discriminator.
+
+        The two waits are both ``queued`` and are handled the same way, so
+        the reader needs one field that says which wait this is.
+        """
+        def answer_for(status):
+            api = StubApi(
+                pull={"head": {"sha": "abc123"}},
+                runs=[{"id": 40032315607,
+                       "name": queue_state.GATE_WORKFLOW_NAME,
+                       "status": status, "conclusion": None}],
+                jobs=[],
+                checks=[])
+            return self._run(["--pr", "550"], api)
+
+        _code, behind = answer_for("pending")
+        _code, for_runner = answer_for("queued")
+        self.assertEqual(behind["verdict"], queue_state.VERDICT_QUEUED)
+        self.assertEqual(for_runner["verdict"], queue_state.VERDICT_QUEUED)
+        self.assertEqual(behind["evidence"]["run"]["status"], "pending")
+        self.assertEqual(for_runner["evidence"]["run"]["status"], "queued")
+        self.assertNotEqual(behind["reason"], for_runner["reason"])
+
+    def test_a_head_without_any_gate_run_exits_two(self):
+        """The true missing form: not even a run says the gate is waiting.
+
+        This is the boundary of the third form.  A run that says it is
+        waiting is ``queued``; no run at all is ``missing`` -- and the exit
+        code says so.
+        """
+        api = StubApi(pull={"head": {"sha": "abc123"}},
+                      runs=[], jobs=[], checks=[])
+        code, answer = self._run(["--pr", "550"], api)
+        self.assertEqual(code, 2)
+        self.assertEqual(answer["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(answer["passed"])
+        self.assertIsNone(answer["evidence"]["run"])
+
+    def test_a_running_gate_run_without_a_check_run_exits_two(self):
+        """The run has started but produced no check-run: still missing."""
+        api = StubApi(
+            pull={"head": {"sha": "abc123"}},
+            runs=[{"id": 40032315607,
+                   "name": queue_state.GATE_WORKFLOW_NAME,
+                   "status": "in_progress", "conclusion": None}],
+            jobs=[],
+            checks=[])
+        code, answer = self._run(["--pr", "550"], api)
+        self.assertEqual(code, 2)
+        self.assertEqual(answer["verdict"], queue_state.VERDICT_MISSING)
+        self.assertFalse(answer["passed"])
+
+    def test_the_console_is_told_not_to_die_on_its_code_page(self):
+        """A name GitHub published must not crash the printing.
+
+        Windows consoles default to a code page that cannot encode every
+        character (``U+2713``, an emoji).  A crash there would exit
+        non-zero, which a caller reads as "the gate said no".
+        """
+        api = StubApi(pull={"head": {"sha": "abc123"}}, checks=[])
+        fake = _FakeStdout()
+        with contextlib.redirect_stdout(fake):
+            queue_state.main(["--pr", "550"], api=api)
+        self.assertEqual(fake.reconfigured,
+                         {"encoding": "utf-8", "errors": "replace"})
+
+    def test_a_non_ascii_name_survives_the_answer(self):
+        """The name comes back verbatim, and nothing crashes on the way.
+
+        A job name is GitHub-published text like any other, so it can hold
+        a character the console's code page cannot encode.
+        """
+        api = StubApi(
+            pull={"head": {"sha": "abc123"}},
+            runs=[{"id": 42, "name": queue_state.GATE_WORKFLOW_NAME,
+                   "status": "in_progress", "conclusion": None}],
+            jobs=[gate_job(),
+                  {"id": 7, "name": "F01 runner regression \u2713",
+                   "status": "completed", "conclusion": "success",
+                   "started_at": "2026-10-23T18:24:21Z",
+                   "completed_at": "2026-10-23T18:24:29Z"}],
+            checks=[gate_check()])
+        code, answer = self._run(["--pr", "550"], api)
+        self.assertEqual(code, 0)
+        names = [job["name"] for job in answer["evidence"]["jobs"]]
+        self.assertIn("F01 runner regression \u2713", names)
+        self.assertEqual(answer["verdict"], queue_state.VERDICT_QUEUED)
 
     def test_the_repository_comes_from_the_environment(self):
         previous = os.environ.get("GITHUB_REPOSITORY")
