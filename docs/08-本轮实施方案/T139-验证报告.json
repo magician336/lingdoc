@@ -211,12 +211,14 @@
       "unblock": "在带 LINGDOC_TEST_POSTGRES_DSN 的 job 里执行 go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1"
     },
     {
-      "id": "AC-04-03 真人浏览器完整链（管理员发布→创建者复制→召回展示→空态/失败重试）",
+      "id": "AC-04-03 真人浏览器完整链（模板目录 → 版本列表 → 版本详情 → 授权来源检查 → 发布 → 导出）",
       "status": "not_run",
-      "matrix_status": "PASS (follow-up)",
+      "matrix_status": "DEFERRED_MANUAL",
       "executed": false,
-      "follow_up_issue": "<待管理会话开一张独立跟进票（真人浏览器完整链验收）并回填链接>",
-      "reason": "本轮未在真实浏览器执行该链；本机 Docker engine pipe 不存在，Hosted CI 的 HTTP/数据库测试不等于浏览器验收。判定状态按《开发规则》§2 改判为 PASS (follow-up)（人工前置项统一放到最后，不阻塞代码开发），但实测事实仍是 NOT RUN，未写成已实测",
+      "follow_up_issue": "#523",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/523",
+      "unblock_condition": "#523 关闭且证据满足：按步骤命名的截图落仓外证据目录、控制台无错误、关键请求与响应摘要、人工判定结论，并回填本条目的证据路径（保留条目本身，不删除）；证据不含密钥",
+      "reason": "本轮未在真实浏览器执行该链；本机 Docker engine pipe 不存在，Hosted CI 的 HTTP/数据库测试不等于浏览器验收。按现行验收协议门槛，矩阵判定状态记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过。DEFERRED_MANUAL 的状态定义见验收协议（另由独立 PR 落地），本报告只使用状态名",
       "unblock": "在带 postgres:17 的本地栈用真实浏览器跑完该链，并把截图与读回写进 T139-验证报告.json 的 passed[]"
     },
     {
@@ -253,7 +255,7 @@
     "门禁在本轮实测为绿的部分：scripts/ci 全套 354 tests OK、命名登记处 80 tests OK（棘轮 0/0/0）、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0、三包 go test 全绿、前端 test/type-check/build 全绿；尚未跑的是新 head 的 CI 作业与真人浏览器链。",
     "PR #446（PF-8）已于 2026-10-23 11:13 合入 main（05fa6b6f）：它的 PF-8 面把 service_facade.go / typed_contracts.go / context_ports_test.go / contracts/openapi.json 还回 PF-4。本面已在新 main 上重做并按新归属重算移交，不再与 #446 并行冲突；它对 Workspace.vue 的改动（RuntimeOpsPanel）与本面共存。",
     "PR #472（登记 PF-7 / PF-9）于 2026-10-23 11:39 合入 main（275d438b）：它只碰了登记处与路径图，登记处新增两个面并永久移交 6 条路径，与本面 PF-13 的 27 条路径无交集（登记处 10 面 validated）。本面据此第三次落基。PR #473 于 11:59 合入（015bd122），同样只改 PF-8 的面 summary，本面据此第四次落基；PR #475 于 12:40 合入（f0fbd487），改的是 PF-7 的面 summary（把迁移号让给 #465 的 PF-10），本面据此第五次落基；PR #443 于 13:18 合入（52f5b615，PF-6 上下文包前端消费），同样改了登记处与路径图，本面据此第六次落基（登记处自动合并、路径图一处冲突手解）；PR #478 于 13:46 合入（743db967，PF-6 交面：登记处 status 改 done + 路径图同步），同样改这两个共享文件，本面据此第七次落基（登记处自动合并、路径图两处冲突手解）；PR #474 于 14:13 合入（a91e3697，#465 的 PF-10 Beta 面登记进登记处），同样改这两个共享文件，本面据此第八次落基（登记处自动合并、路径图两处冲突手解，loader 校验 11 个面）。六次登记处变更都不与本面 PF-13 的 27 条路径相交。",
-    "AC-04-03（真人浏览器完整链）按《开发规则》§2 改判为 PASS (follow-up)：实测事实仍是 NOT RUN（本轮未在真实浏览器执行该链），未写成已实测；跟进票需由管理会话开并回填链接（见 not_run[] 的 AC-04-03 条目 follow_up_issue 字段）。矩阵的 PG 侧（AC-04-01/02/04）与本机 Docker 三轮（AC-04-04）维持 NOT RUN，登记在 not_run[]。",
+    "AC-04-03（真人浏览器完整链）按现行验收协议门槛记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过；实测事实仍为未执行（executed=false，条目保留在 not_run[] 里）。解除条件 = 跟进票 #523 关闭且证据满足（见 not_run[] 的 AC-04-03 条目 follow_up_issue 与 unblock_condition 字段）。矩阵的 PG 侧（AC-04-01/02/04）与本机 Docker 三轮（AC-04-04）维持 NOT RUN，登记在 not_run[]。代码合并不等于 Beta 首版验收通过；完整 Beta 验收仍依据正式验收标准判定。",
     "词表漂移（真实代码项）：governance.Actor.Role 仍是无类型 string（governance.Actor 是 rulesetstore.Actor 的类型别名，internal/lingdoc/templategovernance/model.go:18；rulesetstore.Actor.Role 见 internal/lingdoc/rulesetstore/store.go:59-63）。把 Role 收成 types.TenantRole 不改变 API 契约的字段形状（该结构不跨 HTTP 边界，contracts/openapi.json 无此字段），但会连带改动 rulesetstore 包、internal/container/lingdoc.go（登记处属 PF-7）、internal/router/lingdoc_routes_test.go（属 PF-8）与 internal/lingdoc/workspace/template_governance_adapter_test.go（属 PF-11），并牵动 rulesetstore 既有取值（如 tenant_admin）不在 types.TenantRole 的四个合法值内 ⇒ 属跨包契约变更，本 PR 不改，另开票处理。本 PR 在本面路径内补了运行期断言：治理 seam 拒绝非法角色取值，且身份不可归属时不以该身份署名写收据（TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt）。"
   ]
 }
