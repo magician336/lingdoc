@@ -2,11 +2,11 @@
 
 > 本表按《验收判定口径》v1 判定；口径 commit = `1f195def6fb984d43876567bfe365222c34b46b5`；本表验收点总数 = 31（原子验收点口径：US 15 + TD 按 §1.2 展开 16）。
 
-- **判定 head（产品与测试候选）**：`0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c`（tree `0fbb6fa9ee3b0bc21330d0400c402d7009833189`）
-- **基线**：`main@bbd461ac4cbe68bbee0f2bdcb9a2ea7a4579b9be`（本面按此基线落基；其间 main 前移九次：PR #446（PF-8）合入、PR #472 登记 PF-7 / PF-9、PR #473 写 PF-8 移交顺序、PR #475 让 #465 的 PF-10 取迁移号、PR #443 合入 PF-6 上下文包前端消费、PR #478 合入 PF-6 交面、PR #474 合入 #465 的 PF-10 Beta 面、PR #493 合入 PF-10 的 F01 捕获链诊断、PR #498 合入 #494 资料标识参数化）
+- **判定 head（产品与测试候选）**：`0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c`（tree `0fbb6fa9ee3b0bc21330d0400c402d7009833189`）——这是**落基八的落证提交**（父提交 = main@a91e3697）：产品、测试与契约产物都在这一个提交上。此后落基九（main@0ec51042）、落基十（main@bbd461ac）与本轮落基十一（main@81d0b099，PR #149 与 PR #503 合入后）**只动基线**，本面 24 条路径上的产品/测试增量逐字节未变；核对方式：`git diff 0131b8eb HEAD -- <本面 24 条路径>` 只命中 `internal/lingdoc/workspacecore/context_ports_test.go`，且该文件的增量与候选提交逐行相同（差异仅是 main 侧行号位移——PR #149 在其上方插入过内容）。⇒ **候选 SHA 与 tree 保持不变，仍是产品与测试的唯一落证。**
+- **基线**：`main@81d0b099dd96ecd2a0d7389e00e987d7843f693b`（**落基十一**；本面按此基线落基：其间 main 前移十一次——落基一到十的 main 前移九次记在下方「本轮执行记录」，落基十一吸收 PR #149（PF-11 G5 项目成员）与 PR #503（PF-7 审计链完整性）两次合入；落基十一是**纯基线合并**（`git merge origin/main`），本面 24 条路径的产品/测试增量未变，见上一条）
 - **证据文件**：[T139-验证报告.json](T139-验证报告.json)（`passed[]` / `not_run[]` / `known_limits[]`）
-- **判定状态**：`PASS` / `FAIL` / `NOT RUN` 三值；部分通过即 `FAIL`。**交付分类**与判定状态是两个维度。
-- **NOT RUN 的登记位置**：`T139-验证报告.json` 的 `not_run[]`，每条带机器可读的 `unblock`。按路径缩面而跳过的作业也登记在这里。
+- **判定状态**：`PASS` / `FAIL` / `NOT RUN` 三值；部分通过即 `FAIL`。**交付分类**与判定状态是两个维度。人工前置项按《开发规则》§2 另记 `PASS (follow-up)`（必须链接独立跟进 Issue），其**实测事实仍为 NOT RUN**，不得写成已实测。
+- **NOT RUN 的登记位置**：`T139-验证报告.json` 的 `not_run[]`，每条带机器可读的 `unblock`。按路径缩面而跳过的作业也登记在这里。人工前置项的**判定状态**记在该条目的 `matrix_status` 字段（见下方 AC-04 系列小表），事实仍留在 `not_run[]` 里。
 
 | 定位坐标 | 验收点原文 | 判定状态 | 交付分类 | 证据 | 备注 |
 | --- | --- | --- | --- | --- | --- |
@@ -39,8 +39,22 @@
 | TD-03.4 | 撤回后复制 | PASS | 已交付 | `TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory`；`go test ./internal/lingdoc/workspace/ -run '^TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory$' -count=1`；head `0131b8eb` | — |
 | TD-03.5 | 越权发布 | PASS | 已交付 | `TestReaderCannotSeeUnpublishedCatalogDraft`；`go test ./internal/lingdoc/workspace/ -run '^TestReaderCannotSeeUnpublishedCatalogDraft$' -count=1`；head `0131b8eb` | HTTP 仍回 404 反枚举，治理审计记 permission_denied。 |
 | TD-03.6 | 过期版本发布和审计失败 | PASS | 已交付 | `TestCatalogRejectedMutationAuditsFailureWithoutChangingDraft`；`go test ./internal/lingdoc/templategovernance/ -run '^TestCatalogRejectedMutationAuditsFailureWithoutChangingDraft$' -count=1`；head `0131b8eb` | 收据写失败会作为错误返回，不静默丢弃。 |
-| TD-04 | 需要验证 SQLite/PostgreSQL 对称迁移、重启读回、并发发布和幂等重试。 | NOT RUN | 已交付 | — | PG 侧在 CI 里没有可跑的位置（票 #360，已由在飞 PR #463 实现）：app.yml 无 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database。解除条件见 T139-验证报告.json 的 not_run[]。 |
+| TD-04 | 需要验证 SQLite/PostgreSQL 对称迁移、重启读回、并发发布和幂等重试。 | NOT RUN | 已交付 | — | 本条**只隔离 SQL 投影**：SQLite 侧的投影与幂等/并发门由 `TestCatalogHTTPProductionDatabaseParity`（SQLite 变体）等用例跑通；**生产成员态的 PG 用例见 `internal/lingdoc/workspace/template_governance_adapter_postgres_test.go:117`**（`TestPostgresTemplateCatalogVisibilityUsesProductionMembership`）。**矩阵 PG 侧登记 NOT RUN（AC-04-01/02/04）**——CI 里没有可跑 PG 的位置（票 #360，已由 PR #463 实现）：app.yml 无 PG service；带 PG service 的 lingdoc-interface-integration.yml 不跑 internal/database。解除条件见 T139-验证报告.json 的 not_run[]。 |
 | TD-05 | 前端测试覆盖目录空态、加载失败、版本状态、适用范围、召回提示和复制入口；不复制服务端状态机。 | PASS | 已交付 | 前端用例「catalog choice exposes exact version, scope, origin and hashes without official claim」；`npx tsx --test src/views/lingdoc/firstPassEntryState.test.ts`；head `0131b8eb` | 前端只测读状态与呈现，不复制服务端状态机；面板另有 TemplateGovernancePanel.test.ts 覆盖错误事件与旧响应作废。 |
+
+## 环境受限与人工前置项（AC-04 系列；**不计入** 31 个原子验收点）
+
+判定状态按《开发规则》§2：`PASS (follow-up)` 表示本 PR 接受该项不阻塞，但**必须链接独立跟进 Issue**，且**不得把未运行写成已实测**——下表的「实测事实」列如实保留未运行这一事实。
+
+| 登记号 | 事项 | 判定状态 | 实测事实 | 解除条件 / 跟进 |
+| --- | --- | --- | --- | --- |
+| AC-04-01 | PG 侧迁移演练（SQLite/PostgreSQL 对称） | NOT RUN | 未运行 | CI 无 PG 迁移演练位置（票 #360，已由 PR #463 实现）：在带 postgres:17 service 的 job 里跑 `go test ./internal/database/...` |
+| AC-04-02 | `internal/lingdoc/workspace` 的 PostgreSQL 变体 | NOT RUN | 未运行 | 在带 `LINGDOC_TEST_POSTGRES_DSN` 的 job 里跑 `go test ./internal/lingdoc/workspace/ -run '^TestCatalogHTTPProductionDatabaseParity$' -count=1` |
+| AC-04-03 | 真人浏览器完整链（管理员发布→创建者复制→召回展示→空态/失败重试） | **PASS (follow-up)** | **NOT RUN（本轮未在真实浏览器执行该链）** | **需管理会话开一张独立跟进票并回填链接**（票号待回填）；票开前该项在跟踪状态上仍为未实测 |
+| AC-04-04 | 本机 Docker 下的隔离 PostgreSQL 17 连续三轮实跑 | NOT RUN | 未运行 | Docker 可用时在 postgres:17 容器里跑 `go test -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' -count=3` |
+| AC-04-05 | 按 diff 内容缩面而跳过的 CI 作业 | NOT RUN | 未运行 | 最后一次推送包含 `.go` 改动，或 reopen 本 PR 让门禁按整个 PR 的 range 计算 |
+
+> **放行口径提醒**：《开发规则》§2 写的是「当前交付范围内的矩阵出现 `TODO`、`NOT RUN` 或 `BLOCKED` 时，PR 不能放行」。AC-04-01/02/04/05 是**宿主与 CI 的环境限制**（PG 侧与本机 Docker 不可用），不是产品断言未完成；AC-04-03 是**人工前置项**（用户裁定：人工前置统一放到最后，不阻塞代码开发），已改判 `PASS (follow-up)`，但**实测事实仍是 NOT RUN**。是否把 PG 侧 NOT RUN 计入「当前交付范围的必需项」是放行时的人工判断点，本表不代为裁决。
 
 ## 本轮执行记录
 
@@ -59,6 +73,7 @@
 - **V13**：第八次落基（main@a91e3697，PR #474 合入 #465 的 PF-10 Beta 面）——**#474 把 #465 的 PF-10 面正式登记进 main ⇒ 改名的必要性被实证**（若本面仍叫 PF-10，合并后 main 会有两个同名面，loader 拒绝加载）；登记处三方合并自动成功（main 的 PF-10 与本面 PF-13 两个面都在，loader 校验 **11 面 validated**），路径图两处冲突手解（取 main 的 PF-10 事实 + 本面的 PF-13 附注，面数统一为十一个面）；产品与测试的 26 个文件与第七遍候选 `ec31b729` **逐字节相同**；本遍重跑与登记处/格式相关的校验（登记处 11 面 validated、票面一致性 36 tests OK、scripts/ci 全套 358 tests OK、命名登记处 80 tests OK、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0），head `0131b8eb`
 - **V15**：第十次落基（main@bbd461ac，PR #498 合入 #494 资料标识参数化）＋**按管理会话裁决拆分 PR-1 / PR-2**——本 PR（PR-1）把登记处与路径图交还共享文件锁（内容恢复成 origin/main 的版本，净差集 30 → 28 个文件），只留代码、测试、契约产物与验收证据；产品与测试的 26 个文件与第九遍候选 `0131b8eb` **逐字节相同**（候选不变）；本遍重跑校验（登记处 11 面 validated —— 本 PR 不改登记处、loader 读到的是 main 的 11 个面、票面一致性 36 tests OK、**scripts/ci 全套 418 tests OK**（main 的 #498 新增 18 条）、命名登记处 80 tests OK、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0），head `0131b8eb`
 - **V14**：第九次落基（main@0ec51042，PR #493 合入 PF-10 的 F01 捕获链诊断）——main 未改登记处与路径图 ⇒ `git merge origin/main` **零冲突**（不改写历史、不 force push）；本面 30 个改动文件与上一遍候选 `0131b8eb` **逐字节相同**（只有基线变了，候选不变）；本遍重跑与登记处/格式相关的校验（登记处 11 面 validated、票面一致性 36 tests OK、scripts/ci 全套 400 tests OK（main 的 #493 新增 10 条）、命名登记处 80 tests OK、契约校验 PASS、gofmt 无输出、go build 与 go vet exit 0），head `ed3dbe23`
+- **V16**：第十一次落基（main@81d0b099，PR #149（PF-11 G5 项目成员）与 PR #503（PF-7 审计链完整性）合入后）——**纯基线合并，合并零冲突**；本面 24 条路径的产品/测试增量与候选 `0131b8eb` **逐字节相同**（`git diff 0131b8eb HEAD -- <24 条路径>` 只命中 `internal/lingdoc/workspacecore/context_ports_test.go`，且其增量与候选提交逐行相同，差异仅是 main 侧行号位移）。本遍实测（命令与退出码见 PR 正文「收尾」段）：`go test -p=2 -count=1 -timeout=25m ./internal/lingdoc/templategovernance/ ./internal/lingdoc/workspacecore/ ./internal/lingdoc/workspace/` — PASS（4.018s / 37.464s / 164.927s）；`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` — 423 tests OK（命名登记处棘轮 0/0/0 未增债）；`python scripts/lingdoc_parallel_surfaces.py` — 11 面 validated；`python scripts/lingdoc_ticket_ownership.py` — exit 0；契约校验 `validate_artifacts.py --source-root .` — `result=PASS`；`gofmt -l` 对本 PR 的 Go 文件无输出；`go vet` 三个包 exit 0；`go build ./...` exit 0（**本机环境限制**：第三方 `sqlite-vec` 的 cgo 依赖 `sqlite3.h`，裸环境编译失败，base 同样失败——本机用 `CGO_CFLAGS` 指向本机 mingw 自带的 sqlite3 头后通过，**未改任何仓库文件**）
 
 ## 已知限制
 
@@ -76,4 +91,5 @@
 - **本面不再改登记处与路径图**（按管理会话的拆分裁决）：`scripts/lingdoc_parallel_surfaces.py`（登记处）与 `docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md`（路径图）是**所有面共享的文件**，当前由 **PF-14 持 L1/L2 锁** ⇒ 本 PR（PR-1）把两者的内容**恢复成 origin/main 的版本**，净差集由 30 个文件缩到 **28** 个（= 本面路径 24 条 + owner 归 PF-11 的 3 条 + 保留路径 `Workspace.vue` 1 条）；**登记处 PF-13 的登记（24 条路径 + 借用说明 + PF-4 / PF-5 的移交记录）与路径图面表行改在交面票 PR-2 落**（排队等 L1/L2 释放）。⇒ 本 PR 对这两个共享文件的净改动为零。
 - 路径所有权：本面依 #441 §1.3 从 PF-4 接过 service_facade.go 一条、从 PF-5 接过 template_governance_runtime.go 一条（**登记处的移交记录随交面票 PR-2 落**，本 PR 不碰登记处）；frontend/src/views/lingdoc/Workspace.vue 是保留路径，本 PR **借用**：只记改动事实，不独占。**service_facade.go 只由本面拿**（PF-4 交出，无冲突），**template_governance_runtime.go 由 PF-5 单向移交本面**（PF-5 的 summary 记了移交与归还条件）。
 - **合并顺序裁决（管理会话，2026-10-23）**：本面与 #149（PF-11）动了同一批路径，#149 分支更早且已在施工 ⇒ owner 归 PF-11（#149 先合），本面改为**借用**。具体三条：`workspacecore/context_ports_test.go`（本面借用，补上下文端口断言）、`contracts/openapi.json`（本面借用，加模板目录相关接口）、`workspace/template_governance_adapter_test.go`（owner 归 PF-11，内容由 #149 侧按本面版本合成——本面版本是超集，另加 3 个用例；合入时以 #149 的合成为准）。**这三条不列进本面路径集** ⇒ PF-13 登记 **24** 条（登记本身在交面票 PR-2 落）。前两条在 #149 合入 main 前由 PF-4 持有（否则路径无人拥有），合入后由 PF-11 持有。
+- **边界：不可归属的拒绝不留收据**（依据 `internal/lingdoc/templategovernance/README.md:26-30`）：空的、畸形的或无法归属到目录对象的 template ID **故意不写入目录账本**；这次「不写」**不是收据持久化失败**，不把原始拒绝替换成误导性的存储错误。实现缝 `internal/lingdoc/templategovernance/storage.go:143-148`；用例 `TestCopyFailureWithUnattributableTargetIsAnIntentionalNonWrite`（`internal/lingdoc/templategovernance/catalog_test.go:399`）。同一条边界的身份侧：**身份声明不可归属**（caller/actor 不一致，或角色取值不在 `types.TenantRole` 的四个合法值内）时，请求被拒且**不能以该身份署名写收据**（`storage.go:137`；用例 `TestTemplateGovernanceFailureReceiptRejectsMismatchedCallerIdentity`、`TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt`）。
 - 候选相对产品语义本身还含两处门禁修复：把 PG 夹具里残留的 G4 编号标识符（`g4PostgresCatalogFixture`）去编号化（命名登记处的 legacy 私有标识符棘轮基线是 0，不允许新增债，因此改标识符而不是把债登记进登记处），并修了两处 gofmt（import 分组、行尾逗号）。两处都不改产品行为，故 31 个验收点的结论不变。

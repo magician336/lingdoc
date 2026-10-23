@@ -207,6 +207,32 @@ func TestTemplateGovernanceFailureReceiptRejectsMismatchedCallerIdentity(t *test
 	}
 }
 
+// The governance actor carries its role as a plain string, so the seam has to
+// assert that the claimed role is one of the defined tenant roles. An
+// arbitrary string is an unverified identity claim: the request stays rejected
+// and cannot author a receipt in the claimed actor's name.
+func TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	claimed := governanceActor(owner)
+	claimed.Role = "not-a-tenant-role"
+	_, err := runtime.Service().CreateProfile(ctx, claimed, "arbitrary-role-claim", governance.CreateProfileInput{
+		ID: "arbitrary-role-profile", Name: "must not exist", Reason: "arbitrary role claim",
+	})
+	if !errors.Is(err, governance.ErrUnverifiedActor) || !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("arbitrary role claim error = %v, want an unverified identity denial", err)
+	}
+	var receipts, profiles int64
+	if err := db.Table("audit_logs").Where("action=? AND actor_user_id=? AND outcome=?", "lingdoc.template.create_profile", owner.UserID, "failure").Count(&receipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("lingdoc_template_profiles").Where("template_id=?", "arbitrary-role-profile").Count(&profiles).Error; err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 0 || profiles != 0 {
+		t.Fatalf("arbitrary role claim authored data or a receipt: profiles=%d receipts=%d", profiles, receipts)
+	}
+}
+
 func TestMachineCannotMakeHumanPublicationOrSuggestionDecisions(t *testing.T) {
 	runtime, _, _, p, ctx := governanceAdapterFixture(t)
 	router := gin.New()
