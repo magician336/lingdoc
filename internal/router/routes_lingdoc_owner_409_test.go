@@ -17,7 +17,10 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -165,6 +168,187 @@ func TestOwnerUnavailableFormalExportUnfreezesWhenTheIdentityComesBack(t *testin
 	f.restoreOwner(t, project.ID)
 	f.request(t, http.MethodPost, formalExportPath(project.ID),
 		`{"format":"docx"}`, "owner-unfreeze-export-restored", f.tokens["owner-user"], 202)
+}
+
+// ownerAvailabilityAnswer reads the project level outlet's answer.
+func ownerAvailabilityAnswer(t *testing.T, response *httptest.ResponseRecorder) (bool, []string) {
+	t.Helper()
+	var envelope struct {
+		Data struct {
+			Available     bool     `json:"available"`
+			RecoveryPaths []string `json:"recovery_paths"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode owner availability envelope: %v (%s)", err, response.Body.String())
+	}
+	return envelope.Data.Available, envelope.Data.RecoveryPaths
+}
+
+// TestOwnerUnavailableRefusalShapePerLapseForm is the four shapes the
+// Owner's identity can take, judged at the HTTP boundary.
+//
+// The freeze is a domain fact, but the shape of the refusal is a contract
+// one -- and the shape is not the same for every form:
+//
+//   - the project membership lapses: the request reaches the freeze gate,
+//     and the refusal names the freeze;
+//   - the tenant role is downgraded: the transport's own ceiling refuses
+//     the write before the workspace is reached, and the read side is where
+//     the freeze is named;
+//   - the tenant membership is suspended or removed: the transport refuses
+//     the request before it reaches the workspace at all, so neither the
+//     write nor the read outlets answer.
+//
+// The last shape is a boundary of the transport, not a choice of the
+// workspace: the project level outlet is refused by the same layer, so the
+// recovery guidance reaches the remaining members and the tenant admin rather
+// than the Owner whose identity was taken away. What never changes is that
+// the member working on the project reads the freeze in every form.
+func TestOwnerUnavailableRefusalShapePerLapseForm(t *testing.T) {
+	t.Run("the project membership lapses", func(t *testing.T) {
+		f := newOwnerFreezeExportFixture(t)
+		project := f.activeProject(t)
+		f.addMember(t, project.ID, f.chapters(t, project.ID)[0].ID)
+
+		f.lapseOwner(t, project.ID)
+
+		// The write reaches the freeze gate, and the refusal names it.
+		frozen := f.request(t, http.MethodPost, formalExportPath(project.ID),
+			`{"format":"docx"}`, "pf9-shape-project-membership", f.tokens["owner-user"], 404)
+		if reason := errorReason(t, frozen); reason != "owner_unavailable" {
+			t.Fatalf("export refusal reason = %q, want owner_unavailable (%s)", reason, frozen.Body.String())
+		}
+
+		// The member reads the same reason, so the interface can say why.
+		permission := f.request(t, http.MethodGet, "/projects/"+project.ID+"/permissions?capability=manage",
+			"", "", f.tokens["member-user"], 200)
+		allowed, reason := permissionReason(t, permission)
+		if allowed || reason != "owner_unavailable" {
+			t.Fatalf("member permission = allowed %v reason %q, want false / owner_unavailable (%s)",
+				allowed, reason, permission.Body.String())
+		}
+	})
+
+	t.Run("the tenant role is downgraded", func(t *testing.T) {
+		f := newOwnerFreezeExportFixture(t)
+		project := f.activeProject(t)
+		f.addMember(t, project.ID, f.chapters(t, project.ID)[0].ID)
+
+		lapseOwnerTenantRole(t, f)
+
+		// The write is refused by the transport's ceiling. That refusal is
+		// the transport's own and it names no freeze.
+		refused := f.request(t, http.MethodPost, formalExportPath(project.ID),
+			`{"format":"docx"}`, "pf9-shape-tenant-role", f.tokens["owner-user"], 403)
+		if strings.Contains(refused.Body.String(), "owner_unavailable") {
+			t.Fatalf("the transport refusal names the freeze: %s", refused.Body.String())
+		}
+
+		// The read side is where the freeze is named: the Owner may still
+		// read the project, and it reads its own export permission.
+		permission := f.request(t, http.MethodGet, "/projects/"+project.ID+"/permissions?capability=ops-control",
+			"", "", f.tokens["owner-user"], 200)
+		allowed, reason := permissionReason(t, permission)
+		if allowed || reason != "owner_unavailable" {
+			t.Fatalf("downgraded export permission = allowed %v reason %q, want false / owner_unavailable (%s)",
+				allowed, reason, permission.Body.String())
+		}
+	})
+
+	for _, form := range []struct {
+		name  string
+		weave func(t *testing.T, f *ownerFreezeFixture)
+	}{
+		{
+			name: "the tenant membership is suspended",
+			weave: func(t *testing.T, f *ownerFreezeFixture) {
+				if err := f.db.Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = 1 AND user_id = ?",
+					"owner-user").Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "the tenant membership is removed",
+			weave: func(t *testing.T, f *ownerFreezeFixture) {
+				if err := f.db.Exec("DELETE FROM tenant_members WHERE tenant_id = 1 AND user_id = ?",
+					"owner-user").Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(form.name, func(t *testing.T) {
+			f := newOwnerFreezeExportFixture(t)
+			project := f.activeProject(t)
+			f.addMember(t, project.ID, f.chapters(t, project.ID)[0].ID)
+
+			form.weave(t, f)
+
+			// The transport refuses the request before the workspace is
+			// reached, and it refuses the read outlets the same way.
+			refused := f.request(t, http.MethodPost, formalExportPath(project.ID),
+				`{"format":"docx"}`, "pf9-shape-tenant-membership", f.tokens["owner-user"], 403)
+			if strings.Contains(refused.Body.String(), "owner_unavailable") {
+				t.Fatalf("the transport refusal names the freeze: %s", refused.Body.String())
+			}
+			f.request(t, http.MethodGet, "/projects/"+project.ID+"/permissions?capability=manage",
+				"", "", f.tokens["owner-user"], 403)
+			f.request(t, http.MethodGet, "/projects/"+project.ID+"/owner-availability",
+				"", "", f.tokens["owner-user"], 403)
+
+			// The member still reads the freeze, and with it the ways back:
+			// the recovery guidance reaches the people who can act on it.
+			permission := f.request(t, http.MethodGet, "/projects/"+project.ID+"/permissions?capability=manage",
+				"", "", f.tokens["member-user"], 200)
+			allowed, reason := permissionReason(t, permission)
+			if allowed || reason != "owner_unavailable" {
+				t.Fatalf("member permission = allowed %v reason %q, want false / owner_unavailable (%s)",
+					allowed, reason, permission.Body.String())
+			}
+			availability := f.request(t, http.MethodGet, "/projects/"+project.ID+"/owner-availability",
+				"", "", f.tokens["member-user"], 200)
+			available, paths := ownerAvailabilityAnswer(t, availability)
+			if available || len(paths) == 0 {
+				t.Fatalf("owner availability = available %v paths %v, want unavailable with the ways back (%s)",
+					available, paths, availability.Body.String())
+			}
+		})
+	}
+}
+
+// TestOwnerUnavailableTransferIsAttributable is the write side attribution at
+// the HTTP boundary.
+//
+// The transfer is an Owner-only write like the five decisions, so it carries
+// the same freeze. Before the gate was added to it, the refusal was the
+// ordinary "not found" -- the same answer a missing project gives -- and the
+// caller could not act on it.
+//
+// The shape asserted here is the whole contract: the status code and the
+// error code stay what this refusal has always answered with, and only the
+// reason rides along.
+func TestOwnerUnavailableTransferIsAttributable(t *testing.T) {
+	f := newOwnerFreezeFixture(t)
+	project := f.activeProject(t)
+	chapters := f.chapters(t, project.ID)
+	if len(chapters) == 0 {
+		t.Fatalf("activated project has no chapter: %+v", project)
+	}
+	f.addMember(t, project.ID, chapters[0].ID)
+
+	f.lapseOwner(t, project.ID)
+
+	refused := f.request(t, http.MethodPost, "/projects/"+project.ID+"/owner-transfer",
+		`{"expected_project_version":`+strconv.FormatInt(project.ProjectVersion, 10)+`,"to_user_id":"member-user"}`,
+		"pf9-transfer-owner", f.tokens["owner-user"], 404)
+	if reason := errorReason(t, refused); reason != "owner_unavailable" {
+		t.Fatalf("transfer refusal reason = %q, want owner_unavailable (%s)", reason, refused.Body.String())
+	}
+	if !strings.Contains(refused.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("the transfer refusal lost its error code: %s", refused.Body.String())
+	}
 }
 
 // TestOwnerUnavailableFormalExportIsAttributableWhenTheTenantRoleIsDowngraded
