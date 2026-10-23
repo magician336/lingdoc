@@ -219,6 +219,7 @@ const (
 	operationRuntimeControl             operationName = "runtimeControl"
 	operationRuntimeEvent               operationName = "runtimeEvent"
 	operationRuntimeAlertRule           operationName = "runtimeAlertRule"
+	operationRuntimeAlertRuleAction     operationName = "runtimeAlertRuleAction"
 	operationTrialCreateWindow          operationName = "trialCreateWindow"
 	operationTrialWindowAction          operationName = "trialWindowAction"
 	operationTrialRecordSample          operationName = "trialRecordSample"
@@ -258,28 +259,29 @@ type operationSourceDecoder[I any] func(ChapterWorkspaceTransaction, operationDe
 type operationOutputKind string
 
 const (
-	operationOutputAPIKeyGrant      operationOutputKind = "api_key_grant"
-	operationOutputChapterComment   operationOutputKind = "chapter_comment"
-	operationOutputChapterReview    operationOutputKind = "chapter_review"
-	operationOutputDependencyEdge   operationOutputKind = "dependency_edge"
-	operationOutputImpactPreflight  operationOutputKind = "impact_preflight"
-	operationOutputImpactTask       operationOutputKind = "impact_task"
-	operationOutputInvitation       operationOutputKind = "invitation"
-	operationOutputRuntimeAlertRule operationOutputKind = "runtime_alert_rule"
-	operationOutputRuntimeControl   operationOutputKind = "runtime_control"
-	operationOutputRuntimeEvent     operationOutputKind = "runtime_event"
-	operationOutputStabilization    operationOutputKind = "stabilization"
-	operationOutputTrialDecision    operationOutputKind = "trial_decision"
-	operationOutputTrialSample      operationOutputKind = "trial_sample"
-	operationOutputTrialWindow      operationOutputKind = "trial_window"
-	operationOutputProject          operationOutputKind = "project"
-	operationOutputChapter          operationOutputKind = "chapter"
-	operationOutputWorking          operationOutputKind = "working_copy"
-	operationOutputCommitted        operationOutputKind = "committed_chapter"
-	operationOutputChangeSet        operationOutputKind = "change_set"
-	operationOutputCandidate        operationOutputKind = "draft_candidate"
-	operationOutputIssue            operationOutputKind = "issue_disposition"
-	operationOutputTransfer         operationOutputKind = "owner_transfer"
+	operationOutputAPIKeyGrant            operationOutputKind = "api_key_grant"
+	operationOutputChapterComment         operationOutputKind = "chapter_comment"
+	operationOutputChapterReview          operationOutputKind = "chapter_review"
+	operationOutputDependencyEdge         operationOutputKind = "dependency_edge"
+	operationOutputImpactPreflight        operationOutputKind = "impact_preflight"
+	operationOutputImpactTask             operationOutputKind = "impact_task"
+	operationOutputInvitation             operationOutputKind = "invitation"
+	operationOutputRuntimeAlertRule       operationOutputKind = "runtime_alert_rule"
+	operationOutputRuntimeAlertRuleAction operationOutputKind = "runtime_alert_rule_action"
+	operationOutputRuntimeControl         operationOutputKind = "runtime_control"
+	operationOutputRuntimeEvent           operationOutputKind = "runtime_event"
+	operationOutputStabilization          operationOutputKind = "stabilization"
+	operationOutputTrialDecision          operationOutputKind = "trial_decision"
+	operationOutputTrialSample            operationOutputKind = "trial_sample"
+	operationOutputTrialWindow            operationOutputKind = "trial_window"
+	operationOutputProject                operationOutputKind = "project"
+	operationOutputChapter                operationOutputKind = "chapter"
+	operationOutputWorking                operationOutputKind = "working_copy"
+	operationOutputCommitted              operationOutputKind = "committed_chapter"
+	operationOutputChangeSet              operationOutputKind = "change_set"
+	operationOutputCandidate              operationOutputKind = "draft_candidate"
+	operationOutputIssue                  operationOutputKind = "issue_disposition"
+	operationOutputTransfer               operationOutputKind = "owner_transfer"
 )
 
 type operationDescriptor[I any] struct {
@@ -342,6 +344,8 @@ func operationOutputFor(name operationName) operationOutputKind {
 		return operationOutputProject
 	case operationRuntimeAlertRule:
 		return operationOutputRuntimeAlertRule
+	case operationRuntimeAlertRuleAction:
+		return operationOutputRuntimeAlertRuleAction
 	case operationRuntimeControl:
 		return operationOutputRuntimeControl
 	case operationRuntimeEvent:
@@ -415,6 +419,8 @@ type ownerTransferTransaction = ownerTransferStore
 // AuthorizeRequest is the structured application seam for callers that already
 // know their action and resource. Capability conversion stays at legacy edges.
 func (s *Service) AuthorizeRequest(ctx context.Context, request AuthorizationRequest) error {
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	return s.readWithAudit(ctx, request.Actor, request.ProjectID, request.capability(),
 		TransactionOptions{RepeatableRead: true},
 		func(tx Transaction) (Project, error) {

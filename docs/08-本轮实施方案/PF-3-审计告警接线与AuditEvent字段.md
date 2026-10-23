@@ -269,6 +269,8 @@ S1 落地后，**本机全仓跑**（123 个包）抓出一个真实回归：**2
 
 后两个文件按登记处「共享维护点」的约定修改，**不登记进任何面的路径集**；其余按实测补进 PF-3 的路径集（补齐时 20 条，零重叠）。**后来让出 2 条**（`workspacecore/service_facade.go` 与 `workspacecore/typed_contracts.go`——PF-4 于 2026-10-22 先在 main 上声明了它们，登记处要求一条路径只有一个拥有者），**当前为 18 条，零重叠**。
 
+> **2026-10-23 后续状态另标**（本文件是 PF-3 的交付记录，上文「当前为 18 条」说的是交付当时的状态）：PF-8（#382 / #383 / #384）成立时，本面**再让出 `workspacecore/runtime_control.go`**（#383 的运行控制回退动作要落在同一个文件里：回退目标挂在控制项上、白名单加 `rollback`），登记处路径集 **18 → 17 条**。本面在 main 上已交付的 #327 内容（`EmitAuditFailureAlert` 与 `AuditEvent` 的两个独立列）原样保留，不受这次移交影响。当前路径集以登记处 `scripts/lingdoc_parallel_surfaces.py` 的 `PARALLEL_FACES` 为准。
+
 **复跑结果**：`internal/lingdoc/workspace` ok（196.4s）｜`workspacecore` ok（41.0s）｜`membership` ok（2.6s）｜`internal/database` ok（22.3s）｜`internal/router` ok（1.4s）｜`internal/container` ok（7.8s）。
 
 **留下的机制性缺口**：「测试夹具自持一份生产 schema」这个机制还在——下一次给任何表加列仍会重演。已列入 §10.3 的重构动作（审计表的「模型字段集合 == 表列集合」守护测试 + 夹具默认应用生产迁移）。

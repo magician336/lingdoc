@@ -83,13 +83,22 @@ test('download re-authentication stays a subset of permission rejection and revo
 
 test('a metric the server never measures reads as unavailable rather than zero', () => {
   const items = projectRuntimeMetrics({ 'request/success': 9 })
-  const decisions = items.find(item => item.key === 'permission_decisions')
-  assert.ok(decisions)
-  assert.equal(decisions.total, null)
-  assert.match(String(decisions.unavailableReason), /未提供/)
+  const allowed = items.find(item => item.key === 'authorization_allow')
+  assert.ok(allowed)
+  assert.equal(allowed.total, null)
+  assert.match(String(allowed.unavailableReason), /未提供/)
   // The wording keeps the G5 attribution so the reader knows which gap this is.
-  assert.match(decisions.label, /G5/)
-  assert.match(decisions.label, /allow\/deny/)
+  assert.match(allowed.label, /G5/)
+})
+
+test('a denied authorization is counted while the allowed side stays unavailable', () => {
+  const items = projectRuntimeMetrics({ 'permission/deny': 4 })
+  const denied = items.find(item => item.key === 'authorization_denial')
+  const allowed = items.find(item => item.key === 'authorization_allow')
+  assert.equal(denied?.total, 4)
+  assert.deepEqual(denied?.keys, ['permission/deny'])
+  assert.equal(allowed?.total, null)
+  assert.match(String(allowed?.unavailableReason), /未提供/)
 })
 
 test('a successful preflight is not counted as a preflight problem', () => {
