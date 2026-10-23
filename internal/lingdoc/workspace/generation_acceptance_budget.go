@@ -49,10 +49,14 @@ type generationAcceptanceBudget struct {
 }
 
 type generationAcceptanceLedger struct {
-	SchemaVersion int                           `json:"schema_version"`
-	Profile       string                        `json:"profile"`
-	Model         string                        `json:"model"`
-	PricingBasis  string                        `json:"pricing_basis"`
+	SchemaVersion int    `json:"schema_version"`
+	Profile       string `json:"profile"`
+	Model         string `json:"model"`
+	PricingBasis  string `json:"pricing_basis"`
+	// CostBasis names what the money columns of this ledger MEAN. A profile
+	// without a price basis writes "not_applicable", and its 0 in the money
+	// columns reads as "nothing was priced" instead of "the call was free".
+	CostBasis     string                        `json:"cost_basis,omitempty"`
 	InputMax      int                           `json:"input_max_tokens"`
 	OutputMax     int                           `json:"output_max_tokens"`
 	CallsMax      int                           `json:"calls_max"`
@@ -66,17 +70,25 @@ type generationAcceptanceLedger struct {
 }
 
 type generationAcceptanceRequest struct {
-	Number                   int       `json:"number"`
-	Model                    string    `json:"model"`
-	Status                   string    `json:"status"`
-	ReservedNanoUSD          int64     `json:"reserved_nano_usd"`
-	EstimatedInputUpperBound int       `json:"estimated_input_token_upper_bound"`
-	OutputLimit              int       `json:"output_limit_tokens"`
-	InputTokens              int       `json:"input_tokens,omitempty"`
-	OutputTokens             int       `json:"output_tokens,omitempty"`
-	ActualNanoUSD            int64     `json:"actual_nano_usd,omitempty"`
-	FinishReason             string    `json:"finish_reason,omitempty"`
-	CreatedAt                time.Time `json:"created_at"`
+	Number                   int    `json:"number"`
+	Model                    string `json:"model"`
+	Status                   string `json:"status"`
+	ReservedNanoUSD          int64  `json:"reserved_nano_usd"`
+	EstimatedInputUpperBound int    `json:"estimated_input_token_upper_bound"`
+	OutputLimit              int    `json:"output_limit_tokens"`
+	InputTokens              int    `json:"input_tokens,omitempty"`
+	OutputTokens             int    `json:"output_tokens,omitempty"`
+	// TotalTokens is the total token count the provider reported. It is 0
+	// when the provider reported none.
+	TotalTokens int `json:"total_tokens,omitempty"`
+	// UsageStatus says whether the token counters came from the provider.
+	// "unavailable" means the provider reported no usage: the amount is
+	// 不可核实 (unverifiable), the counters are then empty, and an estimate
+	// is never written as an actual usage.
+	UsageStatus   string    `json:"usage_status,omitempty"`
+	ActualNanoUSD int64     `json:"actual_nano_usd,omitempty"`
+	FinishReason  string    `json:"finish_reason,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type generationAcceptanceReservation struct {
@@ -89,7 +101,7 @@ type generationAcceptanceReservation struct {
 }
 
 func loadGenerationAcceptanceBudget() (*generationAcceptanceBudget, error) {
-	profile := strings.TrimSpace(os.Getenv(generationAcceptanceProfileEnv))
+	profile := activeAcceptanceProfile()
 	if profile == "" {
 		return nil, nil
 	}
@@ -107,8 +119,35 @@ func loadGenerationAcceptanceBudget() (*generationAcceptanceBudget, error) {
 	return &generationAcceptanceBudget{profile: profile, ledgerPath: filepath.Clean(ledgerPath), total: total}, nil
 }
 
+// approvedModel returns the model the active profile approves.
+//
+// The two call sites (the generation adapter and the agent adapter) pass the
+// historical constant generationAcceptanceModel, which names the DeepSeek
+// model; both call sites belong to another face and are not changed here.
+// The profile is therefore the single source of truth for which model is
+// approved, and the call site's name is only accepted as proof that the
+// controlled path was taken.
+//
+// The environment is checked as well: a budget must not spend itself under a
+// profile it was not built for.
+func (b *generationAcceptanceBudget) approvedModel(requested string) (string, error) {
+	profile := b.profileName()
+	if active := activeAcceptanceProfile(); active != "" && active != profile {
+		return "", errAcceptanceLedgerIO
+	}
+	approved := acceptancebudget.ProfileApprovedModel(profile)
+	if requested != generationAcceptanceModel && requested != approved {
+		return "", errAcceptanceWrongModel
+	}
+	return approved, nil
+}
+
 func (b *generationAcceptanceBudget) reserve(ctx context.Context, modelName string, inputUpperBound int) (*generationAcceptanceReservation, error) {
-	local, err := b.reserveChat(ctx, modelName, inputUpperBound)
+	approved, err := b.approvedModel(modelName)
+	if err != nil {
+		return nil, err
+	}
+	local, err := b.reserveChat(ctx, approved, inputUpperBound)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +155,7 @@ func (b *generationAcceptanceBudget) reserve(ctx context.Context, modelName stri
 	if totalBudget == nil {
 		totalBudget = acceptancebudget.New(b.profileName(), b.ledgerPath+".calls.json")
 	}
-	total, err := totalBudget.Reserve(ctx, modelName, inputUpperBound, generationAcceptanceOutputMax)
+	total, err := totalBudget.Reserve(ctx, approved, inputUpperBound, acceptanceOutputMax(b.profileName()))
 	if err != nil {
 		if cancelErr := local.cancelNoCall(); cancelErr != nil {
 			return nil, errAcceptanceLedgerBlocked
@@ -128,7 +167,10 @@ func (b *generationAcceptanceBudget) reserve(ctx context.Context, modelName stri
 }
 
 func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName string, inputUpperBound int) (*generationAcceptanceReservation, error) {
-	if b == nil || inputUpperBound < 0 || inputUpperBound > generationAcceptanceInputMax {
+	profile := b.profileName()
+	inputMax := acceptanceInputMax(profile)
+	outputMax := acceptanceOutputMax(profile)
+	if b == nil || inputUpperBound < 0 || inputUpperBound > inputMax {
 		return nil, errAcceptanceInputTooLarge
 	}
 	lockPath := b.ledgerPath + ".lock"
@@ -142,11 +184,11 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 			_ = acceptancebudget.ReleaseLock(lock, lockPath)
 		}
 	}()
-	ledger, err := readAcceptanceLedger(b.ledgerPath, b.profileName())
+	ledger, err := readAcceptanceLedger(b.ledgerPath, profile)
 	if err != nil {
 		return nil, errAcceptanceLedgerIO
 	}
-	if migrated, ok := migrateGenerationAcceptanceLedger(ledger, b.profileName()); ok {
+	if migrated, ok := migrateGenerationAcceptanceLedger(ledger, profile); ok {
 		ledger = migrated
 		if err := writeAcceptanceLedger(b.ledgerPath, ledger); err != nil {
 			return nil, errAcceptanceLedgerIO
@@ -158,23 +200,25 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 	if ledger.Blocked || acceptanceLedgerHasUnknownCall(ledger) {
 		return nil, errAcceptanceLedgerBlocked
 	}
-	if ledger.Profile != b.profileName() || modelName != generationAcceptanceModel {
+	if ledger.Profile != profile || modelName != acceptancebudget.ProfileApprovedModel(profile) {
 		return nil, errAcceptanceWrongModel
 	}
-	if (ledger.CallsMax > 0 && len(ledger.Requests) >= ledger.CallsMax) || generationAcceptancePerCall > ledger.ReserveMax-ledger.Reserved {
+	reservedPerCall := acceptanceReservedPerCall(profile)
+	if (ledger.CallsMax > 0 && len(ledger.Requests) >= ledger.CallsMax) ||
+		(reservedPerCall > 0 && reservedPerCall > ledger.ReserveMax-ledger.Reserved) {
 		return nil, errAcceptanceBudgetSpent
 	}
 	request := generationAcceptanceRequest{
 		Number:                   len(ledger.Requests) + 1,
-		Model:                    generationAcceptanceModel,
+		Model:                    modelName,
 		Status:                   "in_flight",
-		ReservedNanoUSD:          generationAcceptancePerCall,
+		ReservedNanoUSD:          reservedPerCall,
 		EstimatedInputUpperBound: inputUpperBound,
-		OutputLimit:              generationAcceptanceOutputMax,
+		OutputLimit:              outputMax,
 		CreatedAt:                time.Now().UTC(),
 	}
 	ledger.Requests = append(ledger.Requests, request)
-	ledger.Reserved += generationAcceptancePerCall
+	ledger.Reserved += reservedPerCall
 	if err := writeAcceptanceLedger(b.ledgerPath, ledger); err != nil {
 		return nil, errAcceptanceLedgerIO
 	}
@@ -197,7 +241,29 @@ func mapAcceptanceBudgetError(err error) error {
 	}
 }
 
+// complete records the outcome of one call whose provider reported its usage.
 func (r *generationAcceptanceReservation) complete(status string, inputTokens, outputTokens int, finishReason string, block bool) error {
+	return r.completeUsage(status, acceptancebudget.Usage{
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalTokens:  inputTokens + outputTokens,
+		Reported:     true,
+	}, finishReason, block)
+}
+
+// unknown records a call whose outcome or usage could not be confirmed.
+//
+// The token counters stay empty and the record says the usage was
+// unavailable. The estimate of the request is never written as an actual
+// usage: an estimate that reads as a measurement is a false record, and it
+// is the number a reader would later reconcile against the provider.
+func (r *generationAcceptanceReservation) unknown(status string) error {
+	return r.completeUsage(status, acceptancebudget.Usage{Reported: false}, "", true)
+}
+
+// completeUsage records the outcome of one call together with the usage the
+// provider reported.
+func (r *generationAcceptanceReservation) completeUsage(status string, usage acceptancebudget.Usage, finishReason string, block bool) error {
 	if r == nil || r.finished || r.lock == nil {
 		return errAcceptanceLedgerIO
 	}
@@ -217,11 +283,36 @@ func (r *generationAcceptanceReservation) complete(status string, inputTokens, o
 		r.release()
 		return errAcceptanceLedgerIO
 	}
+	inputTokens, outputTokens := usage.InputTokens, usage.OutputTokens
+	totalTokens := usage.TotalTokens
+	if totalTokens <= 0 && usage.Reported {
+		totalTokens = inputTokens + outputTokens
+	}
+	if !usage.Reported {
+		inputTokens, outputTokens, totalTokens = 0, 0, 0
+	}
+	if inputTokens+outputTokens > acceptanceTotalMax(ledger.Profile) {
+		// This is accounting, NOT prevention: the request has already been
+		// sent, so the call that exceeded the ceiling has already happened.
+		// What this can do is mark the record and freeze the ledger.
+		//
+		// The ceiling is enforced BEFORE the request: the input bound is
+		// checked in reserve(), and the output ceiling travels in the request
+		// itself (max_completion_tokens). This check only notices what the
+		// provider reported.
+		block = true
+		status = "limit_violation"
+	}
 	request.Status = status
 	request.InputTokens = inputTokens
 	request.OutputTokens = outputTokens
+	request.TotalTokens = totalTokens
+	request.UsageStatus = acceptancebudget.UsageStatusReported
+	if !usage.Reported {
+		request.UsageStatus = acceptancebudget.UsageStatusUnavailable
+	}
 	request.FinishReason = finishReason
-	request.ActualNanoUSD = actualDeepSeekCost(inputTokens, outputTokens)
+	request.ActualNanoUSD = actualAcceptanceCost(r.budget.profileName(), inputTokens, outputTokens)
 	ledger.Actual += request.ActualNanoUSD
 	if block {
 		ledger.Blocked = true
@@ -235,9 +326,9 @@ func (r *generationAcceptanceReservation) complete(status string, inputTokens, o
 	var totalErr error
 	if r.total != nil {
 		if block {
-			totalErr = r.total.Complete(status, inputTokens, outputTokens, finishReason, true)
+			totalErr = r.total.CompleteUsage(status, usage, finishReason, true)
 		} else {
-			totalErr = r.total.Complete(status, inputTokens, outputTokens, finishReason, false)
+			totalErr = r.total.CompleteUsage(status, usage, finishReason, false)
 		}
 	}
 	r.release()
@@ -263,10 +354,6 @@ func (r *generationAcceptanceReservation) complete(status string, inputTokens, o
 		return errAcceptanceBudgetSpent
 	}
 	return nil
-}
-
-func (r *generationAcceptanceReservation) unknown(status string) error {
-	return r.complete(status, 0, 0, "", true)
 }
 
 func (r *generationAcceptanceReservation) cancelNoCall() error {
@@ -302,7 +389,22 @@ func (r *generationAcceptanceReservation) release() {
 	r.lock = nil
 }
 
+// selectDeepSeekAcceptanceModel returns the model the active profile approves.
+//
+// The name is the historical one and it is kept because the two call sites
+// (the generation adapter and the agent adapter) belong to another face and
+// this change does not touch them. What the function decides is read from the
+// active profile: the DeepSeek profile keeps its own rule, and the Qwen
+// profile has its own rule, which approves a different provider, a different
+// endpoint and a different model.
 func selectDeepSeekAcceptanceModel(models []*types.Model) (*types.Model, bool) {
+	if activeAcceptanceProfile() == acceptancebudget.QwenProfile {
+		return selectQwenAcceptanceModel(models)
+	}
+	return selectDeepSeekAcceptanceModelOnly(models)
+}
+
+func selectDeepSeekAcceptanceModelOnly(models []*types.Model) (*types.Model, bool) {
 	var selected *types.Model
 	for _, model := range models {
 		if model == nil || model.Name != generationAcceptanceModel {
@@ -322,16 +424,36 @@ func selectDeepSeekAcceptanceModel(models []*types.Model) (*types.Model, bool) {
 	return selected, true
 }
 
+// acceptanceGenerationChatOptions returns the request options of one
+// controlled call.
+//
+// The completion budget is the profile's output ceiling, and it travels in
+// the request: the provider is asked for no more than the profile allows,
+// instead of the request being sent and the answer measured afterwards.
 func acceptanceGenerationChatOptions() *chat.ChatOptions {
 	disabled := false
 	return &chat.ChatOptions{
 		Temperature:         0.2,
-		MaxCompletionTokens: generationAcceptanceOutputMax,
+		MaxCompletionTokens: acceptanceOutputMax(activeAcceptanceProfile()),
 		Thinking:            &disabled,
 		Format:              json.RawMessage(`{"type":"json_object"}`),
 	}
 }
 
+// acceptanceInputUpperBound returns the input bound of one request.
+//
+// The bound is the JSON-encoded length of the messages plus a fixed
+// overhead. It is an UPPER BOUND on the token count, not a token count: a
+// token is at least one byte, so the byte length of a UTF-8 prompt cannot be
+// smaller than its token count. The gate is therefore conservative -- it may
+// refuse a request that would have fitted, but it cannot let a request
+// through that exceeds the ceiling.
+//
+// What the byte count cannot see is what the provider adds on its own (a
+// chat template, a few control tokens). The fixed overhead covers that
+// margin. The provider's own reported usage remains the truth, and it is
+// reconciled after the response; this bound is what can be enforced BEFORE
+// the request.
 func acceptanceInputUpperBound(messages []chat.Message) (int, error) {
 	encoded, err := json.Marshal(messages)
 	if err != nil {
@@ -340,11 +462,30 @@ func acceptanceInputUpperBound(messages []chat.Message) (int, error) {
 	return len(encoded) + generationPromptOverhead, nil
 }
 
-func actualDeepSeekCost(inputTokens, outputTokens int) int64 {
+// actualAcceptanceCost returns the money one call consumed under one profile.
+//
+// A profile with a price basis computes the amount. A profile without one
+// computes nothing: the amount is not known, and a 0 that reads as a price
+// is a false statement. The ledger says which of the two it is through its
+// cost basis.
+func actualAcceptanceCost(profile string, inputTokens, outputTokens int) int64 {
 	if inputTokens < 0 || outputTokens < 0 {
 		return generationAcceptanceTotal + 1
 	}
+	if !acceptancebudget.ProfilePriced(profile) {
+		return 0
+	}
 	return int64(inputTokens)*deepSeekInputNanoUSDPerToken + int64(outputTokens)*deepSeekOutputNanoUSDPerToken
+}
+
+// actualDeepSeekCost returns the money one call consumed.
+//
+// The name is the historical one and it is kept because the two call sites
+// (the generation adapter and the agent adapter) belong to another face. The
+// amount is computed under the active profile, so a profile without a price
+// basis records no amount at all.
+func actualDeepSeekCost(inputTokens, outputTokens int) int64 {
+	return actualAcceptanceCost(activeAcceptanceProfile(), inputTokens, outputTokens)
 }
 
 func acceptanceLedgerHasUnknownCall(ledger generationAcceptanceLedger) bool {
@@ -368,6 +509,11 @@ func generationBudgetLimits(profile string) (calls int, reserveUSD int64, backst
 	if profile == acceptancebudget.CostOnlyProfile {
 		return calls, budget / acceptancebudget.DeepSeekBudgetFXNanoCNYPerUSD, backstopCNY
 	}
+	if !acceptancebudget.ProfilePriced(profile) {
+		// This profile computes no money: the reserve is 0 and the ledger
+		// says "not applicable" instead of an amount.
+		return calls, 0, backstopCNY
+	}
 	return calls, generationAcceptanceTotal, backstopCNY
 }
 
@@ -377,15 +523,17 @@ func readAcceptanceLedger(path string, profiles ...string) (generationAcceptance
 		profile = profiles[0]
 	}
 	calls, reserveUSD, backstop := generationBudgetLimits(profile)
+	inputMax, outputMax, _ := acceptancebudget.ProfileTokenLimits(profile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return generationAcceptanceLedger{
 			SchemaVersion: 1,
 			Profile:       profile,
-			Model:         generationAcceptanceModel,
-			PricingBasis:  "DeepSeek official peak rates captured for 2026-09-29: input $0.30/M, output $1.20/M; cache treated as miss.",
-			InputMax:      generationAcceptanceInputMax,
-			OutputMax:     generationAcceptanceOutputMax,
+			Model:         acceptancebudget.ProfileApprovedModel(profile),
+			PricingBasis:  acceptancePricingBasis(profile),
+			CostBasis:     acceptancebudget.ProfileCostBasis(profile),
+			InputMax:      inputMax,
+			OutputMax:     outputMax,
 			CallsMax:      calls,
 			CNYBackstop:   backstop,
 			ReserveMax:    reserveUSD,
@@ -414,6 +562,7 @@ func migrateGenerationAcceptanceLedger(ledger generationAcceptanceLedger, target
 	migrated := ledger
 	migrated.Profile = target
 	migrated.CallsMax, migrated.ReserveMax, migrated.CNYBackstop = generationBudgetLimits(target)
+	migrated.CostBasis = acceptancebudget.ProfileCostBasis(target)
 	if !validAcceptanceLedger(migrated) {
 		return ledger, false
 	}
@@ -421,19 +570,27 @@ func migrateGenerationAcceptanceLedger(ledger generationAcceptanceLedger, target
 }
 
 func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
-	calls, reserveUSD, backstop := generationBudgetLimits(ledger.Profile)
-	if ledger.SchemaVersion != 1 || !acceptancebudget.SupportedProfile(ledger.Profile) || ledger.Model != generationAcceptanceModel ||
-		ledger.InputMax != generationAcceptanceInputMax || ledger.OutputMax != generationAcceptanceOutputMax ||
+	profile := ledger.Profile
+	calls, reserveUSD, backstop := generationBudgetLimits(profile)
+	inputMax, outputMax, totalMax := acceptancebudget.ProfileTokenLimits(profile)
+	reservedPerCall := acceptanceReservedPerCall(profile)
+	if ledger.SchemaVersion != 1 || !acceptancebudget.SupportedProfile(profile) ||
+		ledger.Model != acceptancebudget.ProfileApprovedModel(profile) ||
+		ledger.InputMax != inputMax || ledger.OutputMax != outputMax ||
 		ledger.CallsMax != calls || ledger.CNYBackstop != backstop || ledger.ReserveMax != reserveUSD ||
-		(calls > 0 && len(ledger.Requests) > calls) || ledger.Reserved > reserveUSD || ledger.Reserved != int64(len(ledger.Requests))*generationAcceptancePerCall ||
+		!validAcceptanceCostBasis(ledger.CostBasis, profile) ||
+		(calls > 0 && len(ledger.Requests) > calls) || ledger.Reserved > reserveUSD || ledger.Reserved != int64(len(ledger.Requests))*reservedPerCall ||
 		ledger.Actual < 0 || ledger.Actual > ledger.Reserved {
 		return false
 	}
 	var actualTotal int64
 	for i, request := range ledger.Requests {
-		if request.Number != i+1 || request.Model != generationAcceptanceModel || request.ReservedNanoUSD != generationAcceptancePerCall ||
-			request.EstimatedInputUpperBound < 0 || request.EstimatedInputUpperBound > generationAcceptanceInputMax ||
-			request.OutputLimit != generationAcceptanceOutputMax || request.InputTokens < 0 || request.OutputTokens < 0 {
+		if request.Number != i+1 || request.Model != acceptancebudget.ProfileApprovedModel(profile) ||
+			request.ReservedNanoUSD != reservedPerCall ||
+			request.EstimatedInputUpperBound < 0 || request.EstimatedInputUpperBound > inputMax ||
+			request.OutputLimit != outputMax || request.InputTokens < 0 || request.OutputTokens < 0 ||
+			request.TotalTokens < 0 || request.InputTokens+request.OutputTokens > totalMax ||
+			!validAcceptanceUsageStatus(request.UsageStatus) {
 			return false
 		}
 		switch request.Status {
@@ -449,6 +606,31 @@ func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
 		actualTotal += request.ActualNanoUSD
 	}
 	return actualTotal == ledger.Actual
+}
+
+// validAcceptanceCostBasis accepts the cost basis of one ledger.
+//
+// An empty basis is a ledger written before the basis existed; it reads as
+// the priced basis those ledgers were written under. A profile without a
+// price basis has no legacy ledgers and must carry its own basis.
+func validAcceptanceCostBasis(recorded, profile string) bool {
+	if recorded == acceptancebudget.ProfileCostBasis(profile) {
+		return true
+	}
+	return profile != acceptancebudget.QwenProfile && recorded == ""
+}
+
+// validAcceptanceUsageStatus accepts the usage status of one request.
+//
+// An empty status is a record written before the status existed; it reads as
+// "reported", because those records only ever carried provider numbers.
+func validAcceptanceUsageStatus(status string) bool {
+	switch status {
+	case "", acceptancebudget.UsageStatusReported, acceptancebudget.UsageStatusUnavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func writeAcceptanceLedger(path string, ledger generationAcceptanceLedger) error {
