@@ -866,6 +866,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 每条断言可判定、**词表里的每个算子都必须有求值分支**）、未知 kind 与
             # 多余键必须报错、以及阴性验证（破坏期望值必须转红）。
             ("scripts/ci/test_lingdoc_beta_check_kinds.py", "file"),
+            # 守护的旧名：文件已随 #499 改名为 test_lingdoc_beta_check_kinds.py，但
+            # **这条路径仍留在本面的路径集里**——登记处记的是归属，不是文件清单；
+            # 一个活着的面不得缩自己的路径集（棘轮：path-set-shrunk / path-unowned），
+            # 路径随本面结束（done）才释放。
+            ("scripts/ci/test_lingdoc_check_kinds.py", "file"),
             # #499 的契约静态校验器：接单一权威，并把 F01 契约自己的断言纳入静态
             # 校验（此前只有运行到那个节点才会被校验）。
             ("docs/08-本轮实施方案/contracts/validate_artifacts.py", "file"),
