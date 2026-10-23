@@ -25,6 +25,20 @@ package database
 //  3. 000011 与 000000 的 down 是**语义不可逆**的（见 assertFullDownIrreversible
 //     的注释），守护把这一点写成断言，而不是假装它们能回滚。
 //
+// 两种环境下的期望边界（**两种都到 0，都不残留应用表**）：
+//
+//   - 服务器给得出 vector / pg_search（生产形态、paradedb 镜像）：整条链跑完，
+//     含 embeddings 那张表。down 之后**扩展仍在**——那是 000000 的 down 里
+//     DROP EXTENSION 被注释掉的设计选择，**不是回滚失败**。
+//   - 服务器给不出 vector / pg_search（**CI 的 postgres:17 service**）：迁移
+//     000002 整体跳过（app.skip_embedding=true），embeddings 这张表**从来没有被
+//     建过**，所以它的 down 也就没有东西可删。000002 的 down 全是
+//     DROP ... IF EXISTS，缺表不报错 ⇒ down 链照样走到 0，照样不残留应用表。
+//
+// ⇒ 000011 / 000000 的「语义不可逆」**不会**让 down 链到不了 0：前者是空操作
+// （不报错），后者只影响扩展、且扩展本来就不删。这两点是**设计上不回滚**，不是
+// 「回滚失败」，与「链能不能走到 0」是两条不同的性质。
+//
 // PostgreSQL 侧只在 LINGDOC_TEST_POSTGRES_DSN 指向隔离测试库时运行。没有配置
 // 时明确跳过——跳过不是通过。
 
