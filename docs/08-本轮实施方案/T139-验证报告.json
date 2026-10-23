@@ -250,9 +250,9 @@
       "follow_up_issue": "#524",
       "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
       "ticket": "#524",
-      "unblock_condition": "在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。",
+      "unblock_condition": "解除条件：#524 关闭且证据满足（CI 观测型，机器可读；本机不可解除）",
       "reason": "属 CI 侧观测面，本机无 GitHub Actions 运行观测面：#360 的修法（PR #463）已落地，lingdoc-interface-integration.yml:63-73 带 postgres:17 service、:111-112 跑 PG 迁移演练；但该作业是否真的跑/被跳过，只能由一次真实 CI run 的 job 记录证明（scripts/ci/lingdoc_gate_surfaces.py:292-319 的路径表 + lingdoc-interface-integration.yml:60 的 if 条件）。本机只用仓内同一判定模块做了两次可复现推演（Case A：diff 仅触及本矩阵与本报告 ⇒ job_lingdoc_interface_integration_integration=false（PG 演练作业被跳过）；Case B：diff 触及 internal/database/**、internal/lingdoc/**、internal/container/lingdoc* 等 20 个文件 ⇒ 同一键为 true（作业被纳入）），判定模块自己的输出写着「Selection only; not a test result or an approval.」⇒ 该推演只能用来写解除条件，不能充当本条的证据。本机结果不得冒充本条通过。",
-      "unblock": "在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。",
+      "unblock": "解除条件（CI 观测型，机器可读）：按 #524 —— 在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。 跟进票 #524；本机不可解除（解除面在 CI 侧）。",
       "follow_up_ticket": "#524"
     }
   ],
