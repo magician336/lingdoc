@@ -28,7 +28,11 @@ func TestRewriteSharesEmbeddingBudgetAndStopsBeforeSeventhCall(t *testing.T) {
 	if _, err := host.RewriteSelected(context.Background(), Actor{TenantID: 1, UserID: "test"}, SelectedRewritePrompt{Instruction: "仅润色"}); err != nil {
 		t.Fatal(err)
 	}
-	if model.options.MaxCompletionTokens != 2048 || model.options.Thinking == nil || *model.options.Thinking {
+	// The request carries the profile's output ceiling -- the same number
+	// the ledger records as output_limit_tokens. The adapter used to ask for
+	// a hard-coded 2048 instead, so the ledger described a call that was
+	// never made (#542).
+	if model.options.MaxCompletionTokens != acceptancebudget.OutputMax || model.options.Thinking == nil || *model.options.Thinking {
 		t.Fatal("output/thinking limits not applied")
 	}
 	model.messages = nil
