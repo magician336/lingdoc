@@ -2,7 +2,7 @@
   "mode": "static-and-suite",
   "note": "PF-6 上下文包的前端消费（票 #330，Spec #431）。两件事：把服务端组装好的上下文包原样显示出来（卡片、选择理由、版本基线、卡片状态、权限态），并允许在发出请求前增删引用的卡片。设计要点：契约类型由已有的传输层模块拥有，本面只读不改、不复制第二份；意图（用户勾了什么）与事实（服务端组装了什么）是两个不可互换的类型，事实区只由预览结果刷新；卡片状态按 id 且 version 双重对齐，对不上显示状态未知而不回退；选择理由按服务端原文逐条透传，前端不解析成条目映射。交付物是四个新文件：前端 API 门面模块 agentContext.ts、面板组件 ContextPackagePanel.vue，及各自的测试；不改服务端、不改任何既有前端文件、不改 agentApi.ts。",
   "head": "10c099d746c40a150fa161f3cc700b2238cb623a",
-  "base": "c66d39f2c25ebfeb29a75e1d5acc2fb7c3550958",
+  "base": "041ebe0f5fce6966bd540f0a973e407c20f48d43",
   "head_note": "证据绑定 10c099d746c40a150fa161f3cc700b2238cb623a（两轴评审判 FAIL 之后的返工提交：面板加会话维度、对齐规则归一、关联标识落地、可选键不再恒写、状态类型收紧）。此后的提交只动文档与证据档；核对命令：git diff 10c099d746c40a150fa161f3cc700b2238cb623a <当前 head> -- frontend/ scripts/ 应为空。",
   "base_note": "基线取 PR #443 的 baseRefOid，即 git merge-base origin/main HEAD。main 在本面施工期间多次前移（80a1863d → c66d39f2），每次前移后本面都把最新 main 合进分支并重跑门禁，让门禁的 diff_range 右端绑定当前 head；当前值见 base 字段，当轮的具体值以 PR body 为准。检测器修正 73f444a2 改的是登记处基线比对本身（剔除基线里从不存在过的悬空登记），它修的是本面改名触发的误报，不是放宽真回退的检测。",
   "commands": [
@@ -34,6 +34,7 @@
       {"run": "39886819150", "head": "74917e68", "conclusion": "success（12m51s）", "tested_sha": "7bdceb15b655be32032ec75f2e57b557ac1d071d"},
       {"run": "39888822533", "head": "e7d702d1", "conclusion": "success（13m）", "tested_sha": "b6793a383203f8c79ff02fd0e586ad66d6393109"}
     ],
+    "verified_runs_note": "这是截至本文件最后一次改动前的实测历史，不是全部轮次。main 每前移一次本面就合一次并重跑一轮门禁，当轮的 run id 与 base 以 PR body 为准——PR body 改动不触发 CI，因此它总能绑到当前 head。",
     "stability_note": "CI 的判定输入是 base..head 的 changed_paths 集合（本面 13 条）。本文件此后的提交只动 docs/08-本轮实施方案/ 下的文档，不改变该集合 ⇒ 判定与所跑的检查集合不变，结论沿用；但 base 与 run id 会随 main 前移与新一轮 CI 变化，以 PR body 为准。",
     "provider_note": "本 PR 改了 scripts/ ⇒ scope.backend=true ⇒ run_providers=true ⇒ provider 档位（go test -race -count=1 + go vet）在四个 provider 包上实跑并通过。实测这一档不按「有没有改 Go 文件」缩面——判断它跑不跑要读 scope.json，不能凭 diff 推断。",
     "steps": [
