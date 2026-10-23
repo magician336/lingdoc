@@ -126,10 +126,11 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # actually delivers.
 #
 # #431 is the 上下文包前端消费 Spec that PF-6 delivers, for the same reason.
+# #482 is the Beta 首版放行验收 Spec that PF-14 delivers, for the same reason.
 # #451 / #452 / #453 are the three Beta-first acceptance Specs that PF-10
 # delivers, for the same reason.
 G_LINE_ISSUES = (
-    frozenset(range(123, 144)) | {145, 146} | {391, 393, 431} | {451, 452, 453}
+    frozenset(range(123, 144)) | {145, 146} | {391, 393, 431} | {451, 452, 453} | {482}
 )
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
@@ -823,6 +824,45 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
             "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，"
             "已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
+        ),
+    },
+    {
+        "name": "PF-14 Beta 首版放行执行",
+        "issue": 492,
+        "issues": (482,),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # #491 的 spec 落盘：Beta 首版放行验收的仓内副本（56 号之后的第一张）。
+            ("docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md", "file"),
+            # #484 的材料接入脚本：真接入（/knowledge/file → 轮询 parse_status →
+            # 查 chunks → 打 retrieval/hybrid-search）。名字照 #484 探索结论 §4.3。
+            ("scripts/acceptance/beta_material_ingest.py", "file"),
+            # #484 的守护测试（探索结论 §5.1 推荐落点：自由路径，PF-10 不拥有它）。
+            ("scripts/ci/test_lingdoc_beta_material.py", "file"),
+            # #494 的守护测试：资料标识参数化（入口 → 绑定动作，无第二处硬编码，
+            # 不传则明确报错，阴性验证）。
+            ("scripts/ci/test_lingdoc_beta_knowledge_id.py", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），"
+            "交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。"
+            "**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，"
+            "三个连续结果串行跑在同一序列里，不为每一行另造执行路径。"
+            "**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，"
+            "不得记为已通过。"
+            "**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，"
+            "不跨票抢跑。"
+            "**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、"
+            "F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、"
+            "证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试"
+            "（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，"
+            "owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；"
+            "本面按「owner 保持拥有、借用方落地后归还」的先例借用它们"
+            "（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），"
+            "**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。"
+            "借用的改动事实记在 PF-10 侧与本面两侧。"
         ),
     },
     {

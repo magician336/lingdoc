@@ -650,6 +650,38 @@ class ScenarioRunner:
         spec = load_spec(spec_path, scenario_id)
         return cls(read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
+    def _preflight_required_variables(self) -> None:
+        """Refuse a run whose contract names a variable nobody supplies.
+
+        A contract may take a value from the environment instead of
+        capturing it.  When it does, the run has to say so before the first
+        request: a run that discovers the gap at the step that needed the
+        value stops with a derived error, and a silent fallback to a
+        placeholder would turn "it ran" into a fiction.
+        """
+        captured = {name for step in self.spec.steps for name in (step.get("capture") or {})}
+        supplied = set(self.seed_variables)
+        missing = sorted(self.referenced_variables() - captured - supplied)
+        if not missing:
+            return
+        raise WorkflowError(
+            f"the contract names variables the environment does not supply: "
+            f"{', '.join(missing)}. The contract takes them from the "
+            f"environment, not from a capture, and there is no default: "
+            f"supply them on the command line (for example --knowledge-id "
+            f"<real identifier>). A silent fallback to a placeholder "
+            f"identifier would make the run look like it exercised the "
+            f"real thing when it did not.")
+
+    def referenced_variables(self) -> set[str]:
+        """The variables the contract's requests name."""
+        names: set[str] = set()
+        for step in self.spec.steps:
+            request = step.get("request") or {}
+            blob = json.dumps(request, ensure_ascii=False)
+            names.update(match.group(1) for match in VARIABLE.finditer(blob))
+        return names
+
     def _check_base_url_scope(self) -> None:
         """Refuse a base URL that does not address the contract's API root.
 
@@ -712,6 +744,7 @@ class ScenarioRunner:
         self.aborted_at = None
         self._validate_readbacks()
         self._check_base_url_scope()
+        self._preflight_required_variables()
         completed = 0
         step_results = self.step_results
         for step in self.spec.steps:
@@ -1298,6 +1331,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", default=os.environ.get("LINGDOC_TEST_TOKEN"), help="short-lived test bearer token (or LINGDOC_TEST_TOKEN)")
     parser.add_argument("--identity", action="append", default=[], metavar="NAME=TOKEN",
                         help="credential for an actor a step names (repeatable); steps with no actor use --token")
+    parser.add_argument("--knowledge-id", default=os.environ.get("LINGDOC_KNOWLEDGE_ID"),
+                        help="the real knowledge identifier the contract binds at F01-06; "
+                             "it is injected as the {{knowledge_id}} variable. There is no "
+                             "default: a contract that names the variable refuses the run "
+                             "when it is not given")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--spec", type=Path, help="specification document: a step list (default workflow.json) or a scenarios document together with --scenario")
     parser.add_argument("--scenario", help="scenario id to drive out of the scenarios document (default scenarios.json)")
@@ -1324,6 +1362,7 @@ def main(argv: list[str] | None = None) -> int:
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
+            variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
         if args.report:
             # Verify the destination before any provider mutation and replace a

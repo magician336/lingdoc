@@ -866,7 +866,10 @@ class CaptureChainGuardTests(unittest.TestCase):
             runner.run()
         message = str(caught.exception)
         self.assertIn("template_id", message)
-        self.assertIn("not captured yet", message)
+        # Without the capture the contract asks the environment for the
+        # value, and the run says so before the first request.
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
         self.assertNotIn("template_id", runner.variables)
 
     def test_a_variable_the_contract_never_captures_is_called_a_precondition(self):
@@ -880,7 +883,8 @@ class CaptureChainGuardTests(unittest.TestCase):
             runner.run()
         message = str(caught.exception)
         self.assertIn("knowledge_id", message)
-        self.assertIn("execution precondition", message)
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
         self.assertNotIn("the contract captures it", message)
 
     def test_a_step_that_failed_its_status_gets_its_own_conclusion(self):

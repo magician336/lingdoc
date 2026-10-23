@@ -235,7 +235,8 @@ def run_command(command: list[str], *, cwd: Path = ROOT, timeout: float = 900.0)
 # ---------------------------------------------------------------------------
 # The F01 sequence
 # ---------------------------------------------------------------------------
-def run_f01(base_url: str, token: str | None, identities: dict[str, str]) -> tuple[list[Outcome], dict[str, Any]]:
+def run_f01(base_url: str, token: str | None, identities: dict[str, str],
+             knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
 
     The runner is the one in ``scripts/lingdoc_mock/run_f01.py``: the steps and
@@ -254,7 +255,8 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str]) -> tup
     try:
         runner = ScenarioRunner.from_files(
             OPENAPI_PATH, WORKFLOW_PATH, base_url=base_url, token=token,
-            identities=identities)
+            identities=identities,
+            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
     except WorkflowError as error:
         outcomes.append(Outcome(
             id="F01 契约序列（24 个节点）", status=BLOCKED,
@@ -806,6 +808,9 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
                         help="契约里某个 actor 的凭据（可重复）")
     parser.add_argument("--executor", default=os.environ.get("LINGDOC_EXECUTOR", ""),
                         help="执行者名字，写进 README")
+    parser.add_argument("--knowledge-id", default=os.environ.get("LINGDOC_KNOWLEDGE_ID", ""),
+                        help="F01-06 绑定的真实资料标识；它作为 {{knowledge_id}} 变量注入执行器。"
+                             "没有默认值：不提供时执行器在第一个请求前就报错，不得回退到演示标识")
     parser.add_argument("--word-check", type=Path, default=None, help="执行者填好的 Word 检查表")
     parser.add_argument("--docx", type=Path, default=None, help="本轮下载的 DOCX（算哈希）")
     parser.add_argument("--modified-docx", type=Path, default=None, help="修改后的 DOCX（算哈希）")
@@ -883,7 +888,8 @@ def main(argv: list[str] | None = None) -> int:
     # ---- the F01 sequence -------------------------------------------------
     commands.append("python scripts/lingdoc_mock/run_f01.py --base-url <base-url> "
                     "--report <f01-report.json>   # by scripts/acceptance/beta_evidence.py")
-    f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities)
+    f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities,
+                                    arguments.knowledge_id or "")
     outcomes.extend(f01_outcomes)
 
     # ---- the browser side -------------------------------------------------
@@ -980,6 +986,11 @@ def main(argv: list[str] | None = None) -> int:
             "migrations": migration_version(arguments.db_dsn, arguments.ledger_sqlite),
         },
         "materials": materials,
+        "knowledge": ({"variable": "knowledge_id", "id": arguments.knowledge_id}
+                     if arguments.knowledge_id else
+                     {"variable": "knowledge_id", "id": None,
+                      "note": "本轮没有提供资料标识：执行器在第一个请求前就拒绝了这轮，"
+                             "没有回退到任何演示标识"}),
         "materials_status": ("本轮给出了合成材料哈希。" if materials else
                              "本轮没有给出 --material，合成材料哈希未记录（协议 §2 第 1 步）。"),
         "template": template,
