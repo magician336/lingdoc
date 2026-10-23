@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -243,6 +244,33 @@ func TestTemplateGovernanceRuntimeCurrentRoleAndParentRollback(t *testing.T) {
 		t.Fatal("suspension permitted old operation replay")
 	}
 }
+
+func TestTemplateGovernanceCatalogManagerProjectionDistinguishesRoleDenialFromStorageFailure(t *testing.T) {
+	r, db, owner, _, ctx := governanceAdapterFixture(t)
+	viewer := governance.Actor{TenantID: owner.TenantID, UserID: "catalog-viewer", Role: string(types.TenantRoleViewer)}
+	if err := db.Exec("INSERT INTO tenant_members(tenant_id,user_id,role,status) VALUES(?,?,?,'active')", viewer.TenantID, viewer.UserID, types.TenantRoleViewer).Error; err != nil {
+		t.Fatal(err)
+	}
+	if canManage, err := r.CanManageTemplateCatalog(ctx, db, viewer); !errors.Is(err, core.ErrNotFound) || canManage {
+		t.Fatalf("mismatched authenticated caller accepted viewer identity: %v, %v", canManage, err)
+	}
+	viewerCtx := governanceCallerContext(context.Background(), coreActorFromGovernance(viewer))
+	canManage, err := r.CanManageTemplateCatalog(viewerCtx, db, viewer)
+	if err != nil || canManage {
+		t.Fatalf("viewer catalog capability = %v, %v; want false without error", canManage, err)
+	}
+	canManage, err = r.CanManageTemplateCatalog(ctx, db, governanceActor(owner))
+	if err != nil || !canManage {
+		t.Fatalf("owner catalog capability = %v, %v; want true", canManage, err)
+	}
+	if err := db.Migrator().DropTable("tenant_members"); err != nil {
+		t.Fatal(err)
+	}
+	if canManage, err = r.CanManageTemplateCatalog(ctx, db, governanceActor(owner)); err == nil || canManage {
+		t.Fatalf("missing membership storage was projected as a public read: %v, %v", canManage, err)
+	}
+}
+
 func TestTemplateGovernanceRuntimeSourceConsentRevisionAndRevocationInOnePool(t *testing.T) {
 	r, db, actor, p, ctx := governanceAdapterFixture(t)
 	_, ref := adapterSourceFixture(t, r, db, p, actor)
@@ -587,6 +615,87 @@ func TestTemplateGovernanceRuntimeWithdrawClosesNewCopiesButKeepsHistory(t *test
 	}
 	if copies == 0 {
 		t.Fatal("withdrawal deleted existing project copies")
+	}
+}
+
+func TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically(t *testing.T) {
+	runtime, projects, db, actor, _, ctx := governanceAdapterFixtureWithProjects(t)
+	projects.SetTemplateCatalogResolver(runtime)
+	published, _ := publishDemoCatalogFixture(t, runtime, actor, ctx)
+	createdRaw, status, replayed, err := projects.CreateProject(ctx, actor, "successful-catalog-copy-audit", core.CreateProjectInput{
+		Name: "成功复制审计", TemplateID: published.TemplateID, TemplateVersion: published.Version,
+	})
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("create published catalog copy: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var created core.Project
+	if err := json.Unmarshal(createdRaw, &created); err != nil || created.TemplateCopy == nil {
+		t.Fatalf("decode successful catalog copy: copy=%+v err=%v", created.TemplateCopy, err)
+	}
+	var successReceipts []struct{ Outcome, TargetID, Details string }
+	if err := db.Table("audit_logs").Select("outcome,target_id,details").Where("action=? AND target_id=?", "lingdoc.template.copy", published.TemplateID+"/"+published.Version).Find(&successReceipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(successReceipts) != 1 || successReceipts[0].Outcome != "success" ||
+		!strings.Contains(successReceipts[0].Details, "new project copied this exact published template version") ||
+		!strings.Contains(successReceipts[0].Details, created.TemplateCopy.ContentHash) ||
+		!strings.Contains(successReceipts[0].Details, created.TemplateCopy.RulesetHash) ||
+		!strings.Contains(successReceipts[0].Details, created.TemplateCopy.ID) ||
+		!strings.Contains(successReceipts[0].Details, created.ID) {
+		t.Fatalf("successful template copy history missing target/reason/hashes: %+v", successReceipts)
+	}
+	if err := db.Exec(`CREATE TRIGGER deny_successful_copy_audit BEFORE INSERT ON audit_logs WHEN NEW.action='lingdoc.template.copy' AND NEW.outcome='success' BEGIN SELECT RAISE(ABORT,'copy audit unavailable'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, copyAuditErr := projects.CreateProject(ctx, actor, "failed-success-copy-audit", core.CreateProjectInput{
+		Name: "成功审计失败必须回滚", TemplateID: published.TemplateID, TemplateVersion: published.Version,
+	})
+	if copyAuditErr == nil {
+		t.Fatal("project creation succeeded despite missing transactional copy audit")
+	}
+	var rolledBack int64
+	if err := db.Table("lingdoc_projects").Where("tenant_id=? AND name=?", actor.TenantID, "成功审计失败必须回滚").Count(&rolledBack).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack != 0 {
+		t.Fatalf("project persisted after copy audit failure: count=%d", rolledBack)
+	}
+	if err := db.Exec("DROP TRIGGER deny_successful_copy_audit").Error; err != nil {
+		t.Fatal(err)
+	}
+	var successCount int64
+	if err := db.Table("audit_logs").Where("action=? AND outcome=?", "lingdoc.template.copy", "success").Count(&successCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if successCount != 1 {
+		t.Fatalf("failed project transaction left a successful copy audit: count=%d", successCount)
+	}
+}
+
+func TestTemplateGovernanceRejectedCatalogCopyRecordsFailureAfterRollback(t *testing.T) {
+	runtime, projects, db, actor, existing, ctx := governanceAdapterFixtureWithProjects(t)
+	projects.SetTemplateCatalogResolver(runtime)
+	published, _ := publishDemoCatalogFixture(t, runtime, actor, ctx)
+	withdrawn, err := runtime.Service().Withdraw(ctx, governanceActor(actor), "withdraw-before-copy-audit", governance.GovernanceInput{TemplateID: published.TemplateID, Version: published.Version, ExpectedRevision: published.Revision, Reason: "stop new copies"})
+	if err != nil || withdrawn.State != template.RuleSetWithdrawn {
+		t.Fatalf("withdraw version: %+v, %v", withdrawn, err)
+	}
+	if published.ContentHash == "" {
+		t.Fatal("published catalog fixture must include a source content hash")
+	}
+	if _, _, _, err := projects.CreateProject(ctx, actor, "rejected-catalog-copy", core.CreateProjectInput{Name: "拒绝撤回模板复制", TemplateID: published.TemplateID, TemplateVersion: published.Version}); !errors.Is(err, governance.ErrInvalidState) {
+		t.Fatalf("withdrawn catalog copy = %v", err)
+	}
+	var events []struct{ Outcome, Details string }
+	if err := db.Table("audit_logs").Select("outcome,details").Where("action=? AND outcome=?", "lingdoc.template.copy", "failure").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Outcome != "failure" || !strings.Contains(events[0].Details, published.ContentHash) {
+		t.Fatalf("copy failure receipt missing source hash: %+v", events)
+	}
+	current, err := projects.GetProject(ctx, actor, existing.ID)
+	if err != nil || current.TemplateCopy == nil || current.TemplateCopy.ContentHash != existing.TemplateCopy.ContentHash {
+		t.Fatalf("rejected copy changed existing project: %+v, %v", current.TemplateCopy, err)
 	}
 }
 

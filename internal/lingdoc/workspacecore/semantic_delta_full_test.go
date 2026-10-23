@@ -266,6 +266,12 @@ type semanticCatalogFixture struct{ value CatalogTemplateDefinition }
 func (f semanticCatalogFixture) Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error) {
 	return f.value, nil
 }
+func (semanticCatalogFixture) RecordCopySuccess(context.Context, Transaction, Actor, TemplateCopyAudit) error {
+	return nil
+}
+func (semanticCatalogFixture) RecordCopyFailure(context.Context, Actor, TemplateCopyFailure) error {
+	return nil
+}
 func TestBindingDerivesImmutableCopyAndInverse(t *testing.T) {
 	s, a, p := extendedImpactStore(t)
 	set, err := template.PublishRuleSet(template.RuleSet{ID: "semantic-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{

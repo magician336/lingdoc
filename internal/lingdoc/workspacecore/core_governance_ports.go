@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 )
 
@@ -30,6 +31,31 @@ func (s *Service) AuthorizeInTransaction(ctx context.Context, tx Transaction, ac
 	return s.authorizeProject(ctx, tx, request)
 }
 
+// TenantPermissionInTransaction projects the actor's current tenant role into
+// an explicit permission decision. Unlike AuthorizeInTransaction, a false
+// result here is an ordinary role ceiling; membership and storage failures
+// remain errors instead of being inferred from a not-found authorization.
+func (s *Service) TenantPermissionInTransaction(_ context.Context, tx Transaction, actor Actor, required types.TenantRole) (bool, error) {
+	if tx == nil || !validActor(actor) || !required.IsValid() {
+		return false, ErrInvalidRequest
+	}
+	active, err := tx.ActiveMember(actor)
+	if err != nil {
+		return false, err
+	}
+	if !active {
+		return false, ErrNotFound
+	}
+	role, err := currentTenantRole(tx, actor)
+	if err != nil {
+		return false, err
+	}
+	if !role.IsValid() {
+		return false, ErrNotFound
+	}
+	return role.HasPermission(required), nil
+}
+
 type CatalogTemplateDefinition struct {
 	Definition                                               Template
 	BindingPolicies                                          []governance.BindingPolicy
@@ -39,6 +65,40 @@ type CatalogTemplateDefinition struct {
 }
 type TemplateCatalogResolver interface {
 	Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error)
+}
+
+// TemplateCopyAudit contains server-computed identities for a successful
+// catalog copy. The recorder writes it through the same project transaction.
+type TemplateCopyAudit struct {
+	ProjectID        string
+	CopyID           string
+	CopyVersion      int64
+	TemplateID       string
+	TemplateVersion  string
+	ContentHash      string
+	RuleSetHash      string
+	RuleSetID        string
+	RuleSetVersion   string
+	SourcePolicyHash string
+}
+
+// TemplateCopyFailure identifies the server-resolved copy target when a
+// project transaction fails. Request values are used only when resolution
+// itself failed and no authoritative target exists.
+type TemplateCopyFailure struct {
+	TemplateID              string
+	TemplateVersion         string
+	ProjectID               string
+	Cause                   error
+	AuditPersistenceFailure bool
+}
+
+// TemplateCopyAuditRecorder is a required adapter for a configured catalog.
+// Success records join the project transaction; failure receipts are written
+// only after that transaction rolls back so they survive a rejected copy.
+type TemplateCopyAuditRecorder interface {
+	RecordCopySuccess(context.Context, Transaction, Actor, TemplateCopyAudit) error
+	RecordCopyFailure(context.Context, Actor, TemplateCopyFailure) error
 }
 
 func (s *Service) SetTemplateCatalogResolver(resolver TemplateCatalogResolver) { s.catalog = resolver }

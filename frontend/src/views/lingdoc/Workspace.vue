@@ -107,9 +107,12 @@
             <form class="create-form" @submit.prevent="create">
               <input id="project-name" v-model="newName" maxlength="120" required placeholder="新课题名称" aria-label="新课题名称">
               <label for="new-project-template">课题模板</label>
-              <select id="new-project-template" v-model="newTemplateKey" :disabled="busy || catalogLoading"><option value="template-demo@1">两章演示模板 · 1</option><option v-for="v in publishedTemplates" :key="v.template_id+'@'+v.version" :value="v.template_id+'@'+v.version">{{v.definition.name || v.template_id}} · {{v.version}}</option></select>
-              <p class="muted">创建时固定这个版本；目录更新不会静默改变课题副本。</p><p v-if="catalogError" role="status" class="muted">{{catalogError}}</p>
-              <button type="submit" :disabled="busy || !newName.trim() || catalogLoading">创建课题</button>
+              <select id="new-project-template" v-model="newTemplateKey" :disabled="busy || catalogLoading"><option value="template-demo@1">两章演示模板 · 1 · 内部演示</option><option v-for="v in publishedTemplates" :key="v.template_id+'@'+v.version" :value="v.template_id+'@'+v.version">{{templateChoiceLabel(v)}}</option></select>
+              <p v-if="selectedPublishedTemplate" class="muted">{{templateChoiceDescription(selectedPublishedTemplate)}}</p>
+              <p v-else-if="newTemplateKey === 'template-demo@1'" class="muted">当前选择的是内部两章演示模板，不代表正式申报要求。</p>
+              <p v-else class="warning" role="alert">先前选择的模板已不在当前可用目录中，请重新选择；不会自动改用演示模板。</p>
+              <p class="muted">创建时固定这个版本；目录更新不会静默改变课题副本。</p><p v-if="templateCatalogNotice" role="status" class="muted">{{templateCatalogNotice}}</p>
+              <button type="submit" :disabled="busy || !newName.trim() || catalogLoading || templateChoiceUnavailable">创建课题</button>
             </form>
           </div>
         </div>
@@ -135,8 +138,15 @@
         <div class="section-head">
           <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 课题版本 {{ project.project_version }}</p>
           <p class="muted">课题成员 {{ project.members.length }} 人。现阶段由课题成员协作编辑。</p></div>
-          <button type="button" @click="selectProject(project.id, { force: true })">重新读取</button>
+          <button type="button" @click="selectProject(project.id, { force: true }).then(loadProjectTemplateStatus)">重新读取</button>
         </div>
+
+        <section v-if="templateRecall" class="warning" role="alert" aria-label="来源模板召回提示">
+          <h3>当前课题使用的来源模板已召回</h3>
+          <p>原因：{{templateRecall.reason}}</p><p>处置建议：{{templateRecall.migration_advice}}</p>
+          <p>当前课题副本和历史交付不会自动改写；请由负责人复核后决定是否走正式模板升级。</p>
+        </section>
+        <p v-if="templateStatusError" class="warning" role="status">{{templateStatusError}} <button type="button" @click="loadProjectTemplateStatus">重试</button></p>
 
 
         <section class="template-copy-panel" aria-label="课题模板副本">
@@ -727,7 +737,7 @@
       </section>
       <section v-else class="panel empty-work">
         <div class="document-welcome"><span class="document-eyebrow">研究文稿</span><h2>从一个课题开始写作</h2><p>设定课题 → 连续写作与资料引用 → 核查后交付。</p>
-          <form @submit.prevent="create" class="create-form"><label for="welcome-template">课题模板</label><select id="welcome-template" v-model="newTemplateKey" :disabled="busy||catalogLoading"><option value="template-demo@1">两章演示模板 · 1</option><option v-for="v in publishedTemplates" :key="v.template_id+'@'+v.version" :value="v.template_id+'@'+v.version">{{v.definition.name||v.template_id}} · {{v.version}}</option></select><input id="welcome-project-name" v-model="newName" required maxlength="120" placeholder="课题名称" aria-label="课题名称"><button type="submit" :disabled="busy || !newName.trim()">创建课题</button></form>
+          <form @submit.prevent="create" class="create-form"><label for="welcome-template">课题模板</label><select id="welcome-template" v-model="newTemplateKey" :disabled="busy||catalogLoading"><option value="template-demo@1">两章演示模板 · 1 · 内部演示</option><option v-for="v in publishedTemplates" :key="v.template_id+'@'+v.version" :value="v.template_id+'@'+v.version">{{templateChoiceLabel(v)}}</option></select><p v-if="selectedPublishedTemplate" class="muted">{{templateChoiceDescription(selectedPublishedTemplate)}}</p><p v-else-if="newTemplateKey === 'template-demo@1'" class="muted">当前选择的是内部两章演示模板，不代表正式申报要求。</p><p v-else class="warning" role="alert">先前选择的模板已不在当前可用目录中，请重新选择；不会自动改用演示模板。</p><p v-if="templateCatalogNotice" role="status" class="muted">{{templateCatalogNotice}}</p><input id="welcome-project-name" v-model="newName" required maxlength="120" placeholder="课题名称" aria-label="课题名称"><button type="submit" :disabled="busy || catalogLoading || !newName.trim() || templateChoiceUnavailable">创建课题</button></form>
           <button type="button" class="ghost" @click="railOpen=true; projectPickerOpen=true">打开已有课题</button>
         </div>
       </section>
@@ -739,7 +749,7 @@
         <ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
         <ImpactOpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <RuntimeOpsPanel v-if="fullPanel === 'operations'" ref="runtimeOpsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
-        <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
+        <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" :can-manage-catalog="auth.hasRole('admin')" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
         <ProjectCollaborationPanel v-if="fullPanel === 'members'" ref="collaborationPanelRef" :project="project" :chapters="chapters" :assets="assets" :current-user-id="auth.currentUserId ?? ''" :readonly="restricted" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <ChapterReviewPanel v-if="fullPanel === 'review' && chapter" ref="chapterReviewPanelRef" :project="project" :chapter="chapter" :current-user-id="auth.currentUserId ?? ''" :selection="commentSelection" :readonly="fullReadonly" :formal-current="!workingCopyDiffersFromFormal && !chapterChanged" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @locate="locateComment" />
       </section>
@@ -786,8 +796,8 @@ import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
 import { listMyProjectInvitations, acceptProjectInvitation, type ProjectInvitation } from '@/api/lingdoc/collaboration'
 import { getEffectivePermission } from '@/api/lingdoc/permissions'
-import { invitationAssignment, invitationScopeDetail, invitationStatusLabel, invitationViewState, permissionIdentity, publishedChoices, resolveTemplateChoice, toggleEvidenceSelection } from './firstPassEntryState'
-import { listTemplateProfiles, listTemplateVersions, type TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
+import { CatalogIntegrityError, catalogNoticeForView, invitationAssignment, invitationScopeDetail, invitationStatusLabel, invitationViewState, permissionIdentity, publishedChoices, recallNoticeForProject, resolveTemplateChoice, templateChoiceDescription, templateChoiceLabel, templateStatusErrorFor, toggleEvidenceSelection } from './firstPassEntryState'
+import { getTemplateVersion, listTemplateProfiles, listTemplateVersions, type TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
 import ChapterReviewPanel from './ChapterReviewPanel.vue'
 import type { CommentSelection } from '@/api/lingdoc/chapterReview'
 import type { VersionRef } from '@/api/lingdoc/agentApi'
@@ -859,11 +869,18 @@ const invitationLoading=ref(false),invitationError=ref('')
 const notifyOpen=ref(true)
 let invitationEpoch=0
 const myInvitations=ref<ProjectInvitation[]>([]),invitationBusy=ref(false),newTemplateKey=ref('template-demo@1'),publishedTemplates=ref<TemplateCatalogVersion[]>([]),catalogLoading=ref(false),catalogError=ref('')
+const selectedPublishedTemplate=computed(()=>publishedTemplates.value.find(v=>`${v.template_id}@${v.version}`===newTemplateKey.value))
+const templateChoiceUnavailable=computed(()=>newTemplateKey.value!=='template-demo@1'&&!selectedPublishedTemplate.value)
+const templateCatalogNotice=computed(()=>catalogNoticeForView(catalogLoading.value,catalogError.value,publishedTemplates.value.length))
+const templateRecall=ref<NonNullable<TemplateCatalogVersion['recall']>|null>(null),templateStatusError=ref('')
 const activeInvitationCount=computed(()=>myInvitations.value.filter(i=>invitationViewState(i)==='active').length)
 async function loadInvitationInbox(){const epoch=++invitationEpoch,user=auth.currentUserId,tenant=auth.effectiveTenantId;invitationLoading.value=true;invitationError.value='';myInvitations.value=[];try{const result=await listMyProjectInvitations();if(epoch===invitationEpoch&&auth.currentUserId===user&&auth.effectiveTenantId===tenant)myInvitations.value=result.data}catch{if(epoch===invitationEpoch&&auth.currentUserId===user&&auth.effectiveTenantId===tenant)invitationError.value='邀请暂不可读，不能据此判断没有邀请。请重新读取。'}finally{if(epoch===invitationEpoch)invitationLoading.value=false}}
 async function acceptMyInvitation(invite:ProjectInvitation){if(invitationBusy.value)return;invitationBusy.value=true;const body={expected_invitation_version:invite.version},name=`invite:${invite.id}`;try{await acceptProjectInvitation(invite.project_id,invite.id,invite.version,operationKey(name,body));attempts.delete(name);await loadInvitationInbox();await loadProjects();await selectProject(invite.project_id)}catch(e){failure(e)}finally{invitationBusy.value=false}}
 let catalogEpoch=0
 async function loadPublishedTemplates(){const epoch=++catalogEpoch,user=auth.currentUserId,tenant=auth.effectiveTenantId;catalogLoading.value=true;catalogError.value='';publishedTemplates.value=[];const current=()=>epoch===catalogEpoch&&auth.currentUserId===user&&auth.effectiveTenantId===tenant;try{const profiles=(await listTemplateProfiles({state:'published'})).data;const versions=await Promise.all(profiles.map(x=>listTemplateVersions(x.template_id)));if(current())publishedTemplates.value=publishedChoices(versions.flatMap(x=>x.data))}catch{if(current())catalogError.value='模板目录暂不可读；可以使用明确标为演示的两章模板。'}finally{if(current())catalogLoading.value=false}}
+let templateStatusEpoch=0
+async function loadProjectTemplateStatus(){const epoch=++templateStatusEpoch,p=project.value,user=auth.currentUserId,tenant=auth.effectiveTenantId;templateRecall.value=null;templateStatusError.value='';if(!p)return;const current=()=>epoch===templateStatusEpoch&&project.value?.id===p.id&&project.value.template_id===p.template_id&&project.value.template_version===p.template_version&&auth.currentUserId===user&&auth.effectiveTenantId===tenant;try{const result=await getTemplateVersion(p.template_id,p.template_version);if(current())templateRecall.value=recallNoticeForProject(p,result.data)}catch(error:unknown){if(current()){if(error instanceof CatalogIntegrityError)console.error('[LingDoc] template catalog integrity failure',{project_id:p.id,template_id:p.template_id,template_version:p.template_version,error:error.message});templateStatusError.value=templateStatusErrorFor(error,p.template_id==='template-demo'&&p.template_version==='1')}}}
+watch(()=>[project.value?.id,project.value?.template_id,project.value?.template_version,auth.currentUserId,auth.effectiveTenantId],()=>{void loadProjectTemplateStatus()})
 watch(()=>[project.value?.id,project.value?.project_version,auth.currentUserId,auth.effectiveTenantId],()=>{const p=project.value;if(p)void loadChapterPermissions(p.id,p.project_version,chapters.value,editorSessionEpoch);else{permissionEpoch++;lastPermissionIdentity='';chapterWritePermissions.value={};chapterConfirmPermissions.value={}}})
 const activationOpen=ref(false),activationDialogRef=ref<HTMLElement|null>(null),activationAcknowledged=ref(false),activationDiff=ref<ActivationDiff|null>(null),activationReceipt=ref<ActivationReadReceipt|null>(null)
 let fullReturnFocus:HTMLElement|null=null

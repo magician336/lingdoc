@@ -18,6 +18,37 @@ type ruleSetSourcePolicyCatalog struct{ value CatalogTemplateDefinition }
 func (r ruleSetSourcePolicyCatalog) Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error) {
 	return r.value, nil
 }
+func (ruleSetSourcePolicyCatalog) RecordCopySuccess(context.Context, Transaction, Actor, TemplateCopyAudit) error {
+	return nil
+}
+func (ruleSetSourcePolicyCatalog) RecordCopyFailure(context.Context, Actor, TemplateCopyFailure) error {
+	return nil
+}
+
+type resolverWithoutCopyAudit struct{ value CatalogTemplateDefinition }
+
+func (r resolverWithoutCopyAudit) Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error) {
+	return r.value, nil
+}
+
+func TestCreateProjectFailsClosedWhenCatalogCopyAuditAdapterIsMissing(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "missing-copy-audit.db"))
+	actor := Actor{TenantID: 732, UserID: "copy-audit-owner", Role: types.TenantRoleOwner}
+	seedTenantMember(t, svc, actor)
+	svc.SetTemplateCatalogResolver(resolverWithoutCopyAudit{value: CatalogTemplateDefinition{Definition: lingdoctemplate.DemoTemplate()}})
+
+	_, _, _, err := svc.CreateProject(context.Background(), actor, "missing-copy-audit", CreateProjectInput{Name: "must roll back", TemplateID: lingdoctemplate.DemoTemplateID})
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("catalog copy without audit adapter = %v, want fail-closed ErrInvalidState", err)
+	}
+	var projects int64
+	if err := svc.testDB().Model(&projectRow{}).Where("tenant_id = ? AND name = ?", actor.TenantID, "must roll back").Count(&projects).Error; err != nil {
+		t.Fatal(err)
+	}
+	if projects != 0 {
+		t.Fatalf("project was persisted without its required copy audit: count=%d", projects)
+	}
+}
 
 // testStore installs the complete production SQLite migration scripts. These
 // regressions use the real project-copy rows and lingdoc_g5_records sidecars.

@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -69,6 +71,142 @@ func TestCurrentAuthorityIdentityStrictBodyAndReplay(t *testing.T) {
 		t.Fatal("empty history skipped current read authority", response.Code, response.Body.String())
 	}
 }
+func TestReaderCannotSeeUnpublishedCatalogDraft(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	reader := core.Actor{TenantID: owner.TenantID, UserID: "catalog-reader", Role: types.TenantRoleViewer}
+	if err := db.Exec("INSERT INTO tenant_members VALUES(7,'catalog-reader','viewer','active',NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	set, _ := seedDemoRuleSetFixture(t, runtime, owner, ctx)
+	if _, err := runtime.Service().CreateProfile(ctx, governanceActor(owner), "create-reader-private-profile", governance.CreateProfileInput{ID: "template-demo", Name: "Private working draft", Reason: "reviewed draft visibility"}); err != nil {
+		t.Fatal(err)
+	}
+	draft := saveDemoTemplateDraftFixture(t, runtime, owner, set, ctx)
+	router := gin.New()
+	RegisterTemplateGovernanceRoutes(router.Group("/api/v1/lingdoc"), runtime)
+	base := "/api/v1/lingdoc/template-catalog/profiles"
+	readerCtx := governanceCallerContext(context.Background(), reader)
+	response := governanceHTTPRequest(router, readerCtx, http.MethodGet, base, "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("reader catalog: %d %s", response.Code, response.Body.String())
+	}
+	var catalog struct {
+		Data []governance.Profile `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || len(catalog.Data) != 0 {
+		t.Fatalf("private draft profile visible: %+v, %v", catalog, err)
+	}
+	versionPath := base + "/" + draft.TemplateID + "/versions/" + draft.Version
+	response = governanceHTTPRequest(router, readerCtx, http.MethodGet, base+"/"+draft.TemplateID+"/versions", "", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("reader draft-only profile history: %d %s", response.Code, response.Body.String())
+	}
+	response = governanceHTTPRequest(router, readerCtx, http.MethodGet, versionPath, "", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("reader draft read: %d %s", response.Code, response.Body.String())
+	}
+	response = governanceHTTPRequest(router, ctx, http.MethodGet, versionPath, "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin draft read: %d %s", response.Code, response.Body.String())
+	}
+	response = governanceHTTPRequest(router, readerCtx, http.MethodPost, base, `{"template_id":"reader-write","name":"forbidden","reason":"unauthorized"}`, "reader-write-attempt")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("reader catalog write: %d %s", response.Code, response.Body.String())
+	}
+	var denied int64
+	if err := db.Table("audit_logs").Where("action=? AND actor_user_id=? AND outcome=?", "lingdoc.template.create_profile", reader.UserID, "failure").Count(&denied).Error; err != nil || denied != 1 {
+		t.Fatalf("reader rejection audit = %d, %v", denied, err)
+	}
+	var receipt struct{ Details string }
+	if err := db.Table("audit_logs").Select("details").Where("action=? AND actor_user_id=? AND outcome=?", "lingdoc.template.create_profile", reader.UserID, "failure").Take(&receipt).Error; err != nil {
+		t.Fatal(err)
+	}
+	var auditDetails struct {
+		Details struct {
+			ErrorCode string `json:"error_code"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(receipt.Details), &auditDetails); err != nil || auditDetails.Details.ErrorCode != "permission_denied" {
+		t.Fatalf("reader denial audit code=%q details=%s err=%v, want permission_denied", auditDetails.Details.ErrorCode, receipt.Details, err)
+	}
+}
+
+func TestTemplateAuditHistoryIsAdminOnlyAndTenantScoped(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	published, _ := publishDemoCatalogFixture(t, runtime, owner, ctx)
+	router := gin.New()
+	RegisterTemplateGovernanceRoutes(router.Group("/api/v1/lingdoc"), runtime)
+	path := "/api/v1/lingdoc/template-catalog/profiles/" + published.TemplateID + "/audit-events"
+
+	reader := core.Actor{TenantID: owner.TenantID, UserID: "audit-reader", Role: types.TenantRoleViewer}
+	if err := db.Exec("INSERT INTO tenant_members VALUES(7,'audit-reader','viewer','active',NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	response := governanceHTTPRequest(router, governanceCallerContext(context.Background(), reader), http.MethodGet, path, "", "")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("non-manager audit history = %d %s, want 403", response.Code, response.Body.String())
+	}
+
+	if err := db.Exec("INSERT INTO tenants(id) VALUES(8)").Error; err != nil {
+		t.Fatal(err)
+	}
+	other := core.Actor{TenantID: 8, UserID: "other-tenant-admin", Role: types.TenantRoleAdmin}
+	if err := db.Exec("INSERT INTO tenant_members VALUES(8,'other-tenant-admin','admin','active',NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	response = governanceHTTPRequest(router, governanceCallerContext(context.Background(), other), http.MethodGet, path, "", "")
+	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "lingdoc.template.publish") {
+		t.Fatalf("cross-tenant audit history leaked: %d %s", response.Code, response.Body.String())
+	}
+	response = governanceHTTPRequest(router, ctx, http.MethodGet, path+"?after_id=not-a-cursor", "", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid audit cursor = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRevokedActorWritesMinimalCatalogReceipt(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	if err := db.Exec("UPDATE tenant_members SET status='suspended' WHERE tenant_id=? AND user_id=?", owner.TenantID, owner.UserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	RegisterTemplateGovernanceRoutes(router.Group("/api/v1/lingdoc"), runtime)
+	response := governanceHTTPRequest(router, ctx, http.MethodPost, "/api/v1/lingdoc/template-catalog/profiles",
+		`{"template_id":"revoked-write","name":"revoked","reason":"must not author a receipt"}`, "revoked-catalog-write")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("revoked actor response = %d %s, want anti-enumerating 404", response.Code, response.Body.String())
+	}
+	var receipts []struct{ Details string }
+	if err := db.Table("audit_logs").Select("details").Where("action=? AND actor_user_id=? AND outcome=?", "lingdoc.template.create_profile", owner.UserID, "failure").Find(&receipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 || !strings.Contains(receipts[0].Details, `"error_code":"permission_denied"`) || strings.Contains(receipts[0].Details, `"content_hash"`) {
+		t.Fatalf("revoked actor must leave one minimal denial receipt without protected catalog metadata: %+v", receipts)
+	}
+}
+
+func TestTemplateGovernanceFailureReceiptRejectsMismatchedCallerIdentity(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	claimed := governanceActor(owner)
+	claimed.UserID = "forged-catalog-actor"
+	_, err := runtime.Service().CreateProfile(ctx, claimed, "forged-receipt-attribution", governance.CreateProfileInput{
+		ID: "forged-receipt", Name: "must not exist", Reason: "mismatched authenticated identity",
+	})
+	if !errors.Is(err, core.ErrNotFound) || !errors.Is(err, governance.ErrUnverifiedActor) {
+		t.Fatalf("mismatched caller error = %v, want an unverified identity denial", err)
+	}
+	var receipts, profiles int64
+	if err := db.Table("audit_logs").Where("actor_user_id=?", claimed.UserID).Count(&receipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("lingdoc_template_profiles").Where("template_id=?", "forged-receipt").Count(&profiles).Error; err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 0 || profiles != 0 {
+		t.Fatalf("unverified actor authored data or an attributed receipt: profiles=%d receipts=%d", profiles, receipts)
+	}
+}
+
 func TestMachineCannotMakeHumanPublicationOrSuggestionDecisions(t *testing.T) {
 	runtime, _, _, p, ctx := governanceAdapterFixture(t)
 	router := gin.New()
