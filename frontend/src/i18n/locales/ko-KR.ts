@@ -2998,7 +2998,13 @@ export default {
           outcome: '결과'
         },
         actorRole: {
-          system_admin: '시스템 관리자'
+          owner: '소유자',
+          admin: '관리자',
+          contributor: '기여자',
+          viewer: '뷰어',
+          system_admin: '시스템 관리자',
+          platform_api_key: '플랫폼 API 키',
+          unknown: '알 수 없는 역할'
         },
         errors: {
           generic: '감사 로그 로드 실패'

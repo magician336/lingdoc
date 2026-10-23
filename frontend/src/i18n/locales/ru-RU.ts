@@ -2998,7 +2998,13 @@ export default {
           outcome: 'Результат'
         },
         actorRole: {
-          system_admin: 'Системный администратор'
+          owner: 'Владелец',
+          admin: 'Администратор',
+          contributor: 'Участник',
+          viewer: 'Наблюдатель',
+          system_admin: 'Системный администратор',
+          platform_api_key: 'Платформенный API-ключ',
+          unknown: 'Неизвестная роль'
         },
         errors: {
           generic: 'Не удалось загрузить журнал аудита'
