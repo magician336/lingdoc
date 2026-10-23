@@ -764,10 +764,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
             ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
-            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),
-            ("migrations/sqlite/000054_lingdoc_audit_decision_fields.down.sql", "file"),
-            ("migrations/versioned/000133_lingdoc_audit_decision_fields.up.sql", "file"),
-            ("migrations/versioned/000133_lingdoc_audit_decision_fields.down.sql", "file"),
+            ("migrations/sqlite/000055_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/sqlite/000055_lingdoc_audit_decision_fields.down.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_audit_decision_fields.up.sql", "file"),
+            ("migrations/versioned/000134_lingdoc_audit_decision_fields.down.sql", "file"),
             # #454 的 Go 守护（1）：模型字段集合 == 表列集合。落 internal/database/
             # 是 56-Spec 决策 3 指定的位置（与被测的迁移/schema 同属一处）。
             ("internal/database/audit_event_columns_test.go", "file"),
@@ -786,9 +786,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "机制理由是「同一条不变量（模型字段集合 == 表列集合）只有一个拥有者」："
             "56-Spec 决策 3 已指定守护落 internal/database/，若 #415 另在 workspacecore/ "
             "写一份，同一条不变量就有两个 module 各写一遍（ch05 信息泄漏）。"
-            "交付 Spec 是既有的 #130，不新开。迁移编号 000054 / 000133 是预留，"
-            "**施工时必须重新核对 origin/main 已占用的编号**（PF-3 用 000052 / 000131，"
-            "PF-4 用 000053 / 000132）。#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
+            "交付 Spec 是既有的 #130，不新开。"
+            "**迁移编号 000055 / 000134（2026-10-23 让号后定）**：本面原预留 000054 / 000133，"
+            "但 PF-10（#465，Beta 首版验收证据生产）已取用 000054 / 000133 建模型调用账本表"
+            "（main 最高为 000132，两者接得上）⇒ 本面让到 000055 / 000134。"
+            "**切分方案 §2.2 曾给 PF-8 预留 000055 / 000134**（回退记录落库用）——PF-8 已 done "
+            "且回退未落库 ⇒ 那个预留作废，现由本面使用；**PF-8 将来若要落库须重新取号**。"
+            "施工时仍必须重新核对 origin/main 已占用的编号。"
+            "#454 的首批夹具迁移清单在开工时落定并追加进本面路径集。"
+            "**`internal/container/lingdoc.go` 被 PF-10 借用（2026-10-23）**：该路径归本面（#414 的 "
+            "AuditSink 实现就在那里），PF-10（#465）在组合根装模型调用账本时改了它一处。"
+            "按「owner 保持拥有、借用方落地后归还」的先例（PF-8 借 PF-4 的四个路径，落地后归还），"
+            "**该路径仍归本面，PF-10 合入 main 后归还**；PF-10 侧已记同一笔借用。"
         ),
     },
     {
