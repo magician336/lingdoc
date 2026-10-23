@@ -156,22 +156,42 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(ingest.BLOCKED, beta_evidence.BLOCKED)
         self.assertEqual(ingest.NOT_RUN, beta_evidence.NOT_RUN)
 
-    def test_the_module_quotes_no_ticket_number(self):
+    def test_the_module_source_carries_no_ticket_number(self):
         """A gap is named by its identifier; the ticket number lives in the registry.
 
-        The rule binds the **emitted unblock conditions**: those land in
-        evidence artifacts and are compared across rounds, so a renumbered gap
-        must not change them.  The module's own docstring may name the ticket
-        that owns the work; that is documentation, not an unblock condition.
+        The producer must not hardcode a ticket: the registry is the one place
+        that binds an identifier to a ticket, so a renumbering changes that
+        file alone.
         """
-        for identifier in re.findall(r"gap_unblock\(\"(GAP-[A-Z0-9-]+)\"\)",
-                                     MODULE_PATH.read_text(encoding="utf-8")):
-            with self.subTest(gap=identifier):
-                self.assertIsNone(re.search(r"#\d{3}", ingest.gap_unblock(identifier)))
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"#\d{3}", source),
+                          "the module hardcodes a ticket number into its source")
 
-    def test_the_module_emits_no_ticket_number_in_any_unblock_condition(self):
-        """Every unblock condition the module can produce is free of one."""
-        conditions = []
+    def test_the_emitted_unblock_carries_the_condition_and_the_ticket_together(self):
+        """口径 §3.3 规则 6 / §5.3: 解除条件与跟进票号必须同行给出。
+
+        The judge rules require the release condition and the follow-up ticket
+        to sit in the **same cell**.  The ticket is resolved from the registry
+        at emit time, so a renumbering moves both sides together and the
+        producer still hardcodes nothing.
+        """
+        condition = ingest.gap_unblock("GAP-WEKNORA-INGEST")
+        registry = json.loads(ingest.GAP_PATH.read_text(encoding="utf-8"))["GAPS"]
+        self.assertIn("GAP-WEKNORA-INGEST", condition)
+        self.assertIn(registry["GAP-WEKNORA-INGEST"]["unblock"], condition)
+        self.assertRegex(condition, r"#\d+", "the unblock condition names no follow-up ticket")
+
+    def test_the_emitted_ticket_is_the_one_the_registry_binds(self):
+        registry = json.loads(ingest.GAP_PATH.read_text(encoding="utf-8"))["GAPS"]
+        for identifier, entry in registry.items():
+            with self.subTest(gap=identifier):
+                condition = ingest.gap_unblock(identifier)
+                self.assertIn(entry["ticket"], condition)
+                self.assertIn(entry["item"], condition)
+                self.assertIn(entry["unblock"], condition)
+
+    def test_every_unblock_the_module_emits_carries_its_ticket(self):
+        """No BLOCKED / NOT RUN record may point at a gap without a ticket."""
         for bundle, stage_name in (
             (_bundle(ingest={"ok": False, "route": ingest.ALLOWED_INGEST_ROUTE}),
              "ingest"),
@@ -180,12 +200,11 @@ class VocabularyTests(unittest.TestCase):
             (_bundle(retrieval={"ok": True, "hit_count": 0}), "retrieve"),
         ):
             record = ingest.run_material(_spec(), _transport(bundle))
-            conditions.append(record["stages"][stage_name]["unblock"])
-        conditions.append(ingest.gap_unblock("GAP-MATERIAL-HASH"))
-        for condition in conditions:
-            self.assertTrue(condition.strip())
-            self.assertIsNone(re.search(r"#\d{3}", condition),
-                              f"an unblock condition quotes a ticket number: {condition}")
+            condition = record["stages"][stage_name]["unblock"]
+            with self.subTest(stage=stage_name):
+                self.assertTrue(condition.strip())
+                self.assertRegex(condition, r"#\d+")
+                self.assertIn("GAP-", condition)
 
     def test_every_gap_the_module_uses_is_registered(self):
         source = MODULE_PATH.read_text(encoding="utf-8")

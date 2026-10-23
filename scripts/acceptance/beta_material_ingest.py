@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Material ingest orchestration for the Beta first release (#484).
+"""Material ingest orchestration for the Beta first release.
+
+(The ticket that owns this work is named in the pull request and in the
+parallel-surface registry; it is deliberately not written here, so that this
+file -- like the evidence producer next to it -- carries no ticket number of
+its own.)
 
 What this file owns
 -------------------
@@ -194,9 +199,16 @@ def processing_state_of(parse_status: str | None) -> str:
 def gap_unblock(identifier: str) -> str:
     """The unblock condition of a gap, named by its stable identifier.
 
-    The ticket number behind a gap changes; the identifier does not.  The code
-    quotes the identifier and never the ticket, so a renumbering changes the
-    registry file alone.
+    The identifier is the stable key: the ticket number behind a gap changes,
+    the identifier does not.  So the **registry file** is the one place that
+    binds them, and the producer quotes the identifier rather than hardcoding
+    a number.
+
+    The emitted condition still carries the ticket number, because the
+    judgement rules require the release condition and the follow-up ticket to
+    sit in the **same cell** (口径 §3.3 规则 6 / §5.3 两个必带件).  It is
+    resolved from the registry at emit time, so a renumbering changes
+    ``gaps.json`` alone and every artifact follows it automatically.
     """
     try:
         registry = json.loads(GAP_PATH.read_text(encoding="utf-8"))["GAPS"]
@@ -205,7 +217,11 @@ def gap_unblock(identifier: str) -> str:
     entry = registry.get(identifier)
     if entry is None:
         raise MaterialError(f"the gap registry has no gap named {identifier}")
-    return (f"（缺口 `{identifier}`：{entry['unblock']}；"
+    ticket = str(entry.get("ticket", "")).strip()
+    item = str(entry.get("item", "")).strip()
+    if not ticket or not item:
+        raise MaterialError(f"the gap registry entry {identifier} has no ticket or no item")
+    return (f"（缺口 `{identifier}`（跟进票 {ticket}，{item}）：{entry['unblock']}；"
             f"对应关系见 docs/08-本轮实施方案/acceptance/gaps.json）")
 
 
@@ -568,9 +584,9 @@ def _ingest_stage(spec: MaterialSpec, transport: MaterialTransport) -> dict[str,
     if observation.seeded_directly or _route_is_forbidden(observation.route):
         return _stage(
             FAILED,
-            reason=("the material was made ready by writing the knowledges or chunks "
-                    f"tables directly (route {observation.route!r}); the protocol forbids "
-                    "that shortcut, so this round proves nothing about the real chain"),
+            reason=("材料是靠直接写 knowledges / chunks 表做成的"
+                    f"（走的是 {observation.route!r}）；协议禁止这条捷径，"
+                    "所以这一轮什么也没证明"),
             failure_class=FORBIDDEN_INGEST_ROUTE,
             evidence={"route": observation.route},
         )
@@ -578,7 +594,7 @@ def _ingest_stage(spec: MaterialSpec, transport: MaterialTransport) -> dict[str,
         return _stage(
             BLOCKED,
             reason=(observation.reason
-                    or f"the material did not get in (route {observation.route!r})"),
+                    or f"材料没有进来（走的是 {observation.route!r}）"),
             unblock=(gap_unblock("GAP-WEKNORA-INGEST")
                      + "；确认材料真的走了上传接口：知识库标识、访问令牌与服务地址"),
             failure_class=INGEST_UNREACHABLE,
@@ -603,7 +619,7 @@ def _poll_stage(spec: MaterialSpec, transport: MaterialTransport,
     if not observation.ok:
         return _stage(
             BLOCKED,
-            reason=observation.reason or "the processing state could not be read",
+            reason=observation.reason or "读不到处理状态",
             unblock=(gap_unblock("GAP-WEKNORA-INGEST")
                      + "；轮询到 parse_status 进入终态（completed / failed / cancelled）后重跑"),
             failure_class=PROCESSING_INCOMPLETE,
@@ -613,7 +629,7 @@ def _poll_stage(spec: MaterialSpec, transport: MaterialTransport,
         return _stage(
             BLOCKED,
             reason=(observation.reason
-                    or f"the parse status {observation.parse_status!r} is not terminal yet"),
+                    or f"解析状态 {observation.parse_status!r} 还没到终态"),
             unblock=(gap_unblock("GAP-WEKNORA-INGEST")
                      + "；等解析进入终态后重跑本脚本"),
             failure_class=PROCESSING_INCOMPLETE,
@@ -647,7 +663,7 @@ def _retrieve_stage(spec: MaterialSpec, transport: MaterialTransport,
         # something nobody looked at.
         return _stage(
             NOT_RUN,
-            reason=observation.reason or "the retrieval probe did not run",
+            reason=observation.reason or "检索探针没有跑",
             unblock=(gap_unblock("GAP-WEKNORA-INGEST")
                      + "；在真实环境跑一次检索探针后重跑本脚本"),
             failure_class=None,
@@ -657,7 +673,7 @@ def _retrieve_stage(spec: MaterialSpec, transport: MaterialTransport,
         return _stage(
             BLOCKED,
             reason=(observation.reason
-                    or f"the retrieval probe for {observation.query!r} returned no hit"),
+                    or f"检索探针对 {observation.query!r} 没有命中"),
             unblock=(gap_unblock("GAP-WEKNORA-INGEST")
                      + "；核对检索索引与查询词后重跑本脚本"),
             failure_class=RETRIEVAL_NO_HIT,
