@@ -1523,7 +1523,9 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 	if input.TemplateVersion == "" {
 		input.TemplateVersion = lingdoctemplate.DemoTemplateVersion
 	}
-	return runOperation(s, ctx, actor, operationInput(operationCreateProject, "projects", key, input, authorizationRequest(actor, "", AuthorizationCreate, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, _ Project) (operationResult[Project], error) {
+	var copyRejected *TemplateCopyFailure
+	var copyAuditFailed *TemplateCopyFailure
+	raw, status, replayed, err := runOperation(s, ctx, actor, operationInput(operationCreateProject, "projects", key, input, authorizationRequest(actor, "", AuthorizationCreate, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, _ Project) (operationResult[Project], error) {
 		featureTx, featureErr := extendedTransaction(tx)
 		if featureErr != nil {
 			return operationResult[Project]{}, featureErr
@@ -1531,17 +1533,45 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 
 		resolved, err := s.resolveTemplate(ctx, featureTx, actor, input.TemplateID, input.TemplateVersion)
 		if err != nil {
+			copyRejected = &TemplateCopyFailure{TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, Cause: err}
 			return operationResult[Project]{}, err
 		}
+		// A missing demo catalog row may legitimately fall back to the fixed
+		// compatibility template. That fallback is a successful resolution,
+		// not a rejected catalog copy receipt.
+		copyRejected = nil
+		copyAuditFailed = nil
 		id := uuid.NewString()
 		copy, err := makeCatalogTemplateCopy(actor, id, 1, resolved, TemplateCopyDraft)
 		if err != nil {
+			copyRejected = &TemplateCopyFailure{TemplateID: resolved.Definition.ID, TemplateVersion: resolved.Definition.Version, ProjectID: id, Cause: err}
 			return operationResult[Project]{}, err
 		}
 		template := resolved.Definition
 		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		if err := tx.InsertProject(actor.TenantID, p); err != nil {
 			return operationResult[Project]{}, err
+		}
+		if s.catalog != nil {
+			recorder, ok := s.catalog.(TemplateCopyAuditRecorder)
+			if !ok {
+				return operationResult[Project]{}, fmt.Errorf("%w: catalog copy audit adapter is required", ErrInvalidState)
+			}
+			details := TemplateCopyAudit{
+				ProjectID: p.ID, CopyID: copy.ID, CopyVersion: copy.Version,
+				TemplateID: copy.SourceTemplateID, TemplateVersion: copy.SourceTemplateVersion,
+				ContentHash: copy.ContentHash, RuleSetHash: copy.RulesetHash,
+				RuleSetID: copy.SourceRuleSetID, RuleSetVersion: copy.SourceRuleSetVersion,
+				SourcePolicyHash: copy.SourcePolicyHash,
+			}
+			if err := recorder.RecordCopySuccess(ctx, featureTx, actor, details); err != nil {
+				copyAuditFailed = &TemplateCopyFailure{
+					TemplateID: copy.SourceTemplateID, TemplateVersion: copy.SourceTemplateVersion,
+					ProjectID: p.ID, Cause: fmt.Errorf("record successful template copy: %w", err),
+					AuditPersistenceFailure: true,
+				}
+				return operationResult[Project]{}, copyAuditFailed.Cause
+			}
 		}
 		if s.requireActivationRead {
 			if err := recordProjectAuditEvent(featureTx, actor, p.ID, "project.create", p.ID, "created"); err != nil {
@@ -1550,6 +1580,20 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		}
 		return operationResult[Project]{Value: p, Status: operationStatusCreated}, nil
 	})
+	if err != nil {
+		failureReceipt := copyRejected
+		if copyAuditFailed != nil {
+			failureReceipt = copyAuditFailed
+		}
+		if failureReceipt != nil {
+			if recorder, ok := s.catalog.(TemplateCopyAuditRecorder); !ok {
+				err = errors.Join(err, fmt.Errorf("catalog copy failure receipt adapter is required: %w", ErrInvalidState))
+			} else if recordErr := recorder.RecordCopyFailure(ctx, actor, *failureReceipt); recordErr != nil {
+				err = errors.Join(err, fmt.Errorf("record template copy failure receipt: %w", recordErr))
+			}
+		}
+	}
+	return raw, status, replayed, err
 }
 
 // CreateProjectResult exposes the project value and replay state without

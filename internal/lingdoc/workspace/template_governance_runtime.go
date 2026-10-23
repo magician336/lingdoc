@@ -30,11 +30,12 @@ import (
 // TemplateGovernanceRuntime composes the actual workspace, evidence, agent model,
 // and catalog services. It owns no permission matrix or model-budget ledger.
 //
-// The workspace is reached through two narrow ports, never through the
-// aggregate: the governance review port and the agent context port.
+// The workspace is reached through narrow review, tenant-permission and agent
+// context ports, never through the aggregate.
 type TemplateGovernanceRuntime struct {
 	db           *gorm.DB
 	review       core.GovernanceReviewApplication
+	permissions  core.TenantPermissionAuthorizer
 	agentContext core.AgentContextApplication
 	sources      SourceApplicationService
 	model        core.AgentModel
@@ -79,16 +80,15 @@ func WithReviewedTemplateFixtures(fixtures []ReviewedTemplateFixture) TemplateGo
 	}
 }
 
-// TemplateGovernancePorts is the pair of context narrow ports the template
-// governance runtime depends on: the governance review port and the agent
-// context port.
+// TemplateGovernancePorts composes only the context ports used by this runtime.
 //
 // The composition root assembles one implementation into both ports; the
-// runtime therefore sees four methods instead of the aggregate's whole
+// runtime therefore sees five methods instead of the aggregate's whole
 // surface.
 type TemplateGovernancePorts interface {
 	core.GovernanceReviewApplication
 	core.AgentContextApplication
+	core.TenantPermissionAuthorizer
 }
 
 // nilPort reports whether a port was not supplied, including the case where
@@ -108,7 +108,7 @@ func nilPort(port any) bool {
 }
 
 func NewTemplateGovernanceRuntime(db *gorm.DB, ports TemplateGovernancePorts, sources SourceApplicationService, model core.AgentModel, options ...TemplateGovernanceRuntimeOption) (*TemplateGovernanceRuntime, error) {
-	runtime := &TemplateGovernanceRuntime{db: db, review: ports, agentContext: ports, sources: sources, model: model, fixtures: map[string]ReviewedTemplateFixture{}}
+	runtime := &TemplateGovernanceRuntime{db: db, review: ports, permissions: ports, agentContext: ports, sources: sources, model: model, fixtures: map[string]ReviewedTemplateFixture{}}
 	if db == nil || nilPort(ports) {
 		return nil, governance.ErrUnavailable
 	}
@@ -149,6 +149,7 @@ var (
 	_ governance.ReplayFixtureReader       = (*TemplateGovernanceRuntime)(nil)
 	_ core.ImpactRuleChecker               = (*TemplateGovernanceRuntime)(nil)
 	_ core.TemplateCatalogResolver         = (*TemplateGovernanceRuntime)(nil)
+	_ core.TemplateCopyAuditRecorder       = (*TemplateGovernanceRuntime)(nil)
 )
 
 func governanceCallerContext(ctx context.Context, actor core.Actor) context.Context {
@@ -181,15 +182,18 @@ func (r *TemplateGovernanceRuntime) freshActor(ctx context.Context, tx *gorm.DB,
 	}
 	caller := types.CallerFromContext(ctx)
 	if caller.TenantID != 0 && (caller.TenantID != actor.TenantID || caller.UserID != actor.UserID) {
-		return core.Actor{}, core.ErrNotFound
+		return core.Actor{}, errors.Join(core.ErrNotFound, governance.ErrUnverifiedActor)
 	}
 	claim := types.TenantRole(actor.Role)
 	if !claim.IsValid() {
-		return core.Actor{}, core.ErrNotFound
+		return core.Actor{}, errors.Join(core.ErrNotFound, governance.ErrUnverifiedActor)
 	}
 	var member struct{ Role types.TenantRole }
 	if err := tx.Table("tenant_members").Select("role").Where("tenant_id=? AND user_id=? AND status='active' AND deleted_at IS NULL", actor.TenantID, actor.UserID).Take(&member).Error; err != nil {
-		return core.Actor{}, core.ErrNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return core.Actor{}, core.ErrNotFound
+		}
+		return core.Actor{}, err
 	}
 	if !member.Role.IsValid() {
 		return core.Actor{}, core.ErrNotFound
@@ -203,6 +207,11 @@ func (r *TemplateGovernanceRuntime) freshActor(ctx context.Context, tx *gorm.DB,
 func (r *TemplateGovernanceRuntime) AuthorizeTemplate(ctx context.Context, tx *gorm.DB, actor governance.Actor, action governance.Action, _ string) error {
 	current, err := r.freshActor(ctx, tx, actor)
 	if err != nil {
+		if action != governance.ActionRead && errors.Is(err, core.ErrNotFound) {
+			// Keep the transport's anti-enumeration 404 while retaining an
+			// auditable permission-denial classification for rejected writes.
+			return fmt.Errorf("%w: %w", governance.ErrPermissionDenied, err)
+		}
 		return err
 	}
 	capability := "tenant-manage"
@@ -210,7 +219,20 @@ func (r *TemplateGovernanceRuntime) AuthorizeTemplate(ctx context.Context, tx *g
 		capability = "read"
 	}
 	_, err = r.review.AuthorizeInTransaction(ctx, core.NewTransactionAdapter(tx), current, "", capability)
+	if action != governance.ActionRead && errors.Is(err, core.ErrNotFound) {
+		// The transport keeps its deliberate 404 anti-enumeration response, but
+		// governance audit receipts need to distinguish an authenticated
+		// capability denial from a missing catalog object.
+		return fmt.Errorf("%w: %w", governance.ErrPermissionDenied, governance.ErrNotFound)
+	}
 	return err
+}
+func (r *TemplateGovernanceRuntime) CanManageTemplateCatalog(ctx context.Context, tx *gorm.DB, actor governance.Actor) (bool, error) {
+	current, err := r.freshActor(ctx, tx, actor)
+	if err != nil {
+		return false, err
+	}
+	return r.permissions.TenantPermissionInTransaction(ctx, core.NewTransactionAdapter(tx), current, types.TenantRoleAdmin)
 }
 func (r *TemplateGovernanceRuntime) AuthorizeRuleSet(ctx context.Context, tx *gorm.DB, actor rulesetstore.Actor, action rulesetstore.Action, _ *template.RuleSet) error {
 	mapped := governance.ActionPublish
@@ -273,6 +295,28 @@ func (r *TemplateGovernanceRuntime) ResolveForCopy(ctx context.Context, tx *gorm
 	}
 	return r.service.ResolveForCopy(ctx, tx, governanceActor(actor), id, version)
 }
+func (r *TemplateGovernanceRuntime) RecordCopySuccess(ctx context.Context, tx core.Transaction, actor core.Actor, details core.TemplateCopyAudit) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	db, err := core.TransactionDatabase(tx)
+	if err != nil {
+		return err
+	}
+	return r.service.RecordCopySuccess(ctx, db, governanceActor(actor), details.ProjectID, details.CopyID,
+		details.CopyVersion, details.TemplateID, details.TemplateVersion, details.ContentHash,
+		details.RuleSetHash, details.RuleSetID, details.RuleSetVersion, details.SourcePolicyHash)
+}
+func (r *TemplateGovernanceRuntime) RecordCopyFailure(ctx context.Context, actor core.Actor, failure core.TemplateCopyFailure) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	return r.service.RecordCopyFailure(ctx, governanceActor(actor), governance.CopyFailure{
+		TemplateID: failure.TemplateID, TemplateVersion: failure.TemplateVersion,
+		ProjectID: failure.ProjectID, Cause: failure.Cause,
+		AuditPersistenceFailure: failure.AuditPersistenceFailure,
+	})
+}
 func (r *TemplateGovernanceRuntime) Resolve(ctx context.Context, tx core.Transaction, actor core.Actor, id, version string) (core.CatalogTemplateDefinition, error) {
 	db, err := core.TransactionDatabase(tx)
 	if err != nil {
@@ -280,6 +324,9 @@ func (r *TemplateGovernanceRuntime) Resolve(ctx context.Context, tx core.Transac
 	}
 	v, err := r.ResolveForCopy(ctx, db, actor, id, version)
 	if err != nil {
+		if errors.Is(err, governance.ErrInvalidState) {
+			return core.CatalogTemplateDefinition{}, fmt.Errorf("%w: %w", core.ErrInvalidState, err)
+		}
 		return core.CatalogTemplateDefinition{}, err
 	}
 	snapshot := v.RuleSetSnapshot

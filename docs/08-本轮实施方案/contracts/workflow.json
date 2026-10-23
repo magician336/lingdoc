@@ -14,8 +14,56 @@
     "tenant": "isolated-test-tenant",
     "template": "template-demo",
     "ready_knowledge": "必须由运行时提供：F01-06 绑定资料用的是 {{knowledge_id}}，执行器用 --knowledge-id <真实标识> 注入；没有默认值，不提供时执行器在发出第一个请求前就报错（不得回退到演示标识）。",
-    "model_adapter": "固定候选输出，并使用实际返回来源ID；真实模型另做质量验证。",
+    "model_adapter": "固定候选输出只允许用于诊断路径与单测；放行路径必须用真实模型调用，并逐段记账（见 provenance 声明）。",
     "renderer": "完整验收时必须使用真实导出器。"
+  },
+  "provenance": {
+    "policy": "放行路径的每一段都必须真的跑：单个真实调用不代表整链为真（TD-06 / US-10 / US-11）。",
+    "observed_from": "lingdoc_model_call_ledger 的 run_mode 列（每次真实模型调用一行）。",
+    "model_dependent_operations": [
+      "startGeneration",
+      "getCandidate",
+      "acceptCandidate"
+    ],
+    "stages": [
+      {
+        "step_id": "F01-07",
+        "must_be_real": true
+      },
+      {
+        "step_id": "F01-09",
+        "must_be_real": true
+      },
+      {
+        "step_id": "F01-11",
+        "must_be_real": true
+      },
+      {
+        "step_id": "F01-12",
+        "must_be_real": true
+      }
+    ],
+    "assertion_name": "F01-07 provenance_real",
+    "node_assertion": "not_mounted",
+    "why_not_mounted": "OpenAPI 的 Candidate 声明 additionalProperties=false 且没有 provenance 字段 ⇒ 契约的 reference_response 不能带这个字段 ⇒ F01-09 挂不上逐段断言；断言能力本身已在 scripts/lingdoc_check_kinds.py 里就位（provenance_real），解除条件见 acceptance/gaps.json 的 GAP-PROVENANCE-FIELD。",
+    "gap": "GAP-PROVENANCE-FIELD"
+  },
+  "failure_states": {
+    "how_expressed": "失败态用「失败路径节点 + http_error 断言」表达：失败响应必须真的是错误状态码，且错误信封的 code 与契约声明的一致（光有错误体不算失败路径）。",
+    "where_they_are": "contracts/scenarios.json 已有的失败路径节点上：F05-04 的 409 version_conflict、F06 的 409 stale_input、F07 的 403 source_access_denied、F11-10 的 409 stale_input、F12-04 的 409 version_conflict、F22-01 的 422 asset_not_authorized。",
+    "why_not_in_this_sequence": "F01 这 24 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容），那两步结构由 #501 落地。",
+    "until_then": "涉及失败态的放行要求一律登记为未完成项（NOT RUN），不得记为已通过；解除条件见 acceptance/gaps.json 的 GAP-FAILURE-PATH-NODES。",
+    "gap": "GAP-FAILURE-PATH-NODES"
+  },
+  "check_kinds": {
+    "authority": "scripts/lingdoc_check_kinds.py",
+    "unmounted": [
+      {
+        "kind": "provenance_real",
+        "gap": "GAP-PROVENANCE-FIELD",
+        "why": "OpenAPI 的 Candidate 声明 additionalProperties=false 且没有 provenance 字段 ⇒ 契约的 reference_response 不能带这个字段 ⇒ F01-09 挂不上逐段断言。断言能力已在权威模块里就位，解除条件见 acceptance/gaps.json 的 GAP-PROVENANCE-FIELD。"
+      }
+    ]
   },
   "variable_syntax": "{{name}}占据整个值时保留捕获值类型（包括null/int）；嵌在文本中时按字符串替换。请求path、引用标记均用捕获ID。",
   "polling": "getGeneration/getExport轮询直到终态；同一个request不重新POST。",
@@ -441,6 +489,18 @@
           "path": "/data/processing_state",
           "equals": "ready",
           "intent": "合成材料真的经过接入与处理，处理就绪（协议 §1）"
+        },
+        {
+          "path": "/data",
+          "keys": [
+            "asset_revision",
+            "id",
+            "knowledge_id",
+            "processing_state",
+            "project_id",
+            "title"
+          ],
+          "intent": "绑定资料的响应恰好带这六个字段：处理状态、资料标识与所属项目都在，没有多余也没有少（协议 §1）"
         }
       ],
       "assertions": []
@@ -613,6 +673,15 @@
           "path": "/data/basis/chapter_version_id",
           "equals": "{{question_version}}",
           "intent": "候选稿绑定的是起草当时的正文版本"
+        },
+        {
+          "path": "/data/validity",
+          "one_of": [
+            "fresh",
+            "stale",
+            "not_authorized"
+          ],
+          "intent": "候选的新鲜度落在契约给出的三个取值里：被判过期的候选不会冒充当前结果（协议 §3）"
         }
       ],
       "assertions": []
@@ -1398,6 +1467,19 @@
           "path": "/data/frozen_input/sources/0/locator",
           "non_empty": true,
           "intent": "冻结输入自带来源定位，不依赖当前Source与动态is_current"
+        },
+        {
+          "path": "/data/frozen_input/asset_versions",
+          "all_non_empty": true,
+          "intent": "冻结输入里的依赖登记逐项齐全：每一条资产版本都登记了标识与修订，没有空项（协议 §2 步骤 4）"
+        },
+        {
+          "path": "/data/frozen_input/sources/0/quoted_text_hash",
+          "equals_step": {
+            "from_step": "F01-10",
+            "path": "/data/quoted_text_hash"
+          },
+          "intent": "冻结输入里的材料哈希与绑定资料时读到的那一份一致：输入侧登记与运行时读到的是同一个事实（协议 §2 步骤 1）"
         }
       ],
       "assertions": []
