@@ -639,6 +639,24 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 
 	logger.Infof(ctx, "Getting chat model: %s, source: %s", model.Name, model.Source)
 
+	// A credential that EXISTS but cannot be decrypted is a misconfiguration,
+	// not an unconfigured credential. The row knows the difference
+	// (types.ModelParameters.CredentialDecryptError): the ciphertext is there
+	// and this process cannot read it, because SYSTEM_AES_KEY is unset or was
+	// rotated.
+	//
+	// Building a client here would send an empty API key upstream and let the
+	// provider reject the call, far from the cause. The refusal happens
+	// before the client exists, so no request is built with a credential
+	// nobody can read.
+	if decryptErr := model.Parameters.CredentialDecryptError(); decryptErr != nil {
+		logger.ErrorWithFields(ctx, decryptErr, map[string]interface{}{
+			"model_id":   model.ID,
+			"model_name": model.Name,
+		})
+		return nil, fmt.Errorf("model %q: %w", model.ID, decryptErr)
+	}
+
 	appID, appSecret := s.resolveWeKnoraCloudCredentials(ctx, &model.Parameters)
 
 	chatModel, err := chat.NewChat(chat.ConfigFromModel(model, appID, appSecret), s.ollamaService)
