@@ -333,7 +333,8 @@ def run_browser_part(base_url: str, frontend_url: str, work_dir: Path) -> tuple[
         outcomes.append(Outcome(
             id="浏览器对偶：浏览器侧快照", status=NOT_RUN,
             reason="没有给出 --frontend-url，浏览器侧没有对着真实前端跑。",
-            unblock="起真实前端（Vite dev server）并用 --frontend-url <地址> 重跑本脚本。"))
+            unblock="起真实前端（Vite dev server）并用 --frontend-url <地址> 重跑本脚本。"
+                    "（Beta 放行执行票 #480：浏览器端到端 / 三方一致性实测）"))
     else:
         context_path = work_dir / "run-context.json"
         http_out = work_dir / "http.json"
@@ -389,7 +390,8 @@ def run_browser_part(base_url: str, frontend_url: str, work_dir: Path) -> tuple[
         outcomes.append(Outcome(
             id="三方一致性：浏览器 = HTTP = 刷新后读回", status=NOT_RUN,
             reason="三方比对需要两侧快照；有一侧没有跑成，比对没有发生。",
-            unblock="让 HTTP 侧与浏览器侧都跑成后重跑本脚本。"))
+            unblock="让 HTTP 侧与浏览器侧都跑成后重跑本脚本。"
+                    "（Beta 放行执行票 #480：浏览器端到端 / 三方一致性实测）"))
     return outcomes, summary
 
 
@@ -408,7 +410,8 @@ def run_restart_part(server_binary: Path | None, repo_root: Path, work_dir: Path
         outcomes.append(Outcome(
             id="重启后读回：协议 §1 的隔离 PostgreSQL", status=NOT_RUN,
             reason=f"本轮的后端是 {driver}；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
-            unblock="用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"))
+            unblock="用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"
+                    "（Beta 放行执行票 #480 缺口 3：隔离 PostgreSQL 环境，协议 §1）"))
     if server_binary is None or not Path(server_binary).is_file():
         outcomes.append(Outcome(
             id="重启后读回：同一个项目、访问令牌与持久化", status=NOT_RUN,
@@ -490,7 +493,8 @@ def word_check(word_check_path: Path | None, docx_path: Path | None,
             reason="执行者还没有填写 Word 检查表；协议 §4 的这一段是人工的。",
             unblock=f"填写 {relative_to_root(Path(word_check_path)) if word_check_path else 'word-check.md'} 里的五个必填字段"
                     "（Word 产品版本 / Windows 版本 / 原始 DOCX SHA-256 / 修改后文件 SHA-256 / 检查结果），"
-                    "并用 --word-check <该文件> 重跑本脚本。")], form, metadata
+                    "并用 --word-check <该文件> 重跑本脚本。"
+                    "（Beta 放行执行票 #480 缺口 5：Word/WPS 人工检查表）")], form, metadata
     text = Path(word_check_path).read_text(encoding="utf-8", errors="replace")
     missing: list[str] = []
     values: dict[str, str] = {}
@@ -912,7 +916,8 @@ def main(argv: list[str] | None = None) -> int:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=NOT_RUN,
                 reason=ledger_reason,
-                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000055 / 000134 已应用）后重跑本脚本。"))
+                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000055 / 000134 已应用）后重跑本脚本。"
+                    "（Beta 放行执行票 #480 缺口 2：真实模型凭据）"))
         else:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=HELD,
@@ -921,13 +926,24 @@ def main(argv: list[str] | None = None) -> int:
         outcomes.append(Outcome(
             id="模型调用账本：参数、预算与模型切换记录", status=NOT_RUN,
             reason="本轮没有给出账本位置（--ledger-dsn 或 --ledger-sqlite）。",
-            unblock="用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。"))
+            unblock="用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。"
+                    "（Beta 放行执行票 #480 缺口 2：真实模型凭据）"))
+
+    if (arguments.ledger_dsn or arguments.ledger_sqlite) and not ledger_reason \
+            and not ledger_rows:
+        outcomes.append(Outcome(
+            id="真实模型调用（协议 §3：真实模型的一次选段改写）", status=NOT_RUN,
+            reason=("本轮没有发生真实模型调用：账本可读，但读到 0 行调用记录，"
+                    "模型参数与预算全 0。"),
+            unblock=("给真实模型凭据后重跑本脚本（Beta 放行执行票 #480 缺口 2：真实模型凭据，"
+                     "并含真实授权来源）")))
 
     if not materials:
         outcomes.append(Outcome(
             id="合成材料哈希（协议 §2 第 1 步）", status=NOT_RUN,
             reason="本轮没有给出 --material，合成材料的哈希没有记录。",
-            unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。"))
+            unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。"
+                    "（Beta 放行执行票 #480 缺口 4：同一套两章材料及其 SHA-256）"))
 
     result = overall_result(outcomes)
 
