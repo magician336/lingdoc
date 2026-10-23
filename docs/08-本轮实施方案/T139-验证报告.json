@@ -245,7 +245,7 @@
     {
       "id": "AC-04-05 按 diff 内容缩面而跳过的 CI 作业",
       "status": "not_run",
-      "matrix_status": "NOT RUN",
+      "matrix_status": "DEFERRED_MANUAL",
       "executed": false,
       "follow_up_issue": "#524",
       "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
