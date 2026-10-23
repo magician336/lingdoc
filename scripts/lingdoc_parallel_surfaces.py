@@ -642,10 +642,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/model_call_ledger_test.go", "file"),
             # 模型调用的唯一出口：账本在这里记一行
             # （2026-10-23 从 PF-5 移交；PF-5 已 done 且不释放路径）。
-            # 组合根 internal/container/lingdoc.go **不**登记进本面：它归 PF-7
-            # （#414 的 AuditSink 实现就在那里）。但本面**要改它**——在
-            # NewHostAgentModel 那一行装上模型调用账本（不装，账本在生产里是死的）。
-            # ⇒ 跨面同文件、不同行的改动，已在 PF-7 的路径注释与交面材料里记录。
+            # 组合根 internal/container/lingdoc.go **不**登记进本面：owner 仍是 PF-7
+            # （#414 的 AuditSink 实现就在那里，PF-7 未开工且已声明它）。
+            # 但本面**借用**它——在 NewHostAgentModel 那一行装上模型调用账本
+            # （不装，账本在生产里就是死的）。**本面合入 main 后该路径归还 PF-7**
+            # （先例：PF-8 借 PF-4 的四个路径，落地后归还）。
+            # **PF-7 侧的对应记录由管理会话补。**
             # 本面在这里装账本：workspace.NewHostAgentModel(models,
             # workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
             ("internal/lingdoc/workspace/agent_model.go", "file"),
@@ -700,21 +702,23 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "——账本行靠外键关联产品动作，不需要改 AgentTurn。"
             "(3) internal/lingdoc/generation/store.go 不在本面路径集内——PF-2 持有"
             "internal/lingdoc/generation/ 这个**目录**；账本的来源引用改由调用方填字符串 id。"
-            "**迁移号**：**sqlite 000055 / versioned 000134**——000054 / 000133 归 PF-7 的审计字段迁移"
-            "（PR #472 已把 PF-7 登记进 main，本面在并新基线时改号，迁移守护的版本常量同步到 55）。"
+            "**迁移号**：**sqlite 000054 / versioned 000133**——经管理会话核对：main 最高是 sqlite 000053 /"
+            "versioned 000132，本面接得上；**PF-7 已让到 000055 / 000134**（PF-7 尚未开工，让号成本在 PF-7 侧）。"
+            "迁移守护的版本常量同步到 54。"
             "**2026-10-23 已完成**（认领与完成的人是 magician336）：把 Beta 首版真实验收从人肉变成一条可复跑命令。"
             "交付三件事：① #453 模型调用账本——一张 lingdoc_model_call_ledger 表，kind 分 call / switch 两行种，"
             "两方言迁移（sqlite/000055、versioned/000134）+ Go 行结构 + 10 个用例，账本装进组合根；"
             "② #452 浏览器 × 后端对偶执行器——编排器 + HTTP 侧 + CDP 浏览器侧三个独立 CLI + 32 条守护测试，"
             "真实后端 + 真实 Vite + 真实 Edge 无头跑通，10 项在「浏览器 == HTTP == 刷新后读回」三个快照上逐项相等，"
-            "注入不一致能红；③ #451 验收执行器与证据目录——run_f01.py 扩五个领域断言 check kind"
-            "（ref_in / marked_or_absent / version_bound / readback_equals / hash_equals）、六件产物一次性产出、"
+            "注入不一致能红；③ #451 验收执行器与证据目录——run_f01.py 扩六个领域断言 check kind"
+            "（ref_in / marked_or_absent / version_bound / readback_equals / hash_equals / non_empty）、六件产物一次性产出、"
             "脱敏守护、协议 §5 三态一字不改。"
-            "**两处跨面同文件/跨面机制**：组合根 internal/container/lingdoc.go 归 PF-7 声明，"
-            "本面只改其中装账本那一行（跨面同文件不同行，双方合并时需人工解一次冲突）；"
+            "**一处跨面借用**：组合根 internal/container/lingdoc.go 的 owner 仍是 PF-7（未开工、已声明），"
+            "本面于 2026-10-23 **借用**它（装模型调用账本，一处），**本面合入 main 后该路径归还 PF-7**"
+            "（先例：PF-8 借 PF-4 的四个路径，落地后归还）；**PF-7 侧的对应记录由管理会话补**。"
             "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
-            "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7 的审计字段迁移）。"
+            "**迁移号**：本面用 sqlite 000054 / versioned 000133（PF-7 已让到 000055 / 000134）。"
         ),
     },
     {
@@ -847,11 +851,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/model.go", "file"),
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
-            # 组合根：#414 的 AuditSink 实现就在这里（workspaceAuditSink.Record）。
-            # ⚠️ 它同时是 PF-10 的模型调用账本装配点——两面改**同一个文件的不同行**
-            # （本面改 AuditSink 的返错语义，PF-10 改 NewHostAgentModel 的那一行）。
-            # 登记处只允许一个主人 ⇒ 归本面；跨面同文件的那一处由 PF-10 在交面材料里
-            # 显式记录，双方合并时需人工解一次冲突。
+            # 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
+            # ⚠️ PF-10 于 2026-10-23 借用本文件（组合根装模型调用账本），合入 main 后归还；
+            # **该借用的对应记录由管理会话补在 PF-7 的票面与本面 summary。**
             ("internal/container/lingdoc.go", "file"),
             # 本面新增迁移（4）：#415 的字段要真落库，两方言各一套。
             ("migrations/sqlite/000054_lingdoc_audit_decision_fields.up.sql", "file"),

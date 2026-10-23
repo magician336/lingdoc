@@ -1,0 +1,48 @@
+{
+  "mode": "beta-first-acceptance",
+  "note": "Beta 首版真实验收的证据目录。协议 §5 的三态按字面记：BLOCKED（主流程缺依赖或无法继续）、FAIL（业务行为违反断言）、NOT RUN（没有执行）。总结果由主流程决定：BLOCKED。passed[] 承载本轮全部已执行结论项（status 取 held / failed / blocked），NOT RUN 一律在 not_run[]，每条带 reason 与 unblock。执行范围：无身份的 HTTP 执行。",
+  "head": "a9f494bf6a2331e30c5c054708975fbbe36d876b",
+  "base": "015bd1225ef4d4a61070295f5c300bc0dce968dd",
+  "head_note": "本轮绑定的代码 head：a9f494bf6a2331e30c5c054708975fbbe36d876b。证据目录的第一层目录名就是它。",
+  "base_note": "基线 015bd1225ef4d4a61070295f5c300bc0dce968dd；`git diff 015bd1225ef4d4a61070295f5c300bc0dce968dd a9f494bf6a2331e30c5c054708975fbbe36d876b -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空时，代码面逐字未变。",
+  "passed": [
+    {
+      "id": "F01 契约序列（24 个节点）",
+      "status": "blocked",
+      "evidence": "没有给出 --base-url，本轮没有对任何提供方执行。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "浏览器对偶：HTTP 侧快照",
+      "reason": "没有给出 --base-url，HTTP 侧没有对着真实后端跑。",
+      "unblock": "用 --base-url <真实后端地址> 重跑本脚本。"
+    },
+    {
+      "id": "重启后读回：协议 §1 的隔离 PostgreSQL",
+      "reason": "本轮的后端是 sqlite；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
+      "unblock": "用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"
+    },
+    {
+      "id": "重启后读回：同一个项目、访问令牌与持久化",
+      "reason": "没有给出可用的 --server-binary，重启没有发生。",
+      "unblock": "用 `make build` 产出服务端二进制，并以 --server-binary <路径> 重跑本脚本。"
+    },
+    {
+      "id": "Word 人工检查（协议 §4）",
+      "reason": "执行者还没有填写 Word 检查表；协议 §4 的这一段是人工的。",
+      "unblock": "填写 word-check.md 里的五个必填字段（Word 产品版本 / Windows 版本 / 原始 DOCX SHA-256 / 修改后文件 SHA-256 / 检查结果），并用 --word-check <该文件> 重跑本脚本。"
+    },
+    {
+      "id": "模型调用账本：参数、预算与模型切换记录",
+      "reason": "本轮没有给出账本位置（--ledger-dsn 或 --ledger-sqlite）。",
+      "unblock": "用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。"
+    },
+    {
+      "id": "合成材料哈希（协议 §2 第 1 步）",
+      "reason": "本轮没有给出 --material，合成材料的哈希没有记录。",
+      "unblock": "用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。"
+    }
+  ],
+  "known_limits": []
+}

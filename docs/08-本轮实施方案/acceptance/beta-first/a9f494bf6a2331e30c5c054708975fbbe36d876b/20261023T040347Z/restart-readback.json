@@ -1,0 +1,22 @@
+{
+  "mode": "beta-first-restart-readback",
+  "note": "重启读回的证据（协议 §2 第 5 步）。总结果：NOT RUN。启动配方与版本按本次 SHA 与环境核对，不继承历史 PASS。",
+  "head": "a9f494bf6a2331e30c5c054708975fbbe36d876b",
+  "base": "015bd1225ef4d4a61070295f5c300bc0dce968dd",
+  "head_note": "本轮绑定的代码 head：a9f494bf6a2331e30c5c054708975fbbe36d876b。",
+  "base_note": "基线 015bd1225ef4d4a61070295f5c300bc0dce968dd。",
+  "passed": [],
+  "not_run": [
+    {
+      "id": "重启后读回：协议 §1 的隔离 PostgreSQL",
+      "reason": "本轮的后端是 sqlite；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
+      "unblock": "用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"
+    },
+    {
+      "id": "重启后读回：同一个项目、访问令牌与持久化",
+      "reason": "没有给出可用的 --server-binary，重启没有发生。",
+      "unblock": "用 `make build` 产出服务端二进制，并以 --server-binary <路径> 重跑本脚本。"
+    }
+  ],
+  "known_limits": []
+}
