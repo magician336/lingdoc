@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -26,7 +27,7 @@ func (a *testAuth) AuthorizeTemplate(_ context.Context, _ *gorm.DB, actor Actor,
 	if !a.allow {
 		return errors.New("denied")
 	}
-	if action != ActionRead && actor.Role != "tenant_admin" {
+	if action != ActionRead && actor.Role != string(types.TenantRoleAdmin) {
 		return ErrPermissionDenied
 	}
 	return nil
@@ -35,10 +36,10 @@ func (a *testAuth) CanManageTemplateCatalog(_ context.Context, _ *gorm.DB, actor
 	if !a.allow {
 		return false, errors.New("denied")
 	}
-	return actor.Role == "tenant_admin", nil
+	return actor.Role == string(types.TenantRoleAdmin), nil
 }
 func (a *testAuth) AuthorizeSuggestion(_ context.Context, _ *gorm.DB, actor Actor, _ Action, _ SuggestionScope) error {
-	if !a.allow || actor.Role != "tenant_admin" {
+	if !a.allow || actor.Role != string(types.TenantRoleAdmin) {
 		return errors.New("denied")
 	}
 	return nil
@@ -47,7 +48,7 @@ func (a *testAuth) CurrentProjectBasis(_ context.Context, _ *gorm.DB, _ Actor, _
 	return a.basis, nil
 }
 func (a *testAuth) AuthorizeRuleSet(_ context.Context, _ *gorm.DB, actor Actor, _ rulesetstore.Action, _ *template.RuleSet) error {
-	if !a.allow || actor.Role != "tenant_admin" {
+	if !a.allow || actor.Role != string(types.TenantRoleAdmin) {
 		return errors.New("denied")
 	}
 	return nil
@@ -87,14 +88,14 @@ func (s sourceVerifier) VerifyTemplateSourcesInTransaction(_ context.Context, _ 
 type publishableNonManagerAuth struct{ *testAuth }
 
 func (a publishableNonManagerAuth) AuthorizeTemplate(ctx context.Context, tx *gorm.DB, actor Actor, action Action, id string) error {
-	if actor.Role == "template_publisher" && (action == ActionRead || action == ActionPublish) {
+	if actor.Role == string(types.TenantRoleContributor) && (action == ActionRead || action == ActionPublish) {
 		return nil
 	}
 	return a.testAuth.AuthorizeTemplate(ctx, tx, actor, action, id)
 }
 
 func (a publishableNonManagerAuth) CanManageTemplateCatalog(ctx context.Context, tx *gorm.DB, actor Actor) (bool, error) {
-	if actor.Role == "template_publisher" {
+	if actor.Role == string(types.TenantRoleContributor) {
 		return false, nil
 	}
 	return a.testAuth.CanManageTemplateCatalog(ctx, tx, actor)
@@ -168,7 +169,7 @@ func seedService(t *testing.T) (*Service, *gorm.DB, *testAuth, Actor, TemplateVe
 	t.Helper()
 	db, _ := openTestDB(t)
 	auth := &testAuth{allow: true}
-	actor := Actor{TenantID: 1, UserID: "owner", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "owner", Role: string(types.TenantRoleAdmin)}
 	set := template.RuleSet{ID: "grant-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{{RuleID: "goal-present", DefinitionID: "presence", DefinitionVersion: "1", Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: template.SeverityWarning, TriggerScenes: []string{"write_check", "preflight"}, Enabled: true, Owner: "rule-admin"}}}
 	store := rulesetstore.NewStore(db, auth)
 	if err := store.CreateDraft(context.Background(), actor, set); err != nil {
@@ -293,7 +294,7 @@ func TestCatalogLifecycleReplayRestartAndCopyGates(t *testing.T) {
 
 func TestCatalogPublicReadHidesDraftSourcesAndTenantWideRecallImpact(t *testing.T) {
 	s, db, _, admin, draft, _ := seedService(t)
-	reader := Actor{TenantID: admin.TenantID, UserID: "project-owner", Role: "tenant_viewer"}
+	reader := Actor{TenantID: admin.TenantID, UserID: "project-owner", Role: string(types.TenantRoleViewer)}
 	profiles, err := s.ListProfiles(context.Background(), reader, CatalogFilter{})
 	if err != nil || len(profiles) != 0 {
 		t.Fatalf("draft-only profile leaked: %v, %v", profiles, err)
@@ -412,7 +413,7 @@ func TestCopyFailureWithUnattributableTargetIsAnIntentionalNonWrite(t *testing.T
 func TestCatalogFailureReceiptSurvivesActorMembershipRevocation(t *testing.T) {
 	s, db, auth, admin, draft, _ := seedService(t)
 	auth.allow = false // The token's identity is known, but its current membership is no longer active.
-	revoked := Actor{TenantID: admin.TenantID, UserID: "revoked-member", Role: "tenant_viewer"}
+	revoked := Actor{TenantID: admin.TenantID, UserID: "revoked-member", Role: string(types.TenantRoleViewer)}
 	err := s.RecordCopyFailure(context.Background(), revoked, CopyFailure{TemplateID: draft.TemplateID, TemplateVersion: draft.Version, Cause: errors.Join(ErrPermissionDenied, ErrNotFound)})
 	if err != nil {
 		t.Fatalf("revoked actor denial receipt: %v", err)
@@ -443,7 +444,7 @@ func TestPublishChecksFullSourceReferencesBeforeReplayForNonManagerPublisher(t *
 	s.ports.Sources = sources
 	s.ports.Replay = replay
 	s.ports.Authorizer = publishableNonManagerAuth{testAuth: auth}
-	publisher := Actor{TenantID: admin.TenantID, UserID: "publisher", Role: "template_publisher"}
+	publisher := Actor{TenantID: admin.TenantID, UserID: "publisher", Role: string(types.TenantRoleContributor)}
 	_, err = s.Publish(context.Background(), publisher, "publish-source-bearing-draft", PublishInput{
 		TemplateID: draft.TemplateID, Version: draft.Version, ExpectedRevision: draft.Revision,
 		ReplayFixtureIDs: []string{"write_check-positive", "write_check-negative", "preflight-positive", "preflight-negative"},

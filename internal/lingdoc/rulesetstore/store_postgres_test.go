@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -113,7 +114,7 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	}
 
 	store := NewStore(db, testAuthorizer{allow: true})
-	actor := Actor{TenantID: 1, UserID: "pg-admin", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "pg-admin", Role: string(types.TenantRoleAdmin)}
 	draft := template.RuleSet{
 		ID: strings.Repeat("r", 64), Version: strings.Repeat("v", 64), State: template.RuleSetDraft,
 		Bindings: []template.RuleBinding{{

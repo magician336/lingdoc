@@ -13,6 +13,26 @@ import (
 // OrgMemberRole defined in organization.go, which governs cross-tenant
 // sharing. A user may therefore carry different TenantRole values in
 // different tenants (one TenantMember row per (user, tenant) pair).
+//
+// This file owns the one and only tenant role vocabulary. The four constants
+// below are its members, and IsValid is the only judge of whether a value
+// belongs to it. Two facts follow from that ownership, and both are load
+// bearing:
+//
+//   - A reader that needs to know whether a role word is a tenant role asks
+//     IsValid. It does not spell out a second list of role words, because a
+//     second list is a second vocabulary: it drifts, and a value that is
+//     legal in one list is unreadable in the other.
+//   - A writer that records a role into an audit column takes the value from
+//     this vocabulary. The audit column then says which tenant role the
+//     operator held, and a reader of that column can interpret it without
+//     knowing which surface wrote it.
+//
+// Other role vocabularies exist and are NOT this one: the member record's
+// project role and governance role (core.Member) and the function roles are
+// separate axes with their own definitions, and OrgMemberRole in
+// organization.go governs cross-tenant sharing. They are different concepts
+// that happen to share some words; do not merge them into this list.
 type TenantRole string
 
 const (

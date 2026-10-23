@@ -299,6 +299,11 @@ type ExportService struct {
 	now         func() time.Time
 }
 
+// Actor identifies the tenant member an export is performed as.
+//
+// Role is the tenant role the member held when the export was requested. It
+// is typed as types.TenantRole, so the tenant role vocabulary owned by
+// internal/types applies: a role outside it cannot even be spelled here.
 type Actor struct {
 	TenantID uint64
 	UserID   string
