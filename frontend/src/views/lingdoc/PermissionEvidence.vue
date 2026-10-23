@@ -318,7 +318,7 @@
           <span class="audit-outcome" :class="`audit-outcome--${row.outcome}`">{{ auditOutcomeLabel(row.outcome) }}</span>
           <div>
             <strong>{{ auditActionLabel(row.action) }}</strong>
-            <p>{{ row.actor_role || '未知角色' }} · {{ row.request_method }} {{ row.request_path || '—' }}</p>
+            <p>{{ formatAuditActorRole(row.actor_role) }} · {{ row.request_method }} {{ row.request_path || '—' }}</p>
           </div>
           <time :datetime="row.created_at">{{ formatTime(row.created_at) }}</time>
         </article>
@@ -335,7 +335,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
+import { auditActorRoleLabel } from '@/i18n/auditActorRoleLabel'
 import { listAuditLog, type AuditLog, type AuditOutcome } from '@/api/tenant/auditLog'
 import { getAccessStatus, listProjects, type AccessStatus, type Project } from '@/api/lingdoc/workspace'
 import {
@@ -353,6 +355,7 @@ import {
 
 const authStore = useAuthStore()
 const route = useRoute()
+const { t, te } = useI18n()
 const demoMode = computed(() => (
   route.meta.publicDemo === true
   || route.name === 'lingdocPermissionEvidenceDemo'
@@ -764,6 +767,12 @@ async function refreshEvidence() {
   } finally {
     loading.value = false
   }
+}
+
+// 审计列 actor_role 走共享解析器：这一列的语义只有一处定义，
+// 租户审计抽屉、平台审计日志与本页因此对同一个值给出同一种含义。
+function formatAuditActorRole(role: string): string {
+  return auditActorRoleLabel({ te, t }, role)
 }
 
 function auditActionLabel(action: string): string {
