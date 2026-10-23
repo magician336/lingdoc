@@ -840,6 +840,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/acceptance/beta_material_ingest.py", "file"),
             # #484 的守护测试（探索结论 §5.1 推荐落点：自由路径，PF-10 不拥有它）。
             ("scripts/ci/test_lingdoc_beta_material.py", "file"),
+            # #484 的服务端能力（材料接入与处理就绪）：**目录级**声明覆盖整棵子树——
+            # 这是一个新增包，后续加文件是常态，逐文件登记必然漏（同 PF-10 对
+            # docs/08-本轮实施方案/acceptance/beta-first/ 的做法）。
+            ("internal/lingdoc/materiallingest/", "dir"),
             # #494 的守护测试：资料标识参数化（入口 → 绑定动作，无第二处硬编码，
             # 不传则明确报错，阴性验证）。
             ("scripts/ci/test_lingdoc_beta_knowledge_id.py", "file"),
@@ -890,6 +894,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "借用事实记在这里与 PF-10 侧。**两处未完成项已登记**：GAP-PROVENANCE-FIELD"
             "（OpenAPI 未声明 provenance 字段，逐段真实溯源挂不上节点断言）与 GAP-FAILURE-PATH-NODES"
             "（F01 序列内的 4xx 节点要等 #501 的两步结构）。"
+            "**#484 的材料接入能力已实现**（internal/lingdoc/materiallingest/，本面持有该路径）："
+            "稳定材料身份＝固定标题前缀＋文件内容 SHA-256（不含时间戳）⇒ 同一份材料恒等；"
+            "接入幂等（同一份材料重复接入不新增知识，结果以 Reused 标记复用）；"
+            "处理状态取数落在 evidence.ProcessingStateOf → evidence.AssetStateReady 这条链 ⇒ "
+            "与 F01-06 响应里的「就绪」同口径（与绑定层 evidence.Bindings.RefreshAsset 同一条链，不会有两套口径）。"
+            "**未接 HTTP 端点与组合根**：路由基线断言与 contracts/openapi.json 归 L3 锁，"
+            "且该包目前零生产调用点（git grep materiallingest 只命中包内与文档）⇒ "
+            "**验收路径改用 F01 执行器现有的 --knowledge-id 注入**（F01-06 的契约节点已有 {{knowledge_id}} 与"
+            "「processing_state=ready」断言，不需要新增契约节点）。"
             "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"),
     },
     {
