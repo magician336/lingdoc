@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 )
@@ -387,6 +389,143 @@ func TestExecuteStoresAcceptanceStopsWithCorrectRetryability(t *testing.T) {
 				t.Fatalf("Execute() = (%+v, %v), want status=%s code=%s retryable=%v", run, err, tc.status, tc.code, tc.retryable)
 			}
 		})
+	}
+}
+
+// The two acceptance messages have to describe the profile that was in force
+// for THAT call.
+//
+// A controlled window allows exactly one call, and the most likely way to
+// fail is "no model row matches the authorized profile".  The message the
+// operator reads then decides what they do next: a message that names a model
+// from another profile sends them after a row the profile will refuse, and
+// they spend the window doing it.
+func TestExecuteAcceptanceMessagesFollowTheArmedProfile(t *testing.T) {
+	cases := []struct {
+		name        string
+		profile     string
+		err         error
+		code        string
+		wantModel   string
+		wantLimit   string
+		mustNotName string
+	}{
+		{
+			name:      "qwen profile names the qwen model",
+			profile:   acceptancebudget.QwenProfile,
+			err:       ErrAcceptanceModelMismatch,
+			code:      "generation_model_mismatch",
+			wantModel: acceptancebudget.QwenChatModel,
+			// The other profile's model must not appear at all: the
+			// operator must not go looking for a row that the profile
+			// will refuse.  The whole word is checked, not just the
+			// model name.
+			mustNotName: "deepseek",
+		},
+		{
+			name:      "qwen profile names the qwen ceiling",
+			profile:   acceptancebudget.QwenProfile,
+			err:       ErrGenerationIncomplete,
+			code:      "generation_incomplete",
+			wantLimit: "4,096",
+			// The DeepSeek ceiling (6,000) is a number the operator
+			// would try to fit the input into.
+			mustNotName: "6,000",
+		},
+		{
+			name:        "deepseek profile still names the deepseek model",
+			profile:     acceptancebudget.Profile,
+			err:         ErrAcceptanceModelMismatch,
+			code:        "generation_model_mismatch",
+			wantModel:   acceptancebudget.DeepSeekModel,
+			mustNotName: "qwen",
+		},
+		{
+			name:      "deepseek profile keeps its ceiling",
+			profile:   acceptancebudget.Profile,
+			err:       ErrGenerationIncomplete,
+			code:      "generation_incomplete",
+			wantLimit: "6,000",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(acceptancebudget.ProfileEnv, tc.profile)
+			svc, repo := generationFixture()
+			svc.Model = testModel{err: tc.err}
+			run, err := svc.Execute(context.Background(), repo.run.ID)
+			if err != nil || run.Status != StatusFailed || run.Error == nil {
+				t.Fatalf("Execute() = (%+v, %v), want a failed run carrying an error", run, err)
+			}
+			if run.Error.Code != tc.code {
+				t.Fatalf("error code = %q, want %q", run.Error.Code, tc.code)
+			}
+			if run.Error.Retryable {
+				t.Fatalf("error is retryable; the acceptance stops are terminal")
+			}
+			if tc.wantModel != "" && !strings.Contains(run.Error.Message, tc.wantModel) {
+				t.Fatalf("message %q does not name the profile's model %q", run.Error.Message, tc.wantModel)
+			}
+			if tc.wantLimit != "" && !strings.Contains(run.Error.Message, tc.wantLimit) {
+				t.Fatalf("message %q does not name the profile's ceiling %q", run.Error.Message, tc.wantLimit)
+			}
+			if tc.mustNotName != "" && strings.Contains(run.Error.Message, tc.mustNotName) {
+				t.Fatalf("message %q names %q, which belongs to another profile", run.Error.Message, tc.mustNotName)
+			}
+		})
+	}
+}
+
+// With no profile armed the process is not in a controlled mode, and the
+// messages have to stay exactly what they were: the two failures cannot even
+// happen without a profile (the adapter only checks the model and the
+// ceiling when one is armed), and a process that arms one later must not
+// find its wording changed underneath it.
+func TestExecuteAcceptanceMessagesWithoutAProfileKeepTheirPreviousWording(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+		want string
+	}{
+		{
+			name: "model mismatch",
+			err:  ErrAcceptanceModelMismatch,
+			code: "generation_model_mismatch",
+			want: "验收模式未找到唯一且符合条件的 deepseek-flash 配置；未调用模型。",
+		},
+		{
+			name: "incomplete output",
+			err:  ErrGenerationIncomplete,
+			code: "generation_incomplete",
+			want: "本轮输出达到 6,000 token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(acceptancebudget.ProfileEnv, "")
+			svc, repo := generationFixture()
+			svc.Model = testModel{err: tc.err}
+			run, err := svc.Execute(context.Background(), repo.run.ID)
+			if err != nil || run.Status != StatusFailed || run.Error == nil {
+				t.Fatalf("Execute() = (%+v, %v), want a failed run carrying an error", run, err)
+			}
+			if run.Error.Code != tc.code {
+				t.Fatalf("error code = %q, want %q", run.Error.Code, tc.code)
+			}
+			if run.Error.Message != tc.want {
+				t.Fatalf("message = %q, want the previous wording %q", run.Error.Message, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatTokenCountWritesThousandsSeparators(t *testing.T) {
+	cases := map[int]string{0: "0", 999: "999", 4096: "4,096", 6000: "6,000", 16000: "16,000"}
+	for count, want := range cases {
+		if got := formatTokenCount(count); got != want {
+			t.Fatalf("formatTokenCount(%d) = %q, want %q", count, got, want)
+		}
 	}
 }
 
