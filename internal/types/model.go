@@ -65,6 +65,29 @@ func IsChatCapableModelType(modelType ModelType) bool {
 	return IsSummaryCapableModelType(modelType) || modelType == ModelTypeVLLM
 }
 
+// IsEmbeddingCapableModelType reports whether a model of the given type can
+// serve an embedding (vectorisation) call.
+//
+// It is the mirror image of IsChatCapableModelType: that predicate answers
+// "may this row serve a text-generation call", this one answers "may this row
+// serve a vectorisation call". Both read the same model TYPE vocabulary — the
+// ModelType constants above — so the codebase has exactly one type list.
+//
+// Only an Embedding row qualifies:
+//   - a KnowledgeQA row speaks the chat/completions protocol; its upstream
+//     has no embeddings endpoint;
+//   - a Rerank row speaks the rerank protocol (a cross-encoder that scores
+//     query/document pairs), not the embeddings protocol;
+//   - an ASR row speaks the speech protocol;
+//   - a VLLM row is a multimodal chat model in this product — it is loaded
+//     through GetVLMModel and carries no embedding dimension configuration.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsEmbeddingCapableModelType(modelType ModelType) bool {
+	return modelType == ModelTypeEmbedding
+}
+
 // ModelStatus represents the status of the model
 type ModelStatus string
 
