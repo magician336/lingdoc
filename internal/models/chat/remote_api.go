@@ -269,6 +269,10 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	}
 	c.applyCompletionToolCallMetadata(body, result)
 	applyRawPromptCacheUsage(body, &result.Usage)
+	// provider 侧关于这次调用自己的事实：请求标识（若 provider 给了）、端点、
+	// 请求体指纹。没有它，一次真实调用在 provider 侧就只有一个「发生过」，
+	// 没有可核对的标识。
+	result.ProviderCall = providerCallFromResponse(resp, endpoint, jsonData)
 	logUsage(ctx, c.modelName, &result.Usage)
 	return result, nil
 }

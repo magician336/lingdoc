@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -72,6 +75,21 @@ func compareGenerationDigest(row generationRow, digest string) error {
 type SQLiteRepository struct{ db *gorm.DB }
 
 func NewSQLiteRepository(db *gorm.DB) *SQLiteRepository { return &SQLiteRepository{db: db} }
+
+// ledgerTableMissing says the ledger read failed because the table is not
+// there, not because the read itself went wrong.
+//
+// A database that predates the model call ledger has no such table, and a
+// candidate written there simply has no model to name. That is not a failure
+// worth a log line on every write; a read that failed for any other reason is.
+func ledgerTableMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such table") ||
+		strings.Contains(message, "does not exist")
+}
 
 func (s *SQLiteRepository) AutoMigrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).AutoMigrate(&generationRow{})
@@ -284,6 +302,31 @@ func (s *SQLiteRepository) Complete(ctx context.Context, runID, claimToken strin
 		}
 		if row.Status != StatusRunning || row.ClaimToken != claimToken || row.ProjectID != candidate.ProjectID || row.ChapterID != candidate.ChapterID || candidate.RunID != row.ID {
 			return ErrRunUnavailable
+		}
+		if candidate.ModelID == "" {
+			// 产物 → 模型：候选行自己记下产出它的模型，读产物的人不必再经
+			// run → 账本绕一圈才推得出。
+			//
+			// 事实的来源是**模型调用账本**：那行账本是这个 run 的真实
+			// provider 调用记录，它的 model_id 就是产出这个候选的模型。没有
+			// 账本行 ⇒ 这次没有 provider 调用（mock 适配器不写账本）⇒ 候选行
+			// 的 model_id 就该是空的。两个字段成对：账本有行则候选必有模型，
+			// 账本无行则候选必无模型。
+			//
+			// 读账本失败**不**让这次运行失败：那是改闸门，不在本次范围。缺口
+			// 留一行日志，由守护测试在代码路径上钉住「账本有行则候选必带模型」。
+			entries, ledgerErr := workspacecore.NewGORMModelCallLedger(tx).
+				ModelCallEntriesBySource(ctx, row.TenantID, workspacecore.ModelCallLedgerSourceGenerationRun, runID)
+			if ledgerErr != nil && !ledgerTableMissing(ledgerErr) {
+				log.Printf("[generation] candidate model id: ledger read failed for run %s: %v", runID, ledgerErr)
+			}
+			// 账本行按时间升序返回。产出这份候选的是**最后一次**调用：一个 run
+			// 里换过模型时，先前那次不是产出者。
+			for _, entry := range entries {
+				if entry.ModelID != "" {
+					candidate.ModelID = entry.ModelID
+				}
+			}
 		}
 		if err := candidateadoption.NewSQLiteCandidateAdoptionStore(tx).UpsertCandidate(ctx, candidate); err != nil {
 			return err

@@ -525,7 +525,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		if estimateErr != nil {
 			return generation.Draft{}, generation.ErrAcceptanceBudgetUnavailable
 		}
-		if inputUpperBound > generationAcceptanceInputMax {
+		if inputUpperBound > acceptanceInputMax(m.acceptanceBudget.profileName()) {
 			return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 		}
 		reservation, err = m.acceptanceBudget.reserve(ctx, generationAcceptanceModel, inputUpperBound)

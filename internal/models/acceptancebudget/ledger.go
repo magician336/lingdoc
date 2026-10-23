@@ -403,6 +403,17 @@ func reserveAmounts(model string, inputUpperBound, outputLimit int) (int64, int6
 }
 
 func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, error) {
+	if model == QwenChatModel {
+		// This model has no price basis, so there is no amount to compute --
+		// not even for a counter that cannot be true. Returning the priced
+		// profile's error here would make the caller write a reserved+1
+		// amount onto a row that reserved nothing, which is exactly the
+		// "reserved 0 but actual is an amount" combination the cost basis
+		// exists to prevent. The impossible counter is caught by the caller
+		// as a limit violation; the amount stays 0, which under the
+		// "not_applicable" basis reads as "not computed", never as "free".
+		return 0, 0, nil
+	}
 	if inputTokens < 0 || outputTokens < 0 {
 		return 0, 0, ErrInputTooLarge
 	}
@@ -410,10 +421,6 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	case DeepSeekModel:
 		usd := int64(inputTokens)*DeepSeekInputNanoUSDPerToken + int64(outputTokens)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
-	case QwenChatModel:
-		// No price basis: the actual amount is not computed, and the ledger
-		// says so through its cost basis.
-		return 0, 0, nil
 	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputTokens != 0 {
 			return 0, 0, ErrWrongModel
