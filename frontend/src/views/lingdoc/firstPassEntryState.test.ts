@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { invitationAssignment, invitationScopeDetail, invitationStatusLabel, invitationViewState, permissionIdentity, publishedChoices, resolveTemplateChoice, toggleEvidenceSelection } from './firstPassEntryState'
+import { CatalogIntegrityError, catalogNoticeForView, invitationAssignment, invitationScopeDetail, invitationStatusLabel, invitationViewState, permissionIdentity, publishedChoices, recallNoticeForProject, resolveTemplateChoice, templateChoiceDescription, templateChoiceLabel, templateStatusErrorFor, toggleEvidenceSelection } from './firstPassEntryState'
 import type { ProjectInvitation } from '@/api/lingdoc/collaboration'
 import type { Project } from '@/api/lingdoc/workspace'
 import type { TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
@@ -11,11 +11,39 @@ test('published choice preserves newer demo versions and removes only the explic
   const choices = publishedChoices([version('template-demo','1'),version('template-demo','2'),version('research','1'),version('research','1'),version('research','2','withdrawn')])
   assert.deepEqual(choices.map(v => `${v.template_id}@${v.version}`), ['template-demo@2','research@1'])
 })
+test('catalog loading, failure and empty result remain distinct in the project chooser', () => {
+  assert.match(catalogNoticeForView(true, '', 0), /正在读取/)
+  assert.match(catalogNoticeForView(false, '目录暂不可读，请重试', 0), /暂不可读/)
+  assert.doesNotMatch(catalogNoticeForView(false, '目录暂不可读，请重试', 0), /暂无其他/)
+  assert.match(catalogNoticeForView(false, '', 0), /暂无其他已发布模板/)
+  assert.equal(catalogNoticeForView(false, '', 0, '当前筛选下没有模板。'), '当前筛选下没有模板。')
+  assert.equal(catalogNoticeForView(false, '', 2), '')
+})
+test('catalog choice exposes exact version, scope, origin and hashes without official claim', () => {
+  const choice = { ...version('research', '2'), definition: { name: '科研申请模板' }, scope: '内部参考', source_type: 'curated', curator: '资料组', content_hash: 'content-2', ruleset_hash: 'rules-3' } as TemplateCatalogVersion
+  assert.match(templateChoiceLabel(choice), /科研申请模板 · 2 · 内部参考/)
+  const description = templateChoiceDescription(choice)
+  for (const text of ['内部参考', 'curated', '资料组', 'content-2', 'rules-3', '不代表官方认证']) assert.ok(description.includes(text))
+})
 test('withdrawn or stale template never silently creates a demo project', () => {
   assert.throws(() => resolveTemplateChoice('research@2',[version('research','2','withdrawn')]), /未改用演示/)
   assert.throws(() => resolveTemplateChoice('missing@1',[]), /重新选择/)
   assert.deepEqual(resolveTemplateChoice('template-demo@1',[]), { template_id:'template-demo',template_version:'1' })
   assert.deepEqual(resolveTemplateChoice('template-demo@2',[version('template-demo','2')]), { template_id:'template-demo',template_version:'2' })
+})
+test('source template recall is shown only for the exact project copy; incomplete recalls are errors', () => {
+  const project = { template_id: 'research', template_version: '2' } as Project
+  const recall = { reason: '结构问题', migration_advice: '先复核课题副本', affected_project_ids: [], recorded_at: '2026-10-20T00:00:00Z' }
+  assert.deepEqual(recallNoticeForProject(project, { ...version('research', '2', 'recalled'), recall } as TemplateCatalogVersion), recall)
+  assert.equal(recallNoticeForProject(project, version('research', '2', 'withdrawn')), null)
+  assert.throws(() => recallNoticeForProject(project, { ...version('research', '1', 'recalled'), recall } as TemplateCatalogVersion), CatalogIntegrityError)
+  assert.throws(() => recallNoticeForProject(project, version('research', '2', 'recalled')), CatalogIntegrityError)
+})
+test('catalog integrity failures are distinct from an unavailable status read, including for demo templates', () => {
+  const mismatch = new CatalogIntegrityError('来源模板与当前课题不匹配')
+  assert.match(templateStatusErrorFor(mismatch, false), /完整性校验失败/)
+  assert.match(templateStatusErrorFor(new Error('offline'), false), /暂不可读/)
+  assert.match(templateStatusErrorFor(new Error('offline'), true), /演示模板状态暂不可读/)
 })
 test('invitation empty scopes do not present all chapters as writable', () => {
   const invite = { assignment:{ governance_role:'member', function_roles:['author','reviewer'], function_scopes:{author:[],reviewer:['chapter-one']} } } as unknown as ProjectInvitation

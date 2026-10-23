@@ -22,6 +22,9 @@ import (
 // decided that the context owns another operation; that decision has to be
 // written down here, and it has to come with the aggregate method it names.
 var narrowPortMethods = map[string][]string{
+	"TenantPermissionAuthorizer": {
+		"TenantPermissionInTransaction",
+	},
 	"AgentActionApplication": {
 		"ApplyChangeSet",
 		"CommitWorkingCopy",
@@ -380,7 +383,7 @@ func TestTheNarrowPortsDoNotHandTheTransportTheWholeAggregate(t *testing.T) {
 // The package also holds the store and transaction ports the aggregate
 // consumes; those are not narrowings of the aggregate, so they are not part
 // of this promise.
-var narrowPortFiles = []string{"context_ports.go", "migrated_context_ports.go"}
+var narrowPortFiles = []string{"context_ports.go", "migrated_context_ports.go", "tenant_permission_port.go"}
 
 // aggregateMethodSignatures reads the aggregate's method signatures from the
 // package source, so the comparison is against the code that actually

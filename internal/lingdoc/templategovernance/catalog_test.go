@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -21,11 +22,20 @@ type testAuth struct {
 	basis VersionBasis
 }
 
-func (a *testAuth) AuthorizeTemplate(_ context.Context, _ *gorm.DB, actor Actor, _ Action, _ string) error {
-	if !a.allow || actor.Role != "tenant_admin" {
+func (a *testAuth) AuthorizeTemplate(_ context.Context, _ *gorm.DB, actor Actor, action Action, _ string) error {
+	if !a.allow {
 		return errors.New("denied")
 	}
+	if action != ActionRead && actor.Role != "tenant_admin" {
+		return ErrPermissionDenied
+	}
 	return nil
+}
+func (a *testAuth) CanManageTemplateCatalog(_ context.Context, _ *gorm.DB, actor Actor) (bool, error) {
+	if !a.allow {
+		return false, errors.New("denied")
+	}
+	return actor.Role == "tenant_admin", nil
 }
 func (a *testAuth) AuthorizeSuggestion(_ context.Context, _ *gorm.DB, actor Actor, _ Action, _ SuggestionScope) error {
 	if !a.allow || actor.Role != "tenant_admin" {
@@ -72,6 +82,50 @@ func (s sourceVerifier) VerifyTemplateSourcesInTransaction(_ context.Context, _ 
 		return ErrSourceUnavailable
 	}
 	return nil
+}
+
+type publishableNonManagerAuth struct{ *testAuth }
+
+func (a publishableNonManagerAuth) AuthorizeTemplate(ctx context.Context, tx *gorm.DB, actor Actor, action Action, id string) error {
+	if actor.Role == "template_publisher" && (action == ActionRead || action == ActionPublish) {
+		return nil
+	}
+	return a.testAuth.AuthorizeTemplate(ctx, tx, actor, action, id)
+}
+
+func (a publishableNonManagerAuth) CanManageTemplateCatalog(ctx context.Context, tx *gorm.DB, actor Actor) (bool, error) {
+	if actor.Role == "template_publisher" {
+		return false, nil
+	}
+	return a.testAuth.CanManageTemplateCatalog(ctx, tx, actor)
+}
+
+type sourceVerifierSpy struct {
+	preflightCalls   int
+	preflightRefs    []SourceRef
+	transactionCalls int
+	preflightErr     error
+}
+
+func (s *sourceVerifierSpy) VerifyTemplateSources(_ context.Context, _ Actor, refs []SourceRef) error {
+	s.preflightCalls++
+	s.preflightRefs = append([]SourceRef{}, refs...)
+	return s.preflightErr
+}
+
+func (s *sourceVerifierSpy) VerifyTemplateSourcesInTransaction(_ context.Context, _ *gorm.DB, _ Actor, _ []SourceRef) error {
+	s.transactionCalls++
+	return nil
+}
+
+type replayVerifierSpy struct {
+	inner ReplayVerifier
+	calls int
+}
+
+func (s *replayVerifierSpy) Verify(ctx context.Context, actor Actor, version TemplateVersion, ids []string) error {
+	s.calls++
+	return s.inner.Verify(ctx, actor, version, ids)
 }
 
 func openTestDB(t *testing.T) (*gorm.DB, string) {
@@ -236,6 +290,176 @@ func TestCatalogLifecycleReplayRestartAndCopyGates(t *testing.T) {
 		t.Fatal("revoked actor replayed cached result")
 	}
 }
+
+func TestCatalogPublicReadHidesDraftSourcesAndTenantWideRecallImpact(t *testing.T) {
+	s, db, _, admin, draft, _ := seedService(t)
+	reader := Actor{TenantID: admin.TenantID, UserID: "project-owner", Role: "tenant_viewer"}
+	profiles, err := s.ListProfiles(context.Background(), reader, CatalogFilter{})
+	if err != nil || len(profiles) != 0 {
+		t.Fatalf("draft-only profile leaked: %v, %v", profiles, err)
+	}
+	if _, err := s.GetVersion(context.Background(), reader, draft.TemplateID, draft.Version); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("draft read = %v, want not found", err)
+	}
+	if _, err := s.ListVersions(context.Background(), reader, draft.TemplateID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("draft-only profile history = %v, want not found", err)
+	}
+	if _, err := s.Publish(context.Background(), reader, "reader-private-publish", PublishInput{TemplateID: draft.TemplateID, Version: draft.Version, ExpectedRevision: draft.Revision, ReplayFixtureIDs: []string{"write_check-positive"}, Reason: "unauthorized private draft"}); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("reader private draft publish = %v, want permission denied", err)
+	}
+	var denied struct{ Details string }
+	if err := db.Table("audit_logs").Select("details").Where("action=? AND actor_user_id=? AND outcome=?", "lingdoc.template.publish", reader.UserID, "failure").Take(&denied).Error; err != nil || strings.Contains(denied.Details, draft.ContentHash) {
+		t.Fatalf("reader failure audit leaked draft hash: %v, %v", denied, err)
+	}
+	if !strings.Contains(denied.Details, `"error_code":"permission_denied"`) {
+		t.Fatalf("reader permission denial audit code = %s", denied.Details)
+	}
+	input := draftInput(draft.RuleSet, draft.Version, draft.Revision)
+	input.Sources = []SourceRef{{ID: "restricted-source", Version: "source-v1", Locator: "private-locator"}}
+	draft, err = s.SaveDraft(context.Background(), admin, "save-source-draft-1", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := publishTestVersion(t, s, admin, draft)
+	visible, err := s.GetVersion(context.Background(), reader, published.TemplateID, published.Version)
+	if err != nil || visible.State != template.RuleSetPublished || visible.ContentHash != published.ContentHash || len(visible.Sources) != 0 {
+		t.Fatalf("public version leaked sources or lost identity: %+v, %v", visible, err)
+	}
+	adminView, err := s.GetVersion(context.Background(), admin, published.TemplateID, published.Version)
+	if err != nil || len(adminView.Sources) != 1 {
+		t.Fatalf("admin source provenance missing: %+v, %v", adminView.Sources, err)
+	}
+	profiles, err = s.ListProfiles(context.Background(), reader, CatalogFilter{State: template.RuleSetPublished})
+	if err != nil || len(profiles) != 1 {
+		t.Fatalf("public published profiles = %v, %v", profiles, err)
+	}
+	if _, err := s.SaveDraft(context.Background(), admin, "save-unpublished-v2", draftInput(draft.RuleSet, "2", 0)); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := s.ListVersions(context.Background(), reader, published.TemplateID)
+	if err != nil || len(versions) != 1 || len(versions[0].Sources) != 0 {
+		t.Fatalf("public version list = %+v, %v", versions, err)
+	}
+	recalled, err := s.Recall(context.Background(), admin, "recall-private-impact", RecallInput{GovernanceInput: GovernanceInput{TemplateID: published.TemplateID, Version: published.Version, ExpectedRevision: published.Revision, Reason: "known structural defect"}, MigrationAdvice: "review the current project before migration"})
+	if err != nil || recalled.Recall == nil || len(recalled.Recall.AffectedProjectIDs) != 1 {
+		t.Fatalf("admin recall lost impact: %+v, %v", recalled.Recall, err)
+	}
+	visible, err = s.GetVersion(context.Background(), reader, published.TemplateID, published.Version)
+	if err != nil || visible.Recall == nil || visible.Recall.Reason != recalled.Recall.Reason || len(visible.Recall.AffectedProjectIDs) != 0 {
+		t.Fatalf("public recall leaked project ids or hid guidance: %+v, %v", visible.Recall, err)
+	}
+}
+
+func TestCatalogRejectedMutationAuditsFailureWithoutChangingDraft(t *testing.T) {
+	s, db, _, admin, draft, _ := seedService(t)
+	input := PublishInput{TemplateID: draft.TemplateID, Version: draft.Version, ExpectedRevision: draft.Revision + 1, ReplayFixtureIDs: []string{"write_check-positive", "write_check-negative", "preflight-positive", "preflight-negative"}, Reason: "stale publication rejected"}
+	if _, err := s.Publish(context.Background(), admin, "publish-stale-audit", input); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale publication error = %v", err)
+	}
+	current, err := s.GetVersion(context.Background(), admin, draft.TemplateID, draft.Version)
+	if err != nil || current.State != template.RuleSetDraft || current.Revision != draft.Revision {
+		t.Fatalf("rejected publish mutated draft: %+v, %v", current, err)
+	}
+	var events []struct{ Outcome, Details string }
+	if err := db.Table("audit_logs").Select("outcome,details").Where("action=?", "lingdoc.template.publish").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Outcome != "failure" || !strings.Contains(events[0].Details, `"error_code":"version_conflict"`) || !strings.Contains(events[0].Details, draft.ContentHash) {
+		t.Fatalf("failed publish audit missing current version identity: %+v", events)
+	}
+}
+
+func TestCatalogFailureReceiptStorageErrorIsReturned(t *testing.T) {
+	s, db, _, admin, draft, _ := seedService(t)
+	if err := db.Migrator().DropTable("audit_logs"); err != nil {
+		t.Fatal(err)
+	}
+	err := s.RecordCopyFailure(context.Background(), admin, CopyFailure{TemplateID: draft.TemplateID, TemplateVersion: draft.Version, Cause: ErrInvalidState})
+	if err == nil || !strings.Contains(err.Error(), "persist catalog failure receipt") {
+		t.Fatalf("failure audit storage error was swallowed: %v", err)
+	}
+}
+
+func TestInvalidCatalogTargetDoesNotReportReceiptStorageFailure(t *testing.T) {
+	s, db, _, admin, _, _ := seedService(t)
+	_, err := s.CreateProfile(context.Background(), admin, "invalid-profile-target", CreateProfileInput{
+		ID: "bad/template/id", Name: "Malformed target", Reason: "invalid target rejected",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("invalid target error = %v, want ErrInvalidRequest", err)
+	}
+	if strings.Contains(err.Error(), "record catalog failure receipt") || strings.Contains(err.Error(), "persist catalog failure receipt") {
+		t.Fatalf("invalid target was misreported as a receipt write failure: %v", err)
+	}
+	if countRows(t, db, "audit_logs", "action=? AND outcome=?", "lingdoc.template.create_profile", "failure") != 0 {
+		t.Fatal("malformed target unexpectedly wrote a failure receipt")
+	}
+}
+
+func TestCopyFailureWithUnattributableTargetIsAnIntentionalNonWrite(t *testing.T) {
+	s, db, _, admin, _, _ := seedService(t)
+	err := s.RecordCopyFailure(context.Background(), admin, CopyFailure{
+		TemplateID: "bad/template/id", TemplateVersion: "1", Cause: ErrInvalidRequest,
+	})
+	if err != nil {
+		t.Fatalf("unattributable copy target should preserve the original rejection without a receipt-write error: %v", err)
+	}
+	if countRows(t, db, "audit_logs", "action=? AND outcome=?", "lingdoc.template.copy", "failure") != 0 {
+		t.Fatal("unattributable copy target unexpectedly wrote a failure receipt")
+	}
+}
+
+func TestCatalogFailureReceiptSurvivesActorMembershipRevocation(t *testing.T) {
+	s, db, auth, admin, draft, _ := seedService(t)
+	auth.allow = false // The token's identity is known, but its current membership is no longer active.
+	revoked := Actor{TenantID: admin.TenantID, UserID: "revoked-member", Role: "tenant_viewer"}
+	err := s.RecordCopyFailure(context.Background(), revoked, CopyFailure{TemplateID: draft.TemplateID, TemplateVersion: draft.Version, Cause: errors.Join(ErrPermissionDenied, ErrNotFound)})
+	if err != nil {
+		t.Fatalf("revoked actor denial receipt: %v", err)
+	}
+	var events []struct{ Outcome, Details string }
+	if err := db.Table("audit_logs").Select("outcome,details").Where("actor_user_id=? AND action=?", revoked.UserID, "lingdoc.template.copy").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Outcome != "failure" ||
+		!strings.Contains(events[0].Details, `"error_code":"permission_denied"`) ||
+		!strings.Contains(events[0].Details, `"current_version_metadata_unavailable":true`) ||
+		strings.Contains(events[0].Details, `"content_hash"`) {
+		t.Fatalf("revoked actor receipt must be minimal and auditable: %+v", events)
+	}
+}
+
+func TestPublishChecksFullSourceReferencesBeforeReplayForNonManagerPublisher(t *testing.T) {
+	s, _, auth, admin, firstDraft, _ := seedService(t)
+	input := draftInput(firstDraft.RuleSet, "2", 0)
+	input.SourceType = "project_copy"
+	input.Sources = []SourceRef{{ID: "source-v1", Version: "1"}}
+	draft, err := s.SaveDraft(context.Background(), admin, "save-source-bearing-draft", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := &sourceVerifierSpy{preflightErr: ErrNotFound}
+	replay := &replayVerifierSpy{inner: s.ports.Replay}
+	s.ports.Sources = sources
+	s.ports.Replay = replay
+	s.ports.Authorizer = publishableNonManagerAuth{testAuth: auth}
+	publisher := Actor{TenantID: admin.TenantID, UserID: "publisher", Role: "template_publisher"}
+	_, err = s.Publish(context.Background(), publisher, "publish-source-bearing-draft", PublishInput{
+		TemplateID: draft.TemplateID, Version: draft.Version, ExpectedRevision: draft.Revision,
+		ReplayFixtureIDs: []string{"write_check-positive", "write_check-negative", "preflight-positive", "preflight-negative"},
+		Reason:           "source authorization must precede replay",
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("publish with denied source = %v, want source denial", err)
+	}
+	if sources.preflightCalls != 1 || len(sources.preflightRefs) != 1 || sources.preflightRefs[0] != input.Sources[0] {
+		t.Fatalf("preflight source refs = %+v (calls %d), want the complete stored refs", sources.preflightRefs, sources.preflightCalls)
+	}
+	if replay.calls != 0 {
+		t.Fatalf("replay calls = %d after denied source; preflight must reject before replay", replay.calls)
+	}
+}
+
 func poolPath(db *gorm.DB, t *testing.T) string {
 	t.Helper()
 	var rows []struct {

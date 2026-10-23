@@ -3,6 +3,7 @@ package templategovernance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,15 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *Service) CreateProfile(ctx context.Context, actor Actor, key string, input CreateProfileInput) (Profile, error) {
+func (s *Service) CreateProfile(ctx context.Context, actor Actor, key string, input CreateProfileInput) (result Profile, err error) {
+	defer func() {
+		if auditErr := s.auditCatalogFailure(ctx, actor, ActionCreateProfile, input.ID, "", input.Reason, err); auditErr != nil {
+			err = errors.Join(err, fmt.Errorf("record catalog failure receipt: %w", auditErr))
+		}
+	}()
 	if err := s.ready(actor); err != nil {
 		return Profile{}, err
 	}
 	if !validKey(key) || !identifier.MatchString(input.ID) || strings.TrimSpace(input.Name) == "" || len(input.Name) > 240 || !validReason(input.Reason) {
 		return Profile{}, ErrInvalidRequest
 	}
-	var result Profile
-	err := s.withTx(ctx, func(tx *gorm.DB) error {
+	err = s.withTx(ctx, func(tx *gorm.DB) error {
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionCreateProfile, input.ID); err != nil {
 			return err
 		}
@@ -63,9 +68,16 @@ func (s *Service) ListProfiles(ctx context.Context, actor Actor, filter CatalogF
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRead, ""); err != nil {
 			return err
 		}
+		canManage, err := s.ports.Authorizer.CanManageTemplateCatalog(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
 		q := tx.Model(&profileRow{}).Where("lingdoc_template_profiles.tenant_id=?", actor.TenantID)
-		if filter.Scope != "" || filter.State != "" {
+		if filter.Scope != "" || filter.State != "" || !canManage {
 			q = q.Joins("JOIN lingdoc_template_versions v ON v.tenant_id=lingdoc_template_profiles.tenant_id AND v.template_id=lingdoc_template_profiles.template_id")
+			if !canManage {
+				q = q.Where("v.state<>?", string(template.RuleSetDraft))
+			}
 			if filter.Scope != "" {
 				q = q.Where("v.scope=?", filter.Scope)
 			}
@@ -99,8 +111,17 @@ func (s *Service) GetVersion(ctx context.Context, actor Actor, id, version strin
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRead, id); err != nil {
 			return err
 		}
-		var err error
+		canManage, err := s.ports.Authorizer.CanManageTemplateCatalog(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
 		result, err = loadVersion(tx, actor, id, version)
+		if err == nil && !canManage {
+			if result.State == template.RuleSetDraft {
+				return ErrNotFound
+			}
+			result = publicVersion(result)
+		}
 		return err
 	})
 	return result, err
@@ -117,23 +138,85 @@ func (s *Service) ListVersions(ctx context.Context, actor Actor, id string) ([]T
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRead, id); err != nil {
 			return err
 		}
+		canManage, err := s.ports.Authorizer.CanManageTemplateCatalog(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
 		if _, err := loadProfile(tx, actor, id); err != nil {
 			return err
 		}
 		var rows []versionRow
-		if err := tx.Where("tenant_id=? AND template_id=?", actor.TenantID, id).Order("created_at DESC,version DESC").Find(&rows).Error; err != nil {
+		q := tx.Where("tenant_id=? AND template_id=?", actor.TenantID, id)
+		if !canManage {
+			q = q.Where("state<>?", string(template.RuleSetDraft))
+		}
+		if err := q.Order("created_at DESC,version DESC").Find(&rows).Error; err != nil {
 			return err
+		}
+		if !canManage && len(rows) == 0 {
+			return ErrNotFound
 		}
 		for _, row := range rows {
 			v, err := decodeVersion(row)
 			if err != nil {
 				return err
 			}
+			if !canManage {
+				v = publicVersion(v)
+			}
 			result = append(result, v)
 		}
 		return nil
 	})
 	return result, err
+}
+
+// Public catalog metadata is enough to choose or inspect an immutable version.
+// Source IDs can reference restricted research material; the full version and
+// tenant-wide recall impact list remain available to current tenant managers.
+func publicVersion(v TemplateVersion) TemplateVersion {
+	v.Sources = []SourceRef{}
+	if v.Recall != nil {
+		recall := *v.Recall
+		recall.AffectedProjectIDs = []string{}
+		v.Recall = &recall
+	}
+	return v
+}
+
+// RecordCopySuccess appends the copy receipt through the caller's project
+// transaction. The copy and its governance history therefore commit or roll
+// back together.
+func (s *Service) RecordCopySuccess(ctx context.Context, tx *gorm.DB, actor Actor, projectID, copyID string, copyVersion int64, templateID, templateVersion, contentHash, rulesetHash, rulesetID, rulesetVersion, sourcePolicyHash string) error {
+	if err := s.ready(actor); err != nil {
+		return err
+	}
+	if tx == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(copyID) == "" || copyVersion < 1 ||
+		!identifier.MatchString(templateID) || !identifier.MatchString(templateVersion) || contentHash == "" {
+		return ErrInvalidRequest
+	}
+	target := templateID + "/" + templateVersion
+	details := map[string]any{
+		"project_id": projectID, "project_template_copy_id": copyID, "copy_version": copyVersion,
+		"content_hash": contentHash, "ruleset_hash": rulesetHash, "ruleset_id": rulesetID,
+		"ruleset_version": rulesetVersion, "source_policy_hash": sourcePolicyHash,
+	}
+	return recordAudit(tx, actor, ActionCopy, target, "new project copied this exact published template version", details)
+}
+
+// RecordCopyFailure is called after the Workspace project transaction rejects
+// a catalog copy, so the failure receipt survives that transaction's rollback.
+func (s *Service) RecordCopyFailure(ctx context.Context, actor Actor, failure CopyFailure) error {
+	reason := "new project template copy rejected"
+	extra := map[string]any{}
+	if failure.ProjectID != "" {
+		extra["project_id"] = failure.ProjectID
+	}
+	if failure.AuditPersistenceFailure {
+		reason = "project creation rolled back because successful template-copy audit persistence failed"
+		extra["error_code"] = "audit_persistence_failed"
+	}
+	return s.auditCatalogFailureWithDetails(ctx, actor, ActionCopy, failure.TemplateID, failure.TemplateVersion, reason, failure.Cause, extra)
 }
 
 // ResolveForCopy participates in the caller's project transaction. It verifies
@@ -219,7 +302,12 @@ func (s *Service) checkTemplateSources(ctx context.Context, actor Actor, refs []
 	}
 	return s.ports.Sources.VerifyTemplateSources(ctx, actor, refs)
 }
-func (s *Service) SaveDraft(ctx context.Context, actor Actor, key string, input SaveDraftInput) (TemplateVersion, error) {
+func (s *Service) SaveDraft(ctx context.Context, actor Actor, key string, input SaveDraftInput) (result TemplateVersion, err error) {
+	defer func() {
+		if auditErr := s.auditCatalogFailure(ctx, actor, ActionSaveDraft, input.TemplateID, input.Version, input.Reason, err); auditErr != nil {
+			err = errors.Join(err, fmt.Errorf("record catalog failure receipt: %w", auditErr))
+		}
+	}()
 	if err := s.ready(actor); err != nil {
 		return TemplateVersion{}, err
 	}
@@ -239,8 +327,7 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, key string, input 
 	if err := s.checkTemplateSources(ctx, actor, input.Sources); err != nil {
 		return TemplateVersion{}, err
 	}
-	var result TemplateVersion
-	err := s.withTx(ctx, func(tx *gorm.DB) error {
+	err = s.withTx(ctx, func(tx *gorm.DB) error {
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionSaveDraft, input.TemplateID); err != nil {
 			return err
 		}
@@ -325,7 +412,12 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, key string, input 
 	})
 	return result, err
 }
-func (s *Service) Publish(ctx context.Context, actor Actor, key string, input PublishInput) (TemplateVersion, error) {
+func (s *Service) Publish(ctx context.Context, actor Actor, key string, input PublishInput) (result TemplateVersion, err error) {
+	defer func() {
+		if auditErr := s.auditCatalogFailure(ctx, actor, ActionPublish, input.TemplateID, input.Version, input.Reason, err); auditErr != nil {
+			err = errors.Join(err, fmt.Errorf("record catalog failure receipt: %w", auditErr))
+		}
+	}()
 	if err := s.ready(actor); err != nil {
 		return TemplateVersion{}, err
 	}
@@ -335,12 +427,14 @@ func (s *Service) Publish(ctx context.Context, actor Actor, key string, input Pu
 	if s.ports.Replay == nil {
 		return TemplateVersion{}, ErrReplayRequired
 	}
-	current, err := s.GetVersion(ctx, actor, input.TemplateID, input.Version)
-	if err != nil {
-		return TemplateVersion{}, err
-	}
+	var current TemplateVersion
 	if err := s.withTx(ctx, func(tx *gorm.DB) error {
-		return s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionPublish, input.TemplateID)
+		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionPublish, input.TemplateID); err != nil {
+			return err
+		}
+		var err error
+		current, err = loadVersion(tx, actor, input.TemplateID, input.Version)
+		return err
 	}); err != nil {
 		return TemplateVersion{}, err
 	}
@@ -350,7 +444,6 @@ func (s *Service) Publish(ctx context.Context, actor Actor, key string, input Pu
 	if err := s.ports.Replay.Verify(ctx, actor, current, append([]string{}, input.ReplayFixtureIDs...)); err != nil {
 		return TemplateVersion{}, err
 	}
-	var result TemplateVersion
 	err = s.withTx(ctx, func(tx *gorm.DB) error {
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionPublish, input.TemplateID); err != nil {
 			return err
@@ -406,11 +499,20 @@ func (s *Service) Withdraw(ctx context.Context, actor Actor, key string, input G
 }
 func (s *Service) Recall(ctx context.Context, actor Actor, key string, input RecallInput) (TemplateVersion, error) {
 	if strings.TrimSpace(input.MigrationAdvice) == "" || s.ports.Usage == nil {
+		err := s.auditCatalogFailure(ctx, actor, ActionRecall, input.TemplateID, input.Version, input.Reason, ErrInvalidRequest)
+		if err != nil {
+			return TemplateVersion{}, errors.Join(ErrInvalidRequest, fmt.Errorf("record catalog failure receipt: %w", err))
+		}
 		return TemplateVersion{}, ErrInvalidRequest
 	}
 	return s.transition(ctx, actor, key, input.GovernanceInput, ActionRecall, input.MigrationAdvice)
 }
-func (s *Service) transition(ctx context.Context, actor Actor, key string, input GovernanceInput, action Action, advice string) (TemplateVersion, error) {
+func (s *Service) transition(ctx context.Context, actor Actor, key string, input GovernanceInput, action Action, advice string) (result TemplateVersion, err error) {
+	defer func() {
+		if auditErr := s.auditCatalogFailure(ctx, actor, action, input.TemplateID, input.Version, input.Reason, err); auditErr != nil {
+			err = errors.Join(err, fmt.Errorf("record catalog failure receipt: %w", auditErr))
+		}
+	}()
 	if err := s.ready(actor); err != nil {
 		return TemplateVersion{}, err
 	}
@@ -421,8 +523,7 @@ func (s *Service) transition(ctx context.Context, actor Actor, key string, input
 		GovernanceInput
 		Advice string
 	}{input, advice}
-	var result TemplateVersion
-	err := s.withTx(ctx, func(tx *gorm.DB) error {
+	err = s.withTx(ctx, func(tx *gorm.DB) error {
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, action, input.TemplateID); err != nil {
 			return err
 		}
