@@ -17,8 +17,8 @@ import { LOCALE_BUNDLES, getLocaleValueAtPath, type LocaleName } from './localeK
  * The audit column `actor_role` carries the role the operator held in that
  * tenant. The vocabulary is the server's: the four tenant roles plus the two
  * platform-side values. These tests pin the read side of that contract --
- * what the two audit tables show for each value, and that they show the same
- * thing.
+ * what the three audit read points show for each value, and that they show
+ * the same thing.
  */
 
 /** The tenant roles (`internal/types/tenant_member.go`). */
@@ -37,10 +37,16 @@ const OUTSIDE_VOCABULARY_VALUE = 'tenant_admin'
 
 const FRONTEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** The two surfaces that read the column. */
-const AUDIT_TABLE_VIEWS = [
+/**
+ * The three surfaces that read the audit column `actor_role`.
+ *
+ * They have to agree: the same value may not mean two different things on
+ * two screens, and a third screen is no different.
+ */
+const AUDIT_READ_POINTS = [
   'src/views/settings/TenantMembers.vue',
   'src/views/system/SystemAuditLog.vue',
+  'src/views/lingdoc/PermissionEvidence.vue',
 ]
 
 function composerFor(locale: LocaleName) {
@@ -130,8 +136,8 @@ test('every locale resolves every value the same way', () => {
   }
 })
 
-test('both audit tables read the column through the shared resolver', () => {
-  for (const view of AUDIT_TABLE_VIEWS) {
+test('every audit read point reads the column through the shared resolver', () => {
+  for (const view of AUDIT_READ_POINTS) {
     const source = readFileSync(join(FRONTEND_ROOT, view), 'utf8')
     assert.match(
       source,
@@ -153,5 +159,74 @@ test('both audit tables read the column through the shared resolver', () => {
       /v-if="row\.actor_role"/,
       `${view} must always render the role label, so an empty value reads as unknown`,
     )
+    // A view may not carry its own fallback for the column: `|| '未知角色'`
+    // made the third read point show the raw English word for a value the
+    // other two read as a label.
+    assert.doesNotMatch(
+      source,
+      /row\.actor_role\s*(\|\||\?\?)/,
+      `${view} must not fall back on the audit column itself`,
+    )
+    // The unknown-role label lives in the locale bundle, next to the other
+    // role labels -- not in a view.
+    assert.doesNotMatch(
+      source,
+      /未知角色/,
+      `${view} must not hard-code the unknown-role label`,
+    )
+    // The column reaches the resolver through the shared wrapper.
+    assert.match(
+      source,
+      /formatAuditActorRole\(row\.actor_role\)/,
+      `${view} must render the column through the shared wrapper`,
+    )
+    // Outside the import, the shared resolver may be mentioned exactly once --
+    // the call. A view that defines its own resolver mentions it twice, and
+    // the shared import would go unused.
+    const body = source
+      .split('\n')
+      .filter((line) => !/^\s*import\b.*auditActorRoleLabel/.test(line))
+      .join('\n')
+    assert.equal(
+      (body.match(/auditActorRoleLabel/g) ?? []).length,
+      1,
+      `${view} must use the shared resolver exactly once, with no local definition of its own`,
+    )
+  }
+})
+
+test('the three read points resolve the column the same way', () => {
+  const calls = AUDIT_READ_POINTS.map((view) => {
+    const source = readFileSync(join(FRONTEND_ROOT, view), 'utf8')
+    const found = source.match(/auditActorRoleLabel\([^)]*\)/g) ?? []
+    assert.equal(found.length, 1, `${view} must call the shared resolver exactly once`)
+    return found[0]
+  })
+
+  // Same resolver, same adapter, same unmodified column value: the three
+  // read points cannot drift apart while this holds.
+  assert.equal(
+    new Set(calls).size,
+    1,
+    `every read point must hand the raw column value to the same resolver call, got ${JSON.stringify(calls)}`,
+  )
+})
+
+test('the call every read point makes turns each value into one label', () => {
+  const i18n = composerFor('zh-CN')
+
+  // The exact call the three read points make: the shared resolver, fed the
+  // raw column value and the app's own i18n composer.
+  const readPointCall = (role: string) => auditActorRoleLabel({ te: i18n.te, t: i18n.t }, role)
+
+  for (const value of ALL_ROLE_VALUES) {
+    const label = readPointCall(value)
+    assert.notEqual(label, value, `${value} must not read as the raw word`)
+    assert.notEqual(label, `${AUDIT_ACTOR_ROLE_I18N_ROOT}.${value}`, `${value} must not read as an i18n key`)
+    assert.notEqual(label, `tenantMember.role.${value}`, `${value} must not read as a tenantMember.role key`)
+  }
+
+  for (const value of [HISTORICAL_EMPTY_VALUE, OUTSIDE_VOCABULARY_VALUE]) {
+    assert.equal(readPointCall(value), '未知角色', `${JSON.stringify(value)} must read as the unknown role`)
   }
 })
