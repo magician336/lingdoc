@@ -122,6 +122,44 @@ func TestQwenProfileUnknownUsageIsRecordedAsUnavailable(t *testing.T) {
 	}
 }
 
+// A counter that cannot be true does not become an amount.
+//
+// The Qwen profile has no price basis, so there is nothing to compute -- not
+// even for an impossible (negative) counter. A priced profile keeps its own
+// behaviour: an impossible counter there is refused, and the ledger's
+// reserved+1 marker says "over the reservation".
+func TestQwenProfileNegativeCounterStaysUnpriced(t *testing.T) {
+	cny, usd, err := actualAmounts(QwenChatModel, -1, -1)
+	if err != nil || cny != 0 || usd != 0 {
+		t.Fatalf("actualAmounts(QwenChatModel, -1, -1) = (%d, %d, %v), want (0, 0, nil)", cny, usd, err)
+	}
+	if _, _, err := actualAmounts(DeepSeekModel, -1, -1); !errors.Is(err, ErrInputTooLarge) {
+		t.Fatalf("actualAmounts(DeepSeekModel, -1, -1) error = %v, want the impossible counter to be refused", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "calls.json")
+	budget := New(QwenProfile, path)
+	reservation, err := budget.Reserve(context.Background(), QwenChatModel, 2048, QwenOutputMax)
+	if err != nil {
+		t.Fatalf("reserve error = %v", err)
+	}
+	if err := reservation.CompleteUsage("response_received",
+		Usage{InputTokens: -1, OutputTokens: -1, Reported: true}, "stop", false); err == nil {
+		t.Fatal("an impossible counter must not settle as a normal response")
+	}
+	ledger, err := readLedger(path, QwenProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ledger.ActualNanoCNY != 0 || ledger.ActualNanoUSD != 0 {
+		t.Fatalf("a profile without a price basis must record no amount: %d/%d",
+			ledger.ActualNanoCNY, ledger.ActualNanoUSD)
+	}
+	if len(ledger.Requests) != 1 || ledger.Requests[0].Status != "limit_violation" {
+		t.Fatalf("the impossible counter must be recorded as a violation: %+v", ledger.Requests)
+	}
+}
+
 // A ledger written before the new fields existed must still read. The
 // fields it does not carry are read as the priced basis and as "reported",
 // which is what those ledgers meant.

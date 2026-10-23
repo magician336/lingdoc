@@ -291,6 +291,12 @@ func (r *generationAcceptanceReservation) completeUsage(status string, usage acc
 	if !usage.Reported {
 		inputTokens, outputTokens, totalTokens = 0, 0, 0
 	}
+	if inputTokens < 0 || outputTokens < 0 {
+		// An impossible counter is a limit violation, not a price. The money
+		// stays 0 under a profile without a price basis.
+		block = true
+		status = "limit_violation"
+	}
 	if inputTokens+outputTokens > acceptanceTotalMax(ledger.Profile) {
 		// This is accounting, NOT prevention: the request has already been
 		// sent, so the call that exceeded the ceiling has already happened.
@@ -469,11 +475,19 @@ func acceptanceInputUpperBound(messages []chat.Message) (int, error) {
 // is a false statement. The ledger says which of the two it is through its
 // cost basis.
 func actualAcceptanceCost(profile string, inputTokens, outputTokens int) int64 {
-	if inputTokens < 0 || outputTokens < 0 {
-		return generationAcceptanceTotal + 1
-	}
+	// The price basis is checked FIRST, before the impossible-counter guard.
+	//
+	// A profile without a price basis has no amount to compute at all -- not
+	// even for a counter that cannot be true. Returning the priced profile's
+	// sentinel here would put a DeepSeek-sized number on a row that reserved
+	// nothing, which is exactly the "reserved 0 but actual is an amount"
+	// combination the cost basis exists to prevent. The impossible counter
+	// itself is still caught by the caller as a limit violation.
 	if !acceptancebudget.ProfilePriced(profile) {
 		return 0
+	}
+	if inputTokens < 0 || outputTokens < 0 {
+		return generationAcceptanceTotal + 1
 	}
 	return int64(inputTokens)*deepSeekInputNanoUSDPerToken + int64(outputTokens)*deepSeekOutputNanoUSDPerToken
 }
