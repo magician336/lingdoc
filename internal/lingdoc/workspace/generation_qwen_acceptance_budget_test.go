@@ -392,6 +392,25 @@ func TestQwenProfileRefusesOversizedInputBeforeTheProvider(t *testing.T) {
 	}
 }
 
+// A profile without a price basis computes no amount -- not even for a
+// counter that cannot be true.
+//
+// The order of the two checks matters: if the priced profile's sentinel were
+// returned for an impossible counter, a Qwen row that reserved nothing would
+// carry a DeepSeek-sized amount, which is the combination the cost basis
+// exists to prevent.
+func TestQwenProfileCostStaysZeroForImpossibleCounters(t *testing.T) {
+	if got := actualAcceptanceCost(acceptancebudget.QwenProfile, -1, -1); got != 0 {
+		t.Fatalf("actualAcceptanceCost(QwenProfile, -1, -1) = %d, want 0", got)
+	}
+	if got := actualAcceptanceCost(acceptancebudget.QwenProfile, 100, 50); got != 0 {
+		t.Fatalf("actualAcceptanceCost(QwenProfile, 100, 50) = %d, want 0", got)
+	}
+	if got := actualAcceptanceCost(acceptancebudget.Profile, -1, -1); got == 0 {
+		t.Fatal("a priced profile must keep its own behaviour for an impossible counter")
+	}
+}
+
 // The DB row's money columns follow the profile too.
 //
 // Under the Qwen profile there is no price basis, so both money columns are 0
