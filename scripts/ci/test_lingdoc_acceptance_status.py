@@ -471,6 +471,38 @@ class MatrixStatusJsonTests(unittest.TestCase):
         }]})
         self.assertEqual(entries[0]["point"], "AC-04-03")
 
+    def test_one_file_may_hold_pass_rows_and_carried_rows_side_by_side(self):
+        """The shape that drifts easiest, pinned.
+
+        One report holds both kinds of row: a row that passed
+        (``status: "pass"``) and a row that is carried (``status: "not_run"``
+        ＋ ``matrix_status: "DEFERRED_MANUAL"``).  The carried row may sit in
+        ``passed[]`` or in ``not_run[]`` -- the run fact and the matrix
+        registration are two different things, and the guard has to read the
+        matrix registration whichever list the row sits in.
+        """
+        entries = self._report({
+            "passed": [
+                {"id": "AC-04-01", "status": "pass", "evidence": "…"},
+                {"id": "AC-04-02", "status": "not_run",
+                 "matrix_status": "DEFERRED_MANUAL", "ticket": "#524",
+                 "unblock": "解除条件：按 #524 在真实 PostgreSQL 上跑通（跟进票 #524）"},
+            ],
+            "not_run": [
+                {"id": "AC-04-05", "status": "not_run",
+                 "matrix_status": "DEFERRED_MANUAL", "ticket": "#524",
+                 "unblock": "解除条件：按 #524 的步骤补齐证据（跟进票 #524）"},
+            ],
+        })
+        self.assertEqual(len(entries), 2,
+                         f"the carried rows were not found: {entries}")
+        for entry in entries:
+            self.assertEqual(entry["problems"], [])
+        self.assertEqual(sorted(entry["point"] for entry in entries),
+                         ["AC-04-02", "AC-04-05"])
+        places = sorted(entry["where"].rsplit(":", 1)[-1] for entry in entries)
+        self.assertEqual(places, ["not_run[0]", "passed[1]"])
+
 
 class RealReportTests(unittest.TestCase):
     """The real report on ``main`` is the fixture -- no synthesis needed.
@@ -492,12 +524,45 @@ class RealReportTests(unittest.TestCase):
                         "the real report is not on main; the fixture is gone")
 
     def test_the_real_report_is_recognised(self):
-        """Six carried acceptance points, in the places they really sit."""
+        """Six carried acceptance points, wherever they sit in the file.
+
+        The report is being reorganised: rows move between ``passed[]`` and
+        ``not_run[]`` as the run facts change.  The guard has to follow the
+        **points**, not the indices -- so this test pins the points and the
+        count, never the position of a row.
+        """
         self.assertEqual(len(self.json_entries), 6,
                          f"the real report's deferrals were not found: {self.json_entries}")
-        places = sorted(entry["where"].rsplit(":", 1)[-1] for entry in self.json_entries)
-        self.assertEqual(places, ["not_run[0]", "not_run[1]", "not_run[2]",
-                                  "not_run[3]", "not_run[4]", "passed[29]"])
+        for entry in self.json_entries:
+            with self.subTest(where=entry["where"]):
+                self.assertRegex(entry["where"], r":(passed|not_run)\[\d+\]$",
+                                 "a deferral must live in one of the report's lists")
+
+    def test_the_real_report_mixes_pass_rows_and_deferrals(self):
+        """The shape that drifts easiest: one file, one list, both kinds of row.
+
+        A row that passed sits next to a row that is carried, in the **same**
+        list.  The guard must pick the carried one out of the mixture and
+        leave the passed rows alone.
+        """
+        document = json.loads(self.REPORT.read_text(encoding="utf-8"))
+        carried = [row for row in document.get("passed", [])
+                   if row.get("matrix_status") == status.DEFERRED_MANUAL]
+        passed = [row for row in document.get("passed", [])
+                  if row.get("status") == "pass"]
+        self.assertTrue(carried,
+                        "the report has no carried row beside its passed rows")
+        self.assertTrue(passed,
+                        "the report has no passed row beside its carried ones")
+        # The guard picks the carried row out of the mixture and leaves the
+        # passed rows alone: its entries in this list are exactly the carried
+        # rows, and each of them is complete.
+        entries_in_passed = [entry for entry in self.json_entries
+                             if ":passed[" in entry["where"]]
+        self.assertEqual(len(entries_in_passed), len(carried))
+        for entry in entries_in_passed:
+            with self.subTest(where=entry["where"]):
+                self.assertEqual(entry["problems"], [])
 
     def test_every_deferral_in_the_real_report_carries_both_carriers(self):
         for entry in self.json_entries:
