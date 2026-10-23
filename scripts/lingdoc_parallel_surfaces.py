@@ -863,8 +863,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 这里读，任何一处再写一份词表就是缺陷。
             ("scripts/lingdoc_check_kinds.py", "file"),
             # #499 的守护测试：单一权威（无第二份词表）、穷举校验（无闲置 kind、
-            # 每条断言可判定）、未知 kind 与多余键必须报错、以及阴性验证
-            # （破坏期望值必须转红）。
+            # 每条断言可判定、**词表里的每个算子都必须有求值分支**）、未知 kind 与
+            # 多余键必须报错、以及阴性验证（破坏期望值必须转红）。
+            ("scripts/ci/test_lingdoc_beta_check_kinds.py", "file"),
+            # 守护的旧名：文件已随 #499 改名为 test_lingdoc_beta_check_kinds.py，但
+            # **这条路径仍留在本面的路径集里**——登记处记的是归属，不是文件清单；
+            # 一个活着的面不得缩自己的路径集（棘轮：path-set-shrunk / path-unowned），
+            # 路径随本面结束（done）才释放。
             ("scripts/ci/test_lingdoc_check_kinds.py", "file"),
             # #499 的契约静态校验器：接单一权威，并把 F01 契约自己的断言纳入静态
             # 校验（此前只有运行到那个节点才会被校验）。
@@ -894,6 +899,20 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "借用事实记在这里与 PF-10 侧。**两处未完成项已登记**：GAP-PROVENANCE-FIELD"
             "（OpenAPI 未声明 provenance 字段，逐段真实溯源挂不上节点断言）与 GAP-FAILURE-PATH-NODES"
             "（F01 序列内的 4xx 节点要等 #501 的两步结构）。"
+            "**2026-10-24 补一条根因修复（求值分派不再落空）**：两个求值分派原先是**隐式**的——"
+            "领域算子落到 _judge_domain_check 末尾的 fallthrough（静默按 non_empty 求值）、"
+            "结构算子落到 _evaluate_checks 的 `else: # one_of`（静默按 one_of 求值）"
+            "⇒ 断言看上去被求值了，实际回答的是另一个问题，报告却写「passed」。"
+            "现在两个分派都是**显式**的：没有分支的算子一律报错（WorkflowError），"
+            "并由 scripts/ci/test_lingdoc_beta_check_kinds.py 双向守着"
+            "「词表里的每个算子都必须有求值分支，且求值器不会判词表以外的算子」。"
+            "**2026-10-24 归属裁定（管理会话）**：① contracts/validate_artifacts.py 归本面"
+            "（它是 workflow.json 的静态校验器、随契约形状变更走；此前不在任何面的路径集里，"
+            "本面在 #530 已把它登记进来）⇒ 本面可直接改它，不必等锁。"
+            "② scripts/acceptance/beta_evidence.py 的 owner 保持 PF-10、**不新增登记**；"
+            "#501 若要改它，属本面借用 PF-10 的路径，由本面记借用事实，不得声明进本面 paths。"
+            "③ #501 的执行器单测新建独立文件 scripts/lingdoc_mock/test_workflow_twostep.py，"
+            "不写进既有的 test_workflow_*.py ⇒ 本面的待合改动与它零重叠。"
             "**#484 的材料接入能力已实现**（internal/lingdoc/materiallingest/，本面持有该路径）："
             "稳定材料身份＝固定标题前缀＋文件内容 SHA-256（不含时间戳）⇒ 同一份材料恒等；"
             "接入幂等（同一份材料重复接入不新增知识，结果以 Reused 标记复用）；"
