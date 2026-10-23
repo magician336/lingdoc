@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 	"maps"
 	"reflect"
@@ -425,6 +426,11 @@ func (t gormTransaction) RecordAudit(event AuditEvent) error {
 		Action: event.Action, Target: event.Target,
 		TargetVersion: event.TargetVersion, ProjectRevision: event.ProjectRevision,
 		DetailsJSON: string(details), CreatedAt: event.CreatedAt,
+		// The decision facts get their own columns (#415): a reader must be
+		// able to rebuild who asked for what and how it was decided without
+		// parsing the details JSON.
+		TenantID: event.TenantID, UserID: event.UserID, Role: string(event.Role),
+		Capability: event.Capability, Decision: event.Decision,
 	}).Error
 }
 
@@ -447,6 +453,11 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 			Action: row.Action, Target: row.Target,
 			TargetVersion: row.TargetVersion, ProjectRevision: row.ProjectRevision,
 			Reason: reason, Details: details, CreatedAt: row.CreatedAt,
+			// The decision facts come back from their own columns (#415).
+			// Before this they were only in details_json, so UserID was
+			// always empty and the read side's role filter could not use it.
+			TenantID: row.TenantID, UserID: row.UserID, Role: types.TenantRole(row.Role),
+			Capability: row.Capability, Decision: row.Decision,
 		})
 	}
 	return result, nil
