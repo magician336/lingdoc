@@ -114,6 +114,35 @@ func TestQwenSelectionApprovesOnlyTheApprovedKnowledgeQAModel(t *testing.T) {
 	}
 }
 
+// The stored provider value must be the LITERAL "aliyun".
+//
+// This is a configuration requirement, not a code limitation: the real
+// deployment stores "generic" on the approved row, because
+// provider.DetectProvider does not recognise a regional Model Studio
+// workspace endpoint and answers "generic" for it. A rule that accepted the
+// detected value would approve whatever provider the endpoint happened to
+// look like, so the rule reads the stored field instead and the deployment
+// declares the provider explicitly.
+//
+// The consequence is deliberate and worth stating: until the deployment
+// writes "aliyun" on that row, the controlled path refuses it (fail closed).
+func TestQwenSelectionRefusesAStoredGenericProviderEvenOnTheApprovedEndpoint(t *testing.T) {
+	t.Setenv(generationAcceptanceProfileEnv, acceptancebudget.QwenProfile)
+
+	stored := qwenApprovedModel()
+	stored.Parameters.Provider = "generic"
+
+	if _, ok := selectDeepSeekAcceptanceModel([]*types.Model{stored}); ok {
+		t.Fatal("a row whose stored provider is 'generic' must not be approved")
+	}
+
+	declared := qwenApprovedModel()
+	declared.Parameters.Provider = acceptancebudget.QwenProvider
+	if _, ok := selectDeepSeekAcceptanceModel([]*types.Model{declared}); !ok {
+		t.Fatal("the same row with the provider declared as 'aliyun' must be approved")
+	}
+}
+
 // The DeepSeek wire-format requirement belongs to the DeepSeek rule. The
 // Qwen rule neither requires nor forbids it.
 func TestQwenSelectionDoesNotRequireTheDeepSeekThinkingWireFormat(t *testing.T) {
