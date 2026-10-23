@@ -410,6 +410,9 @@ def orchestrate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 return parity, 2
             backend_process, backend_url = start_backend(root, binary, work_dir, work_dir / "backend.log")
             environment["started_by_orchestrator"]["backend"] = backend_process is not None
+            environment["backend_port_source"] = (
+                "SERVER_PORT (the viper binding of config/config.yaml's server.port); "
+                "the orchestrator chose a free port for the isolated process")
             if backend_process is None:
                 reason = "The backend process did not become healthy; see the backend log in the work directory."
                 parity = {"consistent": True, "checked": 0, "mismatches": [],
