@@ -82,8 +82,9 @@ type generationAcceptanceRequest struct {
 	// when the provider reported none.
 	TotalTokens int `json:"total_tokens,omitempty"`
 	// UsageStatus says whether the token counters came from the provider.
-	// "unavailable" means they did not, and they are then empty: an estimate
-	// written as an actual usage is a false record.
+	// "unavailable" means the provider reported no usage: the amount is
+	// 不可核实 (unverifiable), the counters are then empty, and an estimate
+	// is never written as an actual usage.
 	UsageStatus   string    `json:"usage_status,omitempty"`
 	ActualNanoUSD int64     `json:"actual_nano_usd,omitempty"`
 	FinishReason  string    `json:"finish_reason,omitempty"`
@@ -291,6 +292,14 @@ func (r *generationAcceptanceReservation) completeUsage(status string, usage acc
 		inputTokens, outputTokens, totalTokens = 0, 0, 0
 	}
 	if inputTokens+outputTokens > acceptanceTotalMax(ledger.Profile) {
+		// This is accounting, NOT prevention: the request has already been
+		// sent, so the call that exceeded the ceiling has already happened.
+		// What this can do is mark the record and freeze the ledger.
+		//
+		// The ceiling is enforced BEFORE the request: the input bound is
+		// checked in reserve(), and the output ceiling travels in the request
+		// itself (max_completion_tokens). This check only notices what the
+		// provider reported.
 		block = true
 		status = "limit_violation"
 	}
@@ -431,6 +440,20 @@ func acceptanceGenerationChatOptions() *chat.ChatOptions {
 	}
 }
 
+// acceptanceInputUpperBound returns the input bound of one request.
+//
+// The bound is the JSON-encoded length of the messages plus a fixed
+// overhead. It is an UPPER BOUND on the token count, not a token count: a
+// token is at least one byte, so the byte length of a UTF-8 prompt cannot be
+// smaller than its token count. The gate is therefore conservative -- it may
+// refuse a request that would have fitted, but it cannot let a request
+// through that exceeds the ceiling.
+//
+// What the byte count cannot see is what the provider adds on its own (a
+// chat template, a few control tokens). The fixed overhead covers that
+// margin. The provider's own reported usage remains the truth, and it is
+// reconciled after the response; this bound is what can be enforced BEFORE
+// the request.
 func acceptanceInputUpperBound(messages []chat.Message) (int, error) {
 	encoded, err := json.Marshal(messages)
 	if err != nil {

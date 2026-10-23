@@ -130,6 +130,53 @@ func TestQwenSelectionDoesNotRequireTheDeepSeekThinkingWireFormat(t *testing.T) 
 	}
 }
 
+// The controlled path names the model it may use. It does not need the
+// global default slot to be moved, and it must not take it: the default slot
+// is read by other paths, and moving it would change what THEY call.
+func TestQwenSelectionIgnoresTheGlobalDefaultSlot(t *testing.T) {
+	t.Setenv(generationAcceptanceProfileEnv, acceptancebudget.QwenProfile)
+
+	other := acceptanceDeepSeekModel()
+	other.IsDefault = true
+	approved := qwenApprovedModel()
+
+	selected, ok := selectDeepSeekAcceptanceModel([]*types.Model{other, approved})
+	if !ok || selected == nil || selected.ID != approved.ID {
+		t.Fatalf("selected model = %+v, valid = %v; want the approved Qwen model", selected, ok)
+	}
+
+	// A default row alone is not an approved row: the controlled path fails
+	// closed instead of falling back to whatever is the default.
+	if _, ok := selectDeepSeekAcceptanceModel([]*types.Model{other}); ok {
+		t.Fatal("the controlled path fell back to the global default model")
+	}
+}
+
+// The same fact, end to end: with another model holding the default slot,
+// the run still calls the approved Qwen model.
+func TestQwenProfileCallsTheApprovedModelEvenWhenAnotherModelIsTheDefault(t *testing.T) {
+	budget := qwenBudget(t)
+	stub := &qwenCountingChat{response: &types.ChatResponse{
+		Content:      `{"body_markdown":"受控执行结论 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`,
+		FinishReason: "stop",
+		Usage:        types.TokenUsage{PromptTokens: 320, CompletionTokens: 128, TotalTokens: 448},
+	}}
+	other := acceptanceDeepSeekModel()
+	other.IsDefault = true
+	service := &acceptanceModelServiceStub{models: []*types.Model{other, qwenApprovedModel()}, chatModel: stub}
+	host := generationHostModel{models: service, templates: core.ContractDemoTemplate{}, acceptanceBudget: budget}
+
+	if _, err := host.Generate(context.Background(), acceptanceGenerationInput()); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if service.selected != "qwen-1" {
+		t.Fatalf("called model ID = %q, want the approved Qwen model row, not the default one", service.selected)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("provider calls = %d, want exactly 1", stub.calls)
+	}
+}
+
 // The gate is real: it runs before the provider is called, it sends the
 // output ceiling in the request, and it records what the provider reported.
 func TestQwenProfileGateRunsBeforeTheProviderAndRecordsReportedUsage(t *testing.T) {

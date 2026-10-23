@@ -101,8 +101,9 @@ type Request struct {
 	// UsageStatus says whether the token counters came from the provider.
 	//
 	// "reported" means they are the provider's numbers. "unavailable" means
-	// the provider reported no usage: the counters are then empty, because
-	// an estimate written as an actual usage is a false record.
+	// the provider reported no usage: the amount is 不可核实 (unverifiable),
+	// the counters are then empty, and an estimate is never written as an
+	// actual usage.
 	//
 	// It is empty in a ledger written before the status existed, which reads
 	// as "reported" -- those ledgers only ever recorded provider numbers.
@@ -277,6 +278,11 @@ func (r *Reservation) CompleteUsage(status string, usage Usage, finishReason str
 	_, _, totalMax := ProfileTokenLimits(r.budget.profile)
 	if costErr != nil || inputTokens < 0 || outputTokens < 0 || inputTokens > request.InputUpperBound ||
 		outputTokens > request.OutputLimit || inputTokens+outputTokens > totalMax {
+		// The ceilings above are checked BEFORE the request as well: the
+		// reservation refuses an oversized input, and the output ceiling
+		// travels in the request. This block only accounts for what the
+		// provider reported: the call has already happened, so it can mark
+		// the record and freeze the ledger, but it cannot undo the call.
 		block = true
 		status = "limit_violation"
 		if costErr != nil {

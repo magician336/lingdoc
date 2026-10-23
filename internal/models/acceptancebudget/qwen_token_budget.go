@@ -71,9 +71,13 @@ const (
 	// UsageStatusReported means the provider reported the token counters and
 	// the recorded counters are the provider's own numbers.
 	UsageStatusReported = "reported"
-	// UsageStatusUnavailable means the provider reported no usage. The
-	// recorded token counters are then empty, and they are never filled
-	// with an estimate.
+	// UsageStatusUnavailable means the provider reported no usage: the
+	// amount is 不可核实 (unverifiable). The recorded token counters are then
+	// empty, and they are never filled with an estimate.
+	//
+	// It is a statement about what is KNOWN, not about what happened: the
+	// provider may well have consumed tokens, but nobody can prove how many
+	// from this side, so the record says so instead of guessing.
 	UsageStatusUnavailable = "unavailable"
 )
 
