@@ -58,6 +58,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = ROOT / "docs/08-本轮实施方案/acceptance/beta-first"
 CONTRACT_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
+# The gaps the Beta release needs, named by a stable identifier.  The ticket
+# that owns a gap changes; the identifier does not.  The code quotes the
+# identifier and never the ticket number: a renumbering changes this file
+# alone, and the evidence stays comparable.
+GAP_PATH = ROOT / "docs/08-本轮实施方案/acceptance/gaps.json"
 RESTART_SCRIPT = ROOT / "scripts/acceptance/lingdoc_full_server_restart.py"
 HTTP_EXECUTOR = ROOT / "scripts/acceptance/beta_http_readback.py"
 BROWSER_EXECUTOR = ROOT / "scripts/acceptance/beta_browser_cdp.mjs"
@@ -114,7 +119,33 @@ class EvidenceError(RuntimeError):
     """An error the operator has to see; never a silent pass."""
 
 
+def gap(identifier: str) -> dict[str, str]:
+    """One gap, named by its stable identifier.
+
+    The registry file is the one place where a gap is bound to a ticket and an
+    item.  Everything else -- the unblock conditions, the evidence, the
+    manifest -- quotes the identifier, so a ticket renumbering does not
+    invalidate the code or the artifacts.
+    """
+    try:
+        registry = json.loads(GAP_PATH.read_text(encoding="utf-8"))["GAPS"]
+    except (OSError, KeyError, json.JSONDecodeError) as error:
+        raise EvidenceError(f"the gap registry {GAP_PATH} could not be read: {error}") from None
+    entry = registry.get(identifier)
+    if entry is None:
+        raise EvidenceError(f"the gap registry has no gap named {identifier}")
+    return entry
+
+
+def gap_unblock(identifier: str) -> str:
+    """The unblock condition of a gap, with its stable identifier in front."""
+    entry = gap(identifier)
+    return (f"（缺口 `{identifier}`：{entry['unblock']}；"
+            f"对应关系见 docs/08-本轮实施方案/acceptance/gaps.json）")
+
+
 @dataclass
+
 class Outcome:
     """One result of one part of the run.
 
@@ -235,7 +266,8 @@ def run_command(command: list[str], *, cwd: Path = ROOT, timeout: float = 900.0)
 # ---------------------------------------------------------------------------
 # The F01 sequence
 # ---------------------------------------------------------------------------
-def run_f01(base_url: str, token: str | None, identities: dict[str, str]) -> tuple[list[Outcome], dict[str, Any]]:
+def run_f01(base_url: str, token: str | None, identities: dict[str, str],
+             knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
 
     The runner is the one in ``scripts/lingdoc_mock/run_f01.py``: the steps and
@@ -254,7 +286,8 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str]) -> tup
     try:
         runner = ScenarioRunner.from_files(
             OPENAPI_PATH, WORKFLOW_PATH, base_url=base_url, token=token,
-            identities=identities)
+            identities=identities,
+            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
     except WorkflowError as error:
         outcomes.append(Outcome(
             id="F01 契约序列（24 个节点）", status=BLOCKED,
@@ -296,6 +329,23 @@ def check_outcomes(report: dict[str, Any]) -> list[Outcome]:
             status=HELD if check.get("status") == "passed" else FAILED,
             evidence=(f"{check.get('intent')}｜期望 {short(check.get('expected'))}｜"
                       f"实际 {short(check.get('actual'))}")))
+    # A step whose HTTP status did not match the contract never reaches
+    # ``steps``: the runner records the steps that answered as the contract
+    # said.  Its failure therefore lives in ``failures`` and nowhere else, so
+    # without this loop the one step that broke the sequence would have no
+    # conclusion at all -- the run would stop on the derived "variable not
+    # captured" error and the real reason would be lost.  This is the same
+    # shape as the "silent skip is a FAIL" rule: what did not happen has to
+    # say so.
+    reported = {step.get("id") for step in report.get("steps", [])}
+    for step_id, failure in failures.items():
+        if step_id in reported:
+            continue
+        outcomes.append(Outcome(
+            id=f"{step_id} {failure.get('operation_id', '')}".strip(),
+            status=FAILED,
+            evidence=(f"契约声明 HTTP {failure.get('expected')}，实际 {failure.get('actual')}；"
+                      f"该步没有完成，它后面的步骤没有执行。")))
     return outcomes
 
 
@@ -316,7 +366,8 @@ def run_browser_part(base_url: str, frontend_url: str, work_dir: Path) -> tuple[
         outcomes.append(Outcome(
             id="浏览器对偶：浏览器侧快照", status=NOT_RUN,
             reason="没有给出 --frontend-url，浏览器侧没有对着真实前端跑。",
-            unblock="起真实前端（Vite dev server）并用 --frontend-url <地址> 重跑本脚本。"))
+            unblock="起真实前端（Vite dev server）并用 --frontend-url <地址> 重跑本脚本。" +
+                    gap_unblock("GAP-BROWSER-END-TO-END")))
     else:
         context_path = work_dir / "run-context.json"
         http_out = work_dir / "http.json"
@@ -372,7 +423,8 @@ def run_browser_part(base_url: str, frontend_url: str, work_dir: Path) -> tuple[
         outcomes.append(Outcome(
             id="三方一致性：浏览器 = HTTP = 刷新后读回", status=NOT_RUN,
             reason="三方比对需要两侧快照；有一侧没有跑成，比对没有发生。",
-            unblock="让 HTTP 侧与浏览器侧都跑成后重跑本脚本。"))
+            unblock="让 HTTP 侧与浏览器侧都跑成后重跑本脚本。" +
+                    gap_unblock("GAP-BROWSER-END-TO-END")))
     return outcomes, summary
 
 
@@ -391,7 +443,8 @@ def run_restart_part(server_binary: Path | None, repo_root: Path, work_dir: Path
         outcomes.append(Outcome(
             id="重启后读回：协议 §1 的隔离 PostgreSQL", status=NOT_RUN,
             reason=f"本轮的后端是 {driver}；协议 §1 要求隔离 PostgreSQL，那一轮没有发生。",
-            unblock="用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。"))
+            unblock="用 --db-driver postgres --db-dsn <隔离库 DSN> 重跑本脚本。" +
+                    gap_unblock("GAP-ISOLATED-PG")))
     if server_binary is None or not Path(server_binary).is_file():
         outcomes.append(Outcome(
             id="重启后读回：同一个项目、访问令牌与持久化", status=NOT_RUN,
@@ -473,7 +526,8 @@ def word_check(word_check_path: Path | None, docx_path: Path | None,
             reason="执行者还没有填写 Word 检查表；协议 §4 的这一段是人工的。",
             unblock=f"填写 {relative_to_root(Path(word_check_path)) if word_check_path else 'word-check.md'} 里的五个必填字段"
                     "（Word 产品版本 / Windows 版本 / 原始 DOCX SHA-256 / 修改后文件 SHA-256 / 检查结果），"
-                    "并用 --word-check <该文件> 重跑本脚本。")], form, metadata
+                    "并用 --word-check <该文件> 重跑本脚本。" +
+                    gap_unblock("GAP-WORD-CHECK"))], form, metadata
     text = Path(word_check_path).read_text(encoding="utf-8", errors="replace")
     missing: list[str] = []
     values: dict[str, str] = {}
@@ -785,6 +839,9 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
                         help="契约里某个 actor 的凭据（可重复）")
     parser.add_argument("--executor", default=os.environ.get("LINGDOC_EXECUTOR", ""),
                         help="执行者名字，写进 README")
+    parser.add_argument("--knowledge-id", default=os.environ.get("LINGDOC_KNOWLEDGE_ID", ""),
+                        help="F01-06 绑定的真实资料标识；它作为 {{knowledge_id}} 变量注入执行器。"
+                             "没有默认值：不提供时执行器在第一个请求前就报错，不得回退到演示标识")
     parser.add_argument("--word-check", type=Path, default=None, help="执行者填好的 Word 检查表")
     parser.add_argument("--docx", type=Path, default=None, help="本轮下载的 DOCX（算哈希）")
     parser.add_argument("--modified-docx", type=Path, default=None, help="修改后的 DOCX（算哈希）")
@@ -862,7 +919,8 @@ def main(argv: list[str] | None = None) -> int:
     # ---- the F01 sequence -------------------------------------------------
     commands.append("python scripts/lingdoc_mock/run_f01.py --base-url <base-url> "
                     "--report <f01-report.json>   # by scripts/acceptance/beta_evidence.py")
-    f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities)
+    f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities,
+                                    arguments.knowledge_id or "")
     outcomes.extend(f01_outcomes)
 
     # ---- the browser side -------------------------------------------------
@@ -895,7 +953,8 @@ def main(argv: list[str] | None = None) -> int:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=NOT_RUN,
                 reason=ledger_reason,
-                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000055 / 000134 已应用）后重跑本脚本。"))
+                unblock="让账本表 lingdoc_model_call_ledger 可读（迁移 000055 / 000134 已应用）后重跑本脚本。" +
+                    gap_unblock("GAP-MODEL-CREDENTIAL")))
         else:
             outcomes.append(Outcome(
                 id="模型调用账本：参数、预算与模型切换记录", status=HELD,
@@ -904,13 +963,24 @@ def main(argv: list[str] | None = None) -> int:
         outcomes.append(Outcome(
             id="模型调用账本：参数、预算与模型切换记录", status=NOT_RUN,
             reason="本轮没有给出账本位置（--ledger-dsn 或 --ledger-sqlite）。",
-            unblock="用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。"))
+            unblock="用 --ledger-dsn <本轮数据库 DSN> 或 --ledger-sqlite <文件> 重跑本脚本。" +
+                    gap_unblock("GAP-MODEL-CREDENTIAL")))
+
+    if (arguments.ledger_dsn or arguments.ledger_sqlite) and not ledger_reason \
+            and not ledger_rows:
+        outcomes.append(Outcome(
+            id="真实模型调用（协议 §3：真实模型的一次选段改写）", status=NOT_RUN,
+            reason=("本轮没有发生真实模型调用：账本可读，但读到 0 行调用记录，"
+                    "模型参数与预算全 0。"),
+            unblock=(gap_unblock("GAP-MODEL-CREDENTIAL")
+                     + "；真实授权来源同属本缺口")))
 
     if not materials:
         outcomes.append(Outcome(
             id="合成材料哈希（协议 §2 第 1 步）", status=NOT_RUN,
             reason="本轮没有给出 --material，合成材料的哈希没有记录。",
-            unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。"))
+            unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。" +
+                    gap_unblock("GAP-MATERIAL-HASH")))
 
     result = overall_result(outcomes)
 
@@ -947,6 +1017,11 @@ def main(argv: list[str] | None = None) -> int:
             "migrations": migration_version(arguments.db_dsn, arguments.ledger_sqlite),
         },
         "materials": materials,
+        "knowledge": ({"variable": "knowledge_id", "id": arguments.knowledge_id}
+                     if arguments.knowledge_id else
+                     {"variable": "knowledge_id", "id": None,
+                      "note": "本轮没有提供资料标识：执行器在第一个请求前就拒绝了这轮，"
+                             "没有回退到任何演示标识"}),
         "materials_status": ("本轮给出了合成材料哈希。" if materials else
                              "本轮没有给出 --material，合成材料哈希未记录（协议 §2 第 1 步）。"),
         "template": template,

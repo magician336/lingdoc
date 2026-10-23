@@ -587,6 +587,18 @@ class ScenarioRunner:
         redactions: dict[str, str] | None = None,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
+        # The API root this contract speaks to: the path of ``servers[0].url``.
+        # A base URL that stops short of that path does not fail the first step
+        # loudly -- it 404s, the capture is skipped, and the run stops on a
+        # *derived* error ("variable not captured") that points at the capture
+        # instead of at the configuration.  Keeping the expected root lets the
+        # runner refuse the configuration before the first request.
+        self.api_path_prefix = urlsplit(server_url).path.rstrip("/")
+        # The variables the contract itself captures, as opposed to the ones it
+        # expects the environment to provide.
+        self.declared_captures = {
+            name for step in spec.steps for name in (step.get("capture") or {})
+        }
         # The transport is the client's business, not the runner's: the runner drives steps
         # through it, other tools send their own requests through it, and the base URL and
         # token rules are resolved once, inside it.
@@ -638,6 +650,84 @@ class ScenarioRunner:
         spec = load_spec(spec_path, scenario_id)
         return cls(read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
+    def _preflight_required_variables(self) -> None:
+        """Refuse a run whose contract names a variable nobody supplies.
+
+        A contract may take a value from the environment instead of
+        capturing it.  When it does, the run has to say so before the first
+        request: a run that discovers the gap at the step that needed the
+        value stops with a derived error, and a silent fallback to a
+        placeholder would turn "it ran" into a fiction.
+        """
+        captured = {name for step in self.spec.steps for name in (step.get("capture") or {})}
+        supplied = set(self.seed_variables)
+        missing = sorted(self.referenced_variables() - captured - supplied)
+        if not missing:
+            return
+        raise WorkflowError(
+            f"the contract names variables the environment does not supply: "
+            f"{', '.join(missing)}. The contract takes them from the "
+            f"environment, not from a capture, and there is no default: "
+            f"supply them on the command line (for example --knowledge-id "
+            f"<real identifier>). A silent fallback to a placeholder "
+            f"identifier would make the run look like it exercised the "
+            f"real thing when it did not.")
+
+    def referenced_variables(self) -> set[str]:
+        """The variables the contract's requests name."""
+        names: set[str] = set()
+        for step in self.spec.steps:
+            request = step.get("request") or {}
+            blob = json.dumps(request, ensure_ascii=False)
+            names.update(match.group(1) for match in VARIABLE.finditer(blob))
+        return names
+
+    def _check_base_url_scope(self) -> None:
+        """Refuse a base URL that does not address the contract's API root.
+
+        The contract's OpenAPI document says where its API lives
+        (``servers[0].url``).  A base URL that stops short of that path makes
+        every request answer 404; the runner then skips the capture of that
+        step and the run stops on a *derived* error -- "workflow variable is
+        not captured yet" -- which points at the capture instead of at the
+        configuration.  This is the same failure with the labels swapped.
+        """
+        expected = self.api_path_prefix
+        if not expected:
+            return
+        actual = urlsplit(self.base_url).path.rstrip("/")
+        if actual == expected or actual.endswith(expected):
+            return
+        raise WorkflowError(
+            f"base URL does not address the contract's API root: F01 speaks to "
+            f"{expected} (contracts/openapi.json servers[0].url), but the base URL is "
+            f"{self.base_url}. Every request would answer 404, the captures would be "
+            f"skipped, and the run would stop on a derived 'variable not captured' "
+            f"error. Use http://<host>{expected}.")
+
+    def _explain_missing_variable(self, error: WorkflowError) -> WorkflowError:
+        """Say which kind of missing variable this is.
+
+        A variable the contract captures and a variable the contract expects the
+        environment to provide are different problems with different unblock
+        conditions, and one sentence hides the difference.
+        """
+        message = str(error)
+        marker = "workflow variable is not captured yet: "
+        if marker not in message:
+            return error
+        name = message.split(marker, 1)[1].strip()
+        if name in self.declared_captures:
+            return WorkflowError(
+                f"{message} -- the contract captures it, but the step that captures it "
+                f"did not produce it: that step's HTTP status did not match the "
+                f"contract, so its capture was skipped. The real failure is this "
+                f"run's failures[] entry for that step.")
+        return WorkflowError(
+            f"{message} -- the contract does not capture it; it is an execution "
+            f"precondition the environment has to provide (the value in setup is a "
+            f"placeholder, as reference_ids says).")
+
     def run(self, stop_on_mismatch: bool = True) -> dict[str, Any]:
         """Drive every step.
 
@@ -653,6 +743,8 @@ class ScenarioRunner:
         self.active_step = None
         self.aborted_at = None
         self._validate_readbacks()
+        self._check_base_url_scope()
+        self._preflight_required_variables()
         completed = 0
         step_results = self.step_results
         for step in self.spec.steps:
@@ -662,10 +754,13 @@ class ScenarioRunner:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
             method, path_template = self.operations[operation_id]
             request_spec = _request_definition(step, step["id"])
-            path_params = substitute(request_spec.get("path_params", {}), self.variables)
-            query = substitute(request_spec.get("query", {}), self.variables)
-            headers = substitute(request_spec.get("headers", {}), self.variables)
-            body = substitute(request_spec.get("json"), self.variables)
+            try:
+                path_params = substitute(request_spec.get("path_params", {}), self.variables)
+                query = substitute(request_spec.get("query", {}), self.variables)
+                headers = substitute(request_spec.get("headers", {}), self.variables)
+                body = substitute(request_spec.get("json"), self.variables)
+            except WorkflowError as error:
+                raise self._explain_missing_variable(error) from None
             url = build_url(self.base_url, path_template, path_params, query)
             actor_token = self.identities.get(step.get("actor"))
             status, response_headers, payload = self.client.request(method, url, headers, body, token=actor_token)
@@ -1236,6 +1331,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", default=os.environ.get("LINGDOC_TEST_TOKEN"), help="short-lived test bearer token (or LINGDOC_TEST_TOKEN)")
     parser.add_argument("--identity", action="append", default=[], metavar="NAME=TOKEN",
                         help="credential for an actor a step names (repeatable); steps with no actor use --token")
+    parser.add_argument("--knowledge-id", default=os.environ.get("LINGDOC_KNOWLEDGE_ID"),
+                        help="the real knowledge identifier the contract binds at F01-06; "
+                             "it is injected as the {{knowledge_id}} variable. There is no "
+                             "default: a contract that names the variable refuses the run "
+                             "when it is not given")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--spec", type=Path, help="specification document: a step list (default workflow.json) or a scenarios document together with --scenario")
     parser.add_argument("--scenario", help="scenario id to drive out of the scenarios document (default scenarios.json)")
@@ -1262,6 +1362,7 @@ def main(argv: list[str] | None = None) -> int:
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
+            variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
         if args.report:
             # Verify the destination before any provider mutation and replace a
