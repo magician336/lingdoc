@@ -21,6 +21,17 @@ import (
 // plain nullable ports now: the composition root hands them over, and a
 // workspace that does not have one answers "the dependency is unavailable"
 // rather than quietly dropping a check.
+// ModelCallLedger returns the ledger this runtime owns.
+//
+// The composition root hands the same instance to every adapter, so one real
+// model call leaves one row whichever path made the call.
+func (r *SourceRuntime) ModelCallLedger() core.ModelCallLedger {
+	if r == nil {
+		return nil
+	}
+	return r.modelCallLedger
+}
+
 type SourceRuntime struct {
 	authorizer   core.CapabilityAuthorizer
 	projects     core.ProjectApplication
@@ -33,6 +44,11 @@ type SourceRuntime struct {
 	templates    delivery.TemplateReader
 	db           *gorm.DB
 	audit        AuditSink
+	// modelCallLedger is the ledger every adapter that calls a provider
+	// writes to.  The runtime owns the one instance on purpose: the agent
+	// turn and the generation run write to the same ledger, so "one real
+	// model call leaves one row" holds no matter which path made the call.
+	modelCallLedger core.ModelCallLedger
 
 	provenance            core.ProjectProvenanceApplication
 	evidenceSelector      core.EvidenceSelectionApplication
@@ -64,7 +80,7 @@ func NewGORMSourceRuntime(db *gorm.DB, projectPorts ProjectPorts, shares interfa
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SourceRuntime{db: db, authorizer: projectPorts.Authorizer, projects: projectPorts.Projects, context: projectPorts.Context, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit}
+	return &SourceRuntime{db: db, authorizer: projectPorts.Authorizer, projects: projectPorts.Projects, context: projectPorts.Context, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit, modelCallLedger: core.NewGORMModelCallLedger(db)}
 }
 
 // ConnectProjects is called only at composition time to connect the mutually
