@@ -1,0 +1,156 @@
+# PF-6 开发计划：上下文包的前端消费
+
+> 交付面：施工并行面 PF-6（[#330](https://github.com/magician336/lingdoc/issues/330)）
+> 实现契约：Spec [#431](https://github.com/magician336/lingdoc/issues/431)（仓内副本 `docs/06-灵档产品开发规划/51-Spec-上下文包前端消费.md`）
+> 兑现的 G 线 Spec：#124（AI 上下文与多轮会话契约）——本面只交付它的前端验收点，#124 保持开放
+> 登记处（路径归属唯一真相）：`scripts/lingdoc_parallel_surfaces.py` 的 PF-6 块
+
+---
+
+## 1. 单一交付目的地
+
+| | |
+|---|---|
+| 主要 Issue | #330（PF-6 面票） |
+| Spec | #431（本面新交付） |
+| 用户可见结果 | 用户在一个面板里看到**这一轮实际带了什么**：卡片、选择理由、版本基线、卡片状态、权限态；能在发出敏感请求前增删引用的卡片；面板显示的范围与服务端组装的范围一致。 |
+| 真实消费者 | `frontend/src/views/lingdoc/ContextPackagePanel.vue` —— 一个新面板组件。集成接线（挂到工作区）**不在本面**（`Workspace.vue` 是保留路径）。 |
+| 范围内 | ① API 模块 `frontend/src/api/lingdoc/agentContext.ts`：意图的纯函数、请求体构造、卡片状态对齐、事实分组、预览编排；② 面板组件 `frontend/src/views/lingdoc/ContextPackagePanel.vue`；③ 两者的测试。 |
+| 范围外 | 服务端任何改动；研究面板（PF-5 已交面文件）；工作区接线；理由的结构化映射；卡片风险分级；契约字段漂移的修复——后三项已分别开票 #432 / #433 / #435。 |
+| 前置依赖 | 无。后端契约（`workspacecore/agent_research_model.go` 的 `AgentContextPackage` / `AgentSession` / `AgentTurn`，`workspace/agent_routes.go` 的 sessions / turns / agent-context / evidence-cards 端点）已在 `main` 上。 |
+| 路径集 | 6 条（登记处为准）：两个实现文件 + 两个测试文件 + 本计划 + 验证报告。 |
+
+## 2. 不可变契约（写代码前先定）
+
+### 2.1 谁拥有真相
+
+| 事实 | 拥有者 | 本面的义务 |
+|---|---|---|
+| 这一轮**实际带了什么** | 服务端（`BuildAgentContext` → `AgentContextPackage`） | 只读。事实区的每个字段都来自服务端返回，不本地推断。 |
+| 上下文包的**契约形状** | `frontend/src/api/lingdoc/agentApi.ts`（PF-5 的路径） | **只读不改**，用 `import type` 复用，不重新声明（Spec 决策 2）。 |
+| 用户**勾了什么** | 本面的意图态 | 它是发请求的输入，不是事实。 |
+| 卡片**业务状态** | 证据卡端点（`listEvidenceCards`） | 按 `id` **与** `version` 双重对齐；对不上显示「状态未知」，不回退。 |
+
+### 2.2 层次方向（单向，不得反向）
+
+```
+ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导入──>  agentApi.ts  ──>  HTTP
+        （视图）                    （用例门面）              （原子客户端）
+```
+
+- 面板**不导入** `agentApi.ts`。这条由静态源码断言守住。
+- ⚠️ **本面会引入本仓第一个 api 模块之间的值导入**（既有先例只有 `import type`）。这是有意的：把「意图与事实」「构造与对齐」的知识收在一个门面里，比让视图自己拼请求体更符合深模块。PR 里要写明这一条新形态。
+
+### 2.3 意图与事实是两个不可互换的类型
+
+- `ContextIntent`：用户勾选的卡片（`id` + `version`）与其余请求参数。**没有**「服务端返回了什么」这类字段。
+- `ContextFacts`：服务端组装好的那一份（包 + 对齐后的卡片状态）。**没有**「用户勾了什么」这类字段。
+- 视图的事实区只吃 `ContextFacts`；编辑区只吃 `ContextIntent`。两个类型的字段集不相交 ⇒ 混用在类型层就暴露。
+
+### 2.4 失败语义
+
+| 情况 | 行为 |
+|---|---|
+| 预览请求失败（网络 / 5xx） | **事实区清空**并显示错误。**不保留上一次成功的包**——留着会让人以为那就是当前范围（Spec 决策 6）。 |
+| 版本冲突（409） | 事实区清空 + 提示「基线已变，请刷新」。**不自动重试**（与研究面板的既有约定一致）。 |
+| 证据卡清单拿不到 | 卡片状态一律「状态未知」；**范围本身仍来自上下文包**，照常显示。 |
+| 撤权 | 服务端不再返回受限条目 ⇒ 面板自然不显示。面板**不缓存**上一轮的包。 |
+| 面板重渲染 / 切会话 | 意图与事实一并清空。 |
+
+### 2.5 写入、事务、幂等、审计
+
+本面是**纯前端读路径**：零写入、零迁移、零事务边界、零审计事件、零幂等键。预览端点是 POST 但无副作用（服务端按读处理）。唯一需要显式约定的是**不自动重试**——版本冲突必须让用户刷新。
+
+## 3. 验收矩阵
+
+列的含义见 `docs/agents/development-rules.md` §2。状态列在施工前一律 `TODO`，逐行在证据档里更新。
+
+| # | 验收项 | 用户可见入口 | 领域不变量 / 事务边界 | 成功 | 失败 / 权限 / 恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | US1 面板列出本轮实际带的卡片 | 面板事实区·卡片 | 事实只来自服务端包 `card_refs` | 显示服务端返回的每张卡（id + version） | 服务端没返回的卡不显示 | N/A（纯读） | `agentContext.test.ts` 事实分组用例 | TODO |
+| 2 | US2 显示每条选择理由 | 面板事实区·理由 | 理由按服务端 `selection_reasons` **原文**逐条 | 条数与顺序与服务端一致 | 服务端给几条就显示几条 | N/A | `agentContext.test.ts` 理由保序用例 | TODO |
+| 3 | US3 显示本轮版本基线 | 面板事实区·基线 | 基线取服务端包的 `project_version` / `spec_revision` / `context_revision` / `chapter_version_id` / `task_version` / `template_version` | 六个值与服务端一致 | 服务端没给的字段不显示 | N/A | `agentContext.test.ts` 基线分组用例 | TODO |
+| 4 | US4 显示卡片是候选还是已确认 | 面板事实区·卡片状态 | 状态来自证据卡端点，按 id **且** version 对齐 | 对齐上则显示服务端给的状态 | version 不等 ⇒ 「状态未知（版本已变）」 | N/A | `agentContext.test.ts` 对齐三例 | TODO |
+| 5 | US5 显示逐来源的模型使用许可 | 面板事实区·来源 | 许可取包内 `source_refs[].model_use_allowed` | 逐条显示 | 缺字段 ⇒ 不显示该项 | N/A | `agentContext.test.ts` 来源分组用例 | TODO |
+| 6 | US6 显示本轮授权结论 | 面板事实区·授权 | 原样显示服务端 `authorization_state` | 显示服务端给的值 | 不翻译、不本地推导 | N/A | `agentContext.test.ts` + 面板断言 | TODO |
+| 7 | US7 显示输出约束 | 面板事实区·约束 | 原样显示 `output_constraints` | 条数与顺序一致 | — | N/A | `agentContext.test.ts` 分组用例 | TODO |
+| 8 | US8 发出前移除一张卡 | 面板编辑区 | 移除只改意图；**不直接改事实** | 意图里该卡消失 | — | N/A | `agentContext.test.ts` 移除用例 | TODO |
+| 9 | US9 发出前加入一张卡 | 面板编辑区 | 加入只改意图 | 意图里多出该卡（id + version） | 重复加入同一张卡 ⇒ 意图不变 | N/A | `agentContext.test.ts` 加入/幂等用例 | TODO |
+| 10 | US10 每次编辑后范围都刷新 | 面板事实区 | 事实区只由预览结果刷新 | 编辑后重新预览并显示新包 | 预览失败 ⇒ 事实区清空 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 11 | US11 意图与事实分开呈现 | 面板整体 | 两个类型字段集不相交 | 意图区与事实区分区显示 | 意图里多一张卡但事实区没有 ⇒ **事实区不显示它** | N/A | `ContextPackagePanel.test.ts` 关键用例 | TODO |
+| 12 | US12 版本变了的卡标为状态未知 | 面板事实区·卡片状态 | 对齐键是 id + version | 显示「状态未知（版本已变）」 | 不回退到任何缓存值 | N/A | `agentContext.test.ts` 对齐用例 | TODO |
+| 13 | US13 预览失败不残留旧范围 | 面板整体 | 失败即清空 | 事实区为空 + 错误提示 | 不保留上一次成功的包 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 14 | US14 版本冲突提示基线已变 | 面板整体 | 409 ⇒ 清空 + 提示 | 显示「基线已变」 | 不自动重试 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 15 | US15 两种助手的会话不合并 | 面板 props | 面板按助手机别承载 | 各自独立 | 不跨助手合并任何一轮 | N/A | 由集成步保证；本面面板不持有跨助手状态 | TODO |
+| 16 | US16 面板只显示当前助手的轮次 | 面板 props | 同上 | 同上 | 同上 | N/A | 同上 | TODO |
+| 17 | US17 理由按服务端原话显示 | 面板事实区·理由 | 不解析成条目映射 | 逐条原文 | 后端改措辞不影响显示 | N/A | `agentContext.test.ts`（断言不做字符串匹配） | TODO |
+| 18 | US18 敏感请求前先看到范围 | 面板整体 | 面板用 `sensitive_context_confirmed: false` 预览 | 面板显示 `requires_confirmation` | 前端不自行判定要不要确认 | N/A | `agentContext.test.ts` 预览入参用例 | TODO |
+| 19 | US19 面板不扩大访问 | 面板整体 | 事实只来自服务端 | 服务端没给的就不显示 | 前端不做本地放行判断 | N/A | `agentContext.test.ts` + 面板断言 | TODO |
+| 20 | US20 撤权后受限内容不残留 | 面板整体 | 不缓存上一轮的包 | 撤权后重新预览，包里没有它 | 旧包不留在屏上 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 21 | US21 显示关联标识 | 面板事实区 | 显示包里的 `correlation_id` | 原样显示 | — | N/A | `agentContext.test.ts` 分组用例 | TODO |
+| 22 | US22 轮次范围可与记录对照 | 面板整体 | 面板展示的那份与轮次里存的那份同源 | 两者来自同一份服务端包 | — | N/A | 本面只负责展示；对照属集成步 | TODO |
+| 23 | US23 前端契约只有一个拥有者 | `agentContext.ts` | 契约类型由 `agentApi.ts` 拥有 | 本面不重新声明 | 出现第二份定义即失败 | N/A | `agentContext.test.ts` 静态断言 | TODO |
+| 24 | US24 视图只经一个门面 | 面板 | 面板不导入 `agentApi.ts` | 依赖链单向 | 出现反向依赖即失败 | N/A | `ContextPackagePanel.test.ts` 静态断言 | TODO |
+| 25 | US25 复用既有客户端 | `agentContext.ts` | 复用 `previewAgentContext` / `listEvidenceCards` | 不新写一个客户端 | 出现第二份请求拼装即失败 | N/A | `agentContext.test.ts` 形状用例 | TODO |
+| 26 | US26 请求体与服务端契约逐字段对齐 | `agentContext.ts` | 构造的 `AgentContextInput` 字段名与服务端一致 | 逐字段相同 | 字段改名即失败 | N/A | `agentContext.test.ts` 形状用例 | TODO |
+| 27 | US27 层次不被侵蚀 | 两个文件 | 静态断言守住 | 守护绿 | 故意引入反向依赖即红 | N/A | 两条静态断言 + 阴性验证 | TODO |
+| 28 | US28 理由不被解析 | `agentContext.ts` | 理由当不透明字符串列表 | 原样透传 | 出现解析即失败 | N/A | `agentContext.test.ts` 静态断言 | TODO |
+| 29 | 失败场景：两个端点其中一个不可用 | 面板 | 清单拿不到 ⇒ 状态未知；预览拿不到 ⇒ 事实区清空 | 面板仍可用 | 事实区为空 + 错误提示 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 30 | 失败场景：请求体字段与服务端不匹配 | 服务端 400/422 | 前端构造与服务端契约逐字段对照 | 契约测试绿 | 字段漂移即测试红 | N/A | `agentContext.test.ts` 形状用例 | TODO |
+| 31 | 权限场景：撤权后重新预览 | 面板 | 服务端决定可见性 | 包里没有受限条目 | 面板不显示 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 32 | 权限场景：授权结论为需确认 | 面板 | 原样显示 | 显示 `requires_confirmation` | 前端不代为确认 | N/A | `agentContext.test.ts` | TODO |
+| 33 | 恢复场景：预览失败后重试成功 | 面板 | 重试由用户发起 | 新包显示 | 失败期间事实区为空 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 34 | 恢复场景：切会话后重来 | 面板 | 意图与事实一并清空 | 新会话从空范围开始 | 不带上一会话的意图 | N/A | `ContextPackagePanel.test.ts` | TODO |
+| 35 | 环境限制：真实模型链路 | — | 本面不接触模型调用 | — | — | — | **N/A**（不接触模型调用） | N/A |
+| 36 | 环境限制：浏览器端到端 | — | 面板需集成后才可见 | — | — | — | **NOT RUN**（集成归保留路径，本面无入口可验） | NOT RUN |
+
+矩阵共 36 行：28 条 user story + 7 条失败/权限/恢复场景 + 1 条 N/A。
+
+**必须留下的阴性验证**（每条结构断言都要证明它抓得住问题）：
+
+- 改坏「事实区只由预览结果刷新」⇒ 对应用例必须红；
+- 改坏「卡片状态按 id+version 对齐」（去掉 version 条件）⇒ 对齐用例必须红；
+- 改坏「预览失败清空事实区」（改成保留旧包）⇒ 面板用例必须红；
+- 改坏「面板不导入 agentApi」（加一行 import）⇒ 静态断言必须红；
+- 改坏「不重新声明契约类型」（加一份 interface）⇒ 静态断言必须红。
+
+## 4. 施工票序列
+
+| 票 | 标题 | 交付 | 依赖 |
+|---|---|---|---|
+| #A | PF-6/1：上下文包门面——意图、事实与预览编排 | `agentContext.ts` + `agentContext.test.ts` | 无 |
+| #B | PF-6/2：上下文包面板——显示本轮范围并支持增删 | `ContextPackagePanel.vue` + `ContextPackagePanel.test.ts` | #A（面板消费门面的类型与纯函数） |
+
+两票串行：#B 需要 #A 的实际导出才能写。
+
+## 5. 实现者要读的先例
+
+| 主题 | 文件 |
+|---|---|
+| API 模块最小样板 | `frontend/src/api/lingdoc/projectArchive.ts` |
+| 「纯函数 + 客户端函数同住一个 api 模块」的先例 | `frontend/src/api/lingdoc/writingAction.ts` |
+| 组件写法（script setup、类型式 props、接口评论、scoped + BEM + 字面色值、硬编码中文） | `frontend/src/views/lingdoc/ProjectArchivePanel.vue` |
+| 组件测试（vm 直调 setup + 静态源码断言） | `frontend/src/views/lingdoc/ProjectArchivePanel.test.ts`、`frontend/src/views/lingdoc/GenerationActionPanel.test.js` |
+| 渲染断言（SSR `renderToString`） | `frontend/src/views/lingdoc/SelectedEvidenceContext.test.ts` |
+| 「未知取值原样显示，不回退」的写法 | `frontend/src/views/lingdoc/selectedEvidenceContextState.ts` |
+| 被复用的契约类型与客户端 | `frontend/src/api/lingdoc/agentApi.ts`（`AgentContextPackage` / `AgentContextInput` / `VersionRef` / `AgentSourceRef` / `previewAgentContext` / `listEvidenceCards`） |
+| 版本期望怎么算 | `frontend/src/views/lingdoc/ResearchPanel.vue` 的 `expectation()` |
+
+⚠️ 工具链：`npm test` = `tsx --test`（Node 内置 runner，**不是** vitest，**没有** `@vue/test-utils`）。定向跑：`cd frontend && npx tsx --test src/api/lingdoc/agentContext.test.ts`。
+
+## 6. 风险与未决
+
+| 风险 | 处置 |
+|---|---|
+| 面板与意图都可能被误当成事实 | 类型层分离（§2.3）+ 一条「意图多一张卡但事实区不显示它」的用例（矩阵 11） |
+| 前端自行分级「要不要确认」 | 面板用 `sensitive_context_confirmed: false` 预览，服务端给什么就显示什么（矩阵 18/32） |
+| api→api 值导入无先例 | 有意为之，PR 里显式说明；层次方向由静态断言守住（矩阵 24/27） |
+| 组件测试没有 `@vue/test-utils` | 沿用仓内三种既有手法之一（vm 直调 setup / SSR 渲染 / 静态源码断言） |
+| 集成不在本面 ⇒ 面板在本 PR 内没有真实入口 | 矩阵 36 记 `NOT RUN`；集成归保留路径，另开集成步 |
+| 残留缺口（理由结构化 / 风险分级 / 契约漂移 / 研究面板重复） | 已开 #432 / #433 / #435 / #434，本面不代偿 |
+
+## 7. 证据落点
+
+- 验收矩阵的逐行状态 → `docs/08-本轮实施方案/T431-验证报告.json`（与 `T327-验证报告.json` / `T49-验证报告.json` 同体例）。
+- 本计划与验证报告的路径已登记在 PF-6 的路径集里。
+- PR body 绑定**当前 head** 的命令与结果；跳过一律标 `NOT RUN`，不写成通过。
