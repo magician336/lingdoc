@@ -13,7 +13,7 @@ const emit=defineEmits<{close:[];changed:[];dirty:[dirty:boolean]}>()
 const localProject=ref(cloneValue(props.project)),busy=ref(false),loading=ref(false),error=ref(''),notice=ref('')
 const section=ref<'members'|'invitations'|'owner'>('members')
 const directory=ref<MemberDirectoryEntry[]>([]),invitations=ref<ProjectInvitation[]>([]),transfers=ref<CollaborationOwnerTransfer[]>([])
-const directoryError=ref(''),invitationError=ref(''),transferError=ref('')
+const projectReadError=ref(''),directoryError=ref(''),invitationError=ref(''),transferError=ref('')
 const access=computed(()=>collaborationAccess(localProject.value,props.currentUserId,props.readonly))
 const owner=computed(()=>localProject.value.members.find(member=>governanceRole(member)==='owner'))
 const names=computed(()=>new Map(directory.value.map(user=>[user.user_id,user.name])))
@@ -42,7 +42,17 @@ function operationKey(operation:string,input:unknown){const previous=attempts.ge
 function errorText(value:unknown){return value instanceof Error?value.message:'请求失败，请重新读取状态后复核。'}
 async function refresh(token=epoch.capture(),includeProject=true){
  const sequence=++readSequence;loading.value=true
- if(includeProject){try{const result=await getCollaborationProject(localProject.value.id);if(!epoch.current(token)||sequence!==readSequence)return;if(result.data.id===localProject.value.id&&result.data.project_version>=localProject.value.project_version)localProject.value=cloneValue(result.data)}catch(value:unknown){if(!epoch.current(token)||sequence!==readSequence)return;error.value=errorText(value)}}
+ if(includeProject){
+  try{
+   const result=await getCollaborationProject(localProject.value.id)
+   if(!epoch.current(token)||sequence!==readSequence)return
+   if(result.data.id===localProject.value.id&&result.data.project_version>=localProject.value.project_version){
+    localProject.value=cloneValue(result.data)
+    // Only this accepted read can recover its error; mutation failures are independent.
+    projectReadError.value=''
+   }
+  }catch(value:unknown){if(!epoch.current(token)||sequence!==readSequence)return;projectReadError.value=errorText(value)}
+ }
  // Directory visibility depends on the newly read role, including an Owner
  // acceptance receipt which contains a transfer and is not a Project DTO.
  const requests=[access.value.manager?listMemberDirectory(localProject.value.id):Promise.resolve({data:[] as MemberDirectoryEntry[]}),listProjectInvitations(localProject.value.id),listOwnerTransfers(localProject.value.id)] as const
@@ -115,7 +125,7 @@ async function acceptHandoff(transfer:CollaborationOwnerTransfer){if(transfer.st
 function beginReject(transfer:CollaborationOwnerTransfer){rejectionVersions[transfer.id]??=localProject.value.project_version}
 function rebaseReject(transfer:CollaborationOwnerTransfer){rejectionVersions[transfer.id]=localProject.value.project_version}
 async function rejectHandoff(transfer:CollaborationOwnerTransfer){const version=rejectionVersions[transfer.id]??transfer.expected_project_version;if(version!==localProject.value.project_version){error.value='拒绝操作依据已变化，请重新读取并复核。';return};const reason=rejectionReasons[transfer.id]?.trim();if(!reason||transfer.status!=='pending')return;await submit(`owner-reject/${transfer.id}`,{expected_project_version:version,reason},key=>rejectOwnerTransfer(localProject.value.id,transfer.id,version,reason,key),result=>`服务端返回：${ownerTransferLabel(result.status)}。`,()=>{delete rejectionReasons[transfer.id];delete rejectionVersions[transfer.id]})}
-watch([()=>props.project.id,()=>props.currentUserId],()=>{epoch.switchContext(`${props.project.id}/${props.currentUserId}`);readSequence++;localProject.value=cloneValue(props.project);directory.value=[];invitations.value=[];transfers.value=[];drawer.value=null;error.value='';notice.value='';loading.value=false;void refresh(epoch.capture(),false)})
+watch([()=>props.project.id,()=>props.currentUserId],()=>{epoch.switchContext(`${props.project.id}/${props.currentUserId}`);readSequence++;localProject.value=cloneValue(props.project);directory.value=[];invitations.value=[];transfers.value=[];drawer.value=null;error.value='';projectReadError.value='';notice.value='';loading.value=false;void refresh(epoch.capture(),false)})
 watch(()=>props.project,project=>{if(project.id===localProject.value.id&&project.project_version>=localProject.value.project_version)localProject.value=cloneValue(project)},{deep:true})
 onMounted(()=>void refresh(epoch.capture(),false))
 onBeforeUnmount(()=>{epoch.dispose();readSequence++})
@@ -124,6 +134,7 @@ onBeforeUnmount(()=>{epoch.dispose();readSequence++})
  <section class="collaboration-panel" :aria-busy="busy || loading" aria-labelledby="collaboration-title" @keydown.esc="!drawer && requestClose()">
   <header class="panel-header"><div><p class="eyebrow">{{ localProject.name }}</p><h2 id="collaboration-title">项目协作</h2><p class="muted">项目第 {{ localProject.project_version }} 版 · 当前 Owner：{{ owner ? nameOf(owner.user_id) : '服务端尚未返回' }}</p></div><button type="button" class="icon-button" aria-label="关闭协作面板" :disabled="busy" @click="requestClose">×</button></header>
   <p v-if="notice" class="notice" role="status">{{ notice }}</p><p v-if="error" class="error" role="alert">{{ error }}</p>
+  <p v-if="projectReadError" class="error" role="alert">{{ projectReadError }}</p>
   <p v-if="readonly" class="muted">当前为只读查看。服务端权限变化后，请重新读取项目。</p><p v-else-if="!currentUserId" class="muted">当前账号身份尚未提供，人工操作保持关闭。</p>
   <div v-if="closeConfirm" class="close-warning" role="alert"><p>还有未提交的协作编辑。保留编辑可继续复核，关闭并丢弃会清空这些输入。</p><div class="actions"><button ref="closeButton" @click="closeConfirm = false">保留编辑</button><button class="danger" @click="discardAndClose">关闭并丢弃</button></div></div>
   <div class="toolbar"><nav aria-label="协作内容"><button type="button" :aria-pressed="section === 'members'" @click="section = 'members'">当前成员</button><button type="button" :aria-pressed="section === 'invitations'" @click="section = 'invitations'">邀请</button><button type="button" :aria-pressed="section === 'owner'" @click="section = 'owner'">Owner 交接</button></nav><button type="button" :disabled="busy || loading" @click="refresh()">{{ loading ? '正在读取…' : '重新读取' }}</button></div>
