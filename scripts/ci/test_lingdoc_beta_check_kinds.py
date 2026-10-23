@@ -212,6 +212,27 @@ class ExhaustiveVocabularyTests(unittest.TestCase):
                               f"the check at {where} names the kind {name}, which the runner "
                               "has no evaluation branch for")
 
+    def test_every_assertion_declares_exactly_the_allowed_keys(self):
+        """``{path, intent}`` plus one registered kind -- and only that kind's own keys.
+
+        Nothing else may ride along: an extra key is either a kind the contract
+        does not declare (and then it was ignored) or a typo that was read as
+        part of the expectation.  The only extras a kind may carry are the ones
+        the kind itself declares (``id_field`` for the two id-set kinds, and
+        only when the check actually uses it).
+        """
+        for path in (WORKFLOW, SCENARIOS):
+            for where, check in all_checks(contract(path)):
+                name = check_kinds.validate_check(check, f"{where} check")
+                record = check_kinds.kind_of(name)
+                required = {"path", "intent", name}
+                allowed = required | set(record.auxiliary_keys)
+                self.assertTrue(required <= set(check),
+                                f"the check at {where} does not declare {sorted(required - set(check))}")
+                self.assertTrue(set(check) <= allowed,
+                                f"the check at {where} carries keys the kind {name} does "
+                                f"not declare: {sorted(set(check) - allowed)}")
+
     def test_the_contract_uses_the_two_kinds_that_used_to_be_idle(self):
         used = kinds_in(contract(WORKFLOW))
         self.assertIn("keys", used, "the keys kind is still idle in the F01 contract")
