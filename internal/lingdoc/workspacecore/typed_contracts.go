@@ -2,6 +2,7 @@ package workspacecore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -127,6 +128,79 @@ const (
 	AuthorizationIssueWaive           AuthorizationAction = "issue-waive"
 	AuthorizationIssueDismissBlocking AuthorizationAction = "issue-dismiss-blocking"
 )
+
+// ResourceKind identifies the canonical object kind used by function scopes.
+type ResourceKind string
+
+const (
+	ResourceChapter ResourceKind = "chapter"
+	ResourceAsset   ResourceKind = "asset"
+)
+
+// ResourceRef is the single typed source for resource-scope identifiers.
+// Chapter IDs remain opaque for the existing persisted contract; assets use
+// the canonical `asset:<id>` representation.
+type ResourceRef struct {
+	Kind      ResourceKind
+	ID        string
+	ChapterID string
+}
+
+func NewChapterResourceRef(id string) (ResourceRef, error) {
+	ref := ResourceRef{Kind: ResourceChapter, ID: id}
+	if !ref.valid() {
+		return ResourceRef{}, ErrInvalidRequest
+	}
+	return ref, nil
+}
+
+func NewAssetResourceRef(id string) (ResourceRef, error) {
+	ref := ResourceRef{Kind: ResourceAsset, ID: id}
+	if !ref.valid() {
+		return ResourceRef{}, ErrInvalidRequest
+	}
+	return ref, nil
+}
+
+func NewAssetResourceRefForChapter(id, chapterID string) (ResourceRef, error) {
+	ref := ResourceRef{Kind: ResourceAsset, ID: id, ChapterID: chapterID}
+	if !ref.valid() {
+		return ResourceRef{}, ErrInvalidRequest
+	}
+	return ref, nil
+}
+
+func (r ResourceRef) valid() bool {
+	validID := func(value string) bool {
+		return value != "" && strings.TrimSpace(value) == value && !strings.Contains(value, ":")
+	}
+	switch r.Kind {
+	case ResourceChapter:
+		return validID(r.ID) && r.ChapterID == ""
+	case ResourceAsset:
+		return validID(r.ID) && (r.ChapterID == "" || validID(r.ChapterID))
+	default:
+		return false
+	}
+}
+
+// AuthorizationResource returns the persisted scope spelling for this ref.
+// Invalid values return an empty string and are rejected by batch authorization.
+func (r ResourceRef) AuthorizationResource() string {
+	if !r.valid() {
+		return ""
+	}
+	if r.Kind == ResourceAsset {
+		return "asset:" + r.ID
+	}
+	return r.ID
+}
+
+type ResourceAuthorizationDecision struct {
+	Resource ResourceRef
+	Allowed  bool
+	Reason   string
+}
 
 // AuthorizationRequest is the only authorization input used by Workspace
 // internals. Resource is the chapter, asset, delivery, or issue identifier
@@ -426,6 +500,101 @@ func (s *Service) AuthorizeRequest(ctx context.Context, request AuthorizationReq
 		func(tx Transaction) (Project, error) {
 			return s.authorizeProject(ctx, tx, request)
 		})
+}
+
+// authorizeProjectWithoutShadow keeps a multi-resource authorization from
+// emitting one shadow event for every resource. The batch records one
+// aggregate decision after all policy checks have completed.
+func (s *Service) authorizeProjectWithoutShadow(ctx context.Context, tx Transaction, request AuthorizationRequest) (Project, error) {
+	if !validAuthorizationAction(request.Action) {
+		return Project{}, ErrInvalidRequest
+	}
+	if err := authorizeAPIKeyProject(ctx, tx, request.ProjectID, request.capability()); err != nil {
+		return Project{}, err
+	}
+	return s.authorizer.AuthorizeProject(tx, request)
+}
+
+// AuthorizeResourceBatch checks a set of same-action resources in one stable
+// project transaction and writes one aggregate authorization audit row. A
+// chapter-scoped author may reread assets already cited by that formal chapter;
+// a caller-supplied chapter ID alone never grants access to an unrelated asset.
+// Researcher scopes continue to match the canonical asset resource.
+//
+// The aggregate audit row is written on the decision's own transaction, so a
+// failed audit write refuses the batch: the caller must not act on a decision
+// nobody recorded.
+func (s *Service) AuthorizeResourceBatch(ctx context.Context, actor Actor, projectID string, action AuthorizationAction, resources []ResourceRef) ([]ResourceAuthorizationDecision, error) {
+	if !validActor(actor) || strings.TrimSpace(projectID) != projectID || projectID == "" || !validAuthorizationAction(action) || len(resources) == 0 {
+		return nil, ErrInvalidRequest
+	}
+	decisions := make([]ResourceAuthorizationDecision, len(resources))
+	for i, resource := range resources {
+		if !resource.valid() {
+			return nil, ErrInvalidRequest
+		}
+		decisions[i] = ResourceAuthorizationDecision{Resource: resource}
+	}
+	var batchErr error
+	err := s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProjectWithoutShadow(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
+			batchErr = err
+			return s.recordAuditInTransaction(ctx, tx, actor, projectID, string(action)+":asset-batch", batchErr)
+		}
+		for i, resource := range resources {
+			if resource.Kind == ResourceAsset && resource.ChapterID != "" {
+				if _, err := tx.Chapter(projectID, resource.ChapterID); err != nil {
+					if errors.Is(err, ErrNotFound) {
+						decisions[i].Reason = "not_found"
+						batchErr = ErrNotFound
+						continue
+					}
+					return err
+				}
+			}
+			request := authorizationRequest(actor, projectID, action, resource.AuthorizationResource())
+			_, authErr := s.authorizeProjectWithoutShadow(ctx, tx, request)
+			if authErr != nil && errors.Is(authErr, ErrNotFound) && resource.Kind == ResourceAsset && resource.ChapterID != "" {
+				_, chapterErr := s.authorizeProjectWithoutShadow(ctx, tx, authorizationRequest(actor, projectID, action, resource.ChapterID))
+				if chapterErr == nil {
+					cited, err := chapterCitesAsset(tx, actor.TenantID, projectID, resource.ChapterID, resource.ID)
+					if err != nil {
+						return err
+					}
+					if cited {
+						authErr = nil
+					}
+				} else if !errors.Is(chapterErr, ErrNotFound) {
+					return chapterErr
+				}
+			}
+			if authErr == nil {
+				decisions[i].Allowed = true
+				decisions[i].Reason = "allowed"
+				continue
+			}
+			if !errors.Is(authErr, ErrNotFound) {
+				return authErr
+			}
+			decisions[i].Reason = "not_authorized"
+			batchErr = ErrNotFound
+		}
+		return s.recordAuditInTransaction(ctx, tx, actor, projectID, string(action)+":asset-batch", batchErr)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if s.mode == AuthorizationModeLog {
+		_ = s.recordAudit(ctx, actor, projectID, "shadow:"+string(action)+":asset-batch", batchErr)
+	}
+	if batchErr != nil && len(decisions) > 0 {
+		// Project-level denial makes every result unusable. Resource-level
+		// denial is represented per item and returned below as decisions.
+		if decisions[0].Reason == "" {
+			return nil, batchErr
+		}
+	}
+	return decisions, nil
 }
 
 // ReassessChangeSetResult keeps reassessment on the same typed application

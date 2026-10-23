@@ -126,10 +126,11 @@ PATH_DIAGRAM_DOC = Path("docs/08-本轮实施方案/G1-G7-Spec-完成路径图.m
 # actually delivers.
 #
 # #431 is the 上下文包前端消费 Spec that PF-6 delivers, for the same reason.
+# #482 is the Beta 首版放行验收 Spec that PF-14 delivers, for the same reason.
 # #451 / #452 / #453 are the three Beta-first acceptance Specs that PF-10
 # delivers, for the same reason.
 G_LINE_ISSUES = (
-    frozenset(range(123, 144)) | {145, 146} | {391, 393, 431} | {451, 452, 453}
+    frozenset(range(123, 144)) | {145, 146} | {391, 393, 431} | {451, 452, 453} | {482}
 )
 
 # Scheduling status vocabulary.  ``available`` is the only status that means
@@ -724,7 +725,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 组合根 internal/container/lingdoc.go **不**登记进本面：owner 仍是 PF-7
             # （#414 的 AuditSink 实现就在那里，PF-7 未开工且已声明它）。
             # 但本面**借用**它——在 NewHostAgentModel 那一行装上模型调用账本
-            # （不装，账本在生产里就是死的）。**本面合入 main 后该路径归还 PF-7**
+            # （不装，账本在生产里就是死的）。**该路径已于 2026-10-23 随 #509（账本写入端）合入 main，路径归还 PF-7；PF-10 不再改它**
             # （先例：PF-8 借 PF-4 的四个路径，落地后归还）。
             # **PF-7 侧的对应记录已在 main 上**（PR #475 / commit 60ae2dca 的 PF-7 块 summary）。
             # 本面在这里装账本：workspace.NewHostAgentModel(models,
@@ -827,6 +828,104 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，"
             "已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
         ),
+    },
+    {
+        "name": "PF-14 Beta 首版放行执行",
+        "issue": 492,
+        "issues": (482,),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # #491 的 spec 落盘：Beta 首版放行验收的仓内副本（56 号之后的第一张）。
+            ("docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md", "file"),
+            # #484 的材料接入脚本：真接入（/knowledge/file → 轮询 parse_status →
+            # 查 chunks → 打 retrieval/hybrid-search）。名字照 #484 探索结论 §4.3。
+            ("scripts/acceptance/beta_material_ingest.py", "file"),
+            # #484 的守护测试（探索结论 §5.1 推荐落点：自由路径，PF-10 不拥有它）。
+            ("scripts/ci/test_lingdoc_beta_material.py", "file"),
+            # #484 的服务端能力（材料接入与处理就绪）：**目录级**声明覆盖整棵子树——
+            # 这是一个新增包，后续加文件是常态，逐文件登记必然漏（同 PF-10 对
+            # docs/08-本轮实施方案/acceptance/beta-first/ 的做法）。
+            ("internal/lingdoc/materiallingest/", "dir"),
+            # #494 的守护测试：资料标识参数化（入口 → 绑定动作，无第二处硬编码，
+            # 不传则明确报错，阴性验证）。
+            ("scripts/ci/test_lingdoc_beta_knowledge_id.py", "file"),
+            # #504 的缺口登记表：稳定标识 → 票号/条目的**唯一**绑定处。
+            # 代码与产物只引用标识（GAP-…），票号变了只改这一份文件。
+            ("docs/08-本轮实施方案/acceptance/gaps.json", "file"),
+            # #504 的守护测试：标识不漂（产出器里不出现票号）、标识齐全、
+            # 「没跑」只有一种拼写。
+            ("scripts/ci/test_lingdoc_beta_gap_ids.py", "file"),
+            # #486 的账本写入端：SourceRuntime 持有那一个账本实例，所有适配器共用它。
+            # 生成适配器所在的 workspace/generation.go 由 PF-2 持有 ⇒ 借用，不声明。
+            ("internal/lingdoc/workspace/source_runtime_gorm.go", "file"),
+            # #486 的守护测试：一次调用一行、失败也写、未注入账本不改变行为。
+            ("internal/lingdoc/workspace/generation_model_call_ledger_test.go", "file"),
+            ("internal/lingdoc/workspace/generation_model_call_ledger_table_test.go", "file"),
+            # #499 的 check kind 词表单一权威：执行器、契约静态校验器与报告文案都从
+            # 这里读，任何一处再写一份词表就是缺陷。
+            ("scripts/lingdoc_check_kinds.py", "file"),
+            # #499 的守护测试：单一权威（无第二份词表）、穷举校验（无闲置 kind、
+            # 每条断言可判定、**词表里的每个算子都必须有求值分支**）、未知 kind 与
+            # 多余键必须报错、以及阴性验证（破坏期望值必须转红）。
+            ("scripts/ci/test_lingdoc_beta_check_kinds.py", "file"),
+            # 守护的旧名：文件已随 #499 改名为 test_lingdoc_beta_check_kinds.py，但
+            # **这条路径仍留在本面的路径集里**——登记处记的是归属，不是文件清单；
+            # 一个活着的面不得缩自己的路径集（棘轮：path-set-shrunk / path-unowned），
+            # 路径随本面结束（done）才释放。
+            ("scripts/ci/test_lingdoc_check_kinds.py", "file"),
+            # #499 的契约静态校验器：接单一权威，并把 F01 契约自己的断言纳入静态
+            # 校验（此前只有运行到那个节点才会被校验）。
+            ("docs/08-本轮实施方案/contracts/validate_artifacts.py", "file"),
+            # #499 的失败路径契约档：已有 4xx 节点（409 冲突 / 403 撤权 / 422 整批
+            # 拒绝等）挂上 http_error 与 not_in 断言。
+            ("docs/08-本轮实施方案/contracts/scenarios.json", "file"),
+            # #499 补 53-Spec 决策 3 的表：第 6 个 kind（non_empty）与新增的 5 个
+            # kind，并补上「词表单一权威」「穷举校验」「失败态的表达方式」三条决策。
+            ("docs/06-灵档产品开发规划/53-Spec-Beta首版验收执行器与证据目录.md", "file"),
+            # #499 的场景执行器与它的两个回归测试：报告文案要覆盖每个 kind；
+            # 断言的词表改从单一权威读（原来测试里自己写了一份 4 个算子）。
+            ("scripts/lingdoc_mock/run_scenario.py", "file"),
+            ("scripts/lingdoc_mock/test_workflow_specs.py", "file"),
+            ("scripts/lingdoc_mock/test_workflow_scenario.py", "file"),
+        ),
+        "resolves": (),
+        "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
+            "执行器、契约静态校验器与报告文案都从那里读——原来词表分三处且互不一致（校验器只认 4 个结构 kind，"
+            "执行器只**数**它认识的 kind、把拼错的 kind 静默忽略）。新增 5 个领域 kind"
+            "（http_error / not_in / all_non_empty / equals_step / provenance_real），"
+            "在 F01 契约与失败路径契约上挂上断言并启用闲置的 keys 与 one_of；"
+            "F01 契约自己的断言也纳入静态校验（此前只有运行到那个节点才会被校验）。"
+            "**一处跨面借用（#499）**：F01 执行器（scripts/lingdoc_mock/run_f01.py）与 F01 契约"
+            "（docs/08-本轮实施方案/contracts/workflow.json）**是 PF-10 的路径，owner 仍是 PF-10**"
+            "（PF-10 已交面，done 状态仍占用路径）⇒ 本面借用它们，**不把它们声明进本面的 paths**，"
+            "借用事实记在这里与 PF-10 侧。**两处未完成项已登记**：GAP-PROVENANCE-FIELD"
+            "（OpenAPI 未声明 provenance 字段，逐段真实溯源挂不上节点断言）与 GAP-FAILURE-PATH-NODES"
+            "（F01 序列内的 4xx 节点要等 #501 的两步结构）。"
+            "**2026-10-24 补一条根因修复（求值分派不再落空）**：两个求值分派原先是**隐式**的——"
+            "领域算子落到 _judge_domain_check 末尾的 fallthrough（静默按 non_empty 求值）、"
+            "结构算子落到 _evaluate_checks 的 `else: # one_of`（静默按 one_of 求值）"
+            "⇒ 断言看上去被求值了，实际回答的是另一个问题，报告却写「passed」。"
+            "现在两个分派都是**显式**的：没有分支的算子一律报错（WorkflowError），"
+            "并由 scripts/ci/test_lingdoc_beta_check_kinds.py 双向守着"
+            "「词表里的每个算子都必须有求值分支，且求值器不会判词表以外的算子」。"
+            "**2026-10-24 归属裁定（管理会话）**：① contracts/validate_artifacts.py 归本面"
+            "（它是 workflow.json 的静态校验器、随契约形状变更走；此前不在任何面的路径集里，"
+            "本面在 #530 已把它登记进来）⇒ 本面可直接改它，不必等锁。"
+            "② scripts/acceptance/beta_evidence.py 的 owner 保持 PF-10、**不新增登记**；"
+            "#501 若要改它，属本面借用 PF-10 的路径，由本面记借用事实，不得声明进本面 paths。"
+            "③ #501 的执行器单测新建独立文件 scripts/lingdoc_mock/test_workflow_twostep.py，"
+            "不写进既有的 test_workflow_*.py ⇒ 本面的待合改动与它零重叠。"
+            "**#484 的材料接入能力已实现**（internal/lingdoc/materiallingest/，本面持有该路径）："
+            "稳定材料身份＝固定标题前缀＋文件内容 SHA-256（不含时间戳）⇒ 同一份材料恒等；"
+            "接入幂等（同一份材料重复接入不新增知识，结果以 Reused 标记复用）；"
+            "处理状态取数落在 evidence.ProcessingStateOf → evidence.AssetStateReady 这条链 ⇒ "
+            "与 F01-06 响应里的「就绪」同口径（与绑定层 evidence.Bindings.RefreshAsset 同一条链，不会有两套口径）。"
+            "**未接 HTTP 端点与组合根**：路由基线断言与 contracts/openapi.json 归 L3 锁，"
+            "且该包目前零生产调用点（git grep materiallingest 只命中包内与文档）⇒ "
+            "**验收路径改用 F01 执行器现有的 --knowledge-id 注入**（F01-06 的契约节点已有 {{knowledge_id}} 与"
+            "「processing_state=ready」断言，不需要新增契约节点）。"
+            "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",

@@ -143,6 +143,9 @@ func runLingdocMigrations(t *testing.T, db *gorm.DB) {
 		"000037_lingdoc_full_workflow.up.sql",
 		"000041_lingdoc_template_version_ruleset_ref.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
+		// 000054 adds the audit decision columns (#415): the audit write of
+		// this fixture needs the table to carry them.
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {

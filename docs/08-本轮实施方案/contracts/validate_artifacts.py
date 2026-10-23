@@ -5,6 +5,7 @@ import importlib.util
 import hashlib
 import json
 import re
+import sys
 import warnings
 from pathlib import Path
 
@@ -22,6 +23,12 @@ if not checker_path.is_file():
 checker_loader=importlib.util.spec_from_file_location('lingdoc_route_parity',checker_path)
 checker=importlib.util.module_from_spec(checker_loader)
 checker_loader.loader.exec_module(checker)
+# The check vocabulary lives in one module -- scripts/lingdoc_check_kinds.py -- and this
+# validator reads it from there.  It used to carry its own shorter copy, which knew four
+# kinds while the runner knew ten: a check that used one of the six the validator did not
+# know was a static failure, and a check that used a kind nobody knew was invisible.
+sys.path.insert(0,str((args.source_root/'scripts').resolve()))
+import lingdoc_check_kinds as check_kinds
 def read(name): return json.loads((ROOT/name).read_text(encoding='utf-8'))
 spec=read('openapi.json')
 cases=read('scenarios.json')
@@ -76,7 +83,6 @@ scenario_steps=0
 scenario_steps_with_requests=0
 check_references={'tied':0,'unresolved':0}
 VARIABLE=re.compile(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}')
-CHECK_OPERATORS=('equals','length','keys','one_of')
 def has_variable(value):
     if isinstance(value,str): return bool(VARIABLE.search(value))
     if isinstance(value,list): return any(has_variable(v) for v in value)
@@ -87,6 +93,146 @@ def variable_names(value):
     if isinstance(value,list): return set().union(*(variable_names(v) for v in value)) if value else set()
     if isinstance(value,dict): return set().union(*(variable_names(v) for v in value.values())) if value else set()
     return set()
+
+def lookup(root,pointer):
+    """Read a place in an example, saying plainly when it is not there."""
+    current=root
+    for part in pointer.lstrip('/').split('/'):
+        part=part.replace('~1','/').replace('~0','~')
+        if isinstance(current,list):
+            if not part.isdigit() or int(part)>=len(current): return False,None
+            current=current[int(part)]
+        elif isinstance(current,dict):
+            if part not in current: return False,None
+            current=current[part]
+        else: return False,None
+    return True,current
+
+def ids_of(collection,id_field):
+    """The ids an array carries, whether it holds bare ids or objects."""
+    found=set()
+    if not isinstance(collection,list): return found
+    for item in collection:
+        if isinstance(item,str): found.add(item)
+        elif isinstance(item,dict) and id_field in item: found.add(item[id_field])
+    return found
+
+def tie_expectation(check,kind,example,at,siblings=None):
+    """Tie one expectation to the example it is about.
+
+    Returns 'tied' when the example supports the expectation and 'unresolved' when the
+    example cannot speak about it -- a captured value, or a place the example does not
+    carry.  An example that contradicts the expectation is an error: an assertion that no
+    published example supports is a wish, not an expectation.
+    """
+    path=check['path']
+    if path.startswith('{{'): return 'unresolved'
+    found,actual=lookup(example,path)
+    value=check[kind]
+    if kind=='equals':
+        if has_variable(value): return 'unresolved'
+        assert found,at+': the example does not carry '+path
+        assert actual==value,at+': the example holds '+repr(actual)+', not '+repr(value)
+        return 'tied'
+    if kind=='length':
+        assert found,at+': the example does not carry '+path
+        assert len(actual)==value,at+': the example has '+str(len(actual))
+        return 'tied'
+    if kind=='keys':
+        assert found,at+': the example does not carry '+path
+        assert sorted(actual)==sorted(value),at+': the example has '+str(sorted(actual))
+        return 'tied'
+    if kind=='one_of':
+        assert found,at+': the example does not carry '+path
+        assert actual in value,at+': the example holds '+repr(actual)
+        return 'tied'
+    if kind=='marked_or_absent':
+        # The item may be absent: that is one of the two states the assertion allows.
+        if not found: return 'tied'
+        marker_found,marker=lookup(actual,value)
+        assert marker_found,at+': the example does not carry the marker '+value
+        assert marker not in (None,'',[],{}),at+': the example marks the item with nothing'
+        return 'tied'
+    if kind in ('ref_in','not_in'):
+        array_found,collection=lookup(example,value)
+        assert array_found,at+': the example does not carry '+value
+        id_field=check.get('id_field','id')
+        assert found,at+': the example does not carry '+path
+        present=actual in ids_of(collection,id_field)
+        assert present==(kind=='ref_in'),at+': the example does not hold the claimed relation'
+        return 'tied'
+    if kind=='version_bound':
+        targets=value if isinstance(value,list) else [value]
+        for target in targets:
+            target_found,target_value=lookup(example,target)
+            assert found and target_found,at+': the example does not carry the bound version'
+            assert actual==target_value,at+': the example does not bind the two versions'
+        return 'tied'
+    if kind=='readback_equals':
+        if has_variable(value): return 'unresolved'
+        assert found,at+': the example does not carry '+path
+        assert actual==value,at+': the example holds '+repr(actual)+', not '+repr(value)
+        return 'tied'
+    if kind=='hash_equals':
+        source=(siblings or {}).get(value['from_step'])
+        assert source is not None,at+': hash_equals names a step this contract does not have'
+        source_found,_=lookup(source,path)
+        assert source_found,at+': the named step does not carry '+path
+        return 'tied'
+    if kind=='non_empty':
+        assert found,at+': the example does not carry '+path
+        assert actual not in (None,'',[],{}),at+': the example holds an empty value'
+        return 'tied'
+    if kind=='all_non_empty':
+        assert found,at+': the example does not carry '+path
+        assert isinstance(actual,list) and actual,at+': the example holds an empty collection'
+        for entry in actual:
+            assert entry not in (None,'',[],{}),at+': the example holds an empty entry'
+        return 'tied'
+    if kind=='http_error':
+        assert found,at+': the example does not carry '+path
+        assert isinstance(actual,dict),at+': the example does not carry an error envelope'
+        assert actual.get('code')==value.get('code'),at+': the example holds the error code '+repr(actual.get('code'))
+        if 'retryable' in value:
+            assert actual.get('retryable')==value['retryable'],at+': the example holds another retryable flag'
+        return 'tied'
+    if kind=='equals_step':
+        other=(siblings or {}).get(value['from_step'])
+        assert other is not None,at+': equals_step names a step this contract does not have'
+        other_found,other_value=lookup(other,value['path'])
+        assert other_found,at+': the named step does not carry '+value['path']
+        assert found,at+': the example does not carry '+path
+        assert actual==other_value,at+': the two steps disagree in the examples'
+        return 'tied'
+    if kind=='provenance_real':
+        # The example may not carry a provenance marker at all: the OpenAPI document
+        # does not declare one yet.  Then the example cannot speak about it.
+        if not found: return 'unresolved'
+        assert actual in check_kinds.REAL_PROVENANCE_VALUES,at+': the example holds the provenance '+repr(actual)
+        return 'tied'
+    raise AssertionError(at+': no tie is defined for the kind '+kind)
+
+def check_scenario_checks(step,where,examples_by_step=None):
+    """Validate the evaluable expectations, and tie every one of them to the published example."""
+    checks=step.get('checks')
+    if checks is None: return 0,0
+    assert isinstance(checks,list) and checks,where+' checks must be a non-empty list'
+    example=ptr(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']['application/json']
+                ['examples'][step['response_example']],'/value')
+    tied=unresolved=0
+    for index,check in enumerate(checks,start=1):
+        at=where+' check '+str(index)
+        try:
+            kind=check_kinds.validate_check(check,at)
+        except check_kinds.CheckKindError as error:
+            raise AssertionError(str(error)) from None
+        expected=check[kind]
+        if kind!='equals' and kind!='readback_equals' and has_variable(expected):
+            raise AssertionError(at+' cannot tie a '+kind+' expectation to the example')
+        verdict=tie_expectation(check,kind,example,at,examples_by_step)
+        if verdict=='unresolved': unresolved+=1
+        else: tied+=1
+    return tied,unresolved
 
 def check_request_shape(op,request,where):
     """The parts of a request a static check can hold without knowing what a variable resolves to.
@@ -118,38 +264,33 @@ def check_request_shape(op,request,where):
     else:
         assert request.get('json') is None,where+' sends a body to an operation that declares none'
 
-def check_scenario_checks(step,where):
-    """Validate the evaluable expectations, and tie every one of them to the published example."""
-    checks=step.get('checks')
-    if checks is None: return 0,0
+def check_flow_checks(step,where,examples_by_step):
+    """Validate the F01 contract's expectations, and tie every one of them to its reference response.
+
+    These assertions used to be validated only when the runner reached them: a kind
+    nobody knew, or a key no kind declares, stayed invisible until that node ran -- or,
+    worse, was silently ignored.  Now the contract is checked before it is run.
+    """
+    checks=step['checks']
     assert isinstance(checks,list) and checks,where+' checks must be a non-empty list'
-    example=ptr(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']['application/json']
-                ['examples'][step['response_example']],'/value')
+    example=step.get('reference_response')
     tied=unresolved=0
     for index,check in enumerate(checks,start=1):
         at=where+' check '+str(index)
-        assert set(check)<= {'path','intent'}|set(CHECK_OPERATORS),at+' carries an unknown key'
-        assert isinstance(check.get('path'),str) and check['path'].startswith('/'),at+' path must be a JSON pointer'
-        assert isinstance(check.get('intent'),str) and check['intent'].strip(),at+' intent must be a sentence'
-        operators=[name for name in CHECK_OPERATORS if name in check]
-        assert len(operators)==1,at+' must state exactly one of '+str(list(CHECK_OPERATORS))
-        operator=operators[0];expected=check[operator]
-        if operator=='length': assert isinstance(expected,int) and not isinstance(expected,bool) and expected>=0,at+' length'
-        if operator=='keys': assert isinstance(expected,list) and all(isinstance(k,str) and k.strip() for k in expected),at+' keys'
-        if operator=='one_of': assert isinstance(expected,list) and expected,at+' one_of'
-        # The expected value has to come from somewhere checkable, and the somewhere is the
-        # response example this step already names: an assertion that no published example
-        # supports is a wish, not an expectation.
-        actual=ptr(example,check['path'])
-        if operator!='equals' and has_variable(expected):
-            raise AssertionError(at+' cannot tie a '+operator+' expectation to the example')
-        if operator=='equals':
-            if has_variable(expected): unresolved+=1;continue
-            assert actual==expected,at+': the example holds '+repr(actual)+', not '+repr(expected)
-        elif operator=='length': assert len(actual)==expected,at+': the example has '+str(len(actual))
-        elif operator=='keys': assert sorted(actual)==sorted(expected),at+': the example has '+str(sorted(actual))
-        else: assert actual in expected,at+': the example holds '+repr(actual)
-        tied+=1
+        try:
+            kind=check_kinds.validate_check(check,at)
+        except check_kinds.CheckKindError as error:
+            raise AssertionError(str(error)) from None
+        if kind!='hash_equals':
+            # A hash assertion is about the bytes another step recorded; every other
+            # kind is about a place in this step's own response.
+            assert example is not None,where+' checks an expectation no reference response stands behind'
+        expected=check[kind]
+        if kind not in ('equals','readback_equals') and has_variable(expected):
+            raise AssertionError(at+' cannot tie a '+kind+' expectation to the example')
+        verdict=tie_expectation(check,kind,example,at,examples_by_step)
+        if verdict=='unresolved': unresolved+=1
+        else: tied+=1
     return tied,unresolved
 
 def check_scenario_step(scenario,index,step):
@@ -259,7 +400,12 @@ def expand(x,env):
     match=re.fullmatch(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',x)
     if match: return env[match[1]]
     return re.sub(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',lambda m:str(env[m[1]]),x)
-env={};resolved=[]
+# A contract may take a value from the environment instead of capturing it
+# (the material identifier at F01-06 is one).  This validator checks the
+# *shape* of a request, so a placeholder of the right type is enough to
+# expand against; the run is where the real value comes from.
+RUNTIME_VARIABLES={'knowledge_id':'k-runtime-placeholder'}
+env=dict(RUNTIME_VARIABLES);resolved=[]
 for step in flow['steps']:
     op=ops[step['operation_id']]
     request=expand(step['request'],env)
@@ -274,6 +420,16 @@ for step in flow['steps']:
         validate(response['schema'],step['reference_response'],step['id']+' response')
         for var,p in step['capture'].items(): env[var]=ptr(step['reference_response'],p)
     resolved.append({**step,'request':request})
+
+# The F01 contract's own assertions are checked here, not only when the runner reaches
+# them.  Every one of them is tied to the reference response of its own step, so an
+# assertion the contract cannot back is refused before anybody runs it.
+flow_examples={step['id']:step.get('reference_response') for step in flow['steps']}
+flow_check_tied=flow_check_unresolved=0
+for step in flow['steps']:
+    if 'checks' not in step: continue
+    tied,unresolved=check_flow_checks(step,step['id'],flow_examples)
+    flow_check_tied+=tied;flow_check_unresolved+=unresolved
 
 def unique_by(items,key):
     keys=[item[key] for item in items]
@@ -537,7 +693,24 @@ def mutate_check(mutate):
     def run():
         step=scenario_step();mutate(step['checks'][0]);check_scenario_step(F22,1,step)
     return run
+def mutate_flow_check(mutate):
+    """Break one of the F01 contract's own assertions and see whether it is refused."""
+    def run():
+        step=copy.deepcopy(next(s for s in flow['steps'] if s.get('checks')))
+        mutate(step['checks'][0])
+        check_flow_checks(step,step['id'],flow_examples)
+    return run
+def replace_flow_kind(check):
+    for name in list(check):
+        if name in check_kinds.KNOWN_CHECK_OPERATORS:
+            del check[name]
+    check['not_a_kind_at_all']=64
 for label,action in [
+    ('workflow_check_with_an_unknown_kind',mutate_flow_check(replace_flow_kind)),
+    ('workflow_check_with_an_unknown_key_next_to_a_known_kind',
+     mutate_flow_check(lambda c:c.update(also_not_a_kind='x'))),
+    ('workflow_check_whose_expectation_the_reference_response_does_not_support',
+     mutate_flow_check(lambda c:c.update(equals='other_code'))),
     ('scenario_check_with_two_operators',mutate_check(lambda c:c.update(one_of=['x']))),
     ('scenario_check_disagrees_with_the_published_example',mutate_check(lambda c:c.update(equals='other_code'))),
     ('scenario_check_reads_a_place_the_example_does_not_have',mutate_check(lambda c:c.update(path='/error/nope'))),
@@ -626,6 +799,9 @@ report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_onl
  'scenario_steps_with_requests':scenario_totals['steps_with_requests'],
  'scenario_checks_tied_to_a_published_example':scenario_totals['checks_tied'],
  'scenario_checks_left_to_the_run':scenario_totals['checks_unresolved'],
+ 'continuous_trace_checks_tied_to_a_reference_response':flow_check_tied,
+ 'continuous_trace_checks_left_to_the_run':flow_check_unresolved,
+ 'check_kinds':list(check_kinds.KNOWN_CHECK_OPERATORS),
  'starting_states':len(buildable_states),'starting_state_parts_buildable':sorted(startable),
  'negative_static_cases_rejected':negative_results,
  'not_run':['real provider/database/model tests','actual DOCX export/opening','running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],

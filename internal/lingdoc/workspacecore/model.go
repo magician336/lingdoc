@@ -3,15 +3,17 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"github.com/Tencent/WeKnora/internal/clienterror"
-	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
+	"gorm.io/gorm/schema"
 )
 
 // These views match the proposed HTTP contract. IDs are opaque to callers.
@@ -451,7 +453,7 @@ var (
 	ErrIdempotencyConflict         = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
 	ErrRequestInProgress           = clienterror.New(clienterror.Form{Status: 409, Code: "request_in_progress", Message: "原请求仍在提交，请稍后用相同操作键重试。", Retryable: true, RetryAfter: 1}, "request_in_progress")
 	ErrSourceUnavailable           = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料不可用或未获授权。", Retryable: false}, "source_access_denied")
-	ErrPermissionSchemaUnavailable = errors.New("permission_schema_unavailable")
+	ErrPermissionSchemaUnavailable = clienterror.New(clienterror.Form{Status: 500, Code: "permission_schema_unavailable", Message: "权限服务未正确配置，请联系管理员。", Retryable: false}, "permission_schema_unavailable")
 )
 
 type projectRow struct {
@@ -537,9 +539,43 @@ type auditEventRow struct {
 	ProjectRevision int64  `gorm:"column:project_revision;not null;default:0"`
 	DetailsJSON     string `gorm:"column:details_json;not null;type:text;default:'{}'"`
 	CreatedAt       time.Time
+	// The five decision columns (#415). They were declared on AuditEvent for
+	// a long time but had no column of their own: they only rode along inside
+	// details_json, and AuditEvents did not restore them, so the read side's
+	// role filter fell back to actor_id alone. They are columns now, so a
+	// reader can rebuild the decision without parsing JSON.
+	//
+	// Capability is unbounded on purpose: the capability string is
+	// "kind:resource" and the resource is caller-supplied, so a bounded
+	// column would bring back the overflow that 000046 fixed for `action`.
+	TenantID   uint64 `gorm:"column:tenant_id;not null;default:0"`
+	UserID     string `gorm:"column:user_id;not null;size:64;default:''"`
+	Role       string `gorm:"column:role;not null;size:32;default:''"`
+	Capability string `gorm:"column:capability;not null;type:text;default:''"`
+	Decision   string `gorm:"column:decision;not null;size:32;default:''"`
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }
+
+// AuditEventRowColumns returns the column names the audit event's row model
+// maps to.
+//
+// It is the model's own answer, produced by GORM's own naming strategy, so a
+// reader that checks the model against the table does not have to
+// re-implement that strategy to get the same list. The check lives in
+// internal/database (the same place as the migrations it is compared against).
+func AuditEventRowColumns() []string {
+	parsed, err := schema.Parse(&auditEventRow{}, &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		return nil
+	}
+	columns := make([]string, 0, len(parsed.Fields))
+	for _, field := range parsed.Fields {
+		columns = append(columns, field.DBName)
+	}
+	sort.Strings(columns)
+	return columns
+}
 
 type ownerTransferRow struct {
 	ID                     string `gorm:"primaryKey;size:36"`

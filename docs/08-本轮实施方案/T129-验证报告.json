@@ -1,0 +1,112 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#129 G5 角色、Scope 与成员生命周期的验收证据。按《验收判定口径》v1 （口径 commit 1f195def6fb984d43876567bfe365222c34b46b5）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。",
+  "head": "249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0",
+  "base": "003efde8",
+  "head_note": "落证 head：249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0（PR #149 的代码候选，含 main 的 003efde8 合并；本 PR 按共享文件锁只带代码、测试与证据文档）",
+  "base_note": "判定所依据的共同祖先：003efde8（PR #149 当前合入的 main 尖端，合并提交 #509 PF-10 的 #486 模型调用账本）。本轮把分支合到 main 的 003efde8，其间 #268 / PR #374 切出成员上下文、G2/G5 段重命名 69 个文件、PR #446 与 PR #472 改了登记处、PR #443 与 PR #478 把 PF-6 交面为 done、PR #474 把 PF-10 落基到 main、PR #493 修了 PF-10 的 F01 捕获链诊断、PR #498 新增 PF-14 并改了登记处、PR #510 与 #511 校正状态与基线文档、PR #509 落了 #486 的模型调用账本（它与本面在 `SourceRuntime` 上各改各的字段，已两边都留）。",
+  "passed": [
+    {
+      "id": "US-01、US-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestAuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery|TestMemberAssignmentsPersistCapabilityAndScopeInTransaction|TestTenantRoleMatrixCapsProjectMemberPermissions'`（退出码 0，3.8s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-01、US-03"
+    },
+    {
+      "id": "US-06、US-11、TD-01",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/views/lingdoc/projectMembers.test.ts src/views/lingdoc/collaborationState.test.js`（退出码 0，1.7s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-06、US-11、TD-01"
+    },
+    {
+      "id": "US-05、TD-05",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/api/lingdoc/sourceRetrievalContract.test.js`（退出码 0，1.1s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-05、TD-05"
+    },
+    {
+      "id": "US-03、US-13",
+      "status": "passed",
+      "evidence": "`cd frontend && npm run type-check`（退出码 0，28.5s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-03、US-13"
+    },
+    {
+      "id": "US-02、US-07、US-08、US-09、US-10、TD-02、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestFirstPassInvitationRequiresAcceptanceAndResendVersion|TestFirstPassRemoveDoesNotRestoreRevokedScopes|TestFirstPassTenantRecoveryRemainsPending'`（退出码 0，3.9s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-02、US-07、US-08、US-09、US-10、TD-02、TD-04"
+    },
+    {
+      "id": "US-04、US-05、US-10、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5ResourceBatchAlignsChapterAuthorAndResearcherAssetScopes|TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets'`（退出码 0，3.9s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-04、US-05、US-10、TD-03"
+    },
+    {
+      "id": "US-05、US-13、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit|TestAuthorizationResourceBatchAuditFailureRefusesTheBatch|TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead'`（退出码 0，5.7s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-05、US-13、TD-03"
+    },
+    {
+      "id": "US-14、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestG5InvitationIdempotencyVersionAndAuditRecovery|TestG5InvitationArchiveRejectsPreflightWriteRaceAndReplay'`（退出码 0，3.6s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-14、TD-02"
+    },
+    {
+      "id": "US-12、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole|TestAuditedProjectReadsPersistAndStillRejectRevokedMembers'`（退出码 0，4.5s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-12、TD-03"
+    },
+    {
+      "id": "TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestTheMemberAndOwnerPortsMatchTheServiceVerbatim|TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts'`（退出码 0，3.5s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 TD-05"
+    },
+    {
+      "id": "US-12、US-13、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run 'TestReviewerMayOnlyDismissBlockingIssueInAssignedScope|TestMemberPermissionAuditFailureRollsBackBusinessWrite'`（退出码 0，3.8s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 US-12、US-13、TD-03"
+    },
+    {
+      "id": "TD-01、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run 'TestLingDocRealAPIThroughMainRegistration'`（退出码 0，8.0s）；落证 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0`；覆盖验收点 TD-01、TD-05"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-129-真实浏览器多账号成员操作",
+      "status": "not_run",
+      "reason": "本轮没有可用的真实浏览器与多账号租户环境；前端证据是合成 HTTP 夹具下的真实 SFC 与状态处理。",
+      "unblock": "在一个装好浏览器的环境里按成员面板的操作序列跑一遍并留下截图/录屏。；承接票 #500（开放票，逐条写明原因与解除条件）"
+    },
+    {
+      "id": "AC-129-外部真实 KB 检索",
+      "status": "not_run",
+      "reason": "未配置真实资料服务凭据；合成检索替身不能替代真实 KB。",
+      "unblock": "拿到真实 KB 凭据后执行一次带项目资产的检索并记录返回。；承接票 #500（开放票，逐条写明原因与解除条件）"
+    },
+    {
+      "id": "AC-129-验收文档提交自身的门禁作业",
+      "status": "not_run",
+      "reason": "本判定矩阵与本 JSON 是一次只改文档的提交，它本身不承载被测代码，所以它自己的门禁作业不构成任何验收点的证据。",
+      "unblock": "代码候选 head `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0` 的 9 项 Actions 全部 success（Run IDs 39936923522–39936923629），重作业（含带一次性 postgres:17 service 的后端 closeout）在那一头上实跑过；该提交只多两份证据文档，被测代码树与 `249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0` 逐字一致。"
+    },
+    {
+      "id": "AC-129-负责人最终审批",
+      "status": "not_run",
+      "reason": "这是人工审批项：项目负责人对成员变更的最终签核没有可自动化的判定谓词，本轮也没有实现审批入口。",
+      "unblock": "由项目负责人（或其授权代理）在真实项目上完成一次签核，并把签核记录（人、时间、动作、结果）写进票面；承接票 #500。"
+    }
+  ],
+  "known_limits": [
+    "《验收判定口径》v1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；**语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明**。",
+    "US-12（Observer 只读）与 TD-03（角色/能力边界）的证据是授权面的用例，不覆盖真实浏览器里的人工多账号操作。",
+    "可复现命令跑在隔离 SQLite 上；**同一组包在 PostgreSQL 上也跑过**——CI 的 Interface Integration（Run ID 39936923629）的 backend closeout 带一次性 postgres:17 service，以 `go test -race -count=1 ./internal/database ./internal/lingdoc/... ./internal/router ./internal/container ./internal/evidence` 覆盖了 membership 与 workspacecore，但那是 CI 产物，不是可在本机复制的命令。",
+    "US-13 的聚合审计 fail-closed 只作用于本 PR 的批量授权口；`AuthorizeRequest` 的审计失败语义由 main 的 PF-4 决定（读路径 fail-open + 审计失败告警），本 PR 未改写它。",
+    "本面从 PF-2 / PF-4 / PF-5 / PF-8 接过 12 条路径（PF-2 四条、PF-4 五条、PF-5 两条、PF-8 一条）（登记处 `TRANSFERS` 有记录）；PF-7 / PF-9 的永久移交也写进了同一份记录，登记处只有一套记法。",
+    "本机没有 sqlite-vec 需要的 `sqlite3.h`，`internal/container` 与 `internal/application/service` 两个包在本机无法编译（既有环境限制，与本 PR 无关）；CI 的 Interface Integration （Run ID 39936923629）的 backend closeout 在带一次性 postgres:17 service 的环境里跑通了这两个包。",
+    "两处路径按管理会话 2026-10-23 的终裁是**借用**而不是接管：PF-7 的 `internal/container/lingdoc.go` 与 `internal/lingdoc/workspacecore/model.go` **owner 保持 PF-7**（已登记且票面写明 owner 的面优先保留 owner，后来的移交改为借用）；保留路径 `frontend/src/views/lingdoc/Workspace.vue` 与两个检测器守护脚本（机制文件）同样不登记进任何面——本面只记改动事实。",
+    "同名文件 `internal/lingdoc/workspace/template_governance_adapter_test.go` 由本面与 PR #248 各自新建（owner 归本面）：本面的净差只有一行（`ProjectPorts{...}` 补 `Resources: projects`）；#248 的版本是同一文件 + 3 个新测试，那 3 个测试调用 `CanManageTemplateCatalog`——**#248 自有的 G4 生产 API、main 上没有** ⇒ 并集文件在本面里编译不过（`go vet` 实测）⇒ 合成在 #248 侧完成（本 PR 合入 main 后，#248 只需补那一行），owner 仍归本面。",
+    "**交面记账未随本 PR 落基**：登记处与路径图当前被共享文件锁（L1/L2）压在 PF-14 手里，本 PR 只带代码、测试与证据文档；登记处的 PF-11 块、`TRANSFERS` 字段、12 条移交记录与两处借用事实排在交面票 #512，等锁释放后单独落。在那之前，**登记处里还没有 PF-11 这个面**，本表记录的移交与借用是**目标状态**而非已落地的记账。"
+  ],
+  "ci": {
+    "head": "249cd5cf8ffeb0d94b7d43452bd78fb8e870f3e0",
+    "run_ids": "39936923522–39936923629",
+    "note": "候选 head 的 9 项 Actions 全部 success。"
+  }
+}

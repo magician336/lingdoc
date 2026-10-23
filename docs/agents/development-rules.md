@@ -105,7 +105,8 @@ API Key 只能放在环境变量、Secret store 或 CI Secret，不能粘贴到�
 - `PASS (follow-up)`：当前 PR 接受该项不阻塞；真实服务验收事项必须链接到独立 GitHub Issue，不能把未运行写成已实测。
 - `N/A`：验收前提在当前目标中不存在，例如没有真实生产数据库；该项不计入当前 PR 的必需矩阵。
 - `WARNING`：宿主环境有局部限制，但等价的 WSL2、CI 或 staging 路径已通过；警告保留在报告中，不阻塞放行。
-- `NOT RUN`/`BLOCKED`：仅对当前 PR 必需范围内的项目阻塞 Ready。外部真实服务链路可以转移到独立 Issue，当前矩阵使用 `PASS (follow-up)`。
+- `NOT RUN`/`BLOCKED`：仅对当前 PR 必需范围内的项目阻塞 Ready。外部真实服务链路可以转移到独立 Issue；**当前矩阵用 `DEFERRED_MANUAL` 承接**（必须带解除条件与跟进票号 `#NNN`），**不要用 `PASS (follow-up)`** —— 判定矩阵的判定状态只有 `PASS` / `FAIL` / `NOT RUN` / `DEFERRED_MANUAL` 四值（《[验收判定口径](../08-本轮实施方案/验收判定口径.md)》§3.1），`PASS (follow-up)` 是 PR 放行层的例外词，写进判定矩阵属**越词表**，读的人分不清它到底是「通过」还是「没做」。
+- `DEFERRED_MANUAL`：**人工前置事项尚未完成**（真人浏览器完整链、外部真实 KB 检索、多账号人工操作、负责人最终审批），但**代码侧条件已满足**，且**已有独立跟进票与写明的解除条件**。它**不是** `PASS`（人工验收确实没做），也**不是** `NOT RUN` 的同义词（`NOT RUN` 表示「没跑且没有承接它的解除条件载体」）。**必须**同时带解除条件与跟进票号（`#NNN`），缺任一项的条目无效（守护测试判失败）。它**不阻塞**独立开发与满足其他条件的代码合并，但**阻塞** Beta 首版放行：**代码合并不等于验收通过**。
 
 ### 最小输入门
 
@@ -137,9 +138,11 @@ Agent 开工后先把依赖分类为：
 
 | 验收项 | 用户可见入口 | 领域不变量/事务边界 | 成功 | 失败/权限/恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 每个 User Story、失败场景和恢复场景一行 | API、application seam、UI 或导出 | 身份、版本、哈希、幂等、锁和审计要求 | 预期结果 | 拒绝、回滚、重试和隔离 | 迁移、重启读回、竞态和无部分写入 | 命令、CI、运行报告或人工验收 | TODO/PASS/PASS (follow-up)/N/A/WARNING/NOT RUN/BLOCKED |
+| 每个 User Story、失败场景和恢复场景一行 | API、application seam、UI 或导出 | 身份、版本、哈希、幂等、锁和审计要求 | 预期结果 | 拒绝、回滚、重试和隔离 | 迁移、重启读回、竞态和无部分写入 | 命令、CI、运行报告或人工验收 | TODO/PASS/PASS (follow-up)/N/A/WARNING/NOT RUN/BLOCKED/DEFERRED_MANUAL |
 
-当前交付范围内的矩阵出现 `TODO`、`NOT RUN` 或 `BLOCKED` 时，PR 不能放行；`N/A`、`WARNING` 和已链接验收 Issue 的 `PASS (follow-up)` 不阻塞，但必须说明边界，环境限制必须和产品断言分开记录。
+当前交付范围内的矩阵出现 `TODO`、`NOT RUN` 或 `BLOCKED` 时，PR 不能放行；`N/A`、`WARNING`、已链接验收 Issue 的 `PASS (follow-up)` 和**带解除条件与跟进票号（`#NNN`）**的 `DEFERRED_MANUAL` 不阻塞，但必须说明边界，环境限制必须和产品断言分开记录。
+
+`DEFERRED_MANUAL` 只解除**代码合并**这一层阻塞，**不改变任何验收结论**：它仍记为未完成（不是 `PASS`），并且按《[Beta 首版真实验收协议](../08-本轮实施方案/Beta首版真实验收协议.md)》§6 阻塞 Beta 首版放行。**代码合并不等于 Beta 验收通过。**
 
 ### 3. 先写不可变契约
 

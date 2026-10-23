@@ -161,6 +161,14 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		}
 	}
 
+	if err := s.validateSummaryModelBinding(ctx, kb); err != nil {
+		return nil, err
+	}
+
+	if err := s.validateEmbeddingModelBinding(ctx, kb); err != nil {
+		return nil, err
+	}
+
 	logger.Infof(ctx, "Creating knowledge base, ID: %s, tenant ID: %d, name: %s", kb.ID, kb.TenantID, kb.Name)
 
 	if err := s.repo.CreateKnowledgeBase(ctx, kb); err != nil {
@@ -177,6 +185,145 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+// validateSummaryModelBinding rejects a knowledge base whose summary model
+// cannot serve the text-generation call that the summary stage makes.
+//
+// The failure this guards against is silent and expensive: an Embedding /
+// Rerank / ASR model bound as summary_model_id makes the document pipeline
+// derive a summary sub-task that calls the chat endpoint of a non-chat
+// model. The provider rejects those requests (HTTP 400, no output, no
+// tokens billed), so the document is processed but never summarised and the
+// wasted calls are invisible. Failing fast at configuration time keeps the
+// mistake where it can still be corrected.
+//
+// The verdict is derived from the model's TYPE (types.ModelType), never from
+// its name: a name check would be bypassed by renaming the model.
+//
+// An empty summary_model_id means "this knowledge base has no summary
+// stage" and is therefore allowed. A summary model id that does not resolve
+// to a model of this tenant is rejected as well — silently dropping it would
+// turn a typo into a knowledge base that quietly stops summarising.
+func (s *knowledgeBaseService) validateSummaryModelBinding(
+	ctx context.Context, kb *types.KnowledgeBase,
+) error {
+	modelID := strings.TrimSpace(kb.SummaryModelID)
+	if modelID == "" {
+		return nil
+	}
+	if s.modelService == nil {
+		return apperrors.NewBadRequestError(
+			"summary model cannot be validated: model service is unavailable")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":      kb.TenantID,
+			"summary_model":  modelID,
+			"knowledge_base": kb.ID,
+			"reason":         "summary model could not be resolved",
+			"error":          err.Error(),
+		}, "[kb.create] summary model is not resolvable")
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"summary model %q is not available: %s", modelID, err.Error()))
+	}
+	if model == nil {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":      kb.TenantID,
+			"summary_model":  modelID,
+			"knowledge_base": kb.ID,
+			"reason":         "summary model does not exist",
+		}, "[kb.create] summary model does not exist")
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"summary model %q does not exist", modelID))
+	}
+	if !types.IsSummaryCapableModelType(model.Type) {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":      kb.TenantID,
+			"summary_model":  modelID,
+			"model_type":     string(model.Type),
+			"knowledge_base": kb.ID,
+			"reason":         "summary model type cannot serve text generation",
+		}, "[kb.create] summary model type is not text-generation capable")
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"summary model %q has type %q: the summary model must be a "+
+				"text-generation model, an %s model cannot be used for summarization",
+			modelID, model.Type, model.Type))
+	}
+	return nil
+}
+
+// validateEmbeddingModelBinding rejects a knowledge base whose embedding
+// model cannot serve the vectorisation call that ingestion and retrieval
+// make.
+//
+// It is the pair of validateSummaryModelBinding: that one guards the
+// text-generation slot, this one guards the embedding slot, and both take the
+// verdict from the model's TYPE (types.ModelType), never from its name.
+//
+// The failure this guards against is the mirror image of the summary one: an
+// Embedding / Rerank / ASR row bound as embedding_model_id makes both the
+// ingestion side (chunk embedding) and the retrieval side (query embedding)
+// call the embeddings endpoint of a model that does not serve it. The
+// provider rejects those calls (HTTP 400, no vector), so the knowledge base
+// looks healthy while every document and every query fails to vectorise.
+//
+// An empty embedding_model_id means "this knowledge base has no embedding
+// stage" and is therefore allowed.
+//
+// A model id that does not resolve is NOT rejected here: the existing
+// behaviour already surfaces that mistake loudly at ingestion time
+// (ErrModelNotFound), and turning it into a configuration-time rejection
+// would be a second, unrelated contract change. This guard only speaks about
+// the TYPE of a row that does resolve.
+func (s *knowledgeBaseService) validateEmbeddingModelBinding(
+	ctx context.Context, kb *types.KnowledgeBase,
+) error {
+	modelID := strings.TrimSpace(kb.EmbeddingModelID)
+	if modelID == "" {
+		return nil
+	}
+	if s.modelService == nil {
+		return apperrors.NewBadRequestError(
+			"embedding model cannot be validated: model service is unavailable")
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, modelID)
+	if err != nil {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":       kb.TenantID,
+			"embedding_model": modelID,
+			"knowledge_base":  kb.ID,
+			"reason":          "embedding model could not be resolved",
+			"error":           err.Error(),
+		}, "[kb.create] embedding model could not be resolved")
+		return nil
+	}
+	if model == nil {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":       kb.TenantID,
+			"embedding_model": modelID,
+			"knowledge_base":  kb.ID,
+			"reason":          "embedding model does not exist",
+		}, "[kb.create] embedding model does not exist")
+		return nil
+	}
+	if !types.IsEmbeddingCapableModelType(model.Type) {
+		logger.WarnWithFields(ctx, logger.Fields{
+			"tenant_id":       kb.TenantID,
+			"embedding_model": modelID,
+			"model_type":      string(model.Type),
+			"knowledge_base":  kb.ID,
+			"reason":          "embedding model type cannot serve embedding",
+		}, "[kb.create] embedding model type is not embedding capable")
+		return apperrors.NewBadRequestError(fmt.Sprintf(
+			"embedding model %q has type %q: the embedding model must be an "+
+				"embedding model, a %s model cannot be used for vectorisation",
+			modelID, model.Type, model.Type))
+	}
+	return nil
 }
 
 func (s *knowledgeBaseService) applyAndValidateStorageBackend(ctx context.Context, kb *types.KnowledgeBase) error {

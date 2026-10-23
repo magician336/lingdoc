@@ -210,7 +210,8 @@
           },
           "assertion": "后到的协作者写入必须因旧章节版本发生冲突，而不是被静默覆盖。",
           "response_example": "version_conflict",
-          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "冲突明确指向章节版本过期"}]
+          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "冲突明确指向章节版本过期"},
+                     {"path": "/error", "http_error": {"code": "version_conflict"}, "intent": "这一步是真的失败路径：响应状态是错误码，错误信封的码也是契约声明的那一个"}]
         },
         {
           "id": "F05-05",
@@ -264,7 +265,8 @@
           "operation_id": "acceptCandidate",
           "expected_http": 409,
           "assertion": "不能自动套用旧候选；章版本不变。",
-          "response_example": "stale_input"
+          "response_example": "stale_input",
+          "checks": [{"path": "/error", "http_error": {"code": "stale_input"}, "intent": "旧候选被显式拒绝：响应状态是错误码，错误信封的码也是契约声明的那一个"}]
         }
       ],
       "providers": [
@@ -281,7 +283,8 @@
           "operation_id": "getSource",
           "expected_http": 403,
           "assertion": "",
-          "response_example": "source_access_denied"
+          "response_example": "source_access_denied",
+          "checks": [{"path": "/error", "http_error": {"code": "source_access_denied"}, "intent": "撤权后取来源是真的被拒：响应状态是错误码，错误信封的码也是契约声明的那一个，正文不泄露"}]
         },
         {
           "operation_id": "getCandidate",
@@ -630,7 +633,8 @@
             "headers": {"Idempotency-Key": "f11-export-stale-0001"},
             "json": {"format": "docx"}
           },
-          "checks": [{"path": "/error/code", "equals": "stale_input", "intent": "服务端因快照过期拒绝导出"}],
+          "checks": [{"path": "/error/code", "equals": "stale_input", "intent": "服务端因快照过期拒绝导出"},
+                     {"path": "/error", "http_error": {"code": "stale_input"}, "intent": "导出失败是真的失败路径：响应状态是错误码，错误信封的码也是契约声明的那一个，产物不冒充"}],
           "assertion": "历史快照的导出请求被服务端拒绝。",
           "response_example": "stale_input"
         }
@@ -2321,6 +2325,12 @@
               "path": "/error/retryable",
               "equals": false,
               "intent": "这次拒绝不声明可重试，调用者不该原样重投"
+            },
+            {
+              "path": "{{asset.k-demo}}",
+              "not_in": "/error/details/denied",
+              "id_field": "asset_id",
+              "intent": "可用那条资料确实不在被拒名单里：没有把可用子集一起拒掉"
             }
           ]
         }

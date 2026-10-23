@@ -124,6 +124,8 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		"000051_lingdoc_review_reports.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
 		"000053_lingdoc_project_archive.up.sql",
+		// 000054 adds the audit decision columns (#415).
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -141,6 +143,9 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	if err := db.Exec("INSERT INTO knowledges (id, tenant_id, knowledge_base_id, title, parse_status, file_hash, file_size, processed_at) VALUES ('knowledge', 2, 'shared-kb', 'synthetic shared source', 'completed', 'hash-v1', 12, ?)", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO knowledges (id, tenant_id, knowledge_base_id, title, parse_status, file_hash, file_size, processed_at) VALUES ('knowledge-unassigned', 2, 'shared-kb', 'synthetic unassigned source', 'completed', 'hash-v2', 13, ?)", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
 	enabled := true
 	cfg := &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}
 	users := apprepo.NewUserRepository(db)
@@ -149,15 +154,22 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	authUsers := appservice.NewUserService(cfg, users, tokens, integrationTenant{}, members, nil)
 	jwtTokens := map[string]string{}
 	for _, fixture := range []struct {
-		id   string
-		role types.TenantRole
-	}{{"a-owner", types.TenantRoleOwner}, {"b-viewer", types.TenantRoleViewer}, {"c-outsider", types.TenantRoleContributor}} {
-		user := &types.User{ID: fixture.id, Username: fixture.id, Email: fixture.id + "@example.invalid", TenantID: 1, IsActive: true}
+		id       string
+		role     types.TenantRole
+		tenantID uint64
+	}{{"a-owner", types.TenantRoleOwner, 1}, {"b-viewer", types.TenantRoleViewer, 1}, {"c-outsider", types.TenantRoleContributor, 1}, {"d-member", types.TenantRoleContributor, 1}, {"e-inactive", types.TenantRoleContributor, 1}, {"f-cross-tenant", types.TenantRoleContributor, 2}, {"g-reviewer", types.TenantRoleContributor, 1}} {
+		user := &types.User{ID: fixture.id, Username: fixture.id, Email: fixture.id + "@example.invalid", TenantID: fixture.tenantID, IsActive: true}
 		if err := users.CreateUser(context.Background(), user); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := members.AddMember(context.Background(), user.ID, 1, fixture.role, nil); err != nil {
+		if _, err := members.AddMember(context.Background(), user.ID, fixture.tenantID, fixture.role, nil); err != nil {
 			t.Fatal(err)
+		}
+		if fixture.id == "e-inactive" {
+			if err := db.Model(&types.TenantMember{}).Where("tenant_id = ? AND user_id = ?", fixture.tenantID, user.ID).
+				Update("status", types.TenantMemberStatusSuspended).Error; err != nil {
+				t.Fatal(err)
+			}
 		}
 		token, _, err := authUsers.GenerateTokens(context.Background(), user)
 		if err != nil {
@@ -184,6 +196,14 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	deps := workspace.HandlerDependencies{
+		FullWorkflow: &workspace.FullWorkflowDependencies{
+			Agent: workspace.AgentRoutePorts{
+				Research: projects, Imports: projects, EvidenceCards: projects, Claims: projects,
+				Anchors: projects, AgentSessions: projects, Proposals: projects, Context: projects, ChangeSets: projects,
+			},
+			Routes: workspace.FullWorkflowRoutePorts{Members: integrationMembershipService(projects, workspacecore.NewGORMRepository(db)), Reviews: projects, Lifecycle: projects},
+			Impact: workspace.ImpactRoutePorts{ChangeSets: projects, Impact: projects, Dependency: projects, Runtime: projects, Trials: projects, Roadmap: projects},
+		},
 		Projects:    projects,
 		Members:     integrationMembershipService(projects, workspacecore.NewGORMRepository(db)),
 		Chapters:    projects,
@@ -200,8 +220,8 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	}
 	registerLingDocWorkspaceRoutes(v1, guards, lingdocHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	request := func(method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
-		t.Helper()
+	requestWithTB := func(tb testing.TB, method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
+		tb.Helper()
 		req := httptest.NewRequest(method, "/api/v1/lingdoc"+path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", key)
@@ -213,9 +233,12 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		res := httptest.NewRecorder()
 		engine.ServeHTTP(res, req)
 		if res.Code != want {
-			t.Fatalf("%s %s: %d %s, want %d", method, path, res.Code, res.Body.String(), want)
+			tb.Fatalf("%s %s: %d %s, want %d", method, path, res.Code, res.Body.String(), want)
 		}
 		return res
+	}
+	request := func(method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
+		return requestWithTB(t, method, path, body, key, identity, apiKey, want)
 	}
 	dropResponse := func(method, path, body, key, identity string, apiKey bool) {
 		req := httptest.NewRequest(method, "/api/v1/lingdoc"+path, strings.NewReader(body))
@@ -288,8 +311,472 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	}
 	retrieval := `{"query":"synthetic","asset_ids":["` + asset.Data.ID + `"]}`
 	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, 200)
+	t.Run("g5_invitation_and_member_lifecycle_http", func(t *testing.T) {
+		request := func(method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
+			t.Helper()
+			return requestWithTB(t, method, path, body, key, identity, apiKey, want)
+		}
+		directory := request(http.MethodGet, path+"/members/directory", "", "", jwtTokens["a-owner"], false, 200)
+		if !strings.Contains(directory.Body.String(), `"user_id":"d-member"`) {
+			t.Fatalf("active same-tenant candidate is missing from the directory: %s", directory.Body.String())
+		}
+		if strings.Contains(directory.Body.String(), `"user_id":"e-inactive"`) || strings.Contains(directory.Body.String(), `"user_id":"f-cross-tenant"`) {
+			t.Fatalf("inactive or cross-tenant candidates leaked into the member directory: %s", directory.Body.String())
+		}
+
+		readOwnerProject := func() workspacecore.Project {
+			t.Helper()
+			response := request(http.MethodGet, path, "", "", jwtTokens["a-owner"], false, 200)
+			var result struct {
+				Data workspacecore.Project `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			return result.Data
+		}
+		marshalInput := func(value any) string {
+			t.Helper()
+			raw, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(raw)
+		}
+		assignmentFor := func(userID string) workspacecore.Member {
+			t.Helper()
+			return workspacecore.Member{
+				UserID:         userID,
+				GovernanceRole: "member",
+				FunctionRoles:  []string{"researcher"},
+				FunctionScopes: map[string][]string{"researcher": {"asset:" + asset.Data.ID}},
+			}
+		}
+
+		for _, userID := range []string{"e-inactive", "f-cross-tenant"} {
+			input := workspacecore.InviteMemberInput{
+				ExpectedProjectVersion: readOwnerProject().ProjectVersion,
+				Assignment:             assignmentFor(userID),
+				Reason:                 "synthetic G5 candidate eligibility acceptance",
+			}
+			request(http.MethodPost, path+"/invitations", marshalInput(input), "invite-ineligible-"+userID, jwtTokens["a-owner"], false, http.StatusNotFound)
+		}
+
+		assignment := assignmentFor("d-member")
+		invite := workspacecore.InviteMemberInput{
+			ExpectedProjectVersion: readOwnerProject().ProjectVersion,
+			Assignment:             assignment,
+			Reason:                 "synthetic G5 HTTP lifecycle acceptance",
+		}
+		createdInvitation := request(http.MethodPost, path+"/invitations", marshalInput(invite), "invite-member-integration", jwtTokens["a-owner"], false, http.StatusCreated)
+		var invitationEnvelope struct {
+			Data workspacecore.MemberInvitation `json:"data"`
+		}
+		if err := json.Unmarshal(createdInvitation.Body.Bytes(), &invitationEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		invitation := invitationEnvelope.Data
+		if invitation.ID == "" || invitation.Version != 1 || invitation.Status != "invited" ||
+			invitation.ExpiresAt.Sub(invitation.CreatedAt) < 71*time.Hour || invitation.ExpiresAt.Sub(invitation.CreatedAt) > 73*time.Hour {
+			t.Fatalf("invitation did not persist its initial three-day lifecycle: %+v", invitation)
+		}
+
+		inbox := request(http.MethodGet, "/project-invitations", "", "", jwtTokens["d-member"], false, http.StatusOK)
+		if !strings.Contains(inbox.Body.String(), invitation.ID) {
+			t.Fatalf("invitee cannot read their pending invitation: %s", inbox.Body.String())
+		}
+
+		invite.InvitationID = invitation.ID
+		invite.ExpectedInvitationVersion = invitation.Version
+		invite.ExpectedProjectVersion = readOwnerProject().ProjectVersion
+		resent := request(http.MethodPost, path+"/invitations", marshalInput(invite), "resend-member-integration", jwtTokens["a-owner"], false, http.StatusCreated)
+		if err := json.Unmarshal(resent.Body.Bytes(), &invitationEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		invitation = invitationEnvelope.Data
+		if invitation.Version != 2 || invitation.Status != "invited" {
+			t.Fatalf("resend did not advance the pending invitation version: %+v", invitation)
+		}
+
+		acceptPath := path + "/invitations/" + invitation.ID + "/accept"
+		request(http.MethodPost, acceptPath, `{"expected_invitation_version":1}`, "accept-stale-invitation", jwtTokens["d-member"], false, http.StatusConflict)
+		pending := request(http.MethodGet, path+"/invitations", "", "", jwtTokens["a-owner"], false, http.StatusOK)
+		if !strings.Contains(pending.Body.String(), `"version":2`) || !strings.Contains(pending.Body.String(), `"status":"invited"`) {
+			t.Fatalf("stale acceptance changed the current invitation: %s", pending.Body.String())
+		}
+		request(http.MethodPost, acceptPath, `{"expected_invitation_version":2}`, "accept-current-invitation", jwtTokens["d-member"], false, http.StatusOK)
+		request(http.MethodPost, acceptPath, `{"expected_invitation_version":2}`, "accept-current-invitation", jwtTokens["d-member"], false, http.StatusOK)
+
+		memberProject := request(http.MethodGet, path, "", "", jwtTokens["d-member"], false, http.StatusOK)
+		var accepted struct {
+			Data workspacecore.Project `json:"data"`
+		}
+		if err := json.Unmarshal(memberProject.Body.Bytes(), &accepted); err != nil {
+			t.Fatal(err)
+		}
+		memberFound := false
+		for _, member := range accepted.Data.Members {
+			if member.UserID == "d-member" {
+				memberFound = member.Status == "active" && member.GovernanceRole == "member" &&
+					strings.Contains(strings.Join(member.FunctionScopes["researcher"], ","), "asset:"+asset.Data.ID)
+			}
+		}
+		if !memberFound {
+			t.Fatalf("acceptance failed to activate the assigned member/scope: %+v", accepted.Data.Members)
+		}
+
+		assignmentInput := workspacecore.MemberAssignmentInput{
+			ExpectedProjectVersion: accepted.Data.ProjectVersion,
+			Assignment: workspacecore.Member{
+				UserID:         "d-member",
+				Role:           "collaborator",
+				GovernanceRole: "admin",
+				FunctionRoles:  []string{"author", "researcher"},
+				FunctionScopes: map[string][]string{
+					"author":     {chapterID},
+					"researcher": {"asset:" + asset.Data.ID},
+				},
+			},
+			Reason: "synthetic G5 role and scope HTTP acceptance",
+		}
+		staleAssignment := assignmentInput
+		staleAssignment.ExpectedProjectVersion--
+		request(http.MethodPut, path+"/members/d-member/assignment", marshalInput(staleAssignment), "stale-member-assignment", jwtTokens["a-owner"], false, http.StatusConflict)
+		unchangedProject := readOwnerProject()
+		unchangedAssignment := false
+		for _, member := range unchangedProject.Members {
+			if member.UserID == "d-member" {
+				unchangedAssignment = member.GovernanceRole == "member" && len(member.FunctionRoles) == 1 && member.FunctionRoles[0] == "researcher" && unchangedProject.ProjectVersion == accepted.Data.ProjectVersion
+			}
+		}
+		if !unchangedAssignment {
+			t.Fatalf("stale assignment changed role, scope or project version: %+v", unchangedProject)
+		}
+
+		assignmentInput.ExpectedProjectVersion = unchangedProject.ProjectVersion
+		assigned := request(http.MethodPut, path+"/members/d-member/assignment", marshalInput(assignmentInput), "current-member-assignment", jwtTokens["a-owner"], false, http.StatusOK)
+		var assignedEnvelope struct {
+			Data workspacecore.Project `json:"data"`
+		}
+		if err := json.Unmarshal(assigned.Body.Bytes(), &assignedEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		updatedAssignment := false
+		for _, member := range assignedEnvelope.Data.Members {
+			if member.UserID == "d-member" {
+				updatedAssignment = member.GovernanceRole == "admin" &&
+					strings.Contains(strings.Join(member.FunctionRoles, ","), "author") &&
+					strings.Contains(strings.Join(member.FunctionRoles, ","), "researcher") &&
+					strings.Contains(strings.Join(member.FunctionScopes["author"], ","), chapterID) &&
+					strings.Contains(strings.Join(member.FunctionScopes["researcher"], ","), "asset:"+asset.Data.ID)
+			}
+		}
+		if !updatedAssignment || assignedEnvelope.Data.ProjectVersion != unchangedProject.ProjectVersion+1 {
+			t.Fatalf("current assignment did not persist both role axes/scopes with one version advance: %+v", assignedEnvelope.Data)
+		}
+		checkPermission := func(capability string, allowed bool) {
+			t.Helper()
+			response := request(http.MethodGet, path+"/permissions?capability="+capability, "", "", jwtTokens["d-member"], false, http.StatusOK)
+			var result struct {
+				Data workspacecore.EffectivePermission `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Data.Allowed != allowed {
+				t.Fatalf("capability %q allowed=%v, want %v: %s", capability, result.Data.Allowed, allowed, response.Body.String())
+			}
+		}
+		checkPermission("manage", true)
+		checkPermission("write:"+chapterID, true)
+		checkPermission("research", true)
+		checkPermission("confirm:"+chapterID, false)
+		reviewerInvite := workspacecore.InviteMemberInput{
+			ExpectedProjectVersion: readOwnerProject().ProjectVersion,
+			Assignment: workspacecore.Member{
+				UserID: "g-reviewer", GovernanceRole: "member", FunctionRoles: []string{"reviewer"},
+				FunctionScopes: map[string][]string{"reviewer": {chapterID}},
+			},
+			Reason: "synthetic G5 reviewer chapter-scope acceptance",
+		}
+		reviewerCreated := request(http.MethodPost, path+"/invitations", marshalInput(reviewerInvite), "invite-reviewer-integration", jwtTokens["d-member"], false, http.StatusCreated)
+		var reviewerInvitation struct {
+			Data workspacecore.MemberInvitation `json:"data"`
+		}
+		if err := json.Unmarshal(reviewerCreated.Body.Bytes(), &reviewerInvitation); err != nil || reviewerInvitation.Data.ID == "" {
+			t.Fatalf("parse reviewer invitation: invitation=%+v err=%v", reviewerInvitation.Data, err)
+		}
+		request(http.MethodPost, path+"/invitations/"+reviewerInvitation.Data.ID+"/accept", `{"expected_invitation_version":1}`, "accept-reviewer-integration", jwtTokens["g-reviewer"], false, http.StatusOK)
+		checkReviewerPermission := func(capability string, allowed bool) {
+			t.Helper()
+			response := request(http.MethodGet, path+"/permissions?capability="+capability, "", "", jwtTokens["g-reviewer"], false, http.StatusOK)
+			var result struct {
+				Data workspacecore.EffectivePermission `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Data.Allowed != allowed {
+				t.Fatalf("reviewer capability %q allowed=%v, want %v: %s", capability, result.Data.Allowed, allowed, response.Body.String())
+			}
+		}
+		checkReviewerPermission("confirm:"+chapterID, true)
+		checkReviewerPermission("write:"+chapterID, false)
+		checkReviewerPermission("research", false)
+		request(http.MethodPost, path+"/retrieval", `{"query":"synthetic","asset_ids":["`+asset.Data.ID+`"]}`, "", jwtTokens["g-reviewer"], false, http.StatusForbidden)
+		unassignedAssetResponse := request(http.MethodPost, path+"/assets", `{"knowledge_id":"knowledge-unassigned"}`, "bind-unassigned-asset", jwtTokens["a-owner"], false, http.StatusCreated)
+		var unassignedAsset struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(unassignedAssetResponse.Body.Bytes(), &unassignedAsset); err != nil || unassignedAsset.Data.ID == "" {
+			t.Fatalf("bind unassigned synthetic source: asset=%+v err=%v", unassignedAsset.Data, err)
+		}
+		assetList := request(http.MethodGet, path+"/assets", "", "", jwtTokens["d-member"], false, http.StatusOK)
+		var visibleAssets struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(assetList.Body.Bytes(), &visibleAssets); err != nil {
+			t.Fatal(err)
+		}
+		listedIDs := map[string]bool{}
+		for _, visible := range visibleAssets.Data {
+			listedIDs[visible.ID] = true
+		}
+		if len(visibleAssets.Data) != 2 || !listedIDs[asset.Data.ID] || !listedIDs[unassignedAsset.Data.ID] {
+			t.Fatalf("active project member read-only asset list = %+v, want both current project assets", visibleAssets.Data)
+		}
+		deniedRetrieval := request(http.MethodPost, path+"/retrieval", `{"query":"synthetic","asset_ids":["`+unassignedAsset.Data.ID+`"]}`, "", jwtTokens["d-member"], false, http.StatusForbidden)
+		// An Admin + Author + Researcher cannot turn a valid chapter ID into
+		// project-wide material access. This crosses real JWT, current member
+		// policy, typed batch port, binding store and the HTTP denial contract.
+		request(http.MethodPost, path+"/retrieval", `{"query":"synthetic","asset_ids":["`+unassignedAsset.Data.ID+`"],"chapter_id":"`+chapterID+`"}`, "", jwtTokens["d-member"], false, http.StatusForbidden)
+		var deniedEnvelope struct {
+			Error struct {
+				Code    string `json:"code"`
+				Details struct {
+					Denied []struct {
+						AssetID string `json:"asset_id"`
+						Reason  string `json:"reason"`
+					} `json:"denied"`
+				} `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(deniedRetrieval.Body.Bytes(), &deniedEnvelope); err != nil || deniedEnvelope.Error.Code != "asset_not_authorized" || len(deniedEnvelope.Error.Details.Denied) != 1 || deniedEnvelope.Error.Details.Denied[0].AssetID != unassignedAsset.Data.ID || deniedEnvelope.Error.Details.Denied[0].Reason != "not_authorized" {
+			t.Fatalf("researcher asset scope denial = %s (err=%v)", deniedRetrieval.Body.String(), err)
+		}
+		adminProject := readOwnerProject()
+		adminInvite := workspacecore.InviteMemberInput{
+			ExpectedProjectVersion: adminProject.ProjectVersion,
+			Assignment: workspacecore.Member{
+				UserID: "c-outsider", GovernanceRole: "member", FunctionRoles: []string{"observer"},
+				FunctionScopes: map[string][]string{"observer": {}},
+			},
+			Reason: "synthetic G5 admin invitation acceptance",
+		}
+		observerCreated := request(http.MethodPost, path+"/invitations", marshalInput(adminInvite), "admin-invite-member-integration", jwtTokens["d-member"], false, http.StatusCreated)
+		var observerInvitation struct {
+			Data workspacecore.MemberInvitation `json:"data"`
+		}
+		if err := json.Unmarshal(observerCreated.Body.Bytes(), &observerInvitation); err != nil || observerInvitation.Data.ID == "" {
+			t.Fatalf("parse observer invitation: invitation=%+v err=%v", observerInvitation.Data, err)
+		}
+		request(http.MethodPost, path+"/invitations/"+observerInvitation.Data.ID+"/accept", `{"expected_invitation_version":1}`, "accept-observer-invitation", jwtTokens["c-outsider"], false, http.StatusOK)
+		request(http.MethodGet, path, "", "", jwtTokens["c-outsider"], false, http.StatusOK)
+		observerAssets := request(http.MethodGet, path+"/assets", "", "", jwtTokens["c-outsider"], false, http.StatusOK)
+		if !strings.Contains(observerAssets.Body.String(), asset.Data.ID) || !strings.Contains(observerAssets.Body.String(), unassignedAsset.Data.ID) {
+			t.Fatalf("observer cannot read current project asset list: %s", observerAssets.Body.String())
+		}
+		observerPermission := request(http.MethodGet, path+"/permissions?capability=research", "", "", jwtTokens["c-outsider"], false, http.StatusOK)
+		if !strings.Contains(observerPermission.Body.String(), `"allowed":false`) {
+			t.Fatalf("observer unexpectedly has research permission: %s", observerPermission.Body.String())
+		}
+		request(http.MethodPost, path+"/retrieval", `{"query":"synthetic","asset_ids":["`+asset.Data.ID+`"]}`, "", jwtTokens["c-outsider"], false, http.StatusForbidden)
+
+		request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["d-member"], false, http.StatusOK)
+		changeState := func(action string) {
+			t.Helper()
+			input := workspacecore.MemberLifecycleInput{
+				ExpectedProjectVersion: readOwnerProject().ProjectVersion,
+				Action:                 action,
+				Reason:                 "synthetic G5 HTTP lifecycle acceptance",
+			}
+			request(http.MethodPost, path+"/members/d-member/state", marshalInput(input), "member-state-"+action, jwtTokens["a-owner"], false, http.StatusOK)
+		}
+		memberState := func(userID string) workspacecore.Member {
+			t.Helper()
+			project := readOwnerProject()
+			for _, member := range project.Members {
+				if member.UserID == userID {
+					return member
+				}
+			}
+			t.Fatalf("project member %q is missing", userID)
+			return workspacecore.Member{}
+		}
+
+		// A project-side suspension must remain a project-side decision across
+		// tenant removal/rejoin; tenant reactivation cannot restore its scope.
+		changeState("suspend")
+		suspendedBeforeTenantRemoval := memberState("d-member")
+		if suspendedBeforeTenantRemoval.Status != "suspended" {
+			t.Fatalf("project suspension did not persist before tenant removal: %+v", suspendedBeforeTenantRemoval)
+		}
+		// Exercise the real tenant-membership removal adapter. It must not
+		// overwrite the already-suspended project membership.
+		if err := members.RemoveMember(context.Background(), "d-member", 1); err != nil {
+			t.Fatalf("remove tenant membership: %v", err)
+		}
+		memberAfterTenantRemoval := memberState("d-member")
+		if memberAfterTenantRemoval.Status != "suspended" {
+			t.Fatalf("tenant removal overwrote project suspension: %+v", memberAfterTenantRemoval)
+		}
+		request(http.MethodGet, path, "", "", jwtTokens["d-member"], false, http.StatusUnauthorized)
+		if _, err := members.AddMember(context.Background(), "d-member", 1, types.TenantRoleContributor, nil); err != nil {
+			t.Fatalf("restore tenant membership: %v", err)
+		}
+		rejoined, err := users.GetUserByID(context.Background(), "d-member")
+		if err != nil || rejoined == nil {
+			t.Fatalf("load rejoined user: user=%v err=%v", rejoined, err)
+		}
+		rejoined.TenantID = 1
+		if err := users.UpdateUser(context.Background(), rejoined); err != nil {
+			t.Fatalf("update rejoined user's active tenant: %v", err)
+		}
+		rejoinedToken, _, err := authUsers.GenerateTokens(context.Background(), rejoined)
+		if err != nil {
+			t.Fatalf("issue token after tenant rejoin: %v", err)
+		}
+		if rejoinedToken == jwtTokens["d-member"] {
+			t.Fatal("token reissued after tenant rejoin must differ from the revoked JWT")
+		}
+		if _, _, err := authUsers.ValidateToken(context.Background(), rejoinedToken); err != nil {
+			t.Fatalf("validate token after tenant rejoin: %v", err)
+		}
+		jwtTokens["d-member"] = rejoinedToken
+		request(http.MethodGet, path, "", "", rejoinedToken, false, http.StatusNotFound)
+		if got := memberState("d-member"); got.Status != "suspended" || strings.Join(got.FunctionScopes["researcher"], ",") != strings.Join(suspendedBeforeTenantRemoval.FunctionScopes["researcher"], ",") {
+			t.Fatalf("tenant rejoin overwrote project suspension or scopes: before=%+v after=%+v", suspendedBeforeTenantRemoval, got)
+		}
+		changeState("restore")
+		request(http.MethodGet, path, "", "", rejoinedToken, false, http.StatusOK)
+
+		// An active project member removed from the tenant is suspended by the
+		// tenant adapter and requires explicit restore_tenant after rejoining.
+		if err := members.RemoveMember(context.Background(), "d-member", 1); err != nil {
+			t.Fatalf("remove active tenant membership: %v", err)
+		}
+		tenantSuspended := memberState("d-member")
+		if tenantSuspended.Status != "suspended_by_tenant" {
+			t.Fatalf("tenant membership removal did not suspend active project membership: %+v", tenantSuspended)
+		}
+		request(http.MethodGet, path, "", "", jwtTokens["d-member"], false, http.StatusUnauthorized)
+		if _, err := members.AddMember(context.Background(), "d-member", 1, types.TenantRoleContributor, nil); err != nil {
+			t.Fatalf("rejoin tenant before tenant-scoped restore: %v", err)
+		}
+		rejoined, err = users.GetUserByID(context.Background(), "d-member")
+		if err != nil || rejoined == nil {
+			t.Fatalf("reload user after tenant rejoin: user=%v err=%v", rejoined, err)
+		}
+		rejoined.TenantID = 1
+		if err := users.UpdateUser(context.Background(), rejoined); err != nil {
+			t.Fatalf("update active tenant after second rejoin: %v", err)
+		}
+		rejoinedToken, _, err = authUsers.GenerateTokens(context.Background(), rejoined)
+		if err != nil {
+			t.Fatalf("issue token after second tenant rejoin: %v", err)
+		}
+		if _, _, err := authUsers.ValidateToken(context.Background(), rejoinedToken); err != nil {
+			t.Fatalf("validate token after second tenant rejoin: %v", err)
+		}
+		jwtTokens["d-member"] = rejoinedToken
+		request(http.MethodGet, path, "", "", rejoinedToken, false, http.StatusNotFound)
+		changeState("restore_tenant")
+		request(http.MethodGet, path, "", "", jwtTokens["d-member"], false, http.StatusOK)
+		request(http.MethodPost, path+"/retrieval", retrieval, "", rejoinedToken, false, http.StatusOK)
+		changeState("remove")
+		request(http.MethodGet, path, "", "", jwtTokens["d-member"], false, http.StatusNotFound)
+		removedProject := readOwnerProject()
+		for _, member := range removedProject.Members {
+			if member.UserID == "d-member" && (member.Status != "removed" || len(member.FunctionScopes) != 0) {
+				t.Fatalf("removal left access scopes active: %+v", member)
+			}
+		}
+		// A project-side removal and its revoked scopes must survive a subsequent
+		// tenant removal/rejoin cycle; tenant reactivation cannot re-add the member.
+		if err := members.RemoveMember(context.Background(), "d-member", 1); err != nil {
+			t.Fatalf("remove tenant membership for project-removed member: %v", err)
+		}
+		if _, err := members.AddMember(context.Background(), "d-member", 1, types.TenantRoleContributor, nil); err != nil {
+			t.Fatalf("restore tenant membership for project-removed member: %v", err)
+		}
+		removedUser, err := users.GetUserByID(context.Background(), "d-member")
+		if err != nil || removedUser == nil {
+			t.Fatalf("reload user after tenant rejoin for removed project member: user=%v err=%v", removedUser, err)
+		}
+		removedUser.TenantID = 1
+		if err := users.UpdateUser(context.Background(), removedUser); err != nil {
+			t.Fatalf("update tenant after rejoining for removed project member: %v", err)
+		}
+		removedToken, _, err := authUsers.GenerateTokens(context.Background(), removedUser)
+		if err != nil {
+			t.Fatalf("issue token after tenant rejoin for removed project member: %v", err)
+		}
+		if _, _, err := authUsers.ValidateToken(context.Background(), removedToken); err != nil {
+			t.Fatalf("validate token after tenant rejoin for removed project member: %v", err)
+		}
+		jwtTokens["d-member"] = removedToken
+		request(http.MethodGet, path, "", "", removedToken, false, http.StatusNotFound)
+		removedAfterTenantRejoin := memberState("d-member")
+		if removedAfterTenantRejoin.Status != "removed" || len(removedAfterTenantRejoin.FunctionScopes) != 0 {
+			t.Fatalf("tenant rejoin restored project-removed member or revoked scopes: %+v", removedAfterTenantRejoin)
+		}
+
+		expiredInput := workspacecore.InviteMemberInput{
+			ExpectedProjectVersion: removedProject.ProjectVersion,
+			Assignment:             assignment,
+			Reason:                 "synthetic G5 expired invitation acceptance",
+		}
+		createdExpired := request(http.MethodPost, path+"/invitations", marshalInput(expiredInput), "create-expired-invitation", jwtTokens["a-owner"], false, http.StatusCreated)
+		var expiredEnvelope struct {
+			Data workspacecore.MemberInvitation `json:"data"`
+		}
+		if err := json.Unmarshal(createdExpired.Body.Bytes(), &expiredEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		expiredInvitation := expiredEnvelope.Data
+		// This is a constructed expired record fixture, not a real-time clock
+		// advancement or wall-clock expiry end-to-end test.
+		expiredInvitation.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+		expiredPayload := marshalInput(expiredInvitation)
+		update := db.Table("lingdoc_g5_records").
+			Where("project_id = ? AND kind = ? AND id = ?", removedProject.ID, "invitation", expiredInvitation.ID).
+			Update("payload_json", expiredPayload)
+		if update.Error != nil || update.RowsAffected != 1 {
+			t.Fatalf("expire synthetic invitation: rows=%d err=%v", update.RowsAffected, update.Error)
+		}
+		projectInvitations := request(http.MethodGet, path+"/invitations", "", "", jwtTokens["a-owner"], false, http.StatusOK)
+		if !strings.Contains(projectInvitations.Body.String(), expiredInvitation.ID) || !strings.Contains(projectInvitations.Body.String(), `"status":"expired"`) {
+			t.Fatalf("expired invitation status was not visible to the project manager: %s", projectInvitations.Body.String())
+		}
+		expiredAcceptPath := path + "/invitations/" + expiredInvitation.ID + "/accept"
+		request(http.MethodPost, expiredAcceptPath, `{"expected_invitation_version":1}`, "accept-expired-invitation", jwtTokens["d-member"], false, http.StatusUnprocessableEntity)
+		finalProject := readOwnerProject()
+		expiredMemberPreserved := false
+		for _, member := range finalProject.Members {
+			if member.UserID == "d-member" {
+				expiredMemberPreserved = member.Status == "invited" && len(member.FunctionScopes) > 0
+			}
+		}
+		if !expiredMemberPreserved {
+			t.Fatalf("rejected expired acceptance changed the pending invitation/member state: %+v", finalProject.Members)
+		}
+	})
 	shares.allowed = false
-	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, 422)
+	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, http.StatusForbidden)                  // KB-share authorization is an explicit permission denial.
 	request(http.MethodPost, path+"/assets", `{"knowledge_id":"knowledge"}`, "bind-integration", jwtTokens["a-owner"], false, 404) // Reauthorization before replay.
 	shares.allowed = true
 	if err := db.Exec("UPDATE knowledges SET parse_status='processing' WHERE id='knowledge'").Error; err != nil {
@@ -351,6 +838,8 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 		"000040_lingdoc_ruleset_use_audits.up.sql",
 		"000041_lingdoc_template_version_ruleset_ref.up.sql",
 		"000052_lingdoc_audit_version_fields.up.sql",
+		// 000054 adds the audit decision columns (#415).
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		script, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -392,7 +881,7 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 	shares := &integrationShares{allowed: true}
 	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, shares, integrationKnowledge{}, delivery.NewFixedTemplateReader())
 	projects := workspacecore.NewServiceWithSources(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	engine := gin.New()
 	engine.Use(middleware.Auth(integrationTenant{}, authUsers, members, keys, cfg))

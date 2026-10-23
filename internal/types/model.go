@@ -3,7 +3,10 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/utils"
@@ -21,6 +24,69 @@ const (
 	ModelTypeVLLM        ModelType = "VLLM"        // VLLM model
 	ModelTypeASR         ModelType = "ASR"         // ASR (Automatic Speech Recognition) model
 )
+
+// IsSummaryCapableModelType reports whether a model of the given type can
+// serve the text-generation (chat) call that a knowledge base's summary
+// stage performs.
+//
+// WeKnora reaches each model type through its own endpoint family:
+// KnowledgeQA speaks the OpenAI-compatible chat/completions protocol, while
+// Embedding, Rerank and ASR models speak the embeddings / rerank / speech
+// protocols. Binding one of those to a knowledge base's summary model makes
+// the document pipeline derive a summary sub-task that calls the chat
+// endpoint of a non-chat model — the provider answers 400 with no output and
+// the document is silently left without a summary.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsSummaryCapableModelType(modelType ModelType) bool {
+	return modelType == ModelTypeKnowledgeQA
+}
+
+// IsChatCapableModelType reports whether a model of the given type can serve a
+// chat (text-generation) call.
+//
+// It is the rule the chat client path follows, and it is the same rule the
+// knowledge-base summary guard follows, plus one type: a VLLM row is a
+// multimodal model whose upstream speaks the OpenAI-compatible
+// chat/completions protocol, and the query-understand fallback loads it
+// through the chat client
+// (internal/application/service/chat_pipeline/query_understand.go). Narrowing
+// this set to KnowledgeQA alone would break that path.
+//
+// Embedding, Rerank and ASR models speak the embeddings / rerank / speech
+// protocols. Building a chat client for one of them produces a call the
+// provider rejects (HTTP 400, no output), so the failure surfaces far from
+// its cause.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsChatCapableModelType(modelType ModelType) bool {
+	return IsSummaryCapableModelType(modelType) || modelType == ModelTypeVLLM
+}
+
+// IsEmbeddingCapableModelType reports whether a model of the given type can
+// serve an embedding (vectorisation) call.
+//
+// It is the mirror image of IsChatCapableModelType: that predicate answers
+// "may this row serve a text-generation call", this one answers "may this row
+// serve a vectorisation call". Both read the same model TYPE vocabulary — the
+// ModelType constants above — so the codebase has exactly one type list.
+//
+// Only an Embedding row qualifies:
+//   - a KnowledgeQA row speaks the chat/completions protocol; its upstream
+//     has no embeddings endpoint;
+//   - a Rerank row speaks the rerank protocol (a cross-encoder that scores
+//     query/document pairs), not the embeddings protocol;
+//   - an ASR row speaks the speech protocol;
+//   - a VLLM row is a multimodal chat model in this product — it is loaded
+//     through GetVLMModel and carries no embedding dimension configuration.
+//
+// The decision is made on the model TYPE, never on the model name: a name
+// check would be bypassed by renaming the model.
+func IsEmbeddingCapableModelType(modelType ModelType) bool {
+	return modelType == ModelTypeEmbedding
+}
 
 // ModelStatus represents the status of the model
 type ModelStatus string
@@ -153,6 +219,43 @@ type ModelParameters struct {
 	// WeKnoraCloud 厂商专用凭证
 	AppID     string `yaml:"app_id,omitempty"     json:"app_id,omitempty"`
 	AppSecret string `yaml:"app_secret,omitempty" json:"app_secret,omitempty"` // AES-256 加密存储，实际承载上游 API Key
+	// credentialDecryptFailure names the stored fields whose ciphertext could
+	// not be decrypted when this row was loaded.
+	//
+	// It is deliberately NOT persisted: the json tag keeps it out of the
+	// parameters column, because it describes one load, not the row. It is
+	// the observable difference between "this model has no credential" and
+	// "this model has a credential this process cannot read".
+	credentialDecryptFailure string
+}
+
+// ErrCredentialDecryptFailed is returned when a stored credential exists but
+// cannot be decrypted.
+//
+// It is a different thing from "no credential was configured": the row holds
+// ciphertext this process cannot read, because SYSTEM_AES_KEY is unset or was
+// rotated. Reporting the two the same way hides a misconfiguration until the
+// next call to the provider.
+var ErrCredentialDecryptFailed = errors.New("stored credential could not be decrypted")
+
+// CredentialDecryptError reports why the credentials of this row are
+// unusable, or nil when they are fine.
+//
+// It tells apart the two states that must not look alike:
+//
+//   - "no credential was configured" — the row holds no ciphertext at all.
+//     The operator has not entered a key yet; nothing is wrong.
+//   - "a credential exists but could not be decrypted" — the row holds
+//     enc:v1: ciphertext this process cannot decrypt. The credential IS
+//     configured and it is unusable; the row needs the key re-entered.
+//
+// The error never carries the ciphertext or any part of the key.
+func (c ModelParameters) CredentialDecryptError() error {
+	if c.credentialDecryptFailure == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s (SYSTEM_AES_KEY unset or rotated?)",
+		ErrCredentialDecryptFailed, c.credentialDecryptFailure)
 }
 
 // Per-response redaction for Model now lives in dto.NewModelResponse. The
@@ -250,20 +353,38 @@ func (c *ModelParameters) Scan(value interface{}) error {
 	if err := json.Unmarshal(b, c); err != nil {
 		return err
 	}
-	// Lenient decrypt: a row with broken ciphertext (key rotated/removed)
-	// must still load — otherwise a single failure breaks ListModels and
-	// the user can't even see which model needs re-credentialing.
+	// A credential that EXISTS but cannot be decrypted is a misconfiguration,
+	// not an unconfigured credential. The two must not look alike:
+	//
+	//   - "no credential was configured" — the row holds no ciphertext at
+	//     all. The operator has not entered a key yet; nothing is wrong.
+	//   - "a credential exists but could not be decrypted" — the row holds
+	//     enc:v1: ciphertext this process cannot read, because
+	//     SYSTEM_AES_KEY is unset or was rotated. The credential IS
+	//     configured and it is unusable; the row needs the key re-entered.
+	//
+	// The row still loads: one broken row must not hide every other model
+	// from the list endpoint. The unusable value is still blanked (a
+	// ciphertext must never travel upstream as an API key), but the failure
+	// stays observable through CredentialDecryptError and in the log.
+	var undecryptable []string
 	if plain, ok := utils.DecryptStoredSecretLenient(c.APIKey); ok {
 		c.APIKey = plain
 	} else {
-		log.Printf("[crypto] model parameters api_key: decrypt failed (SYSTEM_AES_KEY missing/rotated?), treating as unconfigured")
+		undecryptable = append(undecryptable, "api_key")
 		c.APIKey = ""
 	}
 	if plain, ok := utils.DecryptStoredSecretLenient(c.AppSecret); ok {
 		c.AppSecret = plain
 	} else {
-		log.Printf("[crypto] model parameters app_secret: decrypt failed (SYSTEM_AES_KEY missing/rotated?), treating as unconfigured")
+		undecryptable = append(undecryptable, "app_secret")
 		c.AppSecret = ""
+	}
+	if len(undecryptable) > 0 {
+		c.credentialDecryptFailure = strings.Join(undecryptable, ", ")
+		log.Printf("[crypto] model parameters %s: decrypt failed (SYSTEM_AES_KEY missing/rotated?); "+
+			"the credential is configured but unusable — this is NOT an unconfigured credential",
+			c.credentialDecryptFailure)
 	}
 	return nil
 }

@@ -22,6 +22,9 @@ import (
 // decided that the context owns another operation; that decision has to be
 // written down here, and it has to come with the aggregate method it names.
 var narrowPortMethods = map[string][]string{
+	"TenantPermissionAuthorizer": {
+		"TenantPermissionInTransaction",
+	},
 	"AgentActionApplication": {
 		"ApplyChangeSet",
 		"CommitWorkingCopy",
@@ -217,6 +220,13 @@ var narrowPortMethods = map[string][]string{
 	"CapabilityAuthorizer": {
 		"Authorize",
 	},
+	"ResourceBatchAuthorizer": {
+		"AuthorizeResourceBatch",
+	},
+	"AssetUseAuthorizer": {
+		"Authorize",
+		"AuthorizeResourceBatch",
+	},
 	"GenerationContextApplication": {
 		"GenerationContext",
 	},
@@ -373,7 +383,7 @@ func TestTheNarrowPortsDoNotHandTheTransportTheWholeAggregate(t *testing.T) {
 // The package also holds the store and transaction ports the aggregate
 // consumes; those are not narrowings of the aggregate, so they are not part
 // of this promise.
-var narrowPortFiles = []string{"context_ports.go", "migrated_context_ports.go"}
+var narrowPortFiles = []string{"context_ports.go", "migrated_context_ports.go", "tenant_permission_port.go"}
 
 // aggregateMethodSignatures reads the aggregate's method signatures from the
 // package source, so the comparison is against the code that actually
@@ -422,6 +432,7 @@ func aggregateMethodSignatures(t *testing.T, directory string) map[string]string
 func portMethodSignatures(t *testing.T, directory string) map[string]map[string]string {
 	t.Helper()
 	ports := map[string]map[string]string{}
+	embedded := map[string][]string{}
 	for _, name := range narrowPortFiles {
 		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, 0)
 		if err != nil {
@@ -444,6 +455,9 @@ func portMethodSignatures(t *testing.T, directory string) map[string]map[string]
 				methods := map[string]string{}
 				for _, element := range iface.Methods.List {
 					if len(element.Names) == 0 {
+						if name, ok := element.Type.(*ast.Ident); ok {
+							embedded[typed.Name.Name] = append(embedded[typed.Name.Name], name.Name)
+						}
 						continue
 					}
 					function, ok := element.Type.(*ast.FuncType)
@@ -455,6 +469,28 @@ func portMethodSignatures(t *testing.T, directory string) map[string]map[string]
 				ports[typed.Name.Name] = methods
 			}
 		}
+	}
+	// Interface composition must not hide an aggregate capability from this
+	// structural gate. Expand embedded local ports before comparing contracts.
+	var expand func(string, map[string]bool)
+	expand = func(name string, visiting map[string]bool) {
+		if visiting[name] {
+			t.Fatalf("cyclic embedded port %s", name)
+		}
+		visiting[name] = true
+		for _, parent := range embedded[name] {
+			if _, ok := ports[parent]; !ok {
+				t.Fatalf("unrecorded embedded port %s in %s", parent, name)
+			}
+			expand(parent, visiting)
+			for method, signature := range ports[parent] {
+				ports[name][method] = signature
+			}
+		}
+		delete(visiting, name)
+	}
+	for name := range ports {
+		expand(name, map[string]bool{})
 	}
 	return ports
 }

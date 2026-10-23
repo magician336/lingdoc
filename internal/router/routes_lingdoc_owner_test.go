@@ -98,6 +98,10 @@ func newOwnerFreezeFixture(t *testing.T) *ownerFreezeFixture {
 		"000052_lingdoc_audit_version_fields.up.sql",
 		// 000053 adds the project archive table (#410).
 		"000053_lingdoc_project_archive.up.sql",
+		// 000054 adds the audit decision columns (#415). Without them the
+		// audit insert of every write fails on this fixture, so the
+		// refusal under test never gets a chance to happen.
+		"000054_lingdoc_audit_decision_fields.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {

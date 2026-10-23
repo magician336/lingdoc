@@ -29,6 +29,25 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# The check vocabulary lives in one module, not in this file.  It used to live in
+# three places -- here, the contract's static validator, and the spec that
+# defines the kinds -- and the copies disagreed: the validator knew four kinds,
+# the runner knew ten, and a check that named a kind nobody knew was counted as
+# "not one of ours" rather than refused.  The import below is the one authority;
+# the names are re-exported so that the importers of this file keep working.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from scripts.lingdoc_check_kinds import (  # noqa: E402  (the path must be set first)
+    ADDED_CHECK_OPERATORS as _ADDED_CHECK_OPERATORS,
+    DOMAIN_CHECK_OPERATORS as _DOMAIN_CHECK_OPERATORS,
+    KNOWN_CHECK_OPERATORS as _KNOWN_CHECK_OPERATORS,
+    REAL_PROVENANCE_VALUES,
+    STRUCTURAL_CHECK_OPERATORS as _STRUCTURAL_CHECK_OPERATORS,
+    CheckKindError,
+    declared_kind,
+    validate_check,
+)
+
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
 WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
 SCENARIOS_PATH = ROOT / "docs/08-本轮实施方案/contracts/scenarios.json"
@@ -39,22 +58,18 @@ PROVIDER_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA
 # A check states one expectation about one place in the response. The operator is what
 # makes it evaluable; `intent` keeps the sentence a reader needs to judge the expectation.
 #
-# The first four are structural: they compare one place in a response with a value.
-# Their behaviour is fixed — the acceptance protocol's semantic read-backs cannot be
-# expressed by them, so the domain kinds below were added instead of changing these.
-CHECK_OPERATORS = ("equals", "length", "keys", "one_of")
-# The domain kinds. Each one answers exactly one requirement of the acceptance
-# protocol's §3 (or of the contract's own read-back rules); none of them is a general
-# expression language, and none of them changes what a structural operator does.
-#   ref_in          an id occurs among the ids of another array
-#   marked_or_absent  a pending item is either explicitly marked or does not occur
-#   version_bound   two objects bind each other's version / body reference
-#   readback_equals a value read back through a real read equals the expected value
-#   hash_equals     the hash of the downloaded bytes equals the hash in the export record
-#   non_empty       the value is there and is not empty
-DOMAIN_CHECK_OPERATORS = ("ref_in", "marked_or_absent", "version_bound",
-                          "readback_equals", "hash_equals", "non_empty")
-KNOWN_CHECK_OPERATORS = CHECK_OPERATORS + DOMAIN_CHECK_OPERATORS
+# The four structural kinds compare one place in a response with a value; their
+# behaviour is fixed.  The domain kinds answer one requirement of the acceptance
+# protocol each; none of them is a general expression language, and none of them
+# changes what a structural kind does.  The kinds #499 added answer the four
+# expression gaps the coverage audit found: the failure path, the "not in"
+# direction, the collection-level assertion, the cross-step comparison and the
+# real-provenance assertion.  What each kind means is written down once, in
+# scripts/lingdoc_check_kinds.py.
+CHECK_OPERATORS = _STRUCTURAL_CHECK_OPERATORS
+DOMAIN_CHECK_OPERATORS = _DOMAIN_CHECK_OPERATORS
+KNOWN_CHECK_OPERATORS = _KNOWN_CHECK_OPERATORS
+ADDED_CHECK_OPERATORS = _ADDED_CHECK_OPERATORS
 FAILURE_STATES = {"failed", "interrupted", "cancelled", "canceled", "error"}
 
 
@@ -137,37 +152,16 @@ def _request_definition(step: dict[str, Any], where: str) -> dict[str, Any]:
     return request_spec
 
 
-def _check_path(value: Any, at: str, allow_variable: bool) -> str:
-    """Read the place a check is about: a JSON pointer, or one captured value.
-
-    A structural operator compares one place in a response, so its path is a pointer.
-    A domain kind may also be about a value the run captured earlier (the review item
-    id a chapter inherited, for instance), and that is named the way the contract
-    names a variable everywhere else: `{{name}}`.
-    """
-    if not isinstance(value, str) or not value.strip():
-        raise WorkflowError(f"{at} path must be a JSON pointer string that starts with '/'")
-    if value.startswith("/"):
-        return value
-    if allow_variable and VARIABLE.fullmatch(value):
-        return value
-    raise WorkflowError(f"{at} path must be a JSON pointer string that starts with '/'")
-
-
-def _pointer_argument(value: Any, at: str, label: str) -> str:
-    """Read a pointer that names another place in the same response."""
-    if not isinstance(value, str) or not value.strip():
-        raise WorkflowError(f"{at} {label} must be a JSON pointer string that starts with '/'")
-    if not value.startswith("/"):
-        raise WorkflowError(f"{at} {label} must be a JSON pointer string that starts with '/'")
-    return value
-
-
 def _check_definitions(step: dict[str, Any], where: str) -> list[dict[str, Any]]:
     """Validate the evaluable expectations a step declares, before any request is sent.
 
     A check that cannot be evaluated has to be refused here: the alternative is a report
     that quietly counts an unevaluatable sentence as a pass.
+
+    The vocabulary is the one in ``scripts/lingdoc_check_kinds.py``, so this runner and
+    the contract's static validator judge the same words.  A kind nobody knows, a check
+    that names two kinds, and a key no kind declares are all refused here -- the last
+    one is what used to let a misspelled kind disappear next to a well-known one.
     """
     checks = step.get("checks")
     if checks is None:
@@ -179,44 +173,15 @@ def _check_definitions(step: dict[str, Any], where: str) -> list[dict[str, Any]]
         at = f"{where} check {index}"
         if not isinstance(check, dict):
             raise WorkflowError(f"{at} must be an object")
-        present = [name for name in KNOWN_CHECK_OPERATORS if name in check]
-        operator = present[0] if len(present) == 1 else None
-        _check_path(check.get("path"), at, operator in DOMAIN_CHECK_OPERATORS if operator else False)
-        non_empty_string(check.get("intent"), f"{at} intent")
-        if len(present) != 1:
-            raise WorkflowError(f"{at} must state exactly one of {' / '.join(KNOWN_CHECK_OPERATORS)}; "
-                                f"it states {present or 'none'}")
-        expected = check[operator]
-        if operator == "length" and (not isinstance(expected, int) or isinstance(expected, bool) or expected < 0):
-            raise WorkflowError(f"{at} length must be a count of zero or more")
-        if operator == "keys" and (not isinstance(expected, list)
-                                   or not all(isinstance(key, str) and key.strip() for key in expected)):
-            raise WorkflowError(f"{at} keys must be a list of field names")
-        if operator == "one_of" and (not isinstance(expected, list) or not expected):
-            raise WorkflowError(f"{at} one_of must be a non-empty list of allowed values")
-        if operator == "ref_in":
-            _pointer_argument(expected, at, "ref_in")
-            non_empty_string(check.get("id_field", "id"), f"{at} id_field")
-        elif operator == "marked_or_absent":
-            _pointer_argument(expected, at, "marked_or_absent")
-        elif operator == "version_bound":
-            targets = expected if isinstance(expected, list) else [expected]
-            if not targets:
-                raise WorkflowError(f"{at} version_bound must name at least one pointer")
-            for target in targets:
-                _pointer_argument(target, at, "version_bound")
-        elif operator == "readback_equals":
+        try:
+            operator = validate_check(check, at)
+        except CheckKindError as error:
+            raise WorkflowError(str(error)) from None
+        if operator == "readback_equals" and not step.get("readback_of"):
             # A read-back assertion is only meaningful on a step that really reads back:
             # the step has to name the write it reads after. A misplaced one is refused
             # here rather than turned into a check that quietly passes.
-            if not step.get("readback_of"):
-                raise WorkflowError(f"{at} readback_equals belongs on a step that declares readback_of")
-        elif operator == "hash_equals":
-            if (not isinstance(expected, dict) or not isinstance(expected.get("from_step"), str)
-                    or not expected["from_step"].strip()):
-                raise WorkflowError(f"{at} hash_equals must name the step that recorded the hash")
-        elif operator == "non_empty" and expected is not True:
-            raise WorkflowError(f"{at} non_empty must be true")
+            raise WorkflowError(f"{at} readback_equals belongs on a step that declares readback_of")
         validated.append(dict(check))
     return validated
 
@@ -587,6 +552,18 @@ class ScenarioRunner:
         redactions: dict[str, str] | None = None,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
+        # The API root this contract speaks to: the path of ``servers[0].url``.
+        # A base URL that stops short of that path does not fail the first step
+        # loudly -- it 404s, the capture is skipped, and the run stops on a
+        # *derived* error ("variable not captured") that points at the capture
+        # instead of at the configuration.  Keeping the expected root lets the
+        # runner refuse the configuration before the first request.
+        self.api_path_prefix = urlsplit(server_url).path.rstrip("/")
+        # The variables the contract itself captures, as opposed to the ones it
+        # expects the environment to provide.
+        self.declared_captures = {
+            name for step in spec.steps for name in (step.get("capture") or {})
+        }
         # The transport is the client's business, not the runner's: the runner drives steps
         # through it, other tools send their own requests through it, and the base URL and
         # token rules are resolved once, inside it.
@@ -638,6 +615,84 @@ class ScenarioRunner:
         spec = load_spec(spec_path, scenario_id)
         return cls(read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
+    def _preflight_required_variables(self) -> None:
+        """Refuse a run whose contract names a variable nobody supplies.
+
+        A contract may take a value from the environment instead of
+        capturing it.  When it does, the run has to say so before the first
+        request: a run that discovers the gap at the step that needed the
+        value stops with a derived error, and a silent fallback to a
+        placeholder would turn "it ran" into a fiction.
+        """
+        captured = {name for step in self.spec.steps for name in (step.get("capture") or {})}
+        supplied = set(self.seed_variables)
+        missing = sorted(self.referenced_variables() - captured - supplied)
+        if not missing:
+            return
+        raise WorkflowError(
+            f"the contract names variables the environment does not supply: "
+            f"{', '.join(missing)}. The contract takes them from the "
+            f"environment, not from a capture, and there is no default: "
+            f"supply them on the command line (for example --knowledge-id "
+            f"<real identifier>). A silent fallback to a placeholder "
+            f"identifier would make the run look like it exercised the "
+            f"real thing when it did not.")
+
+    def referenced_variables(self) -> set[str]:
+        """The variables the contract's requests name."""
+        names: set[str] = set()
+        for step in self.spec.steps:
+            request = step.get("request") or {}
+            blob = json.dumps(request, ensure_ascii=False)
+            names.update(match.group(1) for match in VARIABLE.finditer(blob))
+        return names
+
+    def _check_base_url_scope(self) -> None:
+        """Refuse a base URL that does not address the contract's API root.
+
+        The contract's OpenAPI document says where its API lives
+        (``servers[0].url``).  A base URL that stops short of that path makes
+        every request answer 404; the runner then skips the capture of that
+        step and the run stops on a *derived* error -- "workflow variable is
+        not captured yet" -- which points at the capture instead of at the
+        configuration.  This is the same failure with the labels swapped.
+        """
+        expected = self.api_path_prefix
+        if not expected:
+            return
+        actual = urlsplit(self.base_url).path.rstrip("/")
+        if actual == expected or actual.endswith(expected):
+            return
+        raise WorkflowError(
+            f"base URL does not address the contract's API root: F01 speaks to "
+            f"{expected} (contracts/openapi.json servers[0].url), but the base URL is "
+            f"{self.base_url}. Every request would answer 404, the captures would be "
+            f"skipped, and the run would stop on a derived 'variable not captured' "
+            f"error. Use http://<host>{expected}.")
+
+    def _explain_missing_variable(self, error: WorkflowError) -> WorkflowError:
+        """Say which kind of missing variable this is.
+
+        A variable the contract captures and a variable the contract expects the
+        environment to provide are different problems with different unblock
+        conditions, and one sentence hides the difference.
+        """
+        message = str(error)
+        marker = "workflow variable is not captured yet: "
+        if marker not in message:
+            return error
+        name = message.split(marker, 1)[1].strip()
+        if name in self.declared_captures:
+            return WorkflowError(
+                f"{message} -- the contract captures it, but the step that captures it "
+                f"did not produce it: that step's HTTP status did not match the "
+                f"contract, so its capture was skipped. The real failure is this "
+                f"run's failures[] entry for that step.")
+        return WorkflowError(
+            f"{message} -- the contract does not capture it; it is an execution "
+            f"precondition the environment has to provide (the value in setup is a "
+            f"placeholder, as reference_ids says).")
+
     def run(self, stop_on_mismatch: bool = True) -> dict[str, Any]:
         """Drive every step.
 
@@ -653,6 +708,8 @@ class ScenarioRunner:
         self.active_step = None
         self.aborted_at = None
         self._validate_readbacks()
+        self._check_base_url_scope()
+        self._preflight_required_variables()
         completed = 0
         step_results = self.step_results
         for step in self.spec.steps:
@@ -662,10 +719,13 @@ class ScenarioRunner:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
             method, path_template = self.operations[operation_id]
             request_spec = _request_definition(step, step["id"])
-            path_params = substitute(request_spec.get("path_params", {}), self.variables)
-            query = substitute(request_spec.get("query", {}), self.variables)
-            headers = substitute(request_spec.get("headers", {}), self.variables)
-            body = substitute(request_spec.get("json"), self.variables)
+            try:
+                path_params = substitute(request_spec.get("path_params", {}), self.variables)
+                query = substitute(request_spec.get("query", {}), self.variables)
+                headers = substitute(request_spec.get("headers", {}), self.variables)
+                body = substitute(request_spec.get("json"), self.variables)
+            except WorkflowError as error:
+                raise self._explain_missing_variable(error) from None
             url = build_url(self.base_url, path_template, path_params, query)
             actor_token = self.identities.get(step.get("actor"))
             status, response_headers, payload = self.client.request(method, url, headers, body, token=actor_token)
@@ -695,7 +755,7 @@ class ScenarioRunner:
                 })
             # Checks are read even when the status was not the declared one: "it answered
             # 403 with source_access_denied" is a more useful failure than "it answered 403".
-            self.check_results.extend(self._evaluate_checks(step, payload))
+            self.check_results.extend(self._evaluate_checks(step, payload, status))
             if status == expected_status:
                 print(f"{step['id']} PASS {operation_id} HTTP {status}")
 
@@ -767,8 +827,21 @@ class ScenarioRunner:
             return bool(value)
         return True
 
+    @staticmethod
+    def _ids_of(collection: Any, id_field: str) -> set[Any]:
+        """The ids an array carries, whether it holds bare ids or objects."""
+        ids: set[Any] = set()
+        if not isinstance(collection, list):
+            return ids
+        for item in collection:
+            if isinstance(item, str):
+                ids.add(item)
+            elif isinstance(item, dict) and id_field in item:
+                ids.add(item[id_field])
+        return ids
+
     def _judge_domain_check(self, check: dict[str, Any], operator: str, step: dict[str, Any],
-                            payload: Any) -> tuple[bool, Any, Any, bool]:
+                            payload: Any, status: int | None = None) -> tuple[bool, Any, Any, bool]:
         """Decide one domain assertion: what it expected, what it read, and whether it held.
 
         Every branch answers the same three questions, so a domain assertion can never
@@ -778,15 +851,19 @@ class ScenarioRunner:
             found, subject = self._resolve_subject(check["path"], payload)
             array_found, collection = lookup_pointer(payload, check["ref_in"])
             id_field = check.get("id_field", "id")
-            ids: set[Any] = set()
-            if array_found and isinstance(collection, list):
-                for item in collection:
-                    if isinstance(item, str):
-                        ids.add(item)
-                    elif isinstance(item, dict) and id_field in item:
-                        ids.add(item[id_field])
+            ids = self._ids_of(collection, id_field)
             held = bool(found and array_found and subject in ids)
             return held, subject, sorted(str(value) for value in ids), found
+        if operator == "not_in":
+            # The other direction of `ref_in`: the id must NOT occur among the ids of
+            # the other array.  An array that cannot be read is a failure, not a
+            # vacuous truth: "not in a list nobody can see" is not evidence.
+            found, subject = self._resolve_subject(check["path"], payload)
+            array_found, collection = lookup_pointer(payload, check["not_in"])
+            id_field = check.get("id_field", "id")
+            ids = self._ids_of(collection, id_field)
+            held = bool(found and array_found and subject not in ids)
+            return held, subject, sorted(str(value) for value in ids), found and array_found
         if operator == "marked_or_absent":
             found, subject = self._resolve_subject(check["path"], payload)
             if not found:
@@ -819,11 +896,54 @@ class ScenarioRunner:
             actual = hashlib.sha256(payload).hexdigest() if isinstance(payload, bytes) else None
             held = bool(found and actual is not None and actual.lower() == str(expected).lower())
             return held, actual, expected, found
-        # non_empty
-        found, actual = self._resolve_subject(check["path"], payload)
-        return bool(found and self._is_marked(actual)), actual, True, found
+        if operator == "http_error":
+            # The failure path: the response has to be an error response, and its error
+            # fields have to be the ones the contract expects.  The status is part of the
+            # assertion: a success status carrying an error object is not a failure path.
+            found, subject = self._resolve_subject(check["path"], payload)
+            expected = check["http_error"]
+            held = bool(status is not None and status >= 400 and found
+                        and isinstance(subject, dict)
+                        and subject.get("code") == expected.get("code")
+                        and ("retryable" not in expected
+                             or subject.get("retryable") == expected["retryable"]))
+            return held, subject, expected, found
+        if operator == "all_non_empty":
+            # The collection-level assertion: the collection is there and every entry in
+            # it is not empty.  An empty collection fails: "nothing is missing" is not
+            # the same claim as "everything that should be there is there".
+            found, subject = self._resolve_subject(check["path"], payload)
+            held = bool(found and isinstance(subject, list) and subject
+                        and all(self._is_marked(entry) for entry in subject))
+            return held, subject, True, found
+        if operator == "equals_step":
+            # One place against another step's answer: the input side and the runtime
+            # side of the same fact, compared where both are visible.
+            source = check["equals_step"]
+            recorded = self.responses.get(source["from_step"])
+            source_found, expected = (lookup_pointer(recorded, source["path"])
+                                      if recorded is not None else (False, None))
+            found, actual = lookup_pointer(payload, check["path"])
+            held = bool(found and source_found and actual == expected)
+            return held, actual, expected, found and source_found
+        if operator == "provenance_real":
+            # "This segment really ran."  A marker outside the real vocabulary is a
+            # different claim, not a weaker one, so it fails rather than passes.
+            found, subject = self._resolve_subject(check["path"], payload)
+            held = bool(found and subject in REAL_PROVENANCE_VALUES)
+            return held, subject, list(REAL_PROVENANCE_VALUES), found
+        if operator == "non_empty":
+            found, actual = self._resolve_subject(check["path"], payload)
+            return bool(found and self._is_marked(actual)), actual, True, found
+        # No kind may fall through to another kind's meaning.  A kind that reaches
+        # this point would be judged by the nearest branch above it -- and the report
+        # would say "passed" about an expectation nobody judged.  So an unhandled
+        # kind is refused here, loudly.
+        raise WorkflowError(f"{step['id']}: the runner has no evaluation branch for the "
+                            f"check kind {operator}")
 
-    def _evaluate_checks(self, step: dict[str, Any], payload: Any) -> list[dict[str, Any]]:
+    def _evaluate_checks(self, step: dict[str, Any], payload: Any,
+                         status: int | None = None) -> list[dict[str, Any]]:
         """Decide every declared expectation against the response, and record why it held.
 
         The comparison is made on the real values and the record is written with the
@@ -832,9 +952,15 @@ class ScenarioRunner:
         """
         recorded: list[dict[str, Any]] = []
         for check in step.get("checks", []):
-            operator = next(name for name in KNOWN_CHECK_OPERATORS if name in check)
+            try:
+                operator = declared_kind(check, f"{step['id']} check")
+            except CheckKindError as error:
+                # A kind nobody knows is a broken contract, not a check that quietly
+                # becomes something else.  The run stops as a specification error.
+                raise WorkflowError(str(error)) from None
             if operator in DOMAIN_CHECK_OPERATORS:
-                held, actual, expected, found = self._judge_domain_check(check, operator, step, payload)
+                held, actual, expected, found = self._judge_domain_check(check, operator, step,
+                                                                         payload, status)
             else:
                 expected = substitute(check[operator], self.variables)
                 found, actual = lookup_pointer(payload, check["path"])
@@ -846,8 +972,14 @@ class ScenarioRunner:
                     held = isinstance(actual, (list, str, dict)) and len(actual) == expected
                 elif operator == "keys":
                     held = isinstance(actual, dict) and sorted(actual) == sorted(expected)
-                else:  # one_of
+                elif operator == "one_of":
                     held = actual in expected
+                else:
+                    # A structural kind with no branch would be judged by the nearest
+                    # branch above it -- and the report would say "passed" about an
+                    # expectation nobody judged.  So an unhandled kind is refused.
+                    raise WorkflowError(f"{step['id']}: the runner has no evaluation branch "
+                                        f"for the check kind {operator}")
             recorded.append({
                 "step_id": step["id"],
                 "path": check["path"],
@@ -1194,6 +1326,116 @@ class CheckOperatorSelfTest(unittest.TestCase):
             [{"data": {"body_markdown": ""}}])
         self.assertEqual(checks[0]["status"], "failed")
 
+    @staticmethod
+    def error_step(checks: list[dict[str, Any]], status: int = 409) -> dict[str, Any]:
+        """One step that is supposed to fail with an error envelope."""
+        return {"id": "SELF-01", "operation_id": "getProject", "expected_http": status,
+                "request": {"path_params": {"projectId": "p-1"}, "headers": {}, "json": None},
+                "capture": {}, "checks": checks}
+
+    def test_http_error_holds_for_an_error_response_with_the_expected_code(self):
+        checks = self.judged([self.error_step([
+            {"path": "/error", "http_error": {"code": "version_conflict", "retryable": False},
+             "intent": "冲突明确指向版本过期"}])],
+            [{"error": {"code": "version_conflict", "message": "版本过期", "retryable": False}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_http_error_fails_for_a_success_status(self):
+        checks = self.judged([self.error_step([
+            {"path": "/error", "http_error": {"code": "version_conflict"},
+             "intent": "成功状态不是失败路径"}], status=200)],
+            [{"error": {"code": "version_conflict", "message": "版本过期", "retryable": False}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_http_error_fails_for_another_error_code(self):
+        checks = self.judged([self.error_step([
+            {"path": "/error", "http_error": {"code": "version_conflict"},
+             "intent": "错误码不是契约声明的那一个"}])],
+            [{"error": {"code": "stale_input", "message": "快照过期", "retryable": False}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_not_in_holds_when_the_id_is_absent_from_the_array(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/subject_id", "not_in": "/data/others",
+             "intent": "该 id 不在授权集合里"}])],
+            [{"data": {"subject_id": "s-1", "others": [{"id": "s-2"}]}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_not_in_fails_when_the_id_is_present(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/subject_id", "not_in": "/data/others",
+             "intent": "该 id 不在授权集合里"}])],
+            [{"data": {"subject_id": "s-1", "others": [{"id": "s-1"}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_not_in_fails_when_the_array_cannot_be_read(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/subject_id", "not_in": "/data/others",
+             "intent": "读不到集合就没有证据"}])],
+            [{"data": {"subject_id": "s-1"}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_all_non_empty_holds_when_every_entry_is_there(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/items", "all_non_empty": True, "intent": "每一项都登记齐全"}])],
+            [{"data": {"items": [{"id": "a"}, {"id": "b"}]}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_all_non_empty_fails_for_an_empty_entry(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/items", "all_non_empty": True, "intent": "每一项都登记齐全"}])],
+            [{"data": {"items": [{"id": "a"}, {}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_all_non_empty_fails_for_an_empty_collection(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/items", "all_non_empty": True, "intent": "每一项都登记齐全"}])],
+            [{"data": {"items": []}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_equals_step_holds_when_both_steps_agree(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/material_hash",
+                 "equals_step": {"from_step": "SELF-01", "path": "/data/material_hash"},
+                 "intent": "运行时读到的哈希与登记的一致"}])],
+            [{"data": {"id": "p-1", "material_hash": "h-1"}}, {"data": {"material_hash": "h-1"}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_equals_step_fails_when_the_two_steps_disagree(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/material_hash",
+                 "equals_step": {"from_step": "SELF-01", "path": "/data/material_hash"},
+                 "intent": "运行时读到的哈希与登记的一致"}])],
+            [{"data": {"id": "p-1", "material_hash": "h-1"}}, {"data": {"material_hash": "h-2"}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_provenance_real_holds_for_a_real_segment(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/run_mode", "provenance_real": True, "intent": "这一段真的跑了"}])],
+            [{"data": {"run_mode": "real"}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_provenance_real_fails_for_a_fake_segment(self):
+        checks = self.judged([self.read_step([
+            {"path": "/data/run_mode", "provenance_real": True, "intent": "这一段真的跑了"}])],
+            [{"data": {"run_mode": "real_api_fake_model"}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_a_kind_nobody_knows_is_refused(self):
+        with self.assertRaisesRegex(WorkflowError, "must state exactly one of"):
+            spec_from_document({"id": "SELF", "steps": [self.read_step(
+                [{"path": "/data/x", "not_a_kind_at_all": 1, "intent": "拼错的 kind"}])]},
+                "self-test specification")
+
+    def test_an_unknown_key_next_to_a_known_kind_is_refused(self):
+        with self.assertRaisesRegex(WorkflowError, "carries keys that no check kind declares"):
+            spec_from_document({"id": "SELF", "steps": [self.read_step(
+                [{"path": "/data/x", "equals": "v", "not_a_kind_at_all": True,
+                  "intent": "多出来的一个键"}])]},
+                "self-test specification")
+
     def test_a_check_that_cannot_read_its_subject_fails_instead_of_skipping(self):
         checks = self.judged([self.read_step([
             {"path": "/data/missing", "non_empty": True, "intent": "读不到就不能算通过"},
@@ -1236,6 +1478,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", default=os.environ.get("LINGDOC_TEST_TOKEN"), help="short-lived test bearer token (or LINGDOC_TEST_TOKEN)")
     parser.add_argument("--identity", action="append", default=[], metavar="NAME=TOKEN",
                         help="credential for an actor a step names (repeatable); steps with no actor use --token")
+    parser.add_argument("--knowledge-id", default=os.environ.get("LINGDOC_KNOWLEDGE_ID"),
+                        help="the real knowledge identifier the contract binds at F01-06; "
+                             "it is injected as the {{knowledge_id}} variable. There is no "
+                             "default: a contract that names the variable refuses the run "
+                             "when it is not given")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--spec", type=Path, help="specification document: a step list (default workflow.json) or a scenarios document together with --scenario")
     parser.add_argument("--scenario", help="scenario id to drive out of the scenarios document (default scenarios.json)")
@@ -1262,6 +1509,7 @@ def main(argv: list[str] | None = None) -> int:
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
+            variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
         if args.report:
             # Verify the destination before any provider mutation and replace a

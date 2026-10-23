@@ -6,6 +6,7 @@ import {
   effectiveCapabilitySummary, hasOrphanedFunctionScopes, hasUnsupportedMemberState, serializeProjectMemberDrafts,
   setAssetScopes, setChapterScopes, setProjectFunctionRole,
 } from './projectMembers'
+import { assetIdFromResourceScope, assetResourceScope, isAssetResourceScope } from './resourceScope'
 
 test('member drafts keep owner read-only and clone nested permission state', () => {
   const members: ProjectMember[] = [
@@ -24,6 +25,15 @@ test('chapter and asset selectors preserve scopes owned by other editors', () =>
   assert.deepEqual(setChapterScopes(scopes, ['chapter-2'], ['chapter-1', 'chapter-2']), ['asset:asset-1', 'delivery:delivery-1', 'knowledge:kb-1', 'chapter-2'])
   assert.deepEqual(assetIdsForSelection(scopes), ['asset-1'])
   assert.deepEqual(setAssetScopes(scopes, ['asset-2']), ['chapter-1', 'delivery:delivery-1', 'knowledge:kb-1', 'asset:asset-2'])
+})
+
+test('asset resource scope uses one canonical typed key', () => {
+  const scope = assetResourceScope('asset-1')
+  assert.equal(scope, 'asset:asset-1')
+  assert.equal(isAssetResourceScope(scope), true)
+  assert.equal(assetIdFromResourceScope(scope), 'asset-1')
+  assert.equal(assetIdFromResourceScope('chapter-1'), undefined)
+  assert.throws(() => assetResourceScope('bad:asset-id'))
 })
 
 test('removing a function role also removes its scopes; empty scope is explicit', () => {

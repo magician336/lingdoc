@@ -2,9 +2,11 @@ package templategovernance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,12 +108,94 @@ func TestPostgresCatalogSchemaLifecycleAndAuditRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This PostgreSQL contract isolates the SQL public projection under the
+	// package's testAuth. Production role normalization/freshActor behavior is
+	// covered on PostgreSQL by
+	// workspace.TestPostgresTemplateCatalogVisibilityUsesProductionMembership.
+	reader := Actor{TenantID: actor.TenantID, UserID: "catalog-reader", Role: "viewer"}
+	if profiles, err := s.ListProfiles(context.Background(), reader, CatalogFilter{}); err != nil || len(profiles) != 0 {
+		t.Fatalf("PostgreSQL draft-only profile leaked: %v, %v", profiles, err)
+	}
 	published := publishTestVersion(t, s, actor, draft)
+	if profiles, err := s.ListProfiles(context.Background(), reader, CatalogFilter{State: template.RuleSetPublished}); err != nil || len(profiles) != 1 {
+		t.Fatalf("PostgreSQL published catalog read: %v, %v", profiles, err)
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		_, err := s.ResolveForCopy(context.Background(), tx, actor, published.TemplateID, published.Version)
 		return err
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := s.Publish(context.Background(), actor, "postgres-stale-publish", PublishInput{TemplateID: published.TemplateID, Version: published.Version, ExpectedRevision: published.Revision + 1, ReplayFixtureIDs: []string{"write_check-positive", "write_check-negative", "preflight-positive", "preflight-negative"}, Reason: "stale version must be audited"}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale PostgreSQL publish = %v", err)
+	}
+	if countRows(t, db, "audit_logs", "action=? AND outcome=?", "lingdoc.template.publish", "failure") != 1 {
+		t.Fatal("PostgreSQL rejected publish lost its failure audit")
+	}
+	// A fresh pool and service must recover the exact version, audit trail and
+	// idempotency record without relying on the first service's memory.
+	reopened, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedPool, err := reopened.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := reopenedPool.Close(); err != nil {
+			t.Errorf("close reopened test database: %v", err)
+		}
+	}()
+	restarted := NewService(reopened, Ports{Authorizer: auth, RuleSets: auth, Replay: ExampleReplayVerifier{Reader: fixtures}})
+	recovered, err := restarted.GetVersion(context.Background(), actor, published.TemplateID, published.Version)
+	if err != nil || recovered.Revision != published.Revision || recovered.State != published.State || recovered.ContentHash != published.ContentHash || recovered.RulesetHash != published.RulesetHash {
+		t.Fatalf("PostgreSQL restart lost exact published version: %+v, %v", recovered, err)
+	}
+	if _, err := restarted.CreateProfile(context.Background(), actor, "postgres-profile", CreateProfileInput{ID: "grant-template", Name: "Internal template", Reason: "reviewed template"}); err != nil {
+		t.Fatalf("PostgreSQL restart lost idempotency receipt: %v", err)
+	}
+	var recoveredAudit struct{ Details string }
+	if err := reopened.Table("audit_logs").Select("details").Where("action=? AND outcome=?", "lingdoc.template.publish", "success").Take(&recoveredAudit).Error; err != nil || !strings.Contains(recoveredAudit.Details, published.ContentHash) {
+		t.Fatalf("PostgreSQL restart lost publication audit/hash: %s, %v", recoveredAudit.Details, err)
+	}
+	raceDraft, err := restarted.SaveDraft(context.Background(), actor, "postgres-racing-draft", draftInput(ref, "race", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raceInput := PublishInput{TemplateID: raceDraft.TemplateID, Version: raceDraft.Version, ExpectedRevision: raceDraft.Revision,
+		ReplayFixtureIDs: []string{"write_check-positive", "write_check-negative", "preflight-positive", "preflight-negative"}, Reason: "concurrent publication must commit once"}
+	type publication struct {
+		key string
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan publication, 2)
+	for _, key := range []string{"postgres-publish-race-a", "postgres-publish-race-b"} {
+		go func(key string) {
+			<-start
+			_, err := restarted.Publish(context.Background(), actor, key, raceInput)
+			results <- publication{key: key, err: err}
+		}(key)
+	}
+	close(start)
+	winner := ""
+	for range 2 {
+		result := <-results
+		if result.err == nil {
+			if winner != "" {
+				t.Fatal("concurrent PostgreSQL publications both succeeded")
+			}
+			winner = result.key
+		} else if !errors.Is(result.err, ErrVersionConflict) && !errors.Is(result.err, ErrInvalidState) {
+			t.Fatalf("concurrent PostgreSQL publication returned an unclassified failure: %v", result.err)
+		}
+	}
+	if winner == "" || countRows(t, reopened, "audit_logs", "action=? AND outcome=? AND target_id=?", "lingdoc.template.publish", "success", raceDraft.TemplateID+"/"+raceDraft.Version) != 1 {
+		t.Fatal("concurrent PostgreSQL publication lost its unique success/audit")
+	}
+	if replayed, err := restarted.Publish(context.Background(), actor, winner, raceInput); err != nil || replayed.Revision != raceDraft.Revision+1 {
+		t.Fatalf("PostgreSQL publication retry was not idempotent: %+v, %v", replayed, err)
 	}
 	if err := db.Exec(`CREATE FUNCTION deny_template_audit() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.action='lingdoc.template.save_draft' THEN RAISE EXCEPTION 'audit unavailable'; END IF; RETURN NEW; END$$; CREATE TRIGGER deny_template_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION deny_template_audit()`).Error; err != nil {
 		t.Fatal(err)

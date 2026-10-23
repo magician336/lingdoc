@@ -56,6 +56,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -66,7 +67,14 @@ BROWSER_EXECUTOR = ACCEPTANCE_DIR / "beta_browser_cdp.mjs"
 PARITY_EXECUTOR = ACCEPTANCE_DIR / "beta_evidence_parity.py"
 
 sys.path.insert(0, str(ACCEPTANCE_DIR))
+# The evidence producer and the contract runner it drives live two levels down,
+# so importing them needs the repository root on the path as well.
+sys.path.insert(0, str(REPO_ROOT))
+import beta_evidence  # noqa: E402
 import beta_evidence_parity as parity  # noqa: E402
+from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
+    ScenarioRunner, WorkflowError, spec_from_document, _SelfTestResponse,
+)
 
 # The six artifacts of the Beta acceptance protocol (§6).  The evidence
 # directory is ``docs/08-本轮实施方案/acceptance/beta-first/<full SHA>/<run id>/``.
@@ -743,6 +751,263 @@ class BetaSixArtifactTests(unittest.TestCase):
                 for word in ("通过", "PASS", "passed"):
                     self.assertNotIn(word, line,
                                      f"{sha}/{run_id}/README.md claims a pass although the flow is not clean: {line}")
+
+
+class CaptureChainGuardTests(unittest.TestCase):
+    """The F01 capture chain has to be visible when it breaks.
+
+    The Beta acceptance runs F01 against a real backend.  Two different things
+    can stop a variable from being captured, and they need different unblock
+    conditions:
+
+    * the step that captures it did not answer as the contract said -- the
+      capture is skipped and the run stops on a *derived* "variable is not
+      captured yet" error;
+    * the contract never captures the variable at all -- it is an execution
+      precondition the environment has to provide (the value in ``setup`` is a
+      placeholder).
+
+    A third failure hides both of them: a base URL that does not address the
+    contract's API root makes *every* request answer 404, so the first capture
+    is skipped and the run stops on the same derived error.
+
+    These tests pin that each of the three is reported as itself.
+    """
+
+    OPENAPI = {
+        "servers": [{"url": "https://provider.test/api/v1"}],
+        "paths": {
+            "/templates/{templateId}": {"get": {"operationId": "getTemplate"}},
+            "/projects": {"post": {"operationId": "createProject"}},
+        },
+    }
+
+    @staticmethod
+    def specification(capture: bool = True, second_variable: str = "{{template_id}}"):
+        steps = [
+            {"id": "S1", "operation_id": "getTemplate", "expected_http": 200,
+             "request": {"path_params": {"templateId": "t-1"}, "headers": {}, "json": None},
+             "capture": ({"template_id": "/data/id"} if capture else {}),
+             "checks": []},
+            {"id": "S2", "operation_id": "createProject", "expected_http": 201,
+             "request": {"path_params": {}, "headers": {}, "json": {"template_id": second_variable}},
+             "capture": {}, "checks": []},
+        ]
+        return spec_from_document({"id": "S", "steps": steps}, "guard specification")
+
+    def test_a_base_url_without_the_api_root_is_refused_before_any_request(self):
+        sent = []
+
+        def opener(request, timeout):
+            sent.append(request)
+            raise AssertionError("the runner must not send a request")
+
+        runner = ScenarioRunner(self.OPENAPI, self.specification(),
+                                base_url="https://provider.test", opener=opener)
+        with self.assertRaises(WorkflowError) as caught:
+            runner.run()
+        message = str(caught.exception)
+        self.assertIn("does not address the contract's API root", message)
+        self.assertIn("/api/v1", message)
+        self.assertNotIn("variable is not captured yet", message)
+        self.assertEqual(sent, [])
+
+    def test_the_http_side_takes_the_api_root_the_contract_names(self):
+        """One shape on both sides, and the contract is where it comes from.
+
+        The HTTP side used to want the server root while the F01 side wanted
+        the API root, so no single base URL could satisfy both.  Now the
+        contract's ``servers[0].url`` is the only authority: the HTTP side
+        derives its API root from it, and the two sides agree on one value.
+        """
+        import beta_http_readback as http_side
+
+        contract = json.loads(http_side.CONTRACT_PATH.read_text(encoding="utf-8"))
+        expected = urlsplit(contract["servers"][0]["url"]).path.rstrip("/")
+        self.assertEqual(http_side.API_ROOT_PATH, expected)
+        # The API root is accepted; the server root is refused by name.
+        self.assertEqual(
+            http_side.normalize_base_url("http://127.0.0.1:8080" + expected),
+            "http://127.0.0.1:8080" + expected)
+        with self.assertRaises(Exception) as caught:
+            http_side.normalize_base_url("http://127.0.0.1:8080")
+        self.assertIn(expected, str(caught.exception))
+
+    def test_both_sides_judge_the_same_base_url_the_same_way(self):
+        """The regression gate: one base URL, one verdict, on both sides."""
+        import beta_http_readback as http_side
+
+        # The one value both sides are given: the API root the contract names.
+        api_root = "https://provider.test" + http_side.API_ROOT_PATH
+        server = "https://provider.test"
+
+        answered = {"count": 0}
+
+        def opener(request, timeout):
+            answered["count"] += 1
+            if answered["count"] == 1:
+                return _SelfTestResponse({"data": {"id": "t-9"}}, status=200)
+            return _SelfTestResponse({"data": {"id": "p-1"}}, status=201)
+
+        # The F01 side accepts the API root ...
+        openapi = {"servers": [{"url": api_root}], "paths": self.OPENAPI["paths"]}
+        runner = ScenarioRunner(openapi, self.specification(),
+                                base_url=api_root, opener=opener)
+        runner.run()
+        self.assertEqual(runner.variables.get("template_id"), "t-9")
+
+        # ... and refuses the server root.
+        with self.assertRaises(WorkflowError):
+            ScenarioRunner(openapi, self.specification(),
+                           base_url=server,
+                           opener=lambda request, timeout: self.fail("no request")).run()
+        # The HTTP side agrees with it on both values.
+        self.assertEqual(http_side.normalize_base_url(api_root), api_root)
+        with self.assertRaises(Exception):
+            http_side.normalize_base_url(server)
+
+    def test_the_right_base_url_captures_the_variable(self):
+        answered = {"count": 0}
+
+        def opener(request, timeout):
+            answered["count"] += 1
+            if answered["count"] == 1:
+                return _SelfTestResponse({"data": {"id": "t-9"}}, status=200)
+            return _SelfTestResponse({"data": {"id": "p-1"}}, status=201)
+
+        runner = ScenarioRunner(self.OPENAPI, self.specification(),
+                                base_url="https://provider.test/api/v1", opener=opener)
+        runner.run()
+        self.assertEqual(runner.variables.get("template_id"), "t-9")
+
+    def test_a_capture_that_did_not_happen_says_so_and_keeps_the_real_failure(self):
+        def opener(request, timeout):
+            return _SelfTestResponse({"error": "not found"}, status=404)
+
+        runner = ScenarioRunner(self.OPENAPI, self.specification(),
+                                base_url="https://provider.test/api/v1", opener=opener)
+        with self.assertRaises(WorkflowError) as caught:
+            runner.run(stop_on_mismatch=False)
+        message = str(caught.exception)
+        self.assertIn("template_id", message)
+        self.assertIn("the contract captures it", message)
+        # The real failure stays on record instead of being only a derived error.
+        self.assertEqual(len(runner.failures), 1)
+        self.assertEqual(runner.failures[0]["step_id"], "S1")
+        self.assertEqual(runner.failures[0]["expected"], 200)
+        self.assertEqual(runner.failures[0]["actual"], 404)
+
+    def test_removing_the_capture_makes_the_run_report_the_capture_again(self):
+        """The negative check: without the capture, the chain breaks on purpose.
+
+        The run must stop, and it must name the variable that is missing -- a
+        contract without the capture may not go green.  Which kind of missing
+        variable it is follows the contract: with no step capturing
+        ``template_id``, the contract asks the environment for it, and the
+        message says so instead of pointing at a capture that no longer
+        exists.
+        """
+        answered = {"count": 0}
+
+        def opener(request, timeout):
+            answered["count"] += 1
+            if answered["count"] == 1:
+                return _SelfTestResponse({"data": {"id": "t-9"}}, status=200)
+            return _SelfTestResponse({"data": {"id": "p-1"}}, status=201)
+
+        runner = ScenarioRunner(self.OPENAPI, self.specification(capture=False),
+                                base_url="https://provider.test/api/v1", opener=opener)
+        with self.assertRaises(WorkflowError) as caught:
+            runner.run()
+        message = str(caught.exception)
+        self.assertIn("template_id", message)
+        # Without the capture the contract asks the environment for the
+        # value, and the run says so before the first request.
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
+        self.assertNotIn("template_id", runner.variables)
+
+    def test_a_variable_the_contract_never_captures_is_called_a_precondition(self):
+        def opener(request, timeout):
+            return _SelfTestResponse({"data": {"id": "t-9"}}, status=200)
+
+        runner = ScenarioRunner(self.OPENAPI,
+                                self.specification(second_variable="{{knowledge_id}}"),
+                                base_url="https://provider.test/api/v1", opener=opener)
+        with self.assertRaises(WorkflowError) as caught:
+            runner.run()
+        message = str(caught.exception)
+        self.assertIn("knowledge_id", message)
+        self.assertIn("does not supply", message)
+        self.assertIn("no default", message)
+        self.assertNotIn("the contract captures it", message)
+
+    def test_a_step_that_failed_its_status_gets_its_own_conclusion(self):
+        """A step that never answered must not vanish from the outcomes."""
+        report = {
+            "steps": [{"id": "S1", "operation_id": "getTemplate", "http_status": 200}],
+            "failures": [{"step_id": "S2", "operation_id": "bindAsset",
+                          "kind": "http_status", "expected": 201, "actual": 404}],
+            "checks": [],
+        }
+        outcomes = beta_evidence.check_outcomes(report)
+        identifiers = [outcome.id for outcome in outcomes]
+        self.assertIn("S2 bindAsset", identifiers)
+        failed = next(o for o in outcomes if o.id == "S2 bindAsset")
+        self.assertEqual(failed.status, beta_evidence.FAILED)
+        self.assertIn("404", failed.evidence)
+        self.assertIn("201", failed.evidence)
+
+
+class UnblockTargetTests(unittest.TestCase):
+    """A NOT RUN item has to say who will unblock it.
+
+    The Beta release ticket (#480) owns the items that need the environment
+    rather than code: a real model credential, an isolated PostgreSQL, the
+    two-chapter material, the Word check sheet.  The unblock condition of
+    every such item names that ticket, so the evidence directory says who
+    owes the next step instead of only saying what is missing.
+    """
+
+    def test_the_browser_and_parity_items_name_the_release_ticket(self):
+        with tempfile.TemporaryDirectory(prefix="lingdoc-unblock-") as temporary:
+            outcomes, _ = beta_evidence.run_browser_part(
+                "http://127.0.0.1:1/api/v1/lingdoc", "", Path(temporary))
+        for outcome in outcomes:
+            self.assertEqual(outcome.status, beta_evidence.NOT_RUN)
+            self.assertIn("GAP-", outcome.unblock, outcome.id)
+            self.assertNotIn("#480", outcome.unblock,
+                             "a ticket number in an unblock condition drifts: "
+                             + outcome.id)
+
+    def test_the_word_item_names_the_release_ticket(self):
+        outcomes, _, _ = beta_evidence.word_check(None, None, None)
+        for outcome in outcomes:
+            self.assertEqual(outcome.status, beta_evidence.NOT_RUN)
+            self.assertIn("GAP-", outcome.unblock, outcome.id)
+            self.assertNotIn("#480", outcome.unblock,
+                             "a ticket number in an unblock condition drifts: "
+                             + outcome.id)
+
+    def test_the_isolated_postgresql_item_names_the_release_ticket(self):
+        with tempfile.TemporaryDirectory(prefix="lingdoc-unblock-") as temporary:
+            outcomes, _ = beta_evidence.run_restart_part(
+                None, REPO_ROOT, Path(temporary), "sqlite", "")
+        isolated = next(o for o in outcomes if "隔离 PostgreSQL" in o.id)
+        self.assertEqual(isolated.status, beta_evidence.NOT_RUN)
+        self.assertIn("GAP-", isolated.unblock)
+        self.assertNotIn("#480", isolated.unblock)
+
+    def test_the_material_and_the_model_call_name_the_release_ticket(self):
+        source = (REPO_ROOT / "scripts" / "acceptance" / "beta_evidence.py").read_text(
+            encoding="utf-8")
+        for marker in ("合成材料哈希（协议 §2 第 1 步）",
+                       "真实模型调用（协议 §3：真实模型的一次选段改写）"):
+            self.assertIn(marker, source)
+            index = source.index(marker)
+            window = source[index:index + 700]
+            self.assertIn("GAP-", window, marker)
+            self.assertNotIn("#480", window, marker)
 
 
 if __name__ == "__main__":

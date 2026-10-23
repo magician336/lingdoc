@@ -57,7 +57,7 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewResearchAdapter(db, projects, runtime, nil, nil, nil)
 	// 生产组合根把同一个适配器同时装成 Sources 与 Research；只有 Research

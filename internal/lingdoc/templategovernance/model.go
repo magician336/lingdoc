@@ -6,6 +6,7 @@ package templategovernance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
@@ -20,6 +21,7 @@ type Action string
 const (
 	ActionRead             Action = "read"
 	ActionCreateProfile    Action = "create_profile"
+	ActionCopy             Action = "copy"
 	ActionSaveDraft        Action = "save_draft"
 	ActionPublish          Action = "publish"
 	ActionWithdraw         Action = "withdraw"
@@ -34,6 +36,12 @@ const (
 // The wording a caller reads is part of the contract, so it is declared here
 // instead of in the transport's error table.
 var (
+	// ErrUnverifiedActor marks a request whose claimed actor cannot be
+	// attributed to the authenticated caller. Such a request must not author
+	// a failure receipt in the claimed actor's name.
+	ErrUnverifiedActor       = errors.New("template_governance_actor_unverified")
+	ErrPermissionDenied      = errors.New("template_governance_permission_denied")
+	ErrAuditHistoryForbidden = clienterror.New(clienterror.Form{Status: 403, Code: "forbidden", Message: "仅当前租户目录管理员可读取治理审计历史。", Retryable: false}, "template_governance_audit_history_forbidden")
 	// ErrUnavailable is a governance service that is not configured.
 	//
 	// Not configured is not temporarily unavailable: the service is absent, so a
@@ -134,6 +142,32 @@ type CatalogFilter struct {
 	Scope string
 	State template.RuleSetState
 }
+type AuditHistoryFilter struct {
+	AfterID uint64
+	Limit   int
+}
+type AuditEvent struct {
+	ID          uint64          `json:"id"`
+	ActorUserID string          `json:"actor_user_id"`
+	ActorRole   string          `json:"actor_role"`
+	Action      string          `json:"action"`
+	TargetType  string          `json:"target_type"`
+	TargetID    string          `json:"target_id"`
+	Outcome     string          `json:"outcome"`
+	Details     json.RawMessage `json:"details"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+type AuditHistoryPage struct {
+	Events      []AuditEvent `json:"events"`
+	NextAfterID uint64       `json:"next_after_id,omitempty"`
+}
+type CopyFailure struct {
+	TemplateID              string
+	TemplateVersion         string
+	ProjectID               string
+	Cause                   error
+	AuditPersistenceFailure bool
+}
 type CreateProfileInput struct {
 	ID     string `json:"template_id"`
 	Name   string `json:"name"`
@@ -195,6 +229,10 @@ type SuggestionScope struct {
 }
 type Authorizer interface {
 	AuthorizeTemplate(context.Context, *gorm.DB, Actor, Action, string) error
+	// CanManageTemplateCatalog rechecks the current tenant role in the same
+	// read transaction. Public catalog readers must not receive unpublished
+	// drafts, source IDs, or another project's recall impact list.
+	CanManageTemplateCatalog(context.Context, *gorm.DB, Actor) (bool, error)
 	AuthorizeSuggestion(context.Context, *gorm.DB, Actor, Action, SuggestionScope) error
 	CurrentProjectBasis(context.Context, *gorm.DB, Actor, string) (VersionBasis, error)
 }

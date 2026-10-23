@@ -303,6 +303,29 @@ func pr150ReadMigrationHistory(t *testing.T, s *Service, a Actor, p Project, ids
 	return string(raw)
 }
 
+// pr150ForwardAuditMigration applies one production migration, found by the
+// marker in its file name, to a library that stopped before it.
+func pr150ForwardAuditMigration(t *testing.T, flavor, marker string, run func([]byte) error) {
+	t.Helper()
+	forward := ""
+	for _, file := range productionLingDocMigrationNames(t, flavor) {
+		if strings.Contains(file, marker) {
+			forward = file
+			break
+		}
+	}
+	if forward == "" {
+		t.Fatalf("the %s migration is not in the %s production chain", marker, flavor)
+	}
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", flavor, forward))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(body); err != nil {
+		t.Fatalf("bring the audit table forward (%s): %v", marker, err)
+	}
+}
+
 // run calls the existing production database driver's Run method on a separate
 // migration connection. It is not a replacement SQL splitter/transaction runner.
 func pr150CheckSatisfiedMigration(t *testing.T, s *Service, flavor string, withSatisfied bool,
@@ -315,23 +338,12 @@ func pr150CheckSatisfiedMigration(t *testing.T, s *Service, flavor string, withS
 	// table, so bringing the audit table forward does not affect what the
 	// rehearsal proves.
 	if !s.testDB().Migrator().HasColumn(&auditEventRow{}, "TargetVersion") {
-		forward := ""
-		for _, file := range productionLingDocMigrationNames(t, flavor) {
-			if strings.Contains(file, "audit_version_fields") {
-				forward = file
-				break
-			}
-		}
-		if forward == "" {
-			t.Fatalf("the audit version fields migration is not in the %s production chain", flavor)
-		}
-		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", flavor, forward))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := run(body); err != nil {
-			t.Fatalf("bring the audit table forward: %v", err)
-		}
+		pr150ForwardAuditMigration(t, flavor, "audit_version_fields", run)
+	}
+	// The decision columns came later (#415): the library also has to carry
+	// them, or the service's own audit write fails with "no such column".
+	if !s.testDB().Migrator().HasColumn(&auditEventRow{}, "TenantID") {
+		pr150ForwardAuditMigration(t, flavor, "audit_decision_fields", run)
 	}
 	a, p, ids := pr150SeedMigrationHistory(t, s)
 	before := pr150MigrationHistorySnapshot(t, s)
