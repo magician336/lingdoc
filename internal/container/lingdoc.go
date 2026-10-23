@@ -82,7 +82,11 @@ func NewLingDocWorkspaceHandler(
 	projectService.RequireActivationRead(true)
 	projectService.SetRuntimeMode("real")
 	research := workspace.NewResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
-	model := workspace.NewHostAgentModel(models)
+	// The model-call ledger is what tells a real sample from a demo one, so the
+	// composition root installs it: without it the calls leave no trace and
+	// 「this run was a real model」 is unanswerable (55-Spec 决策 1 / 决策 4).
+	model := workspace.NewHostAgentModel(models,
+		workspace.WithModelCallLedger(workspacecore.NewGORMModelCallLedger(db)))
 	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {

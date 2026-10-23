@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -21,13 +23,46 @@ type HostAgentModel struct {
 	models    interfaces.ModelService
 	budget    *generationAcceptanceBudget
 	configErr error
+	ledger    core.ModelCallLedger
 }
 
-func NewHostAgentModel(models interfaces.ModelService) core.AgentModel {
-	budget, err := loadGenerationAcceptanceBudget()
-	return &HostAgentModel{models: models, budget: budget, configErr: err}
+// HostAgentModelOption configures the host model adapter.
+type HostAgentModelOption func(*HostAgentModel)
+
+// WithModelCallLedger makes the adapter leave one ledger row per model call.
+//
+// The ledger is what tells a real sample from a demo one, so the composition
+// root has to install it: without it the adapter behaves exactly as before and
+// the calls it makes leave no trace. A call whose fact was not recorded is
+// not a call anybody can account for, so a failed write is reported as an
+// unknown outcome instead of being swallowed.
+func WithModelCallLedger(ledger core.ModelCallLedger) HostAgentModelOption {
+	return func(m *HostAgentModel) { m.ledger = ledger }
 }
-func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request core.ModelRequest) (core.ModelReply, error) {
+
+func NewHostAgentModel(models interfaces.ModelService, options ...HostAgentModelOption) core.AgentModel {
+	budget, err := loadGenerationAcceptanceBudget()
+	host := &HostAgentModel{models: models, budget: budget, configErr: err}
+	for _, option := range options {
+		if option != nil {
+			option(host)
+		}
+	}
+	return host
+}
+func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request core.ModelRequest) (result core.ModelReply, err error) {
+	// A ledger row that could not be written makes the outcome of this call
+	// unknown: the provider was called and the fact of it is missing. The
+	// error is joined into whatever the call already returned, so the turn
+	// never reports a success whose cost nobody can account for.
+	var ledgerErr error
+	defer func() {
+		if ledgerErr == nil {
+			return
+		}
+		result = core.ModelReply{}
+		err = errors.Join(err, core.ErrOutcomeUnknown, ledgerErr)
+	}()
 	if m.configErr != nil {
 		return core.ModelReply{}, generation.ErrAcceptanceBudgetUnavailable
 	}
@@ -108,7 +143,18 @@ func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request co
 		options = acceptanceGenerationChatOptions()
 		options.MaxCompletionTokens = 2048
 	}
+	started := time.Now()
 	response, callErr := selected.Chat(types.WithLLMCallMetadata(modelCtx, "lingdoc_"+request.Agent+"_"+request.Purpose, request.Context.CorrelationID), messages, options)
+	durationMS := time.Since(started).Milliseconds()
+	// This call itself leaves one ledger row: did the provider answer, how many
+	// tokens, how long, which model and which parameters. Whether the answer
+	// turned out to be usable is the turn's own state and stays out of this
+	// row -- they are two facts, and mixing them means nobody can ask one of
+	// them alone.
+	ledgerErr = m.recordModelCall(ctx, actor, request, modelCallOutcome{
+		models: registered, modelID: modelID, options: options,
+		response: response, callErr: callErr, durationMS: durationMS,
+	})
 	if reservation != nil {
 		if callErr != nil {
 			_ = reservation.unknown("outcome_unknown")
@@ -190,6 +236,98 @@ func (m *HostAgentModel) Reply(ctx context.Context, actor core.Actor, request co
 		}
 	}
 	return reply, nil
+}
+
+// modelCallOutcome is what one model call actually did.
+//
+// It is a fact about the CALL, not about the turn it belongs to: the provider
+// answered or it did not, and what the call cost.
+type modelCallOutcome struct {
+	models     []*types.Model
+	modelID    string
+	options    *chat.ChatOptions
+	response   *types.ChatResponse
+	callErr    error
+	durationMS int64
+}
+
+// recordModelCall leaves one ledger row for this model call.
+//
+// The provider and the parameters are taken from what was actually sent, not
+// from a second configuration beside it: a ledger that could disagree with the
+// request would be the very kind of untrustworthy record this ledger exists to
+// remove.
+func (m *HostAgentModel) recordModelCall(ctx context.Context, actor core.Actor, request core.ModelRequest, outcome modelCallOutcome) error {
+	if m.ledger == nil {
+		return nil
+	}
+	entry := core.ModelCallLedgerEntry{
+		TenantID:   actor.TenantID,
+		ProjectID:  request.Context.ProjectID,
+		Provider:   modelProvider(outcome.models, outcome.modelID),
+		ModelID:    outcome.modelID,
+		RunMode:    rewriteRunMode(outcome.models, outcome.modelID),
+		DurationMS: outcome.durationMS,
+		Status:     core.ModelCallLedgerStatusSucceeded,
+		SourceKind: modelCallSourceKind(request.Purpose),
+		SourceID:   request.Context.CorrelationID,
+	}
+	if outcome.response != nil {
+		entry.InputTokens = outcome.response.Usage.PromptTokens
+		entry.OutputTokens = outcome.response.Usage.CompletionTokens
+	}
+	if outcome.callErr != nil || outcome.response == nil {
+		// A call that did not answer is a failure with its error code, never a
+		// success: a retry must not look like a first success.
+		entry.Status = core.ModelCallLedgerStatusFailed
+		entry.ErrorCode = core.ModelCallFailureCode(outcome.callErr)
+	}
+	if outcome.options != nil {
+		raw, marshalErr := json.Marshal(outcome.options)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		entry.ParametersJSON = string(raw)
+	}
+	if m.budget != nil {
+		// The budget columns carry the acceptance ledger's semantics: what was
+		// reserved for this call and what it actually consumed. The ledger
+		// records the budget; it does not enforce it.
+		entry.ReservedNanoUSD = generationAcceptancePerCall
+		if outcome.response != nil && outcome.response.Usage.PromptTokens >= 0 && outcome.response.Usage.CompletionTokens >= 0 {
+			entry.ActualNanoUSD = actualDeepSeekCost(outcome.response.Usage.PromptTokens, outcome.response.Usage.CompletionTokens)
+		}
+	}
+	if !candidateadoption.ValidRunMode(candidateadoption.RunMode(entry.RunMode)) {
+		return core.ErrInvalidRequest
+	}
+	// The row is written without the caller's cancellation: the provider was
+	// called and the tokens were spent, and that does not un-happen because the
+	// caller hung up. A call whose cost nobody can account for is exactly what
+	// this ledger exists to prevent.
+	return m.ledger.RecordModelCall(context.WithoutCancel(ctx), entry)
+}
+
+// modelProvider returns the provider of the model this call actually used.
+func modelProvider(models []*types.Model, modelID string) string {
+	for _, model := range models {
+		if model != nil && model.ID == modelID {
+			return model.Parameters.Provider
+		}
+	}
+	return ""
+}
+
+// modelCallSourceKind says which product action this call belongs to.
+//
+// The id of that action is the correlation id the call carries: ModelRequest
+// does not carry the id of the turn that caused it, and the correlation id is
+// the same handle the agent audit event records for that turn.
+func modelCallSourceKind(purpose string) string {
+	if purpose == core.AgentPurposeRuleSuggestion {
+		return core.ModelCallLedgerSourceRuleSuggestionRun
+	}
+	return core.ModelCallLedgerSourceAgentTurn
 }
 
 var _ core.AgentModel = (*HostAgentModel)(nil)

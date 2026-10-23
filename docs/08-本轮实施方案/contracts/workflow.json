@@ -1,6 +1,6 @@
 {
   "id": "F01",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "mode": "specification_not_executed_against_provider",
   "related_scenarios": [
     {
@@ -103,6 +103,13 @@
       "capture": {
         "template_id": "/data/id"
       },
+      "checks": [
+        {
+          "path": "/data/ruleset_hash",
+          "length": 64,
+          "intent": "模板规则集摘要是 64 位十六进制：冻结输入靠它与模板对齐"
+        }
+      ],
       "assertions": []
     },
     {
@@ -148,8 +155,16 @@
       },
       "capture": {
         "project_id": "/data/id",
-        "spec_revision": "/data/spec_revision"
+        "spec_revision": "/data/spec_revision",
+        "owner_user_id": "/data/members/0/user_id"
       },
+      "checks": [
+        {
+          "path": "/data/template_id",
+          "equals": "{{template_id}}",
+          "intent": "项目绑定的模板就是本轮读到的那个模板"
+        }
+      ],
       "assertions": []
     },
     {
@@ -205,6 +220,13 @@
         "spec_revision": "/data/spec_revision",
         "project_version": "/data/project_version"
       },
+      "checks": [
+        {
+          "path": "/data/spec/research_subject",
+          "equals": "公开的合成调查样本",
+          "intent": "规格字段按请求原样落库"
+        }
+      ],
       "assertions": []
     },
     {
@@ -239,9 +261,24 @@
       "capture": {
         "activation_read_id": "/data/id"
       },
-      "assertions": [
-        "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。"
-      ]
+      "checks": [
+        {
+          "path": "/data/actor_id",
+          "equals": "{{owner_user_id}}",
+          "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执的actor就是执行本次审阅的Owner）"
+        },
+        {
+          "path": "/data/project_version",
+          "equals": "{{project_version}}",
+          "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执记的是当前项目版本——审阅的就是当前版本）"
+        },
+        {
+          "path": "/data/spec_revision",
+          "equals": "{{spec_revision}}",
+          "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执记的是当前规格修订）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-04",
@@ -292,12 +329,20 @@
         }
       },
       "capture": {},
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "active",
+          "intent": "项目激活后状态为active，章节骨架从此可写"
+        }
+      ],
       "assertions": []
     },
     {
       "id": "F01-05",
       "operation_id": "listChapters",
       "actor": "u-owner",
+      "readback_of": "F01-04",
       "request": {
         "path_params": {
           "projectId": "{{project_id}}"
@@ -343,6 +388,18 @@
         "method_id": "/data/1/id",
         "method_version": "/data/1/current_version_id"
       },
+      "checks": [
+        {
+          "path": "/data/0/section_id",
+          "readback_equals": "question",
+          "intent": "激活之后从库里真实读回章节骨架：第一章是研究问题"
+        },
+        {
+          "path": "/data/1/section_id",
+          "readback_equals": "method",
+          "intent": "激活之后从库里真实读回章节骨架：第二章是研究方案"
+        }
+      ],
       "assertions": []
     },
     {
@@ -379,6 +436,13 @@
       "capture": {
         "asset_id": "/data/id"
       },
+      "checks": [
+        {
+          "path": "/data/processing_state",
+          "equals": "ready",
+          "intent": "合成材料真的经过接入与处理，处理就绪（协议 §1）"
+        }
+      ],
       "assertions": []
     },
     {
@@ -420,6 +484,13 @@
       "capture": {
         "run_id": "/data/id"
       },
+      "checks": [
+        {
+          "path": "/data/chapter_id",
+          "equals": "{{question_id}}",
+          "intent": "生成任务落在待起草的那一章上"
+        }
+      ],
       "assertions": []
     },
     {
@@ -452,14 +523,25 @@
       "capture": {
         "candidate_id": "/data/candidate_id"
       },
-      "assertions": [
-        "轮询只GET，超时不重新创建任务；状态最终succeeded，失败则本场景失败。"
-      ]
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "succeeded",
+          "intent": "轮询只GET，超时不重新创建任务；状态最终succeeded，失败则本场景失败。"
+        },
+        {
+          "path": "/data/id",
+          "equals": "{{run_id}}",
+          "intent": "轮询只GET，超时不重新创建任务；状态最终succeeded，失败则本场景失败。（读回的是同一个生成任务，没有重新创建）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-09",
       "operation_id": "getCandidate",
       "actor": "u-owner",
+      "readback_of": "F01-07",
       "request": {
         "path_params": {
           "projectId": "{{project_id}}",
@@ -511,14 +593,35 @@
         "source_id": "/data/source_ids/0",
         "review_id": "/data/review_items/0/id"
       },
-      "assertions": [
-        "正文故意没有待核实提示；结构化review_items仍必须保留。"
-      ]
+      "checks": [
+        {
+          "path": "/data/chapter_id",
+          "readback_equals": "{{question_id}}",
+          "intent": "候选稿读回的是本轮起草的那一章"
+        },
+        {
+          "path": "/data/review_items/0",
+          "marked_or_absent": "/statement",
+          "intent": "正文故意没有待核实提示；结构化review_items仍必须保留。（待核事项要么被显式标记、要么不出现）"
+        },
+        {
+          "path": "/data/basis/spec_revision",
+          "equals": "{{spec_revision}}",
+          "intent": "候选稿绑定的是当前规格修订"
+        },
+        {
+          "path": "/data/basis/chapter_version_id",
+          "equals": "{{question_version}}",
+          "intent": "候选稿绑定的是起草当时的正文版本"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-10",
       "operation_id": "getSource",
       "actor": "u-owner",
+      "readback_of": "F01-07",
       "request": {
         "path_params": {
           "projectId": "{{project_id}}",
@@ -546,6 +649,23 @@
         }
       },
       "capture": {},
+      "checks": [
+        {
+          "path": "/data/asset_id",
+          "readback_equals": "{{asset_id}}",
+          "intent": "来源绑定的是本轮绑定的资料"
+        },
+        {
+          "path": "/data/locator",
+          "non_empty": true,
+          "intent": "来源定位可读（协议 §3）"
+        },
+        {
+          "path": "/data/status",
+          "equals": "available",
+          "intent": "被引用的来源在合成材料里可用（协议 §3）"
+        }
+      ],
       "assertions": []
     },
     {
@@ -597,9 +717,19 @@
       "capture": {
         "accepted_question_version": "/data/current_version_id"
       },
-      "assertions": [
-        "新版本继承review_items；项目版本增加到4。"
-      ]
+      "checks": [
+        {
+          "path": "{{review_id}}",
+          "ref_in": "/data/review_items",
+          "intent": "新版本继承review_items；项目版本增加到4。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）"
+        },
+        {
+          "path": "/data/current_version_id",
+          "non_empty": true,
+          "intent": "新版本继承review_items；项目版本增加到4。（采纳产生了新的正文版本）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-12",
@@ -648,9 +778,19 @@
         }
       },
       "capture": {},
-      "assertions": [
-        "模拟首次响应丢失：返回同一版本；不做旧expected_version前置校验，不新增章节版本。"
-      ]
+      "checks": [
+        {
+          "path": "/data/current_version_id",
+          "equals": "{{accepted_question_version}}",
+          "intent": "模拟首次响应丢失：返回同一版本；不做旧expected_version前置校验，不新增章节版本。"
+        },
+        {
+          "path": "{{review_id}}",
+          "ref_in": "/data/review_items",
+          "intent": "模拟首次响应丢失：返回同一版本；不做旧expected_version前置校验，不新增章节版本。（重投没有丢掉待核事项）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-13",
@@ -703,9 +843,19 @@
       "capture": {
         "question_version": "/data/current_version_id"
       },
-      "assertions": [
-        "普通保存由后端继承上版review_items；请求不允许覆盖或删除它们。"
-      ]
+      "checks": [
+        {
+          "path": "{{review_id}}",
+          "ref_in": "/data/review_items",
+          "intent": "普通保存由后端继承上版review_items；请求不允许覆盖或删除它们。（请求没有覆盖它们，后端继承上版的待核事项）"
+        },
+        {
+          "path": "/data/body_markdown",
+          "non_empty": true,
+          "intent": "章节正文非空（协议 §3）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-14",
@@ -756,9 +906,19 @@
         }
       },
       "capture": {},
-      "assertions": [
-        "成功后响应丢失的重试不产生假409，项目版本仍为5。"
-      ]
+      "checks": [
+        {
+          "path": "/data/current_version_id",
+          "equals": "{{question_version}}",
+          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为5。（重投返回同一正文版本，没有新增章节版本；假409由契约声明的HTTP 201排除）"
+        },
+        {
+          "path": "{{review_id}}",
+          "ref_in": "/data/review_items",
+          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为5。（重投之后待核事项仍在）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-15",
@@ -801,6 +961,13 @@
       "capture": {
         "method_version": "/data/current_version_id"
       },
+      "checks": [
+        {
+          "path": "/data/body_markdown",
+          "non_empty": true,
+          "intent": "第二章正文非空（协议 §3）"
+        }
+      ],
       "assertions": []
     },
     {
@@ -859,6 +1026,23 @@
         }
       },
       "capture": {},
+      "checks": [
+        {
+          "path": "/data/chapter_version_id",
+          "equals": "{{question_version}}",
+          "intent": "确认绑定的是被确认的那一版正文（候选、采纳、确认和冻结绑定正确正文版本，协议 §3）"
+        },
+        {
+          "path": "/data/valid",
+          "equals": true,
+          "intent": "确认结果有效"
+        },
+        {
+          "path": "/data/review_decisions/0/review_item_id",
+          "equals": "{{review_id}}",
+          "intent": "待核事项有明确处置（保留并说明原因）"
+        }
+      ],
       "assertions": []
     },
     {
@@ -900,12 +1084,25 @@
         }
       },
       "capture": {},
+      "checks": [
+        {
+          "path": "/data/chapter_version_id",
+          "equals": "{{method_version}}",
+          "intent": "第二章确认绑定的正文版本正确"
+        },
+        {
+          "path": "/data/valid",
+          "equals": true,
+          "intent": "第二章确认结果有效"
+        }
+      ],
       "assertions": []
     },
     {
       "id": "F01-18",
       "operation_id": "getProject",
       "actor": "u-owner",
+      "readback_of": "F01-17",
       "request": {
         "path_params": {
           "projectId": "{{project_id}}"
@@ -946,6 +1143,18 @@
       "capture": {
         "project_version": "/data/project_version"
       },
+      "checks": [
+        {
+          "path": "/data/spec_revision",
+          "readback_equals": "{{spec_revision}}",
+          "intent": "确认之后从库里读回项目：规格修订仍是本轮的修订（数据库副作用通过读回核对，协议 §3）"
+        },
+        {
+          "path": "/data/status",
+          "equals": "active",
+          "intent": "读回的项目仍是激活状态"
+        }
+      ],
       "assertions": []
     },
     {
@@ -1148,9 +1357,50 @@
       "capture": {
         "snapshot_id": "/data/id"
       },
-      "assertions": [
-        "digest由frozen_input计算；它含待核事项和保留决定，独立于当前Source和动态is_current。"
-      ]
+      "checks": [
+        {
+          "path": "/data/snapshot_digest",
+          "length": 64,
+          "intent": "digest由frozen_input计算；它含待核事项和保留决定，独立于当前Source和动态is_current。（摘要是 64 位十六进制，由冻结输入算出）"
+        },
+        {
+          "path": "/data/frozen_input/chapters/0/source_ids/0",
+          "ref_in": "/data/frozen_input/sources",
+          "intent": "引用指向合成材料中的有效来源（协议 §3）"
+        },
+        {
+          "path": "/data/frozen_input/sources/0/asset_id",
+          "ref_in": "/data/frozen_input/policy_asset_ids",
+          "intent": "模型不声称已读取实际未授权的材料：冻结输入里的来源都在授权资料集合内（协议 §3）"
+        },
+        {
+          "path": "/data/frozen_input/chapters/0/review_items/0/id",
+          "ref_in": "/data/frozen_input/chapters/0/confirmation/review_decisions",
+          "id_field": "review_item_id",
+          "intent": "digest由frozen_input计算；它含待核事项和保留决定（冻结输入里的待核事项都有保留决定）"
+        },
+        {
+          "path": "/data/frozen_input/chapters/0/chapter_version_id",
+          "version_bound": "/data/frozen_input/chapters/0/confirmation/chapter_version_id",
+          "intent": "候选、采纳、确认和冻结绑定正确正文版本：冻结的章节版本与确认的正文版本互相绑定（协议 §3）"
+        },
+        {
+          "path": "/data/check/project_version",
+          "version_bound": "/data/frozen_input/project_version",
+          "intent": "冻结检查用的项目版本与冻结输入里的项目版本一致"
+        },
+        {
+          "path": "/data/frozen_input/chapters/0/body_markdown",
+          "non_empty": true,
+          "intent": "章节正文非空（协议 §3）"
+        },
+        {
+          "path": "/data/frozen_input/sources/0/locator",
+          "non_empty": true,
+          "intent": "冻结输入自带来源定位，不依赖当前Source与动态is_current"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-20",
@@ -1350,9 +1600,14 @@
         }
       },
       "capture": {},
-      "assertions": [
-        "同键返回同一snapshot_id；不再创建快照。"
-      ]
+      "checks": [
+        {
+          "path": "/data/id",
+          "equals": "{{snapshot_id}}",
+          "intent": "同键返回同一snapshot_id；不再创建快照。"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-21",
@@ -1389,12 +1644,20 @@
       "capture": {
         "export_id": "/data/id"
       },
+      "checks": [
+        {
+          "path": "/data/snapshot_id",
+          "equals": "{{snapshot_id}}",
+          "intent": "导出的是本轮冻结的那一份快照"
+        }
+      ],
       "assertions": []
     },
     {
       "id": "F01-22",
       "operation_id": "getExport",
       "actor": "u-owner",
+      "readback_of": "F01-21",
       "request": {
         "path_params": {
           "projectId": "{{project_id}}",
@@ -1422,9 +1685,24 @@
       "capture": {
         "expected_export_sha256": "/data/file_sha256"
       },
-      "assertions": [
-        "文件hash在真实测试中由实际文件字节比较；本参考trace的零hash仅为占位，不能当实物证据。"
-      ]
+      "checks": [
+        {
+          "path": "/data/snapshot_id",
+          "readback_equals": "{{snapshot_id}}",
+          "intent": "导出记录绑定的快照就是本轮冻结的快照（读回核对）"
+        },
+        {
+          "path": "/data/status",
+          "equals": "verified",
+          "intent": "导出进入终态"
+        },
+        {
+          "path": "/data/file_sha256",
+          "length": 64,
+          "intent": "文件hash在真实测试中由实际文件字节比较；本参考trace的零hash仅为占位，不能当实物证据。（导出记录里的哈希是 64 位十六进制；它与真实字节的比较由 F01-23 的 hash_equals 完成）"
+        }
+      ],
+      "assertions": []
     },
     {
       "id": "F01-23",
@@ -1448,10 +1726,18 @@
         ]
       },
       "capture": {},
-      "assertions": [
-        "本文件不含DOCX实物；提供方联调测试必须实际执行以上断言。"
-      ]
+      "checks": [
+        {
+          "path": "/data/file_sha256",
+          "hash_equals": {
+            "from_step": "F01-22"
+          },
+          "intent": "本文件不含DOCX实物；提供方联调测试必须实际执行以上断言。（摘要hash与下载真实字节相等：文件哈希与导出记录一致，协议 §3）"
+        }
+      ],
+      "assertions": []
     }
   ],
-  "download_sha256_variable": "expected_export_sha256"
+  "download_sha256_variable": "expected_export_sha256",
+  "manual_assertions": []
 }
