@@ -299,6 +299,12 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
             "scripts/acceptance/**",
             "internal/container/lingdoc*",
             "internal/router/lingdoc*",
+            # The PostgreSQL migration rehearsals live in internal/database and
+            # only run where a PostgreSQL service exists -- this job.  A change
+            # to a migration must therefore reach this gate, or the rehearsal
+            # would keep skipping and the PostgreSQL side of the migration
+            # would have no pull-request evidence at all.
+            "internal/database/**",
             ".github/workflows/lingdoc-interface-integration.yml",
         ),
         "consumers": (
