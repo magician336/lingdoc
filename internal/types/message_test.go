@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -106,17 +107,18 @@ func TestMessageArtifacts_ScanNil(t *testing.T) {
 	}
 }
 
-// TestMessageArtifacts_ScanUnknownType covers the fallback branch: a driver
-// returning an unexpected type (e.g. int) must produce an empty slice and
-// no error, matching the defensive contract shared with MessageImages/
-// MessageAttachments.
+// TestMessageArtifacts_ScanUnknownType covers a driver returning an
+// unexpected type (e.g. int). The shared JSON-column reader reports it
+// instead of dropping the value: a dropped value would leave an empty slice
+// that is indistinguishable from a column nobody wrote.
 func TestMessageArtifacts_ScanUnknownType(t *testing.T) {
 	var m MessageArtifacts
-	if err := m.Scan(12345); err != nil {
-		t.Fatalf("Scan(int) unexpected error = %v", err)
+	err := m.Scan(12345)
+	if err == nil {
+		t.Fatal("Scan(int) error = nil, want an unsupported-carrier error")
 	}
-	if len(m) != 0 {
-		t.Fatalf("Scan(unknown) length = %d, want 0", len(m))
+	if !errors.Is(err, ErrUnsupportedJSONColumnValue) {
+		t.Fatalf("Scan(int) error = %v, want ErrUnsupportedJSONColumnValue", err)
 	}
 }
 

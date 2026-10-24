@@ -88,20 +88,15 @@ func (v *SkillEnvVars) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch raw := value.(type) {
-	case []byte:
-		b = raw
-	case string:
-		b = []byte(raw)
-	default:
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if len(b) == 0 {
+	if len(raw) == 0 {
 		return nil
 	}
 	var rows []skillEnvVarRow
-	if err := json.Unmarshal(b, &rows); err != nil {
+	if err := json.Unmarshal(raw, &rows); err != nil {
 		return err
 	}
 	if rows == nil {

@@ -346,11 +346,11 @@ func (c *ModelParameters) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	// A credential that EXISTS but cannot be decrypted is a misconfiguration,

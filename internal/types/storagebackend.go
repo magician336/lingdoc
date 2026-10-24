@@ -127,11 +127,11 @@ func (c *StorageBackendConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	accessKey, err := utils.DecryptStoredSecret(c.AccessKeyID)

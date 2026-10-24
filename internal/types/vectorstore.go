@@ -180,11 +180,11 @@ func (c *ConnectionConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	password, err := utils.DecryptStoredSecret(c.Password)
@@ -277,11 +277,7 @@ func (c *IndexConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // GetIndexNameOrDefault returns the effective index/collection name,

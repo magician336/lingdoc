@@ -112,17 +112,7 @@ func (m *MessageImages) Scan(value interface{}) error {
 		*m = make(MessageImages, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*m = make(MessageImages, 0)
-		return nil
-	}
-	return json.Unmarshal(b, m)
+	return scanJSONColumn(value, m)
 }
 
 // MessageAttachment represents a file attachment in a chat message
@@ -209,17 +199,7 @@ func (m *MessageAttachments) Scan(value interface{}) error {
 		*m = make(MessageAttachments, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*m = make(MessageAttachments, 0)
-		return nil
-	}
-	return json.Unmarshal(b, m)
+	return scanJSONColumn(value, m)
 }
 
 // MessageArtifact represents a file produced by a skill script during a chat
@@ -259,17 +239,7 @@ func (m *MessageArtifacts) Scan(value interface{}) error {
 		*m = make(MessageArtifacts, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*m = make(MessageArtifacts, 0)
-		return nil
-	}
-	return json.Unmarshal(b, m)
+	return scanJSONColumn(value, m)
 }
 
 // MentionedItems is a slice of MentionedItem for database storage
@@ -289,17 +259,7 @@ func (m *MentionedItems) Scan(value interface{}) error {
 		*m = make(MentionedItems, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*m = make(MentionedItems, 0)
-		return nil
-	}
-	return json.Unmarshal(b, m)
+	return scanJSONColumn(value, m)
 }
 
 // Message represents a conversation message
@@ -409,17 +369,7 @@ func (c *MessageExecutionContext) Scan(value interface{}) error {
 		*c = MessageExecutionContext{}
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*c = MessageExecutionContext{}
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // AgentSteps represents a collection of agent execution steps
@@ -440,17 +390,7 @@ func (a *AgentSteps) Scan(value interface{}) error {
 		*a = make(AgentSteps, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*a = make(AgentSteps, 0)
-		return nil
-	}
-	return json.Unmarshal(b, a)
+	return scanJSONColumn(value, a)
 }
 
 // BeforeCreate is a GORM hook that runs before creating a new message record

@@ -161,19 +161,19 @@ func (c *RetrieverEngines) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
 
 	// Try the current object format first: {"engines": [...]}
-	if err := json.Unmarshal(b, c); err == nil {
+	if err := json.Unmarshal(raw, c); err == nil {
 		return nil
 	}
 
 	// Fallback: legacy bare-array format: [{...}, {...}]
 	var engines []RetrieverEngineParams
-	if err := json.Unmarshal(b, &engines); err != nil {
+	if err := json.Unmarshal(raw, &engines); err != nil {
 		return fmt.Errorf("retriever_engines: cannot unmarshal as object or array: %w", err)
 	}
 	c.Engines = engines
@@ -235,11 +235,11 @@ func (c *APIPrincipalConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	if plain, ok := utils.DecryptStoredSecretLenient(c.HMACSecret); ok {
@@ -283,11 +283,11 @@ func (c *CredentialsConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	if c.WeKnoraCloud != nil {
@@ -491,11 +491,7 @@ func (c *ParserEngineConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // StorageEngineConfig holds tenant-level storage engine parameters for Local, MinIO, COS, TOS, S3, OSS, KS3, and OBS.
@@ -612,11 +608,7 @@ func (c *StorageEngineConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // TenantSandboxConfig is one named sandbox backend a workspace maintains.
@@ -920,11 +912,11 @@ func (c *TenantSandboxConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 
