@@ -27,7 +27,6 @@ import (
 type storageBackedKnowledge struct {
 	bytes    []byte
 	bytesErr error
-	present  bool
 	calls    int
 }
 

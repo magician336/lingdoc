@@ -79,7 +79,7 @@ func (r KnowledgeFileOriginReader) OriginBytes(ctx context.Context, knowledgeID 
 	if file == nil {
 		return nil, false, nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, evidence.MaxOriginBytes+1))
 	if err != nil {
 		return nil, false, nil

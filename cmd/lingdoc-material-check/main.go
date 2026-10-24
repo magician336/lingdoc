@@ -39,23 +39,23 @@ import (
 )
 
 type chunkPayload struct {
-	ID        string `json:"id"`
-	ChunkIndex int   `json:"chunk_index"`
-	StartAt   int    `json:"start_at"`
-	EndAt     int    `json:"end_at"`
-	Content   string `json:"content"`
-	IndexStatus string `json:"index_status"`
-	ContentRevision int `json:"content_revision"`
+	ID              string `json:"id"`
+	ChunkIndex      int    `json:"chunk_index"`
+	StartAt         int    `json:"start_at"`
+	EndAt           int    `json:"end_at"`
+	Content         string `json:"content"`
+	IndexStatus     string `json:"index_status"`
+	ContentRevision int    `json:"content_revision"`
 }
 
 type sourcePayload struct {
-	ID           string `json:"id"`
-	QuotedText   string `json:"quoted_text"`
+	ID             string `json:"id"`
+	QuotedText     string `json:"quoted_text"`
 	QuotedTextHash string `json:"quoted_text_hash"`
-	Status       string `json:"status"`
-	Locator      string `json:"locator"`
-	AssetID      string `json:"asset_id"`
-	AssetRevision int   `json:"asset_revision"`
+	Status         string `json:"status"`
+	Locator        string `json:"locator"`
+	AssetID        string `json:"asset_id"`
+	AssetRevision  int    `json:"asset_revision"`
 }
 
 type envelope struct {
@@ -67,12 +67,12 @@ type envelope struct {
 }
 
 type report struct {
-	KnowledgeID  string                        `json:"knowledge_id"`
-	ProjectID    string                        `json:"project_id"`
-	OriginFile   string                        `json:"origin_file"`
-	OriginRunes  int                           `json:"origin_runes"`
-	ChunkCount   int                           `json:"chunk_count"`
-	Qualified    bool                          `json:"qualified"`
+	KnowledgeID  string                         `json:"knowledge_id"`
+	ProjectID    string                         `json:"project_id"`
+	OriginFile   string                         `json:"origin_file"`
+	OriginRunes  int                            `json:"origin_runes"`
+	ChunkCount   int                            `json:"chunk_count"`
+	Qualified    bool                           `json:"qualified"`
 	ContentCheck evidence.MaterialQualification `json:"content_check"`
 	// QuotedCheck is the end-to-end check: the quoted text the server hands
 	// out for each source must be the origin slice at the source's own
@@ -300,7 +300,7 @@ func getJSON(client *http.Client, url, bearer string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err

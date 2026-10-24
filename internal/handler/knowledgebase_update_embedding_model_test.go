@@ -28,10 +28,10 @@ import (
 
 type stubKBUpdateService struct {
 	interfaces.KnowledgeBaseService
-	kb                    *types.KnowledgeBase
-	gotEmbeddingModelID   *string
-	gotConfig             *types.KnowledgeBaseConfig
-	updateErr             error
+	kb                  *types.KnowledgeBase
+	gotEmbeddingModelID *string
+	gotConfig           *types.KnowledgeBaseConfig
+	updateErr           error
 }
 
 func (s *stubKBUpdateService) GetKnowledgeBaseByID(_ context.Context, _ string) (*types.KnowledgeBase, error) {
