@@ -100,7 +100,8 @@ class WorkflowReportTest(unittest.TestCase):
             runner.run()
         report = runner.report("completed")
         self.assertEqual(sorted(report),
-                         ["completed_steps", "manual_assertions", "provider_semantics_status",
+                         ["completed_steps", "manual_assertions", "material_gate_stages",
+                          "provider_semantics_status",
                           "runner_status", "steps", "total_steps", "verification_scope", "workflow"])
 
     def test_main_creates_report_parent_before_provider_mutation(self):
