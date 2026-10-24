@@ -19,13 +19,14 @@ for(const directory of [frontend,path.resolve(__dirname,'../../../../../../repo/
 }
 if(!deps)throw new Error('Installed TypeScript/Vue SFC/server-renderer dependencies are required; no download is performed.')
 const ts=deps.load('typescript'),compiler=deps.load('@vue/compiler-sfc'),vue=deps.load('vue'),{renderToString}=deps.load('@vue/server-renderer')
-const fixture={project:null,requests:[],postOverride:null,directory:[]}
+const fixture={project:null,requests:[],postOverride:null,getOverride:null,directory:[]}
 let nonce=0
 const copy=value=>JSON.parse(JSON.stringify(value))
 const envelope=data=>({data:copy(data),meta:{replayed:false,refresh_required:false}})
 function request(method,url,body,config){
  fixture.requests.push({method,url,body:body===undefined?undefined:copy(body),config:config&&copy(config)})
  if(method==='GET'){
+ if(fixture.getOverride){const result=fixture.getOverride(url);if(result!==undefined)return result}
  if(url.endsWith('/members/directory'))return Promise.resolve(envelope(fixture.directory))
  if(url.endsWith('/invitations')||url.endsWith('/owner-transfers')||url.endsWith('/project-invitations'))return Promise.resolve(envelope([]))
  return Promise.resolve(envelope(fixture.project))
@@ -51,6 +52,7 @@ panel.render=compile(source+'.template',template.code).render
 function project(){return {id:'project-ui',name:'合成协作验收',status:'active',project_version:4,spec_revision:1,current_context_revision:0,spec:{},template_id:'template-demo',template_version:'1',members:[{user_id:'owner',role:'owner',governance_role:'owner',status:'active'},{user_id:'writer',role:'collaborator',governance_role:'member',function_roles:['author'],function_scopes:{author:['chapter-a','future:preserved']},status:'active'},{user_id:'removed-user',role:'collaborator',governance_role:'member',function_roles:['author'],function_scopes:{author:['old-authorized-scope']},status:'removed'}]}}
 async function render(props,action){
  fixture.project=copy(props.project);fixture.requests=[];fixture.postOverride=null;fixture.directory=[{user_id:'owner',name:'真实目录 Owner',tenant_role:'owner'},{user_id:'writer',name:'真实目录 Writer',tenant_role:'contributor'},{user_id:'new-user',name:'真实目录 User',tenant_role:'viewer'},{user_id:'removed-user',name:'真实目录 Removed',tenant_role:'contributor'}]
+ fixture.getOverride=null
  let controller;const events=[]
  const component={...panel,setup(input,context){controller=panel.setup(input,context);return action?Promise.resolve(action(controller)).then(()=>controller):controller}}
  const app=vue.createSSRApp(component,{chapters:[],assets:[],currentUserId:'owner',...props,onChanged:()=>events.push('changed'),onDirty:dirty=>events.push(['dirty',dirty]),onClose:()=>events.push('close')})
@@ -199,4 +201,77 @@ test('legacy collaborator identity never invents an Author role or an object sco
  const draft=state.assignmentDraft({user_id:'legacy',role:'collaborator',status:'active'},4)
  assert.deepEqual(draft.roles,[]);assert.deepEqual(draft.scopes,{})
  assert.deepEqual(state.serializeAssignment(draft).function_roles,[])
+})
+
+test('current successful project retry clears the read failure and preserves dirty member input',async()=>{
+ const {html,controller}=await render({project:project()},async s=>{
+  s.openAssignment(project().members[1]);s.editor.value.reason='keep my unsaved reason'
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.reject(new Error('synthetic project outage')):undefined
+  await s.refresh()
+  fixture.getOverride=null
+  await s.refresh()
+ })
+ assert(!html.includes('synthetic project outage'))
+ assert.equal(controller.editor.value.reason,'keep my unsaved reason')
+ assert.equal(controller.hasUnsavedChanges.value,true)
+})
+
+test('a failed retry remains visible even when all sibling reads recover',async()=>{
+ const {html}=await render({project:project()},async s=>{
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.reject(new Error('synthetic ongoing outage')):undefined
+  await s.refresh();await s.refresh()
+ })
+ assert.match(html,/role="alert"[^>]*>synthetic ongoing outage/)
+})
+
+test('a recovered project read does not hide an independent assignment rejection',async()=>{
+ const {html}=await render({project:project()},async s=>{
+  s.openAssignment(project().members[1]);s.editor.value.reason='still rejected'
+  fixture.postOverride=()=>Promise.reject(new Error('synthetic assignment rejection'))
+  await s.saveAssignment()
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.reject(new Error('synthetic project outage')):undefined
+  await s.refresh();fixture.getOverride=null;await s.refresh()
+ })
+ assert(!html.includes('synthetic project outage'))
+ assert.match(html,/synthetic assignment rejection/)
+})
+
+test('wrong-project and older-version responses cannot clear the project read failure',async()=>{
+ const {html,controller}=await render({project:project()},async s=>{
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.reject(new Error('synthetic read failure')):undefined
+  await s.refresh()
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.resolve(envelope({...project(),id:'other-project'})):undefined
+  await s.refresh()
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.resolve(envelope({...project(),project_version:3})):undefined
+  await s.refresh()
+ })
+ assert.match(html,/synthetic read failure/)
+ assert.equal(controller.localProject.value.project_version,4)
+ assert.equal(controller.localProject.value.id,'project-ui')
+})
+
+test('a superseded successful read cannot clear a newer request failure',async()=>{
+ const {html}=await render({project:project()},async s=>{
+  let resolveOld
+  fixture.getOverride=url=>url.endsWith('/project-ui')?new Promise(resolve=>{resolveOld=resolve}):undefined
+  const pending=s.refresh()
+  fixture.getOverride=url=>url.endsWith('/project-ui')?Promise.reject(new Error('newer read failure')):undefined
+  await s.refresh()
+  resolveOld(envelope(project()));await pending
+ })
+ assert.match(html,/newer read failure/)
+})
+
+test('a previous context response cannot clear a new context read failure',async()=>{
+ const {html,controller}=await render({project:project()},async s=>{
+  let resolveOld
+  fixture.getOverride=url=>url.endsWith('/project-ui')?new Promise(resolve=>{resolveOld=resolve}):undefined
+  const pending=s.refresh()
+  s.epoch.switchContext('new-project/owner');s.localProject.value={...project(),id:'new-project'}
+  fixture.getOverride=url=>url.endsWith('/new-project')?Promise.reject(new Error('new context read failure')):undefined
+  await s.refresh()
+  resolveOld(envelope(project()));await pending
+ })
+ assert.match(html,/new context read failure/)
+ assert.equal(controller.localProject.value.id,'new-project')
 })
