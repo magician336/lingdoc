@@ -7,9 +7,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (production dialect)
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver behind gorm.io/driver/sqlite (production dialect)
-	_ "modernc.org/sqlite"             // pure-Go SQLite driver used by some tests
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite" // pure-Go SQLite driver used by some tests
 )
 
 // ---------------------------------------------------------------------------
