@@ -30,6 +30,14 @@ difference between a field that is ``null`` and a field that is not there at
 all: ``null`` is GitHub saying "this job has not started", while a missing
 field is GitHub not saying anything.
 
+There is a third observation form, and it is the one that has no check-run at
+all.  A workflow run that has not been given a runner yet has neither a job
+record nor a check-run, so the gate of that head looks absent from the Checks
+API even though it exists and is waiting.  That is not "the gate did not
+run": the run says the gate is waiting, so the verdict is ``queued``.  A run
+that has started, or that has finished, without a check-run is a different
+thing -- there the data does not say, and the verdict stays ``missing``.
+
 How to use it
 -------------
 ::
@@ -122,9 +130,10 @@ EXIT_CODES = {
 #: What a reader should do with each verdict.
 NEXT_ACTIONS = {
     VERDICT_QUEUED: (
-        "The gate is waiting for a runner. Do not push again: another commit "
-        "does not shorten the queue, it only adds one more waiting run. Wait "
-        "for this run to be given a runner."
+        "The gate has not started yet: it is either waiting for a runner or "
+        "waiting behind an earlier run of the same pull request. Do not push "
+        "again; another commit does not shorten the wait, it only adds one "
+        "more waiting run."
     ),
     VERDICT_RUNNING: (
         "The gate is running. Wait for it to finish; do not push again."
@@ -144,6 +153,26 @@ NEXT_ACTIONS = {
 
 #: The repository this module reads when the caller does not say.
 DEFAULT_REPO = "magician336/lingdoc"
+
+#: The workflow run states that mean the run has not started a job yet.
+#: A run in one of these states has no job record and no check-run, which is
+#: the third observation form of issue #550: the aggregate gate has not
+#: produced a check-run yet.
+RUN_NOT_STARTED = ("queued", "pending", "waiting", "requested")
+
+#: What a run that has not started yet is waiting for.
+#:
+#: The two kinds of wait need the same reaction -- push nothing -- but a
+#: different explanation: one waits for a runner, the other waits behind an
+#: earlier run of the same pull request.  The reason says which one it is,
+#: so a reader does not have to look the run status up to know it.
+RUN_WAIT_REASON = {
+    "queued": "the gate is queued and waiting for a runner",
+    "pending": ("the gate is queued behind an earlier run of the same "
+                "pull request"),
+    "waiting": "the gate is queued and waiting for a runner",
+    "requested": "the gate is queued and has not been started yet",
+}
 
 #: The text an evidence field carries when the record does not have it.
 ABSENT = "<absent>"
@@ -277,14 +306,19 @@ def _result(verdict: str, reason: str, evidence: Mapping[str, Any],
 
 
 def judge(check: Any, jobs: Sequence[Any],
-          checks: Sequence[Any] = ()) -> dict[str, Any]:
+          checks: Sequence[Any] = (), run: Any = None) -> dict[str, Any]:
     """The verdict for one observation of the gate.
 
     ``check`` is the gate's check-run record, or ``None`` when the head
     carries no such check.  ``jobs`` are the job records of the same run,
-    and ``checks`` the check-run records of the same head.  The judgement
-    reads ``started_at`` and the conclusion; it never guesses from a status
-    word alone.
+    ``checks`` the check-run records of the same head, and ``run`` the
+    workflow run itself.  The judgement reads ``started_at`` and the
+    conclusion; it never guesses from a status word alone.
+
+    There is a third observation form: the gate's workflow run exists and has
+    not started, so it has neither a job record nor a check-run.  That is not
+    "the gate did not run" and it is certainly not "the gate passed" -- it is
+    a gate that has not started, and it is judged as queued.
     """
     gate_job = _gate_job(jobs, check)
     records = [record for record in (gate_job, check) if record is not None]
@@ -298,10 +332,26 @@ def judge(check: Any, jobs: Sequence[Any],
     }
 
     if not records:
+        run_status = _plain(_field(run, "status"))
+        if run_status in RUN_NOT_STARTED:
+            return _result(
+                VERDICT_QUEUED,
+                "the aggregate gate has not produced a check-run yet (its "
+                f"workflow run is {run_status!r}); "
+                f"{RUN_WAIT_REASON[run_status]}",
+                evidence, run_status, None)
+        if run is None:
+            return _result(
+                VERDICT_MISSING,
+                "this head has no gate check-run and no gate job, and no "
+                "workflow run says the gate is waiting",
+                evidence, run_status, None)
         return _result(
             VERDICT_MISSING,
-            "this head has no gate check-run and no gate job",
-            evidence)
+            "the aggregate gate has not produced a check-run, and its workflow "
+            f"run ({run_status!r}) does not say it is waiting; the gate's "
+            "state cannot be established",
+            evidence, run_status, None)
 
     status = _first(records, "status")
     conclusion = _first(records, "conclusion")
@@ -478,7 +528,7 @@ def state_for_pull_request(number: int, api: GitHubApi) -> dict[str, Any]:
     jobs = api.jobs(run_id) if run_id is not ABSENT_MARKER else []
     checks = api.check_runs(head_sha) if head_sha else []
     check = _pick_gate_check(checks, jobs)
-    verdict = judge(check, jobs, checks)
+    verdict = judge(check, jobs, checks, run)
     return _state(pr=number, run_id=None if run_id is ABSENT_MARKER else run_id,
                   head_sha=head_sha, verdict=verdict, run=run)
 
@@ -490,7 +540,7 @@ def state_for_run(run_id: int, api: GitHubApi) -> dict[str, Any]:
     jobs = api.jobs(run_id)
     checks = api.check_runs(head_sha) if head_sha else []
     check = _pick_gate_check(checks, jobs)
-    verdict = judge(check, jobs, checks)
+    verdict = judge(check, jobs, checks, run)
     return _state(pr=None, run_id=run_id, head_sha=head_sha,
                   verdict=verdict, run=run)
 
@@ -559,6 +609,19 @@ def main(argv: Sequence[str] | None = None, api: GitHubApi | None = None) -> int
         verdict["reason"] = f"the GitHub data could not be read: {error}"
         answer = _state(pr=args.pr, run_id=args.run, head_sha="",
                         verdict=verdict, run=None)
+    # The answer carries names that GitHub published, and those can hold
+    # characters this machine's console code page cannot encode -- Windows
+    # defaults to GBK here, and a name may carry U+2713 or an emoji.  A
+    # crash at this point would turn a readable answer into a traceback,
+    # and a traceback exits non-zero, which a caller would read as "the
+    # gate said no".  So the console is told to replace what it cannot
+    # encode instead of failing.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
     print(json.dumps(answer, indent=2, ensure_ascii=False))
     return int(answer["exit_code"])
 
