@@ -17,6 +17,19 @@
     "model_adapter": "固定候选输出只允许用于诊断路径与单测；放行路径必须用真实模型调用，并逐段记账（见 provenance 声明）。",
     "renderer": "完整验收时必须使用真实导出器。"
   },
+  "adoption_request": {
+    "note": "F01-11 与 F01-12 是同一个 acceptCandidate 操作：F01-12 用同一个 Idempotency-Key 重投，所以两者的请求体必须逐字相同（静态校验的 replay 一致性检查要求 body 与 data 都相同；服务端的幂等摘要也要求两者相同，确认时刻不进摘要）。",
+    "confirmation_is_required": "服务端把确认载荷当必填：缺了它，采纳被拒（400 invalid_request），重投也不例外——所以契约必须显式提交这次采纳确认了什么，而不是让服务端替它猜。",
+    "value_sources": {
+      "writing_action": "generate：F01-07 的 startGeneration 走生成端点，候选自己记下的动作就是 generate；确认的动作与候选对不上，服务端拒。",
+      "adoption_target": "formal_version_whole：F01-11 的参考响应里 current_version_id 从空变成 cv-question-1，即这次采纳建了正式版本；generate 允许这个目标。",
+      "origin": "ai_generated：生成端点产出的候选，来源标注固定是 AI 生成。",
+      "confirmed_by": "{{owner_user_id}}：F01-02 捕获的项目 owner 用户标识，就是这次请求的认证身份；确认人必须等于认证身份，代他人确认一律拒。",
+      "confirmed_at": "契约钉住的确认时刻（RFC3339）。确认时刻不进幂等摘要，所以 F01-12 重投时带同一个值仍然是同一次请求。",
+      "expected_working_copy_revision": "1：章节骨架在项目激活时创建，工作副本行从修订号 1 开始；F01-04 到 F01-11 之间没有任何一步写过这一章的工作副本（只有 saveChapter 会推进它，而它在 F01-13 之后）。",
+      "expected_body_hash": "空章节的工作副本正文是空的，摘要就是正文字节 SHA-256 的小写十六进制（e3b0c442…b855）。服务端拿它与当前工作副本正文对不上就拒（working_copy_dirty）。"
+    }
+  },
   "provenance": {
     "policy": "放行路径的每一段都必须真的跑：单个真实调用不代表整链为真（TD-06 / US-10 / US-11）。",
     "observed_from": "lingdoc_model_call_ledger 的 run_mode 列（每次真实模型调用一行）。",
@@ -943,7 +956,16 @@
           "candidate_id": "{{candidate_id}}",
           "expected_chapter_version_id": null,
           "expected_spec_revision": "{{spec_revision}}",
-          "replace_existing": false
+          "replace_existing": false,
+          "expected_working_copy_revision": 1,
+          "expected_body_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "{{owner_user_id}}",
+            "origin": "ai_generated"
+          }
         }
       },
       "expected_http": 201,
@@ -1006,7 +1028,16 @@
           "candidate_id": "{{candidate_id}}",
           "expected_chapter_version_id": null,
           "expected_spec_revision": "{{spec_revision}}",
-          "replace_existing": false
+          "replace_existing": false,
+          "expected_working_copy_revision": 1,
+          "expected_body_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "{{owner_user_id}}",
+            "origin": "ai_generated"
+          }
         }
       },
       "expected_http": 201,
