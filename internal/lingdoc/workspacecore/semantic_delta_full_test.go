@@ -132,6 +132,23 @@ func TestSemanticApplyRollsBackEverythingTogether(t *testing.T) {
 		t.Fatal("partial semantic audit")
 	}
 }
+
+// TestAssetScopeRechecksSourcePolicy pins the rule for a material's scope
+// change: the change is about **who may use this material**, not about what
+// the material says, so the material's own chunks are the *object* of that
+// change and are not the operation's cited sources.
+//
+// Before #545 the change re-checked those chunks as if the operation rested
+// on them, which made granting model-use consent depend on the very object
+// being granted: on the real backend F01-06b answered 409 stale_input no
+// matter what the request carried (#545, #485 track-a).
+//
+// What still guards the material at this step is its **integrity**: the
+// content fingerprint recorded when it was bound is compared with the text it
+// carries now (AssetTruth) — see
+// TestAssetScopeRefusesAMaterialWhoseContentMovedOn.  The consistency of each
+// chunk's own coordinates is a source-layer property and is verified where
+// the text would enter a model (internal/lingdoc/workspace/generation.go).
 func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 	f := newAgentFixture(t, false)
 	seedNativeEvidence(t, f)
@@ -144,9 +161,11 @@ func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 	if _, _, _, err := f.svc.AssessChangeSet(context.Background(), f.owner, f.project.ID, c.ID, "asset-scope-assess"); err != nil {
 		t.Fatal(err)
 	}
+	// The material's own chunks are not this operation's cited sources: a
+	// source policy that refuses them does not block a scope change.
 	f.policy.verdict = ErrSourceUnavailable
-	if _, _, _, err := f.svc.ApplyChangeSet(context.Background(), f.owner, f.project.ID, c.ID, "asset-scope-denied"); !errors.Is(err, ErrSourceUnavailable) {
-		t.Fatalf("revoked source applied: %v", err)
+	if _, _, _, err := f.svc.ApplyChangeSet(context.Background(), f.owner, f.project.ID, c.ID, "asset-scope-apply"); err != nil {
+		t.Fatalf("资料范围变更被资料自己的分块挡住了：%v", err)
 	}
 	f.policy.verdict = nil
 	if _, _, _, err := f.svc.ApplyChangeSet(context.Background(), f.owner, f.project.ID, c.ID, "asset-scope-apply"); err != nil {
@@ -176,6 +195,38 @@ func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 		return e
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestAssetScopeRefusesAMaterialWhoseContentMovedOn is the other half of the
+// rule: a material whose **content** moved on since it was bound is refused
+// at the scope change.  The fingerprint recorded with the binding is compared
+// with the text the material carries now (AssetTruth), so "the material was
+// replaced under the same id" cannot slip through a scope change.
+func TestAssetScopeRefusesAMaterialWhoseContentMovedOn(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
+	db := f.svc.testDB()
+	knowledgeID := ""
+	for _, source := range f.source.sources {
+		if source.AssetID == "asset-1" {
+			knowledgeID = source.KnowledgeID
+		}
+	}
+	if knowledgeID == "" {
+		t.Fatal("the fixture did not seed the asset's knowledge")
+	}
+	if err := db.Exec("UPDATE knowledges SET file_hash=? WHERE id=?", "moved-on-hash", knowledgeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := f.svc.CreateChangeDraft(context.Background(), f.owner, f.project.ID, "asset-scope-moved-on", ExtendedChangeSetInput{
+		ExpectedContextRevision: f.project.CurrentContextRevision,
+		Reason:                  "明确人工提交的合成语义变更",
+		Fields:                  map[string]ChangeFieldInput{},
+		SemanticDeltas:          []SemanticDelta{{Kind: "ProjectAssetScope", TargetID: "asset-1", ExpectedVersion: 1, ProposedAssetPolicy: &ProjectAssetPolicy{Scope: "personal", Purpose: "仅本人复核", ModelUseAllowed: false}}},
+	})
+	if !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("资料内容已经变了却仍允许改范围：err = %v, want %v", err, ErrVersionConflict)
 	}
 }
 func TestRouteUsesCurrentDependenciesAndRequiredGate(t *testing.T) {
