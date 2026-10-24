@@ -376,7 +376,10 @@
           "refresh_required": false
         }
       },
-      "capture": {},
+      "capture": {
+        "project_version_active": "/data/project_version",
+        "context_revision": "/data/current_context_revision"
+      },
       "checks": [
         {
           "path": "/data/status",
@@ -482,7 +485,8 @@
         }
       },
       "capture": {
-        "asset_id": "/data/id"
+        "asset_id": "/data/id",
+        "asset_revision": "/data/asset_revision"
       },
       "checks": [
         {
@@ -504,6 +508,191 @@
         }
       ],
       "assertions": []
+    },
+    {
+      "id": "F01-06b",
+      "operation_id": "createChangeDraftPostPolicyProposal",
+      "actor": "u-owner",
+      "expected_http": 201,
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "assetID": "{{asset_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-policy-consent-0001"
+        },
+        "json": {
+          "expected_project_version": "{{project_version_active}}",
+          "expected_context_revision": "{{context_revision}}",
+          "expected_version": "{{asset_revision}}",
+          "confirmed": true,
+          "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。",
+          "policy": {
+            "scope": "personal",
+            "purpose": "合成材料上的模型生成许可：F01 契约显式签发，绑定该资料的当前修订。",
+            "allowed_user_ids": [],
+            "model_use_allowed": true
+          }
+        }
+      },
+      "capture": {
+        "policy_change_set_id": "/data/id"
+      },
+      "reference_response": {
+        "data": {
+          "id": "cs-policy-demo",
+          "project_id": "p-demo",
+          "created_by": "u-owner",
+          "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。",
+          "status": "draft",
+          "base_context_revision": 1,
+          "base_spec_revision": 1,
+          "fields": [],
+          "impacts": [],
+          "created_at": "2026-10-19T14:30:00Z"
+        },
+        "request_id": "req-policy-proposal-1",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "draft",
+          "intent": "这一步只建立变更草案，本身不产生许可：许可要等评估与应用之后才成立（协议 §4 的 model-use 同意）"
+        }
+      ],
+      "assertions": [
+        "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。"
+      ]
+    },
+    {
+      "id": "F01-06c",
+      "operation_id": "assessChangeSet",
+      "actor": "u-owner",
+      "expected_http": 200,
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-policy-assess-0001"
+        },
+        "json": {}
+      },
+      "reference_response": {
+        "data": {
+          "id": "cs-policy-demo",
+          "project_id": "p-demo",
+          "created_by": "u-owner",
+          "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。",
+          "status": "assessed",
+          "base_context_revision": 1,
+          "base_spec_revision": 1,
+          "fields": [],
+          "impacts": [],
+          "created_at": "2026-10-19T14:30:00Z"
+        },
+        "request_id": "req-policy-assess-1",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {},
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "assessed",
+          "intent": "评估完成：变更集进入 assessed，才谈得上被应用"
+        }
+      ],
+      "assertions": [
+        "变更集评估后才允许应用；服务端的合法前态只有 assessed。"
+      ]
+    },
+    {
+      "id": "F01-06d",
+      "operation_id": "applyChangeSet",
+      "actor": "u-owner",
+      "expected_http": 200,
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-policy-apply-0001"
+        },
+        "json": {}
+      },
+      "assertions": [
+        "应用这一步才真正写下 model-use 许可记录（对象 kind = project_asset_policy），并把资料推进到新一版修订。"
+      ]
+    },
+    {
+      "id": "F01-06e",
+      "operation_id": "getProjectAssetPolicy",
+      "actor": "u-owner",
+      "expected_http": 200,
+      "readback_of": "F01-06d",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "assetID": "{{asset_id}}"
+        },
+        "headers": {},
+        "json": null
+      },
+      "reference_response": {
+        "data": {
+          "id": "a-demo",
+          "project_id": "p-demo",
+          "asset_id": "a-demo",
+          "version": 2,
+          "asset_revision": 2,
+          "policy_version": 1,
+          "scope": "personal",
+          "purpose": "合成材料上的模型生成许可：F01 契约显式签发，绑定该资料的当前修订。",
+          "allowed_user_ids": [
+            "u-owner"
+          ],
+          "model_use_allowed": true,
+          "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。",
+          "created_by": "u-owner",
+          "granted_by": "u-owner",
+          "source_version_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "context_revision": 2,
+          "updated_at": "2026-10-19T14:30:00Z"
+        },
+        "request_id": "req-policy-read-1",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {
+        "policy_asset_revision": "/data/asset_revision"
+      },
+      "checks": [
+        {
+          "path": "/data/model_use_allowed",
+          "equals": true,
+          "intent": "许可记录真的建立了模型使用许可：没有这条记录时这里是默认的零值 false"
+        },
+        {
+          "path": "/data/version",
+          "version_bound": "/data/asset_revision",
+          "intent": "许可钉在资料当前的这一版修订上：策略版本与资产修订一致，资料重新解析后旧许可不再跟随"
+        }
+      ],
+      "assertions": [
+        "把许可读回来看：它带 model_use_allowed=true，且钉在这一版资料修订上。"
+      ]
     },
     {
       "id": "F01-07",
@@ -631,7 +820,7 @@
             "asset_versions": [
               {
                 "asset_id": "a-demo",
-                "asset_revision": 1
+                "asset_revision": 2
               }
             ]
           },
@@ -706,7 +895,7 @@
           "id": "s-demo",
           "project_id": "p-demo",
           "asset_id": "a-demo",
-          "asset_revision": 1,
+          "asset_revision": 2,
           "locator": "测试段落 1",
           "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
           "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
@@ -791,12 +980,12 @@
         {
           "path": "{{review_id}}",
           "ref_in": "/data/review_items",
-          "intent": "新版本继承review_items；项目版本增加到4。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）"
+          "intent": "新版本继承review_items；项目版本增加到5。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）"
         },
         {
           "path": "/data/current_version_id",
           "non_empty": true,
-          "intent": "新版本继承review_items；项目版本增加到4。（采纳产生了新的正文版本）"
+          "intent": "新版本继承review_items；项目版本增加到5。（采纳产生了新的正文版本）"
         }
       ],
       "assertions": []
@@ -980,12 +1169,12 @@
         {
           "path": "/data/current_version_id",
           "equals": "{{question_version}}",
-          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为5。（重投返回同一正文版本，没有新增章节版本；假409由契约声明的HTTP 201排除）"
+          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为6。（重投返回同一正文版本，没有新增章节版本；假409由契约声明的HTTP 201排除）"
         },
         {
           "path": "{{review_id}}",
           "ref_in": "/data/review_items",
-          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为5。（重投之后待核事项仍在）"
+          "intent": "成功后响应丢失的重试不产生假409，项目版本仍为6。（重投之后待核事项仍在）"
         }
       ],
       "assertions": []
@@ -1074,7 +1263,7 @@
           "asset_versions": [
             {
               "asset_id": "a-demo",
-              "asset_revision": 1
+              "asset_revision": 2
             }
           ],
           "template_version": "1",
@@ -1186,7 +1375,7 @@
           "id": "p-demo",
           "name": "合成资料演示项目",
           "status": "active",
-          "project_version": 8,
+          "project_version": 9,
           "spec_revision": 1,
           "spec": {
             "research_subject": "公开的合成调查样本",
@@ -1195,7 +1384,7 @@
           "template_id": "template-demo",
           "template_version": "1",
           "template_copy_version": 1,
-          "current_context_revision": 1,
+          "current_context_revision": 2,
           "delivery_status": "NOT_READY",
           "members": [
             {
@@ -1250,7 +1439,7 @@
           "frozen_input": {
             "project_id": "p-demo",
             "project_name": "合成资料演示项目",
-            "project_version": 8,
+            "project_version": 9,
             "spec_revision": 1,
             "spec": {
               "research_subject": "公开的合成调查样本",
@@ -1340,7 +1529,7 @@
                   "asset_versions": [
                     {
                       "asset_id": "a-demo",
-                      "asset_revision": 1
+                      "asset_revision": 2
                     }
                   ],
                   "template_version": "1",
@@ -1380,7 +1569,7 @@
                 "id": "s-demo",
                 "project_id": "p-demo",
                 "asset_id": "a-demo",
-                "asset_revision": 1,
+                "asset_revision": 2,
                 "locator": "测试段落 1",
                 "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
                 "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
@@ -1390,7 +1579,7 @@
             "asset_versions": [
               {
                 "asset_id": "a-demo",
-                "asset_revision": 1
+                "asset_revision": 2
               }
             ],
             "policy_asset_ids": [
@@ -1398,9 +1587,9 @@
             ],
             "delivery_kind": "internal_demo"
           },
-          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "snapshot_digest": "c126ec89bb55a843a79352ea1f166ccfa1091a426f6e8100aabb1acb40f803b4",
           "check": {
-            "project_version": 8,
+            "project_version": 9,
             "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
             "status": "passed",
             "issues": [
@@ -1508,7 +1697,7 @@
           "frozen_input": {
             "project_id": "p-demo",
             "project_name": "合成资料演示项目",
-            "project_version": 8,
+            "project_version": 9,
             "spec_revision": 1,
             "spec": {
               "research_subject": "公开的合成调查样本",
@@ -1598,7 +1787,7 @@
                   "asset_versions": [
                     {
                       "asset_id": "a-demo",
-                      "asset_revision": 1
+                      "asset_revision": 2
                     }
                   ],
                   "template_version": "1",
@@ -1638,7 +1827,7 @@
                 "id": "s-demo",
                 "project_id": "p-demo",
                 "asset_id": "a-demo",
-                "asset_revision": 1,
+                "asset_revision": 2,
                 "locator": "测试段落 1",
                 "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
                 "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
@@ -1648,7 +1837,7 @@
             "asset_versions": [
               {
                 "asset_id": "a-demo",
-                "asset_revision": 1
+                "asset_revision": 2
               }
             ],
             "policy_asset_ids": [
@@ -1656,9 +1845,9 @@
             ],
             "delivery_kind": "internal_demo"
           },
-          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "snapshot_digest": "c126ec89bb55a843a79352ea1f166ccfa1091a426f6e8100aabb1acb40f803b4",
           "check": {
-            "project_version": 8,
+            "project_version": 9,
             "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
             "status": "passed",
             "issues": [
