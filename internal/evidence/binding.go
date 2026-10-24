@@ -312,15 +312,13 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 	var result Asset
 	var replay bool
 	err = b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var previous operationRow
-		err := tx.Where("tenant_id = ? AND user_id = ? AND operation = ? AND target = ? AND key = ?", tenantID, userID, "bindAsset", target, key).First(&previous).Error
+		previous, err := findOperationRow(tx, tenantID, userID, target, key)
 		if err == nil {
-			if previous.BodyHash != bodyHash {
-				return ErrIdempotencyConflict
+			saved, decodeErr := decodeOperationReplay(previous, bodyHash)
+			if decodeErr != nil {
+				return decodeErr
 			}
-			if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
-				return err
-			}
+			result = saved
 			replay = true
 			return nil
 		}
@@ -338,7 +336,50 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 		return tx.Create(&operationRow{TenantID: tenantID, UserID: userID, Operation: "bindAsset", Target: target, Key: key,
 			BodyHash: bodyHash, ResponseJSON: string(response), ResponseCode: 201}).Error
 	})
+	if err != nil {
+		// Another request may have committed the same operation after our
+		// initial read. PostgreSQL aborts the losing transaction on its unique
+		// key conflict, so only reread after Transaction has rolled it back.
+		// The committed operation, not a partially populated result, is the
+		// authority. Its scope and client-request fingerprint must still match.
+		committed, readErr := findOperationRow(b.db.WithContext(ctx), tenantID, userID, target, key)
+		if readErr == nil {
+			saved, decodeErr := decodeOperationReplay(committed, bodyHash)
+			if decodeErr != nil {
+				return Asset{}, false, decodeErr
+			}
+			return saved, true, nil
+		}
+		return Asset{}, false, err
+	}
 	return result, replay, err
+}
+
+// findOperationRow reads the operation record that owns one idempotency
+// scope: the full actor (tenant, user) plus operation/target/key. The
+// in-transaction replay read and the post-rollback reread must resolve the
+// same authoritative row, so they share this lookup.
+func findOperationRow(runner *gorm.DB, tenantID uint64, userID, target, key string) (operationRow, error) {
+	var row operationRow
+	err := runner.Where(
+		"tenant_id = ? AND user_id = ? AND operation = ? AND target = ? AND key = ?",
+		tenantID, userID, "bindAsset", target, key,
+	).First(&row).Error
+	return row, err
+}
+
+// decodeOperationReplay turns a committed operation row into the replayed
+// response. The saved response belongs to one client request fingerprint: a
+// record stored for a different request body is a conflict, never a replay.
+func decodeOperationReplay(row operationRow, bodyHash string) (Asset, error) {
+	if row.BodyHash != bodyHash {
+		return Asset{}, ErrIdempotencyConflict
+	}
+	var saved Asset
+	if err := json.Unmarshal([]byte(row.ResponseJSON), &saved); err != nil {
+		return Asset{}, err
+	}
+	return saved, nil
 }
 
 // ObserveAsset 用一次新观测更新绑定：指纹变了就递增版本并新建修订行，
