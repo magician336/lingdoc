@@ -1,23 +1,29 @@
 package acceptancebudget
 
-// The Qwen controlled-execution profile.
+// The Qwen controlled-execution profiles.
 //
-// What this profile controls is the TOKEN BUDGET and the CALL COUNT of one
-// external Qwen chat request. It carries no price: the profile says so in the
-// ledger instead of inventing a money amount, because a made-up unit price is
-// a number nobody can check and a number that looks like a fact.
+// What these profiles control is the TOKEN BUDGET and the CALL COUNT of
+// external Qwen chat requests. They carry no price: the profile says so in
+// the ledger instead of inventing a money amount, because a made-up unit
+// price is a number nobody can check and a number that looks like a fact.
 //
-// The profile is deliberately NOT derived from the DeepSeek profile. Its model
-// allowlist, its provider rule and its limits are declared here, and a Qwen
-// call is approved only when this file says so.
+// The profiles are deliberately NOT derived from the DeepSeek profile. Their
+// model allowlist, their provider rule and their limits are declared here,
+// and a Qwen call is approved only when this file says so.
 //
-// Three facts travel with every record this profile writes:
+// Each profile is one entry of the configuration table in profile_config.go.
+// The first profile's numbers are frozen; the second profile adds a
+// cumulative token ceiling and changes nothing else.
+//
+// FOUR facts travel with every record these profiles write:
 //
 //   - the cost basis ("not_applicable" here): the money columns are NOT
 //     computed, and 0 under this basis never means "the call was free",
 //   - the usage status ("reported" / "unavailable"): a call whose provider
 //     reported no usage is recorded as unavailable, never as an estimate,
-//   - the token counters the provider actually reported.
+//   - the token counters the provider actually reported,
+//   - the token RESERVATION, which is an upper bound of what a call could
+//     consume and never a claim about what it did consume.
 
 const (
 	// QwenProfile is the profile that arms the controlled Qwen execution path.
@@ -25,7 +31,25 @@ const (
 	// It is selected with LINGDOC_T10_ACCEPTANCE_PROFILE, exactly like the
 	// other profiles. The difference is what the profile controls: tokens and
 	// calls, not money.
+	//
+	// Its meaning is FROZEN. The one call it already made lives in its own
+	// ledger, and its review evidence was gathered against these exact
+	// numbers. A new authorization is a NEW profile, never a new meaning
+	// for this name.
 	QwenProfile = "lingdoc-qwen-token-budget-20261023-v1"
+
+	// QwenProfileV2 is the SECOND controlled Qwen profile.
+	//
+	// It is a new profile, not a new version OF the first one. It carries
+	// its own call count and its own cumulative token ceiling, and it counts
+	// only its own calls: the one call the first profile already made lives
+	// in the first profile's ledger and is not counted here.
+	//
+	// The name is versioned on purpose. A profile name is the identity a
+	// ledger is written under and the identity a reviewer reads; giving an
+	// existing name a new meaning would silently change what an old ledger
+	// says.
+	QwenProfileV2 = "lingdoc-qwen-token-budget-20261024-v2"
 
 	// QwenChatModel is the approved Qwen chat model name.
 	QwenChatModel = "qwen3.8-flash"
@@ -46,8 +70,31 @@ const (
 	QwenOutputMax = 4096
 	// QwenTotalMax is the ceiling of input plus output of one controlled call.
 	QwenTotalMax = QwenInputMax + QwenOutputMax
-	// QwenMaxCalls is the number of external requests this profile allows.
+	// QwenMaxCalls is the number of external requests the FIRST Qwen profile
+	// allows.
 	QwenMaxCalls = 1
+	// QwenV2MaxCalls is the number of external requests the SECOND Qwen
+	// profile allows.
+	//
+	// It counts the calls THIS profile makes. The call the first profile
+	// already made belongs to the first profile's ledger, and the two
+	// ledgers are not added together.
+	QwenV2MaxCalls = 4
+	// QwenV2CumulativeTokenMax is the ceiling of the CUMULATIVE token
+	// reservation of one window under the second Qwen profile.
+	//
+	// The ceiling is on the RESERVATION, not on the usage. A request is
+	// refused BEFORE it leaves the process when the cumulative reservation
+	// of the window plus the reservation of that request would pass this
+	// number. The provider's reported usage is recorded separately and is
+	// never used to decide what may still be reserved.
+	//
+	// The worst case of the authorized window fits inside it: four calls of
+	// at most 16,000 + 4,096 = 20,096 tokens reserve at most
+	// 4 * 20,096 = 80,384 tokens, and 80,384 <= 90,000. The ceiling
+	// therefore cannot be reached by the calls this profile authorizes; it
+	// is the second line of defence behind the call count.
+	QwenV2CumulativeTokenMax = 90000
 )
 
 // The cost basis values a ledger can carry.
@@ -98,18 +145,13 @@ var QwenApprovedBaseURLs = []string{
 // request carries (output) and the same numbers the ledger checks after the
 // provider answered (input, output, total).
 func ProfileTokenLimits(profile string) (inputMax, outputMax, totalMax int) {
-	if profile == QwenProfile {
-		return QwenInputMax, QwenOutputMax, QwenTotalMax
-	}
-	return InputMax, OutputMax, InputMax + OutputMax
+	config := profileConfigOf(profile)
+	return config.inputMax, config.outputMax, config.totalMax
 }
 
 // ProfileCostBasis returns what the money columns of a profile's ledger mean.
 func ProfileCostBasis(profile string) string {
-	if profile == QwenProfile {
-		return CostBasisNotApplicable
-	}
-	return CostBasisDeepSeekPeakUSD
+	return profileConfigOf(profile).costBasis
 }
 
 // ProfilePriced reports whether a profile computes money at all.
@@ -127,27 +169,22 @@ func ProfilePriced(profile string) bool {
 // reservation, the ledger and the model selection all read it, so a call can
 // never be recorded under a model the profile did not approve.
 func ProfileApprovedModel(profile string) string {
-	if profile == QwenProfile {
-		return QwenChatModel
-	}
-	return DeepSeekModel
+	return profileConfigOf(profile).approvedModel
 }
 
 // ProfileAllowsModel reports whether one profile may reserve one model.
 //
-// The Qwen profile allows exactly one model: the approved Qwen chat model.
+// The Qwen profiles allow exactly one model: the approved Qwen chat model.
 // Every other model -- the DeepSeek chat model, the embedding models -- is
 // refused, which is what keeps the embedding, summary and background paths
 // from reaching a provider while the controlled profile is armed.
 func ProfileAllowsModel(profile, model string) bool {
-	switch profile {
-	case QwenProfile:
-		return model == QwenChatModel
-	case CostOnlyProfile:
-		return model == DeepSeekModel || model == QwenEmbedding || model == QwenEmbeddingFlash
-	default:
-		return model == DeepSeekModel || model == QwenEmbedding
+	for _, allowed := range profileConfigOf(profile).allowedModels {
+		if model == allowed {
+			return true
+		}
 	}
+	return false
 }
 
 // IsApprovedQwenBaseURL reports whether a base URL is on the approved list.
