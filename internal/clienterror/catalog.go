@@ -72,6 +72,17 @@ var (
 	// configured or not ready.
 	DependencyUnavailable = Form{Status: 503, Code: "dependency_unavailable", Message: "依赖暂时不可用。", Retryable: true}
 
+	// AcceptanceModelPolicyRejected is the answer for a call that a controlled
+	// acceptance profile refuses because the model it needs is not on the
+	// profile's allowlist.
+	//
+	// It is a policy refusal, not a temporary outage: the refusal happens
+	// before the request reaches a provider and repeating the request does not
+	// change it. It therefore keeps its own code instead of sharing
+	// `dependency_unavailable` (whose promise -- that a later attempt could
+	// succeed -- this failure cannot keep), and it is not retryable.
+	AcceptanceModelPolicyRejected = Form{Status: 422, Code: "acceptance_model_policy_rejected", Message: "受控验收模式未授权本次所需的模型；未发起模型调用，重试无效。", Retryable: false}
+
 	// CandidateStaleInput is the answer for a candidate or snapshot that was
 	// built on an input that has changed since.
 	CandidateStaleInput = Form{Status: 409, Code: "stale_input", Message: "候选稿或快照基于旧输入。", Retryable: false}

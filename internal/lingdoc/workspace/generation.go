@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -185,7 +186,7 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 				QueryText: request.Instruction, MatchCount: 20, KnowledgeIDs: knowledgeIDs,
 			})
 			if err != nil {
-				return generation.Input{}, generation.ErrDependencyUnavailable
+				return generation.Input{}, generationRetrievalError(err)
 			}
 			for _, hit := range hits {
 				if hit == nil || len(sources) >= maxGenerationSources {
@@ -238,6 +239,23 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		Basis: basis, ProjectSpec: cloneStringMap(current.Spec), Sources: sources,
 		Actor: actor, Request: request,
 	}, nil
+}
+
+// generationRetrievalError keeps the reason a retrieval failed.
+//
+// A controlled acceptance profile refuses a model it does not authorize
+// before the request ever reaches a provider, and repeating the request does
+// not change that answer: it is the profile's model allowlist that says no.
+// So the refusal keeps its own non-retryable form, and only the failures that
+// a later attempt could get past answer with the dependency-unavailable form.
+//
+// The refusal's own identity stays reachable through errors.Is, so the fact
+// that the profile said no is not lost on the way out.
+func generationRetrievalError(err error) error {
+	if errors.Is(err, acceptancebudget.ErrWrongModel) {
+		return generation.ErrAcceptanceModelRejected
+	}
+	return generation.ErrDependencyUnavailable
 }
 
 func generationDeniedAssetsError(denied []evidence.DeniedAsset) error {
