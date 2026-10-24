@@ -59,16 +59,22 @@ class MainPathChecksTests(unittest.TestCase):
     """The second path has to read the contract's own assertions."""
 
     def _report_with_check(self, status: str) -> tuple[dict, dict]:
-        """The mock fixture, with one node's own assertion not holding."""
+        """The mock fixture, with one node's own assertion not holding.
+
+        The assertion is one the **contract declares**: a check nobody declared
+        is not a failed assertion of this contract, it is a result set that
+        does not line up -- and this path refuses to judge that instead of
+        calling it a failure.
+        """
         main, failure = main_path_evidence.build_mock_main_path_fixture()
-        main["checks"] = [{
-            "step_id": "F01-07",
-            "operator": "marked_or_absent",
-            "path": "/data/status",
-            "status": status,
-            "intent": "契约声明的状态",
-        }]
+        target = next(check for check in main["checks"] if check["step_id"] == "F01-07")
+        target["status"] = status
         return main, failure
+
+    def _declared_check(self, step_id: str) -> dict:
+        """The contract's own assertion of one node."""
+        return next(check for check in main_path_evidence.declared_contract_checks()
+                    if check["step_id"] == step_id)
 
     def test_a_node_whose_assertion_did_not_hold_cannot_pass(self):
         """The failure this path used to miss: HTTP fine, assertion not."""
@@ -81,16 +87,14 @@ class MainPathChecksTests(unittest.TestCase):
     def test_every_assertion_of_a_node_failing_cannot_pass(self):
         """All of them failing is not a weaker failure than one of them."""
         main, failure = main_path_evidence.build_mock_main_path_fixture()
-        main["checks"] = [
-            {"step_id": "F01-07", "operator": "marked_or_absent",
-             "path": "/data/status", "status": "failed", "intent": "一"},
-            {"step_id": "F01-08", "operator": "equals",
-             "path": "/data/asset_id", "status": "failed", "intent": "二"},
-        ]
+        targets = [check for check in main["checks"]
+                   if check["step_id"] in {"F01-07", "F01-08"}]
+        for check in targets:
+            check["status"] = "failed"
         report = main_path_evidence.build_main_path_report(
             main_report=main, failure_observation=failure)
         self.assertEqual(report["main_path"]["result"], "FAIL")
-        self.assertEqual(len(report["main_path"]["failed_checks"]), 2)
+        self.assertEqual(len(report["main_path"]["failed_checks"]), len(targets))
 
     def test_the_evidence_says_the_http_was_fine_but_the_assertion_was_not(self):
         main, failure = self._report_with_check("failed")
@@ -102,7 +106,9 @@ class MainPathChecksTests(unittest.TestCase):
         failed = report["main_path"]["failed_checks"]
         self.assertEqual(len(failed), 1)
         self.assertEqual(failed[0]["step_id"], "F01-07")
-        self.assertEqual(failed[0]["operator"], "marked_or_absent")
+        declared = self._declared_check("F01-07")
+        self.assertEqual(failed[0]["operator"], declared["operator"])
+        self.assertEqual(failed[0]["path"], declared["path"])
 
     def test_the_evidence_says_the_http_did_not_match_the_contract(self):
         """The other failure: the status itself is not the declared one."""
@@ -302,6 +308,8 @@ class ContractExpectationTests(unittest.TestCase):
                          {step["id"]: step["expected_http"] for step in contract["steps"]})
         self.assertEqual(main_path_evidence.REQUIRED_STEP_IDS,
                          tuple(step["id"] for step in contract["steps"]))
+        self.assertEqual(main_path_evidence.EXPECTED_CHECKS,
+                         tuple(main_path_evidence.declared_contract_checks()))
 
     def test_a_stale_expectation_is_named_instead_of_being_followed(self):
         """The old expectation is not used, and the difference is published."""
