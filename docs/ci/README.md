@@ -61,6 +61,30 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --run 40022872106
 - `started_at` 字段存在且有值 ⇒ **真在跑**；
 - `started_at` 字段**根本不存在** ⇒ **无法判定**（GitHub 什么都没说，**不得**当成「没排队」或「在跑」）。
 
+**第三种形态：聚合门禁还没有 check-run。** 一个还没开工的 workflow run 既没有 job 记录，也没有 check-run。于是「这个 head 上其它 workflow 都绿了，唯独聚合门禁没有 check-run」并不是「门禁没跑」，更不是「门禁绿了」，而是**门禁还在排队／还没开始**：
+
+| 观测 | 判定 |
+| --- | --- |
+| 门禁的 workflow run 状态是 `queued` / `pending` / `waiting` / `requested`，且没有门禁 job、没有门禁 check-run | **排队中**（`queued`） |
+| 同样的观测，但 run 状态是 `in_progress` 或 `completed` | **无法判定**（`missing`）——门禁已经开跑或跑完了却没有 check-run，数据不足 |
+
+这两种判定**都不是「已绿」**。脚本的 `reason` 会明说「聚合门禁尚未产生 check-run」，而不是含糊的「没找到 ⇒ 没跑」。
+
+> ⚠️ **语义变化（本票新增，第三形态）：** 第三形态的判定**从 `missing`（退出码 2）改为 `queued`（退出码 0）**。
+>
+> - **理由**：run 自己说了「我在等」，这就是**问得出结果**，不是「门禁问不出结果」。旧口径把「还在排队」读成「门禁坏了」，人于是去推新 head——而推新 head 只会让队列里多一个还在等的 run（甚至在旧口径下还会取消掉正在排队的那次验证）。
+> - **不变的部分**：`queued` / `running` / `passed` 仍然退出 0，`failed` 仍然退出 1，`missing` 仍然退出 2；**任何情况下都不会输出 `passed`**。变的是**哪一种「问不出结果」**：现在只有「连聚合 workflow run 都不存在」或「run 已开跑／跑完却没有 check-run」才判 `missing`。
+> - **守卫边界**：仍然是 `missing` 的形态 = ① 连聚合 workflow run 都不存在；② run 已 `in_progress`／`completed` 却没有 check-run；③ 门禁记录没有 `started_at`；④ 门禁跑完了却没有 conclusion。
+
+**两种 `queued` 怎么分。** `queued` 有两种成因，**处置相同（不要推）**，但 `reason` 会说清是哪一种：
+
+| `evidence.run.status` | `reason` 里的说法 | 含义 |
+| --- | --- | --- |
+| `pending` | `the gate is queued behind an earlier run of the same pull request` | 等**前一个 head 的门禁**跑完（concurrency group 排队） |
+| `queued` | `the gate is queued and waiting for a runner` | 等 **runner 分配**（供给问题） |
+
+机器可读的判别字段是 `evidence.run.status`；人读的是 `reason`。两者指的是同一件事：`pending` 是**等前一个 head 的门禁**，`queued` 是**等 runner**。
+
 **记录优先级：job 记录优先于聚合 check-run。** job 记录（`/actions/runs/{id}/jobs`）是 runner 分配的记录；聚合 check-run（`/commits/{sha}/check-runs`）是汇总视角。二者不一致时以 job 为准——票面记录的「聚合 check `in_progress` 但同一次 run 的所有 job 都已 completed」正是这种不一致。
 
 **旁证：** 同一个 head 上其它 check 全部 `completed`、只有门禁还开着 ⇒ 门禁是唯一还在等 runner 的 job（票面第三行观测）。旁证只进 `evidence`，不参与判定。
@@ -83,11 +107,13 @@ stdout 是一个 JSON 对象：
 
 `evidence` 里每个字段的取值是 GitHub 的原始值；**字段不存在时写作 `<absent>`**，与「值为 `null`」区分开。
 
+> **打印前 stdout 会被重配为 UTF-8（`errors="replace"`）。** 答案里带着 GitHub 原文的 job / workflow 名，其中可能有当前控制台代码页编码不了的字符（Windows 默认 GBK，`gh` 的输出里就有 `✓`＝U+2713）。不重配的话，`print(json.dumps(..., ensure_ascii=False))` 会抛 `UnicodeEncodeError`，进程以**退出码 1** 结束——而退出码 1 会被调用方读成「门禁说不行」，又是一次假结论。捕获侧一直是 `encoding="utf-8", errors="replace"`，没有动过。
+
 ### 3.4 退出码
 
 | 判定 | 退出码 | 含义 |
 | --- | --- | --- |
-| `queued` | 0 | 排队中，等 runner |
+| `queued` | 0 | 排队中（等 runner，或等前一个 head 的门禁） |
 | `running` | 0 | 正在跑 |
 | `passed` | 0 | 这个 head 门禁真绿 |
 | `failed` | 1 | 门禁没过（`failure` / `cancelled` / `timed_out` / `skipped` …） |
@@ -97,11 +123,13 @@ stdout 是一个 JSON 对象：
 
 `skipped` 判为 `failed`：skipped 是 NOT RUN，不是跑过。
 
+> **本票的变化**：第三形态（聚合 check-run 还不存在，但 workflow run 说它在等）此前判 `missing`（退出码 2），**现在判 `queued`（退出码 0）**。其余四种判定的退出码**未变**。
+
 ### 3.5 「要不要再推」的决策规则
 
 | 判定 | 人 / 脚本该做什么 |
 | --- | --- |
-| `queued` | **不要推。** 再推不会让队列变短，只会让队列里多一个还在等的 run。等这个 run 拿到 runner。 |
+| `queued` | **不要推。** 再推不会让队列变短，只会让队列里多一个还在等的 run。等这个 run 拿到 runner，或等前一个 head 的门禁跑完。 |
 | `running` | **不要推。** 等它跑完。 |
 | `passed` | 这个 head 绿了。 |
 | `failed` | 这个 head 不绿。看 run 日志。 |
@@ -109,7 +137,7 @@ stdout 是一个 JSON 对象：
 
 推新 head 之前先跑一次这个判据：`queued` 时再推是纯粹的浪费（而且在旧口径下还会取消掉正在排队的那一次验证）。
 
-在新口径下，`queued` 有两种成因：**等 runner**（供给问题）与**等前一个 head 的门禁**（concurrency group 排队）。两者的处置一样：**等，不要推**。要区分它们看 `evidence.run.status`：`pending` 是后者（等前一个 head），`queued` 是前者（等 runner）。
+在新口径下，`queued` 有两种成因：**等 runner**（供给问题）与**等前一个 head 的门禁**（concurrency group 排队）。两者的处置一样：**等，不要推**。要区分它们看 `evidence.run.status`：`pending` 是后者（等前一个 head），`queued` 是前者（等 runner）；`reason` 里也会明说是哪一种。
 
 ### 3.6 实跑样本
 
@@ -161,7 +189,7 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 
 ## 4. 守护测试
 
-[`scripts/ci/test_lingdoc_gate_queue_state.py`](../../scripts/ci/test_lingdoc_gate_queue_state.py) 覆盖票面的六行判据：
+[`scripts/ci/test_lingdoc_gate_queue_state.py`](../../scripts/ci/test_lingdoc_gate_queue_state.py) 覆盖票面的六行判据，以及第三形态与它的边界：
 
 | 场景 | 期望判定 |
 | --- | --- |
@@ -171,6 +199,10 @@ $ python scripts/ci/lingdoc_gate_queue_state.py --pr 562
 | ④ gate `SUCCESS` | `passed` |
 | ⑤ gate `FAILURE` | `failed` |
 | ⑥ 数据缺失（没有 check / 没有 `started_at` / 没有 conclusion） | `missing`，**且不得**是 `passed` / `queued` / `running` |
+| ⑦ **聚合门禁还没有 check-run**（workflow run 还在 `pending`） | `queued`，**且不得**是 `passed`；`reason` 明说「尚未产生 check-run」 |
+| ⑧ 同样的观测但 run 已 `in_progress` / `completed` | `missing`，**且不得**是 `passed` |
+| ⑨ **连聚合 workflow run 都不存在** | `missing`，**且不得**是 `passed`；进程退出码 **2** |
+| ⑩ 聚合 run 存在但 `status=pending`（`jobs=[]`）vs `status=queued` | 都是 `queued`，但 **`reason` 不同**（等前一个 head vs 等 runner），`evidence.run.status` 是机器可读的判别字段 |
 
 另含：`status` 字面量不参与判定的验证（`queued` / `waiting` / `pending` 等各种状态词配 `started_at=null` 一律判 `queued`）、job 记录优先于聚合 check 的验证、退出码语义、工作流策略（`cancel-in-progress` 仍为 `false`）的守护。
 
