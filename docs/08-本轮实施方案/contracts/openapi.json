@@ -5341,7 +5341,16 @@
                 "candidate_id": "candidate-demo",
                 "expected_chapter_version_id": null,
                 "expected_spec_revision": 1,
-                "replace_existing": false
+                "replace_existing": false,
+                "expected_working_copy_revision": 1,
+                "expected_body_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "confirmation": {
+                  "writing_action": "generate",
+                  "adoption_target": "formal_version_whole",
+                  "confirmed_at": "2026-10-24T00:00:00Z",
+                  "confirmed_by": "u-owner",
+                  "origin": "ai_generated"
+                }
               }
             }
           }
