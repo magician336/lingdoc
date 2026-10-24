@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -1240,6 +1241,65 @@ def parse_environment_fact(value: str, label: str) -> tuple[str, str]:
     return name.strip(), resolved.strip()
 
 
+def server_root_from(base_url: str) -> str:
+    """The server root behind a LingDoc base URL.
+
+    The runner drives `.../api/v1/lingdoc`; the material gate needs the
+    server root plus the two API prefixes, because it reads both the base
+    knowledge endpoints and the LingDoc source endpoints.
+    """
+    root = base_url.rstrip("/")
+    for suffix in ("/api/v1/lingdoc", "/api/v1"):
+        if root.endswith(suffix):
+            return root[: -len(suffix)]
+    return root
+
+
+def run_material_preflight(
+    check_command: list[str],
+    base_url: str,
+    token: str | None,
+    token_file: str | None,
+    knowledge_id: str,
+    project_id: str | None,
+    origin_file: str,
+) -> None:
+    """Refuse to start the specification when the material is not qualified.
+
+    The material's chunks must be the verbatim slice of the origin text at
+    their own coordinates. When they are not, every source of that material
+    goes stale and every operation that re-checks them is refused — a failure
+    that reads like a licence-chain problem and is not one (#485 / D1). The
+    gate therefore runs *before* the first node.
+
+    The gate is fail-closed: a gate that cannot run is not a pass, so an
+    unusable check command refuses the run instead of letting it start.
+    """
+    if not check_command or not check_command[0]:
+        raise WorkflowError("--material-origin needs --material-check-cmd "
+                            "(the lingdoc-material-check executable)")
+    if not knowledge_id:
+        raise WorkflowError("--material-origin needs --knowledge-id")
+    command = list(check_command) + [
+        "--base-url", server_root_from(base_url),
+        "--knowledge-id", knowledge_id,
+        "--origin-file", str(origin_file),
+    ]
+    if project_id:
+        command += ["--project-id", project_id]
+    if token_file:
+        command += ["--token-file", token_file]
+    elif token:
+        command += ["--token", token]
+    else:
+        raise WorkflowError("the material gate needs a credential: --token or --material-check-token-file")
+    result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace")
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0:
+        raise WorkflowError("材料合格性前置比对未通过（材料不能进入验收）：\n" + output.strip())
+    print(output.strip())
+
+
 class _SelfTestResponse:
     """One synthetic answer, shaped like the transport's answer."""
 
@@ -1592,9 +1652,78 @@ class CheckOperatorSelfTest(unittest.TestCase):
         self.assertEqual(report["manual_assertions"][0]["status"], "not_run")
 
 
+class MaterialPreflightSelfTest(unittest.TestCase):
+    """The material gate refuses an unqualified material before the first node.
+
+    The gate is the reason a run no longer fails at the first source-recheck
+    node with a refusal that reads like a licence-chain problem: the material
+    is checked for what it is — chunks that are the verbatim slice of the
+    origin at their own coordinates — before anything depends on it.
+
+    The cases live in this file because the gate lives here.
+    """
+
+    def gate(self, exit_code: int) -> str:
+        """A stand-in for the gate executable: it exits with the given code."""
+        handle = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8")
+        with handle:
+            handle.write("import sys\nsys.exit(%d)\n" % exit_code)
+        return handle.name
+
+    def preflight(self, exit_code: int) -> None:
+        run_material_preflight(
+            [sys.executable, self.gate(exit_code)],
+            "http://127.0.0.1:18085/api/v1/lingdoc",
+            "token",
+            None,
+            "knowledge-1",
+            "project-1",
+            "origin.md",
+        )
+
+    def test_a_qualified_material_lets_the_run_start(self):
+        self.preflight(0)
+
+    def test_an_unqualified_material_refuses_the_run(self):
+        with self.assertRaises(WorkflowError) as failure:
+            self.preflight(1)
+        self.assertIn("材料合格性", str(failure.exception))
+
+    def test_a_gate_that_cannot_run_refuses_the_run(self):
+        # Fail closed: a gate that did not run is not a pass.
+        with self.assertRaises(WorkflowError):
+            self.preflight(2)
+
+    def test_a_missing_check_command_refuses_the_run(self):
+        with self.assertRaises(WorkflowError):
+            run_material_preflight(
+                [],
+                "http://127.0.0.1:18085/api/v1/lingdoc",
+                "token",
+                None,
+                "knowledge-1",
+                "project-1",
+                "origin.md",
+            )
+
+    def test_the_server_root_is_derived_from_the_lingdoc_base_url(self):
+        self.assertEqual(
+            server_root_from("http://127.0.0.1:18085/api/v1/lingdoc"),
+            "http://127.0.0.1:18085",
+        )
+        self.assertEqual(
+            server_root_from("http://127.0.0.1:18085/api/v1"),
+            "http://127.0.0.1:18085",
+        )
+
+
 def run_operator_self_test() -> int:
     """Run the operator table and report every case by name."""
-    suite = unittest.TestLoader().loadTestsFromTestCase(CheckOperatorSelfTest)
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite([
+        loader.loadTestsFromTestCase(CheckOperatorSelfTest),
+        loader.loadTestsFromTestCase(MaterialPreflightSelfTest),
+    ])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 
@@ -1617,6 +1746,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--poll-interval", type=float, default=1)
     parser.add_argument("--poll-timeout", type=float, default=120)
     parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed steps")
+    parser.add_argument("--material-origin", type=Path,
+                        help="the material's origin text; enables the material qualification gate "
+                             "before the first node")
+    parser.add_argument("--material-check-cmd",
+                        help="the lingdoc-material-check executable the gate runs")
+    parser.add_argument("--material-check-token-file",
+                        help="file holding the bearer token for the gate (keeps it out of the process list)")
+    parser.add_argument("--material-project-id",
+                        help="the project the material is bound to; the gate reads the sources from it")
     parser.add_argument("--self-test", action="store_true",
                         help="run the check-operator table and exit; no provider is contacted")
     args = parser.parse_args(argv)
@@ -1638,6 +1776,19 @@ def main(argv: list[str] | None = None) -> int:
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
             variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
+        if args.material_origin:
+            # Before the first node: the material must be qualified, or every
+            # source of it goes stale and the run fails for a reason that has
+            # nothing to do with the contract.
+            run_material_preflight(
+                [args.material_check_cmd] if args.material_check_cmd else [],
+                runner.client.base_url,
+                args.token,
+                args.material_check_token_file,
+                args.knowledge_id or "",
+                args.material_project_id,
+                str(args.material_origin),
+            )
         if args.report:
             # Verify the destination before any provider mutation and replace a
             # previous successful record with an explicit incomplete-run record.

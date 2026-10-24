@@ -55,6 +55,12 @@ func NewLingDocWorkspaceHandler(
 	}
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, kbShares, knowledge, templates, auditSink)
+	// The origin text of an uploaded material lives in storage: its file path
+	// is a storage reference, not a filesystem path. The runtime needs the
+	// storage side to read it — without it every quote can only be checked
+	// against the chunk itself, and no source of that material counts as a
+	// stable original.
+	runtime.ConnectOriginFiles(workspace.KnowledgeFileOriginReader{Service: knowledgeObjects})
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	// 受控故障注入只在环境变量显式点名注入点与演示租户时装配（#256）。未装配
 	// 时，下面的策略与写入端口与本票之前完全一致。

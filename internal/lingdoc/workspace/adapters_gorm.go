@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
@@ -33,6 +34,60 @@ func NewGORMSourcePorts(db *gorm.DB, kbShares interfaces.KBShareService) GORMSou
 		Catalog:  dbSourceCatalog{db: db},
 		Origins:  evidence.NewOriginReader(knowledgeReader),
 	}
+}
+
+// OriginFileReader reads the source bytes of a material.
+//
+// It is the storage-side counterpart of the database-side facts: the database
+// says which file a material came from, the storage layer says what is in
+// it. The origin text (what a quoted text is proven against) needs both.
+type OriginFileReader interface {
+	OriginBytes(ctx context.Context, knowledgeID string) (data []byte, ok bool, err error)
+}
+
+// KnowledgeFileSource is the storage-side capability the origin reader needs:
+// the bytes of a material's source file.
+//
+// It is deliberately narrow — one method — so the reader depends on the
+// storage seam, not on the whole knowledge service. The production knowledge
+// service satisfies it (it resolves the storage reference of the file);
+// a test can satisfy it with a stub.
+type KnowledgeFileSource interface {
+	GetKnowledgeFile(ctx context.Context, id string) (io.ReadCloser, string, error)
+}
+
+// KnowledgeFileOriginReader reads a material's source bytes through the
+// knowledge service, which resolves the storage reference of the file.
+type KnowledgeFileOriginReader struct {
+	Service KnowledgeFileSource
+}
+
+// OriginBytes reads the source file of a material.
+//
+// A read that fails is a "no origin" answer, not a failure of the request:
+// the caller then degrades to the self-consistency tier, which is the same
+// answer it gave before this reader existed. What it must not do is claim a
+// verbatim match it could not prove.
+func (r KnowledgeFileOriginReader) OriginBytes(ctx context.Context, knowledgeID string) ([]byte, bool, error) {
+	if r.Service == nil || knowledgeID == "" {
+		return nil, false, nil
+	}
+	file, _, err := r.Service.GetKnowledgeFile(ctx, knowledgeID)
+	if err != nil {
+		return nil, false, nil
+	}
+	if file == nil {
+		return nil, false, nil
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, evidence.MaxOriginBytes+1))
+	if err != nil {
+		return nil, false, nil
+	}
+	if len(data) == 0 || len(data) > evidence.MaxOriginBytes {
+		return nil, false, nil
+	}
+	return data, true, nil
 }
 
 type dbSourceCatalog struct{ db *gorm.DB }
@@ -69,7 +124,13 @@ func (r dbSourceCatalog) Chunk(ctx context.Context, id string) (*SourceChunk, er
 	}, nil
 }
 
-type dbKnowledgeReader struct{ db *gorm.DB }
+type dbKnowledgeReader struct {
+	db *gorm.DB
+	// files reads the material's source bytes. It is optional: without it the
+	// origin reader falls back to the local file path, which is what a reader
+	// that only knows local paths can offer.
+	files OriginFileReader
+}
 
 func (r dbKnowledgeReader) KnowledgeForOrigin(ctx context.Context, knowledgeID string) (*types.Knowledge, error) {
 	var knowledge types.Knowledge
@@ -128,6 +189,20 @@ func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID
 		chunking.ParserEngineRules = overrides.ParserEngineRules
 	}
 	return chunking.ResolveParserEngine(knowledge.FileType) == "", nil
+}
+
+// OriginBytes returns the source bytes of a material.
+//
+// The origin text is what the quoted text is proven against, so it has to be
+// the file the ingest chain actually read. For an uploaded material that file
+// lives in storage: its file_path is a storage reference, not a filesystem
+// path. The bytes therefore come from the storage layer (files), not from the
+// database.
+func (r dbKnowledgeReader) OriginBytes(ctx context.Context, knowledgeID string) ([]byte, bool, error) {
+	if r.files == nil {
+		return nil, false, nil
+	}
+	return r.files.OriginBytes(ctx, knowledgeID)
 }
 
 func valueTime(value *time.Time) time.Time {

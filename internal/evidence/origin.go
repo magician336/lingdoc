@@ -13,6 +13,10 @@ import (
 // 超过这个大小就降弱档，而不是把一次请求变成一次大文件读取。
 const maxOriginBytes = 8 << 20 // 8 MiB
 
+// MaxOriginBytes 是直读上限的公开形式：读取原文的一方（存储层）需要同一条
+// 上限，否则它会把一份多大的文件读进内存就由它决定了。
+const MaxOriginBytes = maxOriginBytes
+
 // directReadExtensions 是走 Go 侧 SimpleFormatReader 的扩展名——它把这几种
 // 文件**原样**返回成 MarkdownContent（`docparser/builtin_converter.go:57-60`），
 // 不经过 Python 解析服务，也不做格式转换。
@@ -56,6 +60,21 @@ type KnowledgeReader interface {
 // legitimate weak-evidence case; the former must never be treated as one.
 type OriginPresenceReader interface {
 	OriginKnowledgePresent(ctx context.Context, knowledgeID string) (bool, error)
+}
+
+// OriginBytesReader is an optional capability of the knowledge reader: it
+// returns the source bytes of a material.
+//
+// The file path of an **uploaded** material is a storage reference
+// ("resource://…"), not a filesystem path, so reading the bytes needs the
+// storage layer. A reader that cannot provide them answers ok=false — the
+// caller then degrades to the self-consistency tier instead of claiming that
+// a quote was proven against the original.
+//
+// The reader is optional on purpose: a reader that only knows a local path
+// (the pre-storage case) keeps working through the local-file fallback.
+type OriginBytesReader interface {
+	OriginBytes(ctx context.Context, knowledgeID string) (data []byte, ok bool, err error)
 }
 
 // NewOriginReader 组装固定实现：手工资料的正文取自 metadata，
@@ -146,24 +165,52 @@ func (r *fileOriginReader) fileOrigin(ctx context.Context, row *types.Knowledge)
 		return "", false, nil
 	}
 
-	info, err := os.Stat(row.FilePath)
-	if err != nil || info.IsDir() || info.Size() == 0 || info.Size() > maxOriginBytes {
-		return "", false, nil
-	}
-	data, err := os.ReadFile(row.FilePath)
+	data, ok, err := r.originBytes(ctx, row)
 	if err != nil {
+		return "", false, err
+	}
+	if !ok {
 		return "", false, nil
 	}
-	if len(data) == 0 || len(data) > maxOriginBytes {
-		// 落到这一步说明文件在 Stat 与 Read 之间变了。按降档处理。
-		return "", false, nil
-	}
-
 	text, provable := verbatimOrigin(data)
 	if !provable {
 		return "", false, nil
 	}
 	return text, true, nil
+}
+
+// originBytes 取这份资料的源文件字节。
+//
+// 优先问读取方（OriginBytesReader）：上传进来的资料，其 file_path 是存储
+// 引用（resource://…）而不是文件系统路径，只有存储层能把它读成字节。
+//
+// 读取方**答不出**时退回本地文件路径——那是存储化之前的老路径，仍然要能用。
+// 这一步不能省：答不出不等于「这份资料没有原文」，只等于「这一条路读不到」。
+// 省掉它，存储读取方一旦答不出，存储化之前那些本地路径的资料就会全部
+// 降成「取不到原文」，而它们的原文明明就在磁盘上。
+func (r *fileOriginReader) originBytes(ctx context.Context, row *types.Knowledge) ([]byte, bool, error) {
+	if reader, ok := r.knowledge.(OriginBytesReader); ok {
+		data, readable, err := reader.OriginBytes(ctx, row.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		if readable {
+			return data, true, nil
+		}
+	}
+	info, err := os.Stat(row.FilePath)
+	if err != nil || info.IsDir() || info.Size() == 0 || info.Size() > maxOriginBytes {
+		return nil, false, nil
+	}
+	data, err := os.ReadFile(row.FilePath)
+	if err != nil {
+		return nil, false, nil
+	}
+	if len(data) == 0 || len(data) > maxOriginBytes {
+		// 落到这一步说明文件在 Stat 与 Read 之间变了。按降档处理。
+		return nil, false, nil
+	}
+	return data, true, nil
 }
 
 // verbatimOrigin 判定这一串文本是不是切分链路真正切的那段文本。
