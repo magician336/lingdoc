@@ -48,13 +48,21 @@ from scripts.lingdoc_check_kinds import (  # noqa: E402  (the path must be set f
     declared_kind,
     validate_check,
 )
+# The rules that turn a contract value into the value to send live in one
+# module -- scripts/lingdoc_mock/workflow_expand.py -- and the contract's
+# static validator reads it from there too.  Two copies of the rules are two
+# copies that drift, and a contract the runner and the validator judge
+# differently is a contract nobody can trust.
+from scripts.lingdoc_mock import workflow_expand  # noqa: E402  (the path must be set first)
 
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
 WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
 SCENARIOS_PATH = ROOT / "docs/08-本轮实施方案/contracts/scenarios.json"
 # A variable name may be namespaced the way the contract spells its own facts
 # ("{{asset.k-notready}}"), so dots and dashes are part of a name, not separators.
-VARIABLE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}")
+# The pattern itself belongs to the expansion module -- the one copy of the
+# {{name}} rules -- so this module does not carry a second spelling of it.
+VARIABLE = workflow_expand.VARIABLE
 PROVIDER_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 # A check states one expectation about one place in the response. The operator is what
 # makes it evaluable; `intent` keeps the sentence a reader needs to judge the expectation.
@@ -379,26 +387,18 @@ def json_pointer(value: Any, pointer: str) -> Any:
 
 
 def substitute(value: Any, variables: dict[str, Any]) -> Any:
-    if isinstance(value, dict):
-        return {key: substitute(child, variables) for key, child in value.items()}
-    if isinstance(value, list):
-        return [substitute(child, variables) for child in value]
-    if not isinstance(value, str):
-        return value
-    exact = VARIABLE.fullmatch(value)
-    if exact:
-        name = exact.group(1)
-        if name not in variables:
-            raise WorkflowError(f"workflow variable is not captured yet: {name}")
-        return variables[name]
+    """Expand one contract value against the variables captured so far.
 
-    def replace(match: re.Match[str]) -> str:
-        name = match.group(1)
-        if name not in variables:
-            raise WorkflowError(f"workflow variable is not captured yet: {name}")
-        return str(variables[name])
-
-    return VARIABLE.sub(replace, value)
+    The rules live in ``scripts/lingdoc_mock/workflow_expand.py``: the runner
+    and the contract's static validator read the same module, so a contract
+    cannot be judged one way by the run and another way by the validator.  A
+    value that cannot be expanded is refused here -- before the request is
+    built -- and is never patched up with a placeholder or an empty array.
+    """
+    try:
+        return workflow_expand.expand_value(value, variables)
+    except workflow_expand.ExpansionError as error:
+        raise WorkflowError(str(error)) from None
 
 
 def operation_index(openapi: dict[str, Any]) -> tuple[str, dict[str, tuple[str, str]]]:

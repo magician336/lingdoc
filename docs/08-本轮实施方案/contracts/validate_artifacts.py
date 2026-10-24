@@ -23,6 +23,21 @@ if not checker_path.is_file():
 checker_loader=importlib.util.spec_from_file_location('lingdoc_route_parity',checker_path)
 checker=importlib.util.module_from_spec(checker_loader)
 checker_loader.loader.exec_module(checker)
+# The rules that turn a contract value into the value to send live in one
+# module -- scripts/lingdoc_mock/workflow_expand.py -- and the F01 runner reads
+# it from there too.  Two copies of the rules are two copies that drift, and a
+# contract the validator and the runner judge differently is a contract nobody
+# can trust.  This contract directory may be a scratch copy (the review
+# workflow copies it to a temporary directory before running this validator),
+# so the module is looked up next to this file first and under --source-root
+# second -- the same way check_lingdoc_routes.py is found above.
+expand_path=ROOT/'workflow_expand.py'
+if not expand_path.is_file():
+    expand_path=args.source_root/'scripts/lingdoc_mock/workflow_expand.py'
+assert expand_path.is_file(),'the contract validator cannot find the expansion module: '+str(expand_path)
+expand_loader=importlib.util.spec_from_file_location('lingdoc_workflow_expand',expand_path)
+workflow_expand=importlib.util.module_from_spec(expand_loader)
+expand_loader.loader.exec_module(workflow_expand)
 # The check vocabulary lives in one module -- scripts/lingdoc_check_kinds.py -- and this
 # validator reads it from there.  It used to carry its own shorter copy, which knew four
 # kinds while the runner knew ten: a check that used one of the six the validator did not
@@ -434,12 +449,18 @@ scenario_totals={'steps_with_requests':scenario_steps_with_requests,
                  'checks_tied':check_references['tied'],'checks_unresolved':check_references['unresolved']}
 
 def expand(x,env):
-    if isinstance(x,dict): return {k:expand(v,env) for k,v in x.items()}
-    if isinstance(x,list): return [expand(v,env) for v in x]
-    if not isinstance(x,str): return x
-    match=re.fullmatch(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',x)
-    if match: return env[match[1]]
-    return re.sub(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',lambda m:str(env[m[1]]),x)
+    """Expand one contract value against the variables captured so far.
+
+    The rules live in scripts/lingdoc_mock/workflow_expand.py -- the same
+    module the F01 runner reads -- so this validator and the run judge the
+    same contract by the same rules.  A value that cannot be expanded is a
+    static failure here: it is never left unexpanded, and never patched up
+    with a placeholder or an empty array.
+    """
+    try:
+        return workflow_expand.expand_value(x,env)
+    except workflow_expand.ExpansionError as error:
+        raise AssertionError(str(error)) from None
 # A contract may take a value from the environment instead of capturing it
 # (the material identifier at F01-06 is one).  This validator checks the
 # *shape* of a request, so a placeholder of the right type is enough to
