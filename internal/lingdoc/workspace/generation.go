@@ -533,7 +533,8 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			switch {
 			case errors.Is(err, errAcceptanceLedgerBlocked):
 				return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
-			case errors.Is(err, errAcceptanceBudgetSpent), errors.Is(err, errAcceptanceInputTooLarge):
+			case errors.Is(err, errAcceptanceBudgetSpent), errors.Is(err, errAcceptanceInputTooLarge),
+				errors.Is(err, errAcceptanceTokenBudgetExhausted):
 				return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 			case errors.Is(err, errAcceptanceWrongModel):
 				return generation.Draft{}, generation.ErrAcceptanceModelMismatch

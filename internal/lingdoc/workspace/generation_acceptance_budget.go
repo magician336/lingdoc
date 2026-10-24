@@ -40,6 +40,11 @@ var (
 	errAcceptanceBudgetSpent   = errors.New("acceptance request budget exhausted")
 	errAcceptanceInputTooLarge = errors.New("acceptance input exceeds the round limit")
 	errAcceptanceWrongModel    = errors.New("acceptance model does not match the profile")
+	// errAcceptanceTokenBudgetExhausted means the CUMULATIVE token
+	// reservation of the window would pass the profile's cumulative
+	// ceiling. It is a refusal that happens before the request leaves the
+	// process.
+	errAcceptanceTokenBudgetExhausted = errors.New("acceptance cumulative token budget exhausted")
 )
 
 type generationAcceptanceBudget struct {
@@ -56,9 +61,21 @@ type generationAcceptanceLedger struct {
 	// CostBasis names what the money columns of this ledger MEAN. A profile
 	// without a price basis writes "not_applicable", and its 0 in the money
 	// columns reads as "nothing was priced" instead of "the call was free".
-	CostBasis     string                        `json:"cost_basis,omitempty"`
-	InputMax      int                           `json:"input_max_tokens"`
-	OutputMax     int                           `json:"output_max_tokens"`
+	CostBasis string `json:"cost_basis,omitempty"`
+	InputMax  int    `json:"input_max_tokens"`
+	OutputMax int    `json:"output_max_tokens"`
+	// CumulativeTokenMax is the ceiling of the CUMULATIVE token reservation
+	// of this window. It is 0 in a ledger of a profile that has no
+	// cumulative token ceiling, and in a ledger written before the field
+	// existed.
+	CumulativeTokenMax int `json:"cumulative_token_max,omitempty"`
+	// ReservedTokens is the cumulative token RESERVATION of this window: an
+	// upper bound of what the calls could consume, never a claim about what
+	// they consumed.
+	ReservedTokens int `json:"reserved_tokens,omitempty"`
+	// ActualTokens is the cumulative token usage the provider REPORTED. It
+	// is recorded beside the reservation and never in place of it.
+	ActualTokens  int                           `json:"actual_tokens,omitempty"`
 	CallsMax      int                           `json:"calls_max"`
 	CNYBackstop   int                           `json:"human_backstop_cny"`
 	ReserveMax    int64                         `json:"reserve_max_nano_usd"`
@@ -67,6 +84,41 @@ type generationAcceptanceLedger struct {
 	Blocked       bool                          `json:"blocked"`
 	BlockedReason string                        `json:"blocked_reason,omitempty"`
 	Requests      []generationAcceptanceRequest `json:"requests"`
+}
+
+// tracksCumulativeTokens reports whether this ledger keeps the cumulative
+// token counters.
+//
+// The counters exist for the profiles that HAVE a cumulative token ceiling.
+// A profile without one does not keep them, so its ledger stays exactly as
+// it was before the counters existed.
+func (l generationAcceptanceLedger) tracksCumulativeTokens() bool {
+	return l.CumulativeTokenMax > 0
+}
+
+// acceptanceLedgerUsageUnverifiable reports whether any recorded call has a
+// usage that could not be verified.
+//
+// Such a call is not a smaller usage: it is an UNKNOWN usage. The window
+// cannot promise that the next call stays inside the ceiling, because the
+// ceiling has to be measured against a number nobody can produce.
+func acceptanceLedgerUsageUnverifiable(ledger generationAcceptanceLedger) bool {
+	for _, request := range ledger.Requests {
+		if request.UsageStatus == acceptancebudget.UsageStatusUnavailable {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenBudgetState returns the state of the token budget of this ledger.
+//
+// It reuses the acceptance budget's own state type, so both ledgers answer
+// "how much is left" in the same vocabulary: the RESERVED remainder is what
+// the gate uses, and the ACTUAL remainder is what the provider reported.
+func (l generationAcceptanceLedger) tokenBudgetState() acceptancebudget.TokenBudgetState {
+	return acceptancebudget.NewTokenBudgetState(
+		l.CumulativeTokenMax, l.ReservedTokens, l.ActualTokens, acceptanceLedgerUsageUnverifiable(l))
 }
 
 type generationAcceptanceRequest struct {
@@ -208,6 +260,32 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 		(reservedPerCall > 0 && reservedPerCall > ledger.ReserveMax-ledger.Reserved) {
 		return nil, errAcceptanceBudgetSpent
 	}
+	// The cumulative token gate.
+	//
+	// The reservation of THIS call is the conservative token bound of the
+	// call: the input upper bound plus the output limit that travels in the
+	// request. The input upper bound is a UTF-8 BYTE length (plus a fixed
+	// overhead), NOT an exact token count: a token is at least one byte, so
+	// the byte length can never be smaller than the token count. It is an
+	// upper bound, which makes the reservation conservative -- it may
+	// refuse a request that would have fitted, and it can never let one
+	// through that exceeds the ceiling.
+	//
+	// The check happens HERE, under the ledger lock and BEFORE the caller
+	// receives a reservation, so a request that does not fit never leaves
+	// the process.
+	reservedTokens := inputUpperBound + outputMax
+	if ledger.tracksCumulativeTokens() {
+		if ledger.ReservedTokens+reservedTokens > ledger.CumulativeTokenMax {
+			return nil, errAcceptanceTokenBudgetExhausted
+		}
+		if acceptanceLedgerUsageUnverifiable(ledger) {
+			// The remaining budget cannot be PROVEN: nobody knows what the
+			// unaccounted call consumed. The window stops instead of
+			// spending on a guess.
+			return nil, errAcceptanceTokenBudgetExhausted
+		}
+	}
 	request := generationAcceptanceRequest{
 		Number:                   len(ledger.Requests) + 1,
 		Model:                    modelName,
@@ -219,6 +297,9 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 	}
 	ledger.Requests = append(ledger.Requests, request)
 	ledger.Reserved += reservedPerCall
+	if ledger.tracksCumulativeTokens() {
+		ledger.ReservedTokens += reservedTokens
+	}
 	if err := writeAcceptanceLedger(b.ledgerPath, ledger); err != nil {
 		return nil, errAcceptanceLedgerIO
 	}
@@ -232,6 +313,11 @@ func mapAcceptanceBudgetError(err error) error {
 		return errAcceptanceLedgerBlocked
 	case errors.Is(err, acceptancebudget.ErrCallsSpent):
 		return errAcceptanceBudgetSpent
+	case errors.Is(err, acceptancebudget.ErrTokenBudgetExhausted):
+		// The cumulative token budget is exhausted. It is a budget refusal
+		// like the exhausted call count, and it happens before the request
+		// leaves the process.
+		return errAcceptanceTokenBudgetExhausted
 	case errors.Is(err, acceptancebudget.ErrInputTooLarge):
 		return errAcceptanceInputTooLarge
 	case errors.Is(err, acceptancebudget.ErrWrongModel):
@@ -320,6 +406,12 @@ func (r *generationAcceptanceReservation) completeUsage(status string, usage acc
 	request.FinishReason = finishReason
 	request.ActualNanoUSD = actualAcceptanceCost(r.budget.profileName(), inputTokens, outputTokens)
 	ledger.Actual += request.ActualNanoUSD
+	if ledger.tracksCumulativeTokens() {
+		// The reported usage is the truth about the tokens this call
+		// consumed. It is recorded NEXT TO the reservation, never in place
+		// of it, and it never feeds back into the reservation.
+		ledger.ActualTokens += totalTokens
+	}
 	if block {
 		ledger.Blocked = true
 		ledger.BlockedReason = status
@@ -378,6 +470,12 @@ func (r *generationAcceptanceReservation) cancelNoCall() error {
 	}
 	ledger.Requests = ledger.Requests[:len(ledger.Requests)-1]
 	ledger.Reserved -= request.ReservedNanoUSD
+	if ledger.tracksCumulativeTokens() {
+		// The call provably never happened, so its reservation goes back.
+		// The counter is DECREMENTED, never reset: the other reservations of
+		// the window stay counted.
+		ledger.ReservedTokens -= request.EstimatedInputUpperBound + request.OutputLimit
+	}
 	writeErr := writeAcceptanceLedger(r.budget.ledgerPath, ledger)
 	r.release()
 	if writeErr != nil {
@@ -404,7 +502,7 @@ func (r *generationAcceptanceReservation) release() {
 // profile has its own rule, which approves a different provider, a different
 // endpoint and a different model.
 func selectDeepSeekAcceptanceModel(models []*types.Model) (*types.Model, bool) {
-	if activeAcceptanceProfile() == acceptancebudget.QwenProfile {
+	if acceptancebudget.IsQwenProfile(activeAcceptanceProfile()) {
 		return selectQwenAcceptanceModel(models)
 	}
 	return selectDeepSeekAcceptanceModelOnly(models)
@@ -541,17 +639,18 @@ func readAcceptanceLedger(path string, profiles ...string) (generationAcceptance
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return generationAcceptanceLedger{
-			SchemaVersion: 1,
-			Profile:       profile,
-			Model:         acceptancebudget.ProfileApprovedModel(profile),
-			PricingBasis:  acceptancePricingBasis(profile),
-			CostBasis:     acceptancebudget.ProfileCostBasis(profile),
-			InputMax:      inputMax,
-			OutputMax:     outputMax,
-			CallsMax:      calls,
-			CNYBackstop:   backstop,
-			ReserveMax:    reserveUSD,
-			Requests:      []generationAcceptanceRequest{},
+			SchemaVersion:      1,
+			Profile:            profile,
+			Model:              acceptancebudget.ProfileApprovedModel(profile),
+			PricingBasis:       acceptancePricingBasis(profile),
+			CostBasis:          acceptancebudget.ProfileCostBasis(profile),
+			InputMax:           inputMax,
+			OutputMax:          outputMax,
+			CumulativeTokenMax: acceptancebudget.ProfileCumulativeTokenMax(profile),
+			CallsMax:           calls,
+			CNYBackstop:        backstop,
+			ReserveMax:         reserveUSD,
+			Requests:           []generationAcceptanceRequest{},
 		}, nil
 	}
 	if err != nil {
@@ -593,11 +692,13 @@ func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
 		ledger.InputMax != inputMax || ledger.OutputMax != outputMax ||
 		ledger.CallsMax != calls || ledger.CNYBackstop != backstop || ledger.ReserveMax != reserveUSD ||
 		!validAcceptanceCostBasis(ledger.CostBasis, profile) ||
+		!validAcceptanceCumulativeTokenMax(ledger, profile) ||
 		(calls > 0 && len(ledger.Requests) > calls) || ledger.Reserved > reserveUSD || ledger.Reserved != int64(len(ledger.Requests))*reservedPerCall ||
 		ledger.Actual < 0 || ledger.Actual > ledger.Reserved {
 		return false
 	}
 	var actualTotal int64
+	var reservedTokens, actualTokens int
 	for i, request := range ledger.Requests {
 		if request.Number != i+1 || request.Model != acceptancebudget.ProfileApprovedModel(profile) ||
 			request.ReservedNanoUSD != reservedPerCall ||
@@ -618,8 +719,34 @@ func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
 			}
 		}
 		actualTotal += request.ActualNanoUSD
+		// The two token counters are recomputed from the rows, so a ledger
+		// whose aggregates disagree with its own history is refused. The
+		// reservation and the reported usage are summed separately: they are
+		// different quantities and neither one is derived from the other.
+		reservedTokens += request.EstimatedInputUpperBound + request.OutputLimit
+		actualTokens += request.TotalTokens
+	}
+	if ledger.tracksCumulativeTokens() {
+		if ledger.ReservedTokens != reservedTokens || ledger.ActualTokens != actualTokens {
+			return false
+		}
 	}
 	return actualTotal == ledger.Actual
+}
+
+// validAcceptanceCumulativeTokenMax accepts the cumulative token ceiling of
+// one ledger.
+//
+// The profile's number is the HARD MAXIMUM: a ledger may tighten it (an
+// operator can lower one window's budget) but it may never raise it, and a
+// profile that has a ceiling does not accept a ledger that declares none --
+// such a window would run without the gate.
+func validAcceptanceCumulativeTokenMax(ledger generationAcceptanceLedger, profile string) bool {
+	ceiling := acceptancebudget.ProfileCumulativeTokenMax(profile)
+	if ceiling <= 0 {
+		return ledger.CumulativeTokenMax == 0
+	}
+	return ledger.CumulativeTokenMax > 0 && ledger.CumulativeTokenMax <= ceiling
 }
 
 // validAcceptanceCostBasis accepts the cost basis of one ledger.
@@ -631,7 +758,7 @@ func validAcceptanceCostBasis(recorded, profile string) bool {
 	if recorded == acceptancebudget.ProfileCostBasis(profile) {
 		return true
 	}
-	return profile != acceptancebudget.QwenProfile && recorded == ""
+	return !acceptancebudget.IsQwenProfile(profile) && recorded == ""
 }
 
 // validAcceptanceUsageStatus accepts the usage status of one request.

@@ -45,6 +45,14 @@ var (
 	ErrCallsSpent    = errors.New("model acceptance request budget exhausted")
 	ErrInputTooLarge = errors.New("model acceptance input exceeds the round limit")
 	ErrWrongModel    = errors.New("model is outside the acceptance budget profile")
+	// ErrTokenBudgetExhausted means the CUMULATIVE token reservation of the
+	// window would pass the profile's cumulative ceiling.
+	//
+	// It is a refusal that happens BEFORE the request leaves the process,
+	// and it is separate from ErrCallsSpent: the call count may still have
+	// room while the token budget does not, and a reader needs to know which
+	// of the two stopped the request.
+	ErrTokenBudgetExhausted = errors.New("model acceptance cumulative token budget exhausted")
 )
 
 type Budget struct {
@@ -62,6 +70,34 @@ type Ledger struct {
 	// It is 0 in a ledger written before the ceiling existed, which reads as
 	// "the sum was not limited separately".
 	TotalMaxTokens int `json:"total_max_tokens,omitempty"`
+	// CumulativeTokenMax is the ceiling of the CUMULATIVE token reservation
+	// of this window.
+	//
+	// It is the profile's ceiling. It is 0 in a ledger of a profile that has
+	// no cumulative token ceiling, and in a ledger written before the field
+	// existed. A ledger may TIGHTEN it (an operator can lower one window's
+	// budget) but it may never RAISE it: the profile's number is the hard
+	// maximum.
+	CumulativeTokenMax int `json:"cumulative_token_max,omitempty"`
+	// ReservedTokens is the cumulative token RESERVATION of this window.
+	//
+	// It is a reservation, not a usage: it says how many tokens the window
+	// could still consume, never how many it did consume. The provider's own
+	// numbers live in the request rows (input_tokens / output_tokens /
+	// total_tokens) and in ActualTokens below.
+	//
+	// It is 0 in a ledger of a profile that has no cumulative token ceiling,
+	// so such a ledger stays exactly as it was before the field existed.
+	ReservedTokens int `json:"reserved_tokens,omitempty"`
+	// ActualTokens is the cumulative token usage the provider REPORTED.
+	//
+	// It is the sum of the reported totals. It excludes any call whose usage
+	// was unavailable, because nobody can prove what that call consumed; the
+	// request rows say which calls those were through their usage_status.
+	//
+	// It is never derived from the reservation, and the reservation is never
+	// derived from it.
+	ActualTokens   int `json:"actual_tokens,omitempty"`
 	MaxConcurrency int `json:"max_concurrency"`
 	// CostBasis names what the money columns of this ledger MEAN.
 	//
@@ -205,6 +241,39 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrCallsSpent
 	}
+	// The cumulative token gate.
+	//
+	// The reservation of THIS call is the conservative token bound of the
+	// call: the input upper bound plus the output limit that travelled in
+	// the request.
+	//
+	// The input upper bound is NOT an exact token count: it is a UTF-8 BYTE
+	// length (plus a fixed overhead) that the caller computed before the
+	// request, and a token is at least one byte, so the byte length can
+	// never be smaller than the token count. It is an UPPER BOUND, which
+	// makes the reservation conservative: it may refuse a request that would
+	// have fitted, and it can never let one through that exceeds the
+	// ceiling. The output limit IS exact: it is the max_completion_tokens
+	// the provider was asked for.
+	//
+	// The check happens HERE, while the ledger lock is held and BEFORE the
+	// caller receives a reservation, so a request that does not fit never
+	// leaves the process.
+	reservedTokens := inputUpperBound + outputLimit
+	if ledger.tracksCumulativeTokens() {
+		if ledger.ReservedTokens+reservedTokens > ledger.CumulativeTokenMax {
+			_ = ReleaseLock(lock, lockPath)
+			return nil, ErrTokenBudgetExhausted
+		}
+		if ledgerUsageUnverifiable(ledger) {
+			// The remaining budget cannot be PROVEN. Nobody knows what the
+			// unaccounted call consumed, so the window cannot promise that
+			// the next call stays inside the ceiling. A window whose usage
+			// is unverifiable stops here rather than spending on a guess.
+			_ = ReleaseLock(lock, lockPath)
+			return nil, ErrTokenBudgetExhausted
+		}
+	}
 	request := Request{
 		Number:          len(ledger.Requests) + 1,
 		Model:           model,
@@ -219,6 +288,9 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	ledger.Requests = append(ledger.Requests, request)
 	ledger.ReservedNanoCNY += reserveNanoCNY
 	ledger.ReservedNanoUSD += reserveNanoUSD
+	if ledger.tracksCumulativeTokens() {
+		ledger.ReservedTokens += reservedTokens
+	}
 	if err := writeLedger(b.ledgerPath, ledger); err != nil {
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrUnavailable
@@ -303,6 +375,12 @@ func (r *Reservation) CompleteUsage(status string, usage Usage, finishReason str
 	request.ActualNanoUSD = actualNanoUSD
 	ledger.ActualNanoCNY += actualNanoCNY
 	ledger.ActualNanoUSD += actualNanoUSD
+	if ledger.tracksCumulativeTokens() {
+		// The reported usage is the truth about the tokens this call
+		// consumed. It is recorded NEXT TO the reservation, never in place
+		// of it, and it never feeds back into the reservation.
+		ledger.ActualTokens += totalTokens
+	}
 	if block {
 		ledger.Blocked = true
 		ledger.BlockedReason = status
@@ -353,6 +431,12 @@ func (r *Reservation) CancelNoCall() error {
 	ledger.Requests = ledger.Requests[:len(ledger.Requests)-1]
 	ledger.ReservedNanoCNY -= request.ReservedNanoCNY
 	ledger.ReservedNanoUSD -= request.ReservedNanoUSD
+	if ledger.tracksCumulativeTokens() {
+		// The call provably never happened, so its reservation goes back.
+		// The counter is DECREMENTED, never reset: the other reservations of
+		// the window stay counted.
+		ledger.ReservedTokens -= request.InputUpperBound + request.OutputLimit
+	}
 	writeErr := writeLedger(r.budget.ledgerPath, ledger)
 	r.release()
 	if writeErr != nil {
@@ -433,44 +517,40 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 }
 
 func SupportedProfile(profile string) bool {
-	return profile == Profile || profile == CostOnlyProfile || profile == QwenProfile
+	_, ok := profileConfigs[profile]
+	return ok
 }
 
 // ProfileLimits retains the original six-call profile and makes zero an explicit
 // no-count-limit value for the separately authorized cost-only profile.
 //
-// The Qwen profile is the third shape: it allows exactly one call and no
-// money at all. Its nano-CNY ceiling is 0 because the profile computes no
-// amount -- the zero is "no price basis", not "no budget".
+// The Qwen profiles are the third shape: they control the call count and the
+// tokens, and no money at all. Their nano-CNY ceiling is 0 because the
+// profiles compute no amount -- the zero is "no price basis", not "no budget".
 func ProfileLimits(profile string) (calls int, nanoCNY int64, backstopCNY int) {
-	switch profile {
-	case CostOnlyProfile:
-		return 0, CostOnlyMaxBudgetNanoCNY, 20
-	case QwenProfile:
-		return QwenMaxCalls, 0, 0
-	default:
-		return MaxCalls, MaxBudgetNanoCNY, HumanBackstopCNY
-	}
+	config := profileConfigOf(profile)
+	return config.maxCalls, config.nanoCNY, config.backstopCNY
 }
 
 func freshLedger(profile string) Ledger {
-	calls, budget, _ := ProfileLimits(profile)
-	inputMax, outputMax, totalMax := ProfileTokenLimits(profile)
+	config := profileConfigOf(profile)
+	inputMax, outputMax, totalMax := config.inputMax, config.outputMax, config.totalMax
 	fxReserve := int(DeepSeekBudgetFXNanoCNYPerUSD)
-	if !ProfilePriced(profile) {
+	if config.costBasis == CostBasisNotApplicable {
 		fxReserve = 0
 	}
 	return Ledger{
 		SchemaVersion:      ledgerVersion,
 		Profile:            profile,
-		MaxCalls:           calls,
+		MaxCalls:           config.maxCalls,
 		InputMaxTokens:     inputMax,
 		OutputMaxTokens:    outputMax,
 		TotalMaxTokens:     totalMax,
+		CumulativeTokenMax: config.cumulativeTokenMax,
 		MaxConcurrency:     MaxConcurrency,
-		CostBasis:          ProfileCostBasis(profile),
+		CostBasis:          config.costBasis,
 		FXReserveCNYPerUSD: fxReserve,
-		MaxReserveNanoCNY:  budget,
+		MaxReserveNanoCNY:  config.nanoCNY,
 		Requests:           []Request{},
 	}
 }
@@ -519,12 +599,14 @@ func validLedger(ledger Ledger, profile string) bool {
 		ledger.InputMaxTokens != inputMax || ledger.OutputMaxTokens != outputMax || ledger.MaxConcurrency != MaxConcurrency ||
 		ledger.FXReserveCNYPerUSD != fxReserve || ledger.MaxReserveNanoCNY != budget ||
 		!validLedgerTotalMax(ledger, profile, totalMax) || !validLedgerCostBasis(ledger.CostBasis, profile, costBasis) ||
+		!validLedgerCumulativeTokenMax(ledger, profile) ||
 		(calls > 0 && len(ledger.Requests) > calls) || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > budget ||
 		ledger.ActualNanoCNY < 0 || ledger.ActualNanoCNY > ledger.ReservedNanoCNY || ledger.ReservedNanoUSD < 0 ||
 		ledger.ActualNanoUSD < 0 || ledger.ActualNanoUSD > ledger.ReservedNanoUSD {
 		return false
 	}
 	var reserveCNY, actualCNY, reserveUSD, actualUSD int64
+	var reservedTokens, actualTokens int
 	for index, request := range ledger.Requests {
 		if !ProfileAllowsModel(profile, request.Model) {
 			return false
@@ -558,20 +640,71 @@ func validLedger(ledger Ledger, profile string) bool {
 		actualCNY += request.ActualNanoCNY
 		reserveUSD += request.ReservedNanoUSD
 		actualUSD += request.ActualNanoUSD
+		// The two token counters are recomputed from the rows, so a ledger
+		// whose aggregates disagree with its own history is refused. The
+		// reservation and the reported usage are summed separately: they are
+		// different quantities and neither one is derived from the other.
+		reservedTokens += request.InputUpperBound + request.OutputLimit
+		actualTokens += request.TotalTokens
+	}
+	if ledger.tracksCumulativeTokens() {
+		if ledger.ReservedTokens != reservedTokens || ledger.ActualTokens != actualTokens {
+			return false
+		}
 	}
 	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD && consistentRecordedCosts(ledger)
+}
+
+// validLedgerCumulativeTokenMax accepts the cumulative token ceiling of one
+// ledger.
+//
+// The profile's number is the HARD MAXIMUM: a ledger may tighten it (an
+// operator can lower one window's budget) but it may never raise it, and a
+// profile that has a ceiling does not accept a ledger that declares none --
+// such a window would run without the gate.
+func validLedgerCumulativeTokenMax(ledger Ledger, profile string) bool {
+	ceiling := ProfileCumulativeTokenMax(profile)
+	if ceiling <= 0 {
+		return ledger.CumulativeTokenMax == 0
+	}
+	return ledger.CumulativeTokenMax > 0 && ledger.CumulativeTokenMax <= ceiling
+}
+
+// tracksCumulativeTokens reports whether this ledger keeps the cumulative
+// token counters.
+//
+// The counters exist for the profiles that HAVE a cumulative token ceiling.
+// A profile without one does not keep them, so its ledger stays exactly as
+// it was before the counters existed.
+func (l Ledger) tracksCumulativeTokens() bool {
+	return l.CumulativeTokenMax > 0
+}
+
+// ledgerUsageUnverifiable reports whether any recorded call has a usage that
+// could not be verified.
+//
+// Such a call is not a smaller usage: it is an UNKNOWN usage. The window
+// cannot promise that the next call stays inside the ceiling, because the
+// ceiling has to be measured against a number nobody can produce.
+func ledgerUsageUnverifiable(ledger Ledger) bool {
+	for _, request := range ledger.Requests {
+		if request.UsageStatus == UsageStatusUnavailable {
+			return true
+		}
+	}
+	return false
 }
 
 // validLedgerTotalMax accepts the token ceiling of the profile.
 //
 // A ledger written before the ceiling existed carries 0, which reads as "the
-// sum was not limited separately". The Qwen profile has no such legacy
-// ledgers, so it insists on the ceiling it was created with.
+// sum was not limited separately". The Qwen profiles have no such legacy
+// ledgers, so they insist on the ceiling they were created with.
 func validLedgerTotalMax(ledger Ledger, profile string, totalMax int) bool {
 	if ledger.TotalMaxTokens == totalMax {
 		return true
 	}
-	return profile != QwenProfile && ledger.TotalMaxTokens == 0
+	return !IsQwenProfile(profile) && ledger.TotalMaxTokens == 0
 }
 
 // validLedgerCostBasis accepts the cost basis of the profile.
@@ -583,7 +716,7 @@ func validLedgerCostBasis(recorded, profile, costBasis string) bool {
 	if recorded == costBasis {
 		return true
 	}
-	return profile != QwenProfile && recorded == ""
+	return !IsQwenProfile(profile) && recorded == ""
 }
 
 func validUsageStatus(status string) bool {
