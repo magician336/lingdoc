@@ -3,7 +3,6 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 )
 
 // JSONMap is a map[string]any that round-trips through Postgres JSONB
@@ -33,14 +32,9 @@ func (m *JSONMap) Scan(src any) error {
 		*m = nil
 		return nil
 	}
-	var raw []byte
-	switch v := src.(type) {
-	case []byte:
-		raw = v
-	case string:
-		raw = []byte(v)
-	default:
-		return errors.New("JSONMap.Scan: unsupported source type")
+	raw, err := jsonColumnBytes(src)
+	if err != nil {
+		return err
 	}
 	if len(raw) == 0 {
 		*m = nil

@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -52,16 +51,12 @@ func (s MemoryExtractionState) Value() (driver.Value, error) { return json.Marsh
 
 func (s *MemoryExtractionState) Scan(value interface{}) error {
 	*s = MemoryExtractionState{}
-	var raw []byte
-	switch v := value.(type) {
-	case nil:
+	if value == nil {
 		return nil
-	case []byte:
-		raw = v
-	case string:
-		raw = []byte(v)
-	default:
-		return fmt.Errorf("memory extraction state: unsupported value %T", value)
+	}
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
 	if len(raw) == 0 {
 		return nil

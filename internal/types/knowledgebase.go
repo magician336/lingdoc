@@ -211,15 +211,7 @@ func (c *AutoTagConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		if s, ok := value.(string); ok {
-			b = []byte(s)
-		} else {
-			return nil
-		}
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Normalize applies defaults and bounds to the automatic-tagging configuration.
@@ -368,11 +360,7 @@ func (c *StorageProviderConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Deprecated: StorageConfig is the legacy COS configuration stored in the cos_config column.
@@ -408,11 +396,7 @@ func (c *StorageConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // UnmarshalJSON keeps backward compatibility for legacy clients that still send
@@ -543,11 +527,7 @@ func (c *ChunkingConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements the driver.Valuer interface, used to convert ImageProcessingConfig to database value
@@ -560,11 +540,7 @@ func (c *ImageProcessingConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // VLMConfig represents the VLM configuration
@@ -626,11 +602,7 @@ func (c *QuestionGenerationConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements the driver.Valuer interface, used to convert VLMConfig to database value
@@ -643,11 +615,7 @@ func (c *VLMConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // ASRConfig represents the ASR (Automatic Speech Recognition) configuration
@@ -672,11 +640,7 @@ func (c *ASRConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // ExtractConfig represents the extract configuration for a knowledge base
@@ -701,11 +665,7 @@ func (e *ExtractConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, e)
+	return scanJSONColumn(value, e)
 }
 
 // FAQConfig 存储 FAQ 知识库的特有配置
@@ -724,11 +684,7 @@ func (f *FAQConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, f)
+	return scanJSONColumn(value, f)
 }
 
 // EnsureDefaults 确保类型与配置具备默认值

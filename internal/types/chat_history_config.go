@@ -33,11 +33,7 @@ func (c *ChatHistoryConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // IsConfigured returns true if the chat history KB is properly configured and ready to use.
