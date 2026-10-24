@@ -571,7 +571,7 @@ model is outside the acceptance budget profile
 |---|---|---|
 | 真实 provider 请求次数 | **0** | 下列三条独立依据 |
 | 文件式账本 `D:\wt\lingdoc-485-ledger\qwen-beta.json` | **不存在** | 第三轮实测 `Test-Path` = False；该目录下只有 `zz-write-probe-not-a-ledger.json` ＋ `.calls.json` ＋ `.lock` 三个**探针**文件 |
-| 文件式账本 `D:\wt\lingdoc-485-ledger\.calls.json` | **不存在** | 同上 |
+| 文件式账本 `D:\wt\lingdoc-485-ledger\qwen-beta.json.calls.json`（派生总量账；`ledger.go:210`＝`ledgerPath + ".calls.json"`，Track-C 报告里简写为 `.calls.json`） | **不存在** | 同上 |
 | DB 账本 `lingdoc_model_call_ledger` | 本轮**新增 0 行** | `TRACK-C-REPORT.md`「调用安全」表：表内那 1 行的 `created_at` 是 2026-10-23 17:38:49，属 **v1 profile 时代**的旧调用（`project_id=770576b5` ≠ 本轮项目 `397904db`） |
 | 4 次真实 Qwen chat 额度 | **一次未用**（0 / 4 次；累计预留 0 / 90,000 token） | `TRACK-C-REPORT.md`；窗口**零预留零消耗** |
 | 费用口径 | 不适用（`cost_basis = not_applicable`）⇒ **不得**把 0 读成「免费」（票 **#527**） | §14.2 |
