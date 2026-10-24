@@ -145,6 +145,27 @@ def ids_in_order(collection,id_field):
         else: return None
     return found
 
+def is_marked(value):
+    """Whether a value carries a mark: something is there and it is not empty.
+
+    This is the runner's own emptiness test
+    (``scripts/lingdoc_mock/run_f01.py``'s ``ScenarioRunner._is_marked``), restated
+    here so that the static check and the run judge the same value the same way:
+    a whitespace-only string is empty for both, and so is an empty collection.
+    The validator deliberately does not import the runner -- a contract check has
+    to be able to run without any implementation beside it -- so the two
+    restatements are tied together by
+    ``scripts/ci/test_lingdoc_nonempty_parity.py``: a rule that drifts in one
+    place turns the other one red.
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value,str):
+        return bool(value.strip())
+    if isinstance(value,(list,tuple,dict,set)):
+        return bool(value)
+    return True
+
 def tie_expectation(check,kind,example,at,siblings=None):
     """Tie one expectation to the example it is about.
 
@@ -261,7 +282,7 @@ def tie_expectation(check,kind,example,at,siblings=None):
                 assert entry.get(name)==wanted,at+': an entry does not carry '+name+' as the contract states'
         for name in (value.get('entry_non_empty') or []):
             for entry in actual:
-                assert entry.get(name) not in (None,'',[],{}),at+': an entry leaves '+name+' empty'
+                assert is_marked(entry.get(name)),at+': an entry leaves '+name+' empty'
         return 'tied'
     raise AssertionError(at+': no tie is defined for the kind '+kind)
 
