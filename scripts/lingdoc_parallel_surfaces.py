@@ -307,7 +307,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交。"
             "移交是单向的，本面不再声称拥有它（本面路径集 55 → 54 条）。"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
-            "**2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"
+            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/lingdoc/candidateadoption/adoption_confirmation_http_test.go`（internal/lingdoc/candidateadoption/）；`internal/lingdoc/candidateadoption/adoption_contract_body_http_test.go`（internal/lingdoc/candidateadoption/）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"
         ),
     },
     {
@@ -590,7 +590,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的（不看 status、不看改动行），两边同时声明就直接拒绝加载 "
             "⇒ 本面让出。本面已交面且不再需要它 ⇒ **不归还** ⇒ 本面路径集 41 → 40 条。"
             "本面在 main 上已交付的 owner_unavailable 能力不受这次移交影响。"
-            "**2026-10-24 #576 跨面借用一条（owner 仍是本面，不变更归属）**：#576（PR #589，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源；其中 frontend/src/views/lingdoc/ProjectMembers.vue（本面拥有）只被加了一处**维度标注**——说明该表是「项目治理角色」、不是租户角色词表。**行为未变、判定未变**，owner 仍在本面；PF-14 侧已把这条记为借用事实，两侧一致。"
+            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/openapi.json`（docs/08-本轮实施方案/contracts/openapi.json）。 **2026-10-24 #576 跨面借用一条（owner 仍是本面，不变更归属）**：#576（PR #589，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源；其中 frontend/src/views/lingdoc/ProjectMembers.vue（本面拥有）只被加了一处**维度标注**——说明该表是「项目治理角色」、不是租户角色词表。**行为未变、判定未变**，owner 仍在本面；PF-14 侧已把这条记为借用事实，两侧一致。"
         ),
     },
     {
@@ -880,7 +880,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
             "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，"
-            "**2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明；本面把「恰好一个节点声明检索方式」那条守护改成新事实，并补 keyword_only 的三态守护）。 **2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（PF-10 的文件级声明；本面只改 F01-07 那一个节点的 retrieval 字段与 retrieval_modes 的两段说明文字）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用（owner 仍是本面，不变更归属）**：#592（PR #601）让**本面拥有的**`scripts/acceptance/beta_evidence.py` 与 `scripts/ci/test_lingdoc_beta_evidence.py` 承担放行判定侧的「人工断言未判定 ⇒ 不得 PASS」「契约里没跑到的 checks ⇒ 明确 NOT RUN」「provider_semantics_status 参与整体判定」「受控窗口核验接入放行链」四件事。**owner 仍是本面**，本面按「owner 保持拥有、借用方落地后归还」的先例借给 PF-14 使用（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根）；**行为由 PF-14 的需要决定，但归属不变**。⇒ 借用事实记在 PF-14 侧与本面两侧，两侧一致。 已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
+            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（docs/08-本轮实施方案/contracts/workflow.json）。 **2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明；本面把「恰好一个节点声明检索方式」那条守护改成新事实，并补 keyword_only 的三态守护）。 **2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（PF-10 的文件级声明；本面只改 F01-07 那一个节点的 retrieval 字段与 retrieval_modes 的两段说明文字）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用（owner 仍是本面，不变更归属）**：#592（PR #601）让**本面拥有的**`scripts/acceptance/beta_evidence.py` 与 `scripts/ci/test_lingdoc_beta_evidence.py` 承担放行判定侧的「人工断言未判定 ⇒ 不得 PASS」「契约里没跑到的 checks ⇒ 明确 NOT RUN」「provider_semantics_status 参与整体判定」「受控窗口核验接入放行链」四件事。**owner 仍是本面**，本面按「owner 保持拥有、借用方落地后归还」的先例借给 PF-14 使用（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根）；**行为由 PF-14 的需要决定，但归属不变**。⇒ 借用事实记在 PF-14 侧与本面两侧，两侧一致。 已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
         ),
     },
     {
@@ -1096,6 +1096,68 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/test_workflow_runner.py", "file"),
             # #546 口径②的裁定记录：F01-07 的检索方式由 vector_required 改为 keyword_only （事实依据、七项零 embedding 前置、声明前后对照、放行链层面的判定）＋ 验收矩阵
             ("docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md", "file"),
+            # 模型行经真实仓储读取路径读回的守护：TEXT 写入、应用写入、损坏写入三种载体。
+            ("internal/application/repository/model_parameters_scan_test.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/agent.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/chat.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/chat_history_config.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/custom_agent.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/indexing_strategy.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/json.go", "file"),
+            # JSON 列的共享读取器：接受 []byte 与 string 两种载体，其余类型明确报错（不再静默丢弃参数）。
+            ("internal/types/json_column.go", "file"),
+            # 驱动的真实载体类型实测（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL），问驱动而不是问文档。
+            ("internal/types/json_column_dialect_test.go", "file"),
+            # 共享读取器的载体契约守护：[]byte/string 收、不认识的类型报错、NULL 不清空接收者。
+            ("internal/types/json_column_test.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/json_map.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/mcp.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/memory.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/memory_extraction.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/message.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/message_suggestion.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/message_test.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/retrieval_config.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/search.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/session.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/storagebackend.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/tenant.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/tenant_env_vars.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/user.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/vectorstore.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/vectorstore_test.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/web_search.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/web_search_provider.go", "file"),
+            # 本面在本轮（#609）改动的文件。
+            ("internal/types/wiki_page.go", "file"),
+            # client 模块的资源 URL 行为断言（对照变更：只改 client/ 的最小改动）。
+            ("client/resource_urls_test.go", "file"),
+            # client 面的门禁覆盖守护：只改 client ⇒ client job 跑、app job 不跑；只改 docs ⇒ 两者都不跑；以及覆盖判定的负向用例。
+            ("scripts/ci/test_lingdoc_client_coverage.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1146,7 +1208,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
             "**2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（PF-10 的文件级声明；本面只改 F01-07 那一个节点的 retrieval 字段与 retrieval_modes 的两段说明文字）。 **2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明；本面把「恰好一个节点声明检索方式」那条守护改成新事实，并补 keyword_only 的三态守护）。 **未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"
             "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"
-            "**2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
+            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/openapi.json`（docs/08-本轮实施方案/contracts/openapi.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（docs/08-本轮实施方案/contracts/workflow.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/lingdoc/candidateadoption/adoption_confirmation_http_test.go`（internal/lingdoc/candidateadoption/）；`internal/lingdoc/candidateadoption/adoption_contract_body_http_test.go`（internal/lingdoc/candidateadoption/）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
