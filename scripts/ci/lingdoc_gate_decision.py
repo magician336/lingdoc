@@ -214,6 +214,40 @@ class JobDecision:
 
 
 @dataclasses.dataclass(frozen=True)
+class _Coverage:
+    """One touched surface and the job that verifies it on this head.
+
+    ``surface`` names the part of the contribution the row is about.
+    ``paths`` are the contribution's paths it consists of.  ``verified_by``
+    names the jobs that compile, test or build those paths **and** run on this
+    head; ``watched_by`` names the jobs that watch them at all, including the
+    ones that only inspect them.
+
+    ``status`` is the verdict a reader needs:
+
+    ``verified``
+        a running job compiles, tests or builds this surface.
+    ``not verified``
+        a verifying job watches this surface but none of them runs on this
+        head -- the surface has no compile or test evidence here.
+    ``not verified (no gate job covers this surface)``
+        no verifying job watches this surface at all; the gate makes no
+        promise about it.
+    """
+
+    surface: str
+    paths: tuple[str, ...]
+    verified_by: tuple[str, ...]
+    watched_by: tuple[str, ...]
+    status: str
+
+    @property
+    def covered(self) -> bool:
+        """Whether this surface has compile or test evidence on this head."""
+        return self.status == "verified"
+
+
+@dataclasses.dataclass(frozen=True)
 class Decision:
     """What to run, on what surface, and why.
 
@@ -247,6 +281,10 @@ class Decision:
     changed_paths: tuple[str, ...]
     format_only: bool
     format_reasons: tuple[str, ...]
+
+    # -- who verifies the touched surface ---------------------------------
+    coverage: tuple[_Coverage, ...] = ()
+    uncovered: bool = False
 
     @property
     def provider_tests(self) -> bool:
@@ -578,15 +616,24 @@ def _provider_packages(surface: Surface) -> list[str]:
 
 def _pattern_verdict(forced: bool, run_code: bool,
                       contribution: Sequence[str],
-                      patterns: Sequence[str]) -> bool:
+                      patterns: Sequence[str], *,
+                      base_moved: bool = False) -> bool:
     """Whether a path table selects this event.
 
     This is the one formula behind every workflow-level gate: the gate runs
     when it is forced, or when the contribution changed and the contribution
     touches what the gate watches.
+
+    The base moving under the branch is a second reason to run.  It makes the
+    **merge result** the gate tests new, even when the contribution's own
+    content did not change: the base's new commits are part of what the gate
+    compiles and tests.  A gate that watches the contribution therefore has to
+    run again after a base move -- otherwise the touched surface would have no
+    compile or test evidence on this head at all, and the gate would report a
+    green check for code nobody ran.
     """
-    return bool(forced) or (bool(run_code) and _matches(list(contribution),
-                                                        list(patterns)))
+    return bool(forced) or ((bool(run_code) or bool(base_moved))
+                            and _matches(list(contribution), list(patterns)))
 
 
 def _touches(paths: Sequence[str], surface_paths: Sequence[str],
@@ -615,7 +662,8 @@ def _surface_verdict(surface, decision_fields: Mapping[str, Any]) -> bool:
         return _pattern_verdict(decision_fields["forced"],
                                 decision_fields["run_code"],
                                 decision_fields["contribution"],
-                                surface.paths)
+                                surface.paths,
+                                base_moved=decision_fields["base_moved"])
     if surface.role == manifest.ROLE_PROVIDER:
         return bool(decision_fields["provider_tests"])
     if surface.role == manifest.ROLE_FRONTEND:
@@ -656,6 +704,101 @@ def _jobs(fields: Mapping[str, Any],
                 skipped_on_format_only=surface.skipped_on_format_only,
             ))
     return tuple(jobs)
+
+
+# --------------------------------------------------------------------------
+# the coverage: who verifies the touched surface
+# --------------------------------------------------------------------------
+def _surface_runs(decision: Decision, surface: manifest.Surface,
+                  outputs: Mapping[str, str]) -> bool:
+    """Whether the job that owns this surface runs on this head.
+
+    A surface with a step is selected by that step's output -- that is what
+    the workflow reads -- and a surface without one by the job's own verdict.
+    """
+    if surface.step is not None:
+        return outputs.get(surface.step.output, "false") == "true"
+    return any(job.run for job in decision.jobs if job.surface == surface.name)
+
+
+def _owner_names(surface: manifest.Surface) -> str:
+    """The name of the job (or step) that owns a surface, as a reader sees it."""
+    if surface.step is not None:
+        return surface.step.name
+    return "; ".join(consumer.job_name for consumer in surface.consumers)
+
+
+def _belongs_to(path: str, surface: str) -> bool:
+    """Whether a changed path belongs to a tested surface."""
+    if surface == ".":
+        return "/" not in path
+    return path.startswith(surface + "/")
+
+
+def _coverage_rows(decision: Decision,
+                   surfaces: Sequence[manifest.Surface]) -> tuple[_Coverage, ...]:
+    """The coverage of every surface the contribution touches.
+
+    The unit is the **tested surface** -- the Go packages and frontend
+    directories the contribution touches.  That is the unit the artifact
+    calls "Surface", and it is the unit that has to carry compile or test
+    evidence.
+
+    A surface is **verified** when a job that compiles, tests or builds it
+    runs on this head.  It is **not verified** when a verifying job watches it
+    but none of them runs -- the surface then has no compile or test evidence
+    here, and the decision has to say so instead of skipping it in silence.
+    It is **not verified (no gate job covers this surface)** when no
+    verifying job watches it at all: the gate makes no promise about it (the
+    cli module has its own workflow, which is not a gate surface).
+    """
+    outputs = write_outputs(decision)
+    rows: list[_Coverage] = []
+    for tested in decision.surface:
+        paths = tuple(sorted(path for path in decision.contribution
+                             if _belongs_to(path, tested)))
+        if not paths:
+            continue
+        watching = [surface for surface in surfaces
+                    if _touches(paths, surface.paths, surface.path_kind)]
+        verifying = [surface for surface in watching if surface.verifies]
+        running = [surface for surface in verifying
+                   if _surface_runs(decision, surface, outputs)]
+        if running:
+            status = "verified"
+        elif verifying:
+            status = "not verified"
+        else:
+            status = "not verified (no gate job covers this surface)"
+        rows.append(_Coverage(
+            surface=tested,
+            paths=paths,
+            verified_by=tuple(_owner_names(surface) for surface in running),
+            watched_by=tuple(_owner_names(surface) for surface in watching),
+            status=status,
+        ))
+    return tuple(rows)
+
+
+def _coverage_required(decision: Decision) -> bool:
+    """Whether this head needs fresh compile or test evidence.
+
+    Two cases need none, and both are deliberate:
+
+    * a formatting-only change -- ADR 0005's shortcut;
+    * a head whose code under test did not change -- neither the tested
+      surface nor the base moved, so the verification of that same content
+      still holds.
+    """
+    return not decision.format_only and decision.run_targeted
+
+
+def _uncovered_reason(coverage: Sequence[_Coverage]) -> str:
+    """The sentence that says a surface has no evidence on this head."""
+    names = ", ".join(f"`{row.surface}`" for row in coverage
+                      if row.status == "not verified")
+    return (f"no job that compiles or tests {names} runs on this head, so "
+            "that surface has no test evidence here")
 
 
 # --------------------------------------------------------------------------
@@ -1133,7 +1276,8 @@ def _decide(event: Mapping[str, Any], root: Path,
     elif surface_changed:
         reason = "contribution surface changed"
     else:
-        reason = "the base moved under the branch; the contribution is re-tested against it"
+        reason = ("the base moved under the branch; the merge result is new, "
+                  "so the contribution is re-tested against it")
 
     scope = _classify(list(current.contribution))
     run_code = surface_changed
@@ -1198,6 +1342,16 @@ def _build(fields: Mapping[str, Any],
         format_only=fields["format_only"],
         format_reasons=tuple(fields["format_reasons"]),
     )
+    coverage = _coverage_rows(decision, surfaces)
+    uncovered = (_coverage_required(decision)
+                 and any(row.status == "not verified" for row in coverage))
+    decision = dataclasses.replace(decision, coverage=coverage, uncovered=uncovered)
+    if uncovered:
+        # The reason is what a reader sees when a check is skipped.  A surface
+        # that nobody compiles or tests must not be skipped in silence.
+        decision = dataclasses.replace(
+            decision,
+            reason=f"{decision.reason}; {_uncovered_reason(coverage)}")
     return decision
 
 
@@ -1276,7 +1430,8 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         run = any(job.run for job in decision.jobs)
     else:
         run = _pattern_verdict(decision.forced, decision.run_code,
-                                decision.contribution, patterns)
+                               decision.contribution, patterns,
+                               base_moved=decision.base_moved)
     outputs = {
         "run": _text(run),
         "run_code": _text(decision.run_code),
@@ -1301,6 +1456,14 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "format_reasons": " | ".join(decision.format_reasons),
         "changed_paths": str(len(decision.changed_paths)),
         "diff_range": decision.diff_range or "",
+        # The coverage of the touched surface: which job verifies it on this
+        # head.  One line, because a GitHub output value cannot carry a
+        # newline; the table itself lives in the conclusion.
+        "coverage": " | ".join(
+            f"{row.surface}: {row.status}"
+            + (f" by {', '.join(row.verified_by)}" if row.verified_by else "")
+            for row in decision.coverage),
+        "uncovered": _text(decision.uncovered),
     }
     # A job that watches several surfaces runs when any of them is selected.
     # The published key says so once, not once per surface.
@@ -1346,8 +1509,8 @@ def _out_of_scope_reason(decision: Decision, paths: Sequence[str],
     if not decision.run_code:
         if decision.base_moved:
             return ("the base moved under the branch but the contribution's "
-                    "surface did not change, so only the surfaces the "
-                    "contribution touches are re-tested")
+                    "surface did not change, so the checks that need a "
+                    "changed surface stay away")
         return ("the tested surface and the base did not change, so there is "
                 "nothing to re-test")
     return (f"out of scope: the contribution does not change {subject} "
@@ -1529,6 +1692,9 @@ def gate_conclusion(decision: Decision, workflow: str, *,
         "base": decision.base,
         "undecided": decision.undecided,
         "undecided_note": UNDECIDED_NOTE if decision.undecided else "",
+        "coverage_required": _coverage_required(decision),
+        "coverage": [dataclasses.asdict(row) for row in decision.coverage],
+        "uncovered": decision.uncovered,
         "boundary": BOUNDARY,
         "checks": checks,
     }
@@ -1545,11 +1711,37 @@ def conclusion_markdown(conclusion: Mapping[str, Any]) -> str:
     for check in conclusion["checks"]:
         lines.append(f"| {check['name']} | {check['surface']} | "
                      f"{check['verdict']} | {check['reason']} |")
+    lines += _coverage_markdown(conclusion)
     lines.append("")
     if conclusion.get("undecided_note"):
         lines += [conclusion["undecided_note"], ""]
     lines += ["Skipped means NOT RUN, not passed.", "", conclusion["boundary"], ""]
     return "\n".join(lines)
+
+
+def _coverage_markdown(conclusion: Mapping[str, Any]) -> list[str]:
+    """The coverage table: which surface was verified, and by which job."""
+    rows = conclusion.get("coverage") or []
+    if not rows:
+        return []
+    lines = ["", "| Surface | Paths | Verified by | Status |", "|---|---|---|---|"]
+    for row in rows:
+        verified_by = ", ".join(row.get("verified_by") or ()) or "(nobody)"
+        lines.append(f"| {row['surface']} | {', '.join(row['paths'])} | "
+                     f"{verified_by} | {row['status']} |")
+    if conclusion.get("coverage_required"):
+        lines.append("")
+        lines.append("Fresh compile and test evidence is required on this head.")
+    else:
+        lines.append("")
+        lines.append("No fresh evidence is required on this head: the change "
+                     "only reformats the code, or the tested content did not "
+                     "change.")
+    if conclusion.get("uncovered"):
+        lines.append("")
+        lines.append("A surface above has no compile or test evidence on this "
+                     "head.  This gate must not pass on it.")
+    return lines
 
 
 def publish_conclusion(decision: Decision, workflow: str, *,
@@ -1595,6 +1787,8 @@ def report(decision: Decision, whitespace_range: str | None = None) -> dict[str,
         "provider_packages": packages,
         "format_only": decision.format_only,
         "format_reasons": list(decision.format_reasons),
+        "coverage": [dataclasses.asdict(row) for row in decision.coverage],
+        "uncovered": decision.uncovered,
         "decision": outputs,
         "jobs": [dict(dataclasses.asdict(job), key=job.key,
                       readable_key=job.readable_key)
@@ -1618,7 +1812,8 @@ def check_whitespace(root: Path, diff_range: str | None) -> None:
 def publish(event: Mapping[str, Any], root: Path, *,
             all_checks: bool = False, whitespace: bool = True,
             gate: str | None = None,
-            artifact_dir: Path | None = None) -> dict[str, Any]:
+            artifact_dir: Path | None = None,
+            require_coverage: bool = False) -> dict[str, Any]:
     """Decide, publish the decision, and check the pull request's boundary.
 
     This is what the gate's scope step runs: it prints the report, writes the
@@ -1633,6 +1828,12 @@ def publish(event: Mapping[str, Any], root: Path, *,
     summary a reader sees on the pull request page and the artifact a
     reviewer can download.  Every gate publishes the same conclusion; what
     differs per gate is which of its checks ran and which did not.
+
+    ``require_coverage`` is the pull request gate's **release condition**: it
+    fails the step when a surface the contribution touches has no compile or
+    test evidence on this head.  A gate that passes on a surface nobody
+    compiled or tested says nothing about that surface, so it must not give a
+    green conclusion.
     """
     if all_checks:
         event = {"action": "manual", "reason": "full scope requested"}
@@ -1648,9 +1849,25 @@ def publish(event: Mapping[str, Any], root: Path, *,
                 handle.write(f"{key}={value}\n")
     if gate:
         publish_conclusion(decision, gate, artifact_dir=artifact_dir, root=root)
+    if require_coverage and decision.uncovered:
+        _fail_uncovered(decision)
     if whitespace:
         check_whitespace(root, whitespace_range or decision.diff_range)
     return published
+
+
+def _fail_uncovered(decision: Decision) -> None:
+    """Fail the gate: a touched surface has no compile or test evidence."""
+    rows = [row for row in decision.coverage if row.status == "not verified"]
+    names = ", ".join(row.surface for row in rows)
+    print(f"error: the contribution touches {names}, but no job that compiles "
+          "or tests it runs on this head.  This gate must not pass on a "
+          "surface that was never tested.", file=sys.stderr)
+    for row in rows:
+        print(f"  {row.surface}: watched by "
+              f"{', '.join(row.watched_by) or '(nobody)'}, none of them runs",
+              file=sys.stderr)
+    raise SystemExit(1)
 
 
 def _main() -> None:
@@ -1666,6 +1883,9 @@ def _main() -> None:
                              "(summary and artifact)")
     parser.add_argument("--artifact-dir", type=Path,
                         help="Where the conclusion artifact is written")
+    parser.add_argument("--require-coverage", action="store_true",
+                        help="Fail when a surface the contribution touches has "
+                             "no compile or test evidence on this head")
     args = parser.parse_args()
     root = args.root.resolve()
 
@@ -1674,13 +1894,14 @@ def _main() -> None:
     manual = args.all or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     if manual:
         publish({}, root, all_checks=True, whitespace=args.whitespace,
-                gate=args.gate, artifact_dir=args.artifact_dir)
+                gate=args.gate, artifact_dir=args.artifact_dir,
+                require_coverage=args.require_coverage)
         return
     if args.event is None:
         parser.error("--event or GITHUB_EVENT_PATH is required")
     event = json.loads(args.event.read_text(encoding="utf-8"))
     publish(event, root, whitespace=args.whitespace, gate=args.gate,
-            artifact_dir=args.artifact_dir)
+            artifact_dir=args.artifact_dir, require_coverage=args.require_coverage)
 
 
 if __name__ == "__main__":

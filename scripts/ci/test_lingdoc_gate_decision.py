@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,14 @@ def write(root: Path, relative: str, content: str) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def _job_runs(result: decision.Decision, workflow: str, job: str) -> bool:
+    """Whether one job of the manifest is selected for this decision."""
+    for entry in result.jobs:
+        if entry.workflow == workflow and entry.job == job:
+            return entry.run
+    raise AssertionError(f"no job {job!r} in {workflow!r}")
 
 
 class DecisionFixture(unittest.TestCase):
@@ -179,8 +188,12 @@ class BaseMovementTests(DecisionFixture):
             self.assertTrue(result.run_targeted)
             self.assertEqual(result.provider_packages,
                              ("./internal/lingdoc/workspace/...",))
-            # ... but the repository-wide suites stay away.
+            # The tested surface's own content did not change ...
             self.assertFalse(result.run_code)
+            # ... and this change only reformats the code, so ADR 0005's
+            # shortcut keeps the test jobs away.  The base move alone is not
+            # what decides that: see BaseMoveCoverageTests.
+            self.assertTrue(result.format_only)
             self.assertIn("base moved", result.reason)
 
     def test_a_push_that_changes_nothing_moves_nothing(self):
@@ -200,6 +213,223 @@ class BaseMovementTests(DecisionFixture):
             self.assertFalse(result.surface_changed)
             self.assertFalse(result.run_code)
             self.assertFalse(result.run_targeted)
+
+
+class BaseMoveCoverageTests(DecisionFixture):
+    """After a base move, the touched surface still has evidence (#602).
+
+    The shape the ticket pins: a contribution that touches a surface which is
+    neither a provider package nor covered by the pull request gate's provider
+    step -- ``internal/database`` -- must not be left without a compile or
+    test job on the new head.  Before the fix the App workflow skipped (the
+    merge result was "not new" as far as the decision was concerned) and the
+    pull request gate re-tested only the provider packages, so nothing
+    compiled or tested that surface at all.
+    """
+
+    def _repo_with_a_database_package(self, root: Path) -> None:
+        git(root, "init", "-b", "main")
+        git(root, "config", "user.email", "synthetic@example.com")
+        git(root, "config", "user.name", "Synthetic CI test")
+        write(root, "README.md", "base\n")
+        write(root, "internal/lingdoc/workspace/service.go", "package workspace\n")
+        write(root, "internal/database/store.go", "package database\n")
+        write(root, "cli/tool.go", "package cli\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "base")
+
+    def _contribution_whose_base_moved(self, root: Path,
+                                       changes: dict[str, str]) -> decision.Decision:
+        """A pull request whose base moved under it while its own code stayed.
+
+        The upstream commit touches a file the contribution does not, so the
+        contribution's surface is unchanged and only the base moved -- the
+        shape issue #602 is about.
+        """
+        git(root, "checkout", "-b", "topic")
+        for relative, content in changes.items():
+            write(root, relative, content)
+        git(root, "add", "-A")
+        git(root, "commit", "-m", "contribution")
+        before = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "main")
+        write(root, "docs/upstream.md", "upstream\n")
+        git(root, "add", "."); git(root, "commit", "-m", "upstream")
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "topic")
+        git(root, "merge", "--no-edit", "main")
+        after = git(root, "rev-parse", "HEAD")
+        return decision.decide(self._event(before, after, base), root)
+
+    def test_the_app_workflow_does_not_skip_a_touched_database_surface(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo_with_a_database_package(root)
+
+            result = self._contribution_whose_base_moved(
+                root, {"internal/database/store.go": "package database\n\nfunc Store() string { return \"stored\" }\n"})
+
+            self.assertTrue(result.base_moved)
+            self.assertFalse(result.surface_changed)
+            # The App workflow must not skip: its job is the full Go build and
+            # test, and it is what compiles internal/database.
+            self.assertTrue(_job_runs(result, ".github/workflows/app.yml", "verify"))
+            # The PostgreSQL rehearsal lives in the integration gate.
+            self.assertTrue(_job_runs(
+                result, ".github/workflows/lingdoc-interface-integration.yml",
+                "integration"))
+            # And the conclusion says who verifies the surface.
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/database")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Format, vet, test, and build", row.verified_by)
+            self.assertFalse(result.uncovered)
+
+    def test_the_scope_optimisation_still_holds_for_a_documentation_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo_with_a_database_package(root)
+
+            result = self._contribution_whose_base_moved(
+                root, {"docs/note.md": "evidence\n"})
+
+            self.assertTrue(result.base_moved)
+            # A contribution that touches no code starts no Go suite: the base
+            # move alone is not a reason to run the repository-wide matrix.
+            self.assertFalse(_job_runs(result, ".github/workflows/app.yml", "verify"))
+            self.assertFalse(_job_runs(
+                result, ".github/workflows/lingdoc-interface-integration.yml",
+                "integration"))
+            self.assertFalse(result.uncovered)
+
+    def test_a_surface_the_gate_does_not_watch_is_reported_not_hidden(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo_with_a_database_package(root)
+
+            result = self._contribution_whose_base_moved(
+                root, {"cli/tool.go": "package cli\n\nfunc Tool() string { return \"tool\" }\n"})
+
+            # The cli module has its own workflow, and the App workflow
+            # excludes it on purpose: the gate makes no promise about it.
+            # The conclusion must say so instead of leaving a silent blank.
+            row = next(row for row in result.coverage if row.surface == "cli")
+            self.assertEqual(row.status,
+                             "not verified (no gate job covers this surface)")
+            self.assertEqual(row.verified_by, ())
+            # It is reported, not fatal: the gate does not own that module.
+            self.assertFalse(result.uncovered)
+
+    def _manifest_without_a_verifier(self) -> tuple:
+        """A manifest in which no running job verifies internal/database.
+
+        The two repository-level jobs no longer watch the package, and the
+        only surface that still claims it is one whose step does not test it:
+        the shape of the gap issue #602 is about.
+        """
+        patched = []
+        for surface in manifest.load_surfaces():
+            if surface.name in ("app", "lingdoc-interface-integration"):
+                patched.append(dataclasses.replace(surface, paths=("frontend/**",)))
+            elif surface.name == "pr-gate-provider":
+                patched.append(dataclasses.replace(
+                    surface, paths=surface.paths + ("internal/database/",)))
+            else:
+                patched.append(surface)
+        return tuple(patched)
+
+    def test_a_surface_nobody_tests_fails_the_gate(self):
+        """A surface a verifying job watches but nobody tests is fatal."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo_with_a_database_package(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "internal/database/store.go",
+                  "package database\n\nfunc Store() string { return \"stored\" }\n")
+            git(root, "add", "-A"); git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+
+            with mock.patch.object(decision, "_manifest_surfaces",
+                                   return_value=self._manifest_without_a_verifier()):
+                result = decision.decide(event, root)
+
+            self.assertTrue(result.surface_changed)
+            self.assertTrue(result.uncovered)
+            self.assertIn("no job that compiles or tests", result.reason)
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/database")
+            self.assertEqual(row.status, "not verified")
+            self.assertIn("internal/database", result.reason)
+
+    def test_the_gate_fails_the_scope_step_when_a_surface_has_no_evidence(self):
+        """The scope step fails, so the gate cannot pass on an unverified surface."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            self._repo_with_a_database_package(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "internal/database/store.go",
+                  "package database\n\nfunc Store() string { return \"stored\" }\n")
+            git(root, "add", "-A"); git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+
+            with mock.patch.object(decision, "_manifest_surfaces",
+                                   return_value=self._manifest_without_a_verifier()):
+                with self.assertRaises(SystemExit) as caught:
+                    decision.publish(event, root, require_coverage=True,
+                                     whitespace=False)
+
+            self.assertNotEqual(caught.exception.code, 0)
+
+    def test_the_scope_step_succeeds_when_every_surface_is_verified(self):
+        """The release condition never fires on a covered head."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            self._repo_with_a_database_package(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "internal/database/store.go",
+                  "package database\n\nfunc Store() string { return \"stored\" }\n")
+            git(root, "add", "-A"); git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event_path = scratch / "event.json"
+            event_path.write_text(json.dumps(self._event(base, head, base)),
+                                  encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
+                 "--event", str(event_path), "--root", str(root),
+                 "--require-coverage", "--no-whitespace"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("no job that compiles or tests", result.stderr)
+
+    def test_the_conclusion_shows_which_surface_was_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo_with_a_database_package(root)
+
+            result = self._contribution_whose_base_moved(
+                root, {"internal/database/store.go": "package database\n\nfunc Store() string { return \"stored\" }\n"})
+            conclusion = decision.gate_conclusion(
+                result, ".github/workflows/lingdoc-review.yml", root=root)
+            markdown = decision.conclusion_markdown(conclusion)
+
+            self.assertTrue(conclusion["coverage"])
+            self.assertEqual(conclusion["coverage"][0]["surface"], "internal/database")
+            self.assertEqual(conclusion["coverage"][0]["status"], "verified")
+            self.assertIn("| Surface | Paths | Verified by | Status |", markdown)
+            self.assertIn("internal/database", markdown)
+            self.assertIn("Format, vet, test, and build", markdown)
 
 
 class GovernanceTests(DecisionFixture):
@@ -531,6 +761,12 @@ class PreRefactorGoldenTests(DecisionFixture):
     ``baseline_merge`` scenario.  The decision no longer looks at the last
     push but at the pull request's own contribution, and that contribution
     carries a documentation file, so it is not a formatting-only update.
+
+    Two values changed with ticket #602: the ``run`` verdict and the ``reason``
+    of the ``baseline_merge`` scenario.  A base move makes the merge result
+    the repository-level gates test new, so the gate that watches the
+    contribution has to run again instead of leaving the contribution's
+    surface without any compile or test evidence on the new head.
     """
 
     GOLDEN = {
@@ -553,11 +789,11 @@ class PreRefactorGoldenTests(DecisionFixture):
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "baseline_merge": {
-            "run": "false", "format_only": "false",
+            "run": "true", "format_only": "false",
             "surface": "internal/lingdoc/workspace",
             "base_moved": "true", "surface_changed": "false",
-            "reason": "the base moved under the branch; the contribution is "
-                      "re-tested against it",
+            "reason": "the base moved under the branch; the merge result is "
+                      "new, so the contribution is re-tested against it",
             "run_code": "false", "run_targeted": "true",
             "backend": "true", "frontend": "false",
             "provider_packages": "./internal/lingdoc/workspace/...",

@@ -246,6 +246,15 @@ INTERNAL_MEMBERS: dict[str, str] = {
         "后端范围分类（internal/、migrations/、config/ 等路径）。文档没有为"
         "它命名，工作流也不读它；它只参与判定，不进入产物。"
     ),
+    "Decision.coverage": (
+        "贡献触及的每个面的覆盖情况：谁在这个 head 上编译、测试或构建了它。"
+        "文档没有为它命名；它进入门禁结论（产物与摘要），工作流不读它作为"
+        "输出。"
+    ),
+    "Decision.uncovered": (
+        "是否有一个贡献触及的面在这个 head 上完全没有编译或测试证据。文档"
+        "没有为它命名；它只参与判定，并作为门禁的放行条件。"
+    ),
 }
 
 # The published keys that no document names, and why.
@@ -253,5 +262,13 @@ INTERNAL_KEYS: dict[str, str] = {
     "backend": (
         "后端范围分类的字符串形式，与 Decision.backend 同源；同样没有文档"
         "概念，也没有工作流读取。"
+    ),
+    "coverage": (
+        "覆盖情况的单行字符串形式（每个面一行）。GitHub 输出值不能带换行，"
+        "所以完整表格在门禁结论里；工作流不读它作为输出。"
+    ),
+    "uncovered": (
+        "是否存在完全没有证据的面。与 Decision.uncovered 同源；工作流不读"
+        "它作为输出。"
     ),
 }

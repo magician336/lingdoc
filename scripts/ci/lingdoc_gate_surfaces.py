@@ -12,6 +12,8 @@ ownership: for every surface it records
   it,
 * the gate level (``repository`` or ``targeted``),
 * whether that job is skipped on a formatting-only change,
+* whether that job **verifies** the surface -- compiles, tests or builds it --
+  or only **inspects** it, the way a lint job does,
 * the kind of the path set (``glob``, ``prefix`` or ``exact``),
 * the **role** of the surface: what the surface means for the decision
   (``paths``, ``provider``, ``frontend``, ``contracts`` or ``governance``),
@@ -63,6 +65,15 @@ Terms
     skipped; test jobs are skipped.  This is a job-level fact: the PR gate job
     itself is never skipped, while its provider and frontend *steps* honour
     the formatting-only shortcut.
+
+``verifies``
+    Whether the consuming job **verifies** the surface: compiles it, tests it
+    or builds it.  A lint job only **inspects** the code -- it reads it and
+    reports style defects, it never compiles or runs it -- so it cannot stand
+    in as evidence that a surface was tested.  This is the fact the decision
+    reads when it asks "who tests this surface?": a surface that no verifying
+    job watches has no compile or test evidence at all, and the decision has
+    to say so instead of skipping it in silence.
 
 ``role``
     What the surface means for the decision.  ``paths`` -- the surface is
@@ -163,6 +174,9 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "Docker multi-stage image"},
         ),
         "skipped_on_format_only": True,
+        # The frontend job tests, type-checks and builds the frontend: it
+        # verifies what it watches.
+        "verifies": True,
     },
     {
         "name": "go-lint",
@@ -185,6 +199,10 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "golangci-lint (${{ matrix.module }})"},
         ),
         "skipped_on_format_only": False,
+        # A lint job reads the code and reports style defects.  It never
+        # compiles it and never runs it, so it cannot stand in as evidence
+        # that a surface was tested.
+        "verifies": False,
     },
     {
         "name": "app",
@@ -219,6 +237,9 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "Format, vet, test, and build"},
         ),
         "skipped_on_format_only": True,
+        # This is the full Go build and test: it compiles and runs every
+        # package of the root module, so it verifies what it watches.
+        "verifies": True,
     },
     {
         "name": "lingdoc-mock",
@@ -243,6 +264,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "T06 fixed mock and request consumer"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-f01-runner",
@@ -268,6 +290,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "F01 runner regression"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-workspace-concurrency",
@@ -287,6 +310,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "workspace-concurrency"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-interface-integration",
@@ -316,6 +340,10 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "frontend"},
         ),
         "skipped_on_format_only": True,
+        # The integration job rehearses the migrations against a real
+        # PostgreSQL server and runs the backend closeout: it verifies what it
+        # watches.
+        "verifies": True,
     },
     {
         "name": "pr-gate-provider",
@@ -329,6 +357,9 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The provider step runs the provider packages' tests and vet: it
+        # verifies them.
+        "verifies": True,
         "step": {
             "name": "Provider packages: test and vet",
             "output": "run_providers",
@@ -348,6 +379,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "verifies": True,
         "step": {
             "name": "Frontend: test, type-check and build",
             "output": "run_frontend",
@@ -367,6 +399,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "verifies": True,
         "step": {
             "name": "Contract examples and reference trace",
             "output": "contracts",
@@ -386,6 +419,8 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The gate always runs, and its own tests read these files.
+        "verifies": True,
     },
     {
         "name": "governance-scripts",
@@ -399,11 +434,13 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The gate always runs its own test suite: it verifies these scripts.
+        "verifies": True,
     },
 )
 
 SURFACE_FIELDS = ("name", "gate_level", "path_kind", "paths", "consumers",
-                  "skipped_on_format_only", "role")
+                  "skipped_on_format_only", "verifies", "role")
 CONSUMER_FIELDS = ("workflow", "job", "job_name")
 STEP_FIELDS = ("name", "output", "skipped_on_format_only", "subject")
 
@@ -447,6 +484,7 @@ class Surface:
     gate_level: str
     path_kind: str
     skipped_on_format_only: bool
+    verifies: bool
     role: str = ROLE_PATHS
     step: Step | None = None
 
@@ -539,6 +577,10 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
     if not isinstance(mapping["skipped_on_format_only"], bool):
         raise SurfaceManifestError(
             f"surface {name!r} must state skipped_on_format_only as true or false")
+    if not isinstance(mapping["verifies"], bool):
+        raise SurfaceManifestError(
+            f"surface {name!r} must state verifies as true or false: a surface "
+            "has to say whether its job compiles and tests it or only inspects it")
     step = mapping.get("step")
     return Surface(
         name=name,
@@ -547,6 +589,7 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
         gate_level=gate_level,
         path_kind=path_kind,
         skipped_on_format_only=mapping["skipped_on_format_only"],
+        verifies=mapping["verifies"],
         role=role,
         step=_step_from_record(step, name) if step is not None else None,
     )
@@ -681,6 +724,10 @@ def load_surfaces_lenient() -> tuple[Surface, ...]:
             gate_level=gate_level,
             path_kind=path_kind,
             skipped_on_format_only=bool(entry.get("skipped_on_format_only")),
+            # A record that cannot be read is never guessed: the lenient
+            # loader treats the surface as verifying, which is the safe
+            # direction (the gate then asks for the evidence).
+            verifies=bool(entry.get("verifies", True)),
             role=role,
             step=step,
         ))

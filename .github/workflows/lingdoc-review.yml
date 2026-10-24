@@ -77,6 +77,12 @@ jobs:
       # three fields every gate publishes, plus the reason of every step
       # that was skipped -- into the summary a reader sees on the pull
       # request page and into the artifact this job uploads.
+      #
+      # --require-coverage is this gate's release condition: the scope step
+      # fails when a surface the contribution touches has no compile or test
+      # evidence on this head.  A gate that passes on a surface nobody
+      # compiled or tested says nothing about that surface, so it must not
+      # give a green conclusion (#602).
       - name: Select checks and check diff whitespace
         id: scope
         env:
@@ -85,11 +91,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             python scripts/ci/lingdoc_gate_decision.py --all \
+              --require-coverage \
               --gate .github/workflows/lingdoc-review.yml \
               --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
               > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           else
             python scripts/ci/lingdoc_gate_decision.py \
+              --require-coverage \
               --gate .github/workflows/lingdoc-review.yml \
               --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
               > "$RUNNER_TEMP/lingdoc-checks/scope.json"
@@ -188,6 +196,22 @@ jobs:
           result['surface'] = os.environ.get('SURFACE', '')
           result['reason'] = os.environ.get('REASON', '')
           result['base'] = os.environ.get('BASE', '')
+          # The coverage says who verified each touched surface.  It is read
+          # from the report the scope step wrote, not from a new output: a
+          # surface nobody compiled or tested must be visible in the
+          # conclusion, not hidden behind a green check (#602).
+          report = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks' / 'scope.json'
+          coverage = []
+          uncovered = False
+          if report.is_file():
+              try:
+                  published = json.loads(report.read_text(encoding='utf-8'))
+              except ValueError:
+                  published = {}
+              coverage = published.get('coverage') or []
+              uncovered = bool(published.get('uncovered'))
+          result['coverage'] = coverage
+          result['uncovered'] = uncovered
           result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
           folder.mkdir(exist_ok=True)
@@ -200,6 +224,15 @@ jobs:
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
+              if coverage:
+                  handle.write('### Surface coverage\n\n')
+                  handle.write('| Surface | Paths | Verified by | Status |\n|---|---|---|---|\n')
+                  for row in coverage:
+                      verified_by = ', '.join(row.get('verified_by') or []) or '(nobody)'
+                      handle.write(f'| {row.get("surface", "")} | {", ".join(row.get("paths") or [])} | {verified_by} | {row.get("status", "")} |\n')
+                  handle.write('\n')
+              if uncovered:
+                  handle.write('A surface above has no compile or test evidence on this head.\n\n')
               handle.write(result['boundary'] + '\n')
           PY
 
