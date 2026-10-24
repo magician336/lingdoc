@@ -337,10 +337,11 @@ func TestTheJSONReportCarriesTheStageAndTheOverlapVerdict(t *testing.T) {
 		Qualified    bool   `json:"qualified"`
 		ContentCheck struct {
 			Overlaps []struct {
-				FirstChunkID string `json:"FirstChunkID"`
-				Span         int    `json:"Span"`
-				Identical    bool   `json:"Identical"`
-			} `json:"Overlaps"`
+				FirstChunkID  string `json:"first_chunk_id"`
+				SecondChunkID string `json:"second_chunk_id"`
+				Span          int    `json:"span"`
+				Identical     bool   `json:"identical"`
+			} `json:"overlaps"`
 		} `json:"content_check"`
 	}
 	if err := json.Unmarshal(raw, &decoded); err != nil {
@@ -354,5 +355,8 @@ func TestTheJSONReportCarriesTheStageAndTheOverlapVerdict(t *testing.T) {
 	}
 	if !decoded.ContentCheck.Overlaps[0].Identical || decoded.ContentCheck.Overlaps[0].Span != 4 {
 		t.Fatalf("the overlap must be reported as identical over 4 runes: %+v", decoded.ContentCheck.Overlaps[0])
+	}
+	if decoded.ContentCheck.Overlaps[0].FirstChunkID == "" || decoded.ContentCheck.Overlaps[0].SecondChunkID == "" {
+		t.Fatalf("the overlap verdict must name both chunks: %+v", decoded.ContentCheck.Overlaps[0])
 	}
 }

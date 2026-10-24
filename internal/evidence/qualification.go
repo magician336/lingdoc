@@ -51,27 +51,27 @@ const (
 
 // MaterialChunk is one chunk of a material as the qualification sees it.
 type MaterialChunk struct {
-	ID      string
-	StartAt int
-	EndAt   int
-	Content string
+	ID      string `json:"id"`
+	StartAt int    `json:"start_at"`
+	EndAt   int    `json:"end_at"`
+	Content string `json:"content"`
 }
 
 // MaterialIssue says what is missing for one chunk.
 type MaterialIssue struct {
-	ChunkID string
-	Code    MaterialIssueCode
-	Detail  string
+	ChunkID string            `json:"chunk_id"`
+	Code    MaterialIssueCode `json:"code"`
+	Detail  string            `json:"detail"`
 }
 
 // MaterialChunkVerdict is the per-chunk answer.
 type MaterialChunkVerdict struct {
-	ChunkID        string
-	StartAt        int
-	EndAt          int
-	ContentChars   int
-	CoordinateSpan int
-	Verbatim       bool
+	ChunkID        string `json:"chunk_id"`
+	StartAt        int    `json:"start_at"`
+	EndAt          int    `json:"end_at"`
+	ContentChars   int    `json:"content_chars"`
+	CoordinateSpan int    `json:"coordinate_span"`
+	Verbatim       bool   `json:"verbatim"`
 }
 
 // MaterialOverlapVerdict is the answer for the region two chunks share.
@@ -82,33 +82,33 @@ type MaterialChunkVerdict struct {
 // two different things about the same characters, and no reader of it can
 // tell which one is the original.
 type MaterialOverlapVerdict struct {
-	FirstChunkID  string
-	SecondChunkID string
-	StartAt       int
-	EndAt         int
+	FirstChunkID  string `json:"first_chunk_id"`
+	SecondChunkID string `json:"second_chunk_id"`
+	StartAt       int    `json:"start_at"`
+	EndAt         int    `json:"end_at"`
 	// Span is the width of the overlap in runes.
-	Span int
+	Span int `json:"span"`
 	// Identical is true when the two chunks carry the same text over the
 	// overlap.
-	Identical bool
+	Identical bool `json:"identical"`
 	// FirstDifference is the rune index INSIDE the overlap where the two
 	// texts first differ; -1 when they do not differ.
-	FirstDifference int
+	FirstDifference int `json:"first_difference"`
 }
 
 // MaterialQualification is the answer for one material.
 type MaterialQualification struct {
 	// Qualified is true when the material has chunks and every one of them
 	// is the verbatim slice of the origin at its own coordinates.
-	Qualified bool
+	Qualified bool `json:"qualified"`
 	// OriginRunes is the length of the origin text in runes.
-	OriginRunes int
+	OriginRunes int `json:"origin_runes"`
 	// Chunks holds one verdict per chunk, in the order they were given.
-	Chunks []MaterialChunkVerdict
+	Chunks []MaterialChunkVerdict `json:"chunks"`
 	// Overlaps holds one verdict per pair of chunks that share a region.
-	Overlaps []MaterialOverlapVerdict
+	Overlaps []MaterialOverlapVerdict `json:"overlaps"`
 	// Issues holds one entry per unqualified chunk.
-	Issues []MaterialIssue
+	Issues []MaterialIssue `json:"issues"`
 }
 
 // QualifyMaterial decides whether a material may be used as evidence.
