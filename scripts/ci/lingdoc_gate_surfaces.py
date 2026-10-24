@@ -149,7 +149,7 @@ GOVERNANCE_DIRS = ("scripts/ci/",)
 FRONTEND_ROOT = "frontend/"
 
 # --- the surfaces -----------------------------------------------------------
-# The path sets of the seven workflow-level gates are byte-for-byte the path
+# The path sets of the eight workflow-level gates are byte-for-byte the path
 # tables those workflows carried before the rewiring.  The workflows carry no
 # path table any more (#304): the manifest is the only registration of the
 # path ownership.  Do not reformat these paths -- the wiring test compares
@@ -239,6 +239,32 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "skipped_on_format_only": True,
         # This is the full Go build and test: it compiles and runs every
         # package of the root module, so it verifies what it watches.
+        "verifies": True,
+    },
+    {
+        # The client module is a module of its own (client/go.mod), so the
+        # root module's build never sees it -- app.yml excludes it on
+        # purpose.  Before #605 nothing compiled or tested it: a pull
+        # request that only touched client/ reached main without a single
+        # compile or test of that code.  This surface is what makes the
+        # coverage judgement count the client module as a surface that has
+        # to carry compile or test evidence.
+        "name": "client",
+        "gate_level": GATE_LEVEL_REPOSITORY,
+        "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
+        "paths": (
+            "client/**",
+            ".github/workflows/client.yml",
+        ),
+        "consumers": (
+            {"workflow": ".github/workflows/client.yml",
+             "job": "verify",
+             "job_name": "Build and test the client module"},
+        ),
+        "skipped_on_format_only": True,
+        # The job builds the client module, vets it and really runs its
+        # tests: it verifies what it watches.
         "verifies": True,
     },
     {

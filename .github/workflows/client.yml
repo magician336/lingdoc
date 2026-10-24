@@ -1,0 +1,110 @@
+name: Client
+
+# The client/ directory is a Go module of its own (client/go.mod).  The root
+# module's build never sees it -- app.yml excludes it on purpose -- so before
+# this workflow a pull request that only touched client/ was merged without a
+# single compile or test of that code (#605).
+#
+# The client module has no external dependency (client/go.sum is empty), so
+# this gate needs no CGO, no SQLite headers and no module download to say
+# whether the client still compiles and still passes its tests.
+
+# Gate trigger rules: docs/agents/development-rules.md:26; path ownership: scripts/ci/lingdoc_gate_surfaces.py.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/workflows/client.yml"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  scope:
+    name: Decide what this gate runs
+    runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
+    outputs:
+      verify: ${{ steps.scope.outputs.job_client_verify }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide what this gate runs
+        id: scope
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        #
+        # The module also publishes the conclusion of this gate: the summary
+        # a reader sees on the pull request page and the artifact a reviewer
+        # downloads.  A skipped check carries its reason there.
+        run: |
+          mkdir -p "$RUNNER_TEMP/lingdoc-gate-conclusion"
+          python scripts/ci/lingdoc_gate_decision.py --no-whitespace \
+            --gate .github/workflows/client.yml \
+            --artifact-dir "$RUNNER_TEMP/lingdoc-gate-conclusion" \
+            > "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+          cat "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+
+      # The conclusion is published even when every check of this gate is
+      # skipped: "skipped" alone never says why.
+      - name: Publish the gate conclusion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-conclusion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-gate-conclusion/
+          if-no-files-found: warn
+          retention-days: 14
+
+  verify:
+    name: Build and test the client module
+    needs: scope
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: client/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      # The three steps are the point of this gate: the client module is
+      # compiled, vetted and -- above all -- its tests are really run.  A
+      # lint job cannot stand in for them (#605).
+      - name: Build the client module
+        run: go build ./...
+
+      - name: Vet the client module
+        run: go vet ./...
+
+      - name: Test the client module
+        run: go test -count=1 ./...

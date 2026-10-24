@@ -31,7 +31,7 @@
 
 ### 门禁触发说明
 
-八个门禁（七个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
+九个门禁（八个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
 
 - **门禁始终创建**：门禁 job 永远创建，跑不跑由 job 条件决定。顶层 `paths:` 过滤会让工作流根本不启动，必需检查永远 Pending，门禁连结论都没有地方发布——所以触发器不按 PR 路径过滤，缩面发生在 job 条件里。被跳过的步骤给出 skipped 状态与理由，而不是让检查变成 Pending。
 - **路径归属只登记一次**：门禁看的路径写在门禁面清单 `scripts/ci/lingdoc_gate_surfaces.py` 里，门禁工作流不再带路径表。工作流级门禁的 `push:` 触发器保留一份静态镜像（GitHub 不能动态生成 `paths:`），镜像由手工维护：改清单就要同时改这份镜像。
@@ -40,7 +40,7 @@
 
 #### 门禁面边界
 
-**门禁层只有这八个工作流**：`frontend.yml` / `go-lint.yml` / `app.yml` / `lingdoc-mock.yml` / `lingdoc-f01-runner.yml` / `lingdoc-workspace-concurrency.yml` / `lingdoc-interface-integration.yml` / `lingdoc-review.yml`。清单里登记了 12 个门禁面，加上 PR gate，就是这八个工作流。
+**门禁层只有这九个工作流**：`frontend.yml` / `go-lint.yml` / `app.yml` / `client.yml` / `lingdoc-mock.yml` / `lingdoc-f01-runner.yml` / `lingdoc-workspace-concurrency.yml` / `lingdoc-interface-integration.yml` / `lingdoc-review.yml`。清单里登记了 13 个门禁面，加上 PR gate，就是这九个工作流。
 
 清单里没有登记的工作流不是门禁。它们各有各的起跑方式，不要按门禁的方式改：
 
