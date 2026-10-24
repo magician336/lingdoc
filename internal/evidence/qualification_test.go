@@ -109,6 +109,67 @@ func TestQualifyMaterialRejectsCoordinatesOutOfRange(t *testing.T) {
 	}
 }
 
+// The chunks of one material overlap. The two chunks must carry the SAME
+// text over the region they share: if they do not, the material says two
+// different things about the same characters, and no reader can tell which
+// one is the original.
+func TestQualifyMaterialReportsTheOverlapVerdict(t *testing.T) {
+	origin := qualificationOrigin
+	runes := []rune(origin)
+	chunks := []MaterialChunk{
+		{ID: "c1", StartAt: 0, EndAt: 20, Content: string(runes[0:20])},
+		{ID: "c2", StartAt: 10, EndAt: 30, Content: string(runes[10:30])},
+	}
+
+	report := QualifyMaterial(origin, chunks)
+
+	if len(report.Overlaps) != 1 {
+		t.Fatalf("expected one overlap verdict, got %+v", report.Overlaps)
+	}
+	overlap := report.Overlaps[0]
+	if overlap.FirstChunkID != "c1" || overlap.SecondChunkID != "c2" {
+		t.Fatalf("the verdict must name both chunks: %+v", overlap)
+	}
+	if overlap.StartAt != 10 || overlap.EndAt != 20 || overlap.Span != 10 {
+		t.Fatalf("the verdict must state the shared region: %+v", overlap)
+	}
+	if !overlap.Identical {
+		t.Fatalf("two verbatim chunks must agree over their overlap: %+v", overlap)
+	}
+	if overlap.FirstDifference != -1 {
+		t.Fatalf("an identical overlap has no differing position: %+v", overlap)
+	}
+}
+
+// The negative case: the two chunks disagree over the region they share.
+// That is the "逐位冲突" the acceptance run has to catch, and it has to be
+// reported, not averaged away.
+func TestQualifyMaterialReportsAConflictingOverlap(t *testing.T) {
+	origin := qualificationOrigin
+	runes := []rune(origin)
+	first := string(runes[0:20])
+	second := string(runes[10:30])
+	// Change one character inside the shared region [10,20).
+	second = "X" + second[1:]
+	chunks := []MaterialChunk{
+		{ID: "c1", StartAt: 0, EndAt: 20, Content: first},
+		{ID: "c2", StartAt: 10, EndAt: 30, Content: second},
+	}
+
+	report := QualifyMaterial(origin, chunks)
+
+	if len(report.Overlaps) != 1 {
+		t.Fatalf("expected one overlap verdict, got %+v", report.Overlaps)
+	}
+	overlap := report.Overlaps[0]
+	if overlap.Identical {
+		t.Fatalf("a conflicting overlap must not be reported as identical: %+v", overlap)
+	}
+	if overlap.FirstDifference != 0 {
+		t.Fatalf("the differing position must be reported (0 = the first shared rune): %+v", overlap)
+	}
+}
+
 func TestQualifyMaterialRejectsEmptyContent(t *testing.T) {
 	chunks := []MaterialChunk{
 		{ID: "c1", StartAt: 0, EndAt: 5, Content: ""},

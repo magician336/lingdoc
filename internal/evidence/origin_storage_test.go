@@ -2,8 +2,10 @@ package evidence
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -130,6 +132,41 @@ func TestOriginReaderFallsBackToTheLocalPathWhenTheStorageSideCannotAnswer(t *te
 	if text != origin {
 		t.Fatalf("origin text = %q, want %q", text, origin)
 	}
+}
+
+// A BROKEN storage side is not the same as a material without an original.
+//
+// "I could not read it" (ok=false) is a weak-evidence answer and degrades.
+// "The base failed" (err) is an incident, and reporting it as "this material
+// can only be weak evidence" would turn an outage into a quiet degradation.
+func TestOriginReaderPropagatesTheFailureOfTheStorageSide(t *testing.T) {
+	reader := NewOriginReader(&failingStorageKnowledge{
+		storageBackedKnowledgeWithPath{path: "resource://handle-1"},
+	})
+
+	text, ok, err := reader.OriginText(context.Background(), "k-1")
+
+	if err == nil {
+		t.Fatalf("a broken storage side must not be reported as a weak-evidence answer: text=%q ok=%v", text, ok)
+	}
+	if !strings.Contains(err.Error(), "storage is down") {
+		t.Fatalf("the failure must be the one that happened: %v", err)
+	}
+	if ok {
+		t.Fatal("a failed read must not claim an origin")
+	}
+}
+
+// failingStorageKnowledge is a storage side that is down.
+//
+// Its material has a storage reference as its file path, which is the shape
+// an uploaded material has.
+type failingStorageKnowledge struct {
+	storageBackedKnowledgeWithPath
+}
+
+func (f *failingStorageKnowledge) OriginBytes(_ context.Context, _ string) ([]byte, bool, error) {
+	return nil, false, errors.New("storage is down")
 }
 
 // storageBackedKnowledgeWithPath is a reader that knows about storage and

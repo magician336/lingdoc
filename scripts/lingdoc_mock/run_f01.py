@@ -590,6 +590,11 @@ class ScenarioRunner:
         self.step_results: list[dict[str, Any]] = []
         self.failures: list[dict[str, Any]] = []
         self.check_results: list[dict[str, Any]] = []
+        # A hook the caller may set to judge something between two steps.
+        # The material gate uses it: the quoted-text half of the gate can
+        # only run once the material is bound to a project, so it runs just
+        # before the node that consumes those sources.
+        self.before_step_hook = None
         # What each step of this run amounted to: "succeeded", "failed" or
         # "blocked".  A step that follows another may only assert its consequence
         # when the step it follows succeeded.
@@ -764,6 +769,11 @@ class ScenarioRunner:
                 body = substitute(request_spec.get("json"), self.variables)
             except WorkflowError as error:
                 raise self._explain_missing_variable(error) from None
+            if self.before_step_hook is not None:
+                # The hook judges what must hold BEFORE this step runs. It
+                # may refuse the run (raise WorkflowError): a gate that did
+                # not pass must not let the step that depends on it run.
+                self.before_step_hook(step, self.variables)
             url = build_url(self.base_url, path_template, path_params, query)
             actor_token = self.identities.get(step.get("actor"))
             status, response_headers, payload = self.client.request(method, url, headers, body, token=actor_token)
@@ -1263,14 +1273,24 @@ def run_material_preflight(
     knowledge_id: str,
     project_id: str | None,
     origin_file: str,
+    stage: str = "full",
 ) -> None:
     """Refuse to start the specification when the material is not qualified.
 
     The material's chunks must be the verbatim slice of the origin text at
     their own coordinates. When they are not, every source of that material
     goes stale and every operation that re-checks them is refused — a failure
-    that reads like a licence-chain problem and is not one (#485 / D1). The
-    gate therefore runs *before* the first node.
+    that reads like a licence-chain problem and is not one (#485 / D1).
+
+    The gate has TWO halves and they cannot run at the same moment:
+
+      stage "content" — the chunk content against the origin slice. It needs
+        no project, so it runs before the first node, where the material is
+        not bound to anything yet.
+      stage "full" — the quoted text the server hands out against the origin
+        slice. It reads the sources of a **bound** material, so it runs after
+        the binding (the project exists by then) and before the node that
+        consumes those sources.
 
     The gate is fail-closed: a gate that cannot run is not a pass, so an
     unusable check command refuses the run instead of letting it start.
@@ -1280,10 +1300,14 @@ def run_material_preflight(
                             "(the lingdoc-material-check executable)")
     if not knowledge_id:
         raise WorkflowError("--material-origin needs --knowledge-id")
+    if stage == "full" and not project_id:
+        raise WorkflowError("the full material stage needs the project the material is "
+                            "bound to (it reads the sources of a bound material)")
     command = list(check_command) + [
         "--base-url", server_root_from(base_url),
         "--knowledge-id", knowledge_id,
         "--origin-file", str(origin_file),
+        "--stage", stage,
     ]
     if project_id:
         command += ["--project-id", project_id]
@@ -1298,6 +1322,42 @@ def run_material_preflight(
     if result.returncode != 0:
         raise WorkflowError("材料合格性前置比对未通过（材料不能进入验收）：\n" + output.strip())
     print(output.strip())
+
+
+def material_gate_before_step(
+    step: dict[str, Any],
+    variables: dict[str, Any],
+    check_command: list[str],
+    base_url: str,
+    token: str | None,
+    token_file: str | None,
+    knowledge_id: str,
+    project_id: str | None,
+    origin_file: str,
+    before_operation: str,
+) -> None:
+    """The SECOND stage of the material gate: the quoted-text half.
+
+    It runs just before the node that consumes the material's sources
+    (the generation), because that is the first moment at which the material
+    is bound to a project and the server can hand out its sources.
+
+    It is fail-closed like the first stage: if the project is not known, the
+    gate cannot run, and a gate that could not run is not a pass — the run
+    stops instead of reaching the generation on an unchecked material.
+    """
+    if step.get("operation_id") != before_operation:
+        return
+    run_material_preflight(
+        check_command,
+        base_url,
+        token,
+        token_file,
+        knowledge_id,
+        project_id or variables.get("project_id"),
+        origin_file,
+        stage="full",
+    )
 
 
 class _SelfTestResponse:
@@ -1670,15 +1730,16 @@ class MaterialPreflightSelfTest(unittest.TestCase):
             handle.write("import sys\nsys.exit(%d)\n" % exit_code)
         return handle.name
 
-    def preflight(self, exit_code: int) -> None:
+    def preflight(self, exit_code: int, stage: str = "full", project_id: str | None = "project-1") -> None:
         run_material_preflight(
             [sys.executable, self.gate(exit_code)],
             "http://127.0.0.1:18085/api/v1/lingdoc",
             "token",
             None,
             "knowledge-1",
-            "project-1",
+            project_id,
             "origin.md",
+            stage=stage,
         )
 
     def test_a_qualified_material_lets_the_run_start(self):
@@ -1706,6 +1767,19 @@ class MaterialPreflightSelfTest(unittest.TestCase):
                 "origin.md",
             )
 
+    def test_the_content_stage_runs_without_a_project(self):
+        # The content half needs no project: it runs before the first node,
+        # where nothing is bound to anything yet.
+        self.preflight(0, stage="content", project_id=None)
+
+    def test_the_full_stage_refuses_to_run_without_a_project(self):
+        # The quoted-text half reads the sources of a BOUND material. Without
+        # the project it cannot run, and a gate that could not run is not a
+        # pass.
+        with self.assertRaises(WorkflowError) as failure:
+            self.preflight(0, stage="full", project_id=None)
+        self.assertIn("project", str(failure.exception))
+
     def test_the_server_root_is_derived_from_the_lingdoc_base_url(self):
         self.assertEqual(
             server_root_from("http://127.0.0.1:18085/api/v1/lingdoc"),
@@ -1715,6 +1789,43 @@ class MaterialPreflightSelfTest(unittest.TestCase):
             server_root_from("http://127.0.0.1:18085/api/v1"),
             "http://127.0.0.1:18085",
         )
+
+    def test_the_second_stage_runs_before_the_node_that_consumes_the_sources(self):
+        # The gate is wired to the generation step: the quoted-text half runs
+        # there, because that is the first moment the material is bound.
+        calls: list[str] = []
+
+        def fake_preflight(*args: Any, **kwargs: Any) -> None:
+            calls.append(str(kwargs.get("stage")))
+
+        original = globals()["run_material_preflight"]
+        globals()["run_material_preflight"] = fake_preflight
+        try:
+            material_gate_before_step(
+                {"operation_id": "bindAsset"}, {"project_id": "p-1"},
+                ["gate"], "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
+                "k-1", None, "origin.md", "startGeneration",
+            )
+            self.assertEqual(calls, [], "the gate must not run before its own node")
+            material_gate_before_step(
+                {"operation_id": "startGeneration"}, {"project_id": "p-1"},
+                ["gate"], "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
+                "k-1", None, "origin.md", "startGeneration",
+            )
+            self.assertEqual(calls, ["full"], "the quoted-text half must run at the generation node")
+        finally:
+            globals()["run_material_preflight"] = original
+
+    def test_the_second_stage_refuses_to_run_without_the_project(self):
+        # No project anywhere: the quoted-text half cannot run, and a gate
+        # that could not run must not let the generation node run.
+        with self.assertRaises(WorkflowError):
+            material_gate_before_step(
+                {"operation_id": "startGeneration"}, {},
+                [sys.executable, self.gate(0)],
+                "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
+                "k-1", None, "origin.md", "startGeneration",
+            )
 
 
 def run_operator_self_test() -> int:
@@ -1755,6 +1866,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="file holding the bearer token for the gate (keeps it out of the process list)")
     parser.add_argument("--material-project-id",
                         help="the project the material is bound to; the gate reads the sources from it")
+    parser.add_argument("--material-gate-before", default="startGeneration",
+                        help="the operation whose step the FULL material gate runs before "
+                             "(default startGeneration: the node that consumes the material's sources)")
     parser.add_argument("--self-test", action="store_true",
                         help="run the check-operator table and exit; no provider is contacted")
     args = parser.parse_args(argv)
@@ -1777,9 +1891,10 @@ def main(argv: list[str] | None = None) -> int:
             variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
         if args.material_origin:
-            # Before the first node: the material must be qualified, or every
-            # source of it goes stale and the run fails for a reason that has
-            # nothing to do with the contract.
+            # Stage 1, before the first node: the material's chunks must be
+            # the verbatim slice of the origin text. This half needs no
+            # project, so it can run here — the material is not bound to
+            # anything yet.
             run_material_preflight(
                 [args.material_check_cmd] if args.material_check_cmd else [],
                 runner.client.base_url,
@@ -1788,7 +1903,28 @@ def main(argv: list[str] | None = None) -> int:
                 args.knowledge_id or "",
                 args.material_project_id,
                 str(args.material_origin),
+                stage="content",
             )
+            # Stage 2, just before the node that consumes the material's
+            # sources: the quoted text the server hands out must be the
+            # origin slice at the source's own coordinates. It reads the
+            # sources of a BOUND material, so the project has to exist by
+            # then — and the run must not reach that node without it.
+            def gate_before_step(step: dict[str, Any], variables: dict[str, Any]) -> None:
+                material_gate_before_step(
+                    step,
+                    variables,
+                    [args.material_check_cmd] if args.material_check_cmd else [],
+                    runner.client.base_url,
+                    args.token,
+                    args.material_check_token_file,
+                    args.knowledge_id or "",
+                    args.material_project_id,
+                    str(args.material_origin),
+                    args.material_gate_before,
+                )
+
+            runner.before_step_hook = gate_before_step
         if args.report:
             # Verify the destination before any provider mutation and replace a
             # previous successful record with an explicit incomplete-run record.

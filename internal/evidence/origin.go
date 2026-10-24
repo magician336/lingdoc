@@ -67,9 +67,18 @@ type OriginPresenceReader interface {
 //
 // The file path of an **uploaded** material is a storage reference
 // ("resource://…"), not a filesystem path, so reading the bytes needs the
-// storage layer. A reader that cannot provide them answers ok=false — the
-// caller then degrades to the self-consistency tier instead of claiming that
-// a quote was proven against the original.
+// storage layer.
+//
+// The two negative answers mean different things, and the difference matters:
+//
+//   - ok=false, err=nil — "I could not read it" (the file is gone, the
+//     storage backend cannot serve it, the material is not file-backed).
+//     The caller degrades to the self-consistency tier instead of claiming
+//     that a quote was proven against the original.
+//   - err!=nil — "the base failed" (the storage connection is broken). This
+//     is deliberately **not** degraded: swallowing it would report an
+//     incident as "this material can only be weak evidence", the same
+//     distinction the KnowledgeReader port draws.
 //
 // The reader is optional on purpose: a reader that only knows a local path
 // (the pre-storage case) keeps working through the local-file fallback.
@@ -143,7 +152,7 @@ func manualOrigin(row *types.Knowledge) (string, bool, error) {
 	if clean == "" {
 		return "", false, nil
 	}
-	text, ok := verbatimOrigin([]byte(clean))
+	text, ok := VerbatimOrigin([]byte(clean))
 	return text, ok, nil
 }
 
@@ -172,7 +181,7 @@ func (r *fileOriginReader) fileOrigin(ctx context.Context, row *types.Knowledge)
 	if !ok {
 		return "", false, nil
 	}
-	text, provable := verbatimOrigin(data)
+	text, provable := VerbatimOrigin(data)
 	if !provable {
 		return "", false, nil
 	}
@@ -213,7 +222,7 @@ func (r *fileOriginReader) originBytes(ctx context.Context, row *types.Knowledge
 	return data, true, nil
 }
 
-// verbatimOrigin 判定这一串文本是不是切分链路真正切的那段文本。
+// VerbatimOrigin 判定这一串文本是不是切分链路真正切的那段文本。
 //
 // 读到文本还不够：切分用的是**改写后**的文本。改写只有三处，都查得到
 // （`knowledge_process.go:3637-3639` 及其上游）：
@@ -228,7 +237,12 @@ func (r *fileOriginReader) originBytes(ctx context.Context, row *types.Knowledge
 //
 // BOM 不在排除之列：U+FEFF 是合法 rune、不是 NUL，上面两步都不会动它，
 // 于是它留在两侧的文本里，偏移一致。
-func verbatimOrigin(data []byte) (string, bool) {
+//
+// 这个判据是**导出的**：材料合格性检查（cmd/lingdoc-material-check）必须
+// 用同一个判据检查它手里的原文文件。判据同源不等于输入同源——输入那一侧
+// 仍然要靠调用方把**原始上传文件**原样交进来（见该命令的 --origin-file
+// 说明）。
+func VerbatimOrigin(data []byte) (string, bool) {
 	if !utf8.Valid(data) {
 		return "", false
 	}

@@ -90,8 +90,21 @@ func (r *fakeKBRepo) CreateKnowledgeBase(_ context.Context, kb *types.KnowledgeB
 	return nil
 }
 
+// GetKnowledgeBaseByID returns a COPY of the stored row.
+//
+// The copy is what a database does: the caller mutates what it got back and
+// the row is unchanged until the caller asks the repository to save it. A
+// fake that returned the stored pointer would make "the service persisted
+// the value" impossible to distinguish from "the service mutated the value
+// it was handed" — the assertion would hold even if the repository call were
+// deleted.
 func (r *fakeKBRepo) GetKnowledgeBaseByID(_ context.Context, id string) (*types.KnowledgeBase, error) {
-	return r.rows[id], nil
+	kb := r.rows[id]
+	if kb == nil {
+		return nil, nil
+	}
+	copied := *kb
+	return &copied, nil
 }
 
 func (r *fakeKBRepo) GetKnowledgeBaseByIDAndTenant(_ context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error) {
@@ -99,7 +112,8 @@ func (r *fakeKBRepo) GetKnowledgeBaseByIDAndTenant(_ context.Context, id string,
 	if kb == nil || kb.TenantID != tenantID {
 		return nil, repository.ErrKnowledgeBaseNotFound
 	}
-	return kb, nil
+	copied := *kb
+	return &copied, nil
 }
 
 func (r *fakeKBRepo) GetKnowledgeBaseByIDs(_ context.Context, _ []string) ([]*types.KnowledgeBase, error) {
@@ -120,7 +134,15 @@ func (r *fakeKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, tenantID ui
 	return rows, nil
 }
 
-func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
+// UpdateKnowledgeBase stores the row the way a database does: the value it
+// is handed, serialized into the row. The stored row is a copy, so a caller
+// that mutates its own copy afterwards does not change what was saved.
+func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, kb *types.KnowledgeBase) error {
+	if kb == nil {
+		return nil
+	}
+	copied := *kb
+	r.rows[kb.ID] = &copied
 	return nil
 }
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }

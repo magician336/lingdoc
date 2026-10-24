@@ -443,6 +443,10 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
 		ctx, s.retrieveEngine, s.ownership, tenantInfo.ID, kb.VectorStoreID)
+	// The factory's failure is kept: it is one of the reasons this run may
+	// end up without an index, and the stage record must name the real
+	// cause (see the branch that records it).
+	engineErr := err
 	if err == nil && embeddingModel != nil {
 		if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions(), knowledge.Type); err != nil {
 			logger.Warnf(ctx, "Failed to delete existing index data (may not exist): %v", err)
@@ -691,10 +695,6 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	// pipeline is enabled and this run can serve it.
 	// Chunks are ALWAYS saved to DB (above) because wiki and graph need them even without vector indexing.
 	var totalStorageSize int64
-	if routingErr != nil {
-		s.failStage(ctx, knowledge.ID, types.StageEmbedding,
-			werrors.ErrCodeVectorStoreWriteFailed, "no retriever engine serves the requested pipelines", routingErr)
-	}
 	if indexingEngine != nil {
 		embedInput := types.JSONMap{
 			"chunks_to_embed": len(textChunks),
@@ -833,17 +833,45 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	} else if len(wantedTypes) > 0 {
 		// The knowledge base wants an index, but this run cannot serve any of
-		// the wanted pipelines: there is no usable embedding model and the
-		// remaining pipelines have no engine. The chunks are on disk
-		// (index_status=failed) and the stage records the cause: the document
-		// is parsed, it is simply not searchable until a model is configured
-		// and the index is rebuilt.
-		logger.Warnf(ctx, "KB %s has no usable embedding model; chunks are stored, the index is not built", kb.ID)
+		// the wanted pipelines. The chunks are on disk (index_status=failed)
+		// and the stage records the cause.
+		//
+		// The cause decides the code. An operator reading the record must not
+		// be told "the embedding model is missing" when the real cause is
+		// "no retrieval engine serves the requested pipelines" — those are
+		// two different fixes, and the stage row may only carry one of them
+		// (the later write would overwrite the earlier one).
 		s.beginStage(ctx, knowledge.ID, types.StageEmbedding, types.JSONMap{
-			"model_id": kb.EmbeddingModelID,
+			"model_id":        kb.EmbeddingModelID,
+			"retriever_types": retrieverTypeNames(wantedTypes),
 		})
-		s.failStage(ctx, knowledge.ID, types.StageEmbedding,
-			werrors.ErrCodeEmbeddingModelUnavailable, "embedding model unavailable", embeddingModelErr)
+		switch {
+		case routingErr != nil:
+			// The routing could not be resolved: no engine serves the
+			// requested pipelines. That is an engine/binding problem.
+			logger.ErrorWithFields(ctx, routingErr, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+				"retriever_types":   retrieverTypeNames(wantedTypes),
+			})
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeVectorStoreWriteFailed, "no retriever engine serves the requested pipelines", routingErr)
+		case engineErr != nil:
+			// No retrieval engine could be built for this knowledge base at
+			// all (the engine factory failed).
+			logger.ErrorWithFields(ctx, engineErr, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+			})
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeVectorStoreWriteFailed, "no retrieve engine is bound to this knowledge base", engineErr)
+		default:
+			// The vector pipeline was dropped because there is no usable
+			// embedding model, and no other wanted pipeline is left.
+			logger.Warnf(ctx, "KB %s has no usable embedding model; chunks are stored, the index is not built", kb.ID)
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeEmbeddingModelUnavailable, "embedding model unavailable", embeddingModelErr)
+		}
 	} else {
 		logger.Infof(ctx, "Vector/keyword indexing disabled for KB %s, skipping BatchIndex", kb.ID)
 		s.skipStage(ctx, knowledge.ID, types.StageEmbedding, "skipped")

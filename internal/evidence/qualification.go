@@ -2,6 +2,7 @@ package evidence
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -23,8 +24,15 @@ import (
 // length difference and the first position where the two disagree, so the
 // material can be fixed instead of re-diagnosed.
 //
-// The verdict itself is the one the re-check uses — quoteAt — so "qualified
-// here" and "usable there" cannot drift apart.
+// The verdict itself is the one the re-check uses — quoteAt — so the two
+// cannot drift apart **in their judgement**.
+//
+// That is a statement about the judgement, not about the inputs: the caller
+// still has to hand in the **original uploaded file** as the origin text. A
+// text that differs from it (rewritten line endings, a rewritten image
+// reference, a truncated copy) is rejected by evidence.VerbatimOrigin before
+// the comparison, because the coordinates of a chunk only mean something
+// against the bytes the ingest chain actually split.
 // ---------------------------------------------------------------------------
 
 // MaterialIssueCode is the machine-readable reason a chunk is not qualified.
@@ -66,6 +74,28 @@ type MaterialChunkVerdict struct {
 	Verbatim       bool
 }
 
+// MaterialOverlapVerdict is the answer for the region two chunks share.
+//
+// The chunks of one material overlap (the splitter keeps an overlap so a
+// sentence that straddles a boundary is not lost). The two chunks must
+// carry the SAME text over that region: if they do not, the material says
+// two different things about the same characters, and no reader of it can
+// tell which one is the original.
+type MaterialOverlapVerdict struct {
+	FirstChunkID  string
+	SecondChunkID string
+	StartAt       int
+	EndAt         int
+	// Span is the width of the overlap in runes.
+	Span int
+	// Identical is true when the two chunks carry the same text over the
+	// overlap.
+	Identical bool
+	// FirstDifference is the rune index INSIDE the overlap where the two
+	// texts first differ; -1 when they do not differ.
+	FirstDifference int
+}
+
 // MaterialQualification is the answer for one material.
 type MaterialQualification struct {
 	// Qualified is true when the material has chunks and every one of them
@@ -75,6 +105,8 @@ type MaterialQualification struct {
 	OriginRunes int
 	// Chunks holds one verdict per chunk, in the order they were given.
 	Chunks []MaterialChunkVerdict
+	// Overlaps holds one verdict per pair of chunks that share a region.
+	Overlaps []MaterialOverlapVerdict
 	// Issues holds one entry per unqualified chunk.
 	Issues []MaterialIssue
 }
@@ -90,6 +122,7 @@ func QualifyMaterial(origin string, chunks []MaterialChunk) MaterialQualificatio
 		Qualified:   len(chunks) > 0,
 		OriginRunes: len(runes),
 		Chunks:      make([]MaterialChunkVerdict, 0, len(chunks)),
+		Overlaps:    make([]MaterialOverlapVerdict, 0),
 		Issues:      make([]MaterialIssue, 0),
 	}
 	for _, chunk := range chunks {
@@ -108,7 +141,69 @@ func QualifyMaterial(origin string, chunks []MaterialChunk) MaterialQualificatio
 			report.Issues = append(report.Issues, *issue)
 		}
 	}
+	report.Overlaps = qualifyOverlaps(chunks)
 	return report
+}
+
+// qualifyOverlaps answers for every region two chunks share.
+//
+// The chunks are sorted by their start, and every pair that overlaps is
+// compared over the shared region only. A pair that does not overlap is not
+// reported: there is nothing to compare.
+func qualifyOverlaps(chunks []MaterialChunk) []MaterialOverlapVerdict {
+	verdicts := make([]MaterialOverlapVerdict, 0)
+	ordered := make([]MaterialChunk, len(chunks))
+	copy(ordered, chunks)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].StartAt != ordered[j].StartAt {
+			return ordered[i].StartAt < ordered[j].StartAt
+		}
+		return ordered[i].EndAt < ordered[j].EndAt
+	})
+	for i := 0; i < len(ordered); i++ {
+		for j := i + 1; j < len(ordered); j++ {
+			start := max(ordered[i].StartAt, ordered[j].StartAt)
+			end := min(ordered[i].EndAt, ordered[j].EndAt)
+			if end <= start {
+				continue
+			}
+			verdict := MaterialOverlapVerdict{
+				FirstChunkID:    ordered[i].ID,
+				SecondChunkID:   ordered[j].ID,
+				StartAt:         start,
+				EndAt:           end,
+				Span:            end - start,
+				FirstDifference: -1,
+			}
+			first := overlapText(ordered[i], start, end)
+			second := overlapText(ordered[j], start, end)
+			verdict.Identical = first == second
+			if !verdict.Identical {
+				verdict.FirstDifference = firstDifference(first, second)
+			}
+			verdicts = append(verdicts, verdict)
+		}
+	}
+	return verdicts
+}
+
+// overlapText is the text a chunk carries over the region [start,end).
+//
+// A chunk whose own coordinates do not cover that region has no text to
+// compare there; the answer is the empty string, which differs from any
+// text — the pair is then reported as a conflict rather than as an
+// agreement.
+func overlapText(chunk MaterialChunk, start, end int) string {
+	if start < chunk.StartAt || end > chunk.EndAt {
+		return ""
+	}
+	runes := []rune(chunk.Content)
+	from := start - chunk.StartAt
+	to := end - chunk.StartAt
+	if from < 0 || to > len(runes) || to < from {
+		return ""
+	}
+	return string(runes[from:to])
 }
 
 // qualifyOne answers for a single chunk. It returns nil when the chunk is
@@ -207,6 +302,11 @@ func (q MaterialQualification) QualificationSummary() string {
 	}
 	for _, issue := range q.Issues {
 		fmt.Fprintf(&b, "  ✗ chunk %s [%s] %s\n", issue.ChunkID, issue.Code, issue.Detail)
+	}
+	for _, overlap := range q.Overlaps {
+		fmt.Fprintf(&b, "  重叠 chunk %s / %s [%d,%d) 跨度=%d 逐位一致=%t\n",
+			overlap.FirstChunkID, overlap.SecondChunkID, overlap.StartAt, overlap.EndAt,
+			overlap.Span, overlap.Identical)
 	}
 	return b.String()
 }
