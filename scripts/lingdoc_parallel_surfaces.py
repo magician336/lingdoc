@@ -823,6 +823,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
             # 逐文件登记会漏（本次 PR 产出了 12 个文件、2 个运行目录）。
             ("docs/08-本轮实施方案/acceptance/beta-first/", "dir"),
+            ("scripts/lingdoc_mock/workflow_expand.py", "file"),
+            ("scripts/ci/test_lingdoc_review_decision_expansion.py", "file"),
+            # 2026-10-24 #618（PR #620，合并提交 f404fd02）：本面认领本 PR 新增的两条路径 ——
+            #   scripts/lingdoc_mock/workflow_expand.py            （展开规则的唯一实现）
+            #   scripts/ci/test_lingdoc_review_decision_expansion.py（守护测试，由 LingDoc PR gate 执行）。
+            #   同 PR 还改了 PF-14 持有的 docs/08-本轮实施方案/contracts/validate_artifacts.py
+            #   （让契约静态校验器与 F01 跑批执行器共用同一份展开实现）—— 那是**跨面借用**，
+            #   owner 仍是 PF-14，本面不声明该路径（登记处 loader 拒绝两个面声明同一条路径）。
+            #   依据票：#618（PR #620）、#490（放行结论表）。
         ),
         "resolves": (),
         "summary": (
@@ -1158,6 +1167,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("client/resource_urls_test.go", "file"),
             # client 面的门禁覆盖守护：只改 client ⇒ client job 跑、app job 不跑；只改 docs ⇒ 两者都不跑；以及覆盖判定的负向用例。
             ("scripts/ci/test_lingdoc_client_coverage.py", "file"),
+            # 2026-10-24 #618（PR #620，合并提交 f404fd02）：PF-10 借用了本面持有的
+            #   docs/08-本轮实施方案/contracts/validate_artifacts.py（让契约静态校验器与
+            #   F01 跑批执行器共用同一份展开实现）。**owner 仍是本面**，不变更归属。
+            #   依据票：#618（PR #620）。
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
