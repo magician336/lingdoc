@@ -702,3 +702,36 @@ model is outside the acceptance budget profile
 - provider 请求原文：`D:\wt\lingdoc-484-evidence\logs\llm_debug_trackd\20261024_173737.438.log`
 - 两本账本：`D:\wt\lingdoc-484-evidence\ledger\qwen-beta-sqlite.json` ＋ `.calls.json`
 - 二进制清单：`D:\wt\lingdoc-484-evidence\track-d-binary-manifest.json`
+
+---
+
+## 18. 第十批（第五轮同步）：三条缺陷线合入 ＋ F01-07 检索方式口径变更
+
+**基线**：`origin/main` = `96d9320ed2c958b0ec5054e2e75a341a13a91b12`。本批把 Track-D 实验暴露的三个问题与一件口径变更落进 `main`：**#608**（F01-11 采纳节点）、**#609**（模型参数扫描）、**#605**（`client/**` 门禁覆盖）、**#546 口径②**（F01-07 的检索方式声明）。
+
+| 项 | 票 | PR | 合并提交 | 它修的是什么 | 证据 |
+|---|---|---|---|---|---|
+| 候选采纳契约 | #608 | #612 | `{sha612}` | 契约的 F01-11／F01-12 请求体与服务端 HTTP 契约对不上（缺必填的 `confirmation` ＋ 工作副本声明）⇒ 采纳节点永远 400 | 真 handler ＋ 真 SQLite ＋ 契约那份请求体：旧请求体 400/零版本、契约现在发的那份 201/恰好 1 个版本；缺载荷 400＋零版本、过期修订 409 `version_conflict`、哈希不符 409 `working_copy_dirty`、同键重投 201 `replayed` 且仍 1 个版本 |
+| 模型参数扫描 | #609 | #613 | `{sha613}` | `ModelParameters.Scan` 只认 `[]byte`，拿到驱动交回的 `string` 就**静默返回 nil** ⇒ 非 GORM 写入的模型行在 SQLite 里是哑行（provider/端点/凭据全空） | 共享读取器 `internal/types/json_column.go`：收 `[]byte` 与 `string`，其余类型**报错**（`ErrUnsupportedJSONColumnValue`）；驱动的载体类型**实测**（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL）；base-vs-head 复现：回退后 TEXT 写入的行读回 `provider=""` |
+| `client/**` 门禁覆盖 | #605 | #611 | `{sha611}` | `client/` 是独立 Go 模块，根模块的构建显式排除它 ⇒ 只改 `client/` 的 PR 没有任何 job 编译/测试它 | 新增 `.github/workflows/client.yml`（`go build` ＋ `go vet` ＋ `go test`）；门禁面清单新增 `client` 面（`verifies=True`）；两个对照变更的真实判定输出：只改 `client/` ⇒ client job 跑、app job 不跑、coverage `verified`；只改 `docs/` ⇒ 两者都不跑 |
+| F01-07 检索方式 | #546 | #615 | `{sha615}` | 契约把 F01-07 声明为 `vector_required` ⇒ 受控窗口里它恒 NOT RUN。Track-D 已证明**无 embedding 路线能真的跑通生成链** ⇒ 改为 `keyword_only`（口径②） | 声明前后对照（同一套真实产物，唯一变量是那一个字段）：窗口两次都 **PASS**，F01-07 由 **NOT RUN** 变为**可判定**；放行链层面（`beta_evidence.controlled_window_part`）判为 `held`；独立审查第一轮 **PARTIAL**（6 点）→ 复审 **PASS** |
+
+### 18.1 F01 当前逐节点状态
+
+| 口径 | 结果 | 说明 |
+|---|---|---|
+| **契约判定（放行口径）** | 见 `docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md` §4 | F01-07 的声明已由 `vector_required` 改为 `keyword_only`；**改声明之前的实验事实不动** |
+| **机器产物（执行器视角）** | failed｜15/28 节点｜26 条 checks 全过｜材料闸门两阶段：['content', 'full'] | 失败节点：{"id": "F01-11", "operation_id": "acceptCandidate"} |
+| **下一轮** | 待前置合入后重跑 | 前置：隔离环境（18087，服务在跑）、材料与 KB 可复用（`7c104e1b`／`c1197b70`）、授权 2/4 次（余 2 次）、累计预留 17890/90000 |
+
+### 18.2 真实调用与账本对账（截至本轮）
+
+- **真实 chat 请求：2 次**（授权 4 次，余 2 次）；**embedding 请求：0 次**（未授权，也没有发生）。
+- 窗口账本 `qwen-beta-sqlite.json` ＋ 共享账本 `.calls.json`：各记同一条调用，`status=response_received`、`usage_status=reported`、`input/output/total = 1037/521/1558`、`finish_reason=stop`。
+- 数据库账本 `lingdoc_model_call_ledger`：2 行（`kind=call`／`model_id=lingdoc-chat-qwen3.8-flash-iso`／`run_mode=real`／`source_kind=generation_run`／`input_tokens=1037`／`output_tokens=521`／`status=succeeded`）。
+- ⇒ **预留（17890）／provider 实报 usage（3026）／累计剩余额度**三者分开记录，互不冒充。
+
+### 18.3 尚未验证的与下一步
+
+- **尚未验证**：合并后 head 上的门禁证据；下一轮完整 F01 的逐节点结论（材料闸门两阶段 ＋ 采纳节点 ＋ 放行链的逐节点判定）；`acceptance/beta-first/` 目录的实际落盘内容；**向量开启的知识库**上的检索行为（无这样的 KB 可实测）。
+- **下一步**：① 重建隔离环境二进制（合并后 main）并重跑一轮完整 F01（用掉剩余额度里的 1 次）；② 出 #490 的放行结论表；③ #546 口径②的变更要在放行链上真的被执行（`controlled_window_check.py` 已被放行链接入，但「窗口 PASS 只等于账本里没有 embedding 行、不蕴含没有尝试过 embedding」这条口径强度限制要一起交代）。
