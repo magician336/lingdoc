@@ -1,3 +1,5 @@
+import { TENANT_ROLE_LABELS } from '../tenantRoleLabel'
+
 export default {
   localBrowser: {
     pipOpen: "弹出悬浮窗",
@@ -318,10 +320,7 @@ export default {
       roleLabel: '角色'
     },
     role: {
-      owner: '所有者',
-      admin: '管理员',
-      contributor: '编辑',
-      viewer: '访客'
+      ...TENANT_ROLE_LABELS
     },
     columns: {
       member: '姓名与邮箱',
@@ -3000,7 +2999,10 @@ export default {
           outcome: '结果'
         },
         actorRole: {
-          system_admin: '系统管理员'
+          ...TENANT_ROLE_LABELS,
+          system_admin: '系统管理员',
+          platform_api_key: '平台 API 密钥',
+          unknown: '未知角色'
         },
         errors: {
           generic: '加载审计日志失败'

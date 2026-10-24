@@ -33,7 +33,7 @@
       <div class="identity-facts">
         <div>
           <span>租户角色</span>
-          <strong>{{ permissionRoleLabel(displayRole) }}</strong>
+          <strong>{{ roleLabel(displayRole) }}</strong>
         </div>
         <div>
           <span>租户 ID</span>
@@ -72,7 +72,7 @@
               :class="{ 'role-switch__item--active': demoRole === role }"
               @click="selectDemoRole(role)"
             >
-              {{ PERMISSION_ROLE_LABELS[role] }}
+              {{ roleLabel(role) }}
             </button>
           </div>
           <p class="sandbox-help">角色改变后，右侧的本次请求、证据链和 API Key 结果会立即重算。</p>
@@ -196,14 +196,14 @@
             <p class="section-kicker">角色矩阵</p>
             <h2 id="matrix-title">当前身份能做什么</h2>
           </div>
-          <span class="matrix-role">{{ permissionRoleLabel(displayRole) }}</span>
+          <span class="matrix-role">{{ roleLabel(displayRole) }}</span>
         </div>
         <div class="matrix-scroll">
           <table class="permission-table">
             <thead>
               <tr>
                 <th>操作</th>
-                <th v-for="role in PERMISSION_ROLES" :key="role">{{ PERMISSION_ROLE_LABELS[role] }}</th>
+                <th v-for="role in PERMISSION_ROLES" :key="role">{{ roleLabel(role) }}</th>
                 <th>本次请求</th>
               </tr>
             </thead>
@@ -318,7 +318,7 @@
           <span class="audit-outcome" :class="`audit-outcome--${row.outcome}`">{{ auditOutcomeLabel(row.outcome) }}</span>
           <div>
             <strong>{{ auditActionLabel(row.action) }}</strong>
-            <p>{{ row.actor_role || '未知角色' }} · {{ row.request_method }} {{ row.request_path || '—' }}</p>
+            <p>{{ formatAuditActorRole(row.actor_role) }} · {{ row.request_method }} {{ row.request_path || '—' }}</p>
           </div>
           <time :datetime="row.created_at">{{ formatTime(row.created_at) }}</time>
         </article>
@@ -335,12 +335,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
+import { auditActorRoleLabel } from '@/i18n/auditActorRoleLabel'
 import { listAuditLog, type AuditLog, type AuditOutcome } from '@/api/tenant/auditLog'
 import { getAccessStatus, listProjects, type AccessStatus, type Project } from '@/api/lingdoc/workspace'
 import {
   PERMISSION_EVIDENCE_ROWS,
-  PERMISSION_ROLE_LABELS,
   PERMISSION_ROLES,
   decisionLabel,
   permissionDecision,
@@ -353,6 +354,7 @@ import {
 
 const authStore = useAuthStore()
 const route = useRoute()
+const { t, te } = useI18n()
 const demoMode = computed(() => (
   route.meta.publicDemo === true
   || route.name === 'lingdocPermissionEvidenceDemo'
@@ -523,7 +525,7 @@ const proofSteps = computed(() => [
   },
   {
     title: '租户角色',
-    detail: displayRole.value ? `当前为${permissionRoleLabel(displayRole.value)}` : '尚未读取租户成员关系',
+    detail: displayRole.value ? `当前为${roleLabel(displayRole.value)}` : '尚未读取租户成员关系',
     status: displayRole.value ? '已解析' : '待加载',
     state: displayRole.value ? 'passed' : 'waiting',
   },
@@ -639,7 +641,7 @@ function simulatePermission(action: PermissionEvidenceRow & { minimumLabel: stri
   const sourceAllowed = action.resource !== 'source' || (!demoSourceRevoked.value && accessState.value === 'available')
   const allowed = roleDecision === 'allowed' && resourceAllowed && sourceAllowed
   let reason = `当前角色满足 ${action.minimumLabel}`
-  if (roleDecision !== 'allowed') reason = `需要 ${action.minimumLabel}，当前是${permissionRoleLabel(displayRole.value)}`
+  if (roleDecision !== 'allowed') reason = `需要 ${action.minimumLabel}，当前是${roleLabel(displayRole.value)}`
   else if (!resourceAllowed) reason = '知识库共享已撤销，资源层授权不成立'
   else if (!sourceAllowed) reason = '来源已撤权，交付前重查阻断请求'
   lastDecision.value = { allowed, code: allowed ? '200' : '403', reason, action: action.operation }
@@ -764,6 +766,18 @@ async function refreshEvidence() {
   } finally {
     loading.value = false
   }
+}
+
+// 审计列 actor_role 走共享解析器：这一列的语义只有一处定义，
+// 租户审计抽屉、平台审计日志与本页因此对同一个值给出同一种含义。
+function formatAuditActorRole(role: string): string {
+  return auditActorRoleLabel({ te, t }, role)
+}
+
+// 页面上的租户角色也走同一个解析器：「当前请求身份」这一列与下面的
+// 「最近授权审计」行因此对同一个角色值给出同一种中文说法。
+function roleLabel(role: string | null | undefined): string {
+  return permissionRoleLabel({ te, t }, role)
 }
 
 function auditActionLabel(action: string): string {

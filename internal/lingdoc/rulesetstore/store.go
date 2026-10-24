@@ -17,6 +17,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -30,6 +31,10 @@ import (
 var (
 	// ErrActorRequired is a request without a usable actor.
 	ErrActorRequired = clienterror.New(clienterror.Form{Status: 401, Code: "unauthenticated", Message: "需要有效的租户身份。", Retryable: false}, "ruleset actor is required")
+	// ErrActorRoleInvalid is an actor whose role is outside the tenant role
+	// vocabulary. The role is recorded in the audit column, so a value the
+	// vocabulary does not define cannot be attributed to a tenant role.
+	ErrActorRoleInvalid = clienterror.New(clienterror.Form{Status: 401, Code: "unauthenticated", Message: "需要有效的租户身份。", Retryable: false}, "ruleset actor role is not a tenant role")
 	// ErrRuleSetTenantRequired is a request without a usable tenant.
 	ErrRuleSetTenantRequired = clienterror.New(clienterror.Form{Status: 401, Code: "unauthenticated", Message: "需要有效的租户身份。", Retryable: false}, "ruleset tenant is required")
 	// ErrAuthorizerUnavailable is a rule set authorization that could not be
@@ -56,6 +61,18 @@ const (
 	ActionRecall      Action = "recall"
 )
 
+// Actor identifies the tenant member an operation is performed as.
+//
+// Role is the tenant role the member held when the operation was requested.
+// Its value comes from the tenant role vocabulary owned by internal/types
+// (types.TenantRole), and IsValid is the only judge of membership in it.
+//
+// The value is not decoration: every audit row this package writes records
+// it in audit_logs.actor_role. The column therefore means "the tenant role
+// the operator held at that moment" -- not a project role, not a governance
+// role, not a function role. A value outside the vocabulary would put a word
+// into that column that no reader can interpret, so the store refuses it
+// rather than writing it.
 type Actor struct {
 	TenantID uint64
 	UserID   string
@@ -153,6 +170,9 @@ func (s *Store) GetVersionForBinding(ctx context.Context, tx *gorm.DB, actor Act
 	}
 	if strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(actor.Role) == "" {
 		return template.RuleSet{}, ErrActorRequired
+	}
+	if !types.TenantRole(actor.Role).IsValid() {
+		return template.RuleSet{}, ErrActorRoleInvalid
 	}
 	if s.authorizer == nil {
 		return template.RuleSet{}, ErrAuthorizerUnavailable
@@ -288,6 +308,9 @@ func (s *Store) validateActor(actor Actor) error {
 	if strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(actor.Role) == "" {
 		return ErrActorRequired
 	}
+	if !types.TenantRole(actor.Role).IsValid() {
+		return ErrActorRoleInvalid
+	}
 	if s.authorizer == nil {
 		return ErrAuthorizerUnavailable
 	}
@@ -322,7 +345,16 @@ func decodeRuleSet(row ruleSetVersionRow) (template.RuleSet, error) {
 	return set, nil
 }
 
+// recordAudit writes the rule set lifecycle audit row.
+//
+// The row's actor_role column means "the tenant role the operator held at
+// that moment". This is the last point before the INSERT, so it also guards
+// the callers that reach an audit row without passing through
+// validateActor: a role outside the vocabulary must never reach the column.
 func recordAudit(tx *gorm.DB, actor Actor, set template.RuleSet, action Action, from, to template.RuleSetState) error {
+	if !types.TenantRole(actor.Role).IsValid() {
+		return ErrActorRoleInvalid
+	}
 	details, err := json.Marshal(map[string]any{
 		"ruleset_id": set.ID, "version": set.Version,
 		"ruleset_hash": set.RulesetHash, "from_state": from, "to_state": to,

@@ -402,7 +402,14 @@ func (m generationHostModel) recordGenerationModelCall(ctx context.Context, inpu
 	if m.acceptanceBudget != nil {
 		// The same budget semantics the agent path records: what was reserved
 		// for this call and what it actually consumed.
-		facts.reservedNanoUSD = generationAcceptancePerCall
+		//
+		// The reserved amount follows the ACTIVE PROFILE. A profile without a
+		// price basis (the controlled Qwen path) reserves no money at all:
+		// writing another profile's per-call amount here would put a
+		// DeepSeek-priced number on a Qwen row, and a wrong amount is worse
+		// than an amount that is explicitly not computed. The JSON ledger
+		// carries the meaning ("cost_basis": "not_applicable").
+		facts.reservedNanoUSD = acceptanceReservedPerCall(activeAcceptanceProfile())
 		if response != nil && response.Usage.PromptTokens >= 0 && response.Usage.CompletionTokens >= 0 {
 			facts.actualNanoUSD = actualDeepSeekCost(response.Usage.PromptTokens, response.Usage.CompletionTokens)
 		}
@@ -518,7 +525,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		if estimateErr != nil {
 			return generation.Draft{}, generation.ErrAcceptanceBudgetUnavailable
 		}
-		if inputUpperBound > generationAcceptanceInputMax {
+		if inputUpperBound > acceptanceInputMax(m.acceptanceBudget.profileName()) {
 			return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 		}
 		reservation, err = m.acceptanceBudget.reserve(ctx, generationAcceptanceModel, inputUpperBound)
@@ -526,7 +533,8 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			switch {
 			case errors.Is(err, errAcceptanceLedgerBlocked):
 				return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
-			case errors.Is(err, errAcceptanceBudgetSpent), errors.Is(err, errAcceptanceInputTooLarge):
+			case errors.Is(err, errAcceptanceBudgetSpent), errors.Is(err, errAcceptanceInputTooLarge),
+				errors.Is(err, errAcceptanceTokenBudgetExhausted):
 				return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 			case errors.Is(err, errAcceptanceWrongModel):
 				return generation.Draft{}, generation.ErrAcceptanceModelMismatch
@@ -559,7 +567,21 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			_ = reservation.unknown("usage_unknown")
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}
-		if response.Usage.PromptTokens > generationAcceptanceInputMax || response.Usage.CompletionTokens > generationAcceptanceOutputMax {
+		// The ceiling the answer is measured against is the ceiling of the
+		// ACTIVE PROFILE -- the same number the request asked for and the same
+		// number the shared budget ledger measures this very answer against.
+		// A ceiling read from another profile's constant would let the two
+		// ledgers give opposite answers about one and the same answer: one
+		// says the call was over the ceiling, the other says it was not, and
+		// the reader of both cannot tell which one is true.
+		//
+		// The profile is read the same way the input precheck above reads it,
+		// so one profile decides both ends of the request.
+		//
+		// reservation != nil implies m.acceptanceBudget != nil: the
+		// reservation is only taken inside that branch.
+		profile := m.acceptanceBudget.profileName()
+		if response.Usage.PromptTokens > acceptanceInputMax(profile) || response.Usage.CompletionTokens > acceptanceOutputMax(profile) {
 			_ = reservation.complete("limit_violation", response.Usage.PromptTokens, response.Usage.CompletionTokens, response.FinishReason, true)
 			return generation.Draft{}, generation.ErrAcceptanceBudgetExceeded
 		}
@@ -693,6 +715,16 @@ func (e generationTaskEnqueuer) EnqueueGenerationAfter(_ context.Context, tenant
 	if err != nil {
 		return err
 	}
-	_, err = e.tasks.Enqueue(asynq.NewTask(types.TypeLingDocGeneration, payload), asynq.Queue(types.QueueSummary), asynq.ProcessIn(delay))
+	// The delayed reschedule enqueues the same task type on the same queue as
+	// the normal path, so it states the same retry budget. Without it this
+	// task would inherit asynq's default of 25 retries and turn one throttled
+	// run into 25 real provider calls, burning the acceptance budget and
+	// blocking every later node of the round.
+	_, err = e.tasks.Enqueue(
+		asynq.NewTask(types.TypeLingDocGeneration, payload),
+		asynq.Queue(types.QueueSummary),
+		asynq.MaxRetry(generation.GenerationTaskMaxRetry),
+		asynq.ProcessIn(delay),
+	)
 	return err
 }

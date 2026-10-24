@@ -60,7 +60,11 @@ export function templateStatusErrorFor(error: unknown, isDemo: boolean) {
     : '当前来源模板状态暂不可读，不能据此认定没有召回；请重新读取。'
 }
 
-const roles: Record<string, string> = { owner: '课题所有者', admin: '课题管理员', member: '成员', author: '写作者', researcher: '调研者', reviewer: '评审者', observer: '观察者' }
+// 维度：课题角色（不是租户角色）。
+// 这里的 owner / admin 是课题内部的治理身份，与租户角色（owner / admin /
+// contributor / viewer）是不同的轴；课题角色自带「课题」二字前缀，
+// 不与租户角色词表混用或合并。
+const topicRoleLabels: Record<string, string> = { owner: '课题所有者', admin: '课题管理员', member: '成员', author: '写作者', researcher: '调研者', reviewer: '评审者', observer: '观察者' }
 
 // g5-invitation-workbench-20261014：邀请在收件箱中的可交互状态。
 // 仅 status==='invited' 且未过期的邀请允许“接受”；其余只作历史展示，避免失效邀请继续显示可接受。
@@ -86,11 +90,11 @@ export function invitationStatusLabel(invite: ProjectInvitation, now?: Date): st
 // 精确原始 ID 由 invitationScopeDetail 单独提供，折叠在每条邀请的详情里供核对。
 export function invitationAssignment(invite: ProjectInvitation) {
   const member = invite.assignment
-  const lines = [roles[member.governance_role || 'member'] || member.governance_role || '成员']
+  const lines = [topicRoleLabels[member.governance_role || 'member'] || member.governance_role || '成员']
   for (const role of member.function_roles || []) {
     const scope = member.function_scopes?.[role] || []
     const unit = role === 'author' || role === 'reviewer' ? ['章节', '章'] : role === 'researcher' ? ['资料', '项'] : ['对象', '项']
-    lines.push(scope.length ? `${roles[role] || role}：指定${unit[0]}（${scope.length} ${unit[1]}）` : `${roles[role] || role}：尚未分配对象，不授予该职能的对象操作权限`)
+    lines.push(scope.length ? `${topicRoleLabels[role] || role}：指定${unit[0]}（${scope.length} ${unit[1]}）` : `${topicRoleLabels[role] || role}：尚未分配对象，不授予该职能的对象操作权限`)
   }
   return lines.join('；')
 }
@@ -99,7 +103,7 @@ export function invitationScopeDetail(invite: ProjectInvitation): string[] {
   const lines: string[] = []
   for (const role of member.function_roles || []) {
     const scope = member.function_scopes?.[role] || []
-    if (scope.length) lines.push(`${roles[role] || role}：${scope.join('、')}`)
+    if (scope.length) lines.push(`${topicRoleLabels[role] || role}：${scope.join('、')}`)
   }
   return lines
 }

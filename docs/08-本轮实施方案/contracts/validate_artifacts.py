@@ -64,6 +64,9 @@ def validate(schema,value,label):
 for schema in normalized['components']['schemas'].values(): Draft7Validator.check_schema(schema)
 ops={}
 operation_methods={}
+# 节点可以声明它怎么检索：keyword_only（本节点不依赖向量语义召回）/ vector_required
+# （本节点确实需要向量检索，在受控窗口里是 NOT RUN）。词表是封闭的。
+RETRIEVAL_MODES=('keyword_only','vector_required')
 for path,item in spec['paths'].items():
     for method,op in item.items():
         assert method in {'get','post','put','patch','delete'}
@@ -293,14 +296,30 @@ def check_flow_checks(step,where,examples_by_step):
         else: tied+=1
     return tied,unresolved
 
+def check_retrieval_mode(step,where):
+    """A step may say how it retrieves; the vocabulary is closed.
+
+    The two values mean opposite things for a controlled window: "keyword_only"
+    says the node can be judged there, "vector_required" says it cannot.  A
+    third word would say nothing, so the contract refuses it here rather than
+    leaving it to the reader.
+    """
+    mode=step.get('retrieval')
+    if mode is None: return
+    assert mode in RETRIEVAL_MODES,where+' retrieval 只能是 '+' / '.join(RETRIEVAL_MODES)+' 之一'
+
 def check_scenario_step(scenario,index,step):
     global scenario_steps,scenario_steps_with_requests,check_references
     where=step.get('id') or f"{scenario['id']} step {index}"
     assert step['operation_id'] in ops,where+' names an operation the OpenAPI document does not have'
+    check_retrieval_mode(step,where)
     if 'readback_of' in step:
         assert isinstance(step['readback_of'],str) and step['readback_of'].strip(),where+' readback_of must name an earlier step'
         assert operation_methods[step['operation_id']]=='get',where+' readback step must use GET'
         assert step.get('checks'),where+' readback step must declare at least one check'
+    if 'after_step' in step:
+        assert isinstance(step['after_step'],str) and step['after_step'].strip(),where+' after_step must name an earlier step'
+        assert step.get('checks'),where+' after_step step must declare at least one check'
     response=ops[step['operation_id']]['responses'][str(step['expected_http'])]
     if 'response_example' in step:
         assert step['response_example'] in response['content']['application/json']['examples'],where
@@ -331,6 +350,22 @@ def check_scenario_step(scenario,index,step):
 # 谁是「调用者」这件事也得有出处：契约里只有所有者（canonical fixture 的立项人）和起点状态
 # 声明的协作者两种名字，别的地方冒出来的名字是这个校验器要拦住的那种笔误。
 ACTORS={'u-owner'}|{name for state in cases['starting_states'] for name in state['project'].get('members',[])}
+def check_same_resource(step,earlier,where):
+    """The two steps of a two-step requirement must reach the same resource.
+
+    "Same resource" is machine-checkable here: the two requests name the same
+    path coordinates -- the same keys, and the same values (the same captured
+    variable, or the same literal).  Without this, a step could declare that it
+    asserts the consequence of an operation that touched a different resource
+    altogether, and the report would read it as a fact about this one.
+    """
+    mine=(step.get('request') or {}).get('path_params') or {}
+    theirs=(earlier.get('request') or {}).get('path_params') or {}
+    assert set(mine)==set(theirs),where+' after_step must name a step on the same resource (path parameters differ: '+str(sorted(mine))+' against '+str(sorted(theirs))+')'
+    for name,value in mine.items():
+        assert value==theirs[name],where+' after_step must name a step on the same resource (path parameter '+name+' differs: '+repr(value)+' against '+repr(theirs[name])+')'
+
+
 def check_scenario(scenario):
     observation=scenario.get('white_box_observation')
     if observation is not None:
@@ -360,6 +395,11 @@ def check_scenario(scenario):
             assert earlier is not None,step['id']+' readback_of must name an earlier step'
             assert operation_methods[earlier['operation_id']]!='get',\
                 step['id']+' readback_of must name an earlier write step'
+        if 'after_step' in step:
+            earlier=next((candidate for candidate in steps[:index-1]
+                          if candidate.get('id')==step['after_step']),None)
+            assert earlier is not None,step['id']+' after_step must name an earlier step'
+            check_same_resource(step,earlier,step['id'])
     state=next((item for item in cases['starting_states'] if item['id']==scenario.get('starting_state')),None)
     if state and scenario.get('steps') and all('request' in step for step in scenario['steps']):
         available={'project.id'}
@@ -408,6 +448,7 @@ RUNTIME_VARIABLES={'knowledge_id':'k-runtime-placeholder'}
 env=dict(RUNTIME_VARIABLES);resolved=[]
 for step in flow['steps']:
     op=ops[step['operation_id']]
+    check_retrieval_mode(step,step['id'])
     request=expand(step['request'],env)
     for p in op.get('parameters',[]):
         bucket=request['path_params'] if p['in']=='path' else request['headers'] if p['in']=='header' else {}
@@ -486,6 +527,11 @@ def check_acceptance(previous,candidate,request,result):
 
 def check_trace(steps):
     project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={};activation_reads={}
+    # The model-use consent chain moves three versions at once: the project
+    # version, the context revision and the asset revision.  The trace has to
+    # carry them, or the contract would claim a consent that is pinned to a
+    # revision nobody can name.
+    context_revision=None;asset_revision=0;policy_change_sets={}
     for step in steps:
         oid=step['operation_id'];req=step['request'];body=req['json']
         response=step.get('reference_response');data=response['data'] if response else None
@@ -500,7 +546,7 @@ def check_trace(steps):
             seen[signature]=(copy.deepcopy(body),copy.deepcopy(data))
         if oid=='createProject':
             assert data['project_version']==1 and data['spec_revision']==0 and data['status']=='draft'
-            project_version=1;spec_revision=0
+            project_version=1;spec_revision=0;context_revision=data['current_context_revision']
         elif oid=='saveSpec':
             assert body['expected_spec_revision']==spec_revision
             spec_revision+=1;project_version+=1
@@ -516,7 +562,32 @@ def check_trace(steps):
             assert body['expected_spec_revision']==spec_revision
             project_version+=1
             assert data['project_version']==project_version and data['status']=='active'
+            context_revision=data['current_context_revision']
         elif oid=='listChapters': chapters={c['id']:copy.deepcopy(c) for c in data}
+        elif oid=='bindAsset':
+            # The asset revision is the anchor the consent is pinned to: the
+            # proposal must name the revision that is current right now.
+            asset_revision=data['asset_revision']
+        elif oid=='createChangeDraftPostPolicyProposal':
+            assert body['confirmed'] is True,'the consent proposal must be confirmed'
+            assert body['expected_version']==asset_revision,'the consent must be pinned to the current asset revision'
+            assert body['expected_context_revision']==context_revision,'the consent must name the current context revision'
+            assert body['policy']['model_use_allowed'] is True,'the consent this chain exists for is the model-use one'
+            assert body['policy']['scope'] in {'personal','project','team'}
+            assert body['policy']['purpose'].strip(),'a model-use consent needs a purpose'
+            policy_change_sets[data['id']]='draft'
+        elif oid=='assessChangeSet':
+            assert policy_change_sets.get(req['path_params']['changeSetId'])=='draft','only a draft may be assessed'
+            policy_change_sets[req['path_params']['changeSetId']]='assessed'
+        elif oid=='applyChangeSet':
+            assert policy_change_sets.get(req['path_params']['changeSetId'])=='assessed','only an assessed change set may be applied'
+            policy_change_sets[req['path_params']['changeSetId']]='applied'
+            project_version+=1;context_revision+=1;asset_revision+=1
+        elif oid=='getProjectAssetPolicy':
+            assert data['model_use_allowed'] is True,'the consent record must carry the model-use consent'
+            assert data['asset_revision']==asset_revision,'the consent must be pinned to the current asset revision'
+            assert data['version']==asset_revision
+            assert data['context_revision']==context_revision
         elif oid=='startGeneration':
             assert body['expected_spec_revision']==spec_revision
             assert body['expected_chapter_version_id']==chapters[body['chapter_id']]['current_version_id']
@@ -549,7 +620,7 @@ def check_trace(steps):
                 assert ch['review_items']==latest['review_items'] and ch['body_markdown']==latest['body_markdown']
                 assert ch['confirmation']==confirmations[ch['chapter_id']],'frozen confirmation differs from actual confirmation'
             check_frozen(data)
-    assert project_version==8 and spec_revision==1
+    assert project_version==9 and spec_revision==1
 
 check_trace(resolved)
 release_examples=ops['prepareRelease']['responses']['201']['content']['application/json']['examples']
@@ -705,6 +776,13 @@ def replace_flow_kind(check):
         if name in check_kinds.KNOWN_CHECK_OPERATORS:
             del check[name]
     check['not_a_kind_at_all']=64
+# 「先操作、再断言」的两步结构：先后、同资源、必须带断言，三条各留一个反例。
+# 反例从契约里真实那条两步场景（F24）改出来，改完必须被拒。
+F24=next(s for s in cases['scenarios'] if s['id']=='F24')
+def f24_step(index):
+    return copy.deepcopy(F24['steps'][index])
+F05_WRITE=copy.deepcopy(next(step for step in next(s for s in cases['scenarios'] if s['id']=='F05')['steps']
+                             if step['operation_id']=='saveChapter'))
 for label,action in [
     ('workflow_check_with_an_unknown_kind',mutate_flow_check(replace_flow_kind)),
     ('workflow_check_with_an_unknown_key_next_to_a_known_kind',
@@ -753,6 +831,25 @@ for label,action in [
      lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
                             'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],
                                           capture={'f08.missing':'/data/not_a_field'})]})),
+    ('scenario_after_step_needs_a_check',
+     lambda:check_scenario_step(F24,3,{**f24_step(2),'checks':[]})),
+    ('scenario_after_step_must_name_an_earlier_step',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[f24_step(0),f24_step(2)]})),
+    ('scenario_after_step_must_reach_the_same_resource',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[
+         {**f24_step(1),'id':'F24-90'},
+         {**f24_step(2),'after_step':'F24-90',
+          'request':{**f24_step(2)['request'],
+                     'path_params':{'projectId':'{f24.other_project}'}}}]})),
+    ('scenario_after_step_must_reach_the_same_coordinates',
+     lambda:check_scenario({**copy.deepcopy(F24),'steps':[
+         {**F05_WRITE,'id':'F24-90'},
+         {**f24_step(2),'after_step':'F24-90'}]})),
+    ('scenario_step_with_an_unknown_retrieval_mode',
+     mutate_step(lambda s:s.update(retrieval='vector_whenever'))),
+    ('workflow_step_with_an_unknown_retrieval_mode',
+     lambda:check_retrieval_mode({**copy.deepcopy(next(s for s in flow['steps'] if s['id']=='F01-07')),
+                                  'retrieval':'vector_whenever'},'F01-07')),
 ]:
     must_reject(label,action)
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'

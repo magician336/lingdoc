@@ -145,6 +145,10 @@ function draftFor(userId: string): ProjectMemberDraft {
   return draft
 }
 
+// 维度：项目职能角色（项目能力轴，不是租户角色）。
+// 职能角色是 Author / Researcher / Reviewer / Observer，与租户角色
+// （owner / admin / contributor / viewer）是不同的轴，各自有自己的说法，
+// 不与租户角色词表混用或合并。
 function functionRoleLabel(role: string): string {
   return ({ author: '撰写者', researcher: '资料研究者', reviewer: '评审者', observer: '观察者' } as Record<string, string>)[role] ?? role
 }
@@ -158,6 +162,10 @@ function capabilitySummary(member: ProjectMember): string {
   return effectiveCapabilitySummary(member)
 }
 
+// 维度：项目治理角色（项目治理轴，不是租户角色）。
+// 治理角色是 Owner / Admin / Member 三者之一，与租户角色是不同的轴：
+// 项目里的 Owner 不是租户里的 owner，两者的权限范围也不相同，
+// 因此这里保留本维度自己的说法，不并入租户角色词表。
 function governanceLabel(member: ProjectMember): string {
   const role = member.governance_role ?? (member.role === 'owner' ? 'owner' : 'member')
   return ({ owner: 'Owner', admin: '管理员', member: '普通成员' } as Record<string, string>)[role] ?? role

@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func TestRuleSetUseAuditPageUsesStableCursorAndFilters(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "page-owner", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "page-owner", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("audit-page-v1")
 	draft.ID = "audit-page-rules"
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {
@@ -64,7 +65,7 @@ func TestRuleSetUseAuditPageReadsWithdrawnHistoryAndRejectsInvalidRange(t *testi
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
 	ctx := context.Background()
-	actor := Actor{TenantID: 1, UserID: "history-owner", Role: "tenant_admin"}
+	actor := Actor{TenantID: 1, UserID: "history-owner", Role: string(types.TenantRoleAdmin)}
 	draft := testDraft("audit-history-v1")
 	draft.ID = "audit-history-rules"
 	if err := store.CreateDraft(ctx, actor, draft); err != nil {

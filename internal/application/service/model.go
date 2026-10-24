@@ -27,6 +27,14 @@ var ErrModelNotFound = errors.New("model not found")
 // text-generation call is asked for a chat client.
 var ErrModelTypeNotChatCapable = errors.New("model type cannot serve text generation")
 
+// ErrModelTypeNotEmbeddingCapable is returned when a model that cannot serve
+// an embedding call is asked for an embedder.
+//
+// It is the mirror of ErrModelTypeNotChatCapable: both name the same class of
+// mistake — a model row bound to a purpose its upstream does not serve — so
+// a caller can tell the two apart without reading the message.
+var ErrModelTypeNotEmbeddingCapable = errors.New("model type cannot serve embedding")
+
 // modelService implements the model service interface
 type modelService struct {
 	repo          interfaces.ModelRepository
@@ -496,6 +504,27 @@ func (s *modelService) GetEmbeddingModel(ctx context.Context, modelId string) (e
 		return nil, err
 	}
 
+	// An embedder only works against a row whose upstream speaks the
+	// embeddings protocol. A chat / rerank / ASR row does not: building an
+	// embedder for it yields a call the provider rejects (HTTP 400, no
+	// vector), so both the ingestion side and the retrieval side of a
+	// knowledge base break while the cause — a knowledge base bound to the
+	// wrong model row — stays far away.
+	//
+	// The verdict is taken from the model TYPE, never from the model name: a
+	// name check would be bypassed by renaming the model. It is the mirror
+	// rule of types.IsChatCapableModelType, so both exits agree on which
+	// model rows may serve which purpose.
+	if !types.IsEmbeddingCapableModelType(model.Type) {
+		logger.ErrorWithFields(ctx, ErrModelTypeNotEmbeddingCapable, map[string]interface{}{
+			"model_id":   model.ID,
+			"model_name": model.Name,
+			"model_type": string(model.Type),
+		})
+		return nil, fmt.Errorf("%w: model %q has type %q, which cannot serve embedding",
+			ErrModelTypeNotEmbeddingCapable, model.ID, model.Type)
+	}
+
 	logger.Infof(ctx, "Getting embedding model: %s, source: %s", model.Name, model.Source)
 
 	appID, appSecret := s.resolveWeKnoraCloudCredentials(ctx, &model.Parameters)
@@ -541,6 +570,22 @@ func (s *modelService) GetEmbeddingModelForTenant(ctx context.Context, modelId s
 	if model.Status != types.ModelStatusActive {
 		logger.Errorf(ctx, "Model is not active, status: %s", model.Status)
 		return nil, errors.New("model is not active")
+	}
+
+	// The same type guard the tenant-local exit applies: a row that cannot
+	// serve an embedding call must not produce an embedder here either. The
+	// cross-tenant path exists to keep vectors comparable across a shared
+	// knowledge base, so a chat row bound as the embedding model would
+	// silently break the sharing it is meant to protect.
+	if !types.IsEmbeddingCapableModelType(model.Type) {
+		logger.ErrorWithFields(ctx, ErrModelTypeNotEmbeddingCapable, map[string]interface{}{
+			"model_id":   model.ID,
+			"model_name": model.Name,
+			"model_type": string(model.Type),
+			"tenant_id":  tenantID,
+		})
+		return nil, fmt.Errorf("%w: model %q has type %q, which cannot serve embedding",
+			ErrModelTypeNotEmbeddingCapable, model.ID, model.Type)
 	}
 
 	logger.Infof(ctx, "Getting cross-tenant embedding model: %s, source: %s, tenant: %d", model.Name, model.Source, tenantID)
@@ -638,6 +683,24 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 	}
 
 	logger.Infof(ctx, "Getting chat model: %s, source: %s", model.Name, model.Source)
+
+	// A credential that EXISTS but cannot be decrypted is a misconfiguration,
+	// not an unconfigured credential. The row knows the difference
+	// (types.ModelParameters.CredentialDecryptError): the ciphertext is there
+	// and this process cannot read it, because SYSTEM_AES_KEY is unset or was
+	// rotated.
+	//
+	// Building a client here would send an empty API key upstream and let the
+	// provider reject the call, far from the cause. The refusal happens
+	// before the client exists, so no request is built with a credential
+	// nobody can read.
+	if decryptErr := model.Parameters.CredentialDecryptError(); decryptErr != nil {
+		logger.ErrorWithFields(ctx, decryptErr, map[string]interface{}{
+			"model_id":   model.ID,
+			"model_name": model.Name,
+		})
+		return nil, fmt.Errorf("model %q: %w", model.ID, decryptErr)
+	}
 
 	appID, appSecret := s.resolveWeKnoraCloudCredentials(ctx, &model.Parameters)
 

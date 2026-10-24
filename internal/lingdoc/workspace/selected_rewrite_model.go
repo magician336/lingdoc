@@ -112,7 +112,7 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 		if estimateErr != nil {
 			return SelectedRewriteOutput{}, generation.ErrAcceptanceBudgetUnavailable
 		}
-		if inputUpperBound > generationAcceptanceInputMax {
+		if inputUpperBound > acceptanceInputMax(m.acceptanceBudget.profileName()) {
 			return SelectedRewriteOutput{}, generation.ErrAcceptanceBudgetExceeded
 		}
 		reservation, err = m.acceptanceBudget.reserve(ctx, generationAcceptanceModel, inputUpperBound)
@@ -129,7 +129,12 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 			}
 		}
 		options = acceptanceGenerationChatOptions()
-		options.MaxCompletionTokens = 2048
+		// The completion budget of the request is the profile's output
+		// ceiling -- the same number the ledger records as
+		// output_limit_tokens, and the same number the check after the
+		// response uses. A request that asked for less would leave the
+		// ledger describing a call that was never made.
+		options.MaxCompletionTokens = acceptanceOutputMax(m.acceptanceBudget.profileName())
 	}
 	response, callErr := selected.Chat(types.WithLLMCallMetadata(modelCtx, "lingdoc_selected_rewrite", ""), messages, options)
 	if reservation != nil {
@@ -147,7 +152,8 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 			_ = reservation.unknown("usage_unknown")
 			return SelectedRewriteOutput{}, generation.ErrAcceptanceOutcomeUnknown
 		}
-		if response.Usage.PromptTokens > generationAcceptanceInputMax || response.Usage.CompletionTokens > generationAcceptanceOutputMax {
+		profile := m.acceptanceBudget.profileName()
+		if response.Usage.PromptTokens > acceptanceInputMax(profile) || response.Usage.CompletionTokens > acceptanceOutputMax(profile) {
 			_ = reservation.complete("limit_violation", response.Usage.PromptTokens, response.Usage.CompletionTokens, response.FinishReason, true)
 			return SelectedRewriteOutput{}, generation.ErrAcceptanceBudgetExceeded
 		}

@@ -30,6 +30,7 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 - 配置已获授权的外部模型调用，记录用量、限流、失败原因和脱敏响应证据；
 - 更新当前 head 的验收报告、健康评分、PR body、Issue 状态和 Draft/Ready 建议；
 - 将无法执行的项准确标为 `NOT RUN`、`N/A` 或 `WARNING`，写清事实、影响和解除条件；只有当前交付范围内且必须完成的 `NOT RUN`/`BLOCKED` 才阻止放行。
+- 人工前置事项（真人浏览器完整链、外部真实 KB 检索、多账号人工操作、负责人最终审批）尚未完成、但代码侧条件已满足时，标为 `DEFERRED_MANUAL`，并同时写下**解除条件**与**跟进票号**（`#NNN`）；缺任一项的条目无效。
 
 ### 只有这些情况才向人提问
 
@@ -43,9 +44,10 @@ API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要
 
 - `PASS`：当前 head 有可复核证据，满足本次交付要求。
 - `PASS (follow-up)`：本次交付接受该项不作为阻塞；真实服务验收事项必须链接到独立 GitHub Issue，不能把未运行写成已实测。
+- `DEFERRED_MANUAL`：**人工前置事项尚未完成**（真人浏览器完整链、外部真实 KB 检索、多账号人工操作、负责人最终审批），但**代码侧条件已满足**，且**已有独立跟进票与写明的解除条件**。它**不是** `PASS`（人工验收确实没做），也**不是** `NOT RUN` 的同义词。**必须**同时带解除条件与跟进票号（`#NNN`），缺任一项的条目无效（守护测试判失败）。它**不阻塞**独立开发与满足其他条件的代码合并，但**阻塞** Beta 首版放行：**代码合并不等于验收通过**。
 - `N/A`：验收前提在当前目标中不存在，例如仓库没有真实生产数据库；该项不计入当前 PR 的必需矩阵。
 - `WARNING`：宿主工具链或运行环境有局部限制，但等价的 WSL2、CI 或 staging 路径已通过；警告必须保留在报告中，但不阻止放行。
-- `NOT RUN`/`BLOCKED`：仅当该项属于当前 PR 的必需范围时阻止 Ready；外部真实服务链路可以按上面的 `PASS (follow-up)` 转移到独立验收 Issue。
+- `NOT RUN`/`BLOCKED`：仅当该项属于当前 PR 的必需范围时阻止 Ready；外部真实服务链路可以转移到独立验收 Issue，当前矩阵用 **`DEFERRED_MANUAL`** 承接（必须带解除条件与跟进票号；判定矩阵的判定状态只有 `PASS` / `FAIL` / `NOT RUN` / `DEFERRED_MANUAL` 四值，`PASS (follow-up)` 是 PR 放行层的例外词，不写进判定矩阵）。
 
 ## 0. 最小输入门：先自动补齐再一次性询问
 
@@ -71,7 +73,7 @@ API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要
 - 成功、失败、权限和恢复结果；
 - 持久化、迁移、重启读回、并发和无部分写入；
 - 测试、CI、运行报告或人工验收证据；
-- `TODO`、`PASS`、`PASS (follow-up)`、`N/A`、`WARNING`、`NOT RUN` 或 `BLOCKED` 状态。
+- `TODO`、`PASS`、`PASS (follow-up)`、`DEFERRED_MANUAL`、`N/A`、`WARNING`、`NOT RUN` 或 `BLOCKED` 状态。
 
 在写代码前决定：哪个模块拥有真相，哪个事务保护读取/校验/写入/审计，哪些 reader/writer port 必需，失败时如何零写入和幂等重试。未决规则先记录为决策或 Issue，不用代码猜测。
 
@@ -94,7 +96,7 @@ Agent 在请求人工审查前完成以下工作：
 - PR body 的 SHA、CI 链接和结论都指向当前 head；
 - 完成 `lingdoc-health-scoring` 的合并前复评。
 
-只要当前交付范围内的必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。`N/A`、`WARNING` 和已链接真实服务验收 Issue 的 `PASS (follow-up)` 不阻塞当前 PR。绿色通用 CI 不能替代 Spec 证据。
+只要当前交付范围内的必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。`N/A`、`WARNING` 和已链接真实服务验收 Issue 的 `PASS (follow-up)` 不阻塞当前 PR。带解除条件与跟进票号（`#NNN`）的 `DEFERRED_MANUAL` **不阻塞代码合并**，但**仍阻塞 Beta 放行**——代码合并不等于 Beta 验收通过。绿色通用 CI 不能替代 Spec 证据。
 
 Agent 不应把常规测试、日志整理、报告编写或本地依赖准备交给用户。只有外部输入确实缺失、环境不可访问或需要业务判断时，才在报告中列出一项精确的人工请求。
 
@@ -110,7 +112,7 @@ Agent 不应把常规测试、日志整理、报告编写或本地依赖准备�
 
 评审发现新的不变量时，先更新验收矩阵，再修改代码。连续两轮出现新的 `Blocker` 时，停止堆补丁，重新切分 Spec、补决策记录或拆 PR。
 
-只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。`PASS (follow-up)` 只代表当前 PR 的范围决策，不代表真实服务验收 Issue 已关闭；只有最后一个交付切片完成全部矩阵项后才关闭主 Issue。
+只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。`PASS (follow-up)` 只代表当前 PR 的范围决策，不代表真实服务验收 Issue 已关闭；`DEFERRED_MANUAL` 同样只是「有人接住了、人工验收还没做」，解除条件满足前它一直是未完成项。只有最后一个交付切片完成全部矩阵项后才关闭主 Issue。
 
 ## 交付格式
 
