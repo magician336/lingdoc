@@ -211,3 +211,30 @@ func TestAcceptanceEndpointReplaysTheContractRequestBody(t *testing.T) {
 
 	require.Equal(t, int64(1), chapterVersionCount(t, store), "同键重投不得写第二版")
 }
+
+// TestAcceptanceEndpointRejectsTheOldContractBodyAndAcceptsTheFixedOne 断言同
+// 一个端点上，旧契约那份请求体与服务端对不上，补齐之后的那份被接受。
+//
+// 旧请求体与服务端对不上的地方有三处：没有工作副本修订号、没有正文摘要、没有
+// 确认载荷。三处都在服务层的请求校验里被拒，所以旧请求体的下场是 400，且零
+// 版本。
+//
+// before/after 放在同一条用例里：分开放，两边各自都能通过，却没人看得出契约改
+// 的正是这一处。
+func TestAcceptanceEndpointRejectsTheOldContractBodyAndAcceptsTheFixedOne(t *testing.T) {
+	router, store := contractAcceptanceFixture(t)
+
+	before := httptest.NewRecorder()
+	oldRequest := httptest.NewRequest(http.MethodPost, "/projects/project-1/chapters/chapter-1/acceptances",
+		bytes.NewReader([]byte(`{"candidate_id":"candidate-1","expected_chapter_version_id":null,`+
+			`"expected_spec_revision":1,"replace_existing":false}`)))
+	oldRequest.Header.Set("Idempotency-Key", "contract-body-before")
+	router.ServeHTTP(before, oldRequest)
+	require.Equal(t, http.StatusBadRequest, before.Code, before.Body.String())
+	require.Contains(t, before.Body.String(), "invalid_request")
+	require.Zero(t, chapterVersionCount(t, store), "旧契约那份请求体不得留下版本")
+
+	after := postContractAcceptance(t, router, "contract-body-after", nil)
+	require.Equal(t, http.StatusCreated, after.Code, after.Body.String())
+	require.Equal(t, int64(1), chapterVersionCount(t, store), "补齐之后的那份请求体恰好建一个版本")
+}
