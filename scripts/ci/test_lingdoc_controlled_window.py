@@ -93,14 +93,59 @@ class ControlledWindowCheckTest(unittest.TestCase):
         self.assertIn("模型表", result["reason"])
 
     def test_the_contract_declares_how_the_f01_generation_may_retrieve(self):
+        """F01-07 says it retrieves by keyword, so the window may judge it.
+
+        The declaration is the contract's own statement about how the node
+        retrieves.  A node that declares nothing is named but not judged; a
+        node that declares ``vector_required`` is never judged in a
+        controlled window; F01-07 declares ``keyword_only``, so it is judged
+        exactly when the window itself is judged.
+        """
         with tempfile.TemporaryDirectory() as directory:
             ledger = write_ledger(directory, ["qwen3.8-flash"])
             models = write_models(directory)
             result = check(CONTRACT, ledger, models)
         declarations = {item["step_id"]: item["retrieval"] for item in result["declarations"]}
-        self.assertEqual(declarations.get("F01-07"), "vector_required")
-        self.assertEqual([item["step_id"] for item in result["vector_required_steps"]], ["F01-07"])
-        self.assertIn("拆分 chat/embedding 额度", result["vector_required_steps"][0]["unblock"])
+        self.assertEqual(declarations.get("F01-07"), "keyword_only")
+        # keyword_only_steps carries the step identifiers; vector_required_steps
+        # carries the step identifiers WITH their unblock condition.
+        self.assertEqual(result["keyword_only_steps"], ["F01-07"])
+        self.assertEqual(result["vector_required_steps"], [])
+
+    def test_a_keyword_only_node_follows_the_window_verdict(self):
+        """A keyword-only node is judged exactly when the window is judged.
+
+        This is the guard against turning the declaration into a way around a
+        failed window: the node inherits the window's three states --
+        a window that passed judges it, a window that failed fails it, and a
+        window nobody can read leaves it NOT RUN.
+        """
+        # 1. a window without an embedding call: the node is judged.
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = write_ledger(directory, ["qwen3.8-flash"])
+            models = write_models(directory)
+            passed = check(CONTRACT, ledger, models)
+        node = next(entry for entry in passed["nodes"] if entry["step_id"] == "F01-07")
+        self.assertEqual(passed["status"], PASS)
+        self.assertEqual(node["status"], PASS)
+
+        # 2. a window that used embedding: the whole window fails, and so
+        #    does the node -- the declaration is not a way around it.
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = write_ledger(directory, ["qwen3.8-flash", "qwen3.7-text-embedding-flash"])
+            models = write_models(directory)
+            failed = check(CONTRACT, ledger, models)
+        node = next(entry for entry in failed["nodes"] if entry["step_id"] == "F01-07")
+        self.assertEqual(failed["status"], FAIL)
+        self.assertEqual(node["status"], FAIL)
+
+        # 3. a window nobody can read: the node is not judged at all.
+        with tempfile.TemporaryDirectory() as directory:
+            models = write_models(directory)
+            unreadable = check(CONTRACT, None, models)
+        node = next(entry for entry in unreadable["nodes"] if entry["step_id"] == "F01-07")
+        self.assertEqual(unreadable["status"], NOT_RUN)
+        self.assertEqual(node["status"], NOT_RUN)
 
     def test_the_command_line_reports_the_window_verdict_as_the_exit_code(self):
         with tempfile.TemporaryDirectory() as directory:

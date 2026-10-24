@@ -671,7 +671,11 @@ model is outside the acceptance budget profile
   `reserved_tokens=8945`、`actual_tokens=1558`、`calls_max=4`、`blocked=false`。
 - 账本②共享账本 `.calls.json`：同一条调用，`max_calls=4`、`max_concurrency=1`。
 - 账本③数据库 `lingdoc_model_call_ledger`：1 行（`kind=call`／`provider=aliyun`／`model_id=lingdoc-chat-qwen3.8-flash-iso`／
-  `source_kind=real`／`input_tokens=1037`／`output_tokens=521`／`status=succeeded`／`context=generation_run`）。
+  `run_mode=real`／`input_tokens=1037`／`output_tokens=521`／`status=succeeded`／`source_kind=generation_run`，
+  `source_id` = 生成运行 `f4135915-…`）。
+  ⚠️ **更正（2026-10-24，独立审查发现）**：本节初稿把这一行读成了「`source_kind=real`／`context=generation_run`」——
+  **两处都错**：真实列名是 **`run_mode=real`** 与 **`source_kind=generation_run`**（`source_id` 才是生成运行 id），
+  表里**没有 `context` 列**。事实本身（1 行、聊天调用、usage 1037/521）不变，只是字段读法更正。
 - ⇒ **预留（8945）、provider 实报 usage（1558）、累计剩余额度（90000−8945）三者分开记录**，互不冒充。
 
 ### 17.4 这一批暴露的两个问题（已开票）

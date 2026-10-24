@@ -49,12 +49,18 @@ RETRIEVAL_UNDECLARED = "undeclared"
 RETRIEVAL_UNKNOWN = "unknown"
 
 # The unblock condition for a node that cannot run in a controlled window.
-# It is the condition the ruling fixed: embedding has to come into the
-# controlled profile, and the chat/embedding quota has to be split -- the two
-# share one MaxCalls=1 allowance today.
+# The mode is still part of the closed vocabulary, so the condition has to
+# stay true for any future node that declares it: embedding has to come into
+# the controlled profile, and the chat/embedding quota has to be split -- the
+# two share one allowance today (the profile's own call ceiling).
+#
+# The wording no longer names a fixed call ceiling: the profiles are
+# versioned and their ceilings differ (the first Qwen profile allows 1 call,
+# the second 4), so a sentence that pinned "MaxCalls=1" would go stale the
+# moment another profile exists.
 VECTOR_REQUIRED_UNBLOCK = (
-    "把 embedding 纳入受控 profile 并拆分 chat/embedding 额度（两者今天共用同一个 "
-    "MaxCalls=1），届时该节点在受控窗口重新开放。"
+    "把 embedding 纳入受控 profile 并拆分 chat/embedding 额度（今天两者共用同一个 "
+    "allowance），届时该节点在受控窗口重新开放。"
 )
 
 PASS = "PASS"
@@ -377,6 +383,11 @@ def check(contract_path: Path, ledger_path: Path | None, sqlite_path: Path | Non
         "reason": verdict["reason"],
         "embedding_rows": verdict["embedding_rows"],
         "window_requests": verdict["window_requests"],
+        # The per-node verdicts belong to the window's verdict: the one-ledger
+        # form is kept for the module's own guard test and for a quick look,
+        # and a reader of this form has to see the node verdicts too (the
+        # command line already reports them).
+        "nodes": verdict["nodes"],
         "keyword_only_steps": verdict["keyword_only_steps"],
         "vector_required_steps": verdict["vector_required_steps"],
         "undeclared_steps": verdict["undeclared_steps"],

@@ -1288,15 +1288,27 @@ class ReleaseGateVerdictTests(unittest.TestCase):
         self.assertEqual(verdict["status"], "FAIL")
 
     def test_a_vector_required_node_is_never_recorded_as_passed(self):
-        """The node that needs vector retrieval is not judged in the window."""
+        """The node that needs vector retrieval is not judged in the window.
+
+        The mode is still part of the closed vocabulary, so the rule is driven
+        by a FIXTURE contract that declares it: what the real contract
+        declares today must not decide whether this rule holds.
+        """
         with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
             ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
             calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
             models = self.write_models_db(directory)
             types = beta_evidence.read_model_types("", str(models))[0]
-            outcomes, verdict = self.window_part([ledger, calls], types)
+            contract_path = Path(directory) / "contract.json"
+            contract_path.write_text(json.dumps({
+                "id": "F01",
+                "retrieval_modes": {"values": ["keyword_only", "vector_required"]},
+                "steps": [{"id": "X-01", "operation_id": "startGeneration",
+                           "retrieval": "vector_required"}],
+            }, ensure_ascii=False), encoding="utf-8")
+            outcomes, verdict = self.window_part([ledger, calls], types, contract_path)
         self.assertEqual(verdict["status"], "PASS")
-        node = [outcome for outcome in outcomes if "F01-07" in outcome.id]
+        node = [outcome for outcome in outcomes if "X-01" in outcome.id]
         self.assertEqual(len(node), 1)
         self.assertEqual(node[0].status, beta_evidence.NOT_RUN)
         self.assertTrue(node[0].unblock.strip())
@@ -1304,9 +1316,62 @@ class ReleaseGateVerdictTests(unittest.TestCase):
         # The window module's own per-node verdict says the same thing: the
         # release chain must not be the only place that knows it.
         window_node = next(entry for entry in verdict["nodes"]
-                           if entry["step_id"] == "F01-07")
+                           if entry["step_id"] == "X-01")
         self.assertEqual(window_node["status"], "NOT_RUN")
         self.assertTrue(str(window_node.get("unblock", "")).strip())
+
+    def test_a_keyword_only_node_is_judged_only_in_a_window_that_passed(self):
+        """A keyword-only node inherits the window's three states.
+
+        The declaration says the node does not depend on vector-semantic
+        recall, so the window MAY judge it -- and only when the window itself
+        is judged.  A window that failed (it used embedding) must fail the
+        node too, and a window nobody can read must leave the node NOT RUN.
+        Without this the declaration would be a way around a failed window.
+        """
+        def contract_for(directory: str) -> Path:
+            path = Path(directory) / "contract.json"
+            path.write_text(json.dumps({
+                "id": "F01",
+                "retrieval_modes": {"values": ["keyword_only", "vector_required"]},
+                "steps": [{"id": "X-01", "operation_id": "startGeneration",
+                           "retrieval": "keyword_only"}],
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        # 1. a window without an embedding call: the node is held.
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([ledger, calls], types, contract_for(directory))
+        self.assertEqual(verdict["status"], "PASS")
+        node = [outcome for outcome in outcomes if "X-01" in outcome.id]
+        self.assertEqual(len(node), 1)
+        self.assertEqual(node[0].status, beta_evidence.HELD)
+
+        # 2. a window that used embedding: the node fails with it.
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json",
+                                              ["qwen3.8-flash", "qwen3.7-text-embedding-flash"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([ledger, calls], types, contract_for(directory))
+        self.assertEqual(verdict["status"], "FAIL")
+        node = [outcome for outcome in outcomes if "X-01" in outcome.id]
+        self.assertEqual(node[0].status, beta_evidence.FAILED)
+
+        # 3. a window nobody can read: the node is not judged.
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            missing = Path(directory) / "absent.json"
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([missing, missing], types, contract_for(directory))
+        self.assertEqual(verdict["status"], "NOT_RUN")
+        node = [outcome for outcome in outcomes if "X-01" in outcome.id]
+        self.assertEqual(node[0].status, beta_evidence.NOT_RUN)
 
     def test_an_undeclared_node_is_named_in_the_verdict(self):
         """Nobody declared it does not mean nobody owns it."""
@@ -1351,7 +1416,7 @@ class ReleaseGateVerdictTests(unittest.TestCase):
         contract = self.contract()
         declared = [(step["id"], step["retrieval"]) for step in contract["steps"]
                     if "retrieval" in step]
-        self.assertEqual(declared, [("F01-07", "vector_required")])
+        self.assertEqual(declared, [("F01-07", "keyword_only")])
 
 
 if __name__ == "__main__":
