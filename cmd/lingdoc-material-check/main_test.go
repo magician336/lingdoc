@@ -333,9 +333,10 @@ func TestTheJSONReportCarriesTheStageAndTheOverlapVerdict(t *testing.T) {
 		t.Fatalf("read report: %v", err)
 	}
 	var decoded struct {
-		Stage        string `json:"stage"`
-		Qualified    bool   `json:"qualified"`
-		ContentCheck struct {
+		Stage          string `json:"stage"`
+		QualifiedScope string `json:"qualified_scope"`
+		Qualified      bool   `json:"qualified"`
+		ContentCheck   struct {
 			Overlaps []struct {
 				FirstChunkID  string `json:"first_chunk_id"`
 				SecondChunkID string `json:"second_chunk_id"`
@@ -349,6 +350,9 @@ func TestTheJSONReportCarriesTheStageAndTheOverlapVerdict(t *testing.T) {
 	}
 	if decoded.Stage != "full" || !decoded.Qualified {
 		t.Fatalf("the report must record the stage and the verdict: %+v", decoded)
+	}
+	if decoded.QualifiedScope != "full" {
+		t.Fatalf("the report must say which half the verdict covers: %+v", decoded)
 	}
 	if len(decoded.ContentCheck.Overlaps) != 1 {
 		t.Fatalf("the report must carry the overlap verdict: %+v", decoded.ContentCheck.Overlaps)

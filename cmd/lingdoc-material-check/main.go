@@ -81,9 +81,16 @@ type report struct {
 	// project does not exist yet before the first node. A stage that says
 	// which half it judged is what keeps "half-checked" from being read as
 	// "checked".
-	Stage        string                         `json:"stage"`
-	Qualified    bool                           `json:"qualified"`
-	ContentCheck evidence.MaterialQualification `json:"content_check"`
+	Stage string `json:"stage"`
+	// QualifiedScope names the half the verdict covers: "content" (the chunk
+	// content against the origin slice) or "full" (both halves).
+	//
+	// Without it, a reader of a "qualified": true document cannot tell
+	// "the material is qualified" from "the half that was checked is
+	// qualified" — the content stage never checks the quoted text.
+	QualifiedScope string                         `json:"qualified_scope"`
+	Qualified      bool                           `json:"qualified"`
+	ContentCheck   evidence.MaterialQualification `json:"content_check"`
 	// QuotedCheck is the end-to-end check: the quoted text the server hands
 	// out for each source must be the origin slice at the source's own
 	// coordinates. It needs the project the material is bound to, so in the
@@ -177,13 +184,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	result := report{
-		KnowledgeID:  *knowledgeID,
-		ProjectID:    *projectID,
-		OriginFile:   *originFile,
-		OriginRunes:  utf8.RuneCountInString(origin),
-		ChunkCount:   len(chunks),
-		Stage:        *stage,
-		SourceStatus: map[string]string{},
+		KnowledgeID:    *knowledgeID,
+		ProjectID:      *projectID,
+		OriginFile:     *originFile,
+		OriginRunes:    utf8.RuneCountInString(origin),
+		ChunkCount:     len(chunks),
+		Stage:          *stage,
+		QualifiedScope: *stage,
+		SourceStatus:   map[string]string{},
 	}
 
 	// The "full" stage judges both halves, so it needs the project the
