@@ -17,7 +17,15 @@
  * holds no vocabulary of its own: the words live in the locale bundles under
  * `AUDIT_ACTOR_ROLE_I18N_ROOT`, so a value that has a label has exactly one
  * label, and a value that has none falls back to exactly one label as well.
+ *
+ * The four tenant roles are the exception to "the words live in the locale
+ * bundle": their single Chinese wording is owned by `tenantRoleLabel.ts`,
+ * and the zh-CN bundle spreads it into the namespace this module reads. So
+ * when a locale does not carry a tenant role, this module still answers with
+ * the one wording the product uses, instead of a second one.
  */
+
+import { tenantRoleLabel } from './tenantRoleLabel'
 
 /**
  * The locale root that holds the labels for the audit column's actor role.
@@ -51,6 +59,10 @@ export type AuditActorRoleI18n = {
  * unknown label rather than to an empty tag. A value outside the vocabulary
  * resolves to the same label: the column's meaning is "the role the operator
  * held", and a word that is not a role says exactly that much.
+ *
+ * A tenant role that the locale does not carry resolves to the one Chinese
+ * wording the product uses for it, so no locale can end up with a second
+ * word for the same value.
  */
 export function auditActorRoleLabel(
   i18n: AuditActorRoleI18n,
@@ -60,6 +72,8 @@ export function auditActorRoleLabel(
   if (value) {
     const key = `${AUDIT_ACTOR_ROLE_I18N_ROOT}.${value}`
     if (i18n.te(key)) return i18n.t(key)
+    const tenantLabel = tenantRoleLabel(value)
+    if (tenantLabel) return tenantLabel
   }
   return i18n.t(AUDIT_ACTOR_ROLE_UNKNOWN_KEY)
 }
