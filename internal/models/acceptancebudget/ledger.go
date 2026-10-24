@@ -121,13 +121,35 @@ type Ledger struct {
 }
 
 type Request struct {
-	Number          int    `json:"number"`
-	Model           string `json:"model"`
-	Status          string `json:"status"`
-	InputUpperBound int    `json:"input_upper_bound_tokens"`
-	OutputLimit     int    `json:"output_limit_tokens"`
-	InputTokens     int    `json:"input_tokens,omitempty"`
-	OutputTokens    int    `json:"output_tokens,omitempty"`
+	Number int    `json:"number"`
+	Model  string `json:"model"`
+	Status string `json:"status"`
+	// InputUpperBound is the input bound this request reserved against.
+	//
+	// Its dimension is a UTF-8 BYTE LENGTH plus a fixed overhead: it is an
+	// UPPER BOUND of the token count and NEVER a token count. A token is at
+	// least one byte, so the byte length of a prompt can never be smaller
+	// than its token count.
+	//
+	// The historical JSON key says "tokens" and stays as it is, because an
+	// old ledger file has to keep reading exactly as it did. The dimension is
+	// stated here, next to the field, instead of in the key.
+	//
+	// This is the quantity the input-ceiling criterion of the authoritative
+	// checklist measures the provider's reported input tokens against. See
+	// EvaluateCallLimits.
+	InputUpperBound int `json:"input_upper_bound_tokens"`
+	// OutputLimit is the output limit this request carried.
+	//
+	// Its dimension is TOKENS, and it is exact: it is the
+	// max_completion_tokens that was sent to the provider.
+	//
+	// This is the quantity the output-ceiling criterion of the authoritative
+	// checklist measures the provider's reported output tokens against. See
+	// EvaluateCallLimits.
+	OutputLimit  int `json:"output_limit_tokens"`
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
 	// TotalTokens is the total token count the provider reported.
 	//
 	// It is 0 when the provider reported no total; the input and output
@@ -347,9 +369,17 @@ func (r *Reservation) CompleteUsage(status string, usage Usage, finishReason str
 		totalTokens = 0
 	}
 	actualNanoCNY, actualNanoUSD, costErr := actualAmounts(r.model, inputTokens, outputTokens)
-	_, _, totalMax := ProfileTokenLimits(r.budget.profile)
-	if costErr != nil || inputTokens < 0 || outputTokens < 0 || inputTokens > request.InputUpperBound ||
-		outputTokens > request.OutputLimit || inputTokens+outputTokens > totalMax {
+	// The authoritative checklist decides whether this call exceeded a limit.
+	// The shared budget ledger and the round ledger read the SAME checklist,
+	// so one and the same answer cannot be written down as a violation in one
+	// ledger and as a normal response in the other.
+	verdict := EvaluateCallLimits(r.budget.profile, CallFacts{
+		InputUpperBound: request.InputUpperBound,
+		OutputLimit:     request.OutputLimit,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+	})
+	if costErr != nil || verdict.Violated {
 		// The ceilings above are checked BEFORE the request as well: the
 		// reservation refuses an oversized input, and the output ceiling
 		// travels in the request. This block only accounts for what the

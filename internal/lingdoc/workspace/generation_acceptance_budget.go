@@ -122,14 +122,36 @@ func (l generationAcceptanceLedger) tokenBudgetState() acceptancebudget.TokenBud
 }
 
 type generationAcceptanceRequest struct {
-	Number                   int    `json:"number"`
-	Model                    string `json:"model"`
-	Status                   string `json:"status"`
-	ReservedNanoUSD          int64  `json:"reserved_nano_usd"`
-	EstimatedInputUpperBound int    `json:"estimated_input_token_upper_bound"`
-	OutputLimit              int    `json:"output_limit_tokens"`
-	InputTokens              int    `json:"input_tokens,omitempty"`
-	OutputTokens             int    `json:"output_tokens,omitempty"`
+	Number          int    `json:"number"`
+	Model           string `json:"model"`
+	Status          string `json:"status"`
+	ReservedNanoUSD int64  `json:"reserved_nano_usd"`
+	// EstimatedInputUpperBound is the input bound this request reserved
+	// against.
+	//
+	// Its dimension is a UTF-8 BYTE LENGTH plus a fixed overhead: it is an
+	// UPPER BOUND of the token count and NEVER a token count. A token is at
+	// least one byte, so the byte length of a prompt can never be smaller
+	// than its token count.
+	//
+	// The historical JSON key says "token" and stays as it is, because an old
+	// ledger file has to keep reading exactly as it did. The dimension is
+	// stated here, next to the field, instead of in the key.
+	//
+	// This is the quantity the input-ceiling criterion of the authoritative
+	// checklist measures the provider's reported input tokens against. See
+	// acceptancebudget.EvaluateCallLimits.
+	EstimatedInputUpperBound int `json:"estimated_input_token_upper_bound"`
+	// OutputLimit is the output limit this request carried.
+	//
+	// Its dimension is TOKENS, and it is exact: it is the
+	// max_completion_tokens that was sent to the provider.
+	//
+	// This is the quantity the output-ceiling criterion of the authoritative
+	// checklist measures the provider's reported output tokens against.
+	OutputLimit  int `json:"output_limit_tokens"`
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
 	// TotalTokens is the total token count the provider reported. It is 0
 	// when the provider reported none.
 	TotalTokens int `json:"total_tokens,omitempty"`
@@ -377,13 +399,31 @@ func (r *generationAcceptanceReservation) completeUsage(status string, usage acc
 	if !usage.Reported {
 		inputTokens, outputTokens, totalTokens = 0, 0, 0
 	}
-	if inputTokens < 0 || outputTokens < 0 {
-		// An impossible counter is a limit violation, not a price. The money
-		// stays 0 under a profile without a price basis.
-		block = true
-		status = "limit_violation"
-	}
-	if inputTokens+outputTokens > acceptanceTotalMax(ledger.Profile) {
+	// The authoritative checklist decides whether this call exceeded a limit.
+	//
+	// The round ledger and the shared budget ledger read the SAME checklist,
+	// so one and the same answer cannot be written down as a violation in one
+	// ledger and as a normal response in the other. Before this, the two
+	// ledgers read two different input criteria: this ledger measured the
+	// reported input tokens against the profile's input ceiling, while the
+	// shared ledger measured them against the request's own input bound. A
+	// response between the two was a violation in one ledger and a normal
+	// response in the other.
+	//
+	// The input criterion measures the reported tokens against the request's
+	// OWN input bound, whose dimension is a UTF-8 byte length plus a fixed
+	// overhead -- an upper bound of the token count, never a token count.
+	// The output criterion measures them against the output limit that
+	// travelled in the request, whose dimension is tokens and is exact. The
+	// total criterion measures them against the profile's single-call total
+	// ceiling, whose dimension is tokens.
+	verdict := acceptancebudget.EvaluateCallLimits(ledger.Profile, acceptancebudget.CallFacts{
+		InputUpperBound: request.EstimatedInputUpperBound,
+		OutputLimit:     request.OutputLimit,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+	})
+	if verdict.Violated {
 		// This is accounting, NOT prevention: the request has already been
 		// sent, so the call that exceeded the ceiling has already happened.
 		// What this can do is mark the record and freeze the ledger.
