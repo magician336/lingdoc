@@ -134,6 +134,8 @@ PROBES: dict[str, tuple[dict, dict]] = {
                     {"data": {"x": "v"}}),
     "provenance_real": ({"path": "/data/run_mode", "provenance_real": True},
                         {"data": {"run_mode": "real"}}),
+    "one_to_one": ({"path": "/data/x", "one_to_one": {"from_step": "SYN-01", "path": "/data/items"}},
+                   {"data": {"x": ["a"]}}),
 }
 
 

@@ -73,7 +73,7 @@ STRUCTURAL_CHECK_OPERATORS: tuple[str, ...] = ("equals", "length", "keys", "one_
 DOMAIN_CHECK_OPERATORS: tuple[str, ...] = ("ref_in", "marked_or_absent", "version_bound",
                                            "readback_equals", "hash_equals", "non_empty",
                                            "http_error", "not_in", "all_non_empty",
-                                           "equals_step", "provenance_real")
+                                           "equals_step", "provenance_real", "one_to_one")
 
 #: The kinds #499 added for the four expression gaps the coverage audit found:
 #: the failure path, the "not in" direction, the collection-level assertion,
@@ -200,6 +200,30 @@ def _identifier_field(value: Any, at: str) -> None:
         raise CheckKindError(f"{at} id_field must name the field that holds the id")
 
 
+def _one_to_one(value: Any, at: str) -> None:
+    """The value of a kind that matches two collections one to one.
+
+    The shape names the other collection -- the step that recorded it and the
+    place inside that step's answer -- the field each side keeps its id in, and
+    the fields every entry of this side has to carry.
+    """
+    if not isinstance(value, dict):
+        raise CheckKindError(f"{at} must name the collection it matches one to one")
+    _recorded_step(value, at)
+    _pointer(value.get("path"), at)
+    for key in ("id_field", "other_id_field"):
+        if key in value:
+            _identifier_field(value[key], f"{at} {key}")
+    equals_fields = value.get("entry_equals", {})
+    if not isinstance(equals_fields, dict) or not all(
+            isinstance(name, str) and name.strip() for name in equals_fields):
+        raise CheckKindError(f"{at} entry_equals must name the fields every entry must carry")
+    non_empty_fields = value.get("entry_non_empty", [])
+    if not isinstance(non_empty_fields, list) or not all(
+            isinstance(name, str) and name.strip() for name in non_empty_fields):
+        raise CheckKindError(f"{at} entry_non_empty must name the fields every entry has to fill")
+
+
 # ---------------------------------------------------------------------------
 # The vocabulary
 # ---------------------------------------------------------------------------
@@ -250,6 +274,11 @@ CHECK_KINDS: Mapping[str, CheckKind] = {
     "provenance_real": CheckKind(
         "provenance_real", "domain", True, _true,
         meaning="one place says the segment really ran against the real dependency"),
+    "one_to_one": CheckKind(
+        "one_to_one", "domain", False, _one_to_one,
+        meaning="every entry of this collection answers exactly one entry of another "
+                "collection (by id, in any order), and every entry carries the stated "
+                "field values"),
 }
 
 

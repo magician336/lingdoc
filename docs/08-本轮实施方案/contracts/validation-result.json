@@ -1587,8 +1587,8 @@
   "scenario_steps_with_requests": 122,
   "scenario_checks_tied_to_a_published_example": 92,
   "scenario_checks_left_to_the_run": 20,
-  "continuous_trace_checks_tied_to_a_reference_response": 35,
-  "continuous_trace_checks_left_to_the_run": 23,
+  "continuous_trace_checks_tied_to_a_reference_response": 36,
+  "continuous_trace_checks_left_to_the_run": 22,
   "check_kinds": [
     "equals",
     "length",
@@ -1604,7 +1604,8 @@
     "not_in",
     "all_non_empty",
     "equals_step",
-    "provenance_real"
+    "provenance_real",
+    "one_to_one"
   ],
   "starting_states": 8,
   "starting_state_parts_buildable": [

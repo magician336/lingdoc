@@ -982,6 +982,47 @@ class ScenarioRunner:
                 ids.add(item[id_field])
         return ids
 
+    @staticmethod
+    def _ids_in_order(collection: Any, id_field: str) -> list[Any] | None:
+        """The ids an array carries, in the order it carries them.
+
+        ``None`` when the collection is not an array, or when an entry does not
+        carry the field its id lives in: an entry without an id cannot be matched,
+        and a mapping nobody can read is not a mapping that holds.
+        """
+        if not isinstance(collection, list):
+            return None
+        ids: list[Any] = []
+        for item in collection:
+            if isinstance(item, str):
+                ids.append(item)
+            elif isinstance(item, dict) and id_field in item:
+                ids.append(item[id_field])
+            else:
+                return None
+        return ids
+
+    @staticmethod
+    def _entries_carry(collection: Any, source: dict[str, Any]) -> bool:
+        """Whether every entry carries the field values the contract states.
+
+        ``entry_equals`` names fields every entry must carry with that exact
+        value; ``entry_non_empty`` names fields every entry has to fill with
+        something.  A field that is missing is a field that is not carried.
+        """
+        if not isinstance(collection, list):
+            return False
+        for entry in collection:
+            if not isinstance(entry, dict):
+                return False
+            for name, wanted in (source.get("entry_equals") or {}).items():
+                if entry.get(name) != wanted:
+                    return False
+            for name in (source.get("entry_non_empty") or []):
+                if not ScenarioRunner._is_marked(entry.get(name)):
+                    return False
+        return True
+
     def _judge_domain_check(self, check: dict[str, Any], operator: str, step: dict[str, Any],
                             payload: Any, status: int | None = None) -> tuple[bool, Any, Any, bool]:
         """Decide one domain assertion: what it expected, what it read, and whether it held.
@@ -1074,6 +1115,27 @@ class ScenarioRunner:
             found, subject = self._resolve_subject(check["path"], payload)
             held = bool(found and subject in REAL_PROVENANCE_VALUES)
             return held, subject, list(REAL_PROVENANCE_VALUES), found
+        if operator == "one_to_one":
+            # Two collections that have to answer each other one to one.  The ids
+            # are compared as sets: the order the provider returns is not the
+            # contract's business, and a contract that depended on it would fail
+            # for a reason that has nothing to do with the decision.  A repeated
+            # id is not a mapping either -- it is one entry answering twice --
+            # so a duplicated id fails even when both sides carry the same set.
+            source = check["one_to_one"]
+            recorded = self.responses.get(source["from_step"])
+            other_found, other = (lookup_pointer(recorded, source["path"])
+                                  if recorded is not None else (False, None))
+            found, subject = lookup_pointer(payload, check["path"])
+            ids = self._ids_in_order(subject, source.get("id_field", "id"))
+            other_ids = self._ids_in_order(other, source.get("other_id_field", "id"))
+            held = bool(found and other_found
+                        and ids and other_ids
+                        and len(ids) == len(set(ids))
+                        and len(other_ids) == len(set(other_ids))
+                        and set(ids) == set(other_ids)
+                        and self._entries_carry(subject, source))
+            return held, subject, other_ids, found and other_found
         if operator == "non_empty":
             found, actual = self._resolve_subject(check["path"], payload)
             return bool(found and self._is_marked(actual)), actual, True, found
@@ -1735,6 +1797,82 @@ class CheckOperatorSelfTest(unittest.TestCase):
         checks = self.judged([self.read_step([
             {"path": "/data/run_mode", "provenance_real": True, "intent": "这一段真的跑了"}])],
             [{"data": {"run_mode": "real_api_fake_model"}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_one_to_one_holds_when_two_collections_answer_each_other_in_any_order(self):
+        # The order the provider returns is not the contract's business: the
+        # ids are compared as sets.
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id"},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}, {"id": "r-2"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-2"}, {"review_item_id": "r-1"}]}}])
+        self.assertEqual(checks[0]["status"], "passed")
+
+    def test_one_to_one_fails_when_an_entry_points_at_an_item_that_is_not_there(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id"},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}, {"id": "r-2"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-1"}, {"review_item_id": "r-9"}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_one_to_one_fails_when_one_item_is_left_without_a_decision(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id"},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}, {"id": "r-2"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-1"}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_one_to_one_fails_when_a_repeated_id_takes_the_place_of_a_missing_one(self):
+        # The same number of entries on both sides is not a mapping: one item is
+        # left without a decision and another one is decided twice.
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id"},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}, {"id": "r-2"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-1"}, {"review_item_id": "r-1"}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_one_to_one_fails_when_an_entry_does_not_carry_the_stated_field_value(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id",
+                                "entry_equals": {"disposition": "retained_warning"},
+                                "entry_non_empty": ["reason"]},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-1",
+                                      "disposition": "dropped", "reason": "x"}]}}])
+        self.assertEqual(checks[0]["status"], "failed")
+
+    def test_one_to_one_fails_when_an_entry_leaves_the_reason_empty(self):
+        checks = self.judged(
+            [self.write_step(), self.read_step([
+                {"path": "/data/decisions",
+                 "one_to_one": {"from_step": "SELF-01", "path": "/data/items",
+                                "id_field": "review_item_id", "other_id_field": "id",
+                                "entry_equals": {"disposition": "retained_warning"},
+                                "entry_non_empty": ["reason"]},
+                 "intent": "每条待核事项都有明确处置"}])],
+            [{"data": {"id": "p-1", "items": [{"id": "r-1"}]}},
+             {"data": {"decisions": [{"review_item_id": "r-1",
+                                      "disposition": "retained_warning", "reason": "  "}]}}])
         self.assertEqual(checks[0]["status"], "failed")
 
     def test_a_kind_nobody_knows_is_refused(self):
