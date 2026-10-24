@@ -997,6 +997,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/controlled_window_check.py", "file"),
             # #546 的守护：契约声明「本节点只走关键词检索」的节点确实不产生 embedding 请求；节点未声明检索方式、或声明与实际不符时的处理。
             ("scripts/ci/test_lingdoc_controlled_window.py", "file"),
+            # #583 的 profile 配置表：把「单值判断」改成按 profile 取配置（v1 的取值逐字段不变，v2 新增 4 次调用与累计 90,000 token 的预留闸门）。
+            ("internal/models/acceptancebudget/profile_config.go", "file"),
+            # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
+            ("internal/models/acceptancebudget/token_budget_state.go", "file"),
+            # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。
+            ("internal/models/acceptancebudget/qwen_token_budget_v2_test.go", "file"),
+            # #583 的应用缝守护：超限不出网（provider 请求数 = 0）、预算预留失败不出网、第 5 次在出网前被拒、输出上限 4096 实际下发。
+            ("internal/lingdoc/workspace/generation_qwen_v2_acceptance_budget_test.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1035,7 +1043,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**验收路径改用 F01 执行器现有的 --knowledge-id 注入**（F01-06 的契约节点已有 {{knowledge_id}} 与"
             "「processing_state=ready」断言，不需要新增契约节点）。"
             "Beta 首版放行的执行面：交付 Spec #482（Beta 首版放行验收），交付票 #481 / #484 / #485 / #486 / #487 / #488 / #489 / #490 / #491 / #483。**判定接缝唯一**（来自 #482 的裁定）：Beta 放行只在 **F01 契约执行序列**上判定，三个连续结果串行跑在同一序列里，不为每一行另造执行路径。**第二人独立复现不是放行门槛**（#483 的口径）：它是必须登记的未完成项，不得记为已通过。**2026-10-23 认领**（认领的人是 magician336）：先做 frontier 上能做的那一张，不跨票抢跑。**一处跨面借用**：F01 执行器（scripts/lingdoc_mock/run_f01.py）、F01 契约（docs/08-本轮实施方案/contracts/workflow.json）、证据产出器（scripts/acceptance/beta_evidence.py）与证据守护测试（scripts/ci/test_lingdoc_beta_evidence.py）**都是 PF-10 的路径，owner 仍是 PF-10**（PF-10 已交面，done 状态仍占用路径）；本面按「owner 保持拥有、借用方落地后归还」的先例借用它们（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根），**故不把它们声明进本面的 paths**——重复声明会被登记处 loader 直接拒绝。**本面还新建了缺口登记表**（docs/08-本轮实施方案/acceptance/gaps.json）：稳定标识（GAP-…）与票号/条目的唯一绑定处——代码与证据只引用标识，票号变更只改这一份文件（#504）。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在生成路径（internal/lingdoc/workspace/generation.go），那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 里的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-7 —— 已于 2026-10-23 随 #509 归还 PF-7，PF-14 不再改它）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。借用的改动事实记在 PF-10 侧与本面两侧。**一处跨面借用（#486 账本写入端）**：F01 的模型调用在 F01-07 startGeneration，走的是生成路径（internal/lingdoc/workspace/generation.go）——那一路原先**不写** lingdoc_model_call_ledger ⇒ 即便真跑真实模型，账本仍是 0 行，「真实模型调用」这条结论项结构上不可能为 PASS。本面把「一次真实模型调用 ⇒ 一行账本」的记账口径**下沉**为共享函数（workspace/agent_model.go 的 modelCallFacts + recordModelCallRow），让 Agent 轮次与生成路径**共用**它（不造第四套），并把账本实例放进 SourceRuntime ⇒ 所有适配器共用同一个账本。**借用的路径（owner 未变，不声明进本面 paths）**：internal/lingdoc/workspace/generation.go（owner PF-2 —— 该面已交面，done 状态仍占用路径；实际写权在本面，记账留痕在此）、internal/lingdoc/workspace/agent_model.go 与 internal/container/lingdoc.go（owner PF-10）、internal/lingdoc/generation/service.go（owner PF-2 的目录级声明 internal/lingdoc/generation/）。**一处跨面借用（#504 口径统一）**：scripts/acceptance/beta_http_readback.py 与 scripts/ci/test_lingdoc_beta_evidence.py 的 owner 仍是 PF-10（未变），本面**不独占**它们、也不把它们声明进本面 paths（done 状态仍占用路径，重复声明会被 loader 拒绝）；借用事实记录于此。借用的原因与事实：#504 统一对偶两侧的 base-url 口径——单一权威＝契约 contracts/openapi.json 的 servers[0].url（http://localhost:4010/api/v1/lingdoc）；HTTP 对偶侧 15 处 API 根字面量归零、改为从契约派生；守护测试由「把两套相反约定各自钉死」改为只钉死单一口径，并新增两条断言（API 根等于契约 servers[0].url 的 path；同一个 base-url 同时喂两侧、两侧给出同一判定）。**归还是否发生：不需要归还** —— owner 未变，本面只是借用，未独占该路径。"
-            "**2026-10-24 跨面借用三条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：① **#535** 改动了 **PF-13** 拥有的 internal/lingdoc/templategovernance/{model.go, storage.go, catalog_test.go, catalog_postgres_test.go} 四个文件⇒ 本面借用 PF-13 的这四条路径；② **#534** 改动了 **L5（owner 属 PF-2）** 的 internal/lingdoc/workspace/generation.go⇒ 本面借用 PF-2 的这一条路径；③ **#534** 改动了 **PF-2 目录级声明内** 的 internal/lingdoc/generation/tasks.go 与 internal/lingdoc/generation/tasks_test.go⇒ 本面借用 PF-2 的这两条路径；本面只**新增**那条守护测试文件 internal/lingdoc/workspace/generation_retry_budget_test.go。"),
+            "**2026-10-24 跨面借用三条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：① **#535** 改动了 **PF-13** 拥有的 internal/lingdoc/templategovernance/{model.go, storage.go, catalog_test.go, catalog_postgres_test.go} 四个文件⇒ 本面借用 PF-13 的这四条路径；② **#534** 改动了 **L5（owner 属 PF-2）** 的 internal/lingdoc/workspace/generation.go⇒ 本面借用 PF-2 的这一条路径；③ **#534** 改动了 **PF-2 目录级声明内** 的 internal/lingdoc/generation/tasks.go 与 internal/lingdoc/generation/tasks_test.go⇒ 本面借用 PF-2 的这两条路径；本面只**新增**那条守护测试文件 internal/lingdoc/workspace/generation_retry_budget_test.go。"
+            "**2026-10-24 #480 跨面借用（第五条；owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**："
+            "#480 补 #485 的两个放行链缺口（服务重启后的读回 / 浏览器端到端与三方一致性）。"
+            "重启读回必须落在**隔离 PostgreSQL**（协议 §1），而 PF-10 拥有的重启脚本 "
+            "scripts/acceptance/lingdoc_full_server_restart.py **写死 SQLite**（DB_DRIVER / DB_PATH / RETRIEVE_DRIVER 三个键），"
+            "且 PF-10 自己的证据产出器 scripts/acceptance/beta_evidence.py **早已把 --db-driver / --db-dsn 传给它**——"
+            "两者的契约是断的（该脚本的 argparse 不认这两个旗标）⇒ 本面借用 PF-10 的这条路径把它参数化（协议 §1 的双模式："
+            "隔离 PostgreSQL ＝ 协议那一轮；SQLite ＝ 本地诊断），并把读回扩到协议 §2 第 5 步点名的四类对象"
+            "（项目 / 章节 / 来源绑定 / 交付文件与下载哈希）。"
+            "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
+            "**未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
