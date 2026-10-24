@@ -127,6 +127,7 @@
           <button type="button" class="ghost" :disabled="!project" @click="specOpen = true">研究条件 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="templateOpen = true">当前模板副本 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('research')">调研与证据 →</button>
+          <button type="button" class="ghost" :disabled="!project" @click="openInspector('sources')">上传与项目资料 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('changes')">正式变更与运行 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('operations')">运行观测与试用 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('governance')">模板目录与规则 →</button>
@@ -339,7 +340,9 @@
 </div>
 
         <div class="wb-pane wb-pane-sources">
+        <button v-if="project.status === 'draft'" type="button" class="ghost" @click="closeInsp">收起项目资料</button>
         <section class="assets">
+          <ProjectMaterialIntakePanel :key="JSON.stringify([auth.currentUserId,auth.effectiveTenantId,project.id])" :project-id="project.id" :project-name="project.name" :identity="JSON.stringify([auth.currentUserId,auth.effectiveTenantId])" @bound="refreshMaterialAssets" />
           <h3>课题绑定资料</h3>
           <a href="/platform/knowledge-bases" target="_blank" rel="noopener" class="native-bank-link">管理资料库（WeKnora，新窗口）</a><p class="muted">资料库用于保管和索引资料；本窗口保留当前文稿。绑定和正文引用仍在此处分别完成。</p>
           <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
@@ -821,6 +824,7 @@ import { rewriteAdoptionConfirmation } from './candidateAdoption'
 import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composables/useOwnerAvailability'
 import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
+import ProjectMaterialIntakePanel from './ProjectMaterialIntakePanel.vue'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
 import { plainOf, parseInlineText } from './editor/markdown'
@@ -922,6 +926,12 @@ const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
 const knowledgeId = ref('')
+async function refreshMaterialAssets() {
+  const id = project.value?.id, session = editorSessionEpoch
+  if (!id) return
+  try { const result = await listAssets(id); if (project.value?.id === id && session === editorSessionEpoch) assets.value = result.data ?? [] }
+  catch { if (project.value?.id === id && session === editorSessionEpoch) bindingNoticeText.value = '材料操作后资料列表暂不可读，请重新读取。' }
+}
 /* 按名称绑定：知识库可用资料 / 课题绑定资料（assets 列表）/ 本段实际引用（paraCitationLabel）三层分开 */
 const kbList = ref<Array<{ kb_id: string; kb_name: string }>>([])
 const kbFiles = ref<Array<{ id: string; file_name: string }>>([])
