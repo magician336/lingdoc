@@ -21,6 +21,7 @@ import unittest
 
 import yaml
 
+import lingdoc_gate_attest_witness as witness
 import lingdoc_gate_decision as decision
 import lingdoc_gate_surfaces as manifest
 
@@ -223,6 +224,11 @@ class GateStepWiringTests(unittest.TestCase):
         for step in contract_steps:
             self.assertNotIn("format_only", str(step.get("if", "")))
 
+    # The condition every heavy step of the gate stands behind: the scope
+    # boolean first, then the witness.  A reuse means the earlier green run
+    # already produced this evidence, and the heavy work is not paid again.
+    NO_REUSE = "&& steps.attest.outputs.reuse != 'true'"
+
     def test_the_provider_and_frontend_steps_are_gated(self):
         gated = [step for step in self._steps(self.REVIEW)
                  if "run_providers" in str(step.get("if", ""))
@@ -230,13 +236,123 @@ class GateStepWiringTests(unittest.TestCase):
                      and "contracts" not in str(step.get("if", "")))]
         self.assertTrue(gated, "the provider and frontend steps were not found")
         for step in gated:
-            # One boolean each: the decision module already folded the
-            # formatting-only shortcut into it.
             condition = str(step.get("if", ""))
             self.assertNotIn("format_only", condition)
-            self.assertNotIn("&&", condition)
             self.assertRegex(condition,
                              r"steps\.scope\.outputs\.run_(providers|frontend) == 'true'")
+            self.assertTrue(condition.endswith(self.NO_REUSE),
+                            f"{condition!r}: every heavy step also stands "
+                            "behind the witness")
+
+    def _step_by_id(self, name: str, step_id: str) -> dict:
+        for job in jobs_of(name).values():
+            for step in job.get("steps") or []:
+                if step.get("id") == step_id:
+                    return step
+        self.fail(f"{name}: no step has the id {step_id!r}")
+
+    def test_the_heavy_steps_stand_behind_the_scope_and_the_witness(self):
+        expected = {
+            "contracts": ("steps.scope.outputs.contracts == 'true' "
+                          "&& steps.attest.outputs.reuse != 'true'"),
+            "providers": ("steps.scope.outputs.run_providers == 'true' "
+                          "&& steps.attest.outputs.reuse != 'true'"),
+            "frontend": ("steps.scope.outputs.run_frontend == 'true' "
+                         "&& steps.attest.outputs.reuse != 'true'"),
+        }
+        for step_id, condition in expected.items():
+            with self.subTest(step=step_id):
+                self.assertEqual(
+                    str(self._step_by_id(self.REVIEW, step_id).get("if", "")),
+                    condition)
+
+
+class AttestWiringTests(unittest.TestCase):
+    """The ready_for_review path asks the witness before the heavy steps.
+
+    The attest step sits between the scope step and the heavy steps.  The
+    scope step must run unconditionally -- its anchor is the current
+    observation the witness reads -- and the publish and artifact steps must
+    run on every path: a reuse is recorded, never assumed.  The check name
+    the main ruleset demands does not move.
+    """
+
+    REVIEW = "lingdoc-review.yml"
+
+    def _steps(self) -> list[dict]:
+        steps: list[dict] = []
+        for job in jobs_of(self.REVIEW).values():
+            steps.extend(job.get("steps") or [])
+        return steps
+
+    def _step_ids(self) -> dict[str, int]:
+        return {step.get("id"): index
+                for index, step in enumerate(self._steps())
+                if step.get("id")}
+
+    def test_the_attest_step_sits_between_the_scope_and_the_heavy_steps(self):
+        ids = self._step_ids()
+        for step_id in ("scope", "attest", "contracts", "providers",
+                        "frontend"):
+            self.assertIn(step_id, ids, f"the step {step_id} is missing")
+        self.assertLess(ids["scope"], ids["attest"],
+                        "the witness reads the scope step's anchor; it must "
+                        "run after the scope step")
+        self.assertLess(ids["attest"], ids["contracts"],
+                        "the witness decides before the heavy steps start")
+        self.assertLess(ids["attest"], ids["providers"])
+        self.assertLess(ids["attest"], ids["frontend"])
+
+    def test_the_attest_step_asks_the_witness_module(self):
+        step = next(step for step in self._steps()
+                    if step.get("id") == "attest")
+        self.assertIn("scripts/ci/lingdoc_gate_attest_witness.py",
+                      str(step.get("run", "")))
+        # The witness falls back on its own, but a crash of the step itself
+        # must also degrade to a full rerun, not to a red gate.
+        self.assertTrue(step.get("continue-on-error"),
+                        "a crashed witness must not fail the gate")
+
+    def test_the_scope_step_runs_on_every_path(self):
+        scope = next(step for step in self._steps()
+                     if step.get("id") == "scope")
+        self.assertEqual(scope.get("if", ""), "",
+                         "the scope step writes the anchor the witness "
+                         "reads; it must never be skipped")
+
+    def test_the_publish_and_artifact_steps_are_never_skipped_by_the_witness(
+            self):
+        publish = next(step for step in self._steps()
+                       if "Publish check boundary" in str(step.get("name", "")))
+        upload = next(step for step in self._steps()
+                      if str(step.get("uses", "")).startswith(
+                          "actions/upload-artifact"))
+        for step in (publish, upload):
+            self.assertEqual(step.get("if"), "always()")
+            self.assertNotIn("attest", str(step.get("if", "")),
+                             "a reuse is recorded in the results, never "
+                             "assumed by skipping the reporting")
+
+    def test_the_check_name_the_ruleset_demands_is_unchanged(self):
+        for job in jobs_of(self.REVIEW).values():
+            self.assertEqual(job.get("name"), "LingDoc PR gate")
+
+    def test_the_witness_may_read_other_runs_artifacts(self):
+        permissions = load(self.REVIEW).get("permissions") or {}
+        self.assertEqual(permissions.get("actions"), "read",
+                         "reading another run's artifact needs actions: read")
+        self.assertEqual(permissions.get("contents"), "read")
+
+    def test_the_artifact_name_still_carries_the_checks_prefix(self):
+        """The witness finds the candidate's artifact by the prefix the
+        upload step spells; the two ends of that contract agree."""
+        upload = next(step for step in self._steps()
+                      if str(step.get("uses", "")).startswith(
+                          "actions/upload-artifact"))
+        name = str((upload.get("with") or {}).get("name", ""))
+        self.assertTrue(name.startswith(witness.CHECKS_ARTIFACT_PREFIX),
+                        f"{name!r} does not start with "
+                        f"{witness.CHECKS_ARTIFACT_PREFIX!r}")
 
 
 if __name__ == "__main__":

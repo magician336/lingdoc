@@ -2,6 +2,16 @@ name: LingDoc Review
 
 # Always create one stable check. Top-level paths filters can leave a required
 # check pending forever on unrelated PRs; select expensive steps inside the job.
+#
+# The gate may also *reuse* an earlier green run: when a pull request turns
+# from Draft to Ready for a merge ref that an earlier run of the same pull
+# request already tested green -- same head, same main tip, completed and
+# successful, produced by this workflow -- the witness (the attest step)
+# ends the gate green on that run's record instead of paying the run again.
+# The judgement reads machine records only, and any doubt falls back to the
+# full rerun below; every other trigger and the workflow_dispatch escape
+# hatch always rerun in full. See spec #627 and
+# scripts/ci/lingdoc_gate_attest_reuse.py.
 on:
   pull_request:
     branches: [main]
@@ -10,6 +20,9 @@ on:
 
 permissions:
   contents: read
+  # The witness reads an earlier run's checks artifact through the Actions
+  # API (spec #627). Read-only, like the rest of this workflow.
+  actions: read
 
 concurrency:
   group: lingdoc-review-${{ github.event.pull_request.number || github.ref }}
@@ -104,12 +117,28 @@ jobs:
           fi
           cat "$RUNNER_TEMP/lingdoc-checks/scope.json"
 
+      # The witness asks whether an earlier gate run of this same pull
+      # request already tested this exact merge ref green (spec #627). It
+      # reads only machine records -- this run's own anchor above, the run
+      # list of this head, and the candidate run's checks artifact -- and
+      # answers reuse or full rerun. Any doubt, any missing record, any API
+      # failure falls back to the rerun, and the witness never fails the
+      # gate: a crashed attest step degrades to the full rerun below.
+      # Only ready_for_review asks; every other trigger reruns in full,
+      # exactly as before.
+      - name: Ask the witness whether an earlier green run may be reused
+        id: attest
+        continue-on-error: true
+        run: |
+          python scripts/ci/lingdoc_gate_attest_witness.py \
+            --artifact-dir "$RUNNER_TEMP/lingdoc-checks"
+
       - name: Install contract validator dependency
-        if: steps.scope.outputs.contracts == 'true'
+        if: steps.scope.outputs.contracts == 'true' && steps.attest.outputs.reuse != 'true'
         run: python -m pip install --disable-pip-version-check -r scripts/ci/requirements-lingdoc.txt
 
       - name: Validate contract examples and reference trace
-        if: steps.scope.outputs.contracts == 'true'
+        if: steps.scope.outputs.contracts == 'true' && steps.attest.outputs.reuse != 'true'
         id: contracts
         run: |
           python -m unittest discover -s scripts/ci -p 'test_lingdoc_routes.py' -v
@@ -130,7 +159,7 @@ jobs:
           PY
 
       - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.run_providers == 'true'
+        if: steps.scope.outputs.run_providers == 'true' && steps.attest.outputs.reuse != 'true'
         id: providers
         env:
           CGO_ENABLED: "1"
@@ -157,14 +186,14 @@ jobs:
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
       - uses: actions/setup-node@v6
-        if: steps.scope.outputs.run_frontend == 'true'
+        if: steps.scope.outputs.run_frontend == 'true' && steps.attest.outputs.reuse != 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Test, type-check and build frontend
-        if: steps.scope.outputs.run_frontend == 'true'
+        if: steps.scope.outputs.run_frontend == 'true' && steps.attest.outputs.reuse != 'true'
         id: frontend
         working-directory: frontend
         run: |
@@ -184,6 +213,8 @@ jobs:
           SURFACE: ${{ steps.scope.outputs.surface }}
           REASON: ${{ steps.scope.outputs.reason }}
           BASE: ${{ steps.scope.outputs.base }}
+          REUSE: ${{ steps.attest.outputs.reuse }}
+          REUSED_RUN_ID: ${{ steps.attest.outputs.reused_run_id }}
         run: |
           python - <<'PY'
           import json, os
@@ -191,6 +222,15 @@ jobs:
           result = {key.lower(): os.environ[key] for key in
                     ('CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
+          # Whether the conclusion is this run's own or reused from an
+          # earlier green run of the same merge ref (spec #627). A reuse
+          # leaves the heavy steps skipped; the result says so, and the
+          # reused run's scope verdict records are handed on in the
+          # artifact, so "skipped is not passed" stays auditable.
+          result['reuse'] = os.environ.get('REUSE', '') == 'true'
+          reused_run_id = os.environ.get('REUSED_RUN_ID', '')
+          result['reused_run_id'] = (int(reused_run_id)
+                                     if reused_run_id.isdecimal() else None)
           # The surface says what was tested, the reason says why that surface
           # was chosen, and the base says which baseline it was judged against.
           result['surface'] = os.environ.get('SURFACE', '')
@@ -223,6 +263,10 @@ jobs:
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
+              if result['reuse']:
+                  handle.write(f"Reused: REUSED run #{result['reused_run_id']} -- the witness section above carries the five-condition comparison and the link.\n")
+              else:
+                  handle.write('Reused: no -- this run verified the merge ref itself.\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
               if coverage:
                   handle.write('### Surface coverage\n\n')
