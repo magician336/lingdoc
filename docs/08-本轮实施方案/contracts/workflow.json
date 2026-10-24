@@ -78,7 +78,7 @@
       }
     ]
   },
-  "variable_syntax": "{{name}}占据整个值时保留捕获值类型（包括null/int）；嵌在文本中时按字符串替换。请求path、引用标记均用捕获ID。",
+  "variable_syntax": "{{name}}占据整个值时保留捕获值类型（包括null/int）；嵌在文本中时按字符串替换。请求path、引用标记均用捕获ID。{\"$expand\":{\"collection\":<已捕获变量名>,\"item\":<元素模板>}}把一个已捕获的数组按元素模板投影成数组（模板里的{\"$item\":\"字段名\"}取当前元素的该字段）；集合不存在、不是数组或元素缺字段一律报错停止，不得静默补值。",
   "polling": "getGeneration/getExport轮询直到终态；同一个request不重新POST。",
   "reference_ids": "参考响应的ID仅供静态语义检查；真实执行从capture取ID，内容比对忽略动态ID及时间。",
   "steps": [
@@ -1131,7 +1131,8 @@
         }
       },
       "capture": {
-        "question_version": "/data/current_version_id"
+        "question_version": "/data/current_version_id",
+        "question_review_items": "/data/review_items"
       },
       "checks": [
         {
@@ -1249,7 +1250,8 @@
         }
       },
       "capture": {
-        "method_version": "/data/current_version_id"
+        "method_version": "/data/current_version_id",
+        "method_review_items": "/data/review_items"
       },
       "checks": [
         {
@@ -1275,13 +1277,16 @@
         "json": {
           "expected_chapter_version_id": "{{question_version}}",
           "expected_spec_revision": "{{spec_revision}}",
-          "review_decisions": [
-            {
-              "review_item_id": "{{review_id}}",
-              "disposition": "retained_warning",
-              "reason": "仅作内部演示，保留该项并随文件明确列出。"
+          "review_decisions": {
+            "$expand": {
+              "collection": "question_review_items",
+              "item": {
+                "review_item_id": {"$item": "id"},
+                "disposition": "retained_warning",
+                "reason": "仅作内部演示，保留该项并随文件明确列出。"
+              }
             }
-          ]
+          }
         }
       },
       "expected_http": 201,
@@ -1350,7 +1355,16 @@
         "json": {
           "expected_chapter_version_id": "{{method_version}}",
           "expected_spec_revision": "{{spec_revision}}",
-          "review_decisions": []
+          "review_decisions": {
+            "$expand": {
+              "collection": "method_review_items",
+              "item": {
+                "review_item_id": {"$item": "id"},
+                "disposition": "retained_warning",
+                "reason": "仅作内部演示，保留该项并随文件明确列出。"
+              }
+            }
+          }
         }
       },
       "expected_http": 201,
