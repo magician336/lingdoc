@@ -40,26 +40,38 @@ func TestLimitChecklistCoversTheFourClassesSeparately(t *testing.T) {
 		name      string
 		facts     CallFacts
 		criterion LimitCriterion
+		alone     bool
 	}{
 		{
 			name:      "the output ceiling",
 			facts:     CallFacts{InputUpperBound: bound, OutputLimit: limit, InputTokens: 100, OutputTokens: limit + 1},
 			criterion: LimitCriterionOutputCeiling,
+			alone:     true,
 		},
 		{
 			name:      "the input ceiling",
 			facts:     CallFacts{InputUpperBound: bound, OutputLimit: limit, InputTokens: bound + 1, OutputTokens: 100},
 			criterion: LimitCriterionInputCeiling,
+			alone:     true,
 		},
 		{
+			// The total ceiling CANNOT fire on its own, and that is a fact
+			// about the numbers rather than about the code: the total
+			// ceiling is inputMax + outputMax, and every recorded request
+			// satisfies bound <= inputMax and outputLimit <= outputMax, so
+			// an answer that passes the total ceiling has already passed one
+			// of the other two. The class is still worth having -- it names
+			// the profile's own total ceiling, which the other two do not.
 			name:      "the total ceiling",
-			facts:     CallFacts{InputUpperBound: bound, OutputLimit: limit, InputTokens: 20000, OutputTokens: 200},
+			facts:     CallFacts{InputUpperBound: bound, OutputLimit: limit, InputTokens: total - 96, OutputTokens: 200},
 			criterion: LimitCriterionTotalCeiling,
+			alone:     false,
 		},
 		{
 			name:      "the negative counter",
 			facts:     CallFacts{InputUpperBound: bound, OutputLimit: limit, InputTokens: -1, OutputTokens: 100},
 			criterion: LimitCriterionNegativeCounter,
+			alone:     true,
 		},
 	}
 	for _, tc := range cases {
@@ -80,6 +92,10 @@ func TestLimitChecklistCoversTheFourClassesSeparately(t *testing.T) {
 			}
 			if breach.Dimension == "" {
 				t.Fatalf("the %s did not say what its quantity counts", tc.name)
+			}
+			if tc.alone && len(verdict.Breaches) != 1 {
+				t.Fatalf("the %s fired together with %d other criteria: %+v",
+					tc.name, len(verdict.Breaches)-1, verdict.Breaches)
 			}
 		})
 	}

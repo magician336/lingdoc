@@ -213,9 +213,9 @@ func ProfileMaxCalls(profile string) int {
 // UPPER BOUND of the token count and never a token count: a token is at least
 // one byte, so the byte length of a prompt can never be smaller than its token
 // count. Comparing the provider's reported token count against it is
-// therefore CONSERVATIVE -- it can fire only when the provider counted more
-// tokens than the request had bytes, which is an anomaly -- and it can never
-// let a call through that the request had not reserved for.
+// therefore CONSERVATIVE -- it can fire only when the provider counted MORE
+// tokens than the request's own byte bound, which is an anomaly -- and it can
+// never let a call through that the request had not reserved for.
 //
 // The byte bound is NOT a token ceiling, and it is not treated as one:
 // LimitQuantityRequestInputUpperBound says so in its dimension, and every
@@ -224,10 +224,11 @@ func ProfileMaxCalls(profile string) int {
 // The profile's own input ceiling (inputMax) is the ceiling of the REQUEST'S
 // INPUT BOUND, so it is a byte ceiling too. The reservation refuses a request
 // whose bound passes it, which means every recorded request satisfies
-// bound <= inputMax. A reported token count can therefore never exceed
-// inputMax on its own: the post-hoc comparison against the profile's input
-// ceiling is SUBSUMED by the input-ceiling criterion above, and the criterion
-// that decides a verdict is the one that names the request's own bound.
+// bound <= inputMax. A reported token count is at most the byte bound, so it
+// can never pass inputMax on its own either: the post-hoc comparison against
+// the profile's input ceiling is SUBSUMED by the input-ceiling criterion
+// above, and the criterion that decides a verdict is the one that names the
+// request's own bound.
 //
 // # What each ledger records
 //
