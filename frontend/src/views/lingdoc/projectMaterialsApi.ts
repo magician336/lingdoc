@@ -9,6 +9,20 @@ import type { MaterialKnowledge, MaterialPorts } from './projectMaterialIntake'
  * request interceptor — carries the existing knowledge the same way. */
 type UploadOutcome = { success?: boolean; code?: string; data?: MaterialKnowledge }
 
+/** One in-flight asset read per project: the panel timer refreshes several
+ * rows in the same tick and every observe needs the same fresh list, so
+ * concurrent duplicates collapse into one request. The entry clears when the
+ * request settles — a later caller always starts its own fresh read. */
+const inflightProjectAssets = new Map<string, ReturnType<typeof listAssets>>()
+
+function freshProjectAssets(project: string): ReturnType<typeof listAssets> {
+  const existing = inflightProjectAssets.get(project)
+  if (existing) return existing
+  const request = listAssets(project).finally(() => { inflightProjectAssets.delete(project) })
+  inflightProjectAssets.set(project, request)
+  return request
+}
+
 /** Keep platform envelopes and duplicate errors out of the project UI.
  * Metadata records upload intent, NOT authoritative project ownership. */
 export const projectMaterialPorts: MaterialPorts = {
@@ -32,7 +46,7 @@ export const projectMaterialPorts: MaterialPorts = {
   },
   async observe(project, reference) {
     const [knowledge, trace, assets] = await Promise.all([
-      getKnowledgeDetails(reference.id), getKnowledgeSpans(reference.id), listAssets(project),
+      getKnowledgeDetails(reference.id), getKnowledgeSpans(reference.id), freshProjectAssets(project),
     ])
     return { knowledge: knowledge.data, trace: trace.data, assets: assets.data }
   },

@@ -20,7 +20,7 @@ function compile(filename, source, resolve = require) {
   return module.exports
 }
 const state = compile(path.join(directory, 'projectMaterialIntake.ts'))
-const fixture = { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false }
+const fixture = { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false, assetReads: 0 }
 const knowledge = () => ({ id: 'k-a', knowledge_base_id: 'kb-a', parse_status: 'completed', title: 'Real SFC synthetic material' })
 const asset = () => ({ id: 'a-a', project_id: 'p-a', knowledge_id: 'k-a', processing_state: 'ready', asset_revision: 1 })
 const api = {
@@ -40,7 +40,7 @@ const api = {
   async listKnowledgeBases() { return { data: [{ id: 'kb-a', name: 'Synthetic KB', type: 'document' }] } },
 }
 const workspace = {
-  async listAssets() { return { data: fixture.bound ? [asset()] : [] } },
+  async listAssets() { fixture.assetReads += 1; return { data: fixture.bound ? [asset()] : [] } },
   async bindAsset(...args) { fixture.binds.push(args); fixture.bound = true; return { data: asset() } },
   async retrieveSources() { return { data: [] } },
 }
@@ -71,7 +71,7 @@ const component = compile(filename, script.content, id => {
 component.render = compile(filename + '.template', template.code).render
 const file = new File(['synthetic'], 'material.txt')
 async function render(action) {
-  Object.assign(fixture, { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false })
+  Object.assign(fixture, { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false, assetReads: 0 })
   const values = new Map()
   globalThis.window = { localStorage: { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value) } }
   let controller
@@ -128,6 +128,17 @@ test('actual binding uses the original API and emits only after current project 
   assert.match(html, /已读回当前项目绑定/)
 })
 
+test('concurrent row refreshes collapse into one project asset read', async () => {
+  let readsBefore = 0
+  const { controller } = await render(async c => {
+    await c.model.upload('kb-a', file)
+    c.model.rows.push({ ref: { id: 'k-b', kb: 'kb-a', key: 'second-key' }, indexReady: false, label: '', readError: '', actionError: '', notice: '', busy: false, query: '', hits: [] })
+    readsBefore = fixture.assetReads
+    await Promise.all([c.model.refresh(c.model.rows[0]), c.model.refresh(c.model.rows[1])])
+  })
+  assert.equal(fixture.assetReads - readsBefore, 1)
+  assert.equal(controller.model.rows.length, 2)
+})
 test('real panel exposes the index error when parse_status is completed and refuses binding', async () => {
   const { html } = await render(async c => {
     fixture.indexFailed = true

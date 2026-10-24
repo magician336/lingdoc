@@ -62,7 +62,10 @@ export interface MaterialPorts {
 export interface MaterialStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 
 /** Only real, current-attempt stage rows prove indexing. The spans API also
- * synthesizes "done" placeholders from parse_status; those have no span_id. */
+ * synthesizes "done" placeholders from parse_status; those have no span_id —
+ * a server-side invariant guarded by TestBuildSpanTree_SynthesizedPlaceholdersNeverCarrySpanID
+ * in internal/handler/knowledge_spans_test.go. If that guard ever changes,
+ * this consumer must change in the same commit. */
 export function materialReadiness(knowledge: MaterialKnowledge, trace: MaterialTrace): { ready: boolean; label: string } {
   if (knowledge.parse_status !== 'completed') {
     return { ready: false, label: PARSE_STATUS_LABELS[knowledge.parse_status] ?? '处理状态未知，请重新读取' }

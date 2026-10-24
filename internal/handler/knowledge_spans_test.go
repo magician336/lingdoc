@@ -104,6 +104,26 @@ func TestBuildSpanTree_LegacyCompletedRendersAsDone(t *testing.T) {
 	}
 }
 
+// TestBuildSpanTree_SynthesizedPlaceholdersNeverCarrySpanID locks a
+// cross-layer contract: placeholders synthesized from parse_status must stay
+// distinguishable from real pipeline rows by their EMPTY span_id. LingDoc's
+// material intake (frontend/src/views/lingdoc/projectMaterialIntake.ts,
+// materialReadiness) treats "embedding stage with a non-empty span_id" as
+// the ONLY positive proof that a real index stage ran. Filling synthetic
+// IDs here would make that consumer accept fabricated indexing evidence.
+// If this contract must change, change that consumer in the same commit.
+func TestBuildSpanTree_SynthesizedPlaceholdersNeverCarrySpanID(t *testing.T) {
+	a := assert.New(t)
+
+	tree, _, _ := buildSpanTree("kid-synthetic", 3, nil, types.ParseStatusCompleted)
+	a.NotNil(tree)
+	a.Equal("", tree.SpanID, "the synthesized root must not carry a span_id")
+	for _, child := range tree.Children {
+		a.Equal("", child.SpanID,
+			"synthesized %s placeholder must not carry a span_id", child.Name)
+	}
+}
+
 // TestBuildSpanTree_LastFailureSurfaces records that a failed stage is
 // reported as last_error so the UI can highlight the responsible step
 // even if a later stage was cancelled by cascade.
