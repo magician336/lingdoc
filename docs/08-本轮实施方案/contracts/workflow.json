@@ -740,7 +740,8 @@
           "intent": "生成任务落在待起草的那一章上"
         }
       ],
-      "assertions": []
+      "assertions": [],
+      "retrieval": "vector_required"
     },
     {
       "id": "F01-08",
@@ -2010,5 +2011,18 @@
     }
   ],
   "download_sha256_variable": "expected_export_sha256",
-  "manual_assertions": []
+  "manual_assertions": [],
+  "retrieval_modes": {
+    "authority": "本文件的步骤级 retrieval 字段",
+    "values": [
+      "keyword_only",
+      "vector_required"
+    ],
+    "meaning": {
+      "keyword_only": "该节点不依赖向量语义召回：在受控窗口里它可以被正常判定，执行器核验该窗口的验收预算账本里没有 embedding 调用行",
+      "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK"
+    },
+    "deployment_property": "知识库 indexing_strategy 的向量开关是部署/环境属性，不是受控 profile 的一部分：受控执行不得靠永久改知识库配置来达成「不调用 embedding」；临时改了必须还原并留下还原证据。",
+    "window_fact": "受控窗口的机器事实是验收预算账本（internal/models/acceptancebudget 的 ledger）：窗口里出现 embedding 行 ⇒ 窗口整体判失败；账本读不到 ⇒ NOT RUN，不得记为通过。"
+  }
 }
