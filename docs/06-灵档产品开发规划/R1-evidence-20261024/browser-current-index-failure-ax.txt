@@ -1,0 +1,126 @@
+Browser tab: 4, Title: "WeKnora", URL: "http://127.0.0.1:39401/platform/lingdoc".
+1 AXWebArea WeKnora, URL: 127.0.0.1:39401/platform/lingdoc
+	2 container app
+		3 container
+			4 container 搜索
+			5 text 新对话
+			6 text 知识库
+			7 text 智能体
+			8 text 共享空间
+			9 text 灵档项目
+			10 text 暂无对话
+			11 container
+				12 text R R1-606-合成测试 r1-606-local-20261024@example.com
+				13 image
+		14 container
+			15 heading 灵档文稿, Value: 1
+				16 text 灵档文稿
+			17 text 写作 · 来源 · 核查 · 交付
+			18 checkbox 收起目录, Value: 1
+			19 button 成员与协作权限 →
+			20 pop up button (collapsed) 开发与验收, Secondary Actions: Expand
+			21 container 通知
+				22 button (expanded) 通知 收起, Secondary Actions: Collapse
+					23 text 通知
+					24 text 收起
+				25 button (collapsed) 恢复已丢弃的课题草稿, Secondary Actions: Expand
+					26 text 恢复已丢弃的课题草稿
+			37 heading 当前课题, Value: 2
+				38 text 当前课题
+			130 text R1-606-最新基线闭环
+			40 text 草稿
+			41 button (collapsed) 切换课题, Secondary Actions: Expand
+			42 button 研究条件 →
+			43 button 当前模板副本 →
+			44 button 调研与证据 →
+			45 button 上传与项目资料 →
+			46 button (disabled) 正式变更与运行 →
+			47 button (disabled) 运行观测与试用 →
+			48 button 模板目录与规则 →
+			49 button (disabled) 章节评审与批注 →
+			27 heading R1-606-最新基线闭环, Value: 2
+				131 text R1-606-最新基线闭环
+			29 text 研究条件版本 0 · 课题版本 1
+			30 text 课题成员 1 人。现阶段由课题成员协作编辑。
+			31 button 重新读取
+			132 container
+				133 text 演示模板状态暂不可读，不能确认当前目录状态；请稍后重试。
+				134 button 重试
+			50 container
+				51 button 收起项目资料
+				135 container 项目内材料接入
+					136 heading 上传新材料, Value: 3
+						137 text 上传新材料
+					138 container
+						139 text 目标课题： R1-606-最新基线闭环 。上传、处理、绑定和检索分别确认；上传不会自动扩大资料权限。
+					140 text 材料存储库
+					141 pop up button (collapsed, settable) 材料存储库, Value: R1-606-索引失败对照库, ID: material-769d5ca8-eaa3-44a2-8ca1-73abad065f40-kb, Secondary Actions: Expand
+						142 menu
+							143 选择可使用的资料库
+							144 (selected) R1-606-索引失败对照库
+							145 R1-606-最新关键词库
+							146 R1-606-关键词合成材料库
+					147 button 重新读取资料库
+					148 container
+						149 text 选择文件
+						150 button 选择要上传到当前课题的材料
+					151 text 沿用平台文件类型和大小限制。首次上传在此完成，无需跳转平台；处理中的材料不会自动用于写作或模型。
+					152 text 下列是此账号、此空间、此课题在本浏览器发起的材料记录，不是服务端的正式绑定列表。刷新时会重新核实权限和状态。
+					153 content list
+						154 container
+							155 heading material-current.txt, Value: 4
+								170 text material-current.txt
+							171 text 处理完成（当前索引阶段已完成） 项目检索已返回该绑定材料的来源。
+							158 button 重新读取材料状态
+							159 button 移除本机追踪记录
+							160 button 核实当前项目绑定
+							162 text 在当前项目检索此材料
+							163 text field (settable) 在当前项目检索此材料, Value: R1CURRENTBETA, ID: material-769d5ca8-eaa3-44a2-8ca1-73abad065f40-b8adcb59-0ec7-41f0-b131-49b705e0e81d
+							164 button 核实检索命中
+							172 content list 当前绑定材料的项目检索结果
+								173 container
+									174 AXListMarker ◦
+									175 text material-current.txt · 第 0 段：R1CURRENTBETA is the unique keyword for a fresh material processed on main 78f31f16. This synthetic text verifies real upload, current keyword indexing, project binding and scoped retrieval after the indexing lifecycle change. No real personal data, research proposal, model completion or embedding API is used.
+						176 container
+							177 heading material-current.txt, Value: 4
+								187 text material-current.txt
+							188 text 解析完成，但索引失败；尚不可检索。原因：embedding model unavailable 文件已上传；解析、索引与项目绑定需要分别确认。
+							180 button 重新读取材料状态
+							181 button 移除本机追踪记录
+							182 button (disabled) 绑定到当前课题
+							183 text 解析完成不等于索引完成；无真实的当前索引记录时，不放行绑定。解析失败请先修复资料库配置，再由有权限的人员重新处理；不会自动重传或重解析。
+							184 text 在当前项目检索此材料
+							185 text field (settable) 在当前项目检索此材料, ID: material-769d5ca8-eaa3-44a2-8ca1-73abad065f40-4f0227e9-d086-4f0a-be0d-0495f1b44e31
+							186 button (disabled) 核实检索命中
+				79 heading 课题绑定资料, Value: 3
+					80 text 课题绑定资料
+				81 link Description: 管理资料库（WeKnora，新窗口）, Value: 127.0.0.1:39401/platform/knowledge-bases
+				82 text 资料库用于保管和索引资料；本窗口保留当前文稿。绑定和正文引用仍在此处分别完成。
+				83 container
+					84 text 绑定知识资料
+					85 text field (settable) 绑定知识资料, ID: knowledge-id
+					86 button (disabled) 绑定
+				87 container 从知识库按名称选择资料
+					88 text 按名称选择（不需输入内部 ID）：
+					89 pop up button (collapsed, settable) Description: 知识库, Value: 选择知识库, Secondary Actions: Expand
+						90 menu
+							91 (disabled) 选择知识库
+							92 R1-606-关键词合成材料库
+					93 pop up button (disabled, collapsed, settable) Description: 资料文件, Value: 无可用资料, Secondary Actions: Expand
+						94 menu
+							95 (disabled) 无可用资料
+					96 button (disabled) 绑定选中资料
+				97 text 当前段落实际引用：（本段暂无引用）
+				167 content list
+					168 container
+						169 text material-current.txt 版本 1 已就绪
+				101 heading 资料检索, Value: 3
+					102 text 资料检索
+				103 container
+					104 text 检索问题
+					105 text field (settable) 检索问题, ID: source-query
+					106 button (disabled) 检索
+			35 button (collapsed) 课题草稿候选, Secondary Actions: Expand
+				36 text 课题草稿候选
+
+The focused UI element is 180 button 重新读取材料状态
