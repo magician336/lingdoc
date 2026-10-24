@@ -116,6 +116,17 @@ func impactSourceIDsForRefs(tx Transaction, p Project, refs []ObjectVersionRef) 
 		if ref.Kind == "RouteNode" && ref.Version == "0" {
 			continue
 		}
+		if ref.Kind == "ProjectAsset" {
+			// 一份**资料**是这次操作的**对象**，不是它所引用的来源：资料自己的
+			// 分块是它的正文。把它们算进操作级来源复核，等于让「改这份资料的权限」
+			// 这一步依赖「这份资料本身」——授权与被授权互为前提（#545：F01-06b
+			// 在真实后端上恒 409 stale_input）。
+			//
+			// 资料自身的来源一致性没有因此被放弃：坐标取不回原文的分块拿不到
+			// available 结论，因而不会成为来源，也就不会进模型的上下文
+			// （internal/lingdoc/workspace/generation.go）。
+			continue
+		}
 		state, err := currentImpactObject(tx, p, ref)
 		if err != nil && !errors.Is(err, ErrVersionConflict) && !errors.Is(err, ErrInvalidState) {
 			return nil, err

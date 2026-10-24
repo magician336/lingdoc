@@ -227,12 +227,22 @@ func currentSemanticValue(tx Transaction, p Project, delta SemanticDelta) (Seman
 		}
 		out.ProvenanceHash = hashImpactValue(claim.Basis)
 	case "ProjectAssetScope":
-		policy, ids, provenance, err := ReadProjectAssetPolicy(tx, p, delta.TargetID)
+		policy, _, provenance, err := ReadProjectAssetPolicy(tx, p, delta.TargetID)
 		if err != nil {
 			return out, err
 		}
 		out.Ref.Version = strconv.FormatInt(policy.Version, 10)
-		out.SourceIDs = ids
+		// 一条资料范围变更改的是「谁可以用这份资料」，不是「这份资料说了什么」。
+		// 所以这份资料自己的分块是这次变更的**对象**，绝不是这次变更所依据的
+		// 证据：把它们算进操作级来源复核，等于让「授权」这一步依赖「被授权的那个
+		// 对象」，于是授权与被授权互为前提（#545：F01-06b 恒 409 stale_input）。
+		//
+		// 这里被摘掉的是**归属**，不是**保证**：资料自身的来源一致性由生成边界
+		// 保证 —— 坐标取不回原文的分块拿不到 available 结论
+		// （internal/evidence/source.go 的 quoteAt / selfConsistentAt），因此不会
+		// 成为来源，也就不会进模型的上下文
+		// （internal/lingdoc/workspace/generation.go）。授权一份坐标不自洽的
+		// 资料，放行的是「坐标对得上的那部分」，放行不了「对不上的那部分」。
 		out.ProvenanceHash = provenance
 		value = policy
 	case "RuleBinding":
