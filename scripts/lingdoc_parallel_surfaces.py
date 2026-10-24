@@ -997,6 +997,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/controlled_window_check.py", "file"),
             # #546 的守护：契约声明「本节点只走关键词检索」的节点确实不产生 embedding 请求；节点未声明检索方式、或声明与实际不符时的处理。
             ("scripts/ci/test_lingdoc_controlled_window.py", "file"),
+            # #583 的 profile 配置表：把「单值判断」改成按 profile 取配置（v1 的取值逐字段不变，v2 新增 4 次调用与累计 90,000 token 的预留闸门）。
+            ("internal/models/acceptancebudget/profile_config.go", "file"),
+            # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
+            ("internal/models/acceptancebudget/token_budget_state.go", "file"),
+            # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。
+            ("internal/models/acceptancebudget/qwen_token_budget_v2_test.go", "file"),
+            # #583 的应用缝守护：超限不出网（provider 请求数 = 0）、预算预留失败不出网、第 5 次在出网前被拒、输出上限 4096 实际下发。
+            ("internal/lingdoc/workspace/generation_qwen_v2_acceptance_budget_test.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
