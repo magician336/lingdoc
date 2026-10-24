@@ -754,7 +754,7 @@
         }
       ],
       "assertions": [],
-      "retrieval": "vector_required"
+      "retrieval": "keyword_only"
     },
     {
       "id": "F01-08",
@@ -2050,8 +2050,8 @@
       "vector_required"
     ],
     "meaning": {
-      "keyword_only": "该节点不依赖向量语义召回：在受控窗口里它可以被正常判定，执行器核验该窗口的验收预算账本里没有 embedding 调用行",
-      "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK"
+      "keyword_only": "该节点不依赖向量语义召回：在受控窗口里它可以被正常判定。判据是受控窗口本身的判定：窗口 PASS（该窗口的两本验收预算账本里没有 embedding 调用行）⇒ 该节点被判定；窗口 FAIL（窗口里出现过 embedding 调用行）⇒ 该节点随之失败；两本账本读不到 ⇒ NOT RUN，不得推断为通过。",
+      "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK。本契约当前没有任何节点声明它；该取值仍在封闭词表里，供将来确有节点需要向量检索时使用。"
     },
     "deployment_property": "知识库 indexing_strategy 的向量开关是部署/环境属性，不是受控 profile 的一部分：受控执行不得靠永久改知识库配置来达成「不调用 embedding」；临时改了必须还原并留下还原证据。",
     "window_fact": "受控窗口的机器事实是验收预算账本（internal/models/acceptancebudget 的 ledger）：窗口里出现 embedding 行 ⇒ 窗口整体判失败；账本读不到 ⇒ NOT RUN，不得记为通过。"
