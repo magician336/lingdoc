@@ -2050,7 +2050,7 @@
       "vector_required"
     ],
     "meaning": {
-      "keyword_only": "该节点不依赖向量语义召回：在受控窗口里它可以被正常判定。判据是受控窗口本身的判定：窗口 PASS（该窗口的两本验收预算账本里没有 embedding 调用行）⇒ 该节点被判定；窗口 FAIL（窗口里出现过 embedding 调用行）⇒ 该节点随之失败；两本账本读不到 ⇒ NOT RUN，不得推断为通过。",
+      "keyword_only": "该节点在**本轮所用的知识库部署配置**下不依赖向量语义召回：向量开关（知识库的 indexing_strategy）是**部署/环境属性**，不是本契约能声明的属性。执行器核验的是**受控窗口的机器事实** —— 该窗口的两本验收预算账本里没有 embedding 调用行 ⇒ 窗口 PASS 时该节点被判定、窗口 FAIL 时该节点随之失败、两本账本读不到时该节点 NOT RUN。⚠️ 窗口 PASS 只等于「账本里没有 embedding 行」：**被受控 profile 在 transport 之前拒绝的 embedding 尝试不落账本行**，所以「没有 embedding 调用行」**不蕴含**「没有尝试过 embedding」——后者要由 provider 调试日志与应用日志这两条独立于账本的证据来判。",
       "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK。本契约当前没有任何节点声明它；该取值仍在封闭词表里，供将来确有节点需要向量检索时使用。"
     },
     "deployment_property": "知识库 indexing_strategy 的向量开关是部署/环境属性，不是受控 profile 的一部分：受控执行不得靠永久改知识库配置来达成「不调用 embedding」；临时改了必须还原并留下还原证据。",
