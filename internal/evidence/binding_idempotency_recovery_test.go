@@ -94,7 +94,7 @@ func TestBindIdempotentWriteFailureNeverReturnsPartialAsset(t *testing.T) {
 	wantErr := errors.New("synthetic operation record write failed")
 	if err := store.db.Callback().Create().Before("gorm:create").Register("r1:fail-operation-write", func(tx *gorm.DB) {
 		if tx.Statement.Table == "lingdoc_operations" {
-			tx.AddError(wantErr)
+			_ = tx.AddError(wantErr)
 		}
 	}); err != nil {
 		t.Fatal(err)
