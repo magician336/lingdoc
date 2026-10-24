@@ -183,6 +183,7 @@ def record(**overrides) -> dict:
             "job_name": "Test, type-check, and build",
         },),
         "skipped_on_format_only": True,
+        "verifies": True,
     }
     base.update(overrides)
     return base
