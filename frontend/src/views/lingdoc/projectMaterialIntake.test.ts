@@ -64,6 +64,16 @@ test('pending, processing, finalizing, failed, cancelled and unknown never imply
 test('parse completed plus a REAL latest-attempt completed embedding stage is positive indexing evidence', () => {
   assert.equal(materialReadiness(knowledge(), trace()).ready, true)
 })
+
+test('parsed-but-not-indexed preserves the actual index failure cause without declaring processing complete', () => {
+  const t = trace()
+  Object.assign(t.trace!.children![0], { status: 'failed', error_message: 'embedding model unavailable' })
+  const result = materialReadiness(knowledge(), t)
+  assert.equal(result.ready, false)
+  assert.match(result.label, /解析完成，但索引失败/)
+  assert.match(result.label, /embedding model unavailable/)
+  assert(!result.label.includes('处理完成'))
+})
 test('legacy synthesized done placeholders do not prove indexing, even with current_attempt > 0', () => {
   const t = trace()
   t.trace!.children![0].span_id = ''

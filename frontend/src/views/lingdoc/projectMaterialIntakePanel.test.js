@@ -20,7 +20,7 @@ function compile(filename, source, resolve = require) {
   return module.exports
 }
 const state = compile(path.join(directory, 'projectMaterialIntake.ts'))
-const fixture = { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false }
+const fixture = { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false }
 const knowledge = () => ({ id: 'k-a', knowledge_base_id: 'kb-a', parse_status: 'completed', title: 'Real SFC synthetic material' })
 const asset = () => ({ id: 'a-a', project_id: 'p-a', knowledge_id: 'k-a', processing_state: 'ready', asset_revision: 1 })
 const api = {
@@ -33,7 +33,7 @@ const api = {
   async getKnowledgeDetails() { return { data: knowledge() } },
   async getKnowledgeSpans() {
     return { data: { knowledge_id: 'k-a', current_attempt: 1, latest_attempt: 1, parse_status: 'completed', trace: {
-      name: 'root', kind: 'root', status: 'done', children: [{ span_id: fixture.placeholder ? '' : 'real-index-span', name: 'embedding', kind: 'stage', status: 'done', attempt: 1, knowledge_id: 'k-a' }],
+      name: 'root', kind: 'root', status: 'done', children: [{ span_id: fixture.placeholder ? '' : 'real-index-span', name: 'embedding', kind: 'stage', status: fixture.indexFailed ? 'failed' : 'done', error_message: fixture.indexFailed ? 'synthetic index storage unavailable' : '', attempt: 1, knowledge_id: 'k-a' }],
     } } }
   },
   async getKnowledgeBaseById(id) { return { data: { id, name: 'Synthetic KB', type: 'document' } } },
@@ -71,7 +71,7 @@ const component = compile(filename, script.content, id => {
 component.render = compile(filename + '.template', template.code).render
 const file = new File(['synthetic'], 'material.txt')
 async function render(action) {
-  Object.assign(fixture, { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false })
+  Object.assign(fixture, { duplicate: false, denied: false, cancelled: false, uploads: [], binds: [], bound: false, placeholder: false, indexFailed: false })
   const values = new Map()
   globalThis.window = { localStorage: { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value) } }
   let controller
@@ -126,6 +126,18 @@ test('actual binding uses the original API and emits only after current project 
   assert.deepEqual(fixture.binds, [['p-a', 'k-a', 'binding-key']])
   assert.deepEqual(events, ['bound'])
   assert.match(html, /已读回当前项目绑定/)
+})
+
+test('real panel exposes the index error when parse_status is completed and refuses binding', async () => {
+  const { html } = await render(async c => {
+    fixture.indexFailed = true
+    await c.model.upload('kb-a', file)
+    await c.bind(c.model.rows[0])
+  })
+  assert.match(html, /解析完成，但索引失败/)
+  assert.match(html, /synthetic index storage unavailable/)
+  assert(!html.includes('处理完成（当前索引阶段已完成）'))
+  assert.equal(fixture.binds.length, 0)
 })
 test('KB denial is visible and does not render a material row or successful binding', async () => {
   const { html, controller } = await render(async c => { fixture.denied = true; await c.model.upload('kb-a', file) })

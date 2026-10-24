@@ -62,7 +62,8 @@ export function materialReadiness(knowledge: MaterialKnowledge, trace: MaterialT
   if (!stage.span_id || stage.attempt !== attempt || stage.knowledge_id !== knowledge.id) {
     return { ready: false, label: '解析完成；缺少真实的当前索引记录' }
   }
-  if (stage.status === 'failed') return { ready: false, label: '解析完成，但索引失败；尚不可检索' }
+  if (stage.status === 'failed') return { ready: false, label: '解析完成，但索引失败；尚不可检索。' +
+    (stage.error_message ? '原因：' + stage.error_message : '请检查资料库索引与模型配置后，由有权限人员重新处理。') }
   if (stage.status !== 'done') return { ready: false, label: '解析完成；索引未完成或未启用' }
   return { ready: true, label: '处理完成（当前索引阶段已完成）' }
 }
