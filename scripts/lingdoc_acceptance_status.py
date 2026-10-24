@@ -52,7 +52,10 @@ An acceptance row carries two of them, and the guard reads both:
 
 * **the run fact** (``status`` in JSON) -- what this run actually did
   (``not_run``, ``passed``, ``failed``).  It is a **fact**: it is never
-  rewritten to make a gate pass, and no gate reads it as a verdict;
+  rewritten to make a gate pass, and no gate reads it as a **pass**.  A gate
+  does recognise the *spelling* of a blocking word -- ``failed`` is ``FAIL``
+  written the way the evidence producer writes it, and a gate that cannot see
+  it lets a failure through (see ``BLOCKING_SPELLINGS``);
 * **the matrix registration** (``matrix_status`` in JSON, the 判定状态 column
   in a matrix) -- what the acceptance matrix says about the row (``PASS`` /
   ``FAIL`` / ``NOT RUN`` / ``DEFERRED_MANUAL``).
@@ -120,6 +123,33 @@ BETA_RELEASE_BLOCKING = (FAIL, BLOCKED, NOT_RUN, DEFERRED_MANUAL)
 #: A status with no conclusion yet: the acceptance has not happened.
 NO_CONCLUSION = (TODO, NOT_RUN, BLOCKED, DEFERRED_MANUAL)
 
+#: The spellings the evidence producers use for the three facts that **block**,
+#: mapped onto the vocabulary's own word.
+#:
+#: The vocabulary is the authority on the words; the readers of it are not all
+#: written in the same spelling.  ``scripts/acceptance/beta_evidence.py``
+#: writes the verdict of every conclusion item in lower case (``failed`` /
+#: ``blocked``), and the run fact of a report is written ``not_run``.  The
+#: matrix, the protocol and the progress source write the same facts as
+#: ``FAIL`` / ``BLOCKED`` / ``NOT RUN``.  Those are spellings of one word, and
+#: a reader that only knows one of them cannot see the failure the other one
+#: wrote: the Beta release gate would not block on a ``failed`` item.
+#:
+#: Only the **blocking** spellings are listed, and that asymmetry is the
+#: point: a reader that misses a failure is a reader that lets a failure
+#: through.  The pass-shaped spelling (``passed``) is deliberately **not**
+#: listed -- a run fact is not a matrix registration, and the registration
+#: ``PASS`` only holds when the evidence triple is there (judgement rules
+#: §4.2).  Reading a run fact as that registration would soften the gate.
+#:
+#: This table changes no word and no gate: the vocabulary stays upper case,
+#: the four documents stay as they are, and only the reader learns spellings.
+BLOCKING_SPELLINGS = {
+    "failed": FAIL,
+    "blocked": BLOCKED,
+    "not_run": NOT_RUN,
+}
+
 #: The four places that name the vocabulary.
 PROTOCOL = "docs/08-本轮实施方案/Beta首版真实验收协议.md"
 JUDGEMENT_RULES = "docs/08-本轮实施方案/验收判定口径.md"
@@ -173,13 +203,48 @@ def normalize_status(raw: Any) -> str:
     ``PASS (follow-up)`` is never read as ``PASS``.  A cell that carries no
     known word is returned as it is -- an unknown word is not silently
     turned into a known one.
+
+    The word is recognised in **any case**, and the word that is returned is
+    always the one the vocabulary registers (upper case).  The vocabulary is
+    the authority on the words; the readers of it are not all written in the
+    same case.  The evidence producer writes its per-item verdicts in lower
+    case (``failed`` / ``blocked``), the matrix and the progress source write
+    the same two facts in upper case (``FAIL`` / ``BLOCKED``).  Those are two
+    spellings of one word, and a reader that only knows one of them cannot
+    see the failure the other one wrote -- the Beta release gate would not
+    block on a ``failed`` item.  Normalising the case does not add a word and
+    does not soften one: it only lets the reader see the word it already
+    knows.
+
+    Three blocking spellings differ from the vocabulary's word by more than
+    case (``failed`` ends in ``ed``; ``not_run`` uses an underscore), so they
+    are named in ``BLOCKING_SPELLINGS``.  Only the blocking ones are named:
+    the pass-shaped spelling is not, because a run fact is not a matrix
+    registration, and reading one as the other would soften the gate.
+
+    The **run fact** (``not_run`` / ``passed`` / ``failed`` in a report's
+    ``status`` field) and the **matrix registration** (``PASS`` / ``FAIL`` /
+    ``NOT RUN`` / ``DEFERRED_MANUAL``) stay two different things; see the
+    module docstring.  Only the spelling of a word is normalised here, never
+    the word itself.
     """
     text = str(raw or "").strip().replace("**", "").replace("`", "").strip()
+    folded = text.casefold()
     for status in sorted(ALL_STATUSES, key=len, reverse=True):
-        if text == status:
+        candidate = status.casefold()
+        if folded == candidate:
             return status
-        if text.startswith(status):
-            rest = text[len(status):]
+        if folded.startswith(candidate):
+            rest = folded[len(candidate):]
+            if rest and (rest[0].isalnum() or rest[0] == "_"):
+                continue
+            return status
+    for spelling, status in sorted(BLOCKING_SPELLINGS.items(),
+                                   key=lambda item: len(item[0]), reverse=True):
+        if folded == spelling:
+            return status
+        if folded.startswith(spelling):
+            rest = folded[len(spelling):]
             if rest and (rest[0].isalnum() or rest[0] == "_"):
                 continue
             return status
