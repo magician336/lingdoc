@@ -95,6 +95,13 @@ F01-19 `prepareRelease` 的服务端前置（`internal/lingdoc/workspacecore/rel
 - `item`：元素模板。其中 `{"$item": "<字段名>"}` 表示「取当前元素的该字段」；其余值按现有 `{{var}}` 规则替换；
 - 展开结果替换整个 `$expand` 节点，**类型是数组** ⇒ 与 openapi 的 `review_decisions` 数组 schema 兼容，wire 格式不变。
 
+**结构封闭性**（实现阶段补定，与仓内封闭词表的既有惯例一致：`check_kinds` / `retrieval_modes` 一律封闭）：
+
+- `$expand` 节点只允许 `$expand` 一个键；`$expand` 内部只允许 `collection` 与 `item` 两个键；`$item` 节点只允许 `$item` 一个键；
+- `collection` 必须是合法变量名，且**不得**写成 `{{...}}` 占位符（它按名字取已捕获的数组，不是占位符）。
+
+理由：若结构不封闭，「结构不合法 ⇒ 抛错」这条失败条件就无法判定，失败分支会退化成「随便接受」。
+
 ### 2.3 关键约束（每条都有否决理由）
 
 | 约束 | 理由 |
@@ -121,6 +128,7 @@ F01-19 `prepareRelease` 的服务端前置（`internal/lingdoc/workspacecore/rel
 | F01-15 `saveChapter` | `capture` 增加 `method_review_items: /data/review_items` | 同上；method 章节运行时为 0 条 ⇒ 展开为空数组 |
 | F01-16 `confirmChapter` | `review_decisions` 改为 `$expand`（collection=`question_review_items`） | 对全部待核项逐条 `retained_warning` |
 | F01-17 `confirmChapter` | `review_decisions` 由 `[]` 改为 `$expand`（collection=`method_review_items`） | 与 F01-16 同一条规则；method 展开后仍是空数组，但若将来有待核项也能正确处置 |
+| 契约 `variable_syntax` 字段 | 补写 `$expand` 的含义与「集合缺失/非数组/元素缺字段一律报错停止」 | 该字段是契约对**自己语法的自述**；契约新增了 `$expand` 却只写 `{{name}}` 就是自述不全。（超出原表格的一行散文，可单独回退，不影响其余改动） |
 
 **F01-13 的 `expected_chapter_version_id` 仍是 `{{accepted_question_version}}`**，不受影响。
 
@@ -135,7 +143,7 @@ F01-19 `prepareRelease` 的服务端前置（`internal/lingdoc/workspacecore/rel
 | A1 | 服务端语义保持：缺一条处置仍返回 422 `invalid_state` | Go 现有用例 + 本 Spec §1.3 实测 A | `internal/lingdoc/candidateadoption/confirmation_test.go`；`confirm-dual-mapping-verdict.json` |
 | A2 | 真实用户顺序可完成章节确认（逐条处置全部待核项 ⇒ 201） | 本 Spec §1.3 实测 B | `confirm-dual-mapping-verdict.json` |
 | A3 | 契约静态校验器接受改动后的 `workflow.json` | `python docs/08-本轮实施方案/contracts/validate_artifacts.py` 退出码 0 | 校验器输出 |
-| A4 | 静态校验器**仍然拒绝**「决策集合 ≠ 待核项集合」 | 负向用例：把 F01-16 的 collection 指向一个只含 1 条的集合 ⇒ 校验器必须报错 | 新增守护测试 |
+| A4 | 静态校验器**仍然拒绝**「决策集合 ≠ 待核项集合」 | 负向用例（见下方「A4 的可构造负向」） | 新增守护测试 |
 | A5 | 跑批执行器把 `$expand` 展开成 N 条决策 | 单元测试：给定 3 个待核项 ⇒ 展开结果 3 条、ID 与集合一致 | 新增守护测试 |
 | A6 | `collection` 变量缺失 / 非数组 / 元素缺字段 ⇒ **抛错停止**，不产生请求 | 负向单元测试 | 新增守护测试 |
 | A7 | 静态校验器与执行器用的是**同一份**展开实现（规则只有一份） | 守护测试：断言两处都从 `scripts/lingdoc_mock/workflow_expand.py` 导入 | 新增守护测试 |
@@ -146,6 +154,23 @@ F01-19 `prepareRelease` 的服务端前置（`internal/lingdoc/workspacecore/rel
 | A12 | 改动未越过路径所有权 | 登记处归属核对：`workflow.json`/`run_f01.py` = PF-10；`validate_artifacts.py` = PF-14（跨面借用需注记）；新文件登记归 PF-10 | 登记处补记 PR |
 
 **三视角分离**：A1/A2 是**契约判定**；A3/A4/A5/A6/A7/A9 是**执行器与静态校验器结果**；A8/A10/A11 是**自动化测试与真实跑批**。三者不互相替代。
+
+### 3.1 A4 的可构造负向（实现阶段补正，不放宽判定）
+
+初稿写的 A4 负向是「把 F01-16 的 collection 指向一个**只含 1 条**的集合 ⇒ 校验器必须报错」。**这条在静态夹具里不可构造**：契约夹具里 question 章节本来就只有 1 条待核项（`review-1`），指向 1 条的集合恰好是**对**的；而契约的 capture 只能指向整个数组，没有子集指针。
+
+**补正后的可构造负向**（两条，都由同一个双射断言 `unique_by(body['review_decisions'],'review_item_id')==review_ids(ch)` 拒绝）：
+
+1. **条数不匹配**：把 F01-16 的 collection 指向 `method_review_items`（0 条），而该章节夹具有 1 条待核项 ⇒ 0 ≠ 1 ⇒ 拒绝。
+2. **ID 集合不匹配**：把 F01-16 的 item 模板改成取 `origin_candidate_id` ⇒ 决策 ID 集合与待核项 ID 集合不相等 ⇒ 拒绝。
+
+**判定强度未变**：拒绝点仍是那条「决策集合必须等于待核项集合」的等式，**没有**新增、放宽或绕过任何判定。
+
+### 3.2 实现阶段补定的其余三点
+
+- **§2.2 的结构封闭性**（`$expand`/`$item` 的键封闭、`collection` 不得写成占位符）——理由见 §2.2。
+- **契约 `variable_syntax` 补一行**——理由见 §2.5 表格末行。
+- **runner 的预检变量扫描不纳入 collection 名**：`_preflight_required_variables` 只扫 `{{name}}` 占位符；collection 名不是占位符。因此「collection 未捕获」是在**构造请求体时**抛错，仍在**发出任何请求之前** ⇒ 满足 A6 的「不产生任何请求」。若把它纳入预检，报错文案会变成「环境未提供该变量」，与实情（契约本该自己捕获它）不符，故保持现状。
 
 ---
 
