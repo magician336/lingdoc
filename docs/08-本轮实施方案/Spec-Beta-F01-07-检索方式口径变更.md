@@ -87,6 +87,32 @@ after 的原话：「受控窗口的 2 条调用行里没有 embedding 行；该
 
 ⇒ **窗口本身早就是 PASS 的**；F01-07 之所以不被判定，只因为它自己声明了 `vector_required`。产物：`f01-07-declaration-before-after.json`。
 
+### 3.4 放行链自己的判定（不是模块的自检）
+
+§3.3 走的是 `controlled_window_check` 模块。**放行链那一层**（`scripts/acceptance/beta_evidence.py` 的 `controlled_window_part`）也用同一套真实产物判了一遍 —— 调的是**它自己的函数**，不是一份复制：
+
+```
+=== window verdict ===
+status  = PASS
+reason  = 受控窗口的 2 条调用行里没有 embedding 行。
+requests= 2  embedding_rows= []
+cross_check = {"available": true, "reason": "部署的模型调用账本里有 0 个 embedding 模型的调用。", "embedding_models": []}
+
+=== per-node outcomes (the release chain's own) ===
+held       受控窗口：embedding 调用核验（受控窗口内不得有 embedding 调用行）
+           evidence: 受控窗口的 2 条调用行里没有 embedding 行。
+held       受控窗口 · F01-07 startGeneration（keyword_only）
+           evidence: 受控窗口的 2 条调用行里没有 embedding 行；该节点声明 keyword_only，可以在受控窗口里被判定。
+not_run    受控窗口 · F01-08 getGeneration（undeclared）
+           reason: 契约没有为这个节点声明检索方式（undeclared）：它不参与受控窗口的 embedding 判定，所以本轮没有判定它。
+（其余 26 个节点同为 undeclared ⇒ not_run，见 §6 的边界说明）
+```
+
+⇒ **F01-07 在放行链这一层被判为 `held`**，窗口级结论也是 `held`，交叉核对可用且**部署账本里 0 个 embedding 模型**。
+产物：`release-chain-f01-07-verdict.json`（本节脚本 **0 次 provider 请求**，只读已经发生的事）。
+
+⚠️ **这一节证明的是「这条节点能被判定」，不是「整条 F01 通过」**：F01-08…F01-23 仍因 `undeclared` 而 NOT RUN，F01-11 仍是 #608 的 FAIL。
+
 ---
 
 ## 4. 验收矩阵
@@ -100,6 +126,7 @@ after 的原话：「受控窗口的 2 条调用行里没有 embedding 行；该
 | A3 | **`keyword_only` 节点只有在窗口 PASS 时才被判定为 held** | 新增守护（窗口 PASS ⇒ 该节点 held；窗口 FAIL ⇒ failed；窗口 NOT RUN ⇒ not_run） | **PASS** | 守护断言（CI） |
 | A4 | 受控窗口里**没有 embedding 调用行** ⇒ 窗口 PASS | `test_a_window_without_embedding_calls_passes` | **PASS** | 守护断言 ＋ 真实两本账本（§3.3） |
 | A5 | 受控窗口里**有** embedding 调用行 ⇒ **整个窗口判失败**（不是「检索通过」） | `test_a_window_with_an_embedding_call_fails_as_a_whole` ＋ `test_a_controlled_window_with_an_embedding_call_fails_as_a_whole` | **PASS** | 守护断言 |
+| A5b | **放行链自己**（`beta_evidence.controlled_window_part`，不是模块自检）把 F01-07 判为 `held`，窗口级结论也是 `held`，交叉核对可用且 0 个 embedding 模型 | `python D:\wt\lingdoc-485-evidence\scripts\exp_f0107_release_chain_verdict.py`（真实两本账本 ＋ 隔离 SQLite ＋ 只改一个字段的契约副本；**0 次 provider 请求**） | **PASS** | `release-chain-f01-07-verdict.json` |
 | A6 | 窗口账本**读不到** ⇒ NOT RUN，**永不** PASS | `test_a_window_that_cannot_be_read_is_not_run_and_never_pass` ＋ `test_a_window_with_only_one_of_its_two_ledgers_is_not_run` | **PASS** | 守护断言 |
 | A7 | 没有模型表 ⇒ NOT RUN（「读不到」不等于「没有」） | `test_a_window_without_the_model_table_is_not_run` | **PASS** | 守护断言 |
 | A8 | 声明了没人知道的检索方式 ⇒ **按名字拒绝**，不得静默跳过 | `test_a_misspelled_declaration_is_refused_by_name` | **PASS** | 守护断言 |
