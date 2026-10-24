@@ -234,6 +234,47 @@ func TestLimitChecklistCannotSeeAViolationTheProfileCeilingCannotSee(t *testing.
 	}
 }
 
+// The shared budget ledger's criteria did not change.
+//
+// The expression the shared budget ledger used before the checklist existed
+// is written out here verbatim, and the checklist has to answer exactly as it
+// does on every case of a matrix. The shared budget ledger's verdict decides
+// whether a window keeps spending, so a checklist that is even slightly
+// stricter or slightly looser would change what an existing ledger says --
+// and "slightly looser" would be a relaxation nobody asked for.
+func TestTheChecklistAgreesWithTheSharedLedgersOldCriteria(t *testing.T) {
+	profile := QwenProfile
+	_, _, totalMax := ProfileTokenLimits(profile)
+
+	bounds := []int{0, 1, 2048, QwenInputMax}
+	limits := []int{0, 1, 4096, QwenOutputMax}
+	inputs := []int{-1, 0, 1, 2048, 2049, QwenInputMax, QwenInputMax + 1, totalMax, totalMax + 1}
+	outputs := []int{-1, 0, 1, 4096, 4097, QwenOutputMax, QwenOutputMax + 1, totalMax, totalMax + 1}
+
+	for _, bound := range bounds {
+		for _, limit := range limits {
+			for _, input := range inputs {
+				for _, output := range outputs {
+					// The criteria the shared budget ledger applied before
+					// the checklist existed, written out as they were.
+					old := input < 0 || output < 0 || input > bound ||
+						output > limit || input+output > totalMax
+					verdict := EvaluateCallLimits(profile, CallFacts{
+						InputUpperBound: bound,
+						OutputLimit:     limit,
+						InputTokens:     input,
+						OutputTokens:    output,
+					})
+					if verdict.Violated != old {
+						t.Fatalf("the checklist answers %v where the old criteria answered %v: bound %d, limit %d, input %d, output %d",
+							verdict.Violated, old, bound, limit, input, output)
+					}
+				}
+			}
+		}
+	}
+}
+
 // The first profile's numbers did not move.
 //
 // This is the configuration half of the "the old profile is unchanged" proof:
