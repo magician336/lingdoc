@@ -65,6 +65,21 @@ var (
 	ErrAcceptanceBudgetUnavailable = errors.New("acceptance_budget_unavailable")
 	ErrAcceptanceOutcomeUnknown    = errors.New("acceptance_outcome_unknown")
 	ErrAcceptanceModelMismatch     = errors.New("acceptance_model_mismatch")
+	// ErrAcceptanceModelRejected is the answer for a retrieval that a
+	// controlled acceptance profile refuses because the model it needs is not
+	// on the profile's allowlist.
+	//
+	// The refusal happens before the request reaches a provider, and repeating
+	// the request does not change it: it is the profile's model allowlist that
+	// says no. So it keeps its own non-retryable form instead of the
+	// dependency-unavailable form, which promises that a later attempt could
+	// succeed. The cause stays reachable -- the acceptance budget's own "model
+	// is outside the profile" failure is what this one is made of.
+	ErrAcceptanceModelRejected = clienterror.Wrap(
+		clienterror.AcceptanceModelPolicyRejected,
+		"acceptance_model_policy_rejected: "+acceptancebudget.ErrWrongModel.Error(),
+		acceptancebudget.ErrWrongModel,
+	)
 	// ErrUnauthenticated is a request without a usable actor.
 	ErrUnauthenticated = clienterror.New(clienterror.Unauthenticated, "unauthenticated")
 )
@@ -639,7 +654,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	allowed := make(map[string]Source, len(input.Sources))
 	for _, source := range input.Sources {
 		assetRevision, selected := selectedAssets[source.AssetID]
-		if source.ID == "" || source.ProjectID != run.ProjectID || source.Status != "available" || !selected || assetRevision != source.AssetRevision {
+		if source.ID == "" || source.ProjectID != run.ProjectID || source.Status != string(evidence.SourceAvailable) || !selected || assetRevision != source.AssetRevision {
 			continue
 		}
 		allowed[source.ID] = source

@@ -68,6 +68,10 @@ set:
   is a shared serial resource: whoever merges first takes the next number.**
   A face that adds a migration must rebase onto the integration branch tip
   and re-allocate its version number if the slot it picked was taken.
+* ``docs/BETA_STATUS.md`` -- the Beta status document.  Every face reports its
+  own four dimensions there, and the management session reconciles the
+  rounds, so no single face may own it: declaring it would forbid the other
+  faces from updating the status of their own work.
 
 The path-overlap check cannot catch this kind of contention, because it is a
 race for a *sequence*, not for a path.  It shows up as an explicit merge
@@ -296,6 +300,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的：改了别面的路径就必须显式移交。"
             "移交是单向的，本面不再声称拥有它（本面路径集 55 → 54 条）。"
             "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
+            "**2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"
         ),
     },
     {
@@ -1018,6 +1023,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/views/lingdoc/PermissionEvidence.vue", "file"),
             # #576：验收台单测适配新签名，并断言与审计列拿到同一个字符串。
             ("frontend/src/views/lingdoc/permissionEvidence.test.ts", "file"),
+            # 错误形态的跨面归并文档：dependency_unavailable 的形态数与 retryable 取值的实况，以及新的策略拒绝形态。
+            ("docs/08-本轮实施方案/Spec-47-段二-错误形态跨面归并与共享核心提取.md", "file"),
+            # 检索失败的阴性验证：受控 profile 拒绝与非策略故障必须给出不同的对外形态。
+            ("internal/lingdoc/workspace/generation_retrieval_error_test.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1067,7 +1076,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（项目 / 章节 / 来源绑定 / 交付文件与下载哈希）。"
             "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
             "**未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"
-            "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"),
+            "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"
+            "**2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
