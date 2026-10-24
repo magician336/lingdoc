@@ -163,6 +163,14 @@ type KnowledgeBaseConfig struct {
 	// IndexingStrategy controls which indexing pipelines are active.
 	// nil means "no change" when updating (preserves existing strategy).
 	IndexingStrategy *IndexingStrategy `yaml:"indexing_strategy"       json:"indexing_strategy"`
+	// EmbeddingModelID points at the embedding model this knowledge base uses.
+	//
+	// nil means "leave the current value alone" when updating; a non-nil
+	// value is written verbatim (an empty string clears it). The field used
+	// to be accepted by the update endpoint and then dropped on the floor:
+	// the client got 200 and an empty value on the next read, so "set" and
+	// "ignored" were indistinguishable.
+	EmbeddingModelID *string `yaml:"embedding_model_id"      json:"embedding_model_id,omitempty"`
 }
 
 const (

@@ -67,11 +67,17 @@ type KnowledgeBaseService interface {
 	//   - name: New knowledge base name
 	//   - description: New knowledge base description
 	//   - config: Knowledge base configuration, including chunking strategy, vectorization settings, etc.
+	//   - embeddingModelID: the embedding model to persist. nil keeps the current
+	//     value; a non-nil value is written verbatim (the empty string clears it).
+	//     The field used to be accepted by the HTTP layer and then dropped, so a
+	//     client could not tell "set" from "ignored" — it saw 200 and an empty
+	//     value on the next read.
 	// Returns:
 	//   - Updated knowledge base object
 	//   - Possible errors such as not existing, insufficient permissions, etc.
 	UpdateKnowledgeBase(ctx context.Context,
 		id string, name string, description string, config *types.KnowledgeBaseConfig,
+		embeddingModelID *string,
 	) (*types.KnowledgeBase, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base

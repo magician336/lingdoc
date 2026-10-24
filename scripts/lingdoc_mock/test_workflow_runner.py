@@ -406,6 +406,7 @@ class RecordedOutcomeTest(unittest.TestCase):
         runner.run()
         report = runner.report("completed")
         self.assertEqual(set(report), {"workflow", "runner_status", "completed_steps", "total_steps", "steps",
+                                      "material_gate_stages",
                                        "verification_scope", "provider_semantics_status", "manual_assertions"})
 
     def test_seeded_variables_reach_the_steps_and_a_second_run_reproduces_the_first(self):

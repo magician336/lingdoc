@@ -45,6 +45,9 @@ type SourceRuntime struct {
 	templates    delivery.TemplateReader
 	db           *gorm.DB
 	audit        AuditSink
+	// originFiles reads a material's source bytes from storage. It is
+	// optional; see ConnectOriginFiles.
+	originFiles OriginFileReader
 	// modelCallLedger is the ledger every adapter that calls a provider
 	// writes to.  The runtime owns the one instance on purpose: the agent
 	// turn and the generation run write to the same ledger, so "one real

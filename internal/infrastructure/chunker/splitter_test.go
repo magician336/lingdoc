@@ -658,12 +658,19 @@ func TestSplitText_LargeChineseDocument(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Table header prepending tests
+// Table header context tests
+//
+// The column names travel in Chunk.ContextHeader, not in Chunk.Content.
+// Content is the document slice between Start and End; the header sits at a
+// different place in the document, so putting it into the content made the
+// content longer than the coordinate span and broke every coordinate-based
+// re-check downstream (the source re-check compares the origin slice with the
+// quoted text — see the Chunk doc and #485 / D1).
 // ---------------------------------------------------------------------------
 
-func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
+func TestSplitText_TableHeaderCarriedAsContext(t *testing.T) {
 	// A markdown table large enough to span multiple chunks.
-	// Each chunk after the first should have the header row + separator prepended.
+	// Each chunk after the first should carry the header row + separator as context.
 	text := "" +
 		"前面的文字\n\n" +
 		"| 姓名 | 年龄 | 城市 |\n" +
@@ -686,7 +693,7 @@ func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
 	}
 
 	// Find chunks that contain table row data but not the original header position.
-	// These should have the header prepended.
+	// These should carry the header as context.
 	headerPrependCount := 0
 	for _, c := range chunks {
 		if strings.Contains(c.Content, "| 李四") || strings.Contains(c.Content, "| 王五") ||
@@ -694,19 +701,25 @@ func TestSplitText_TableHeaderPrependedToChunks(t *testing.T) {
 			strings.Contains(c.Content, "| 周八") {
 			if !strings.Contains(c.Content, "| 张三") {
 				// This is a chunk with table rows but not the first row;
-				// it should have the header prepended.
-				if !strings.HasPrefix(c.Content, tableHeader) {
-					t.Errorf("chunk (seq=%d) has table rows but is missing prepended header:\n%s",
-						c.Seq, c.Content)
+				// it should carry the header as context.
+				if !strings.Contains(c.ContextHeader, tableHeader) {
+					t.Errorf("chunk (seq=%d) has table rows but is missing the header context:\n%s",
+						c.Seq, c.ContextHeader)
 				} else {
 					headerPrependCount++
+				}
+				// The header must not be part of the content: the content is
+				// the document slice at [Start,End).
+				if strings.Contains(c.Content, tableHeader) {
+					t.Errorf("chunk (seq=%d) must not carry the header inside its content:\n%s",
+						c.Seq, c.Content)
 				}
 			}
 		}
 	}
 
 	if headerPrependCount == 0 {
-		t.Error("expected at least one chunk to have prepended table header, found none")
+		t.Error("expected at least one chunk to carry the table header as context, found none")
 		for i, c := range chunks {
 			t.Logf("chunk[%d] (seq=%d, start=%d, end=%d):\n%s", i, c.Seq, c.Start, c.End, c.Content)
 		}
@@ -891,12 +904,12 @@ func TestSplitText_EmptyHeaderRowPrepend(t *testing.T) {
 			strings.Contains(c.Content, "TC-003") ||
 			strings.Contains(c.Content, "TC-004")
 		if hasLaterRow && !strings.Contains(c.Content, "TC-001") {
-			// Should have column names prepended
-			if !strings.Contains(c.Content, "用例ID") {
-				t.Errorf("chunk with data rows should have real column names prepended:\n%s", c.Content)
+			// Should have the real column names as context
+			if !strings.Contains(c.ContextHeader, "用例ID") {
+				t.Errorf("chunk with data rows should carry the real column names as context:\n%s", c.ContextHeader)
 			}
 			// Should NOT have the empty || row
-			lines := strings.Split(c.Content, "\n")
+			lines := strings.Split(c.ContextHeader, "\n")
 			for _, line := range lines {
 				trimmed := strings.TrimSpace(line)
 				isOnlyPipes := trimmed != "" && func() bool {
@@ -908,7 +921,7 @@ func TestSplitText_EmptyHeaderRowPrepend(t *testing.T) {
 					return true
 				}()
 				if isOnlyPipes {
-					t.Errorf("chunk should NOT contain empty pipe row %q:\n%s", trimmed, c.Content)
+					t.Errorf("chunk context should NOT contain empty pipe row %q:\n%s", trimmed, c.ContextHeader)
 					break
 				}
 			}
@@ -1017,14 +1030,15 @@ func TestSplitText_MultipleTablesInDocument(t *testing.T) {
 	cfg := SplitterConfig{ChunkSize: 50, ChunkOverlap: 5, Separators: []string{"\n\n", "\n"}}
 	chunks := SplitText(text, cfg)
 
-	// Verify that if a chunk has rows from table 2, it has table 2's header, not table 1's.
+	// Verify that if a chunk has rows from table 2, it carries table 2's header
+	// as context, not table 1's.
 	for _, c := range chunks {
 		if strings.Contains(c.Content, "| Y |") && !strings.Contains(c.Content, "| X |") {
-			if !strings.Contains(c.Content, "| 项目 | 状态 |") {
-				t.Errorf("chunk with table-2 rows should have table-2 header:\n%s", c.Content)
+			if !strings.Contains(c.ContextHeader, "| 项目 | 状态 |") {
+				t.Errorf("chunk with table-2 rows should carry the table-2 header as context:\n%s", c.ContextHeader)
 			}
-			if strings.Contains(c.Content, "| 名称 | 值 |") {
-				t.Errorf("chunk with table-2 rows should NOT have table-1 header:\n%s", c.Content)
+			if strings.Contains(c.ContextHeader, "| 名称 | 值 |") {
+				t.Errorf("chunk with table-2 rows should NOT carry the table-1 header:\n%s", c.ContextHeader)
 			}
 		}
 	}

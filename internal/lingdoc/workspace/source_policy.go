@@ -432,7 +432,22 @@ func (h *SourceRuntime) readSource(ctx context.Context, actor Actor, projectID, 
 
 // origins 现取原文读取器。装配只有这一处定义——将来换实现不会漏掉某条读路径。
 func (h *SourceRuntime) origins() evidence.OriginReader {
-	return evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
+	return evidence.NewOriginReader(dbKnowledgeReader{db: h.db, files: h.originFiles})
+}
+
+// ConnectOriginFiles hands the runtime the reader that can fetch a
+// material's source bytes.
+//
+// The origin text is what a quoted text is proven against. For an uploaded
+// material it lives in storage, so the runtime needs the storage side to
+// read it; without it the runtime can only prove a quote against the chunk
+// itself (the self-consistency tier), and every source of that material is
+// reported as "not a stable original".
+func (h *SourceRuntime) ConnectOriginFiles(read OriginFileReader) {
+	if h == nil {
+		return
+	}
+	h.originFiles = read
 }
 
 // rebuiltSource 是一条引用在底座上重建出来的样子，连同它所属资料此刻的标题。

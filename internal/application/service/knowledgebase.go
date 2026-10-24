@@ -639,11 +639,22 @@ func (s *knowledgeBaseService) FillKnowledgeBaseCounts(ctx context.Context, kb *
 //
 // Any future cross-store rebind workflow must use raw SQL through a
 // dedicated repository method — the only sanctioned write path post-creation.
+//
+// The embedding model is persisted here, not swallowed: the HTTP layer used to
+// accept "embedding_model_id" and drop it, so a client that configured the
+// model got 200 and an empty value back on the next read. Two carriers are
+// accepted and the explicit parameter wins over the one inside "config":
+//
+//   - embeddingModelID: nil keeps the current value, a value is written
+//     verbatim (the empty string clears it);
+//   - config.EmbeddingModelID: the same rule, for clients that put the whole
+//     configuration under "config".
 func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	id string,
 	name string,
 	description string,
 	config *types.KnowledgeBaseConfig,
+	embeddingModelID *string,
 ) (*types.KnowledgeBase, error) {
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
@@ -671,10 +682,31 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	if config != nil {
 		changedFields = append(changedFields, "config")
 	}
+	modelID := embeddingModelID
+	if modelID == nil && config != nil {
+		modelID = config.EmbeddingModelID
+	}
+	if modelID != nil && kb.EmbeddingModelID != *modelID {
+		changedFields = append(changedFields, "embedding_model_id")
+	}
 
 	// Update the knowledge base properties
 	kb.Name = name
 	kb.Description = description
+	if modelID != nil {
+		// Validate before mutating: a refused model must not leave a
+		// half-written value behind on the row.
+		probe := *kb
+		probe.EmbeddingModelID = *modelID
+		// Same guard as the create path: a chat model bound as the embedding
+		// model makes every ingest and every query call an endpoint that does
+		// not serve embeddings. The field used to be dropped here, so this
+		// hole only opens once the value is actually persisted.
+		if err := s.validateEmbeddingModelBinding(ctx, &probe); err != nil {
+			return nil, err
+		}
+		kb.EmbeddingModelID = *modelID
+	}
 	if config != nil {
 		kb.ChunkingConfig = config.ChunkingConfig
 		kb.ImageProcessingConfig = config.ImageProcessingConfig
