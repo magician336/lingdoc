@@ -880,7 +880,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "55-Spec 决策 5 的词表收口整体未做（candidate_shape.go 在 PF-2 的目录级声明内、"
             "runtime_control.go 属在飞的 PF-8）⇒ 本面复用既有 run_mode 取值，不新增第三套词表。"
             "**迁移号**：本面用 sqlite 000055 / versioned 000134（000054 / 000133 归 PF-7，"
-            "**2026-10-24 #592 跨面借用（owner 仍是本面，不变更归属）**：#592（PR #601）让**本面拥有的**`scripts/acceptance/beta_evidence.py` 与 `scripts/ci/test_lingdoc_beta_evidence.py` 承担放行判定侧的「人工断言未判定 ⇒ 不得 PASS」「契约里没跑到的 checks ⇒ 明确 NOT RUN」「provider_semantics_status 参与整体判定」「受控窗口核验接入放行链」四件事。**owner 仍是本面**，本面按「owner 保持拥有、借用方落地后归还」的先例借给 PF-14 使用（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根）；**行为由 PF-14 的需要决定，但归属不变**。⇒ 借用事实记在 PF-14 侧与本面两侧，两侧一致。 已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
+            "**2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用（owner 仍是本面，不变更归属）**：#592（PR #601）让**本面拥有的**`scripts/acceptance/beta_evidence.py` 与 `scripts/ci/test_lingdoc_beta_evidence.py` 承担放行判定侧的「人工断言未判定 ⇒ 不得 PASS」「契约里没跑到的 checks ⇒ 明确 NOT RUN」「provider_semantics_status 参与整体判定」「受控窗口核验接入放行链」四件事。**owner 仍是本面**，本面按「owner 保持拥有、借用方落地后归还」的先例借给 PF-14 使用（先例：PF-8 借 PF-4 的四个路径、PF-10 借 PF-7 的组合根）；**行为由 PF-14 的需要决定，但归属不变**。⇒ 借用事实记在 PF-14 侧与本面两侧，两侧一致。 已记录在 main 上 ⇒ 按约定已登记的面不再让号；机器侧不兜底，判据见本面 summary）。"
         ),
     },
     {
@@ -1034,6 +1034,66 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("docs/08-本轮实施方案/Spec-47-段二-错误形态跨面归并与共享核心提取.md", "file"),
             # 检索失败的阴性验证：受控 profile 拒绝与非策略故障必须给出不同的对外形态。
             ("internal/lingdoc/workspace/generation_retrieval_error_test.go", "file"),
+            # client 侧的知识库更新调用点：#590 让它把 embedding_model_id 一起传下去。
+            ("client/knowledgebase.go", "file"),
+            # 材料合格性前置门的命令行实现（两阶段：内容检查 ＋ 来源引文检查，fail-closed）。
+            ("cmd/lingdoc-material-check/main.go", "file"),
+            # 材料闸门命令自身的单测：退出码、分页聚合、token 读取与三条 fail-closed 路径。
+            ("cmd/lingdoc-material-check/main_test.go", "file"),
+            # 知识图谱查询工具的测试随本 PR 的分块语义调整。
+            ("internal/agent/tools/query_knowledge_graph_test.go", "file"),
+            # D1 的数据库级往返用例：PUT 写入 embedding_model_id 后走独立读回路径验证，删掉持久化调用必须转红。
+            ("internal/application/repository/knowledgebase_embedding_model_roundtrip_test.go", "file"),
+            # 数据源服务的测试随本 PR 的分块语义调整。
+            ("internal/application/service/datasource_service_test.go", "file"),
+            # 无 embedding 模型时的处理：解析不中止、分块照落、index_status 记 failed（#590 的核心行为变更）。
+            ("internal/application/service/knowledge_embedding_failure_test.go", "file"),
+            # 分块与 embedding 解耦的实现：取不到 embedding 模型不再中止解析，路由按可服务类型收窄。
+            ("internal/application/service/knowledge_process.go", "file"),
+            # 解耦的守护：分块路径上不调 embedder、路由只含关键词。
+            ("internal/application/service/knowledge_process_embedding_decoupled_test.go", "file"),
+            # D2 的守护：路由失败与 embedding 缺失各自记自己的原因，不互相覆盖。
+            ("internal/application/service/knowledge_process_stage_failure_test.go", "file"),
+            # fake 仓库改为真正落库并返回副本，使「已持久化」断言不再结构上不可能失败（D1 的根因）。
+            ("internal/application/service/knowledgebase_pr3_test.go", "file"),
+            # embedding_model_id 更新的服务层测试（读回值 ＋ 省略字段时保留原值）。
+            ("internal/application/service/knowledgebase_update_embedding_model_test.go", "file"),
+            # 新增的解析阶段错误码（embedding 模型不可用等），有唯一使用点。
+            ("internal/errors/parse_error_codes.go", "file"),
+            # 原文读取：新增存储层能力接口（OriginBytesReader），并把接口的 err 语义写准（D4）。
+            ("internal/evidence/origin.go", "file"),
+            # 存储层原文读取的测试（含三类失败降档与超上限拒绝）。
+            ("internal/evidence/origin_storage_test.go", "file"),
+            # 材料合格性判据：坐标越界／空内容／逐字不一致三道检查，与来源复核共用 quoteAt。
+            ("internal/evidence/qualification.go", "file"),
+            # 合格性判据的阴性用例（表头污染、坐标越界、空内容、无分块）。
+            ("internal/evidence/qualification_test.go", "file"),
+            # 知识库更新接口的请求/响应：embedding_model_id 真的进出。
+            ("internal/handler/knowledgebase.go", "file"),
+            # handler 层的 embedding_model_id 读回测试。
+            ("internal/handler/knowledgebase_update_embedding_model_test.go", "file"),
+            # 分块器：表头移出正文，正文只保留原文切片，坐标与正文长度自洽。
+            ("internal/infrastructure/chunker/splitter.go", "file"),
+            # 分块器的坐标与正文自洽测试。
+            ("internal/infrastructure/chunker/splitter_test.go", "file"),
+            # 逐字不变式的守护：分块正文必须等于原文在它自己坐标上的切片。
+            ("internal/infrastructure/chunker/verbatim_invariant_test.go", "file"),
+            # 存储层适配：把上传材料的 resource:// 引用读成字节（原文取回的真实路径）。
+            ("internal/lingdoc/workspace/adapters_gorm.go", "file"),
+            # 存储层原文读取的整链测试（含 resource:// 形状的真实路径）。
+            ("internal/lingdoc/workspace/adapters_gorm_origin_test.go", "file"),
+            # 来源复核：坐标与引文的自洽判定。
+            ("internal/lingdoc/workspace/source_policy.go", "file"),
+            # 知识库更新接口的签名（新增 embedding_model_id 参数）。
+            ("internal/types/interfaces/knowledgebase.go", "file"),
+            # 知识库模型：embedding_model_id 字段（读回即此字段）。
+            ("internal/types/knowledgebase.go", "file"),
+            # 材料合格性闸门的守护用例：两阶段的 fail-closed 行为（不合格材料必须被前置检查拒绝，且失败报告必须落盘）。
+            ("scripts/lingdoc_mock/test_material_gate.py", "file"),
+            # 工作流报告的守护用例：F01 报告的判定口径（未求值的 check 不得被记为通过，失败的阶段必须留下原因）。
+            ("scripts/lingdoc_mock/test_workflow_reports.py", "file"),
+            # 工作流执行器的守护用例：阶段顺序与两阶段闸门的接线（闸门位置错了必须转红）。
+            ("scripts/lingdoc_mock/test_workflow_runner.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1084,7 +1144,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
             "**未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"
             "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"
-            "**2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
+            "**2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
@@ -1303,7 +1363,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（逐个迁移夹具，形态扫描基线随之变短，守护会挡住「基线变长」）；"
             "② 夹具的迁移子集仍手抄（本面补的是「必须带上本面新增的迁移」）；"
             "③ internal/container 的用例本地跑不了（缺 sqlite3.h / duckdb bindings，**基线同因**）⇒ CI 上跑；"
-            "④ PostgreSQL 方言本地不跑（无 LINGDOC_TEST_POSTGRES_DSN）⇒ CI 的 integration 作业带 PG service。"
+            "**2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 ④ PostgreSQL 方言本地不跑（无 LINGDOC_TEST_POSTGRES_DSN）⇒ CI 的 integration 作业带 PG service。"
         ),
     },
     {
