@@ -265,16 +265,7 @@ func (c *AgentConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements driver.Valuer interface for SessionAgentConfig
@@ -287,16 +278,7 @@ func (c *SessionAgentConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // ResolveSystemPrompt returns the prompt template for the given web search state.

@@ -571,9 +571,11 @@ func TestConnectionConfig_ValueScan(t *testing.T) {
 		assert.NoError(t, c.Scan(nil))
 	})
 
-	t.Run("Scan non-byte value returns no error", func(t *testing.T) {
+	t.Run("Scan non-byte value reports an unsupported carrier", func(t *testing.T) {
 		var c ConnectionConfig
-		assert.NoError(t, c.Scan(42))
+		err := c.Scan(42)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrUnsupportedJSONColumnValue)
 	})
 
 	t.Run("original struct is not mutated by Value", func(t *testing.T) {
@@ -706,9 +708,11 @@ func TestIndexConfig_ValueScan(t *testing.T) {
 		assert.NoError(t, c.Scan(nil))
 	})
 
-	t.Run("Scan non-byte value returns no error", func(t *testing.T) {
+	t.Run("Scan non-byte value reports an unsupported carrier", func(t *testing.T) {
 		var c IndexConfig
-		assert.NoError(t, c.Scan(42))
+		err := c.Scan(42)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrUnsupportedJSONColumnValue)
 	})
 }
 

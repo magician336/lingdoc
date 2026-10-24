@@ -247,11 +247,7 @@ func (c *StringArray) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements the driver.Valuer interface, used to convert SummaryConfig to database value
@@ -264,11 +260,7 @@ func (c *SummaryConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // SessionLastRequestState captures the user-facing input-bar state at the
@@ -305,19 +297,14 @@ func (s *SessionLastRequestState) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
+	}
+	if len(raw) == 0 {
 		return nil
 	}
-	if len(b) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(b, s); err != nil {
+	if err := json.Unmarshal(raw, s); err != nil {
 		// Tolerate legacy shapes from before this column was repurposed.
 		return nil
 	}
@@ -334,9 +321,5 @@ func (c *ContextConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }

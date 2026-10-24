@@ -144,16 +144,7 @@ func (u *TokenUsage) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		return nil
-	}
-	return json.Unmarshal(b, u)
+	return scanJSONColumn(value, u)
 }
 
 // LLMToolCall represents a function/tool call from the LLM
@@ -349,9 +340,5 @@ func (c *References) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }

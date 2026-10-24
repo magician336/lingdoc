@@ -53,17 +53,7 @@ func (s *SuggestionItems) Scan(value interface{}) error {
 		*s = SuggestionItems{}
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
-		*s = SuggestionItems{}
-		return nil
-	}
-	return json.Unmarshal(b, s)
+	return scanJSONColumn(value, s)
 }
 
 // MessageSuggestionSet is the durable generation/cache record for one
