@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive } from 'vue'
-import { ProjectMaterialIntake, materialReadiness, type MaterialPorts, type MaterialObservation, type MaterialTrace, type MaterialStorage } from './projectMaterialIntake'
+import { ProjectMaterialIntake, materialReadiness, IN_PROGRESS_PARSE_STATUSES, type MaterialPorts, type MaterialObservation, type MaterialTrace, type MaterialStorage } from './projectMaterialIntake'
 import type { Asset, Source } from '@/api/lingdoc/workspace'
 
 function knowledge() { return { id: 'knowledge-a', knowledge_base_id: 'kb-a', title: 'Synthetic material', parse_status: 'completed' } }
@@ -56,10 +56,15 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-test('pending, processing, finalizing, failed, cancelled and unknown never imply indexing completion', () => {
-  for (const state of ['pending', 'unprocessed', 'processing', 'finalizing', 'failed', 'cancelled', '', 'future']) {
+test('in-progress, failed, cancelled and unknown statuses never imply indexing completion', () => {
+  for (const state of [...IN_PROGRESS_PARSE_STATUSES, 'failed', 'cancelled', '', 'future']) {
     assert.equal(materialReadiness({ ...knowledge(), parse_status: state }, trace()).ready, false, state)
   }
+})
+test('finalizing keeps a distinct user-facing label from parsing', () => {
+  const processing = materialReadiness({ ...knowledge(), parse_status: 'processing' }, trace()).label
+  const finalizing = materialReadiness({ ...knowledge(), parse_status: 'finalizing' }, trace()).label
+  assert.notEqual(processing, finalizing)
 })
 test('parse completed plus a REAL latest-attempt completed embedding stage is positive indexing evidence', () => {
   assert.equal(materialReadiness(knowledge(), trace()).ready, true)

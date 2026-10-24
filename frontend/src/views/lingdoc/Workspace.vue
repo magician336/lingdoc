@@ -340,9 +340,9 @@
 </div>
 
         <div class="wb-pane wb-pane-sources">
-        <button v-if="project.status === 'draft'" type="button" class="ghost" @click="closeInsp">收起项目资料</button>
+        <button type="button" class="ghost" @click="closeInsp">收起项目资料</button>
         <section class="assets">
-          <ProjectMaterialIntakePanel :key="JSON.stringify([auth.currentUserId,auth.effectiveTenantId,project.id])" :project-id="project.id" :project-name="project.name" :identity="JSON.stringify([auth.currentUserId,auth.effectiveTenantId])" @bound="refreshMaterialAssets" />
+          <ProjectMaterialIntakePanel :key="materialIdentity + ':' + project.id" :project-id="project.id" :project-name="project.name" :identity="materialIdentity" @bound="refreshMaterialAssets" />
           <h3>课题绑定资料</h3>
           <a href="/platform/knowledge-bases" target="_blank" rel="noopener" class="native-bank-link">管理资料库（WeKnora，新窗口）</a><p class="muted">资料库用于保管和索引资料；本窗口保留当前文稿。绑定和正文引用仍在此处分别完成。</p>
           <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
@@ -825,6 +825,7 @@ import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composa
 import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import ProjectMaterialIntakePanel from './ProjectMaterialIntakePanel.vue'
+import { materialIntakeIdentity } from './projectMaterialIntake'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
 import { plainOf, parseInlineText } from './editor/markdown'
@@ -840,6 +841,8 @@ import {
 
 const projects = ref<Project[]>([])
 const auth = useAuthStore()
+// 材料接入面板的缓存身份只在唯一一处构造：:key 与 :identity 都取这个值。
+const materialIdentity = computed(() => materialIntakeIdentity(auth.currentUserId ?? '', String(auth.effectiveTenantId ?? '')))
 const truncated = ref(false)
 const project = ref<Project | null>(null)
 // Owner 可用性事实与恢复指引文案都在这一处持有：按钮的置灰条件与提示文案

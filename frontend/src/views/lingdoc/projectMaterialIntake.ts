@@ -1,6 +1,27 @@
 import type { Asset, Source } from '@/api/lingdoc/workspace'
 import type { KnowledgeTraceNode } from '@/utils/knowledgeTrace'
 
+/** Spans 行在通用诊断树上附加归属信息：trace 根与 embedding 阶段都带这两个扩展字段。 */
+export type MaterialSpanNode = KnowledgeTraceNode & { attempt?: number; knowledge_id?: string }
+
+/** 解析仍在推进中的状态。处于这些状态的行保持可观察；面板定时器只刷新它们。 */
+export const IN_PROGRESS_PARSE_STATUSES: readonly string[] = ['pending', 'unprocessed', 'processing', 'finalizing']
+
+/** 各 parse_status 的用户可见文案。刻意不含 completed：解析完成本身永远不证明索引就绪。 */
+const PARSE_STATUS_LABELS: Readonly<Record<string, string>> = {
+  pending: '等待处理',
+  unprocessed: '等待处理',
+  processing: '正在解析',
+  finalizing: '正在写入索引',
+  failed: '处理失败：请检查原文件或处理配置后重新处理',
+  cancelled: '处理已取消',
+}
+
+/** 一个用户在租户内的扁平缓存身份。storage key 会原样内嵌它，所以只能在唯一一处构造。 */
+export function materialIntakeIdentity(userId: string, tenantId: string): string {
+  return JSON.stringify([userId, tenantId])
+}
+
 export interface MaterialKnowledge {
   id: string
   knowledge_base_id: string
@@ -14,7 +35,7 @@ export interface MaterialTrace {
   current_attempt: number
   latest_attempt: number
   parse_status: string
-  trace?: KnowledgeTraceNode & { attempt?: number; knowledge_id?: string }
+  trace?: MaterialSpanNode
 }
 export interface MaterialReference { id: string; kb: string; key: string }
 export interface MaterialRow {
@@ -43,13 +64,8 @@ export interface MaterialStorage { getItem(key: string): string | null; setItem(
 /** Only real, current-attempt stage rows prove indexing. The spans API also
  * synthesizes "done" placeholders from parse_status; those have no span_id. */
 export function materialReadiness(knowledge: MaterialKnowledge, trace: MaterialTrace): { ready: boolean; label: string } {
-  switch (knowledge.parse_status) {
-    case 'pending': case 'unprocessed': return { ready: false, label: '等待处理' }
-    case 'processing': case 'finalizing': return { ready: false, label: '正在处理' }
-    case 'failed': return { ready: false, label: '处理失败：请检查原文件或处理配置后重新处理' }
-    case 'cancelled': return { ready: false, label: '处理已取消' }
-    case 'completed': break
-    default: return { ready: false, label: '处理状态未知，请重新读取' }
+  if (knowledge.parse_status !== 'completed') {
+    return { ready: false, label: PARSE_STATUS_LABELS[knowledge.parse_status] ?? '处理状态未知，请重新读取' }
   }
   const attempt = trace.current_attempt
   if (trace.knowledge_id !== knowledge.id || !Number.isInteger(attempt) || attempt <= 0 ||
@@ -58,7 +74,7 @@ export function materialReadiness(knowledge: MaterialKnowledge, trace: MaterialT
   }
   const stages = trace.trace?.children?.filter(node => node.name === 'embedding' && node.kind === 'stage') ?? []
   if (stages.length !== 1) return { ready: false, label: '解析完成；缺少唯一索引阶段记录' }
-  const stage = stages[0] as KnowledgeTraceNode & { attempt?: number; knowledge_id?: string }
+  const stage = stages[0] as MaterialSpanNode
   if (!stage.span_id || stage.attempt !== attempt || stage.knowledge_id !== knowledge.id) {
     return { ready: false, label: '解析完成；缺少真实的当前索引记录' }
   }
@@ -96,7 +112,7 @@ export class ProjectMaterialIntake {
   private storageKey: string
 
   constructor(readonly project: string, identity: string, private ports: MaterialPorts, private storage?: MaterialStorage) {
-    this.storageKey = 'lingdoc:material-intake:v1:' + JSON.stringify([identity, project])
+    this.storageKey = 'lingdoc:material-intake:v1:' + identity + ':' + project
     if (!storage) this.storageWarning = '本机存储不可用；材料引用仅在本次页面中保留，刷新后需重新选择文件。'
     try {
       const raw: unknown = JSON.parse(storage?.getItem(this.storageKey) || '[]')
@@ -179,7 +195,8 @@ export class ProjectMaterialIntake {
     }
   }
   async refreshAll() {
-    // Bound request volume; no polling loop per row.
+    // Bound request volume. This controller runs no timer of its own: the
+    // panel's visibility-gated timer re-refreshes only in-progress rows.
     for (const row of this.rows) if (!row.busy && this.active) await this.refresh(row)
   }
   async bind(row: MaterialRow) {

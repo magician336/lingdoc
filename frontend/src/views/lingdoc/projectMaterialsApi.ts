@@ -4,22 +4,28 @@ import { newIdempotencyKey } from '@/api/lingdoc/candidateAdoption'
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess'
 import type { MaterialKnowledge, MaterialPorts } from './projectMaterialIntake'
 
+/** Platform upload envelope. Success responses carry the knowledge row in
+ * `data`; the duplicate rejection — spread into the thrown error by the
+ * request interceptor — carries the existing knowledge the same way. */
+type UploadOutcome = { success?: boolean; code?: string; data?: MaterialKnowledge }
+
 /** Keep platform envelopes and duplicate errors out of the project UI.
  * Metadata records upload intent, NOT authoritative project ownership. */
 export const projectMaterialPorts: MaterialPorts = {
   newKey: newIdempotencyKey,
   async upload(kb, file, project, options) {
-    let result: any
+    let result: UploadOutcome
     let reused = false
     try {
-      result = await uploadKnowledgeFile(kb, {
+      result = (await uploadKnowledgeFile(kb, {
         file, process_config: options as KnowledgeProcessOverrides,
         metadata: JSON.stringify({ lingdoc_upload_project_id: project, lingdoc_upload_origin: 'workspace' }),
-      })
+      })) as unknown as UploadOutcome
       if (result.success !== true) throw result
-    } catch (error: any) {
-      if (error?.code !== 'duplicate_file' || !error.data?.id) throw error
-      result = error
+    } catch (error) {
+      const outcome = error as UploadOutcome
+      if (outcome?.code !== 'duplicate_file' || !outcome.data?.id) throw error
+      result = outcome
       reused = true
     }
     return { knowledge: result.data as MaterialKnowledge, reused }

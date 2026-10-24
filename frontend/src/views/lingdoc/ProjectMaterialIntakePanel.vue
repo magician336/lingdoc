@@ -51,7 +51,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getKnowledgeBaseById, listKnowledgeBases } from '@/api/knowledge-base'
 import { useUploadConfirmStore } from '@/stores/uploadConfirm'
 import { kbFileTypeVerification } from '@/utils'
-import { ProjectMaterialIntake, type MaterialRow, type MaterialStorage } from './projectMaterialIntake'
+import { ProjectMaterialIntake, IN_PROGRESS_PARSE_STATUSES, type MaterialRow, type MaterialStorage } from './projectMaterialIntake'
 import { projectMaterialPorts } from './projectMaterialsApi'
 
 const props = defineProps<{ projectId: string; projectName: string; identity: string }>()
@@ -131,7 +131,7 @@ onMounted(() => {
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return
     for (const row of model.rows) {
-      if (!row.busy && ['pending', 'unprocessed', 'processing', 'finalizing'].includes(row.knowledge?.parse_status || '')) void model.refresh(row)
+      if (!row.busy && IN_PROGRESS_PARSE_STATUSES.includes(row.knowledge?.parse_status || '')) void model.refresh(row)
     }
   }, 10000)
 })
