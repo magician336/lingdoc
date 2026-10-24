@@ -414,6 +414,7 @@ EXPECTATION_PHRASES = {
     "all_non_empty": "期望集合里的每一项都非空",
     "equals_step": "期望与另一步的 {expected} 一致",
     "provenance_real": "期望是真实来源",
+    "one_to_one": "期望与另一步的集合一一对应（与顺序无关）{expected}",
 }
 
 
