@@ -22,6 +22,7 @@ import unittest
 
 import lingdoc_gate_attest_reuse as reuse
 import lingdoc_gate_queue_state as queue_state
+import lingdoc_gate_surfaces as manifest
 
 HEAD = "a" * 40
 OTHER_HEAD = "b" * 40
@@ -131,6 +132,31 @@ class ConditionPassTests(unittest.TestCase):
         decision = decided(candidate=anchor_record(
             completed_at="2020-01-01T00:00:00Z"))
         assert_reuse(self, decision)
+
+
+class ManifestDerivationTests(unittest.TestCase):
+    """The gate workflow's identity is the manifest's knowledge, read once.
+
+    The manifest registers the gate workflow as a governance file; the
+    judgement reads the path from there and never spells the file name a
+    second time -- a second spelling can drift away from the manifest and
+    quietly break condition 5.
+    """
+
+    def test_the_gate_workflow_path_is_the_manifests_governance_workflow(self):
+        workflows = [path for path in manifest.GOVERNANCE_FILES
+                     if path.startswith(".github/workflows/")
+                     and path.endswith(".yml")]
+        self.assertEqual(len(workflows), 1,
+                         "the manifest must register exactly one governance "
+                         "workflow for the derivation to be unambiguous")
+        self.assertEqual(reuse.GATE_WORKFLOW_PATH, workflows[0])
+        self.assertEqual(reuse.GATE_WORKFLOW_IDENTIFIERS,
+                         (reuse.GATE_WORKFLOW_NAME, reuse.GATE_WORKFLOW_PATH))
+
+    def test_the_workflow_file_name_is_not_spelled_a_second_time(self):
+        self.assertFalse(hasattr(reuse, "GATE_WORKFLOW_FILE"),
+                         "the workflow file name lives in the manifest only")
 
 
 class ConditionViolationTests(unittest.TestCase):

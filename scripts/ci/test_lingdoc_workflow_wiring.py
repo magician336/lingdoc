@@ -333,6 +333,26 @@ class AttestWiringTests(unittest.TestCase):
                              "a reuse is recorded in the results, never "
                              "assumed by skipping the reporting")
 
+    def test_the_publish_step_records_the_attest_outcome(self):
+        """A broken attest step degrades to a full rerun, but the degradation
+        must not vanish into the step log: the publish step (which runs on
+        every path) records the attest step's outcome in the result artifact
+        and in the summary, so a permanently damaged witness leaves a trace
+        in the conclusion the gate publishes (#627)."""
+        publish = next(step for step in self._steps()
+                       if "Publish check boundary" in str(step.get("name", "")))
+        # The step reads the outcome through its env block, the way it reads
+        # every other step's outcome.
+        self.assertIn("steps.attest.outcome", str(publish.get("env", "")),
+                      "the publish step must read the attest step's "
+                      "outcome, not only its reuse output")
+        run = str(publish.get("run", ""))
+        self.assertIn("attest_outcome", run,
+                      "the outcome must be published as a result field")
+        self.assertGreaterEqual(run.count("attest_outcome"), 2,
+                                "the outcome must reach the summary as well, "
+                                "not only the result artifact")
+
     def test_the_check_name_the_ruleset_demands_is_unchanged(self):
         for job in jobs_of(self.REVIEW).values():
             self.assertEqual(job.get("name"), "LingDoc PR gate")

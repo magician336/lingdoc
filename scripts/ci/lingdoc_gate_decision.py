@@ -46,7 +46,7 @@ registered makes the guard test fail.
     What the gate's scope step runs: decide, publish the decision, publish
     the conclusion, and check the pull request's whitespace boundary.  When
     an artifact directory is given, it also records the **run anchor**
-    (``gate-anchor.json``): the facts a later run needs in order to verify
+    (``GATE_ANCHOR_FILE``, ``gate-anchor.json``): the facts a later run needs in order to verify
     that this run's evidence still stands -- the pull request's own head
     SHA (never ``GITHUB_SHA``, which is the merge commit), the main tip the
     run's merge ref integrated, this run's id and pull request number, the
@@ -1908,7 +1908,10 @@ def publish(event: Mapping[str, Any], root: Path, *,
 # --------------------------------------------------------------------------
 # the run anchor: the reuse verdict's machine record (spec #627)
 # --------------------------------------------------------------------------
-_ANCHOR_FILE = "gate-anchor.json"
+#: The anchor's file name, inside the artifact directory.  The witness reads
+#: the name across the module boundary, so it is public: a cross-module read
+#: of a private name is not an interface.
+GATE_ANCHOR_FILE = "gate-anchor.json"
 
 
 def _anchor_head_sha(event: Mapping[str, Any], env: Mapping[str, str]) -> str:
@@ -1962,11 +1965,18 @@ def _main_sha(root: Path, env: Mapping[str, str]) -> tuple[str, str]:
     run's moment -- so the merge commit ``GITHUB_SHA`` carries the exact
     integrated main tip as its first parent.  That parent is the anchor's
     ``main_sha``: reading main again later (or the event's stale ``base``)
-    would record a main tip the run never tested.  When the checkout did not
-    create a merge commit (the pull request is already ahead of main), the
-    checkout's ``origin/main`` is the main tip of the run's moment; when
-    neither is readable, the record stays incomplete and the reuse verdict
-    falls back on its own.
+    would record a main tip the run never tested.  When the checkout did
+    not create a merge commit (the pull request is already ahead of main,
+    a fast-forward), the commit the run actually checked out and tested is
+    the head itself, so the head is recorded: two runs of the same head
+    that both tested the head itself are the same evidence, and a run whose
+    merge ref integrates a moved main produces a merge commit -- and
+    therefore a different record.  Only when the run cannot name the commit
+    it checked out does the record fall back to the checkout's
+    ``origin/main``, and the source marks that degradation: the ref is the
+    fetch-time value and may name a main tip this run never tested, so it
+    is the last resort, never the first answer.  When neither is readable,
+    the record stays incomplete and the reuse verdict falls back on its own.
     """
     sha = env.get("GITHUB_SHA", "")
     if isinstance(sha, str) and SHA.fullmatch(sha):
@@ -1977,12 +1987,17 @@ def _main_sha(root: Path, env: Mapping[str, str]) -> tuple[str, str]:
             parents = []
         if len(parents) == 3 and SHA.fullmatch(parents[1]):
             return parents[1], "merge_ref_parent"
+        # Not a merge commit (or unreadable): the checked-out commit is the
+        # exact content this run tested.  Anchoring it cannot fake a match
+        # across a moved main, because a merge ref over a moved main is a
+        # merge commit and takes the first-parent answer above.
+        return sha, "checkout_head"
     try:
         main = _run_git(root, "rev-parse", "refs/remotes/origin/main")
     except (OSError, subprocess.CalledProcessError):
         main = ""
     if SHA.fullmatch(main):
-        return main, "origin_main"
+        return main, "origin_main_unverified"
     return "", ""
 
 
@@ -2007,7 +2022,7 @@ def _write_gate_anchor(artifact_dir: Path | None, event: Mapping[str, Any],
         folder = Path(artifact_dir)
         folder.mkdir(parents=True, exist_ok=True)
         main_sha, main_source = _main_sha(root, env)
-        (folder / _ANCHOR_FILE).write_text(
+        (folder / GATE_ANCHOR_FILE).write_text(
             json.dumps({"head_sha": _anchor_head_sha(event, env),
                         "main_sha": main_sha,
                         "main_sha_source": main_source,

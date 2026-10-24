@@ -48,7 +48,11 @@ steps::
 It prints the verdict as JSON on stdout, writes ``reuse`` and
 ``reused_run_id`` into ``$GITHUB_OUTPUT``, and appends a summary section
 saying which run was reused, with the five conditions compared, or why the
-gate reruns in full.  The exit code is always zero.
+gate reruns in full.  The complete judgement -- reuse, reason, the five
+conditions compared field by field, and the moment it was decided -- is
+also written into the artifact directory as ``gate-attest-decision.json``,
+for reuse and fallback alike, so the audit trail survives the run log.
+The exit code is always zero.
 
 When the verdict is reuse, the candidate run's scope verdict records
 (``scope.json`` and its anchor) are copied from the candidate's artifact
@@ -72,6 +76,7 @@ import os
 import subprocess
 import sys
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -88,7 +93,14 @@ REUSE_EVENT = "ready_for_review"
 #: The anchor record, inside this run's artifact directory and inside the
 #: candidate run's artifact.  The name is the scope step's contract; it is
 #: read from the module that froze it, never spelled a second time.
-ANCHOR_FILE = gate_decision._ANCHOR_FILE
+ANCHOR_FILE = gate_decision.GATE_ANCHOR_FILE
+
+#: The witness's own record in this run's artifact directory: the complete
+#: verdict -- reuse, reason, and the five conditions compared field by field
+#: -- plus the moment it was decided.  A reuse and a fallback both write it,
+#: so the audit question "why was this run (not) reused" survives the run
+#: log (spec #627, user story 14).
+DECISION_FILE = "gate-attest-decision.json"
 
 #: The candidate's records, handed on into this run's artifact on reuse.
 REUSED_SCOPE_FILE = "reused-scope.json"
@@ -202,6 +214,36 @@ def _hand_on_scope_records(artifact_dir: Path | str | None,
                   "the reuse verdict is unaffected.", file=sys.stderr)
 
 
+def _now_iso() -> str:
+    """The decision's moment, UTC: what makes the record auditable."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _write_decision_record(artifact_dir: Path | str | None,
+                           verdict: Mapping[str, Any]) -> None:
+    """The complete judgement, beside the records the gate already publishes.
+
+    The stdout verdict and the summary section are gone with the run log;
+    the artifact stays.  A reuse and a fallback both leave their record
+    here, so the audit question "why was this run (not) reused" -- with the
+    five conditions compared field by field and the decision's moment --
+    stays answerable (spec #627, user story 14).  The record is an
+    ancillary product: a failure to write it degrades the audit trail,
+    never the verdict.
+    """
+    if artifact_dir is None:
+        return
+    try:
+        record = dict(verdict)
+        record["decided_at"] = _now_iso()
+        (Path(artifact_dir) / DECISION_FILE).write_text(
+            json.dumps(record, ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8")
+    except (OSError, TypeError, ValueError) as error:
+        print(f"warning: the witness decision record could not be written "
+              f"({error}); the verdict is unaffected.", file=sys.stderr)
+
+
 def decide(event_name: str, artifact_dir: Path | str | None, api: Any,
            current_run_id: int | None) -> dict[str, Any]:
     """Whether this gate run may reuse an earlier green run, and why.
@@ -212,8 +254,18 @@ def decide(event_name: str, artifact_dir: Path | str | None, api: Any,
     candidate needs; ``current_run_id`` excludes this run from its own
     candidates.  The verdict is the decision module's, whatever happens:
     the assembly only chooses between handing it complete records and
-    handing it a fallback reason.
+    handing it a fallback reason.  Both outcomes -- reuse and fallback --
+    leave the complete judgement in the artifact directory as
+    ``DECISION_FILE``.
     """
+    verdict = _decide(event_name, artifact_dir, api, current_run_id)
+    _write_decision_record(artifact_dir, verdict)
+    return verdict
+
+
+def _decide(event_name: str, artifact_dir: Path | str | None, api: Any,
+            current_run_id: int | None) -> dict[str, Any]:
+    """The reuse judgement, without the artifact record (see :func:`decide`)."""
     if event_name != REUSE_EVENT:
         return _fallback(None, f"the {event_name or 'unknown'} trigger never "
                                "reuses; the gate reruns in full")

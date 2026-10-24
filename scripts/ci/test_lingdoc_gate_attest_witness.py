@@ -27,10 +27,12 @@ import json
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import lingdoc_gate_attest_reuse as reuse
 import lingdoc_gate_attest_witness as witness
+import lingdoc_gate_decision as gate_decision
 import lingdoc_gate_queue_state as queue_state
 
 HEAD = "a" * 40
@@ -213,6 +215,74 @@ class ReusePathTests(unittest.TestCase):
         decision = witness.decide("ready_for_review", fixture.folder, api,
                                   CURRENT_RUN_ID)
         assert_fallback(self, decision)
+
+
+class AnchorNameTests(unittest.TestCase):
+    """The witness reads the anchor's name from the public interface."""
+
+    def test_the_anchor_file_is_the_decision_modules_public_constant(self):
+        # A cross-module read of a private name is not an interface (#627):
+        # the decision module publishes the anchor's file name as a constant.
+        self.assertIs(witness.ANCHOR_FILE, gate_decision.GATE_ANCHOR_FILE)
+
+
+class DecisionRecordTests(unittest.TestCase):
+    """The complete judgement lands in the artifact, not in stdout alone.
+
+    The five-condition comparison and the decision's moment are audit
+    records: a reuse and a fallback both leave them in the artifact beside
+    the records the gate already publishes (spec #627, user story 14), so
+    "why was this run reused" -- and "why was it not" -- stays answerable
+    after the run log is gone.
+    """
+
+    DECISION_FILE = "gate-attest-decision.json"
+
+    def test_a_reuse_writes_the_full_decision_to_the_artifact(self):
+        fixture, api = _qualified_fixture()
+        decision = witness.decide("ready_for_review", fixture.folder, api,
+                                  CURRENT_RUN_ID)
+        record = json.loads(fixture.read(self.DECISION_FILE))
+        # The record is the complete verdict plus the decision's moment.
+        self.assertEqual(record, {**decision,
+                                  "decided_at": record["decided_at"]})
+        self.assertTrue(record["reuse"])
+        self.assertEqual(record["verdict"], queue_state.VERDICT_PASSED)
+        self.assertEqual(record["reused_run_id"], RUN_ID)
+        compared = record["evidence"]["compared"]
+        for name in reuse.CONDITION_NAMES:
+            self.assertTrue(record["evidence"]["conditions"][name], name)
+        self.assertEqual(compared["pr"]["current"], PR)
+        self.assertEqual(compared["pr"]["candidate"], PR)
+        self.assertEqual(compared["head_sha"]["current"], HEAD)
+        self.assertEqual(compared["main_sha"]["candidate"], MAIN)
+        self.assertEqual(compared["status"]["candidate"], "completed")
+        self.assertEqual(compared["conclusion"]["candidate"], "success")
+        decided_at = datetime.fromisoformat(record["decided_at"])
+        self.assertEqual(decided_at.utcoffset(), timedelta(0))
+
+    def test_a_fallback_also_writes_the_decision_to_the_artifact(self):
+        """The question "why did this run not reuse" is an audit record too."""
+        fixture, api = _qualified_fixture()
+        api.run_records = [run_record(id=CURRENT_RUN_ID)]
+        decision = witness.decide("ready_for_review", fixture.folder, api,
+                                  CURRENT_RUN_ID)
+        record = json.loads(fixture.read(self.DECISION_FILE))
+        self.assertEqual(record, {**decision,
+                                  "decided_at": record["decided_at"]})
+        self.assertFalse(record["reuse"])
+        self.assertEqual(record["verdict"], queue_state.VERDICT_MISSING)
+        self.assertIsNone(record["reused_run_id"])
+        self.assertIn("no earlier gate run", record["reason"])
+
+    def test_a_failed_decision_write_does_not_change_the_verdict(self):
+        """The decision record is an ancillary product: a write failure must
+        degrade the audit trail, never the verdict itself."""
+        fixture, api = _qualified_fixture()
+        (fixture.folder / self.DECISION_FILE).mkdir()
+        decision = witness.decide("ready_for_review", fixture.folder, api,
+                                  CURRENT_RUN_ID)
+        assert_reuse(self, decision)
 
 
 class TriggerBoundaryTests(unittest.TestCase):

@@ -92,11 +92,13 @@ import lingdoc_gate_surfaces as manifest
 #: identifies the gate in a candidate record; both are exact spellings, so
 #: the comparison stays machine-judgeable either way.  The path is the
 #: manifest's knowledge -- it registers the gate workflow as a governance
-#: file -- so it is read from there, never written down a second time.
+#: file -- so it is read from there, and the file name is never spelled a
+#: second time here: a second spelling could drift away from the manifest
+#: and quietly break condition 5.
 GATE_WORKFLOW_NAME = queue_state.GATE_WORKFLOW_NAME
-GATE_WORKFLOW_FILE = "lingdoc-review.yml"
 GATE_WORKFLOW_PATH = next(path for path in manifest.GOVERNANCE_FILES
-                          if path.endswith("/" + GATE_WORKFLOW_FILE))
+                          if path.startswith(".github/workflows/")
+                          and path.endswith(".yml"))
 GATE_WORKFLOW_IDENTIFIERS = (GATE_WORKFLOW_NAME, GATE_WORKFLOW_PATH)
 
 #: What condition 4 demands, spelled once.

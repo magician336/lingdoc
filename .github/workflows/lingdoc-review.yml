@@ -207,6 +207,12 @@ jobs:
         env:
           CISCRIPTS: ${{ steps.ciscripts.outcome }}
           SCOPE: ${{ steps.scope.outcome }}
+          # The attest step may be permanently broken (it carries
+          # continue-on-error, so it never fails the gate by itself); its
+          # outcome is therefore published with the results, so a damaged
+          # witness leaves a trace in the conclusion, not in a step log
+          # alone (spec #627).
+          ATTEST: ${{ steps.attest.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
           FRONTEND: ${{ steps.frontend.outcome }}
@@ -221,6 +227,10 @@ jobs:
           from pathlib import Path
           result = {key.lower(): os.environ[key] for key in
                     ('CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+          # The witness step's own outcome (success/skipped/failure): the
+          # attest step cannot fail the gate, so this is the only place a
+          # broken witness becomes visible in the published conclusion.
+          result['attest_outcome'] = os.environ.get('ATTEST', '')
           result['tested_sha'] = os.environ['GITHUB_SHA']
           # Whether the conclusion is this run's own or reused from an
           # earlier green run of the same merge ref (spec #627). A reuse
@@ -260,6 +270,7 @@ jobs:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
               for key in ('ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
+              handle.write(f'| attest (witness) | {result["attest_outcome"]} |\n')
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')

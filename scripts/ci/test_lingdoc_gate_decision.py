@@ -1090,6 +1090,14 @@ class GateAnchorTests(DecisionFixture):
         return json.loads(
             (artifact / "gate-anchor.json").read_text(encoding="utf-8"))
 
+    def test_the_anchor_file_name_is_a_public_constant(self):
+        # The witness reads the anchor's file name across the module
+        # boundary; a private name reached from outside is not an interface,
+        # so the constant is public and the private spelling is gone (#627).
+        self.assertEqual(decision.GATE_ANCHOR_FILE, "gate-anchor.json")
+        self.assertFalse(hasattr(decision, "_ANCHOR_FILE"),
+                         "the anchor file name has one public spelling")
+
     def test_the_anchor_records_the_pull_request_head_not_the_merge_commit(self):
         # On the runner GITHUB_SHA is the merge commit of head and main --
         # exactly the value the anchor must NOT record (spec #627: the head
@@ -1160,10 +1168,14 @@ class GateAnchorTests(DecisionFixture):
 
             self.assertEqual(self._anchor_of(artifact)["main_sha"], main_tip)
 
-    def test_the_main_anchor_falls_back_to_the_checkout_origin_main(self):
-        # A head GitHub can merge without a merge commit (the branch is
-        # already ahead of main) checks out the pull request itself; the
-        # checkout's origin/main is the main tip of the run's moment.
+    def test_the_main_anchor_of_a_fast_forward_checkout_is_the_head_itself(
+            self):
+        # A head GitHub merges without a merge commit (the branch is already
+        # ahead of main) checks out the pull request head itself.  The head
+        # is the exact content this run compiled and tested, so the anchor
+        # records the head -- not the checkout's origin/main, whose ref is
+        # the fetch-time value and may name a newer main tip this run never
+        # tested (#627: the anchor anchors the tested commit).
         with tempfile.TemporaryDirectory() as tmp:
             root, base, main_tip, head, _ = self._merged_repo(tmp)
             git(root, "update-ref", "refs/remotes/origin/main", main_tip)
@@ -1172,8 +1184,25 @@ class GateAnchorTests(DecisionFixture):
                           env={"GITHUB_SHA": head, "GITHUB_RUN_ID": "7"})
 
             anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["main_sha"], head)
+            self.assertEqual(anchor["main_sha_source"], "checkout_head")
+
+    def test_the_checkout_origin_main_is_the_last_resort_of_the_main_anchor(
+            self):
+        # Only when the run cannot name the commit it checked out does the
+        # anchor fall back to the checkout's origin/main -- and the source
+        # marks the degradation: that ref is the fetch-time value and may
+        # not be the main tip this run tested (#627).
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, main_tip, head, _ = self._merged_repo(tmp)
+            git(root, "update-ref", "refs/remotes/origin/main", main_tip)
+            artifact = Path(tmp) / "artifact"
+            with self._without_ci_env():
+                self._publish(root, base, head, artifact)
+
+            anchor = self._anchor_of(artifact)
             self.assertEqual(anchor["main_sha"], main_tip)
-            self.assertEqual(anchor["main_sha_source"], "origin_main")
+            self.assertEqual(anchor["main_sha_source"], "origin_main_unverified")
 
     def test_a_main_tip_nobody_can_read_leaves_the_record_incomplete_and_the_gate_green(self):
         with tempfile.TemporaryDirectory() as tmp:
