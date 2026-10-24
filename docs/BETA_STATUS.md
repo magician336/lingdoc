@@ -2,7 +2,7 @@
 
 > **本文件是 lingdoc Beta 实施的唯一进度源。** 每批任务结束后更新它；不要另建进度表。
 > **基线**：`origin/main`（本文件合并后即最新基线；每次更新在本行下写明本文件对应的合并提交，避免基线行本身过期）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
-> **本轮同步基线（第二轮）**：`origin/main` = `b63aa79f`（PR #583 合并提交；含 #545 许可节点 PR #577、#546 检索口径 PR #580、v2 受控 profile PR #583）。**第一轮**同步（PR #561，合并提交 `2a664c56`）的基线是 `a98138af`。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
+> **本轮同步基线（第二轮）**：`origin/main` = `6b382132`（PR #584 合并提交；其父 `b63aa79f` = PR #583 —— 含 #545 许可节点 PR #577、#546 检索口径 PR #580、v2 受控 profile PR #583）。**第一轮**同步（PR #561，合并提交 `2a664c56`）的基线是 `a98138af`。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **状态枚举**：代码实现 / 集成（进 main）/ 测试通过 / 验收完成（真实跑过且结论 PASS）——**四维度分别记，不合并**。
 > 另有 `NOT STARTED` / `IN PROGRESS` / `IMPLEMENTED_UNVERIFIED` / `INTEGRATED_UNVERIFIED` / `PASS` / `BLOCKED` / `UNKNOWN` / `DEFERRED` / `DEFERRED_MANUAL`。
 > **`DEFERRED_MANUAL` 的含义（v1.1 增补，授权票 [#523](https://github.com/magician336/lingdoc/issues/523)）**：**人工前置事项尚未完成**（真人浏览器完整链、外部真实 KB 检索、多账号人工操作、负责人最终审批），但**代码侧条件已满足**，且**已有独立跟进票与写明的解除条件**。
@@ -405,6 +405,7 @@ request_body = {"knowledge_id": "128b88fd-8389-4800-9851-92e9bf6fe19c"}
 | #577 | `88845c5d` | **#545** model-use 许可节点：`F01-06b…F01-06e` 四个节点走生产链 `policy/proposals → assess → apply`；F01 节点数 **24 → 28** |
 | #580 | `67c0c9de` | **#546** 检索口径：步骤字段 `retrieval`（`keyword_only`／`vector_required`）＋ 契约 `retrieval_modes` 段；受控窗口按**验收预算账本 ＋ 模型表类型**核验 embedding 行 |
 | #582 | `e232bf0d` | 登记处 F01 节点数注记（steps 24 → 28、checks 50 → 58，以 main 实测为准） |
+| #584 | `6b382132` | 登记处补登记 #583 profile v2 的 4 条路径（**PF-14 路径集 53 → 57**；PF-14 自 2026-10-23 认领时的 19 条起，多轮补登记到 57 条） |
 | #583 | `b63aa79f` | **v2 受控 profile** `lingdoc-qwen-token-budget-20261024-v2`：4 次调用 ＋ 累计 90,000 token 预留闸门；旧 profile 行为逐字不变 |
 | #562 ＋ #575 | `4ba068d8` / `f7d974dd` | **#550** CI 排队机制：`cancel-in-progress: false` ＋ 判据脚本 `scripts/ci/lingdoc_gate_queue_state.py`；第三形态（聚合 check-run 还不存在但 workflow run 仍在排队）判为 `queued` |
 | #563 / #565 / #566 / #569 | `8b380a01` / `34d8a328` / `596b4a99` / `986f9143` | **#542**（受控 profile 下的输出上限与事后限值检查）／**#557**（审计列 `actor_role` 两处读侧兜底）／**#558**（rulesetstore 导出写入口补角色词表校验）／**#564**（`000001_agent.down.sql` 改 PostgreSQL 的 `UPDATE ... FROM`） |
