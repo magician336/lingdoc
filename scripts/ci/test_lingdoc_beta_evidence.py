@@ -52,6 +52,7 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -1008,6 +1009,349 @@ class UnblockTargetTests(unittest.TestCase):
             window = source[index:index + 700]
             self.assertIn("GAP-", window, marker)
             self.assertNotIn("#480", window, marker)
+
+
+class ReleaseGateVerdictTests(unittest.TestCase):
+    """The release verdict must not be a false pass (issue 592).
+
+    The release chain (``scripts/acceptance/beta_evidence.py``) reads three
+    kinds of fact: what the runner did, what the contract declares, and what
+    the controlled window's ledgers say.  Each of them has a way of being
+    *absent*, and every absence used to read as a pass:
+
+    * a prose assertion a human never judged,
+    * a step or a check the contract declares and the run never evaluated,
+    * a provider whose semantics nobody verified,
+    * a controlled window whose ledgers cannot be read.
+
+    "Did not happen" is not "passed".  Every test below fails as soon as the
+    producer treats one of those absences as a pass, so the rule is pinned by
+    the failure, not by a comment.
+
+    The controlled window has a second property: the contract declares how
+    each node may retrieve, and the window enforces it.  A node that needs
+    vector retrieval is never judged inside a controlled window, a node that
+    declares nothing is named (never silently skipped), and a declaration
+    nobody knows is refused by name instead of being guessed at.
+    """
+
+    CONTRACT_PATH = REPO_ROOT / "docs" / "08-本轮实施方案" / "contracts" / "workflow.json"
+
+    # -- helpers ----------------------------------------------------------
+
+    def contract(self) -> dict[str, Any]:
+        return json.loads(self.CONTRACT_PATH.read_text(encoding="utf-8"))
+
+    def report_for(self, contract: dict[str, Any], steps: int | None = None,
+                   drop_check: dict[str, str] | None = None,
+                   **extra: Any) -> dict[str, Any]:
+        """A machine report that reached the first ``steps`` contract steps."""
+        declared_steps, declared_checks = beta_evidence.contract_expectations(contract)
+        reached = declared_steps if steps is None else declared_steps[:steps]
+        reached_ids = {step["id"] for step in reached}
+        evaluated = [check for check in declared_checks if check["step_id"] in reached_ids]
+        if drop_check is not None:
+            evaluated = [check for check in evaluated if check != drop_check]
+        report = {
+            "workflow": contract.get("id"),
+            "runner_status": "completed",
+            "steps": [{"id": step["id"], "operation_id": step["operation_id"],
+                       "http_status": 200} for step in reached],
+            "checks": [{"step_id": check["step_id"], "operator": check["operator"],
+                        "path": check["path"], "status": "passed", "found": True,
+                        "expected": 1, "actual": 1, "intent": "一条断言"}
+                       for check in evaluated],
+            "manual_assertions": [],
+            "provider_semantics_status": "verified",
+        }
+        report.update(extra)
+        return report
+
+    def write_window_ledger(self, directory: str, name: str, models: list[str]) -> Path:
+        path = Path(directory) / name
+        document = {
+            "schema_version": 1,
+            "max_calls": 1,
+            "requests": [{"number": index + 1, "model": model, "status": "succeeded"}
+                         for index, model in enumerate(models)],
+        }
+        path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def write_models_db(self, directory: str) -> Path:
+        path = Path(directory) / "models.db"
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE models (id TEXT PRIMARY KEY, name TEXT, type TEXT)")
+            connection.execute("INSERT INTO models VALUES ('chat-1','qwen3.8-flash','chat')")
+            connection.execute("INSERT INTO models VALUES "
+                               "('embed-1','qwen3.7-text-embedding-flash','embedding')")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    def window_part(self, ledgers: list[Path | None], types: dict[str, str] | None = None,
+                    contract_path: Path | None = None,
+                    db_embedding_models: list[str] | None = None):
+        return beta_evidence.controlled_window_part(
+            contract_path or self.CONTRACT_PATH, ledgers,
+            types if types is not None else {}, "", db_embedding_models or [], "")
+
+    # -- the manual assertions -------------------------------------------
+
+    def test_an_unjudged_prose_assertion_forbids_a_pass(self):
+        """A sentence no machine can judge is not a pass until a human judged it.
+
+        The report even claims ``verified`` -- the release gate may not take
+        the runner's word for it when the report still carries an unjudged
+        prose assertion.
+        """
+        contract = self.contract()
+        report = self.report_for(contract, steps=1)
+        report["manual_assertions"] = [{"step_id": "F01-06b",
+                                        "assertion": "一句机器读不了的话",
+                                        "status": "not_run"}]
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        manual = [outcome for outcome in outcomes if "人工断言" in outcome.id]
+        self.assertEqual(len(manual), 1, "the unjudged assertion is not visible")
+        self.assertEqual(manual[0].status, beta_evidence.NOT_RUN)
+        self.assertTrue(manual[0].reason.strip(), "a NOT RUN has to say why")
+        self.assertTrue(manual[0].unblock.strip(), "a NOT RUN has to say how")
+        verdict = beta_evidence.overall_result(outcomes, beta_evidence.provider_semantics_status(report))
+        self.assertNotEqual(verdict, "PASS",
+                            "an unjudged prose assertion was read as a pass")
+
+    def test_every_unjudged_prose_assertion_is_named_on_its_own(self):
+        """Four unjudged assertions are four facts, not one summary line."""
+        contract = self.contract()
+        report = self.report_for(contract, steps=1)
+        report["manual_assertions"] = [
+            {"step_id": "F01-06b", "assertion": "第一句", "status": "not_run"},
+            {"step_id": "F01-06c", "assertion": "第二句", "status": "not_run"},
+        ]
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        manual = [outcome for outcome in outcomes if "人工断言" in outcome.id]
+        self.assertEqual(len(manual), 2)
+        self.assertEqual(len({outcome.id for outcome in manual}), 2,
+                         "two assertions share one name, so one of them is invisible")
+
+    # -- the contract's own expectations ----------------------------------
+
+    def test_a_check_the_contract_declares_and_the_run_never_evaluated_is_not_run(self):
+        """The difference between the contract and the report is a conclusion."""
+        contract = self.contract()
+        _, declared_checks = beta_evidence.contract_expectations(contract)
+        dropped = declared_checks[3]
+        report = self.report_for(contract, drop_check=dropped)
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        missing = [outcome for outcome in outcomes
+                   if outcome.id == f"{dropped['step_id']} {dropped['operator']} {dropped['path']}"]
+        self.assertEqual(len(missing), 1, "the check the run never evaluated vanished")
+        self.assertEqual(missing[0].status, beta_evidence.NOT_RUN)
+        self.assertTrue(missing[0].reason.strip())
+        self.assertTrue(missing[0].unblock.strip())
+
+    def test_a_step_the_contract_declares_and_the_run_never_reached_is_not_run(self):
+        contract = self.contract()
+        report = self.report_for(contract, steps=3)
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        not_run = [outcome for outcome in outcomes if outcome.status == beta_evidence.NOT_RUN]
+        identifiers = {outcome.id for outcome in not_run}
+        for step in contract["steps"][3:]:
+            self.assertIn(f"{step['id']} {step.get('operation_id', '')}", identifiers)
+        for outcome in not_run:
+            self.assertTrue(outcome.reason.strip(), outcome.id)
+            self.assertTrue(outcome.unblock.strip(), outcome.id)
+
+    def test_the_contract_s_own_check_account_is_visible_in_the_verdict(self):
+        """The repository's contract declares 58 checks; a run that reached
+        eleven of its steps evaluated 15 of them.  The other 43 have to be
+        visible as NOT RUN, not absent."""
+        contract = self.contract()
+        _, declared_checks = beta_evidence.contract_expectations(contract)
+        self.assertEqual(len(declared_checks), 58)
+        report = self.report_for(contract, steps=11)
+        self.assertEqual(len(report["checks"]), 15)
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        not_run_checks = [outcome for outcome in outcomes
+                          if outcome.status == beta_evidence.NOT_RUN
+                          and outcome.id.count(" ") == 2]
+        self.assertEqual(len(not_run_checks), 58 - 15)
+
+    def test_a_run_that_evaluated_everything_has_nothing_to_report_as_not_run(self):
+        """The difference set is empty when the run really did everything."""
+        contract = self.contract()
+        report = self.report_for(contract)
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        not_run = [outcome for outcome in outcomes if outcome.status == beta_evidence.NOT_RUN]
+        self.assertEqual([outcome.id for outcome in not_run], [])
+        self.assertEqual(beta_evidence.overall_result(
+            outcomes, beta_evidence.provider_semantics_status(report)), "PASS")
+
+    def test_a_report_from_another_contract_cannot_be_differenced_against_it(self):
+        """Two different sources may not be compared into a conclusion."""
+        contract = self.contract()
+        report = self.report_for(contract, steps=1)
+        report["workflow"] = "F02"
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        mismatch = [outcome for outcome in outcomes if "不同源" in outcome.id]
+        self.assertEqual(len(mismatch), 1)
+        self.assertEqual(mismatch[0].status, beta_evidence.NOT_RUN)
+
+    # -- the provider's semantics -----------------------------------------
+
+    def test_an_unverified_provider_semantics_forbids_a_pass(self):
+        contract = self.contract()
+        report = self.report_for(contract, steps=1)
+        report["provider_semantics_status"] = "not_verified"
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        semantics = [outcome for outcome in outcomes if "provider_semantics_status" in outcome.id]
+        self.assertEqual(len(semantics), 1)
+        self.assertEqual(semantics[0].status, beta_evidence.NOT_RUN)
+        verdict = beta_evidence.overall_result(outcomes, beta_evidence.provider_semantics_status(report))
+        self.assertNotEqual(verdict, "PASS")
+        self.assertEqual(verdict, "NOT RUN")
+
+    def test_a_report_without_a_provider_semantics_verdict_is_treated_as_unverified(self):
+        """An unknown verdict is not a verified one."""
+        contract = self.contract()
+        report = self.report_for(contract, steps=1)
+        del report["provider_semantics_status"]
+        self.assertEqual(beta_evidence.provider_semantics_status(report), "not_verified")
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        self.assertNotEqual(beta_evidence.overall_result(
+            outcomes, beta_evidence.provider_semantics_status(report)), "PASS")
+
+    def test_the_conservative_order_of_the_overall_verdict_is_unchanged(self):
+        """FAIL beats BLOCKED beats NOT RUN beats nothing."""
+        held = beta_evidence.Outcome(id="held", status=beta_evidence.HELD)
+        failed = beta_evidence.Outcome(id="failed", status=beta_evidence.FAILED)
+        blocked = beta_evidence.Outcome(id="blocked", status=beta_evidence.BLOCKED)
+        not_run = beta_evidence.Outcome(id="not_run", status=beta_evidence.NOT_RUN)
+        self.assertEqual(beta_evidence.overall_result([held, failed, not_run]), "FAIL")
+        self.assertEqual(beta_evidence.overall_result([held, blocked, not_run]), "BLOCKED")
+        self.assertEqual(beta_evidence.overall_result([held, not_run]), "NOT RUN")
+        self.assertEqual(beta_evidence.overall_result([]), "NOT RUN")
+        self.assertEqual(beta_evidence.overall_result([held], "verified"), "PASS")
+        self.assertEqual(beta_evidence.overall_result([held], "not_verified"), "NOT RUN")
+
+    # -- the controlled window --------------------------------------------
+
+    def test_a_controlled_window_with_an_embedding_call_fails_as_a_whole(self):
+        """The negative control of the window: one embedding row fails it."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json",
+                                              ["qwen3.8-flash", "qwen3.7-text-embedding-flash"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([ledger, calls], types)
+        self.assertEqual(verdict["status"], "FAIL")
+        window = [outcome for outcome in outcomes if outcome.id.startswith("受控窗口：")]
+        self.assertEqual(len(window), 1)
+        self.assertEqual(window[0].status, beta_evidence.FAILED)
+
+    def test_a_controlled_window_whose_ledgers_cannot_be_read_is_not_run(self):
+        """A window nobody can look at is NOT RUN, never a pass."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            missing = Path(directory) / "absent.json"
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([missing, missing], types)
+        self.assertEqual(verdict["status"], "NOT_RUN")
+        window = [outcome for outcome in outcomes if outcome.id.startswith("受控窗口：")]
+        self.assertEqual(window[0].status, beta_evidence.NOT_RUN)
+        self.assertTrue(window[0].reason.strip())
+        self.assertTrue(window[0].unblock.strip())
+
+    def test_a_window_with_only_one_of_its_two_ledgers_is_not_run(self):
+        """The window's fact is the two ledgers together; half of it is no fact."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([ledger, Path(directory) / "budget.json.calls.json"],
+                                                 types)
+        self.assertEqual(verdict["status"], "NOT_RUN")
+        window = [outcome for outcome in outcomes if outcome.id.startswith("受控窗口：")]
+        self.assertEqual(window[0].status, beta_evidence.NOT_RUN)
+
+    def test_the_deployment_s_own_ledger_is_the_cross_check_on_the_window(self):
+        """A model the deployment recorded as an embedding call is one, whatever
+        the model table says."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json", ["mystery-model"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            types = {"mystery-model": "chat"}
+            _, verdict = self.window_part([ledger, calls], types, db_embedding_models=["mystery-model"])
+        self.assertEqual(verdict["status"], "FAIL")
+
+    def test_a_vector_required_node_is_never_recorded_as_passed(self):
+        """The node that needs vector retrieval is not judged in the window."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, verdict = self.window_part([ledger, calls], types)
+        self.assertEqual(verdict["status"], "PASS")
+        node = [outcome for outcome in outcomes if "F01-07" in outcome.id]
+        self.assertEqual(len(node), 1)
+        self.assertEqual(node[0].status, beta_evidence.NOT_RUN)
+        self.assertTrue(node[0].unblock.strip())
+        self.assertNotEqual(node[0].status, beta_evidence.HELD)
+        # The window module's own per-node verdict says the same thing: the
+        # release chain must not be the only place that knows it.
+        window_node = next(entry for entry in verdict["nodes"]
+                           if entry["step_id"] == "F01-07")
+        self.assertEqual(window_node["status"], "NOT_RUN")
+        self.assertTrue(str(window_node.get("unblock", "")).strip())
+
+    def test_an_undeclared_node_is_named_in_the_verdict(self):
+        """Nobody declared it does not mean nobody owns it."""
+        contract = self.contract()
+        undeclared = [step["id"] for step in contract["steps"] if "retrieval" not in step]
+        self.assertEqual(len(undeclared), 27)
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
+            calls = self.write_window_ledger(directory, "budget.json.calls.json", [])
+            models = self.write_models_db(directory)
+            types = beta_evidence.read_model_types("", str(models))[0]
+            outcomes, _ = self.window_part([ledger, calls], types)
+        named = {outcome.id: outcome for outcome in outcomes}
+        for step_id in undeclared:
+            # The prefix is exact: "F01-03" must not match "F01-03b".
+            matches = [outcome for outcome in named.values()
+                       if outcome.id.startswith(f"受控窗口 · {step_id} ")]
+            self.assertEqual(len(matches), 1, f"{step_id} is not named in the verdict")
+            self.assertEqual(matches[0].status, beta_evidence.NOT_RUN)
+            self.assertTrue(matches[0].reason.strip())
+            self.assertTrue(matches[0].unblock.strip())
+
+    def test_a_misspelled_declaration_is_refused_by_name(self):
+        """An unknown retrieval mode is a broken contract, not a quiet skip."""
+        with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
+            contract_path = Path(directory) / "contract.json"
+            contract_path.write_text(json.dumps({
+                "id": "F01",
+                "retrieval_modes": {"values": ["keyword_only", "vector_required"]},
+                "steps": [{"id": "X-01", "operation_id": "startGeneration",
+                           "retrieval": "keyword_onlyy"}],
+            }, ensure_ascii=False), encoding="utf-8")
+            outcomes, verdict = self.window_part([None, None], {}, contract_path)
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertIn("keyword_onlyy", verdict["reason"])
+        node = [outcome for outcome in outcomes if "X-01" in outcome.id]
+        self.assertEqual(len(node), 1)
+        self.assertEqual(node[0].status, beta_evidence.FAILED)
+
+    def test_the_contract_declares_the_retrieval_mode_of_exactly_one_node(self):
+        """The facts the release conclusion quotes about this repository."""
+        contract = self.contract()
+        declared = [(step["id"], step["retrieval"]) for step in contract["steps"]
+                    if "retrieval" in step]
+        self.assertEqual(declared, [("F01-07", "vector_required")])
 
 
 if __name__ == "__main__":
