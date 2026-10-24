@@ -654,7 +654,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	allowed := make(map[string]Source, len(input.Sources))
 	for _, source := range input.Sources {
 		assetRevision, selected := selectedAssets[source.AssetID]
-		if source.ID == "" || source.ProjectID != run.ProjectID || source.Status != "available" || !selected || assetRevision != source.AssetRevision {
+		if source.ID == "" || source.ProjectID != run.ProjectID || source.Status != string(evidence.SourceAvailable) || !selected || assetRevision != source.AssetRevision {
 			continue
 		}
 		allowed[source.ID] = source
