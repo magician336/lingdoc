@@ -6,7 +6,7 @@ ready. That keeps a successful HTTP trace from masquerading as full failure-side
 
 What the verdict is made of
 ---------------------------
-Three things have to hold before this path may say PASS:
+Four things have to hold before this path may say PASS:
 
 * the runner finished (``runner_status`` is ``completed``);
 * every node answered with the HTTP status the **contract** declares.  The
@@ -14,13 +14,27 @@ Three things have to hold before this path may say PASS:
   at import time, so a contract that moved on cannot be judged against the
   old expectations -- and where the two disagree, the disagreement is named
   instead of being followed silently;
-* every assertion the contract's own nodes carry **held** (``checks``).
+* every **machine** assertion the contract's own nodes carry **held**
+  (``checks``);
+* every **prose** assertion the contract's own nodes carry was judged by
+  somebody (``manual_assertions``), and the runner's own verdict on the
+  provider's semantics is ``verified`` (``provider_semantics_status``).
 
 The third one used to be missing.  This path read the HTTP status only, so a
 node whose every assertion had failed was still reported as a node that had
 passed, and the evidence said the HTTP matched the contract.  A node that
 answered as the contract says but whose own assertion did not hold has not
 passed, and the report now says which of the two happened.
+
+The fourth one used to be missing too, and it was the more expensive one.
+The contract's nodes carry two kinds of assertion: the machine ones above,
+and the prose ones no machine can read -- a human judges those.  This path
+read neither the prose assertions nor the runner's verdict on the provider's
+semantics, so a run whose prose assertions nobody had judged was reported
+as a pass.  The main path (``scripts/acceptance/beta_evidence.py``) counts
+the very same run as NOT RUN, so one run had two verdicts and the release
+decision read the optimistic one.  An unjudged prose assertion is neither a
+failure nor a pass: it is NOT RUN, and that is what this path says now.
 """
 from __future__ import annotations
 
@@ -70,6 +84,13 @@ SAFE_FAILURE_CASE = re.compile(r"[a-z][a-z0-9_.-]{1,63}")
 #: the report, so both are checked before they are written into the evidence.
 SAFE_OPERATOR = re.compile(r"[a-z_][a-z0-9_]{0,63}")
 SAFE_POINTER = re.compile(r"(?:/[A-Za-z0-9_.~%-]{0,64}){0,32}")
+#: The statuses a prose assertion may carry once somebody judged it.  The
+#: main path reads the same set (``beta_evidence.manual_assertion_outcomes``);
+#: any other status means nobody judged it.
+JUDGED_MANUAL_ASSERTION_STATUSES = {"passed", "held", "judged"}
+#: The only value of ``provider_semantics_status`` that may lead to a PASS.
+#: The main path uses the same one (``beta_evidence.PROVIDER_SEMANTICS_VERIFIED``).
+PROVIDER_SEMANTICS_VERIFIED = "verified"
 
 
 def _contract_expectations() -> dict[str, Any] | None:
@@ -207,6 +228,45 @@ def _failed_checks(report: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
+def _unjudged_manual_assertions(report: dict[str, Any]) -> list[dict[str, str]]:
+    """The prose assertions of this run that nobody judged.
+
+    A prose assertion is one no machine can read: the contract leaves it to a
+    human.  Until a human judges it, the run has not verified it -- and a run
+    that does not say so looks like a run that did.  The main path counts the
+    same entries as NOT RUN, so this path counts them the same way: one run
+    may not have two verdicts.
+
+    Only the node the assertion belongs to is published.  The assertion text
+    itself is not carried into the evidence.
+    """
+    entries = report.get("manual_assertions", [])
+    if not isinstance(entries, list):
+        return []
+    unjudged: list[dict[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("status", "")).lower() in JUDGED_MANUAL_ASSERTION_STATUSES:
+            continue
+        step_id = entry.get("step_id")
+        unjudged.append({
+            "step_id": step_id if isinstance(step_id, str) and SAFE_STEP_ID.fullmatch(step_id) else "",
+            "status": "not_run",
+        })
+    return unjudged
+
+
+def _provider_semantics_status(report: dict[str, Any]) -> str:
+    """The runner's own verdict on the provider's semantics.
+
+    ``not_verified`` when the report does not carry the verdict at all: an
+    unknown verdict is not a verified one, and the main path reads a missing
+    verdict the same way.
+    """
+    return str(report.get("provider_semantics_status", "not_verified") or "not_verified")
+
+
 def _safe_fixture_state(value: Any) -> dict[str, Any]:
     """Keep only redacted, status-shaped fixture state in the quality report."""
     if not isinstance(value, dict):
@@ -323,29 +383,37 @@ def _safe_main_report(report: dict[str, Any], expected_http: dict[str, int],
 def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
     """What this run observed, and what it therefore says.
 
-    Four different things can happen, and the report has to say which one:
+    Five different things can happen, and the report has to say which one:
 
     * the runner did not finish -- BLOCKED;
     * the contract and this module's declared expectations disagree --
       BLOCKED, because a verdict made against expectations nobody can name is
       not evidence;
     * a node answered with a status the contract does not declare, **or** a
-      node answered as the contract says but one of its own assertions did
-      not hold -- FAIL.  The second one used to be PASS: this path read the
-      HTTP status only, so a node whose every assertion had failed was
-      reported as a node that had passed;
-    * nothing failed -- PASS.
+      node answered as the contract says but one of its own machine
+      assertions did not hold -- FAIL.  The second one used to be PASS: this
+      path read the HTTP status only, so a node whose every assertion had
+      failed was reported as a node that had passed;
+    * a prose assertion nobody judged, or a provider whose semantics this run
+      did not verify -- NOT RUN.  Nothing failed, but something was not judged
+      either, and the main path counts the same run as NOT RUN;
+    * nothing failed and nothing was left unjudged -- PASS.
 
     The two FAIL causes stay apart in the evidence: "the HTTP status is wrong"
     and "the HTTP status is right but the assertion did not hold" are two
-    different facts.
+    different facts.  The NOT RUN cause says which prose assertions nobody
+    judged and what the runner's verdict on the provider's semantics was.
     """
     contract = _contract_expectations()
+    unjudged = _unjudged_manual_assertions(report)
+    semantics = _provider_semantics_status(report)
     analysis: dict[str, Any] = {
         "result": "BLOCKED",
         "reason": "",
         "http_mismatches": [],
         "failed_checks": [],
+        "unjudged_manual_assertions": unjudged,
+        "provider_semantics_status": semantics,
         "contract_mismatch": _contract_mismatch(contract),
     }
     if contract is None:
@@ -424,16 +492,29 @@ def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
         analysis["result"] = "FAIL"
         analysis["reason"] = "有节点的判定不是通过，详见 main_steps。"
         return analysis
+    if unjudged or semantics != PROVIDER_SEMANTICS_VERIFIED:
+        analysis["result"] = "NOT RUN"
+        reasons: list[str] = []
+        if unjudged:
+            reasons.append("还有人工/散文断言未判定："
+                           + "；".join(item["step_id"] or "（未标注节点）"
+                                       for item in unjudged))
+        if semantics != PROVIDER_SEMANTICS_VERIFIED:
+            reasons.append(f"provider_semantics_status = {semantics}："
+                           "提供方的语义本轮没有核验。")
+        analysis["reason"] = "；".join(reasons)
+        return analysis
     if verdicts and all(verdict == "passed" for verdict in verdicts):
         analysis["result"] = "PASS"
-        analysis["reason"] = "全部节点的 HTTP 与契约声明一致，且没有断言不成立。"
+        analysis["reason"] = ("全部节点的 HTTP 与契约声明一致，机器断言全部成立，"
+                              "散文断言都有人判定，提供方的语义已核验。")
         return analysis
     analysis["reason"] = "没有跑出结论。"
     return analysis
 
 
 def _observed_result(report: dict[str, Any]) -> str:
-    """The verdict of this path alone: PASS, FAIL or BLOCKED."""
+    """The verdict of this path alone: PASS, FAIL, NOT RUN or BLOCKED."""
     return _observed_analysis(report)["result"]
 
 
@@ -572,6 +653,13 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
 
     The fixture is intentionally explicit about its scope: it proves the report
     shape and the no-half-write failure assertion, not a live API deployment.
+
+    It is a **fully verified** synthetic run: every node answers as the
+    contract declares, no prose assertion is left unjudged, and the runner's
+    verdict on the provider's semantics is ``verified``.  That is what lets
+    this path reach PASS at all -- a run whose prose assertions nobody judged
+    is NOT RUN, and a real F01 run is in exactly that state today, because the
+    contract leaves four prose assertions to a human.
     """
     workflow = json.loads(WORKFLOW_PATH.read_text(encoding="utf-8"))
     steps = [
@@ -585,6 +673,8 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
         "completed_steps": len(steps),
         "total_steps": len(steps),
         "verification_scope": "contract_fixture_only",
+        "provider_semantics_status": "verified",
+        "manual_assertions": [],
         "fixture_metadata": {
             "template_version": "template.v1",
             "ruleset_hash": "rules.key",
@@ -677,6 +767,8 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             "verification_scope": safe_main_report["verification_scope"],
             "http_mismatches": analysis["http_mismatches"],
             "failed_checks": analysis["failed_checks"],
+            "unjudged_manual_assertions": analysis["unjudged_manual_assertions"],
+            "provider_semantics_status": analysis["provider_semantics_status"],
             "contract_mismatch": analysis["contract_mismatch"],
         },
         "fixture_state": fixture_state,
@@ -685,7 +777,9 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             fixture_id=fixture_id, runtime_mode=runtime_mode, result=result,
             input_value={"fixture_id": fixture_id, "coverage": coverage},
             output_value={"main_path": safe_main_report, "failure_path": failure},
-            attribution=["fixture_or_test"] if result == "BLOCKED" else ["domain_logic"],
+            attribution=(["runtime"] if result == "NOT RUN"
+                         else ["fixture_or_test"] if result == "BLOCKED"
+                         else ["domain_logic"]),
             evidence_refs=["fixture_coverage", "main_path", "failure_path"],
             owner="quality-operations", reviewer="unassigned",
             fixture_digest=fixture_digest,

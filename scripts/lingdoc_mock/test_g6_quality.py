@@ -495,6 +495,8 @@ class G6MainPathTest(unittest.TestCase):
         return {"runner_status": "completed", "completed_steps": len(steps),
                 "workflow": "F01",
                 "total_steps": len(steps), "verification_scope": "http_smoke_only",
+                "provider_semantics_status": "verified",
+                "manual_assertions": [],
                 "steps": steps}
 
     def test_complete_path_stays_blocked_until_failure_side_effect_is_read_back(self):
@@ -564,7 +566,15 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["main_path"]["result"], "PASS")
         self.assertEqual(report["result"], "PASS")
 
-    def test_actual_f01_runner_report_shape_is_accepted(self):
+    def test_actual_f01_runner_report_shape_is_accepted_and_is_not_run(self):
+        """A real runner report is read -- and it is NOT RUN today.
+
+        The runner reports the contract's four prose assertions as
+        ``not_run`` and the provider's semantics as ``not_verified``:
+        nobody judged them.  A run like that has not verified the delivery
+        chain, so this path says NOT RUN -- the same verdict the main path
+        gives the very same run.
+        """
         main, failure = main_path_evidence.build_mock_main_path_fixture()
         runner = main_path_evidence.ScenarioRunner.from_files(
             main_path_evidence.OPENAPI_PATH, main_path_evidence.WORKFLOW_PATH,
@@ -578,8 +588,9 @@ class G6MainPathTest(unittest.TestCase):
         report = main_path_evidence.build_main_path_report(
             main_report=raw_report, failure_observation=failure,
             runtime_mode="real_api_fake_model")
-        self.assertEqual(report["main_path"]["result"], "PASS")
-        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(raw_report["provider_semantics_status"], "not_verified")
+        self.assertEqual(report["main_path"]["result"], "NOT RUN")
+        self.assertEqual(report["result"], "NOT RUN")
 
     def test_fixture_digest_changes_when_redacted_fixture_state_changes(self):
         main, failure = main_path_evidence.build_mock_main_path_fixture()

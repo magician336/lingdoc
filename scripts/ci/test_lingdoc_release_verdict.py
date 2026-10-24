@@ -18,6 +18,14 @@ assertion had failed was still reported as a node that had passed, and the
 evidence said the HTTP matched the contract.  That is a false PASS in the
 release decision, and these tests pin it shut.
 
+They pin the two channels the second path used to leave out as well.  The
+contract's nodes carry two kinds of assertion: the machine ones (``checks``)
+and the prose ones no machine can read (``manual_assertions``), and the
+runner's own verdict on the provider's semantics
+(``provider_semantics_status``) belongs to the same story.  The main path
+reads all three; the second path read only the first one, so one run had two
+verdicts -- and the release decision read the optimistic one.
+
 They also pin two facts that go stale silently:
 
 * the number of nodes the F01 contract declares is **read from the contract**
@@ -146,6 +154,143 @@ class MainPathChecksTests(unittest.TestCase):
         encoded = json.dumps(report, ensure_ascii=False)
         self.assertNotIn("SECRET_TOKEN_VALUE", encoded)
         self.assertNotIn("raw document body", encoded)
+
+
+class ProseAssertionAndProviderSemanticsTests(unittest.TestCase):
+    """The two channels the second path used to leave out.
+
+    The contract's nodes carry two kinds of assertion: the machine ones
+    (``checks``) and the prose ones no machine can read
+    (``manual_assertions``).  The runner's own verdict on the provider's
+    semantics (``provider_semantics_status``) belongs to the same story.  The
+    main path reads all three; the second path read only the first one.
+
+    An unjudged prose assertion is not a failure and not a pass either: it is
+    NOT RUN.  A provider whose semantics nobody verified has not earned a
+    pass either.  The main path says exactly that, so the second path has to
+    say it too -- otherwise one run has two verdicts, and the release
+    decision reads the optimistic one.
+    """
+
+    FAILURE_OBSERVATION = {"failure_case": "duplicate_formal_write",
+                           "expected_http": 409, "actual_http": 409,
+                           "no_formal_side_effect": True,
+                           "readback": {"status": "unchanged"}}
+
+    def _runner_report(self, *, manual_assertions=(),
+                       provider_semantics_status="not_verified"):
+        """A report in the shape the F01 runner writes.
+
+        Every node the contract declares answered, and every machine assertion
+        the contract declares was evaluated and held.  So the only thing that
+        can decide the verdict is what this report says about the prose
+        assertions and about the provider's semantics.
+        """
+        contract = beta_evidence.read_json(CONTRACT_PATH) or {}
+        steps = [{"id": step["id"], "operation_id": step["operation_id"],
+                  "http_status": step["expected_http"]}
+                 for step in contract["steps"]]
+        _, declared_checks = beta_evidence.contract_expectations(contract)
+        checks = [{"step_id": check["step_id"], "operator": check["operator"],
+                   "path": check["path"], "status": "passed", "intent": "一条断言"}
+                  for check in declared_checks]
+        return {
+            "workflow": contract["id"],
+            "runner_status": "completed",
+            "completed_steps": len(steps),
+            "total_steps": len(steps),
+            "verification_scope": "http_smoke_only",
+            "provider_semantics_status": provider_semantics_status,
+            "manual_assertions": list(manual_assertions),
+            "steps": steps,
+            "checks": checks,
+        }
+
+    def _second_path(self, report):
+        return main_path_evidence.build_main_path_report(
+            main_report=report, failure_observation=self.FAILURE_OBSERVATION)
+
+    def _main_path(self, report):
+        # The main path always diffs the runner's record against the contract
+        # (``beta_evidence.run_f01`` does the same), so the guard does it too.
+        contract = beta_evidence.read_json(CONTRACT_PATH) or {}
+        outcomes = beta_evidence.check_outcomes(report, contract)
+        return beta_evidence.overall_result(
+            outcomes, beta_evidence.provider_semantics_status(report))
+
+    def test_the_two_paths_do_not_disagree_about_the_same_run(self):
+        """One run, one verdict.  This is what this file was opened for.
+
+        The second path used to say PASS where the main path said NOT RUN, so
+        the release decision read the optimistic verdict of one run.
+        """
+        cases = {
+            "a prose assertion nobody judged": self._runner_report(
+                manual_assertions=[{"step_id": "F01-06d",
+                                    "assertion": "一句机器读不了的话",
+                                    "status": "not_run"}],
+                provider_semantics_status="verified"),
+            "a provider whose semantics nobody verified": self._runner_report(
+                provider_semantics_status="not_verified"),
+            "everything judged and verified": self._runner_report(
+                provider_semantics_status="verified"),
+        }
+        for label, report in cases.items():
+            with self.subTest(case=label):
+                second = self._second_path(report)["main_path"]["result"]
+                main = self._main_path(report)
+                self.assertFalse(second == "PASS" and main == "NOT RUN",
+                                 f"the two paths disagree about one run: {second} / {main}")
+                self.assertEqual(second, main)
+
+    def test_an_unjudged_prose_assertion_cannot_pass(self):
+        """A sentence no machine can judge is not a pass until a human judged it.
+
+        The report even claims ``verified`` -- this path may not take the
+        runner's word for it while the report still carries an unjudged prose
+        assertion.
+        """
+        report = self._second_path(self._runner_report(
+            manual_assertions=[{"step_id": "F01-06b",
+                                "assertion": "一句机器读不了的话",
+                                "status": "not_run"}],
+            provider_semantics_status="verified"))
+        self.assertNotEqual(report["main_path"]["result"], "PASS")
+        self.assertNotEqual(report["result"], "PASS")
+        self.assertEqual(report["main_path"]["result"], "NOT RUN")
+        self.assertEqual(len(report["main_path"]["unjudged_manual_assertions"]), 1)
+        self.assertEqual(report["main_path"]["unjudged_manual_assertions"][0]["step_id"],
+                         "F01-06b")
+        self.assertIn("未判定", report["main_path"]["reason"])
+
+    def test_an_unverified_provider_semantics_cannot_pass(self):
+        """The runner's own verdict on the provider's semantics counts here too."""
+        report = self._second_path(
+            self._runner_report(provider_semantics_status="not_verified"))
+        self.assertNotEqual(report["main_path"]["result"], "PASS")
+        self.assertNotEqual(report["result"], "PASS")
+        self.assertEqual(report["main_path"]["result"], "NOT RUN")
+        self.assertEqual(report["main_path"]["provider_semantics_status"], "not_verified")
+        self.assertIn("provider_semantics_status", report["main_path"]["reason"])
+        self.assertIn("not_verified", report["main_path"]["reason"])
+
+    def test_a_verified_provider_semantics_still_passes(self):
+        """The fix may not overreach: a judged and verified run still passes."""
+        report = self._second_path(
+            self._runner_report(provider_semantics_status="verified"))
+        self.assertEqual(report["main_path"]["result"], "PASS")
+        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(report["main_path"]["unjudged_manual_assertions"], [])
+        self.assertEqual(report["main_path"]["provider_semantics_status"], "verified")
+
+    def test_a_report_without_a_provider_semantics_verdict_is_treated_as_unverified(self):
+        """An unknown verdict is not a verified one -- the main path reads it so too."""
+        report = self._runner_report()
+        del report["provider_semantics_status"]
+        second = self._second_path(report)
+        self.assertEqual(second["main_path"]["provider_semantics_status"], "not_verified")
+        self.assertNotEqual(second["main_path"]["result"], "PASS")
+        self.assertEqual(second["main_path"]["result"], "NOT RUN")
 
 
 class ContractExpectationTests(unittest.TestCase):
