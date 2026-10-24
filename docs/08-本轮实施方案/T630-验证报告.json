@@ -1,0 +1,152 @@
+{
+  "mode": "spec-627-t4-acceptance-matrix-closing",
+  "note": "Spec #627 T4（票 #630）验收矩阵收口与文档一致性核对。机制与测试代码零改动（本提交为纯 docs/ 增量）；机器可判定层证据在审计基线 8ad31b5f 上由 Windows 宿主 Python 3.14.3 于 2026-10-25 实跑；运行级证据需 GitHub Actions 真实门禁 run，属环境限制，如实 NOT RUN 并带解除条件。矩阵文档：docs/08-本轮实施方案/Spec-627-门禁见证复用验收矩阵.md（口径 v1.1，口径 commit 1f195def6fb984d43876567bfe365222c34b46b5）。",
+  "head": "8ad31b5f",
+  "base": "6b394ca7",
+  "head_note": "集成分支 spec/627-gate-attest-reuse 顶端（a92ec64d T2 → 8c80d4ea T1 → 99b05e49 T3 → 9745ee29 落基 origin/main 6b394ca7 → 8ad31b5f review fixes F1–F5）。",
+  "base_note": "落基时的 origin/main。",
+  "passed": [
+    {
+      "id": "T1-AC3 锚点写入失败不改变门禁既有结论语义",
+      "status": "passed",
+      "evidence": "scripts/ci/test_lingdoc_gate_decision.py GateAnchorTests 写失败不改结论用例；命令（scripts/ci 下）：python -m unittest test_lingdoc_gate_decision → 102 OK；head 8ad31b5f"
+    },
+    {
+      "id": "T1-AC4 ciscripts 全绿；ready_for_review 外触发点语义不变",
+      "status": "passed",
+      "evidence": "python -m unittest discover -s scripts/ci -p \"test_lingdoc_*.py\" → Ran 791 tests OK；test_lingdoc_workflow_wiring 21 OK；head 8ad31b5f"
+    },
+    {
+      "id": "T2-AC1 五条件正/反用例全部通过",
+      "status": "passed",
+      "evidence": "scripts/ci/test_lingdoc_gate_attest_reuse.py 29 OK（ConditionViolationTests 6 反例 + 条件 5 同接受 workflow 名与 manifest 派生路径）；命令（scripts/ci 下）：python -m unittest test_lingdoc_gate_attest_reuse；head 8ad31b5f"
+    },
+    {
+      "id": "T2-AC2 见证层故障用例全部回退零误判",
+      "status": "passed",
+      "evidence": "WitnessFailureTests（记录缺失/字段畸形/API 异常 11+ 形态）+ 锚点与 run 记录自相矛盾交叉核验回退；同上命令；head 8ad31b5f"
+    },
+    {
+      "id": "T2-AC3 queue-state 三形态同形兼容断言",
+      "status": "passed",
+      "evidence": "同形 guard test 与真实 judge() 逐键比对（lingdoc_gate_attest_reuse.py docstring The queue-state shape guarantee 节）；同上命令；head 8ad31b5f"
+    },
+    {
+      "id": "T2-AC4 决策模块 ciscripts 全绿且无 GitHub API 运行时依赖",
+      "status": "passed",
+      "evidence": "决策模块为纯函数（零网络面 import）；全量 791 OK；head 8ad31b5f"
+    },
+    {
+      "id": "T3-AC6 既有 ciscripts 测试面全绿",
+      "status": "passed",
+      "evidence": "python -m unittest discover -s scripts/ci -p \"test_lingdoc_*.py\" → Ran 791 tests OK（2026-10-25 在 8ad31b5f 重跑）"
+    },
+    {
+      "id": "F1 见证步骤 outcome 进 result.json",
+      "status": "passed",
+      "evidence": "workflow publish 步骤 result['attest_outcome']；test_lingdoc_workflow_wiring.py::test_the_publish_step_records_the_attest_outcome；head 8ad31b5f"
+    },
+    {
+      "id": "F2 GATE_ANCHOR_FILE 转公共常量",
+      "status": "passed",
+      "evidence": "lingdoc_gate_decision.py GATE_ANCHOR_FILE = \"gate-anchor.json\"；witness ANCHOR_FILE = gate_decision.GATE_ANCHOR_FILE；test_lingdoc_gate_attest_witness.py 断言同一常量；head 8ad31b5f"
+    },
+    {
+      "id": "F3 gate workflow 名从 manifest 派生",
+      "status": "passed",
+      "evidence": "lingdoc_gate_attest_reuse.py GATE_WORKFLOW_PATH 读自 manifest.GOVERNANCE_FILES；ManifestDerivationTests（含 GATE_WORKFLOW_FILE 不存在断言）；head 8ad31b5f"
+    },
+    {
+      "id": "F4 见证判定 JSON 落 artifact（gate-attest-decision.json）",
+      "status": "passed",
+      "evidence": "witness DECISION_FILE；DecisionRecordTests 3 条；head 8ad31b5f"
+    },
+    {
+      "id": "F5 _main_sha 三级回退链（merge_ref_parent → checkout_head → origin_main_unverified）",
+      "status": "passed",
+      "evidence": "lingdoc_gate_decision.py::_main_sha + GateAnchorTests 回退链用例；head 8ad31b5f"
+    },
+    {
+      "id": "T4-AC1 workflow 头注释与 Spec/机制逐字一致（F1–F5 后实现口径零漂移）",
+      "status": "passed",
+      "evidence": "2026-10-25 在 8ad31b5f 逐字核对 .github/workflows/lingdoc-review.yml 头注释与 lingdoc_gate_attest_reuse.py / lingdoc_gate_decision.py / lingdoc_gate_attest_witness.py docstring：复用条件五要素、any-doubt-回退、dispatch 逃生通道、actions: read、GATE_ANCHOR_FILE、manifest 派生、gate-attest-decision.json、main_sha 回退链全部一致；未发现漂移，未修改注释"
+    },
+    {
+      "id": "T4-AC3 登记处纪律确认：触碰路径零命中",
+      "status": "passed",
+      "evidence": "scripts/lingdoc_parallel_surfaces.py 对 .github/workflows/lingdoc-review.yml、scripts/ci/lingdoc_gate_decision.py、lingdoc_gate_attest_reuse.py、lingdoc_gate_attest_witness.py 及三个测试文件 grep -c 均为 0（2026-10-25，head 8ad31b5f）；按票面未自行登记，登记由管理方统一协调"
+    },
+    {
+      "id": "T4-AC4 独立审查人可仅凭票面与链接复核全部结论",
+      "status": "passed",
+      "evidence": "矩阵每行三件套（具名测试类 + 可复现命令 + 落证 head 8ad31b5f）；NOT RUN 行全部带机器可读解除条件（口径 §5.2）；矩阵 docs/08-本轮实施方案/Spec-627-门禁见证复用验收矩阵.md"
+    },
+    {
+      "id": "IMPL 约束核对 10 条（触发范围/五条件/无时间上限/锚点落账/证据透传/失败语义/逃生通道/check 名/queue-state 同形/文档同步）",
+      "status": "passed",
+      "evidence": "矩阵第四节约束表，证据与上列各行相同；运行级半边随对应 NOT RUN 行解除"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "T1-AC1 / RUN-1 前置：真实门禁 run artifact 中复核 gate-anchor.json 四元组",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "字段语义已由 GateAnchorTests 单测证明，但真实 run 的 artifact 只能在 GitHub Actions 上产生，本机无法产生（环境限制）。",
+      "unblock": "Spec PR 自身的 ready_for_review 门禁 run 产出 artifact 后读取 gate-anchor.json 逐字段复核"
+    },
+    {
+      "id": "T1-AC2 真实 run 中复核 main tip 锚定的时间与值",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "同上：main_sha_source/main_sha_read_at 字段实现与回退链已单测，运行级 artifact 未产生。",
+      "unblock": "同 T1-AC1：真实门禁 run 的 gate-anchor.json 中复核时间与值"
+    },
+    {
+      "id": "T3-AC1 / RUN-1 真实复用发生（Draft 绿 → 转 Ready → 约一分钟绿，REUSED 链接与五条件比对，gate-attest-decision.json 落盘）",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "机器层全链单测通过（witness 27 OK + wiring 7 条 attest 条件断言），运行级记录不存在；需要真实 PR 的 ready_for_review 门禁 run。",
+      "unblock": "Spec PR 自身转 Ready 的 ready_for_review 门禁 run 产出含 REUSED 链接与五条件比对的 check summary/artifact"
+    },
+    {
+      "id": "T3-AC2 / RUN-2 条件不满足回退完整重跑",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "条件违反回退已单测，运行级回退实跑未发生。",
+      "unblock": "转 Ready 前 push 新提交，或复用首个无锚点旧绿 run 的实跑 check summary 留痕"
+    },
+    {
+      "id": "T3-AC3 / RUN-3 见证故障回退（门禁不变红不卡死）",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "机器层等价保证已 PASS（恒零退出 + continue-on-error: true + outputs 未设置判 false），运行级注入实验未做。",
+      "unblock": "本机/CI 注入 API 故障实验记录或真实 API 故障留痕"
+    },
+    {
+      "id": "T3-AC4 / RUN-4 复用透传 scope 记录的运行级可审计性 + fork PR 跨 run artifact 可见性",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "拷贝逻辑（reused-scope.json / reused-gate-anchor.json）已单测，运行级确认与 fork PR 的 actions: read 可见性未实证。",
+      "unblock": "真实复用 run 中读取本次 artifact 的 reused-scope.json 复核，并做 fork PR 场景实证"
+    },
+    {
+      "id": "T3-AC5 / RUN-5 opened/synchronize/reopened 实跑逐字不变 + workflow_dispatch 全量语义不变",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "wiring 断言（重步骤条件逐字、always() 不跳过、check 名不变、--all 分支保留）已 PASS，运行级实跑记录不存在。",
+      "unblock": "既有 PR 的日常 push run（自然验证载体）与一次手动 dispatch 的 check 结论留痕"
+    },
+    {
+      "id": "T4-AC2 运行层三份真实记录（复用/回退/故障）回填矩阵",
+      "status": "not_run",
+      "matrix_status": "NOT RUN",
+      "reason": "矩阵本体已建立且机器层全部行有证据；缺运行层三份真实记录（与 T3-AC1/AC2/AC3 同源）。",
+      "unblock": "运行级第 1–3 项解除后在本矩阵 T3-AC1/AC2/AC3 行回填真实 check summary 与 artifact 链接"
+    }
+  ],
+  "known_limits": [
+    "运行级 5 项（RUN-1…RUN-5）的解除载体是 Spec #627 自身 PR 的门禁 run（转 Ready 场景 + 日常 push run），证据回填不阻塞本收口票的代码合并，但阻塞该 Spec 的验收放行（口径 §5.3 Beta 放行层语义）。",
+    "注释漂移核对结论为时点结论（2026-10-25，head 8ad31b5f）：后续若再改 gate 脚本或 workflow 注释，需重新核对。"
+  ]
+}
