@@ -35,6 +35,23 @@ as a pass.  The main path (``scripts/acceptance/beta_evidence.py``) counts
 the very same run as NOT RUN, so one run had two verdicts and the release
 decision read the optimistic one.  An unjudged prose assertion is neither a
 failure nor a pass: it is NOT RUN, and that is what this path says now.
+
+The fifth one was the most expensive one, and it is the one this file was
+opened for (#632).  The contract declares 58 machine assertions; a run
+evaluates as many of them as it got to.  This path read the assertions the run
+*did* produce and said nothing about the ones it did not, so a run that
+evaluated 15 of the contract's 58 assertions was reported as a run whose
+assertions all held -- while the main path counted the very same run as NOT
+RUN, with one NOT RUN outcome per unevaluated assertion.  A check the contract
+declares and the run never judged is not a pass: nobody produced a fact about
+it.  So this path now diffs the contract's own assertions against the run's
+own record, the same way the main path does, and the difference is published
+rather than swallowed.
+
+Where the difference does not line up, this path refuses to judge at all: a
+check the contract does not declare, the same check twice, a check of a kind
+nobody knows -- none of those is "the run got less far", it is "the two sides
+do not agree", and it is BLOCKED.
 """
 from __future__ import annotations
 
@@ -49,6 +66,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.lingdoc_check_kinds import (
+    CheckKindError,
+    KNOWN_CHECK_OPERATORS,
+    declared_kind,
+)
 from scripts.lingdoc_mock.quality_evidence import RUNTIME_MODES, SAFE_FIXTURE_ID, build_evidence, digest
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, WORKFLOW_PATH, ScenarioRunner, WorkflowError, write_report
 
@@ -91,19 +113,61 @@ JUDGED_MANUAL_ASSERTION_STATUSES = {"passed", "held", "judged"}
 #: The only value of ``provider_semantics_status`` that may lead to a PASS.
 #: The main path uses the same one (``beta_evidence.PROVIDER_SEMANTICS_VERIFIED``).
 PROVIDER_SEMANTICS_VERIFIED = "verified"
+#: The check kinds the vocabulary knows.  A check of a kind outside this set
+#: states a fact nobody can judge, so it is blocked rather than ignored.  The
+#: vocabulary is read from its single authority (``scripts/lingdoc_check_kinds.py``)
+#: -- a second copy of it here would be a defect, and the guard test says so.
+KNOWN_CHECK_KINDS = frozenset(KNOWN_CHECK_OPERATORS)
+#: The result a machine check carries when it held, and the one it carries when
+#: it did not.  These are the runner's own two words; a check that carries any
+#: other word has not produced a readable result, and the main path reads such
+#: a check as a failure too (``beta_evidence.check_outcomes``).
+CHECK_PASSED = "passed"
+CHECK_FAILED = "failed"
+
+
+def _declared_check(step_id: str, check: Any) -> dict[str, str] | None:
+    """The contract's own record of one check: which node, which kind, which subject.
+
+    Those three things are what name a check, and the main path names them the
+    same way (``beta_evidence.contract_expectations``).  The kind comes from
+    the single authority (``scripts/lingdoc_check_kinds.py``), so the contract,
+    the runner and this path name one check the same way -- a second spelling
+    of the kind would make the diff between them meaningless.
+
+    ``None`` means the declaration cannot be read: the check names no known
+    kind, names more than one, or carries no path.  A declaration nobody can
+    read is not a check that may be skipped; it is a reason to refuse the
+    verdict.
+    """
+    if not isinstance(check, dict):
+        return None
+    try:
+        operator = declared_kind(check, f"{step_id} check")
+    except CheckKindError:
+        return None
+    path = check.get("path")
+    if not isinstance(path, str) or not path:
+        return None
+    return {"step_id": step_id, "operator": operator, "path": path}
 
 
 def _contract_expectations() -> dict[str, Any] | None:
-    """The node ids and the HTTP statuses the contract declares, read now.
+    """The node ids, the HTTP statuses and the checks the contract declares, read now.
 
-    The contract is the only place that says what a node must answer, so it
-    is read every time a verdict is made rather than frozen at import time.
-    A frozen copy is a second truth, and a second truth goes stale the moment
-    the contract gains a node.
+    The contract is the only place that says what a node must answer and what
+    it must prove, so it is read every time a verdict is made rather than
+    frozen at import time.  A frozen copy is a second truth, and a second truth
+    goes stale the moment the contract gains a node or an assertion.
 
     ``None`` means the contract could not be read, or does not carry the shape
     this module needs.  A verdict without the contract is not a verdict, so
     the caller says BLOCKED instead of guessing.
+
+    ``problem`` carries the one thing the contract can declare that this
+    module cannot read: a check whose kind or subject is unreadable.  That is
+    a missing declaration, and it blocks the verdict rather than shrinking the
+    set of checks the run has to answer for.
     """
     try:
         document = json.loads(WORKFLOW_PATH.read_text(encoding="utf-8"))
@@ -114,6 +178,8 @@ def _contract_expectations() -> dict[str, Any] | None:
         return None
     step_ids: list[str] = []
     expected_http: dict[str, int] = {}
+    checks: list[dict[str, str]] = []
+    problem: str | None = None
     for step in steps:
         if not isinstance(step, dict):
             return None
@@ -125,7 +191,29 @@ def _contract_expectations() -> dict[str, Any] | None:
             return None
         step_ids.append(step_id)
         expected_http[step_id] = status
-    return {"step_ids": tuple(step_ids), "expected_http": expected_http}
+        for check in step.get("checks", []) or []:
+            declared = _declared_check(step_id, check)
+            if declared is None and problem is None:
+                problem = (f"{step_id}：契约里的 check 没有声明一个已知的类型或没有 path，"
+                           "判定没有依据。")
+            if declared is not None:
+                checks.append(declared)
+    return {"step_ids": tuple(step_ids), "expected_http": expected_http,
+            "checks": tuple(checks), "problem": problem}
+
+
+def declared_contract_checks() -> list[dict[str, str]]:
+    """The checks the contract declares, in the contract's own order.
+
+    Each entry names one check: the node it belongs to, the kind it is and the
+    subject it is about.  This is the list a run has to answer for -- a check
+    that is not on it is not a check anybody may pass, and a check that is on
+    it but missing from the run's record was not evaluated.
+    """
+    contract = _contract_expectations()
+    if contract is None:
+        return []
+    return [dict(entry) for entry in contract["checks"]]
 
 
 #: What this module was loaded with.  It is kept so the difference against the
@@ -133,6 +221,10 @@ def _contract_expectations() -> dict[str, Any] | None:
 _CONTRACT_AT_IMPORT = _contract_expectations()
 REQUIRED_STEP_IDS = tuple(_CONTRACT_AT_IMPORT["step_ids"]) if _CONTRACT_AT_IMPORT else ()
 EXPECTED_STEP_HTTP = dict(_CONTRACT_AT_IMPORT["expected_http"]) if _CONTRACT_AT_IMPORT else {}
+#: The checks the contract declared when this module was loaded.  They are the
+#: checks a run has to answer for; a contract that moved on cannot be judged
+#: against the expectations this module was loaded with.
+EXPECTED_CHECKS = tuple(_CONTRACT_AT_IMPORT["checks"]) if _CONTRACT_AT_IMPORT else ()
 
 
 def _contract_mismatch(current: dict[str, Any] | None) -> list[str]:
@@ -155,6 +247,8 @@ def _contract_mismatch(current: dict[str, Any] | None) -> list[str]:
             differences.append(f"{step_id}：契约声明 {declared}，本模块声明 {loaded}")
     if tuple(current["step_ids"]) != tuple(REQUIRED_STEP_IDS):
         differences.append("节点清单与本模块声明的不一致")
+    if tuple(current.get("checks") or ()) != tuple(EXPECTED_CHECKS):
+        differences.append("契约声明的 checks 与本模块声明的不一致")
     return differences
 
 
@@ -197,35 +291,110 @@ def _step_verdict(step: dict[str, Any], expected_http: dict[str, int],
     return "unknown"
 
 
-def _failed_checks(report: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """The checks of this run that did not hold, grouped by the node they belong to.
+#: A subject the contract declares as a value captured earlier ("{{name}}") is
+#: not a JSON pointer, and the name behind it is the contract's own business.
+#: The evidence publishes the shape, not the name.
+CAPTURED_SUBJECT = "{{captured}}"
 
-    A check is the node's own assertion: "it answered 200" is not the same
-    fact as "it answered 200 with the state the contract names".  Only the
-    shape is kept -- the operator and the pointer the contract declared --
-    so that a report cannot smuggle a payload into the evidence.
+
+def _safe_subject(path: Any) -> str:
+    """The subject of a check, as the evidence may publish it."""
+    if isinstance(path, str) and SAFE_POINTER.fullmatch(path):
+        return path
+    return CAPTURED_SUBJECT
+
+
+def _safe_check_entry(entry: dict[str, str]) -> dict[str, str]:
+    """The shape of one check: which node, which kind, which subject.
+
+    Only the shape is kept -- never the values a check compared -- so that a
+    report cannot smuggle a payload into the evidence.
     """
-    checks = report.get("checks", [])
-    if not isinstance(checks, list):
-        return {}
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for check in checks:
+    step_id = entry.get("step_id", "")
+    operator = entry.get("operator", "")
+    return {
+        "step_id": (step_id if isinstance(step_id, str)
+                    and SAFE_STEP_ID.fullmatch(step_id) else ""),
+        "operator": (operator if isinstance(operator, str)
+                     and SAFE_OPERATOR.fullmatch(operator) else "unknown"),
+        "path": _safe_subject(entry.get("path")),
+        "status": CHECK_FAILED,
+    }
+
+
+def _group_by_step(entries: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    """The failed checks, grouped by the node they belong to."""
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for entry in entries:
+        grouped.setdefault(entry["step_id"], []).append(entry)
+    return grouped
+
+
+def _check_findings(report: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    """What the contract requires, what this run judged, and where the two disagree.
+
+    Three different things can be wrong here, and they must not be confused:
+
+    * a check the contract declares and this run never judged -- NOT RUN.
+      The run produced no fact about it, so nobody may read it as a pass;
+    * a check this run reports that the contract does not declare, the same
+      check twice, or a check of a kind nobody knows -- BLOCKED.  The two
+      sides do not line up, and a verdict made on a set nobody can name is
+      not evidence;
+    * a check that was judged and did not hold -- FAIL.
+
+    The main path draws the same three lines
+    (``beta_evidence.unevaluated_outcomes`` and
+    ``beta_evidence.check_outcomes``): a check that is in the record counts as
+    evaluated, and a check that carries any result other than ``passed`` did
+    not hold.  One run may not have two verdicts, so this path reads the
+    record the same way.
+    """
+    declared = [dict(entry) for entry in (contract.get("checks") or ())]
+    declared_keys = {(entry["step_id"], entry["operator"], entry["path"]) for entry in declared}
+    problems: list[str] = []
+    occurrences: dict[tuple[str, str, str], list[str]] = {}
+    raw = report.get("checks", [])
+    if not isinstance(raw, list):
+        return {"declared": declared_keys, "evaluated": set(), "duplicated": set(),
+                "failed": [], "unevaluated": [_safe_check_entry(entry) for entry in declared],
+                "problems": ["报告里的 checks 不是列表，判定没有依据。"]}
+    for check in raw:
         if not isinstance(check, dict):
-            continue
-        if check.get("status") == "passed":
+            problems.append("报告里有一条 check 不是对象，判定没有依据。")
             continue
         step_id = check.get("step_id")
-        key = step_id if isinstance(step_id, str) and SAFE_STEP_ID.fullmatch(step_id) else ""
         operator = check.get("operator")
-        pointer = check.get("path")
-        grouped.setdefault(key, []).append({
-            "step_id": key,
-            "operator": (operator if isinstance(operator, str)
-                         and SAFE_OPERATOR.fullmatch(operator) else "unknown"),
-            "path": pointer if isinstance(pointer, str) and SAFE_POINTER.fullmatch(pointer) else "",
-            "status": "failed",
-        })
-    return grouped
+        path = check.get("path")
+        if not isinstance(step_id, str) or not step_id:
+            problems.append("报告里有一条 check 没有节点标识，判定没有依据。")
+            continue
+        if not isinstance(operator, str) or operator not in KNOWN_CHECK_KINDS:
+            problems.append(f"{step_id}：报告里的 check 声明了未知的类型，判定没有依据。")
+            continue
+        if not isinstance(path, str) or not path:
+            problems.append(f"{step_id} {operator}：报告里的 check 没有 path，判定没有依据。")
+            continue
+        key = (step_id, operator, path)
+        if key not in declared_keys:
+            problems.append(f"{step_id} {operator}：报告里的这条 check 契约没有声明，"
+                            "结果集合对不上。")
+            continue
+        occurrences.setdefault(key, []).append(str(check.get("status")))
+    evaluated = set(occurrences)
+    duplicated = {key for key, results in occurrences.items() if len(results) > 1}
+    for key in sorted(duplicated):
+        results = occurrences[key]
+        detail = ("两个不同的结果" if len(set(results)) > 1 else "出现了两次")
+        problems.append(f"{key[0]} {key[1]}：同一条 check {detail}，结果集合对不上。")
+    failed: list[dict[str, str]] = []
+    for key in sorted(evaluated - duplicated):
+        if occurrences[key][0] != CHECK_PASSED:
+            failed.append(_safe_check_entry({"step_id": key[0], "operator": key[1], "path": key[2]}))
+    unevaluated = [_safe_check_entry(entry) for entry in declared
+                   if (entry["step_id"], entry["operator"], entry["path"]) not in evaluated]
+    return {"declared": declared_keys, "evaluated": evaluated, "duplicated": duplicated,
+            "failed": failed, "unevaluated": unevaluated, "problems": problems}
 
 
 def _unjudged_manual_assertions(report: dict[str, Any]) -> list[dict[str, str]]:
@@ -383,26 +552,38 @@ def _safe_main_report(report: dict[str, Any], expected_http: dict[str, int],
 def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
     """What this run observed, and what it therefore says.
 
-    Five different things can happen, and the report has to say which one:
+    Six different things can happen, and the report has to say which one:
 
     * the runner did not finish -- BLOCKED;
-    * the contract and this module's declared expectations disagree --
-      BLOCKED, because a verdict made against expectations nobody can name is
-      not evidence;
+    * the contract and this module's declared expectations disagree, or the
+      contract declares a check nobody can read -- BLOCKED, because a verdict
+      made against expectations nobody can name is not evidence;
     * a node answered with a status the contract does not declare, **or** a
       node answered as the contract says but one of its own machine
       assertions did not hold -- FAIL.  The second one used to be PASS: this
       path read the HTTP status only, so a node whose every assertion had
       failed was reported as a node that had passed;
-    * a prose assertion nobody judged, or a provider whose semantics this run
-      did not verify -- NOT RUN.  Nothing failed, but something was not judged
+    * the contract's own checks and this run's record do not line up -- a
+      check the contract does not declare, the same check twice, a check of a
+      kind nobody knows -- BLOCKED.  That is not "the run got less far", it is
+      "the two sides disagree", and a verdict made on a set nobody can name is
+      not evidence;
+    * a check the contract declares and this run never judged, a prose
+      assertion nobody judged, or a provider whose semantics this run did not
+      verify -- NOT RUN.  Nothing failed, but something was not judged
       either, and the main path counts the same run as NOT RUN;
     * nothing failed and nothing was left unjudged -- PASS.
 
     The two FAIL causes stay apart in the evidence: "the HTTP status is wrong"
     and "the HTTP status is right but the assertion did not hold" are two
-    different facts.  The NOT RUN cause says which prose assertions nobody
-    judged and what the runner's verdict on the provider's semantics was.
+    different facts.  The NOT RUN cause says which checks of the contract were
+    not evaluated, which prose assertions nobody judged, and what the runner's
+    verdict on the provider's semantics was.
+
+    The order of the tiers is the order the main path uses (``FAIL >
+    BLOCKED > NOT RUN``): an explicit failure is a failure even when
+    something else is also wrong, a result set that does not line up is a
+    refusal to judge, and what nobody judged is NOT RUN.
     """
     contract = _contract_expectations()
     unjudged = _unjudged_manual_assertions(report)
@@ -412,12 +593,20 @@ def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
         "reason": "",
         "http_mismatches": [],
         "failed_checks": [],
+        "unevaluated_checks": [],
+        "check_set_problems": [],
         "unjudged_manual_assertions": unjudged,
         "provider_semantics_status": semantics,
         "contract_mismatch": _contract_mismatch(contract),
     }
     if contract is None:
         analysis["reason"] = f"契约读不到（{CONTRACT_PATH}），判定没有依据。"
+        return analysis
+    if contract.get("problem"):
+        # The contract declares something nobody can read.  That is more
+        # fundamental than any other difference: the verdict would be computed
+        # against a set of checks nobody can name.
+        analysis["reason"] = contract["problem"]
         return analysis
     if analysis["contract_mismatch"]:
         analysis["reason"] = ("契约与本模块声明的期望值不一致，判定没有依据："
@@ -431,7 +620,13 @@ def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(steps, list):
         analysis["reason"] = "报告里的 steps 不是列表，判定没有依据。"
         return analysis
-    failed = _failed_checks(report)
+    # What the contract requires, what this run judged, and where the two
+    # disagree.  The contract is read now, so the difference is against the
+    # contract as it is on disk -- not against a copy frozen at import time.
+    findings = _check_findings(report, contract)
+    analysis["unevaluated_checks"] = findings["unevaluated"]
+    analysis["check_set_problems"] = findings["problems"]
+    failed = _group_by_step(findings["failed"])
     # The HTTP mismatches of the nodes this run answered, read from the nodes
     # themselves: a node that answered with a status the contract does not
     # declare is a mismatch whether or not the runner wrote it down.
@@ -463,8 +658,7 @@ def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
             "expected": expected if isinstance(expected, int) and not isinstance(expected, bool) else None,
             "actual": actual if isinstance(actual, int) and not isinstance(actual, bool) else None,
         })
-    for group in failed.values():
-        analysis["failed_checks"].extend(group)
+    analysis["failed_checks"] = list(findings["failed"])
     if any(_step_id(step) is not None and _step_http(step) is None
            for step in steps if isinstance(step, dict)):
         analysis["reason"] = "有节点没有记录 HTTP 状态码，判定没有依据。"
@@ -491,6 +685,23 @@ def _observed_analysis(report: dict[str, Any]) -> dict[str, Any]:
     if any(verdict == "failed" for verdict in verdicts):
         analysis["result"] = "FAIL"
         analysis["reason"] = "有节点的判定不是通过，详见 main_steps。"
+        return analysis
+    if analysis["check_set_problems"]:
+        # The contract's checks and this run's record do not line up.  This is
+        # not "the run got less far" -- it is "the two sides disagree", so the
+        # verdict is refused rather than computed on a set nobody can name.
+        analysis["result"] = "BLOCKED"
+        analysis["reason"] = ("契约声明的 checks 与本轮的结果集合对不上，判定没有依据："
+                              + "；".join(analysis["check_set_problems"]))
+        return analysis
+    if analysis["unevaluated_checks"]:
+        # The contract declares this assertion and this run never judged it.
+        # Nobody produced a fact about it, so it is NOT RUN -- the same verdict
+        # the main path gives the very same run.
+        analysis["result"] = "NOT RUN"
+        analysis["reason"] = ("契约声明了这些断言，但本轮没有求值它们："
+                              + "；".join(f"{item['step_id']} {item['operator']} {item['path']}"
+                                          for item in analysis["unevaluated_checks"]))
         return analysis
     if unjudged or semantics != PROVIDER_SEMANTICS_VERIFIED:
         analysis["result"] = "NOT RUN"
@@ -655,17 +866,26 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
     shape and the no-half-write failure assertion, not a live API deployment.
 
     It is a **fully verified** synthetic run: every node answers as the
-    contract declares, no prose assertion is left unjudged, and the runner's
+    contract declares, every machine assertion the contract declares was
+    evaluated and held, no prose assertion is left unjudged, and the runner's
     verdict on the provider's semantics is ``verified``.  That is what lets
     this path reach PASS at all -- a run whose prose assertions nobody judged
-    is NOT RUN, and a real F01 run is in exactly that state today, because the
-    contract leaves four prose assertions to a human.
+    is NOT RUN, a run that left some of the contract's assertions unevaluated
+    is NOT RUN too, and a real F01 run is in exactly the first of those states
+    today, because the contract leaves four prose assertions to a human.
     """
     workflow = json.loads(WORKFLOW_PATH.read_text(encoding="utf-8"))
     steps = [
         {"step_id": step["id"], "operation_id": step["operation_id"],
          "verdict": "passed", "actual_http": step["expected_http"]}
         for step in workflow["steps"]
+    ]
+    # The contract's own assertions, evaluated and held: a fixture that claims
+    # to be a verified run has to carry the record of that verification.
+    checks = [
+        {"step_id": check["step_id"], "path": check["path"],
+         "operator": check["operator"], "status": "passed"}
+        for check in declared_contract_checks()
     ]
     main_report = {
         "workflow": "F01",
@@ -675,6 +895,7 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
         "verification_scope": "contract_fixture_only",
         "provider_semantics_status": "verified",
         "manual_assertions": [],
+        "checks": checks,
         "fixture_metadata": {
             "template_version": "template.v1",
             "ruleset_hash": "rules.key",
@@ -727,7 +948,7 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
     failure = _failure_path(failure_observation)
     metadata = _safe_metadata(main_report.get("fixture_metadata", {}))
     fixture_state = _safe_fixture_state(main_report.get("fixture_state"))
-    failed_checks = _failed_checks(main_report)
+    failed_checks = _group_by_step(analysis["failed_checks"])
     safe_main_report = _safe_main_report(main_report, expected_http, failed_checks)
     fixture_definition = {
         "fixture_id": fixture_id,
@@ -750,6 +971,11 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             (not coverage["constructed_complete"] or not coverage["step_sequence_complete"]
              or not coverage["step_counts_complete"])):
         result = "BLOCKED"
+        # The main path's own verdict is downgraded with the overall one: the
+        # coverage gap is a fact about the main path, so a published evidence
+        # that says ``main_path.result = "PASS"`` while the whole report says
+        # BLOCKED contradicts itself.
+        main_result = "BLOCKED"
     return {
         "report_version": 1,
         "scope": "canonical F01 project-to-download path plus one failure side-effect fixture",
@@ -767,6 +993,8 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             "verification_scope": safe_main_report["verification_scope"],
             "http_mismatches": analysis["http_mismatches"],
             "failed_checks": analysis["failed_checks"],
+            "unevaluated_checks": analysis["unevaluated_checks"],
+            "check_set_problems": analysis["check_set_problems"],
             "unjudged_manual_assertions": analysis["unjudged_manual_assertions"],
             "provider_semantics_status": analysis["provider_semantics_status"],
             "contract_mismatch": analysis["contract_mismatch"],

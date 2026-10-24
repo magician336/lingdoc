@@ -488,16 +488,26 @@ class G6MetricsTest(unittest.TestCase):
 
 class G6MainPathTest(unittest.TestCase):
     def _complete_report(self):
+        """A report in which every node the contract declares answered and
+        every machine assertion the contract declares was evaluated and held.
+
+        The assertions are the contract's own, read now: a report that leaves
+        some of them unevaluated is NOT RUN, and a "complete" report that says
+        so would be a lie.
+        """
         workflow = json.loads(main_path_evidence.WORKFLOW_PATH.read_text(encoding="utf-8"))
         steps = [{"id": step["id"], "operation_id": step["operation_id"],
                   "verdict": "passed", "actual_http": step["expected_http"]}
                  for step in workflow["steps"]]
+        checks = [{"step_id": check["step_id"], "path": check["path"],
+                   "operator": check["operator"], "status": "passed"}
+                  for check in main_path_evidence.declared_contract_checks()]
         return {"runner_status": "completed", "completed_steps": len(steps),
                 "workflow": "F01",
                 "total_steps": len(steps), "verification_scope": "http_smoke_only",
                 "provider_semantics_status": "verified",
                 "manual_assertions": [],
-                "steps": steps}
+                "steps": steps, "checks": checks}
 
     def test_complete_path_stays_blocked_until_failure_side_effect_is_read_back(self):
         pending = main_path_evidence.build_main_path_report(main_report=self._complete_report())
