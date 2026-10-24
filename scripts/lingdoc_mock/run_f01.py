@@ -595,6 +595,10 @@ class ScenarioRunner:
         # only run once the material is bound to a project, so it runs just
         # before the node that consumes those sources.
         self.before_step_hook = None
+        # Which stages of the material gate actually ran. A gate that did
+        # not run is not a pass, so the run refuses when a required stage
+        # is missing from this list.
+        self.gate_stages_ran: list[str] = []
         # What each step of this run amounted to: "succeeded", "failed" or
         # "blocked".  A step that follows another may only assert its consequence
         # when the step it follows succeeded.
@@ -1314,14 +1318,48 @@ def run_material_preflight(
     if token_file:
         command += ["--token-file", token_file]
     elif token:
-        command += ["--token", token]
+        # The token file is REQUIRED here: a bearer token on the command
+        # line is visible in the process list to every other account on the
+        # machine. The runner therefore does not fall back to --token for
+        # the gate; the CLI keeps --token for a human running the gate by
+        # hand, where the operator can see what they are doing.
+        raise WorkflowError("the material gate needs --material-check-token-file "
+                            "(a token on the command line is visible in the process list)")
     else:
-        raise WorkflowError("the material gate needs a credential: --token or --material-check-token-file")
+        raise WorkflowError("the material gate needs a credential: --material-check-token-file")
     result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace")
     output = (result.stdout or "") + (result.stderr or "")
     if result.returncode != 0:
         raise WorkflowError("材料合格性前置比对未通过（材料不能进入验收）：\n" + output.strip())
     print(output.strip())
+
+
+def material_gate_stages_ran(runner: Any, required: tuple[str, ...]) -> list[str]:
+    """The stages of the material gate that must have run.
+
+    A gate that did not run is not a pass. A run that never reached the
+    quoted-text half — a wrong --material-gate-before, a scenario without
+    the generation node, a step blocked before it — checked half the
+    material and must say so instead of reporting a clean run.
+
+    The missing stage is recorded on the runner (machine-readable) and
+    returned; the caller decides whether to refuse the run. The recording
+    happens on BOTH paths — a run that failed for another reason must still
+    say that the quoted-text half was never checked.
+    """
+    ran = list(getattr(runner, "gate_stages_ran", []) or [])
+    missing = [stage for stage in required if stage not in ran]
+    if not missing:
+        return []
+    detail = "材料合格性闸门的这些阶段没有运行：" + ", ".join(missing)
+    runner.failures.append({
+        "step_id": "",
+        "operation_id": "",
+        "kind": "material_gate_not_run",
+        "stage": ",".join(missing),
+        "detail": detail,
+    })
+    return missing
 
 
 def material_gate_before_step(
@@ -1363,6 +1401,7 @@ def material_gate_before_step(
             origin_file,
             stage="full",
         )
+        runner.gate_stages_ran.append("full")
     except WorkflowError as error:
         runner.failures.append({
             "step_id": step.get("id", ""),
@@ -1735,6 +1774,7 @@ class _StubRunner:
 
     def __init__(self) -> None:
         self.failures: list[dict[str, Any]] = []
+        self.gate_stages_ran: list[str] = []
 
 
 class MaterialPreflightSelfTest(unittest.TestCase):
@@ -1756,11 +1796,16 @@ class MaterialPreflightSelfTest(unittest.TestCase):
         return handle.name
 
     def preflight(self, exit_code: int, stage: str = "full", project_id: str | None = "project-1") -> None:
+        # The gate needs the token in a FILE: a token on the command line
+        # would be visible in the process list, so the runner refuses it.
+        handle = tempfile.NamedTemporaryFile("w", suffix=".token", delete=False, encoding="utf-8")
+        with handle:
+            handle.write("token")
         run_material_preflight(
             [sys.executable, self.gate(exit_code)],
             "http://127.0.0.1:18085/api/v1/lingdoc",
-            "token",
             None,
+            handle.name,
             "knowledge-1",
             project_id,
             "origin.md",
@@ -1875,6 +1920,181 @@ class MaterialPreflightSelfTest(unittest.TestCase):
         # The detail must say WHY the gate refused, not merely that it did.
         self.assertIn("project", entry["detail"])
 
+    def test_the_gate_refuses_a_token_on_the_command_line(self):
+        # A bearer token on the command line is visible in the process list
+        # to every other account on the machine. The runner therefore does
+        # not fall back to --token for the gate.
+        with self.assertRaises(WorkflowError) as failure:
+            run_material_preflight(
+                [sys.executable, self.gate(0)],
+                "http://127.0.0.1:18085/api/v1/lingdoc",
+                "token-on-the-command-line",
+                None,
+                "knowledge-1",
+                "project-1",
+                "origin.md",
+                stage="full",
+            )
+        self.assertIn("--material-check-token-file", str(failure.exception))
+        self.assertIn("process list", str(failure.exception),
+                      "the refusal must say WHY a token on the command line is refused")
+
+    def test_main_stops_the_run_at_the_gate_and_leaves_a_report(self):
+        # The regression protection for the whole gate integration: the gate
+        # must be able to stop the RUN before its first request, and the run
+        # must leave a report that says so.
+        #
+        # The case drives the real entry point (main), against a local
+        # server that records every request: if the gate were not wired in,
+        # the step would be requested and the report would carry no failure.
+        import http.server
+        import threading
+
+        seen: list[str] = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - the name is the library's
+                seen.append(self.path)
+                body = b'{"data": {"id": "p-1"}}'
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: Any) -> None:
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            workspace = tempfile.mkdtemp()
+            openapi_path = os.path.join(workspace, "openapi.json")
+            with open(openapi_path, "w", encoding="utf-8") as handle:
+                json.dump({"servers": [{"url": "https://provider.test/api/v1"}],
+                           "paths": {"/generations": {"post": {"operationId": "startGeneration"}}}}, handle)
+            spec_path = os.path.join(workspace, "spec.json")
+            with open(spec_path, "w", encoding="utf-8") as handle:
+                json.dump({"id": "GATE-MAIN", "steps": [{
+                    "id": "S-01", "operation_id": "startGeneration", "expected_http": 202,
+                    "request": {"path_params": {}, "headers": {}, "json": {}},
+                    "capture": {}, "checks": [],
+                }]}, handle)
+            origin_path = os.path.join(workspace, "origin.md")
+            with open(origin_path, "w", encoding="utf-8") as handle:
+                handle.write("# 合成材料\n")
+            token_path = os.path.join(workspace, "token.txt")
+            with open(token_path, "w", encoding="utf-8") as handle:
+                handle.write("token")
+            gate_path = os.path.join(workspace, "gate.sh")
+            if sys.platform.startswith("win"):
+                # The runner runs ONE executable; on Windows that is a .cmd.
+                gate_path = os.path.join(workspace, "gate.cmd")
+                with open(gate_path, "w", encoding="utf-8") as handle:
+                    handle.write(
+                        "@echo off\r\n"
+                        "setlocal\r\n"
+                        "set STAGE=full\r\n"
+                        "echo %* | findstr /C:\"--stage content\" >nul && set STAGE=content\r\n"
+                        "if \"%STAGE%\"==\"content\" (exit /b 0) else (exit /b 1)\r\n"
+                    )
+            else:
+                with open(gate_path, "w", encoding="utf-8") as handle:
+                    handle.write(
+                        "#!/bin/sh\n"
+                        "case \"$*\" in\n"
+                        "  *\"--stage content\"*) exit 0 ;;\n"
+                        "  *) exit 1 ;;\n"
+                        "esac\n"
+                    )
+                os.chmod(gate_path, 0o755)
+            report_path = os.path.join(workspace, "report.json")
+            with open(report_path, "w", encoding="utf-8") as handle:
+                json.dump({"runner_status": "completed", "steps": [{"id": "OLD"}]}, handle)
+
+            code = main([
+                "--base-url", "http://127.0.0.1:%d/api/v1" % server.server_address[1],
+                "--openapi", openapi_path,
+                "--spec", spec_path,
+                "--token", "t",
+                "--knowledge-id", "k-1",
+                "--report", report_path,
+                "--material-origin", origin_path,
+                "--material-check-cmd", gate_path,
+                "--material-check-token-file", token_path,
+                "--material-gate-before", "startGeneration",
+            ])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(code, 1, "the run must refuse when the gate refuses")
+        self.assertEqual(seen, [], "no request may be made when the gate refuses")
+        with open(report_path, encoding="utf-8") as handle:
+            report = json.load(handle)
+        self.assertNotEqual(report.get("runner_status"), "completed",
+                            "the report must not keep the previous run's success")
+        kinds = [entry.get("kind") for entry in report.get("failures") or []]
+        self.assertIn("material_gate_failed", kinds,
+                      "the report must say that the material gate refused")
+        stages = [entry.get("stage") for entry in report.get("failures") or []]
+        self.assertIn("full", stages,
+                      "the refusal must name the stage that refused")
+
+    def test_a_gate_that_never_ran_is_not_a_pass(self):
+        # The full stage must have RUN. A run that never reached it checked
+        # half the material and must refuse rather than report a clean run.
+        runner = _StubRunner()
+        runner.gate_stages_ran.append("content")
+        missing = material_gate_stages_ran(runner, required=("content", "full"))
+        self.assertEqual(missing, ["full"])
+        self.assertEqual(runner.failures[0]["kind"], "material_gate_not_run")
+        self.assertEqual(runner.failures[0]["stage"], "full")
+
+    def test_the_wiring_between_the_runner_and_the_gate_is_live(self):
+        # The regression protection for F1/F2: the gate must be able to stop
+        # the RUN, and the runner must record why. If the hook were not
+        # called, the step would run and the report would carry no failure —
+        # a gate that can be silently disconnected.
+        served: list[str] = []
+
+        def opener(request, timeout):
+            served.append(request.url if hasattr(request, "url") else str(request))
+            return _SelfTestResponse({"data": {"id": "p-1", "status": "active"}}, status=201)
+
+        document = {
+            "id": "GATE-WIRING",
+            "steps": [{
+                "id": "F01-07", "operation_id": "createProject", "expected_http": 201,
+                "request": {"path_params": {}, "headers": {}, "json": {}},
+                "capture": {}, "checks": [],
+            }],
+        }
+        runner = ScenarioRunner(
+            {"servers": [{"url": "https://provider.test/api/v1"}],
+             "paths": {"/projects": {"post": {"operationId": "createProject"}}}},
+            spec_from_document(document, "gate wiring specification"),
+            base_url="https://provider.test/api/v1", opener=opener,
+        )
+
+        def refuse(step, variables):
+            material_gate_before_step(
+                step, variables, runner,
+                [sys.executable, self.gate(1)],
+                "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
+                "k-1", None, "origin.md", "createProject",
+            )
+
+        runner.before_step_hook = refuse
+        with self.assertRaises(WorkflowError):
+            runner.run()
+        self.assertEqual(served, [], "the step must not be requested when the gate refuses")
+        self.assertEqual(runner.failures[0]["kind"], "material_gate_failed")
+        report = runner.report("failed")
+        self.assertEqual(report["runner_status"], "failed")
+        self.assertEqual(report["failures"][0]["kind"], "material_gate_failed")
+
 
 def run_operator_self_test() -> int:
     """Run the operator table and report every case by name."""
@@ -1911,7 +2131,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--material-check-cmd",
                         help="the lingdoc-material-check executable the gate runs")
     parser.add_argument("--material-check-token-file",
-                        help="file holding the bearer token for the gate (keeps it out of the process list)")
+                        help="file holding the bearer token for the gate (REQUIRED when --material-origin is given: "
+                             "a token on the command line is visible in the process list)")
     parser.add_argument("--material-project-id",
                         help="the project the material is bound to; the gate reads the sources from it")
     parser.add_argument("--material-gate-before", default="startGeneration",
@@ -1938,21 +2159,45 @@ def main(argv: list[str] | None = None) -> int:
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
             variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
         )
+        if args.report:
+            # Verify the destination before any provider mutation and replace a
+            # previous successful record with an explicit incomplete-run record.
+            #
+            # This happens BEFORE the first gate: a gate that refuses the run
+            # must leave a report behind, and the report must not be the
+            # previous run's "completed" — a reader that takes the report at
+            # face value would read the last success as this one's success.
+            write_report(args.report, runner.report("not_started"))
+            report_started = True
         if args.material_origin:
             # Stage 1, before the first node: the material's chunks must be
             # the verbatim slice of the origin text. This half needs no
             # project, so it can run here — the material is not bound to
             # anything yet.
-            run_material_preflight(
-                [args.material_check_cmd] if args.material_check_cmd else [],
-                runner.client.base_url,
-                args.token,
-                args.material_check_token_file,
-                args.knowledge_id or "",
-                args.material_project_id,
-                str(args.material_origin),
-                stage="content",
-            )
+            #
+            # A refusal is recorded on the runner (like stage 2's), so the
+            # report says WHICH stage refused and why.
+            try:
+                run_material_preflight(
+                    [args.material_check_cmd] if args.material_check_cmd else [],
+                    runner.client.base_url,
+                    args.token,
+                    args.material_check_token_file,
+                    args.knowledge_id or "",
+                    args.material_project_id,
+                    str(args.material_origin),
+                    stage="content",
+                )
+                runner.gate_stages_ran.append("content")
+            except WorkflowError as error:
+                runner.failures.append({
+                    "step_id": "",
+                    "operation_id": "",
+                    "kind": "material_gate_failed",
+                    "stage": "content",
+                    "detail": str(error),
+                })
+                raise
             # Stage 2, just before the node that consumes the material's
             # sources: the quoted text the server hands out must be the
             # origin slice at the source's own coordinates. It reads the
@@ -1974,12 +2219,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
             runner.before_step_hook = gate_before_step
-        if args.report:
-            # Verify the destination before any provider mutation and replace a
-            # previous successful record with an explicit incomplete-run record.
-            write_report(args.report, runner.report("not_started"))
-            report_started = True
         result = runner.run()
+        if args.material_origin:
+            # The full stage must have RUN. A run that never reached it
+            # (a wrong --material-gate-before, a scenario without the
+            # generation node, a step that was blocked before it) checked
+            # only half the material and must not report a pass.
+            missing = material_gate_stages_ran(runner, required=("content", "full"))
+            if missing:
+                raise WorkflowError("材料合格性闸门的这些阶段没有运行：" + ", ".join(missing))
         if args.report:
             write_report(args.report, runner.report("completed"))
             print(f"{runner.spec.id} report written to {args.report}")
@@ -1987,6 +2235,11 @@ def main(argv: list[str] | None = None) -> int:
         # Name the specification that failed; a load failure has no spec id yet.
         failed = runner.spec.id if runner is not None else args.scenario or spec_path.name
         print(f"{failed} FAILED: {error}", file=sys.stderr)
+        if runner is not None and args.material_origin:
+            # A run that failed for another reason must still say that the
+            # quoted-text half of the gate was never checked: "did not run"
+            # and "ran and passed" must not look the same in the report.
+            material_gate_stages_ran(runner, required=("content", "full"))
         if report_started and runner is not None:
             try:
                 write_report(args.report, runner.report("failed"))

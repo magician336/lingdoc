@@ -113,7 +113,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		apiPath     = flags.String("api-path", "/api/v1", "API path prefix")
 		lingdocPath = flags.String("lingdoc-path", "/api/v1/lingdoc", "LingDoc API path prefix")
 		tokenFile   = flags.String("token-file", "", "file holding the bearer token")
-		token       = flags.String("token", "", "bearer token (alternative to --token-file)")
+		token       = flags.String("token", "", "bearer token (alternative to --token-file). "+
+			"WARNING: a token on the command line is visible in the process list to every "+
+			"other account on the machine — prefer --token-file")
 		knowledgeID = flags.String("knowledge-id", "", "knowledge id of the material")
 		projectID   = flags.String("project-id", "", "project the material is bound to")
 		originFile  = flags.String("origin-file", "", "the ORIGINAL uploaded file of the material; "+
