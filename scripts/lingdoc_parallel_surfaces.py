@@ -800,9 +800,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
             ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
             # F01 契约：协议 §3 的语义读回落成这里的 check
-            # （steps 24 个、checks 50 条；一条 check 的断言键就是它的 kind：
+            # （steps 28 个、checks 58 条；一条 check 的断言键就是它的 kind：
             #  equals / ref_in / readback_equals / non_empty / length /
             #  version_bound / marked_or_absent / hash_equals）。
+            #  28 个 ＝ 原 23 个业务步骤 ＋ activation-read 前置 ＋ #545 的四个
+            #  model-use 许可节点（F01-06b～06e：为建立同意记录而存在，不是业务步骤）。
             ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
             # 协议 §6 的证据产物目录：<SHA>/<运行标识>/ 下的六件产物。
             # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
