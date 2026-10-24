@@ -2,7 +2,7 @@
 
 > **票**：[#546](https://github.com/magician336/lingdoc/issues/546)（受控 Qwen profile 拒绝 embedding 与需要检索的生成路径互斥：F01 检索节点撞 1007，需裁定口径）｜**上游**：[#482](https://github.com/magician336/lingdoc/issues/482)（Beta 首版放行验收）｜**执行面**：PF-14（Beta 首版放行执行）｜**口径**：#546 的候选②
 > **变更基线（被改的那棵树的基线）**：`origin/main` = `1c543c7d`
-> **实现 head（§4 验收矩阵的 PASS 谓词绑在它上面）**：本 PR 的 head sha（合并后为合并提交）
+> **实现 head（§4 验收矩阵的 PASS 谓词绑在它上面）**：`3f081e53`（每次 push 后更新此行；合并后为合并提交）
 > ⚠️ **两者的区别**：A1–A3 这类「要求靠这次改动才成立」的判据，在**变更基线**上**不成立**（那里契约仍声明 `vector_required`、三态守护还不存在）⇒ 它们的 PASS 只能绑在**实现 head**上；把它们记成「在 `1c543c7d` 上 PASS」就是把一个还没发生的改动说成了已经验证过的。
 > **状态**：**已裁定 ＋ 已独立审查（PARTIAL，6 点已改）＋ 待合入**（契约变更与守护同步在同一个 PR；审查结论见 §7）
 
@@ -37,7 +37,7 @@
 |---|---|---|
 | `docs/08-本轮实施方案/contracts/workflow.json` | ① F01-07 的 `retrieval` 字段：`vector_required` → `keyword_only`；② `retrieval_modes.meaning.keyword_only` 的文本补上判据（窗口 PASS 才可判定）**并加上范围限定**（向量开关是部署属性）**与证据强度边界**（账本里没有 embedding 行 ≠ 没有尝试过 embedding）；③ `retrieval_modes.meaning.vector_required` 的文本保留该模式的定义，但写清「本契约现在没有节点声明它」 | PF-10（跨面借用，owner 不变） |
 | `scripts/lingdoc_mock/controlled_window_check.py` | ① `VECTOR_REQUIRED_UNBLOCK` 的文本：该模式仍在词表里，解除条件改成「若将来某节点确实需要向量检索 ⇒ 把 embedding 纳入受控 profile 并拆分 chat/embedding 额度」（并去掉已过时的「MaxCalls=1」——profile 是版本化的，v1 是 1 次、v2 是 4 次）；② **`check()` 的返回形状新增 `nodes` 键**（逐节点判定）——命令行的 `main()` 早就报它了，单账本形态却没有，而新的三态守护要读它 | PF-14（自有） |
-| `scripts/ci/test_lingdoc_controlled_window.py` | 两条钉住旧事实的守护改成新事实；**新增**「`keyword_only` 节点的三态守护」（窗口 PASS ⇒ 判定、窗口 FAIL ⇒ 失败、窗口 NOT RUN ⇒ NOT RUN） | PF-14（自有） |
+| `scripts/ci/test_lingdoc_controlled_window.py` | 该文件基线里**有 1 条**钉住旧事实的守护（`test_the_contract_declares_how_the_f01_generation_may_retrieve`），改成新事实；**新增**「`keyword_only` 节点的三态守护」（窗口 PASS ⇒ 判定、窗口 FAIL ⇒ 失败、窗口 NOT RUN ⇒ NOT RUN） | PF-14（自有） |
 | `scripts/ci/test_lingdoc_beta_evidence.py` | ① `declared == [("F01-07", "keyword_only")]`；② **`test_a_vector_required_node_is_never_recorded_as_passed` 改成**夹具契约**驱动**（它原来钉的是真实契约的声明 —— 真实契约一变，这条守护就会因为「真实契约不再声明 vector_required」而失去它要守的语义）；③ **新增**「窗口 FAIL ⇒ 该节点 FAILED」「窗口 NOT RUN ⇒ 该节点 NOT_RUN」 | PF-10（跨面借用，owner 不变） |
 | `docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md` | 本文件（裁定记录 ＋ 验收矩阵 ＋ 证据索引） | PF-14（自有，新增路径） |
 
@@ -135,10 +135,10 @@ not_run    受控窗口 · F01-08 getGeneration（undeclared）
 |---|---|---|---|---|
 | A1 | F01-07 在契约里声明 `keyword_only` | `test_the_contract_declares_how_the_f01_generation_may_retrieve`（`scripts/ci/test_lingdoc_controlled_window.py`） | **PASS（绑在实现 head 上）** | 契约字段 ＋ 守护断言。⚠️ 这条要求**在变更基线 `1c543c7d` 上不成立**（那里仍声明 `vector_required`）⇒ PASS 只能记在实现 head 上 |
 | A2 | 放行链引用的契约声明里**恰好一个**节点声明检索方式，且是 F01-07 | `test_the_contract_declares_the_retrieval_mode_of_exactly_one_node`（`scripts/ci/test_lingdoc_beta_evidence.py`） | **PASS（绑在实现 head 上）** | 守护断言（同上：变更基线上不成立） |
-| A3 | **`keyword_only` 节点只有在窗口 PASS 时才被判定为 held** | 新增守护（窗口 PASS ⇒ 该节点 held；窗口 FAIL ⇒ failed；窗口 NOT RUN ⇒ not_run） | **PASS（绑在实现 head 上）** | 守护断言（CI）。⚠️ 这条守护**在变更基线上还不存在** ⇒ 同上 |
+| A3 | **`keyword_only` 节点只有在窗口 PASS 时才被判定为 held** | 新增守护 `test_a_keyword_only_node_follows_the_window_verdict`（窗口 PASS ⇒ 该节点 held；窗口 FAIL ⇒ failed；窗口 NOT RUN ⇒ not_run） | **PASS（绑在实现 head 上）** | 守护断言（CI）。⚠️ 这条守护**在变更基线上还不存在** ⇒ 同上 |
 | A4 | 受控窗口里**没有 embedding 调用行** ⇒ 窗口 PASS | `test_a_window_without_embedding_calls_passes` | **PASS** | 守护断言 ＋ 真实两本账本（§3.3） |
 | A5 | 受控窗口里**有** embedding 调用行 ⇒ **整个窗口判失败**（不是「检索通过」） | `test_a_window_with_an_embedding_call_fails_as_a_whole` ＋ `test_a_controlled_window_with_an_embedding_call_fails_as_a_whole` | **PASS** | 守护断言 |
-| A5b | **放行链自己**（`beta_evidence.controlled_window_part`，不是模块自检）把 F01-07 判为 `held`，窗口级结论也是 `held`，交叉核对可用且 0 个 embedding 模型 | `python D:\wt\lingdoc-485-evidence\scripts\exp_f0107_release_chain_verdict.py`（真实两本账本 ＋ 隔离 SQLite ＋ 只改一个字段的契约副本；**0 次 provider 请求**） | **PASS** | `release-chain-f01-07-verdict.json`。⚠️ **这条 `held` 是窗口级事实**：放行链不看跑批报告 ⇒ F01-07 根本没执行也会产出它；且「账本里没有 embedding 行」**不蕴含**「没有尝试过 embedding」（被白名单拒绝的尝试不落行，§3.3/§3.4 已展开） |
+| A5b | **放行链自己**（`beta_evidence.controlled_window_part`，不是模块自检）把 F01-07 判为 `held`，窗口级结论也是 `held`，交叉核对可用且 0 个 embedding 模型 | `python D:\wt\lingdoc-485-evidence\scripts\exp_f0107_release_chain_verdict.py`（真实两本账本 ＋ 隔离 SQLite ＋ 只改一个字段的契约副本；**0 次 provider 请求**） | **PASS** | `release-chain-f01-07-verdict.json`（**绑定实现 head `3f081e53`**）。⚠️ **这条 `held` 是窗口级事实**：放行链不看跑批报告 ⇒ F01-07 根本没执行也会产出它；且「账本里没有 embedding 行」**不蕴含**「没有尝试过 embedding」（被白名单拒绝的尝试不落行，§3.3/§3.4 已展开） |
 | A6 | 窗口账本**读不到** ⇒ NOT RUN，**永不** PASS | `test_a_window_that_cannot_be_read_is_not_run_and_never_pass` ＋ `test_a_window_with_only_one_of_its_two_ledgers_is_not_run` | **PASS** | 守护断言 |
 | A7 | 没有模型表 ⇒ NOT RUN（「读不到」不等于「没有」） | `test_a_window_without_the_model_table_is_not_run` | **PASS** | 守护断言 |
 | A8 | 声明了没人知道的检索方式 ⇒ **按名字拒绝**，不得静默跳过 | `test_a_misspelled_declaration_is_refused_by_name` | **PASS** | 守护断言 |
@@ -146,7 +146,7 @@ not_run    受控窗口 · F01-08 getGeneration（undeclared）
 | A10 | F01 序列在 F01-07 之后的节点（08…23）全部跑到底 | 同上 | **NOT RUN** | 解除条件：**#608**（F01-11 采纳节点）合入并复核后重跑 |
 | A11 | **真实实验的证据与原始口径不被改写** | 本文件 §3 记录的是 Track-D **改声明之前**的事实（窗口 PASS、F01-07 NOT_RUN）；Track-D 的 F01 报告原样保留（`f01-report.json` ＋ 第一次尝试的 `f01-report-attempt1-model-mismatch.json`） | **PASS** | 证据目录原样；历史结果未被追溯修改 |
 | A12 | **不放宽 embedding 拒绝规则** | `internal/models/acceptancebudget/` 与 embedding 拒绝路径**一字未改**（本次 PR 不碰这些文件） | **PASS** | 本 PR 的改动文件清单 |
-| A13 | **不永久改既有知识库的向量开关** | Track-D 用的是**新建**的 keyword-only KB；既有 9 个 KB 的 `indexing_strategy` 未被本 PR 或实验改动 | **PASS** | §3 环境说明 ＋ 实验脚本只创建、不翻转 |
+| A13 | **不永久改既有知识库的向量开关** | Track-D 用的是**新建**的 keyword-only KB；实测隔离库里 12 个 KB **全部是当天新建**、**无一被翻转**（`indexing_strategy` 与 `updated_at` 均未被本 PR 或实验改动） | **PASS** | §3 环境说明 ＋ 实验脚本只创建、不翻转 |
 
 **本变更自身没有 `DEFERRED_MANUAL` 行**（人工前置项是 F01 链自己的，不是本变更的）。
 
@@ -186,7 +186,7 @@ not_run    受控窗口 · F01-08 getGeneration（undeclared）
 | # | 审查发现 | 处置 |
 |---|---|---|
 | 1 | **A1/A2/A3 在变更基线 `1c543c7d` 上不成立**（那里契约仍声明 `vector_required`、三态守护还不存在），却标了 PASS | §4 三行改成「PASS（绑在实现 head 上）」并在证据栏写明「在变更基线上不成立」；头部新增「变更基线 vs 实现 head」两行 |
-| 2 | §2 漏了两处必改：`check()` 的返回形状新增 `nodes` 键；`test_a_vector_required_node_is_never_recorded_as_passed` 必须改成**夹具驱动** | §2 已补这两行（并把「两条守护」改成「两个文件各一条」） |
+| 2 | §2 漏了两处必改：`check()` 的返回形状新增 `nodes` 键；`test_a_vector_required_node_is_never_recorded_as_passed` 必须改成**夹具驱动** | §2 已补这两行；旧事实守护共 3 条、分布在两个文件（`test_lingdoc_controlled_window.py` 1 条 ＋ `test_lingdoc_beta_evidence.py` 2 条），§2 已按文件分列 |
 | 3 | §3.2 把账本③读成「`source_kind=real`／`context=generation_run`」——**两处都错**，真实列名是 `run_mode`／`source_kind`，表里没有 `context` 列 | §3.2 已更正并标注更正；**同一处错误也存在于 Track-D 报告与 `docs/BETA_STATUS.md` §17**，两处已一并更正（见 §8 证据索引的更正说明） |
 | 4 | `keyword_only` 的释义缺**部署配置**的范围限定 | 契约的 `meaning.keyword_only` 已加范围限定；§1/§6 已补实现事实边界 |
 | 5 | §3.4 与 A5b 的免责只防了「范围外推」，没防「**证据强度外推**」（窗口 PASS ≠ 没有 embedding 尝试） | §3.3/§3.4/A5b 三处都补了这条；契约释义里也写了 |
@@ -196,7 +196,7 @@ not_run    受控窗口 · F01-08 getGeneration（undeclared）
 
 **审查明确指出的仍未验证项**：未发真实 provider 请求；#608 未合入；**没有向量开启的 KB 可供实测**（⇒ 「keyword-only 路线成立」这件事本身在真实环境里的证据来自 Track-D 的**新建** keyword-only KB，没有「向量开启时对比」的实测）；`acceptance/beta-first/` 目录尚不存在（逐节点 `passed[]` 那条是代码路径推导）；未跑 `scripts/ci` 全量发现、未跑 `go test`。
 
-**审查提出的环境副作用**：§3.4 的脚本以读写方式打开过隔离库，在证据目录留下 `-wal`/`-shm`（**主库未改**）⇒ 已把脚本改成只读打开并清理那两个旁文件。
+**审查提出的环境副作用**：§3.4 的脚本原先经 `beta_evidence.read_model_types` **读写**打开隔离库，于是那对 `-wal`/`-shm` 旁文件的 mtime 被改了一次（**主库内容与行数未变**，复审实测：主库 sha256/大小/mtime 全同、`integrity_check=ok`、models=1／ledger=1／chunks=24／knowledges=12／KB=12 行数不变）⇒ **已把脚本改成自带只读读类型函数**（`mode=ro`），复审实测跑前跑后主库与旁文件的 sha256/大小/mtime **全部未变**。那两个旁文件是 WAL 模式的正常产物（服务端自己也在用），**没有也不该由证据脚本删除**。
 
 > ⚠️ **审查结论为 PASS 之前，本变更不得合入 main**；当前结论是 **PARTIAL**，上面 6 点已全部处置 ⇒ 处置后需**复审**（复审只针对这 6 点），复审通过才合入。
 
