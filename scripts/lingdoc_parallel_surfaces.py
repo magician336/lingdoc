@@ -578,6 +578,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "而登记处的重叠检查是路径级的（不看 status、不看改动行），两边同时声明就直接拒绝加载 "
             "⇒ 本面让出。本面已交面且不再需要它 ⇒ **不归还** ⇒ 本面路径集 41 → 40 条。"
             "本面在 main 上已交付的 owner_unavailable 能力不受这次移交影响。"
+            "**2026-10-24 #576 跨面借用一条（owner 仍是本面，不变更归属）**：#576（PR #589，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源；其中 frontend/src/views/lingdoc/ProjectMembers.vue（本面拥有）只被加了一处**维度标注**——说明该表是「项目治理角色」、不是租户角色词表。**行为未变、判定未变**，owner 仍在本面；PF-14 侧已把这条记为借用事实，两侧一致。"
         ),
     },
     {
@@ -1005,6 +1006,18 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/models/acceptancebudget/qwen_token_budget_v2_test.go", "file"),
             # #583 的应用缝守护：超限不出网（provider 请求数 = 0）、预算预留失败不出网、第 5 次在出网前被拒、输出上限 4096 实际下发。
             ("internal/lingdoc/workspace/generation_qwen_v2_acceptance_budget_test.go", "file"),
+            # #576 的租户角色中文标签唯一来源：前端整个租户角色词表（四个值）只在这一处产生中文标签；审计列解析器（A）引用它，权限验收台（B）不再自带同值映射。
+            ("frontend/src/i18n/tenantRoleLabel.ts", "file"),
+            # #576 的守护：断言「租户角色四值在整个前端只有一处中文标签来源」，并要求项目治理角色 / 课题角色这两张不同维度的表各自标注维度。
+            ("frontend/src/i18n/tenantRoleLabel.test.ts", "file"),
+            # #576：zh-CN locale 的两个租户角色 namespace 改为从唯一来源展开 ⇒ 两处说法结构上不会漂移。
+            ("frontend/src/i18n/locales/zh-CN.ts", "file"),
+            # #576：权限验收台的角色标签改为引用共享解析器（原 PERMISSION_ROLE_LABELS 表已删除）。
+            ("frontend/src/views/lingdoc/permissionEvidence.ts", "file"),
+            # #576：验收台「当前请求身份」列与「最近授权审计」行改走同一个中文说法。
+            ("frontend/src/views/lingdoc/PermissionEvidence.vue", "file"),
+            # #576：验收台单测适配新签名，并断言与审计列拿到同一个字符串。
+            ("frontend/src/views/lingdoc/permissionEvidence.test.ts", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1053,7 +1066,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "隔离 PostgreSQL ＝ 协议那一轮；SQLite ＝ 本地诊断），并把读回扩到协议 §2 第 5 步点名的四类对象"
             "（项目 / 章节 / 来源绑定 / 交付文件与下载哈希）。"
             "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
-            "**未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"),
+            "**未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"
+            "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
@@ -1374,6 +1388,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**PR #248 相对 main 的净差集是 28 个文件** = 本面登记 24 条 + owner 归 PF-11 的 3 条（context_ports_test.go、contracts/openapi.json、template_governance_adapter_test.go）+ 保留路径 1 条（Workspace.vue）；"
             "登记处（scripts/lingdoc_parallel_surfaces.py）与共享路径图（docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md）**不在 #248 的差集里**，它们落在本交面 PR（#508）——路径图登记在 PF-8 名下，本 PR 按 #441 §7.3「改了不申报要记录」处理：只改内容（补本面行），不夺所有权。"
             "依据票：#441（下一批面怎么切）、#248（PR）、#139（Spec）。"
+            "**2026-10-24 #576 跨面借用一条（owner 仍是本面，不变更归属）**：#576（PR #589，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源；其中 frontend/src/views/lingdoc/firstPassEntryState.ts（本面拥有）只被加了一处**维度标注**——说明该表是「课题角色」、不是租户角色词表。**行为未变、判定未变**，owner 仍在本面；PF-14 侧已把这条记为借用事实，两侧一致。"
         ),
     },
 )

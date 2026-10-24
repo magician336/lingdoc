@@ -1,27 +1,23 @@
-export type PermissionRole = 'viewer' | 'contributor' | 'admin' | 'owner' | ''
+import { auditActorRoleLabel, type AuditActorRoleI18n } from '../../i18n/auditActorRoleLabel'
+import { TENANT_ROLE_VALUES, type TenantRoleValue } from '../../i18n/tenantRoleLabel'
+
+export type PermissionRole = TenantRoleValue | ''
 export type PermissionDecision = 'allowed' | 'denied' | 'unknown'
 
 export interface PermissionEvidenceRow {
   id: string
   operation: string
   scope: string
-  minimumRole: Exclude<PermissionRole, ''>
+  minimumRole: TenantRoleValue
   proof: string
 }
 
-export const PERMISSION_ROLES: Array<Exclude<PermissionRole, ''>> = [
-  'viewer',
-  'contributor',
-  'admin',
-  'owner',
-]
-
-export const PERMISSION_ROLE_LABELS: Record<Exclude<PermissionRole, ''>, string> = {
-  viewer: '查看者',
-  contributor: '协作者',
-  admin: '管理员',
-  owner: '所有者',
-}
+/**
+ * The tenant roles, ascending by privilege -- the order the role matrix shows
+ * them in. The list itself is the vocabulary's (`tenantRoleLabel.ts`), so the
+ * evidence desk cannot offer a role the product does not have.
+ */
+export const PERMISSION_ROLES: TenantRoleValue[] = [...TENANT_ROLE_VALUES].reverse()
 
 export const PERMISSION_EVIDENCE_ROWS: PermissionEvidenceRow[] = [
   {
@@ -61,31 +57,37 @@ export const PERMISSION_EVIDENCE_ROWS: PermissionEvidenceRow[] = [
   },
 ]
 
-const ROLE_LEVEL: Record<Exclude<PermissionRole, ''>, number> = {
+const ROLE_LEVEL: Record<TenantRoleValue, number> = {
   viewer: 10,
   contributor: 20,
   admin: 30,
   owner: 40,
 }
 
-export function permissionRoleLabel(role: string | null | undefined): string {
-  if (role && role in PERMISSION_ROLE_LABELS) {
-    return PERMISSION_ROLE_LABELS[role as Exclude<PermissionRole, ''>]
-  }
-  return role || '未加载'
+/**
+ * The label of a tenant role.
+ *
+ * It comes from the shared resolver, so this desk reads the tenant role
+ * vocabulary exactly the way the audit surfaces read it: one value, one word.
+ * The desk used to carry a second wording of its own, which meant the
+ * "current identity" column and the "recent authorization audit" rows below
+ * it called the same role two different things (issue #576).
+ */
+export function permissionRoleLabel(i18n: AuditActorRoleI18n, role: string | null | undefined): string {
+  return auditActorRoleLabel(i18n, role)
 }
 
 export function roleSatisfies(
   current: string | null | undefined,
-  minimum: Exclude<PermissionRole, ''>,
+  minimum: TenantRoleValue,
 ): boolean | null {
   if (!current || !(current in ROLE_LEVEL)) return null
-  return ROLE_LEVEL[current as Exclude<PermissionRole, ''>] >= ROLE_LEVEL[minimum]
+  return ROLE_LEVEL[current as TenantRoleValue] >= ROLE_LEVEL[minimum]
 }
 
 export function permissionDecision(
   current: string | null | undefined,
-  minimum: Exclude<PermissionRole, ''>,
+  minimum: TenantRoleValue,
 ): PermissionDecision {
   const result = roleSatisfies(current, minimum)
   if (result === null) return 'unknown'
