@@ -202,6 +202,7 @@
           "operation_id": "saveChapter",
           "actor": "u-member",
           "expected_http": 409,
+          "after_step": "F05-03",
           "request": {
             "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f05.chapter_id}}"},
             "headers": {"Idempotency-Key": "f05-member-save-0001"},
@@ -282,6 +283,11 @@
         {
           "operation_id": "getSource",
           "expected_http": 403,
+          "environment_precondition": {
+            "action": "撤销该资料对调用者的分享（WeKnora 的 kbShares.RemoveShare；不在 LingDoc 的 OpenAPI 内）",
+            "performed_by": "environment",
+            "verified_by": "这一步的断言：撤权后同一资源不再被放行"
+          },
           "assertion": "",
           "response_example": "source_access_denied",
           "checks": [{"path": "/error", "http_error": {"code": "source_access_denied"}, "intent": "撤权后取来源是真的被拒：响应状态是错误码，错误信封的码也是契约声明的那一个，正文不泄露"}]
@@ -289,18 +295,33 @@
         {
           "operation_id": "getCandidate",
           "expected_http": 403,
+          "environment_precondition": {
+            "action": "撤销该资料对调用者的分享（WeKnora 的 kbShares.RemoveShare；不在 LingDoc 的 OpenAPI 内）",
+            "performed_by": "environment",
+            "verified_by": "这一步的断言：撤权后同一资源不再被放行"
+          },
           "assertion": "",
           "response_example": "source_access_denied"
         },
         {
           "operation_id": "listChapters",
           "expected_http": 403,
+          "environment_precondition": {
+            "action": "撤销该资料对调用者的分享（WeKnora 的 kbShares.RemoveShare；不在 LingDoc 的 OpenAPI 内）",
+            "performed_by": "environment",
+            "verified_by": "这一步的断言：撤权后同一资源不再被放行"
+          },
           "assertion": "",
           "response_example": "source_access_denied"
         },
         {
           "operation_id": "downloadExport",
           "expected_http": 403,
+          "environment_precondition": {
+            "action": "撤销该资料对调用者的分享（WeKnora 的 kbShares.RemoveShare；不在 LingDoc 的 OpenAPI 内）",
+            "performed_by": "environment",
+            "verified_by": "这一步的断言：撤权后同一资源不再被放行"
+          },
           "assertion": "",
           "response_example": "source_access_denied"
         }
@@ -2337,6 +2358,62 @@
       ],
       "providers": [
         "evidence"
+      ]
+    },
+    {
+      "id": "F24",
+      "name": "导出失败要显式失败，产物不冒充",
+      "starting_state": "S1",
+      "setup": "冻结一份快照并启动导出；渲染或完整性校验失败，导出进入失败终态。它必须是显式的失败，而不是冒充已验证的产物。",
+      "steps": [
+        {
+          "id": "F24-01",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {"Idempotency-Key": "f23-release-0001"},
+            "json": {"expected_project_version": 8}
+          },
+          "capture": {"f24.snapshot_id": "/data/id"},
+          "assertion": "冻结出本轮导出的快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F24-02",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f24.snapshot_id}}"},
+            "headers": {"Idempotency-Key": "f23-export-0001"},
+            "json": {"format": "docx"}
+          },
+          "capture": {"f24.export_id": "/data/id"},
+          "assertion": "导出已启动，导出任务有自己的标识。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F24-03",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "after_step": "F24-02",
+          "expected_http": 200,
+          "expected_terminal_state": "failed",
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "exportId": "{{f24.export_id}}"},
+            "headers": {},
+            "json": null
+          },
+          "capture": {},
+          "assertion": "导出失败要显式失败：终态是 failed，产物不冒充已验证。",
+          "response_example": "failed",
+          "checks": [{"path": "/data/status", "one_of": ["failed"], "intent": "导出失败是显式的终态，不是 verified"}]
+        }
+      ],
+      "providers": [
+        "delivery"
       ]
     },
     {

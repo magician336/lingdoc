@@ -376,7 +376,9 @@
           "refresh_required": false
         }
       },
-      "capture": {},
+      "capture": {
+        "current_context_revision": "/data/current_context_revision"
+      },
       "checks": [
         {
           "path": "/data/status",
@@ -482,7 +484,8 @@
         }
       },
       "capture": {
-        "asset_id": "/data/id"
+        "asset_id": "/data/id",
+        "asset_revision": "/data/asset_revision"
       },
       "checks": [
         {

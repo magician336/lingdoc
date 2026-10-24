@@ -207,13 +207,47 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
         readback_of = _optional_string(step.get("readback_of"), f"{where} readback_of")
         if readback_of is not None and not step.get("checks"):
             raise WorkflowError(f"{where} readback step must declare at least one check")
+        after_step = _optional_string(step.get("after_step"), f"{where} after_step")
+        if after_step is not None and not step.get("checks"):
+            raise WorkflowError(f"{where} a step that follows another must declare at least one check")
+        expected_terminal_state = _optional_string(step.get("expected_terminal_state"),
+                                                    f"{where} expected_terminal_state")
+        environment_precondition = step.get("environment_precondition")
+        if environment_precondition is not None:
+            environment_precondition = _environment_precondition(environment_precondition, where)
         validated.append({**step, "id": step_id, "operation_id": operation_id,
                           "actor": _optional_string(actor, f"{where} actor"),
                           **({"readback_of": readback_of} if readback_of is not None else {}),
+                          **({"after_step": after_step} if after_step is not None else {}),
+                          **({"expected_terminal_state": expected_terminal_state}
+                             if expected_terminal_state is not None else {}),
+                          **({"environment_precondition": environment_precondition}
+                             if environment_precondition is not None else {}),
                           "request": _request_definition(step, where),
                           "checks": _check_definitions(step, where),
                           "assertions": _assertion_texts(step, where)})
     return tuple(validated)
+
+
+def _environment_precondition(value: Any, where: str) -> dict[str, str]:
+    """Read the machine-readable declaration of a precondition the environment performs.
+
+    Some preconditions are not actions of the product: revoking a material's share
+    happens in the knowledge service, not behind any endpoint of this contract.  The
+    contract says so, in words a machine can read, and the node's own assertion is
+    what verifies it -- the runner cannot perform the action, so it must not pretend
+    to have verified it either.
+    """
+    if not isinstance(value, dict):
+        raise WorkflowError(f"{where} environment_precondition must be an object")
+    action = non_empty_string(value.get("action"), f"{where} environment_precondition action")
+    performed_by = (_optional_string(value.get("performed_by"),
+                                     f"{where} environment_precondition performed_by")
+                    or "environment")
+    verified_by = (_optional_string(value.get("verified_by"),
+                                    f"{where} environment_precondition verified_by")
+                   or "the assertion of this step")
+    return {"action": action, "performed_by": performed_by, "verified_by": verified_by}
 
 
 def _optional_string(value: Any, label: str) -> str | None:
@@ -582,6 +616,10 @@ class ScenarioRunner:
         self.step_results: list[dict[str, Any]] = []
         self.failures: list[dict[str, Any]] = []
         self.check_results: list[dict[str, Any]] = []
+        # What each step of this run amounted to: "succeeded", "failed" or
+        # "blocked".  A step that follows another may only assert its consequence
+        # when the step it follows succeeded.
+        self.step_outcomes: dict[str, str] = {}
         # The responses of this run, kept so that a check may compare against another
         # step's answer (the export record's hash against the downloaded bytes).
         self.responses: dict[str, Any] = {}
@@ -705,9 +743,11 @@ class ScenarioRunner:
         self.failures = []
         self.check_results = []
         self.responses = {}
+        self.step_outcomes = {}
         self.active_step = None
         self.aborted_at = None
         self._validate_readbacks()
+        self._validate_after_steps()
         self._check_base_url_scope()
         self._preflight_required_variables()
         completed = 0
@@ -717,6 +757,30 @@ class ScenarioRunner:
             self.active_step = {"id": step.get("id", ""), "operation_id": operation_id or ""}
             if operation_id not in self.operations:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
+            unmet = self._unmet_precondition(step)
+            if unmet is not None:
+                # The step this one asserts about did not hold.  Judging the assertion
+                # anyway is how a two-step expectation becomes true no matter what
+                # happened, so the step is not executed and its expectations are not
+                # judged: the run records that it is blocked.
+                self.failures.append({"step_id": step["id"], "operation_id": operation_id,
+                                      "kind": "precondition_unmet", "after_step": unmet,
+                                      "node_kind": self._node_kind(step),
+                                      "intent": "这一步断言的是前一步造成的后果；前一步没有成立，"
+                                                "所以这一步的断言不得求值"})
+                self.step_outcomes[step["id"]] = "blocked"
+                step_results.append({
+                    "id": step["id"],
+                    "operation_id": operation_id,
+                    "expected_http": step.get("expected_http"),
+                    "node_kind": "blocked",
+                    "http_status": None,
+                    "content_type": None,
+                    **({"after_step_observation": self._after_step_observation(step)}
+                       if step.get("after_step") else {}),
+                })
+                print(f"{step['id']} BLOCKED {operation_id} (precondition {unmet} did not hold)")
+                continue
             method, path_template = self.operations[operation_id]
             request_spec = _request_definition(step, step["id"])
             try:
@@ -739,6 +803,7 @@ class ScenarioRunner:
                 self.failures.append({"step_id": step["id"], "operation_id": operation_id, "kind": "http_status",
                                       "expected": expected_status, "actual": status,
                                       "intent": "该操作按契约返回声明的状态码"})
+                self.step_outcomes[step["id"]] = "failed"
             else:
                 if operation_id in {"getGeneration", "getExport"}:
                     payload = self._poll_terminal(step, method, url, headers, payload, actor_token)
@@ -746,12 +811,23 @@ class ScenarioRunner:
                 if operation_id == "downloadExport" and 200 <= status < 300:
                     self._verify_download(step, payload, response_headers)
                 completed += 1
+                self.step_outcomes[step["id"]] = "succeeded"
+                node_kind = self._node_kind(step)
                 step_results.append({
                     "id": step["id"],
                     "operation_id": operation_id,
                     "http_status": status,
                     "content_type": header_value(response_headers, "Content-Type"),
+                    # A plain 2xx success keeps the shape it always had, so the records
+                    # of the existing contract stay comparable byte for byte.  The two
+                    # keys that say *which* outcome this was appear only when the
+                    # outcome is not a plain success.
+                    **({"expected_http": expected_status, "node_kind": node_kind}
+                       if node_kind != "success" else {}),
                     **({"observation": self._readback_observation(step)} if step.get("readback_of") else {}),
+                    **({"after_step_observation": self._after_step_observation(step)}
+                       if step.get("after_step") else {}),
+                    **({"environment_precondition": True} if step.get("environment_precondition") else {}),
                 })
             # Checks are read even when the status was not the declared one: "it answered
             # 403 with source_access_denied" is a more useful failure than "it answered 403".
@@ -767,6 +843,90 @@ class ScenarioRunner:
         self.active_step = None
         self.aborted_at = None
         return {**self.report("completed"), "variables": self.variables}
+
+    def _validate_after_steps(self) -> None:
+        """Require each declared successor to follow an earlier step on the same resource.
+
+        The shape says two things at once: *this step happens after that step*, and
+        *it is about the same resource*.  The second half is what makes the
+        assertion mean something -- an assertion about a different resource proves
+        nothing about the operation that preceded it, and the machine would not know.
+        """
+        positions = {step["id"]: index for index, step in enumerate(self.spec.steps)}
+        for index, step in enumerate(self.spec.steps):
+            after = step.get("after_step")
+            if after is None:
+                continue
+            source_index = positions.get(after)
+            if source_index is None:
+                raise WorkflowError(f"{step['id']}: after_step names a step this specification "
+                                    f"does not have: {after}")
+            if source_index >= index:
+                raise WorkflowError(f"{step['id']}: after_step must name an earlier step")
+            self._require_same_resource(step, self.spec.steps[source_index])
+
+    @staticmethod
+    def _require_same_resource(step: dict[str, Any], source: dict[str, Any]) -> None:
+        """Both steps must address the same resource.
+
+        "The same resource" is not "the same URL shape": a step that follows another
+        may address what that step produced -- the export task it created, say.  So
+        the two must agree on every coordinate they share, and a coordinate the
+        successor has and the predecessor did not must be one the predecessor
+        captured.
+        """
+        mine = (step.get("request") or {}).get("path_params") or {}
+        theirs = (source.get("request") or {}).get("path_params") or {}
+        captured = set(source.get("capture") or {})
+        for name, value in mine.items():
+            if name in theirs:
+                if value != theirs[name]:
+                    raise WorkflowError(f"{step['id']}: after_step must name a step on the same "
+                                        f"resource (path parameter {name} differs: {value!r} "
+                                        f"against {theirs[name]!r})")
+                continue
+            produced = isinstance(value, str) and value.startswith("{{") and value.endswith("}}") \
+                and value[2:-2] in captured
+            if not produced:
+                raise WorkflowError(f"{step['id']}: after_step must name a step on the same resource "
+                                    f"(path parameter {name} is neither shared nor produced by "
+                                    f"the earlier step)")
+
+    def _unmet_precondition(self, step: dict[str, Any]) -> str | None:
+        """The earlier step this step depends on, when that step did not hold.
+
+        "Did not hold" is not "was not reached": a step that was blocked, failed or
+        never ran leaves the successor without the fact it asserts about.
+        """
+        after = step.get("after_step")
+        if after is None:
+            return None
+        if self.step_outcomes.get(after) == "succeeded":
+            return None
+        return after
+
+    @staticmethod
+    def _node_kind(step: dict[str, Any]) -> str:
+        """What kind of outcome this node is, so a reader can tell them apart.
+
+        ``success`` -- the node was supposed to answer 2xx, and it did.
+        ``expected_refusal`` -- the node was supposed to be refused, and it was.
+        ``expected_terminal_failure`` -- the node answered 2xx and the payload says
+        the work ended in a failure state, which is what the contract declared.
+        """
+        if step.get("expected_terminal_state"):
+            return "expected_terminal_failure"
+        expected = step.get("expected_http") or 200
+        return "expected_refusal" if expected >= 400 else "success"
+
+    @staticmethod
+    def _after_step_observation(step: dict[str, Any]) -> dict[str, str]:
+        return {
+            "kind": "after_step",
+            "request_step_id": step["id"],
+            "after_step": step["after_step"],
+            "operation_id": step["operation_id"],
+        }
 
     def _validate_readbacks(self) -> None:
         """Require each declared readback to be a checked GET after a prior write step."""
@@ -1055,6 +1215,7 @@ class ScenarioRunner:
         target = reference.get("data", {}).get("status")
         if not target:
             raise WorkflowError(f"{step['id']}: async poll step has no reference terminal status")
+        expected_terminal = step.get("expected_terminal_state")
         deadline = time.monotonic() + self.poll_timeout
         while True:
             try:
@@ -1062,6 +1223,11 @@ class ScenarioRunner:
             except WorkflowError:
                 raise WorkflowError(f"{step['id']}: async response is missing /data/status")
             if status in FAILURE_STATES:
+                # A failure terminal state is a terminal state.  When the contract
+                # declares it, the run continues and the step's own assertion judges
+                # it; when it does not, the operation really did fail and the run stops.
+                if expected_terminal and status == expected_terminal:
+                    return payload
                 raise WorkflowError(f"{step['id']}: async operation ended in {status}")
             if status == target:
                 return payload

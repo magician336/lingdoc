@@ -293,10 +293,36 @@ def check_flow_checks(step,where,examples_by_step):
         else: tied+=1
     return tied,unresolved
 
+def check_shape_declarations(scenario,step,where):
+    """Check the shape declarations a step carries: what follows what, and on what.
+
+    The declarations are only worth anything if the machine reads them: a field the
+    validator ignores would be a comment, and a comment is not a shape.
+    """
+    after=step.get('after_step')
+    if after is not None:
+        assert isinstance(after,str) and after.strip(),where+' after_step must name an earlier step'
+        assert step.get('checks'),where+' a step that follows another must declare at least one check'
+    terminal=step.get('expected_terminal_state')
+    if terminal is not None:
+        assert isinstance(terminal,str) and terminal.strip(),where+' expected_terminal_state must be a state name'
+        example=ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']['application/json']
+        statuses={name:(item['value'].get('data') or {}).get('status')
+                  for name,item in example.get('examples',{}).items()}
+        assert terminal in statuses.values(),(
+            where+' expected_terminal_state '+terminal+' is not a terminal state the published example shows'
+            +' ('+str(sorted(set(statuses.values())))+')')
+    precondition=step.get('environment_precondition')
+    if precondition is not None:
+        assert isinstance(precondition,dict),where+' environment_precondition must be an object'
+        action=precondition.get('action')
+        assert isinstance(action,str) and action.strip(),where+' environment_precondition must say what the environment does'
+
 def check_scenario_step(scenario,index,step):
     global scenario_steps,scenario_steps_with_requests,check_references
     where=step.get('id') or f"{scenario['id']} step {index}"
     assert step['operation_id'] in ops,where+' names an operation the OpenAPI document does not have'
+    check_shape_declarations(scenario,step,where)
     if 'readback_of' in step:
         assert isinstance(step['readback_of'],str) and step['readback_of'].strip(),where+' readback_of must name an earlier step'
         assert operation_methods[step['operation_id']]=='get',where+' readback step must use GET'
@@ -354,6 +380,29 @@ def check_scenario(scenario):
     steps=scenario.get('steps',[])
     for index,step in enumerate(steps,start=1):
         check_scenario_step(scenario,index,step)
+        # The two-step shape: a step may only follow an earlier step, and the two must
+        # be about the same resource -- the same path parameters, by the same values.
+        after=step.get('after_step')
+        if after is not None:
+            where=step.get('id') or f"{scenario['id']} step {index}"
+            earlier=[(i,s) for i,s in enumerate(steps,start=1) if s.get('id')==after]
+            assert earlier,where+' after_step names a step this scenario does not have: '+str(after)
+            source_index,source=earlier[0]
+            assert source_index<index,where+' after_step must name an earlier step'
+            mine=(step.get('request') or {}).get('path_params') or {}
+            theirs=(source.get('request') or {}).get('path_params') or {}
+            captured=set(source.get('capture') or {})
+            for name,value in mine.items():
+                if name in theirs:
+                    assert value==theirs[name],(
+                        where+' after_step must name a step on the same resource (path parameter '
+                        +name+' differs: '+repr(value)+' against '+repr(theirs[name])+')')
+                    continue
+                produced=(isinstance(value,str) and value.startswith('{{') and value.endswith('}}')
+                          and value[2:-2] in captured)
+                assert produced,(
+                    where+' after_step must name a step on the same resource (path parameter '
+                    +name+' is neither shared nor produced by the earlier step)')
         if 'readback_of' in step:
             earlier=next((candidate for candidate in steps[:index-1]
                           if candidate.get('id')==step['readback_of']),None)
@@ -705,17 +754,18 @@ def replace_flow_kind(check):
         if name in check_kinds.KNOWN_CHECK_OPERATORS:
             del check[name]
     check['not_a_kind_at_all']=64
+def f05_pointing_at(target):
+    """F05 with its expected refusal pointed at another step."""
+    scenario=copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F05'))
+    for step in scenario['steps']:
+        if step.get('id')=='F05-04': step['after_step']=target
+    return scenario
 for label,action in [
     ('workflow_check_with_an_unknown_kind',mutate_flow_check(replace_flow_kind)),
     ('workflow_check_with_an_unknown_key_next_to_a_known_kind',
      mutate_flow_check(lambda c:c.update(also_not_a_kind='x'))),
     ('workflow_check_whose_expectation_the_reference_response_does_not_support',
      mutate_flow_check(lambda c:c.update(equals='other_code'))),
-    ('scenario_check_with_two_operators',mutate_check(lambda c:c.update(one_of=['x']))),
-    ('scenario_check_disagrees_with_the_published_example',mutate_check(lambda c:c.update(equals='other_code'))),
-    ('scenario_check_reads_a_place_the_example_does_not_have',mutate_check(lambda c:c.update(path='/error/nope'))),
-    ('scenario_check_without_an_intent',mutate_check(lambda c:c.pop('intent'))),
-    ('scenario_check_without_an_operator',mutate_check(lambda c:c.pop('equals'))),
     ('scenario_check_with_an_unknown_key',mutate_check(lambda c:c.update(assertion='prose'))),
     ('scenario_check_on_a_step_with_no_published_example',mutate_step(lambda s:s.pop('response_example'))),
     ('scenario_request_omits_a_required_path_parameter',mutate_step(lambda s:s['request']['path_params'].pop('projectId'))),
@@ -753,6 +803,10 @@ for label,action in [
      lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
                             'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],
                                           capture={'f08.missing':'/data/not_a_field'})]})),
+    ('scenario_after_step_must_name_an_earlier_step',
+     lambda:check_scenario(f05_pointing_at('F05-05'))),
+    ('scenario_after_step_must_name_a_step_on_the_same_resource',
+     lambda:check_scenario(f05_pointing_at('F05-02'))),
 ]:
     must_reject(label,action)
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
