@@ -1,0 +1,151 @@
+{
+  "at": "2026-10-24T09:56:28.343Z",
+  "baseline": "78f31f16585d922e941e58c2de22c0d5f0a04031",
+  "product_commit": "72139864d00900985b609ae5419eb15b71d74e21",
+  "server_commit": "72139864d00900985b609ae5419eb15b71d74e21",
+  "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+  "checks": [
+    {
+      "name": "current server commit and migration readback",
+      "status": "PASS",
+      "evidence": {
+        "version": "r1-fixed-isolated-test",
+        "edition": "standard",
+        "commit_id": "72139864d00900985b609ae5419eb15b71d74e21",
+        "build_time": "unknown",
+        "go_version": "unknown",
+        "keyword_index_engine": "postgres",
+        "vector_store_engine": "postgres",
+        "graph_database_engine": "Not Enabled",
+        "db_version": "134",
+        "started_at": "2026-10-24T09:55:30Z",
+        "uptime_seconds": 57
+      }
+    },
+    {
+      "name": "fresh material actual keyword indexing",
+      "status": "PASS",
+      "evidence": {
+        "knowledge_id": "b8adcb59-0ec7-41f0-b131-49b705e0e81d",
+        "parse_status": "completed",
+        "stage": {
+          "knowledge_id": "b8adcb59-0ec7-41f0-b131-49b705e0e81d",
+          "attempt": 1,
+          "span_id": "abb18514212848ffade1713d826de25c",
+          "parent_span_id": "aff0fc66124d4d81b4c2159fd8c8a39c",
+          "name": "embedding",
+          "kind": "stage",
+          "status": "done",
+          "input": {
+            "chunks_to_embed": 1,
+            "dim": 768,
+            "model_id": "70876a75-a73a-4ded-a48b-213e148b6419",
+            "retriever_types": [
+              "keywords"
+            ]
+          },
+          "output": {
+            "storage_bytes": 532,
+            "vectors_written": 1
+          },
+          "started_at": "2026-10-24T09:41:21.522025Z",
+          "finished_at": "2026-10-24T09:41:21.552417Z",
+          "duration_ms": 30,
+          "created_at": "2026-10-24T09:41:21.522411Z",
+          "updated_at": "2026-10-24T09:41:21.552838Z"
+        }
+      }
+    },
+    {
+      "name": "parsed completed but actual index failed remains distinct",
+      "status": "PASS",
+      "evidence": {
+        "knowledge_id": "4f0227e9-d086-4f0a-be0d-0495f1b44e31",
+        "parse_status": "completed",
+        "stage": {
+          "knowledge_id": "4f0227e9-d086-4f0a-be0d-0495f1b44e31",
+          "attempt": 1,
+          "span_id": "0c9e2d09113e4a09b13a39422f857ecf",
+          "parent_span_id": "985bdf0943b44c6c90198eac485f522d",
+          "name": "embedding",
+          "kind": "stage",
+          "status": "failed",
+          "input": {
+            "model_id": "2be10c9c-b8c4-4ace-869b-d2d7bf2b9b94",
+            "retriever_types": [
+              "vector"
+            ]
+          },
+          "error_code": "EMBEDDING_MODEL_UNAVAILABLE",
+          "error_message": "embedding model unavailable",
+          "started_at": "2026-10-24T09:41:52.308229Z",
+          "finished_at": "2026-10-24T09:41:52.315316Z",
+          "duration_ms": 7,
+          "created_at": "2026-10-24T09:41:52.308632Z",
+          "updated_at": "2026-10-24T09:41:52.315704Z"
+        }
+      }
+    },
+    {
+      "name": "duplicate file reuses exact knowledge identity",
+      "status": "PASS",
+      "evidence": {
+        "http_status": 409,
+        "knowledge_id": "b8adcb59-0ec7-41f0-b131-49b705e0e81d"
+      }
+    },
+    {
+      "name": "concurrent repeat binding keeps exactly one asset",
+      "status": "PASS",
+      "evidence": {
+        "asset_id": "db34fe5e-8789-42f0-9515-ef7d2bd34f87",
+        "replayed": [
+          true,
+          false
+        ]
+      }
+    },
+    {
+      "name": "same operation key with different knowledge stays conflict",
+      "status": "PASS",
+      "evidence": {
+        "http_status": 409
+      }
+    },
+    {
+      "name": "real scoped retrieval excludes unbound control",
+      "status": "PASS",
+      "evidence": {
+        "unbound_knowledge_id": "2841cc04-571e-40ac-8e09-ebe8cf8a76b8",
+        "sources": [
+          {
+            "id": "ac599fa6-1878-47dc-81a3-0faa3abb35af",
+            "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+            "asset_id": "db34fe5e-8789-42f0-9515-ef7d2bd34f87",
+            "asset_revision": 1,
+            "locator": "material-current.txt · 第 0 段",
+            "quoted_text": "R1CURRENTBETA is the unique keyword for a fresh material processed on main 78f31f16.\nThis synthetic text verifies real upload, current keyword indexing, project binding and scoped retrieval after the indexing lifecycle change.\nNo real personal data, research proposal, model completion or embedding API is used.\n",
+            "quoted_text_hash": "a2d2fe9eefb8eafea64a8886816e4fedfeaa1fa4a8bc4101e90454cb59789cc4",
+            "status": "available"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cross-project asset retrieval is rejected",
+      "status": "PASS",
+      "evidence": {
+        "http_status": 404
+      }
+    },
+    {
+      "name": "independent account cannot read target KB or material",
+      "status": "PASS",
+      "evidence": {
+        "kb_http": 403,
+        "knowledge_http": 403
+      }
+    }
+  ],
+  "unbound_knowledge_id": "2841cc04-571e-40ac-8e09-ebe8cf8a76b8"
+}

@@ -836,8 +836,12 @@ func buildSpanTree(knowledgeID string, attempt int, rows []types.KnowledgeProces
 	// pending while the pipeline is still running, done/failed for
 	// historical knowledge whose terminal state we know but whose
 	// per-stage timing was never recorded. Appended in AllStages order
-	// so the canonical stage layout is deterministic regardless of
-	// which rows are missing.
+	// so the canonical stage layout is deterministic regardless of which
+	// rows are missing.
+	// Placeholders keep SpanID empty ON PURPOSE: LingDoc material intake
+	// uses a non-empty span_id as proof a real stage ran — guarded by
+	// TestBuildSpanTree_SynthesizedPlaceholdersNeverCarrySpanID. Do not
+	// synthesize IDs without changing that consumer in the same commit.
 	for _, name := range types.AllStages {
 		if _, ok := stageRowByName[name]; ok {
 			continue

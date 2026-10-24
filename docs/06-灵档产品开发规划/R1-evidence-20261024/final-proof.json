@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-24T10:06:11.152Z",
+  "frontend_code_commit": "ca1076fa32275f87f6a9591fad9ad13086ebe2d3",
+  "backend_commit": "72139864d00900985b609ae5419eb15b71d74e21",
+  "main_baseline": "78f31f16585d922e941e58c2de22c0d5f0a04031",
+  "main_integrated": "1c543c7d008967d04e377e78498b4e372139065f",
+  "mode": "real HTTP/browser, synthetic input, keyword-only; no fake provider",
+  "system": {
+    "version": "r1-fixed-isolated-test",
+    "edition": "standard",
+    "commit_id": "72139864d00900985b609ae5419eb15b71d74e21",
+    "build_time": "unknown",
+    "go_version": "unknown",
+    "keyword_index_engine": "postgres",
+    "vector_store_engine": "postgres",
+    "graph_database_engine": "Not Enabled",
+    "db_version": "134",
+    "started_at": "2026-10-24T09:55:30Z",
+    "uptime_seconds": 639
+  },
+  "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+  "knowledge_id": "ef159449-bf10-4a2f-99c0-250cf1967462",
+  "parse_status": "completed",
+  "current_index_stage": {
+    "knowledge_id": "ef159449-bf10-4a2f-99c0-250cf1967462",
+    "attempt": 1,
+    "span_id": "0ea92de418e249718ce46526f4036e56",
+    "parent_span_id": "3e46e5f9aa134e9fbe1f1ccd7138bd50",
+    "name": "embedding",
+    "kind": "stage",
+    "status": "done",
+    "input": {
+      "chunks_to_embed": 1,
+      "dim": 768,
+      "model_id": "70876a75-a73a-4ded-a48b-213e148b6419",
+      "retriever_types": [
+        "keywords"
+      ]
+    },
+    "output": {
+      "storage_bytes": 515,
+      "vectors_written": 1
+    },
+    "started_at": "2026-10-24T09:57:12.815032Z",
+    "finished_at": "2026-10-24T09:57:12.851157Z",
+    "duration_ms": 36,
+    "created_at": "2026-10-24T09:57:12.815579Z",
+    "updated_at": "2026-10-24T09:57:12.851664Z"
+  },
+  "assets": [
+    {
+      "id": "db34fe5e-8789-42f0-9515-ef7d2bd34f87",
+      "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+      "knowledge_id": "b8adcb59-0ec7-41f0-b131-49b705e0e81d",
+      "title": "material-current.txt",
+      "asset_revision": 1,
+      "processing_state": "ready"
+    },
+    {
+      "id": "e9331c34-ab08-4d38-85ed-f94a18b0a871",
+      "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+      "knowledge_id": "ef159449-bf10-4a2f-99c0-250cf1967462",
+      "title": "material-final.txt",
+      "asset_revision": 1,
+      "processing_state": "ready"
+    }
+  ],
+  "sources": [
+    {
+      "id": "b7565627-f1f8-4e3c-9e81-857d36f887cc",
+      "project_id": "769d5ca8-eaa3-44a2-8ca1-73abad065f40",
+      "asset_id": "e9331c34-ab08-4d38-85ed-f94a18b0a871",
+      "asset_revision": 1,
+      "locator": "material-final.txt · 第 0 段",
+      "quoted_text": "R1FINALGAMMA is a fresh synthetic material processed by the final R1 candidate server.\nThe test follows real file upload, parser and keyword index state, a controlled binding failure, safe retry and project-scoped retrieval.\nThere are no private research materials and no external model requests.\n",
+      "quoted_text_hash": "73eef69f935a614cb74068da558ad0d9fac214be127bbb4fb31edfe85289af4e",
+      "status": "available"
+    }
+  ],
+  "indexing_strategy": {
+    "graph_enabled": false,
+    "keyword_enabled": true,
+    "vector_enabled": false,
+    "wiki_enabled": false
+  },
+  "parse_failure": {
+    "knowledge_id": "95b60bcf-7fbb-44cf-b252-37d9f197bb5a",
+    "parse_status": "failed",
+    "error_message": "document read failed: csv conversion failed: record on line 2: wrong number of fields"
+  },
+  "limits": [
+    "No real model or embedding requests",
+    "No external PDF/DOCX parser matrix",
+    "No production DB/migration target",
+    "No PR or CI publishing yet"
+  ]
+}
