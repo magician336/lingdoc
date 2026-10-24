@@ -105,6 +105,18 @@ test('upload acceptance does not imply binding or a search hit', async () => {
   assert(!calls.some(call => call.action === 'bind' || call.action === 'search'))
   assert.match(model.rows[0].notice, /文件已上传/)
 })
+
+test('a malformed binding readback clears even partially assigned fresh knowledge and index proof', async () => {
+  const f = await uploaded()
+  f.ports.observe = async () => ({ knowledge: knowledge(), trace: trace(), assets: undefined } as any)
+  assert.equal(await f.model.refresh(f.model.rows[0]), false)
+  assert.equal(f.model.rows[0].knowledge, undefined)
+  assert.equal(f.model.rows[0].asset, undefined)
+  assert.equal(f.model.rows[0].indexReady, false)
+  assert.deepEqual(f.model.rows[0].hits, [])
+  await f.model.bind(f.model.rows[0])
+  assert(!f.calls.some(call => call.action === 'bind'))
+})
 test('duplicate uploads reuse a single row and the original binding key', async () => {
   const f = await uploaded()
   f.ports.upload = async () => ({ knowledge: knowledge(), reused: true })

@@ -168,6 +168,10 @@ export class ProjectMaterialIntake {
       return true
     } catch (error) {
       if (this.active && this.sequences.get(row.ref.id) === sequence) {
+        row.indexReady = false
+        row.knowledge = undefined
+        row.asset = undefined
+        row.hits = []
         row.readError = message(error)
         row.label = '无法确认当前权限或处理状态'
       }
