@@ -36,6 +36,12 @@ const (
 	// config changes.
 	ErrCodeEmbeddingProviderFail = "EMBEDDING_PROVIDER_FAIL"
 
+	// ErrCodeEmbeddingModelUnavailable — the knowledge base asks for an
+	// index but no usable embedding model is configured (or the model
+	// cannot be resolved). The document is still parsed and its chunks are
+	// stored with index_status=failed; only the retrieval index is missing.
+	ErrCodeEmbeddingModelUnavailable = "EMBEDDING_MODEL_UNAVAILABLE"
+
 	// ErrCodeVectorStoreWriteFailed — chunks embedded fine but the
 	// vector DB write failed (quota, connectivity, schema mismatch).
 	ErrCodeVectorStoreWriteFailed = "VECTORSTORE_WRITE_FAILED"

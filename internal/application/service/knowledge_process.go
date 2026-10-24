@@ -27,6 +27,7 @@ import (
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/sirupsen/logrus"
 )
 
 func (s *knowledgeService) cloneKnowledge(
@@ -279,6 +280,56 @@ func buildParentChildConfigs(cc types.ChunkingConfig, base chunker.SplitterConfi
 	return chunker.DeriveParentChildConfigs(base, cc.ParentChunkSize, cc.ChildChunkSize)
 }
 
+// markChunksIndexFailed records that the chunks of this knowledge are not
+// reflected in the retrieval stores.
+//
+// index_status is the per-chunk answer to "is this content reflected in the
+// index?" — a chunk that was never indexed (no usable embedding model) or
+// whose index write failed must not answer "ready". The chunks stay on disk:
+// they carry the source anchors, and dropping them would make the material
+// unusable for reasons that have nothing to do with the material.
+func (s *knowledgeService) markChunksIndexFailed(
+	ctx context.Context, knowledge *types.Knowledge, chunks []*types.Chunk,
+) {
+	now := time.Now()
+	for _, chunk := range chunks {
+		if chunk == nil || chunk.IndexStatus == "failed" {
+			continue
+		}
+		chunk.IndexStatus = "failed"
+		chunk.UpdatedAt = now
+		if err := s.chunkRepo.UpdateChunk(ctx, chunk); err != nil {
+			logger.Warnf(ctx, "Failed to mark chunk %s as not indexed for knowledge %s: %v",
+				chunk.ID, knowledge.ID, err)
+		}
+	}
+}
+
+// embeddingDimensions answers the vector width of an embedder, or 0 when
+// there is none.
+//
+// The keyword pipeline stores no vectors, so the dimension is meaningless
+// there — but the delete calls take one, and a missing embedder must not
+// turn a cleanup into a nil dereference.
+func embeddingDimensions(model embedding.Embedder) int {
+	if model == nil {
+		return 0
+	}
+	return model.GetDimensions()
+}
+
+// retrieverTypeNames renders the pipelines of a run for the stage record.
+//
+// The stage record is what an operator reads to answer "what did this run
+// actually index?"; a keyword-only run must say "keyword", not "vectors".
+func retrieverTypeNames(kinds []types.RetrieverType) []string {
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, string(kind))
+	}
+	return names
+}
+
 // processChunks processes chunks and creates embeddings for knowledge content
 func (s *knowledgeService) processChunks(ctx context.Context,
 	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []types.ParsedChunk,
@@ -319,24 +370,65 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		return
 	}
 
-	// Get embedding model for vectorization — only needed when vector/keyword indexing is enabled
+	// Get embedding model for vectorization — only needed when vector/keyword indexing is enabled.
+	//
+	// The embedding stage is **decoupled** from the chunk stage. A knowledge
+	// base without a usable embedding model must still be able to finish
+	// parsing with its chunks on disk: chunks are the carrier of the source
+	// anchors (coordinates + quoted text), so refusing to write them turns
+	// "this document is not searchable" into "this document does not exist",
+	// and every operation that re-checks the sources of that material is then
+	// refused for a reason that has nothing to do with the material.
+	//
+	// The index failure is not hidden either: the chunks report
+	// index_status=failed (the same contract a failed re-index after a manual
+	// chunk edit uses) and the stage records the cause.
 	var embeddingModel embedding.Embedder
+	var embeddingModelErr error
 	if kb.NeedsEmbeddingModel() {
-		var err error
-		embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
-		if err != nil {
-			logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks get embedding model failed")
-			knowledge.ParseStatus = types.ParseStatusFailed
-			knowledge.ErrorMessage = "Embedding model unavailable: " + err.Error()
-			knowledge.UpdatedAt = time.Now()
-			if updateErr := s.updateKnowledgeUnlessSourceReplaced(ctx, knowledge); updateErr != nil {
-				logger.Errorf(ctx, "Failed to persist embedding model failure: %v", updateErr)
-			}
-			return
+		embeddingModel, embeddingModelErr = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+		if embeddingModelErr != nil {
+			logger.GetLogger(ctx).WithField("error", embeddingModelErr).
+				Warnf("processChunks embedding model unavailable for KB %s; the vector pipeline is skipped, the keyword pipeline is not", kb.ID)
 		}
 	} else {
 		logger.Infof(ctx, "Vector/keyword indexing disabled for KB %s, skipping embedding model", kb.ID)
 	}
+
+	// The retrieval pipelines this knowledge base wants.
+	var wantedTypes []types.RetrieverType
+	if kb.IsVectorEnabled() {
+		wantedTypes = append(wantedTypes, types.VectorRetrieverType)
+	}
+	if kb.IsKeywordEnabled() {
+		wantedTypes = append(wantedTypes, types.KeywordsRetrieverType)
+	}
+	// The vector pipeline needs an embedder; the keyword pipeline does not.
+	// A missing embedding model therefore takes the vector pipeline out of
+	// this run — not the whole indexing stage.
+	//
+	// Refusing to index at all would make the keyword channel unreachable,
+	// and the keyword channel is exactly what a knowledge base without an
+	// embedding model has: it would turn "this document is not searchable
+	// by meaning" into "this document is not searchable at all", and every
+	// downstream step that needs a source (the generation run, for one)
+	// would then have nothing to work with.
+	indexingTypes := wantedTypes
+	if embeddingModel == nil {
+		indexingTypes = nil
+		for _, kind := range wantedTypes {
+			if kind != types.VectorRetrieverType {
+				indexingTypes = append(indexingTypes, kind)
+			}
+		}
+	}
+	// A chunk that did not reach every wanted pipeline must say so:
+	// index_status is the per-chunk answer to "is this content reflected in
+	// the index?"; writing "ready" for a chunk that never reached the
+	// vector store would present a false success. The routing view is
+	// resolved below (it needs the retrieve engine), and the status is
+	// decided there — before the chunks are written, so the status they
+	// carry is the one this run can actually deliver.
 
 	// 幂等性处理：清理旧的chunks和索引数据，避免重复数据
 	logger.Infof(ctx, "Cleaning up existing chunks and index data for knowledge: %s", knowledge.ID)
@@ -351,6 +443,10 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
 		ctx, s.retrieveEngine, s.ownership, tenantInfo.ID, kb.VectorStoreID)
+	// The factory's failure is kept: it is one of the reasons this run may
+	// end up without an index, and the stage record must name the real
+	// cause (see the branch that records it).
+	engineErr := err
 	if err == nil && embeddingModel != nil {
 		if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions(), knowledge.Type); err != nil {
 			logger.Warnf(ctx, "Failed to delete existing index data (may not exist): %v", err)
@@ -358,6 +454,32 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		} else {
 			logger.Infof(ctx, "Successfully deleted existing index data for knowledge: %s", knowledge.ID)
 		}
+	}
+
+	// The routing view restricted to the pipelines this run serves.
+	//
+	// It is resolved here — before the chunks are written — because the
+	// per-chunk index status depends on it: a chunk that cannot reach the
+	// store it was promised must say so, and it can only say so if the
+	// answer is known before the chunk row is written.
+	var indexingEngine *retriever.CompositeRetrieveEngine
+	var routingErr error
+	if len(indexingTypes) > 0 && retrieveEngine != nil {
+		indexingEngine, routingErr = retrieveEngine.WithRetrieverTypes(indexingTypes)
+		if routingErr != nil {
+			logger.ErrorWithFields(ctx, routingErr, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+				"retriever_types":   retrieverTypeNames(indexingTypes),
+			})
+			indexingEngine = nil
+		}
+	}
+	// The per-chunk index status: "ready" only when every wanted pipeline
+	// can actually be served by this run.
+	chunkIndexStatus := "ready"
+	if len(indexingTypes) != len(wantedTypes) || (len(wantedTypes) > 0 && indexingEngine == nil) {
+		chunkIndexStatus = "failed"
 	}
 
 	// 删除知识图谱数据（如果存在）
@@ -472,6 +594,10 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		insertChunks = append(insertChunks, parentDBChunks...)
 	}
 
+	// The per-chunk index status is decided where the pipelines are decided
+	// (above the chunk construction): it depends on which pipelines this
+	// run can serve.
+
 	for idx, chunkData := range chunks {
 		if strings.TrimSpace(chunkData.Content) == "" {
 			continue
@@ -492,6 +618,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			StartAt:         int(chunkData.Start),
 			EndAt:           int(chunkData.End),
 			ChunkType:       types.ChunkTypeText,
+			IndexStatus:     chunkIndexStatus,
 		}
 
 		// Wire up ParentChunkID for child chunks
@@ -564,16 +691,20 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		"total_text_chars": totalChunkChars,
 	})
 
-	// Create index information and perform vector indexing — only when vector/keyword is enabled.
+	// Create index information and perform indexing — only when a retrieval
+	// pipeline is enabled and this run can serve it.
 	// Chunks are ALWAYS saved to DB (above) because wiki and graph need them even without vector indexing.
 	var totalStorageSize int64
-	if kb.NeedsEmbeddingModel() && embeddingModel != nil {
+	if indexingEngine != nil {
 		embedInput := types.JSONMap{
 			"chunks_to_embed": len(textChunks),
 			"model_id":        kb.EmbeddingModelID,
+			"retriever_types": retrieverTypeNames(indexingTypes),
 		}
-		if dim := embeddingModel.GetDimensions(); dim > 0 {
-			embedInput["dim"] = dim
+		if embeddingModel != nil {
+			if dim := embeddingModel.GetDimensions(); dim > 0 {
+				embedInput["dim"] = dim
+			}
 		}
 		s.beginStage(ctx, knowledge.ID, types.StageEmbedding, embedInput)
 		// Create index information — only for child/flat chunks, NOT parent chunks.
@@ -599,7 +730,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 
 		// Calculate storage size required for embeddings
-		totalStorageSize = retrieveEngine.EstimateStorageSize(ctx, embeddingModel, indexInfoList)
+		totalStorageSize = indexingEngine.EstimateStorageSize(ctx, embeddingModel, indexInfoList)
 		if tenantInfo.StorageQuota > 0 {
 			// Re-fetch tenant storage information
 			tenantInfo, err = s.tenantRepo.GetTenantByID(ctx, tenantInfo.ID)
@@ -637,32 +768,28 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			return
 		}
 
-		var indexingTypes []types.RetrieverType
-		if kb.IsVectorEnabled() {
-			indexingTypes = append(indexingTypes, types.VectorRetrieverType)
-		}
-		if kb.IsKeywordEnabled() {
-			indexingTypes = append(indexingTypes, types.KeywordsRetrieverType)
-		}
-		var indexingEngine *retriever.CompositeRetrieveEngine
-		indexingEngine, err = retrieveEngine.WithRetrieverTypes(indexingTypes)
-		if err == nil {
-			err = indexingEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
-		}
+		err = indexingEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
 		if err != nil {
-			knowledge.ParseStatus = types.ParseStatusFailed
-			knowledge.ErrorMessage = err.Error()
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
+			// The index write failed. The chunks stay on disk.
+			//
+			// They are the carrier of the source anchors (coordinates +
+			// quoted text), so deleting them would turn "this document is not
+			// searchable" into "this document does not exist" — and every
+			// operation that re-checks the sources of that material would
+			// then be refused for a reason that has nothing to do with the
+			// material. The failure is not hidden either: the chunks report
+			// index_status=failed (the same contract a failed re-index after
+			// a manual chunk edit uses) and the stage records the cause, so
+			// no surface presents a false success.
+			logger.ErrorWithFields(ctx, err, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+			})
+			s.markChunksIndexFailed(ctx, knowledge, insertChunks)
 
-			// delete failed chunks
-			if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, knowledge.TenantID, knowledge.ID); err != nil {
-				logger.Errorf(ctx, "Delete chunks failed: %v", err)
-			}
-
-			// delete index
+			// delete the half-written index so a later re-index starts clean
 			if err := retrieveEngine.DeleteByKnowledgeIDList(
-				ctx, []string{knowledge.ID}, embeddingModel.GetDimensions(), kb.Type,
+				ctx, []string{knowledge.ID}, embeddingDimensions(embeddingModel), kb.Type,
 			); err != nil {
 				logger.Errorf(ctx, "Delete index failed: %v", err)
 			}
@@ -674,13 +801,15 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			}
 			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
 				code, "batch index failed", err)
-			return
+			// The parse itself succeeded: the document is parsed, it is not
+			// indexed. Fall through so the row reaches its terminal state.
+		} else {
+			logger.GetLogger(ctx).Infof("processChunks batch index successfully, with %d index", len(indexInfoList))
+			s.endStage(ctx, knowledge.ID, types.StageEmbedding, types.JSONMap{
+				"vectors_written": len(indexInfoList),
+				"storage_bytes":   totalStorageSize,
+			})
 		}
-		logger.GetLogger(ctx).Infof("processChunks batch index successfully, with %d index", len(indexInfoList))
-		s.endStage(ctx, knowledge.ID, types.StageEmbedding, types.JSONMap{
-			"vectors_written": len(indexInfoList),
-			"storage_bytes":   totalStorageSize,
-		})
 
 		// Final check before marking as completed.
 		// deleting → drop chunks+index we just wrote.
@@ -696,11 +825,52 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 				if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, knowledge.TenantID, knowledge.ID); err != nil {
 					logger.Warnf(ctx, "Failed to cleanup chunks after deletion detected: %v", err)
 				}
-				if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions(), kb.Type); err != nil {
+				if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingDimensions(embeddingModel), kb.Type); err != nil {
 					logger.Warnf(ctx, "Failed to cleanup index after deletion detected: %v", err)
 				}
 			}
 			return
+		}
+	} else if len(wantedTypes) > 0 {
+		// The knowledge base wants an index, but this run cannot serve any of
+		// the wanted pipelines. The chunks are on disk (index_status=failed)
+		// and the stage records the cause.
+		//
+		// The cause decides the code. An operator reading the record must not
+		// be told "the embedding model is missing" when the real cause is
+		// "no retrieval engine serves the requested pipelines" — those are
+		// two different fixes, and the stage row may only carry one of them
+		// (the later write would overwrite the earlier one).
+		s.beginStage(ctx, knowledge.ID, types.StageEmbedding, types.JSONMap{
+			"model_id":        kb.EmbeddingModelID,
+			"retriever_types": retrieverTypeNames(wantedTypes),
+		})
+		switch {
+		case routingErr != nil:
+			// The routing could not be resolved: no engine serves the
+			// requested pipelines. That is an engine/binding problem.
+			logger.ErrorWithFields(ctx, routingErr, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+				"retriever_types":   retrieverTypeNames(wantedTypes),
+			})
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeVectorStoreWriteFailed, "no retriever engine serves the requested pipelines", routingErr)
+		case engineErr != nil:
+			// No retrieval engine could be built for this knowledge base at
+			// all (the engine factory failed).
+			logger.ErrorWithFields(ctx, engineErr, logrus.Fields{
+				"knowledge_id":      knowledge.ID,
+				"knowledge_base_id": kb.ID,
+			})
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeVectorStoreWriteFailed, "no retrieve engine is bound to this knowledge base", engineErr)
+		default:
+			// The vector pipeline was dropped because there is no usable
+			// embedding model, and no other wanted pipeline is left.
+			logger.Warnf(ctx, "KB %s has no usable embedding model; chunks are stored, the index is not built", kb.ID)
+			s.failStage(ctx, knowledge.ID, types.StageEmbedding,
+				werrors.ErrCodeEmbeddingModelUnavailable, "embedding model unavailable", embeddingModelErr)
 		}
 	} else {
 		logger.Infof(ctx, "Vector/keyword indexing disabled for KB %s, skipping BatchIndex", kb.ID)

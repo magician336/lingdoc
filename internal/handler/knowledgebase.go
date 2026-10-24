@@ -713,6 +713,17 @@ type UpdateKnowledgeBaseRequest struct {
 	Name        string                     `json:"name"        binding:"required"`
 	Description string                     `json:"description"`
 	Config      *types.KnowledgeBaseConfig `json:"config"`
+	// EmbeddingModelID persists the embedding model of the knowledge base.
+	//
+	// nil = "not in the payload" = keep the current value.
+	// A value (including the empty string) = write it.
+	//
+	// The field used to be accepted here and silently dropped, so a client
+	// that set the embedding model got 200 and an empty value back on the
+	// next read. It is honoured at the top level of the body (the shape the
+	// create endpoint and the #485 harness use) and inside "config" (the
+	// shape the web editor uses); the top-level one wins when both are sent.
+	EmbeddingModelID *string `json:"embedding_model_id"`
 }
 
 // UpdateKnowledgeBase godoc
@@ -768,10 +779,17 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config, req.EmbeddingModelID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
-		c.Error(apperrors.NewInternalServerError(err.Error()))
+		// A refusal that already carries its own verdict (e.g. "that model is
+		// not an embedding model") is the caller's mistake and must not be
+		// reported as a server failure.
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			_ = c.Error(appErr)
+			return
+		}
+		_ = c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
 

@@ -333,6 +333,11 @@ type UpdateKnowledgeBaseRequest struct {
 	Name        string               `json:"name"`
 	Description string               `json:"description"`
 	Config      *KnowledgeBaseConfig `json:"config"`
+	// EmbeddingModelID persists the embedding model of the knowledge base.
+	// nil keeps the current value; a value (including "") is written.
+	// The server used to accept the field and drop it, so the value could
+	// never be set through this request.
+	EmbeddingModelID *string `json:"embedding_model_id,omitempty"`
 }
 
 // UpdateKnowledgeBase updates a knowledge base

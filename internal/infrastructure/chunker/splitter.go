@@ -391,8 +391,19 @@ func buildUnitsWithProtection(text string, protected []span, separators []string
 
 // mergeUnits combines split units into chunks with overlap tracking.
 // Enforces an absolute maximum chunk size to prevent exceeding downstream limits (e.g., embedding APIs).
-// Active contextual headers (e.g., Markdown table headers) are prepended to new
-// chunks so that every chunk carries its own header context.
+// Active contextual headers (e.g., Markdown table headers) travel in Chunk.ContextHeader
+// so that every chunk carries its own header context.
+//
+// The header is **not** part of Content. Content must stay the verbatim slice
+// of the document between Start and End (see the Chunk doc), and a table
+// header sits at a different place in the document than the body it
+// describes. Putting it into Content made the content longer than the
+// coordinate span, which broke every coordinate-based re-check downstream:
+// the source re-check compares the text the origin yields at
+// [start_at, end_at) with the quoted text, so a chunk that carries a
+// synthesized header is judged "the quoted text no longer comes from the
+// original" — the source goes stale and every operation that re-checks it is
+// refused (#485 / D1).
 func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 	if len(units) == 0 {
 		return nil
@@ -405,6 +416,23 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 	var chunks []Chunk
 	var current []splitUnit
 	curLen := 0
+	// pendingHeader is the table header that belongs to the chunk currently
+	// being built. It is attached when that chunk is closed.
+	pendingHeader := ""
+
+	// flush closes the chunk that is being built. The pending header travels
+	// with it — it describes the section the chunk belongs to. It returns the
+	// flushed units so the caller can derive the overlap from them.
+	flush := func() []splitUnit {
+		flushed := current
+		chunk := buildChunk(flushed, len(chunks))
+		chunk.ContextHeader = pendingHeader
+		pendingHeader = ""
+		chunks = append(chunks, chunk)
+		current = nil
+		curLen = 0
+		return flushed
+	}
 
 	for _, u := range units {
 		uLen := runeLen(u.text)
@@ -413,9 +441,7 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 		if uLen > absoluteMaxSize {
 			// Flush current chunk if any
 			if len(current) > 0 {
-				chunks = append(chunks, buildChunk(current, len(chunks)))
-				current = nil
-				curLen = 0
+				flush()
 			}
 
 			// Update header state even for oversized units
@@ -439,11 +465,13 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 
 				chunkText := string(runes[offset:chunkEnd])
 				chunks = append(chunks, Chunk{
-					Content: chunkText,
-					Seq:     len(chunks),
-					Start:   u.start + offset,
-					End:     u.start + chunkEnd,
+					Content:       chunkText,
+					ContextHeader: pendingHeader,
+					Seq:           len(chunks),
+					Start:         u.start + offset,
+					End:           u.start + chunkEnd,
 				})
+				pendingHeader = ""
 				offset = chunkEnd
 			}
 			continue
@@ -454,9 +482,7 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 		// Flush at table boundary so the next table is not merged into a chunk
 		// that still carries the previous table's prepended header context.
 		if ht.headerEndedThisUnit && len(current) > 0 {
-			chunks = append(chunks, buildChunk(current, len(chunks)))
-			current = nil
-			curLen = 0
+			flush()
 		}
 		headers := ht.getHeaders()
 		headersLen := runeLen(headers)
@@ -468,10 +494,10 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 		// If adding this unit (plus reserving space for headers in a potential
 		// next chunk) would exceed chunk size, flush the current chunk.
 		if curLen+uLen+headersLen > chunkSize && len(current) > 0 {
-			chunks = append(chunks, buildChunk(current, len(chunks)))
+			flushed := flush()
 
 			// Keep overlap from the end of current
-			current, curLen = computeOverlap(current, chunkOverlap, chunkSize, uLen)
+			current, curLen = computeOverlap(flushed, chunkOverlap, chunkSize, uLen)
 
 			// Shrink overlap further if needed to fit headers + next unit
 			if headers != "" && headersLen+uLen <= chunkSize {
@@ -480,17 +506,14 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 					current = current[1:]
 				}
 
-				// Prepend headers if the column-name context is not already present
-				// in the overlap or the next unit being added.
+				// Carry the column-name context if it is not already present
+				// in the overlap or the next unit being added. It rides in
+				// ContextHeader — the content itself stays the document
+				// slice (see the function comment).
 				overlapText := unitsText(current)
 				if !headerAlreadyPresent(headers, overlapText, u.text) &&
 					!headerColumnMismatch(headers, u.text) {
-					startPos := u.start
-					if len(current) > 0 {
-						startPos = current[0].start
-					}
-					hUnit := splitUnit{text: headers, start: startPos, end: startPos}
-					current = append([]splitUnit{hUnit}, current...)
+					pendingHeader = headers
 					curLen += headersLen
 				}
 			}
@@ -499,9 +522,7 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 		// Check if adding this unit would exceed absolute max
 		if curLen+uLen > absoluteMaxSize {
 			if len(current) > 0 {
-				chunks = append(chunks, buildChunk(current, len(chunks)))
-				current = nil
-				curLen = 0
+				flush()
 			}
 		}
 
@@ -511,7 +532,7 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 
 	// Flush remaining
 	if len(current) > 0 {
-		chunks = append(chunks, buildChunk(current, len(chunks)))
+		flush()
 	}
 
 	return chunks
