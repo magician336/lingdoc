@@ -12,19 +12,37 @@ ALTER TABLE users
 ALTER TABLE knowledge_bases
     ADD COLUMN IF NOT EXISTS rerank_model_id VARCHAR(64);
 
--- MySQL's "UPDATE ... JOIN ... SET" has no PostgreSQL equivalent; the
--- PostgreSQL spelling of the same statement is "UPDATE ... SET ... FROM ...
--- WHERE".  The join predicate and the filter are carried over unchanged, so
--- the rows this statement touches are exactly the rows it touched before.
+-- Undo the models.tenant_id back-fill that 000001_agent.up.sql performs.
 --
--- NOTE: the join key below ("m.id = k.id") joins two independently generated
--- UUID primary keys (models.id and knowledges.id), so it matches almost
--- nothing.  That is a separate semantic question from the syntax fix and is
--- tracked on its own issue; it is deliberately NOT changed here.
+-- The up side builds its list of "models a knowledge base points at" from
+-- knowledge_bases.embedding_model_id and knowledge_bases.summary_model_id (its
+-- tenant_source CTE) and raises models.tenant_id from 0 to the knowledge
+-- base's tenant.  This statement is the exact mirror of that: it rebuilds the
+-- same list from the same two columns and resets models.tenant_id back to 0
+-- for the rows the up side raised.
+--
+-- The previous spelling joined models to knowledges on "m.id = k.id".
+-- models.id and knowledges.id are two independently generated random UUIDv4
+-- primary keys with no foreign key between them, so that join matched almost
+-- nothing: the back-fill was never actually undone.  When the two id spaces
+-- happened to collide it touched the wrong row instead.
+--
+-- Same-source invariant: the list below must stay identical to the up side's
+-- tenant_source.  internal/database/migration_agent_tenant_source_test.go
+-- fails when the two drift apart.
+WITH tenant_source AS (
+    SELECT kb.embedding_model_id AS model_id, kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL AND kb.embedding_model_id IS NOT NULL AND kb.embedding_model_id <> ''
+    UNION
+    SELECT kb.summary_model_id AS model_id, kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL AND kb.summary_model_id IS NOT NULL AND kb.summary_model_id <> ''
+)
 UPDATE models m
 SET tenant_id = 0
-FROM knowledges k
-WHERE m.id = k.id AND m.tenant_id = k.tenant_id;
+FROM tenant_source ts
+WHERE m.id = ts.model_id AND m.tenant_id = ts.tenant_id;
 
 -- Drop index on content_hash
 DROP INDEX IF EXISTS idx_chunks_content_hash;
