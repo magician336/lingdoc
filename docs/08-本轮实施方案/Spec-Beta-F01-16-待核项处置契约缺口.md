@@ -1,7 +1,7 @@
 # Spec-Beta-F01-16-待核项处置契约缺口
 
 - 票号：#618
-- 基线：`origin/main = 0dad5012d`（合并提交 `0dad5012`，含 #615 的 F01-07 口径变更与 #617 的 BETA_STATUS 第五轮）
+- **分支基线**：`0dad5012`（本分支从它拉出）。撰写本 Spec 时 `origin/main` 即 `0dad5012`；其后 `origin/main` 推进到 `7b5466fa`（#616 登记处补记，与本次改动无交集）。合并前本分支已落基到当时的 `origin/main`。
 - 隔离环境：484（SQLite，端口 18087，pid 58932，二进制由 `96d9320e` 重建）
 - 跑批现场：`D:\wt\lingdoc-485-evidence\track-d-experiment\run-20261024-195932-96d9320e\f01-report.json`
 - 性质：**契约表达缺口**（不是服务端缺陷）。本 Spec 不改服务端、不改验收门槛、不改判定口径。

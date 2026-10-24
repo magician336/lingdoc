@@ -60,7 +60,9 @@ WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
 SCENARIOS_PATH = ROOT / "docs/08-本轮实施方案/contracts/scenarios.json"
 # A variable name may be namespaced the way the contract spells its own facts
 # ("{{asset.k-notready}}"), so dots and dashes are part of a name, not separators.
-VARIABLE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}")
+# The pattern itself belongs to the expansion module -- the one copy of the
+# {{name}} rules -- so this module does not carry a second spelling of it.
+VARIABLE = workflow_expand.VARIABLE
 PROVIDER_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 # A check states one expectation about one place in the response. The operator is what
 # makes it evaluable; `intent` keeps the sentence a reader needs to judge the expectation.
