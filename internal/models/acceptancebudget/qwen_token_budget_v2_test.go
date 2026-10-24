@@ -1,13 +1,17 @@
 package acceptancebudget
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The second Qwen profile.
@@ -202,6 +206,110 @@ func TestQwenV2CumulativeGateRefusesTheRequestThatWouldPassTheCeiling(t *testing
 	}
 	if after := len(readLedgerRequests(t, path)); after != before {
 		t.Fatalf("recorded requests = %d, want %d: a refused reservation must not be recorded", after, before)
+	}
+}
+
+// The environment the child process of the cross-process test reads.
+const (
+	qwenV2HelperEnv    = "LINGDOC_QWEN_V2_TEST_HELPER"
+	qwenV2HelperPath   = "LINGDOC_QWEN_V2_TEST_PATH"
+	qwenV2HelperResult = "LINGDOC_QWEN_V2_TEST_RESULT"
+)
+
+// TestQwenV2CrossProcessHelper is the child-process half of the
+// cross-process concurrency test.
+//
+// It is a no-op unless the helper environment says otherwise, so running the
+// test suite does not spawn anything.
+func TestQwenV2CrossProcessHelper(t *testing.T) {
+	if os.Getenv(qwenV2HelperEnv) == "" {
+		return
+	}
+	path := os.Getenv(qwenV2HelperPath)
+	result := os.Getenv(qwenV2HelperResult)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	reservation, err := New(QwenProfileV2, path).Reserve(ctx, QwenChatModel, QwenInputMax, QwenOutputMax)
+	outcome := "refused"
+	if err == nil {
+		outcome = "reserved"
+		if err := reservation.Complete("response_received", 1024, 512, "stop", false); err != nil {
+			t.Fatal(err)
+		}
+	} else if !errors.Is(err, ErrTokenBudgetExhausted) && !errors.Is(err, ErrCallsSpent) {
+		t.Fatalf("helper reserve error = %v", err)
+	}
+	if err := os.WriteFile(result, []byte(outcome), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Two PROCESSES cannot both pass the cumulative gate.
+//
+// The in-process test above proves the gate for two goroutines. This one
+// proves it for two operating-system processes, because the ledger is a
+// FILE: an in-process mutex would not help a service process that two
+// requests hit at once, and the ledger is shared by every process that
+// opens it.
+//
+// The window has room for exactly one call, so exactly one of the two sides
+// may be reserved -- whichever side gets the ledger lock first.
+func TestQwenV2TwoProcessesCannotBothPassTheCumulativeGate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "calls.json")
+	result := filepath.Join(dir, "result.txt")
+	qwenV2LedgerWithCeiling(t, path, QwenInputMax+QwenOutputMax)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQwenV2CrossProcessHelper$", "-test.timeout=20s")
+	command.Env = append(os.Environ(),
+		qwenV2HelperEnv+"=1",
+		qwenV2HelperPath+"="+path,
+		qwenV2HelperResult+"="+result)
+	output := new(bytes.Buffer)
+	command.Stdout = output
+	command.Stderr = output
+	if err := command.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+	t.Cleanup(func() { _ = command.Process.Kill() })
+
+	// The parent races the child for the same window.
+	parentCtx, parentCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer parentCancel()
+	reservation, err := New(QwenProfileV2, path).Reserve(parentCtx, QwenChatModel, QwenInputMax, QwenOutputMax)
+	parent := "refused"
+	if err == nil {
+		parent = "reserved"
+		if err := reservation.Complete("response_received", 1024, 512, "stop", false); err != nil {
+			t.Fatal(err)
+		}
+	} else if !errors.Is(err, ErrTokenBudgetExhausted) && !errors.Is(err, ErrCallsSpent) {
+		t.Fatalf("parent reserve error = %v", err)
+	}
+
+	if err := command.Wait(); err != nil {
+		t.Fatalf("helper failed: %v: %s", err, output.String())
+	}
+	data, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatalf("the helper must report its outcome: %v", err)
+	}
+	child := strings.TrimSpace(string(data))
+	if parent == child {
+		t.Fatalf("both sides reported %q; exactly one of them may pass the gate", parent)
+	}
+
+	ledger, err := readLedger(path, QwenProfileV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ledger.Requests) != 1 {
+		t.Fatalf("recorded requests = %d, want exactly 1: the refused reservation must not be recorded", len(ledger.Requests))
+	}
+	if ledger.ReservedTokens != QwenInputMax+QwenOutputMax {
+		t.Fatalf("cumulative reservation = %d, want %d", ledger.ReservedTokens, QwenInputMax+QwenOutputMax)
 	}
 }
 
