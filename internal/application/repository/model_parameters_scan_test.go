@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/database"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/utils"
 	"github.com/stretchr/testify/assert"
@@ -12,45 +15,44 @@ import (
 	"gorm.io/gorm"
 )
 
-// modelsTestDDL mirrors the `models` section of
-// migrations/sqlite/000000_init.up.sql. We inline the DDL here instead of
-// using GORM AutoMigrate because Model carries fields tagged with `type:json`,
-// which AutoMigrate does not map onto the production column type.
+// modelsTestAESKey is a self-made 32-byte key. No real key and no real
+// secret ever enters the repository.
+const modelsTestAESKey = "0123456789abcdef0123456789abcdef"
+
+// setupModelsTestDB builds a SQLite database from the production migration
+// chain and opens it through GORM.
+//
+// The models table belongs to the production migration chain, not to this
+// fixture: a fixture that hand-writes the column list drifts away from
+// production the next time a column is added, and the drift stays green —
+// the repository's own guard says so
+// (scripts/ci/test_lingdoc_fixture_schema_source.py).
 //
 // The `parameters TEXT NOT NULL` declaration is the point of this file: the
 // column is declared TEXT, while this application binds the []byte that
 // json.Marshal returns. SQLite keeps a BLOB a BLOB, so the storage class of a
 // row's parameters depends on WHO wrote it — this application (BLOB), or a
 // literal SQL INSERT in a migration, an ops script or an import (TEXT).
-const modelsTestDDL = `
-CREATE TABLE IF NOT EXISTS models (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    display_name VARCHAR(255) NOT NULL DEFAULT '',
-    type VARCHAR(50) NOT NULL,
-    source VARCHAR(50) NOT NULL,
-    description TEXT,
-    parameters TEXT NOT NULL,
-    is_default BOOLEAN NOT NULL DEFAULT 0,
-    is_builtin BOOLEAN NOT NULL DEFAULT 0,
-    managed_by VARCHAR(32) NOT NULL DEFAULT '',
-    status VARCHAR(50) NOT NULL DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME
-);
-`
-
-// modelsTestAESKey is a self-made 32-byte key. No real key and no real
-// secret ever enters the repository.
-const modelsTestAESKey = "0123456789abcdef0123456789abcdef"
-
 func setupModelsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	require.NoError(t, err)
-	require.NoError(t, db.Exec(modelsTestDDL).Error)
+	previousDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(previousDir) })
+
+	dbPath := filepath.Join(t.TempDir(), "models.db")
+	require.NoError(t, database.RunMigrationsWithOptions(
+		"sqlite3://unused", database.MigrationOptions{SQLiteDBPath: dbPath},
+	))
+
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 

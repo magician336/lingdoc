@@ -3,10 +3,14 @@ package types
 import (
 	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (production dialect)
-	_ "github.com/mattn/go-sqlite3"    // SQLite driver behind gorm.io/driver/sqlite (production dialect)
+	"github.com/golang-migrate/migrate/v4"
+	sqlite3migrate "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file" // production migration source
+	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver (production dialect)
+	_ "github.com/mattn/go-sqlite3"                      // SQLite driver behind gorm.io/driver/sqlite (production dialect)
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver used by some tests
@@ -31,36 +35,71 @@ import (
 // evidence that the shared reader has to accept both carriers.
 // ---------------------------------------------------------------------------
 
+// productionSQLiteDBPath builds a SQLite database from the production
+// migration chain and returns its path.
+//
+// The models table — and with it the `parameters` column this file measures —
+// belongs to the production migration chain, not to this fixture. A fixture
+// that hand-writes the column list drifts away from production the next time
+// a column is added, and the drift stays green; the repository's own guard
+// says so (scripts/ci/test_lingdoc_fixture_schema_source.py).
+func productionSQLiteDBPath(t *testing.T) string {
+	t.Helper()
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+	previousDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoRoot))
+	t.Cleanup(func() { _ = os.Chdir(previousDir) })
+
+	dbPath := filepath.Join(t.TempDir(), "carrier.db")
+	sqlDB, err := sql.Open("sqlite3", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	driver, err := sqlite3migrate.WithInstance(sqlDB, &sqlite3migrate.Config{})
+	require.NoError(t, err)
+	migrator, err := migrate.NewWithDatabaseInstance("file://migrations/sqlite", "sqlite3", driver)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = migrator.Close() })
+	require.NoError(t, migrator.Up())
+	return dbPath
+}
+
 func TestSQLiteJSONColumnCarrierTypes(t *testing.T) {
+	dbPath := productionSQLiteDBPath(t)
+
 	// "sqlite3" is the driver gorm.io/driver/sqlite opens — the production
 	// SQLite path. "sqlite" is the pure-Go driver some tests use.
 	for _, driverName := range []string{"sqlite3", "sqlite"} {
 		t.Run(driverName, func(t *testing.T) {
-			db, err := sql.Open(driverName, ":memory:")
+			db, err := sql.Open(driverName, dbPath)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
 
-			_, err = db.Exec(`CREATE TABLE models (id VARCHAR(64) PRIMARY KEY, parameters TEXT NOT NULL)`)
-			require.NoError(t, err)
-
 			// A row written as TEXT — what a literal SQL INSERT binds.
 			_, err = db.Exec(
-				`INSERT INTO models (id, parameters) VALUES (?, ?)`,
-				"text-row", `{"provider":"aliyun"}`,
+				`INSERT INTO models (id, tenant_id, name, type, source, parameters) VALUES (?, ?, ?, ?, ?, ?)`,
+				"text-row-"+driverName, 7, "qwen3.8-flash", "KnowledgeQA", "remote", `{"provider":"aliyun"}`,
 			)
 			require.NoError(t, err)
 
 			// A row written as BLOB — what this application binds.
 			_, err = db.Exec(
-				`INSERT INTO models (id, parameters) VALUES (?, ?)`,
-				"blob-row", []byte(`{"provider":"aliyun"}`),
+				`INSERT INTO models (id, tenant_id, name, type, source, parameters) VALUES (?, ?, ?, ?, ?, ?)`,
+				"blob-row-"+driverName, 7, "qwen3.8-flash", "KnowledgeQA", "remote", []byte(`{"provider":"aliyun"}`),
 			)
 			require.NoError(t, err)
 
 			var textCarrier any
-			require.NoError(t, db.QueryRow(`SELECT parameters FROM models WHERE id = 'text-row'`).Scan(&textCarrier))
+			require.NoError(t, db.QueryRow(
+				`SELECT parameters FROM models WHERE id = ?`, "text-row-"+driverName,
+			).Scan(&textCarrier))
 			var blobCarrier any
-			require.NoError(t, db.QueryRow(`SELECT parameters FROM models WHERE id = 'blob-row'`).Scan(&blobCarrier))
+			require.NoError(t, db.QueryRow(
+				`SELECT parameters FROM models WHERE id = ?`, "blob-row-"+driverName,
+			).Scan(&blobCarrier))
 
 			t.Logf("driver=%s TEXT value -> %T, BLOB value -> %T", driverName, textCarrier, blobCarrier)
 
