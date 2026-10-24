@@ -33,4 +33,3 @@ export const projectMaterialPorts: MaterialPorts = {
   async bind(project, knowledge, key) { return (await bindAsset(project, knowledge, key)).data },
   async search(project, query, asset) { return (await retrieveSources(project, query, [asset])).data },
 }
-

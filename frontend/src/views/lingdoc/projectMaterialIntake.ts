@@ -223,4 +223,3 @@ export class ProjectMaterialIntake {
     finally { if (this.active) row.busy = false }
   }
 }
-

@@ -269,4 +269,3 @@ test('disposed in-flight retrieval never returns snippets to an old project view
   await request
   assert.deepEqual(row.hits, [])
 })
-

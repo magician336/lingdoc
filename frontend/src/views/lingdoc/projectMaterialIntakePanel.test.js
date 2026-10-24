@@ -153,4 +153,3 @@ test('upload configuration dialog cancellation performs no upload and is not a f
   assert.equal(fixture.uploads.length, 0)
   assert.equal(controller.model.uploadError, '')
 })
-

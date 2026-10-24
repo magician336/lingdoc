@@ -157,4 +157,3 @@ onBeforeUnmount(() => {
 .material-rows form label { display: block; }
 .material-rows input { width: min(100%, 360px); }
 </style>
-
