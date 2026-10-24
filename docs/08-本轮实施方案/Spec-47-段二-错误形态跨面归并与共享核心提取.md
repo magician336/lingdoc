@@ -210,11 +210,25 @@ Spec 决策 19：保留状态码与错误码，但必须**进入统一语义表*
 | 候选稿输入已变 | 409 `stale_input` | 候选稿或快照基于旧输入。 | 候选采纳面 |
 | 依赖不可用 | 503 `dependency_unavailable` | 依赖暂时不可用。 | 生成面 |
 | 候选采纳依赖未就绪 | 503 `dependency_unavailable` | 候选采纳依赖尚未就绪，请稍后重试。 | 候选采纳面 |
+| 受控模式拒绝模型 | 422 `acceptance_model_policy_rejected` | 受控验收模式未授权本次所需的模型；未发起模型调用，重试无效。 | 生成面 |
 
 **「同码不同文」的处理原则**（票 #262 明确要求）：**不得把同码的文案合并成一句**。
-上表中 `invalid_state` 有 3 种文案、`version_conflict` 有 2 种、`stale_input` 有 2 种、
-`dependency_unavailable` 有 2 种——它们**各自是独立形态**，只是共享错误码。
+上表中 `invalid_state` 有 3 种文案、`version_conflict` 有 2 种、`stale_input` 有 2 种——
+它们**各自是独立形态**，只是共享错误码。
 共享形态目录只收「状态码 + 错误码 + 文案」三者全同的那一簇。
+
+**`dependency_unavailable` 的实况（2026-10-24 按 `origin/main`=`c14770f9` 复核，票 #593）**：
+上表两行只列了本段收口时归并进目录的两簇。仓内实际有 **6 种**文案共享这个错误码
+（生成面、候选采纳面 ×2、工作区核心面、工作区代理面、选段改写面），其中
+**工作区代理面那一种的 `retryable` 是 `false`**（`internal/lingdoc/workspace/agent_error_wording.go`），
+其余 5 种是 `true` ⇒ 这个码的 `retryable` 实况是 **2 种取值**。
+
+**票 #593 的处置**：生成面此前把「受控 profile 拒绝模型」也压成 `dependency_unavailable`，
+于是 F01-07 那条 503 把调用方导向无限重试——而真正要做的（改 profile 授权）重试一万次
+也无效。现在检索侧的策略拒绝有自己的形态 **422 `acceptance_model_policy_rejected` /
+`retryable=false`**（登记在 `internal/clienterror/catalog.go`），生成面不再复用
+`dependency_unavailable` 却改它的 `retryable`；工作区代理面那一个 `retryable=false`
+的既有形态**不在本票范围**，另行处置。
 
 ## 两条归属判据（形态由谁决定）
 
