@@ -46,7 +46,7 @@ export function materialReadiness(knowledge: MaterialKnowledge, trace: MaterialT
   switch (knowledge.parse_status) {
     case 'pending': case 'unprocessed': return { ready: false, label: '等待处理' }
     case 'processing': case 'finalizing': return { ready: false, label: '正在处理' }
-    case 'failed': return { ready: false, label: '处理失败：请检查解析或索引配置后重新处理' }
+    case 'failed': return { ready: false, label: '处理失败：请检查原文件或处理配置后重新处理' }
     case 'cancelled': return { ready: false, label: '处理已取消' }
     case 'completed': break
     default: return { ready: false, label: '处理状态未知，请重新读取' }

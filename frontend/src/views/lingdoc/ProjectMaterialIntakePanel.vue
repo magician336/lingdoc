@@ -32,7 +32,7 @@
         <button type="button" :disabled="row.busy || !row.indexReady" @click="bind(row)">
           {{ row.asset ? '核实当前项目绑定' : '绑定到当前课题' }}
         </button>
-        <p v-if="!row.indexReady" class="hint">解析完成不等于索引完成；无真实的当前索引记录时，不放行绑定。解析失败请先修复资料库配置，再由有权限的人员重新处理；不会自动重传或重解析。</p>
+        <p v-if="!row.indexReady" class="hint">解析完成不等于索引完成；无真实的当前索引记录时，不放行绑定。请根据错误原因检查原文件和资料库配置；修正文件后可重新选择上传，重新处理已有材料需由有权限的人员进行，不会自动重传或重解析。</p>
         <form @submit.prevent="model.search(row)">
           <label :for="prefix + '-' + row.ref.id">在当前项目检索此材料</label>
           <input :id="prefix + '-' + row.ref.id" v-model="row.query" maxlength="500" placeholder="输入文件中的原文关键词" />
