@@ -1333,9 +1333,20 @@
           "intent": "确认结果有效"
         },
         {
-          "path": "/data/review_decisions/0/review_item_id",
-          "equals": "{{review_id}}",
-          "intent": "待核事项有明确处置（保留并说明原因）"
+          "path": "/data/review_decisions",
+          "one_to_one": {
+            "from_step": "F01-13",
+            "path": "/data/review_items",
+            "id_field": "review_item_id",
+            "other_id_field": "id",
+            "entry_equals": {
+              "disposition": "retained_warning"
+            },
+            "entry_non_empty": [
+              "reason"
+            ]
+          },
+          "intent": "待核事项有明确处置（保留并说明原因）：处置集合与该章节的待核项集合一一对应，与顺序无关"
         }
       ],
       "assertions": []
