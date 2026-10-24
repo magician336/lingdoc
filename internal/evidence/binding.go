@@ -338,6 +338,28 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 		return tx.Create(&operationRow{TenantID: tenantID, UserID: userID, Operation: "bindAsset", Target: target, Key: key,
 			BodyHash: bodyHash, ResponseJSON: string(response), ResponseCode: 201}).Error
 	})
+	if err != nil {
+		// Another request may have committed the same operation after our
+		// initial read. PostgreSQL aborts the losing transaction on its unique
+		// key conflict, so only reread after Transaction has rolled it back.
+		// The committed operation, not a partially populated result, is the
+		// authority. Its scope and client-request fingerprint must still match.
+		var committed operationRow
+		if readErr := b.db.WithContext(ctx).Where(
+			"tenant_id = ? AND user_id = ? AND operation = ? AND target = ? AND key = ?",
+			tenantID, userID, "bindAsset", target, key,
+		).First(&committed).Error; readErr == nil {
+			if committed.BodyHash != bodyHash {
+				return Asset{}, false, ErrIdempotencyConflict
+			}
+			var saved Asset
+			if decodeErr := json.Unmarshal([]byte(committed.ResponseJSON), &saved); decodeErr != nil {
+				return Asset{}, false, decodeErr
+			}
+			return saved, true, nil
+		}
+		return Asset{}, false, err
+	}
 	return result, replay, err
 }
 
