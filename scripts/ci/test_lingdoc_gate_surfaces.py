@@ -31,12 +31,13 @@ CI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CI_DIR.parents[1]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
-# The seven workflow-level gates that carry their own path table.  This list is
+# The eight workflow-level gates that carry their own path table.  This list is
 # the expectation; the manifest has to agree with it.
 GATED_WORKFLOWS = (
     "frontend.yml",
     "go-lint.yml",
     "app.yml",
+    "client.yml",
     "lingdoc-mock.yml",
     "lingdoc-f01-runner.yml",
     "lingdoc-workspace-concurrency.yml",
@@ -80,6 +81,10 @@ PATH_TABLES = {
         "scripts/*license*.sh",
         "cmd/desktop/build/windows/installer/project.nsi",
         ".github/workflows/app.yml",
+    ),
+    "client": (
+        "client/**",
+        ".github/workflows/client.yml",
     ),
     "lingdoc-mock": (
         "scripts/lingdoc_mock/**",

@@ -109,11 +109,11 @@ func (p *WebSearchProviderParameters) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, p); err != nil {
+	if err := json.Unmarshal(raw, p); err != nil {
 		return err
 	}
 	if plain, ok := utils.DecryptStoredSecretLenient(p.APIKey); ok {

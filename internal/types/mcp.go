@@ -214,11 +214,7 @@ func (h *MCPHeaders) Scan(value interface{}) error {
 		*h = nil
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, h)
+	return scanJSONColumn(value, h)
 }
 
 // Value implements driver.Valuer for MCPAuthConfig.
@@ -259,11 +255,11 @@ func (c *MCPAuthConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(b, c); err != nil {
+	if err := json.Unmarshal(raw, c); err != nil {
 		return err
 	}
 	if plain, ok := utils.DecryptStoredSecretLenient(c.APIKey); ok {
@@ -294,11 +290,7 @@ func (c *MCPAdvancedConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements driver.Valuer interface for MCPStdioConfig
@@ -314,11 +306,7 @@ func (c *MCPStdioConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Value implements driver.Valuer interface for MCPEnvVars
@@ -335,11 +323,7 @@ func (e *MCPEnvVars) Scan(value interface{}) error {
 		*e = nil
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, e)
+	return scanJSONColumn(value, e)
 }
 
 // GetDefaultAdvancedConfig returns default advanced configuration

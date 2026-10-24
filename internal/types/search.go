@@ -261,11 +261,7 @@ func (c *SearchResult) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return scanJSONColumn(value, c)
 }
 
 // Pagination represents the pagination parameters

@@ -96,10 +96,19 @@ func postAcceptance(t *testing.T, router *gin.Engine, key string, confirmation a
 }
 
 func TestAcceptanceEndpointRefusesAMissingConfirmation(t *testing.T) {
-	router, _ := adoptionHTTPFixture(t)
+	router, store := adoptionHTTPFixture(t)
 	recorder := postAcceptance(t, router, "http-missing-confirmation", nil)
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "invalid_request")
+
+	// 被拒的采纳在库里不留任何东西：没有版本，也没有幂等行。少了这两句，
+	// 「缺确认载荷被拒」这条语义就只是「返回了 400」，而不是「没有发生采纳」。
+	var versions int64
+	require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&versions).Error)
+	require.Zero(t, versions, "缺确认载荷的采纳不得留下版本")
+	var idem int64
+	require.NoError(t, store.DB().Model(&adoptionIdempotencyRow{}).Count(&idem).Error)
+	require.Zero(t, idem, "缺确认载荷的采纳不得留下幂等行")
 }
 
 func TestAcceptanceEndpointRefusesATargetTheActionDoesNotAllow(t *testing.T) {

@@ -17,23 +17,18 @@ func (j *JSON) Scan(value interface{}) error {
 		return nil
 	}
 
-	var bytes []byte
-	switch v := value.(type) {
-	case []byte:
-		bytes = v
-	case string:
-		bytes = []byte(v)
-	default:
-		return errors.New("type assertion to []byte or string failed")
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
 
-	if len(bytes) == 0 {
+	if len(raw) == 0 {
 		*j = nil
 		return nil
 	}
 
 	result := json.RawMessage{}
-	err := json.Unmarshal(bytes, &result)
+	err = json.Unmarshal(raw, &result)
 	*j = JSON(result)
 	return err
 }

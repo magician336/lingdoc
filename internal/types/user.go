@@ -3,7 +3,6 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -66,20 +65,15 @@ func (p *UserPreferences) Scan(value interface{}) error {
 		*p = UserPreferences{}
 		return nil
 	}
-	var data []byte
-	switch v := value.(type) {
-	case []byte:
-		data = v
-	case string:
-		data = []byte(v)
-	default:
-		return errors.New("UserPreferences.Scan: unsupported type")
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if len(data) == 0 {
+	if len(raw) == 0 {
 		*p = UserPreferences{}
 		return nil
 	}
-	return json.Unmarshal(data, p)
+	return json.Unmarshal(raw, p)
 }
 
 // User represents a user in the system
