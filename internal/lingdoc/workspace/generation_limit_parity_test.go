@@ -5,12 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
+	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // The two ledgers, one answer.
@@ -294,6 +299,71 @@ func TestTheWorkspaceAndTheChecklistReadTheSameTotalCeiling(t *testing.T) {
 			t.Fatalf("the workspace reads %d as the total ceiling of %q, the checklist reads %d",
 				acceptanceTotalMax(profile), profile, totalMax)
 		}
+	}
+}
+
+// qwenBoundAnswerChat answers with an input token count that is DELTA tokens
+// above the request's OWN input bound.
+//
+// The bound is the same number the reservation computed, so the answer can be
+// placed inside the band between that bound and the profile's ceiling -- the
+// interval the two ledgers used to answer differently about.
+type qwenBoundAnswerChat struct {
+	delta   int
+	calls   int
+	options *chat.ChatOptions
+}
+
+func (s *qwenBoundAnswerChat) Chat(_ context.Context, messages []chat.Message, options *chat.ChatOptions) (*types.ChatResponse, error) {
+	s.calls++
+	s.options = options
+	bound, err := acceptanceInputUpperBound(messages)
+	if err != nil {
+		return nil, err
+	}
+	promptTokens := bound + s.delta
+	return &types.ChatResponse{
+		Content:      `{"body_markdown":"受控执行结论 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`,
+		FinishReason: "stop",
+		Usage:        types.TokenUsage{PromptTokens: promptTokens, CompletionTokens: 128, TotalTokens: promptTokens + 128},
+	}, nil
+}
+
+func (*qwenBoundAnswerChat) ChatStream(context.Context, []chat.Message, *chat.ChatOptions) (<-chan types.StreamResponse, error) {
+	return nil, nil
+}
+
+func (*qwenBoundAnswerChat) GetModelName() string { return acceptancebudget.QwenChatModel }
+func (*qwenBoundAnswerChat) GetModelID() string   { return "qwen-1" }
+
+// An answer in the band is refused with the SAME error an answer over the
+// profile's ceiling is refused with.
+//
+// The call site checks the answer against the profile's ceiling before it
+// writes anything down; the ledgers check it against the request's own
+// bound. The two must not produce two different outcomes for one answer, and
+// this test says so at the seam a caller actually sees: the run is refused
+// with the very same error, and both ledgers record the violation.
+func TestTheBandIsRefusedWithTheSameErrorAsAnAnswerOverTheProfileCeiling(t *testing.T) {
+	budget := qwenV2Budget(t)
+	stub := &qwenBoundAnswerChat{delta: 1}
+	service := &acceptanceModelServiceStub{models: []*types.Model{qwenApprovedModel()}, chatModel: stub}
+	host := generationHostModel{models: service, templates: core.ContractDemoTemplate{}, acceptanceBudget: budget}
+
+	if _, err := host.Generate(context.Background(), acceptanceGenerationInput()); !errors.Is(err, generation.ErrAcceptanceBudgetExceeded) {
+		t.Fatalf("Generate() error = %v, want the same error an answer over the profile's ceiling produces", err)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("provider calls = %d, want exactly 1", stub.calls)
+	}
+
+	round, sharedInWindow := parityReadRound(t, budget.ledgerPath), parityReadShared(t, budget.ledgerPath+".calls.json")
+	if round.Status != "limit_violation" || sharedInWindow.Status != "limit_violation" {
+		t.Fatalf("the two ledgers recorded %q and %q, want limit_violation in both",
+			round.Status, sharedInWindow.Status)
+	}
+	if !round.Blocked || !sharedInWindow.Blocked {
+		t.Fatalf("a limit violation must block both ledgers: round %v, shared %v", round.Blocked, sharedInWindow.Blocked)
 	}
 }
 
