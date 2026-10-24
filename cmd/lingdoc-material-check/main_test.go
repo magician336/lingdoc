@@ -244,6 +244,34 @@ func TestAnOriginFileThatIsNotTheOriginalIsRefusedBeforeAnythingIsJudged(t *test
 	}
 }
 
+func TestAMissingSourceIsNotAPass(t *testing.T) {
+	// The source of a chunk cannot be read (the material is not bound, or the
+	// server cannot serve it). The quoted-text half then has nothing to
+	// compare, and the gate must NOT report a pass: the sources are the half
+	// #485 actually broke.
+	origin, chunks, _ := qualifiedFixture(t)
+	server := httptest.NewServer((&fakeServer{chunks: chunks, missingSource: true}).handler(t))
+	defer server.Close()
+
+	code, stdout, stderr := runGate(t, []string{
+		"--base-url", server.URL,
+		"--knowledge-id", "k-1",
+		"--project-id", "p-1",
+		"--origin-file", writeOrigin(t, origin),
+		"--token-file", writeToken(t),
+		"--stage", "full",
+	})
+	if code == 0 {
+		t.Fatalf("an unreadable source must not be a pass: stdout=%s stderr=%s", stdout, stderr)
+	}
+	if code != 1 {
+		t.Fatalf("an unreadable source must be refused with 1, got %d (stderr=%s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "unreadable") {
+		t.Fatalf("the report must say the source could not be read: %s", stdout)
+	}
+}
+
 func TestAnUnknownStageIsRefused(t *testing.T) {
 	origin, chunks, _ := qualifiedFixture(t)
 	server := httptest.NewServer((&fakeServer{chunks: chunks}).handler(t))

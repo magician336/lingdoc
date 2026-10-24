@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
-	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,10 +90,10 @@ func TestTheEmbeddingStageRecordsTheRoutingFailureAsTheRoutingFailure(t *testing
 		retrieveEngine: parentChildRetrieveRegistry{
 			engine: &parentChildRetrieveEngine{}, // supports the vector pipeline only
 		},
-		graphEngine:  parentChildGraphRepo{},
-		tenantRepo:   parentChildTenantRepo{},
-		task:         parentChildTaskEnqueuer{},
-		spanTracker:  tracker,
+		graphEngine: parentChildGraphRepo{},
+		tenantRepo:  parentChildTenantRepo{},
+		task:        parentChildTaskEnqueuer{},
+		spanTracker: tracker,
 	}
 	kb := &types.KnowledgeBase{
 		ID:       "kb-1",
@@ -150,6 +150,46 @@ func TestTheEmbeddingStageRecordsTheMissingEmbeddingModelAsSuch(t *testing.T) {
 		"the embedding error must be carried as the detail, not dropped")
 	require.Contains(t, failure.detail.Error(), "model ID",
 		"the detail must be the embedding error itself: %v", failure.detail)
+}
+
+// The routing failure and the missing embedding model can happen AT THE SAME
+// TIME. The record must still carry the real cause — the routing — and the
+// detail must not be empty: "the embedding model is missing" would send the
+// operator to fix a model that was never the problem.
+func TestTheRoutingCauseWinsWhenBothCausesHappen(t *testing.T) {
+	tracker := &recordingSpanTracker{}
+	knowledge := &types.Knowledge{ID: "k-1", TenantID: 1, KnowledgeBaseID: "kb-1", ParseStatus: types.ParseStatusProcessing}
+	ctx := withAttempt(context.WithValue(context.Background(), types.TenantInfoContextKey, keywordOnlyTenantNoEngine()), 1)
+	svc := &knowledgeService{
+		repo:         &parentChildKnowledgeRepo{knowledge: knowledge},
+		chunkRepo:    &embeddingDecoupledChunkService{},
+		modelService: &unavailableEmbeddingModelService{}, // the embedder is missing TOO
+		retrieveEngine: parentChildRetrieveRegistry{
+			engine: &parentChildRetrieveEngine{}, // and no engine serves the keyword pipeline
+		},
+		graphEngine: parentChildGraphRepo{},
+		tenantRepo:  parentChildTenantRepo{},
+		task:        parentChildTaskEnqueuer{},
+		spanTracker: tracker,
+	}
+	kb := &types.KnowledgeBase{
+		ID:       "kb-1",
+		TenantID: 1,
+		// Both pipelines are wanted; there is no embedder for the vector one
+		// and no engine for the keyword one.
+		IndexingStrategy: types.IndexingStrategy{VectorEnabled: true, KeywordEnabled: true},
+	}
+
+	svc.processChunks(ctx, kb, knowledge, embeddingDecoupledChunks())
+
+	require.Len(t, tracker.failures, 1, "the stage must record exactly one failure")
+	failure := tracker.failures[0]
+	require.Equal(t, werrors.ErrCodeVectorStoreWriteFailed, failure.code,
+		"the routing cause must not be overwritten by the embedding cause")
+	require.Contains(t, failure.message, "no retriever engine")
+	require.Error(t, failure.detail, "the detail must not be empty")
+	require.Contains(t, failure.detail.Error(), "retriever",
+		"the detail must be the routing error itself: %v", failure.detail)
 }
 
 // The embedding model service must never be asked for a model when the

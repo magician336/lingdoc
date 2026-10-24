@@ -1327,6 +1327,7 @@ def run_material_preflight(
 def material_gate_before_step(
     step: dict[str, Any],
     variables: dict[str, Any],
+    runner: Any,
     check_command: list[str],
     base_url: str,
     token: str | None,
@@ -1345,19 +1346,32 @@ def material_gate_before_step(
     It is fail-closed like the first stage: if the project is not known, the
     gate cannot run, and a gate that could not run is not a pass — the run
     stops instead of reaching the generation on an unchecked material.
+
+    A refusal is recorded on the runner as a machine-readable failure, so the
+    report says "the material gate refused" and not merely "a step failed".
     """
     if step.get("operation_id") != before_operation:
         return
-    run_material_preflight(
-        check_command,
-        base_url,
-        token,
-        token_file,
-        knowledge_id,
-        project_id or variables.get("project_id"),
-        origin_file,
-        stage="full",
-    )
+    try:
+        run_material_preflight(
+            check_command,
+            base_url,
+            token,
+            token_file,
+            knowledge_id,
+            project_id or variables.get("project_id"),
+            origin_file,
+            stage="full",
+        )
+    except WorkflowError as error:
+        runner.failures.append({
+            "step_id": step.get("id", ""),
+            "operation_id": step.get("operation_id", ""),
+            "kind": "material_gate_failed",
+            "stage": "full",
+            "detail": str(error),
+        })
+        raise
 
 
 class _SelfTestResponse:
@@ -1712,6 +1726,17 @@ class CheckOperatorSelfTest(unittest.TestCase):
         self.assertEqual(report["manual_assertions"][0]["status"], "not_run")
 
 
+class _StubRunner:
+    """The part of the runner the material gate writes to.
+
+    The gate records its refusal on the runner so the run's report carries it;
+    the cases need nothing of the runner but that list.
+    """
+
+    def __init__(self) -> None:
+        self.failures: list[dict[str, Any]] = []
+
+
 class MaterialPreflightSelfTest(unittest.TestCase):
     """The material gate refuses an unqualified material before the first node.
 
@@ -1803,12 +1828,14 @@ class MaterialPreflightSelfTest(unittest.TestCase):
         try:
             material_gate_before_step(
                 {"operation_id": "bindAsset"}, {"project_id": "p-1"},
+                _StubRunner(),
                 ["gate"], "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
                 "k-1", None, "origin.md", "startGeneration",
             )
             self.assertEqual(calls, [], "the gate must not run before its own node")
             material_gate_before_step(
                 {"operation_id": "startGeneration"}, {"project_id": "p-1"},
+                _StubRunner(),
                 ["gate"], "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
                 "k-1", None, "origin.md", "startGeneration",
             )
@@ -1822,10 +1849,31 @@ class MaterialPreflightSelfTest(unittest.TestCase):
         with self.assertRaises(WorkflowError):
             material_gate_before_step(
                 {"operation_id": "startGeneration"}, {},
+                _StubRunner(),
                 [sys.executable, self.gate(0)],
                 "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
                 "k-1", None, "origin.md", "startGeneration",
             )
+
+    def test_the_gate_refusal_is_recorded_in_the_machine_readable_report(self):
+        # A refusal that only reaches the console is not evidence: it has to
+        # be in the report the run leaves behind.
+        runner = _StubRunner()
+        with self.assertRaises(WorkflowError):
+            material_gate_before_step(
+                {"id": "F01-07", "operation_id": "startGeneration"}, {},
+                runner,
+                [sys.executable, self.gate(1)],
+                "http://127.0.0.1:18085/api/v1/lingdoc", "token", None,
+                "k-1", None, "origin.md", "startGeneration",
+            )
+        self.assertEqual(len(runner.failures), 1, "the refusal must be recorded")
+        entry = runner.failures[0]
+        self.assertEqual(entry["kind"], "material_gate_failed")
+        self.assertEqual(entry["stage"], "full")
+        self.assertEqual(entry["step_id"], "F01-07")
+        # The detail must say WHY the gate refused, not merely that it did.
+        self.assertIn("project", entry["detail"])
 
 
 def run_operator_self_test() -> int:
@@ -1914,6 +1962,7 @@ def main(argv: list[str] | None = None) -> int:
                 material_gate_before_step(
                     step,
                     variables,
+                    runner,
                     [args.material_check_cmd] if args.material_check_cmd else [],
                     runner.client.base_url,
                     args.token,
