@@ -279,6 +279,45 @@ def run_command(command: list[str], *, cwd: Path = ROOT, timeout: float = 900.0)
 # ---------------------------------------------------------------------------
 # The F01 sequence
 # ---------------------------------------------------------------------------
+def f01_node_count() -> int | None:
+    """How many nodes the F01 contract declares, read from the contract.
+
+    The number is never written down here: a hardcoded count goes stale the
+    moment the contract gains a node, and the evidence then tells the reader
+    the contract is shorter than it is.  ``None`` means the contract could not
+    be read, and the caller has to say so rather than fall back to a guess.
+    """
+    document = read_json(WORKFLOW_PATH)
+    if document is None:
+        return None
+    steps = document.get("steps")
+    if not isinstance(steps, list):
+        return None
+    return len(steps)
+
+
+def f01_sequence_label() -> str:
+    """The name of the F01 sequence item, with the contract's own node count.
+
+    When the contract cannot be read, the item says that the count is
+    unknown: "24" was a number nobody had checked, and an unchecked number in
+    the name of the item is how a reader ends up believing a sequence is
+    shorter than it is.
+    """
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约序列（节点数未读到）"
+    return f"F01 契约序列（{count} 个节点）"
+
+
+def f01_scope_label() -> str:
+    """The scope line that says how long the F01 sequence is."""
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约的节点数未读到（contracts/workflow.json 读不到，本轮用契约的断言求值）"
+    return f"F01 契约的 {count} 个节点（本轮用 contracts/workflow.json 的断言求值）"
+
+
 def run_f01(base_url: str, token: str | None, identities: dict[str, str],
              knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
@@ -289,9 +328,10 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
     the assertions and not a pass either.
     """
     outcomes: list[Outcome] = []
+    label = f01_sequence_label()
     if not base_url:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence="没有给出 --base-url，本轮没有对任何提供方执行。",
             reason="未提供真实后端地址，F01 契约序列没有执行。",
             unblock="用 --base-url <真实后端地址> 重跑本脚本。"))
@@ -303,7 +343,7 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
             variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"执行器拒绝了这轮配置：{error}",
             reason=f"执行器在发出第一个请求前就拒绝了本轮配置：{error}",
             unblock="按错误信息补齐 --token / --identity 后重跑本脚本。"))
@@ -312,7 +352,7 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner.run(stop_on_mismatch=False)
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"序列中断：{error}",
             reason=f"主流程缺依赖或无法继续：{error}",
             unblock="让真实后端可达（隔离 PostgreSQL + 迁移 + 启动）后重跑本脚本。"))
@@ -1415,7 +1455,7 @@ def main(argv: list[str] | None = None) -> int:
         "迁移版本": str(manifest["database"]["migrations"].get("version") or "（没有读到）"),
     }
     scope = [
-        "F01 契约的 24 个节点（本轮用 contracts/workflow.json 的断言求值）",
+        f01_scope_label(),
         "浏览器对偶三方比对（HTTP = 浏览器 = 刷新后读回）",
         "服务端真实重启后的读回",
         "Word 人工检查（执行者填写，执行器只算哈希与校验必填字段）",
