@@ -832,6 +832,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   （让契约静态校验器与 F01 跑批执行器共用同一份展开实现）—— 那是**跨面借用**，
             #   owner 仍是 PF-14，本面不声明该路径（登记处 loader 拒绝两个面声明同一条路径）。
             #   依据票：#618（PR #620）、#490（放行结论表）。
+            # 2026-10-24 #626（PR #637，内容提交 ab9fd141，合并提交 6b394ca7）：本面**再次借用**
+            #   PF-14 持有的 docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 在校验器里
+            #   新增 is_marked()（逐条复刻 runner 的 _is_marked）并把 one_to_one 的 entry_non_empty
+            #   改用同一口径（纯空白字符串在两边都算空）。**owner 仍是 PF-14**，本面不声明该路径
+            #   （登记处 loader 拒绝两个面声明同一条路径）。
+            #   同 PR 新增的三条路径 —— scripts/lingdoc_mock/test_check_operators.py、
+            #   scripts/ci/test_lingdoc_check_operator_discovery.py、scripts/ci/test_lingdoc_nonempty_parity.py
+            #   —— 经登记处自身的 PathClaim.overlaps 逐条核对为**自由路径**（本仓无面声明），
+            #   按本轮约定不声明进任何面的路径集；此处只记录改动事实，不改本面既有路径集。
+            #   依据票：#626（PR #637）、#621（引入 one_to_one 的那轮）、#490（放行结论表）。
         ),
         "resolves": (),
         "summary": (
@@ -1171,6 +1181,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   docs/08-本轮实施方案/contracts/validate_artifacts.py（让契约静态校验器与
             #   F01 跑批执行器共用同一份展开实现）。**owner 仍是本面**，不变更归属。
             #   依据票：#618（PR #620）。
+            # 2026-10-24 #626（PR #637，内容提交 ab9fd141，合并提交 6b394ca7）：PF-10 **再次借用**
+            #   本面持有的 docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 在校验器里
+            #   新增 is_marked()（逐条复刻 runner 的 _is_marked）并把 one_to_one 的 entry_non_empty
+            #   改用同一口径。**owner 仍是本面**，不变更归属；本面不把它借给别的面。
+            #   依据票：#626（PR #637）、#621。
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
