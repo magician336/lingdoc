@@ -407,6 +407,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		must(container.Provide(router.NewWikiAsynqServer, dig.Name("wikiAsynqServer")))
 		// Asynq inspector for cancel-by-knowledge-id (best-effort
 		// dequeue of pending/scheduled/retry tasks + active-task cancel).
+		// It reads the QUEUE's database, which may be its own index
+		// (LINGDOC_ASYNQ_REDIS_DB) -- an inspector on the application-wide
+		// Redis database would report "no tasks" for everything.
+		must(container.Provide(router.NewAsynqQueueRedisClient))
 		must(container.Provide(router.NewAsynqInspector))
 		must(container.Provide(router.NewAsynqTaskInspector))
 		// Install the distributed per-model chat concurrency governor. Only
