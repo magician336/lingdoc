@@ -87,11 +87,11 @@
 
 | # | 项 | 状态 | 缺什么 | 是否阻塞 |
 |---|---|---|---|---|
-| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | **DEFERRED_MANUAL**（⚠️ **本行记的是 #485 那一轮（2026-10-24）的事实**；最新一轮的真实调用事实见 §20.6 与 §20.11 第 6 项：模型账本**累计 4 行**（其中 **3 行属 10-24 更早的轮次**，**第 4 次**才落在最终跑批 `f01-20261025T013341Z-5105ae32` 那一轮）、额度 **4/4 用尽**，且**检索与向量相关的那部分仍 `NOT RUN`**）｜#485 那一轮在真实后端上实跑：**provider 请求 0 次、4 次额度一次未用**；F01-07 那一次**仍未发生** | **本轮实测事实（#485，2026-10-24）**：受控 profile ＝ **v2** `lingdoc-qwen-token-budget-20261024-v2`（PR #583 `b63aa79f`：调用数上限 **4**、累计预留上限 **90,000** token、单次 input ≤16,000 / output ≤4,096、获准模型仍**只有** `qwen3.8-flash`、v1 行为逐字未变）；**真实 provider 请求数 = 0**；**4 次额度一次未用**（累计预留 0/90,000）；**两本账本文件都不存在**（`qwen-beta.json` ＋ `.calls.json`）⇒ 窗口**零预留零消耗**；DB 账本 `lingdoc_model_call_ledger` 总行数仍 **1** —— 那一行是 **v1 窗口 2026-10-23 的历史行**（`source_kind=generation_run`／`run_mode=real`／2051/519 tokens，§14.2），**本轮新增 0 行**；环境检查 CHECK1–CHECK9 全 true ＋ `ALL_PASS=true`。**仍未做**（**第三轮后的唯一原因**）：① ~~**D2** 许可链断在 F01-06b（409 `stale_input`）~~ ⇒ **已解除**（PR #588 `4b73e8e7` 合入；**第三轮 Track-C 实测 F01-06b = 201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）② ~~Run B 实测：许可缺失时 `POST /generations` 返 **422 `asset_not_authorized`**~~ ⇒ **该前置已不成立**（许可已真实建立）③ **D3 仍在**：契约把 F01-07 声明为 `retrieval: vector_required`（`workflow.json` 实测只有 F01-07 带这个标签），而受控 profile 只放行 chat、**拒 embedding** ⇒ **第三轮 Track-C 实测 F01-07 返 503 `dependency_unavailable`**（`retryable=true`），embedding 请求在 **transport 之前**被受控 profile 拒掉（原文 `model is outside the acceptance budget profile`）⇒ 真实 provider 请求仍为 **0**。⇒ **契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 的口径；机器产物里它是 `failed_step` —— 两个视角见 §16.3）⇒ **不是**代码缺陷。**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`；之后在受控 profile v2 下重跑 F01-07 ⇒ 账本出现 `source_kind=generation_run` 的真实行（跟进票 **#546**／**#480**；配套 **#484**（材料接入，**D1**／**D5** 仍未解除））。⚠️ **不得**改 `retrieval` 标签或关限制来让 F01-07 变绿。⚠️ **一次受控调用成功 ≠ F01-07 验收通过 ≠ Beta 放行通过**（§15.5）。⚠️ **不设** `LINGDOC_T10_ACCEPTANCE_PROFILE` ⇒ 空预算 ⇒ **没有调用次数上限、没有费用口径、没有预留/实付记账** ⇒ 「一次真实调用在预算内」**没有机器强制**；映射与坑不变：`LLM_MODEL_NAME=qwen3.8-flash` / `LLM_BASE_URL=https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` / `LLM_API_KEY=<与 DASHSCOPE_API_KEY 同值>`；⛔ **不要写 `LLM_API_KEY=${DASHSCOPE_API_KEY}`**（`env_file` 原样传值、应用内插值只做一遍 ⇒ 会变成字面量）；⚠️ **设** `LINGDOC_T10_ACCEPTANCE_PROFILE` 会把 F01 的 chat 强制成 DeepSeek ⇒ 用 Qwen 时不要设 | **是**（卡 F01-07） |
+| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | **DEFERRED_MANUAL**（⚠️ **本行记的是 #485 那一轮（2026-10-24）的事实**；最新一轮的真实调用事实见 §20.6 与 §20.11 第 6 项：模型账本**累计 4 行**（其中 **3 行属 10-24 更早的轮次**，**第 4 次**才落在最终跑批 `f01-20261025T013341Z-5105ae32` 那一轮）、额度 **4/4 用尽**，且**检索与向量相关的那部分仍 `NOT RUN`**）｜#485 那一轮在真实后端上实跑：**provider 请求 0 次、4 次额度一次未用**；F01-07 那一次**仍未发生** | **本轮实测事实（#485，2026-10-24）**：受控 profile ＝ **v2** `lingdoc-qwen-token-budget-20261024-v2`（PR #583 `b63aa79f`：调用数上限 **4**、累计预留上限 **90,000** token、单次 input ≤16,000 / output ≤4,096、获准模型仍**只有** `qwen3.8-flash`、v1 行为逐字未变）；**真实 provider 请求数 = 0**；**4 次额度一次未用**（累计预留 0/90,000）；**两本账本文件都不存在**（`qwen-beta.json` ＋ `.calls.json`）⇒ 窗口**零预留零消耗**；DB 账本 `lingdoc_model_call_ledger` 总行数仍 **1** —— 那一行是 **v1 窗口 2026-10-23 的历史行**（`source_kind=generation_run`／`run_mode=real`／2051/519 tokens，§14.2），**本轮新增 0 行**；环境检查 CHECK1–CHECK9 全 true ＋ `ALL_PASS=true`。**仍未做**（**第三轮后的唯一原因**）：① ~~**D2** 许可链断在 F01-06b（409 `stale_input`）~~ ⇒ **已解除**（PR #588 `4b73e8e7` 合入；**第三轮 Track-C 实测 F01-06b = 201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）② ~~Run B 实测：许可缺失时 `POST /generations` 返 **422 `asset_not_authorized`**~~ ⇒ **该前置已不成立**（许可已真实建立）③ **D3 仍在**：契约把 F01-07 声明为 `retrieval: vector_required`（`workflow.json` 实测只有 F01-07 带这个标签），而受控 profile 只放行 chat、**拒 embedding** ⇒ **第三轮 Track-C 实测 F01-07 返 503 `dependency_unavailable`**（`retryable=true`），embedding 请求在 **transport 之前**被受控 profile 拒掉（原文 `model is outside the acceptance budget profile`）⇒ 真实 provider 请求仍为 **0**。⇒ **契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 的口径；机器产物里它是 `failed_step` —— 两个视角见 §16.3）⇒ **不是**代码缺陷。**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权已批并已执行（2026-10-25）**：口径裁定与新 priced embedding profile 已落地（PR #668，合并提交 `79613798`），真实 provider 请求 **1 次**被 provider **403 `insufficient_quota`** 挡住 ⇒ **向量检索仍未验证**，详见 §20.13）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`；之后在受控 profile v2 下重跑 F01-07 ⇒ 账本出现 `source_kind=generation_run` 的真实行（跟进票 **#546**／**#480**；配套 **#484**（材料接入，**D1**／**D5** 仍未解除））。⚠️ **不得**改 `retrieval` 标签或关限制来让 F01-07 变绿。⚠️ **一次受控调用成功 ≠ F01-07 验收通过 ≠ Beta 放行通过**（§15.5）。⚠️ **不设** `LINGDOC_T10_ACCEPTANCE_PROFILE` ⇒ 空预算 ⇒ **没有调用次数上限、没有费用口径、没有预留/实付记账** ⇒ 「一次真实调用在预算内」**没有机器强制**；映射与坑不变：`LLM_MODEL_NAME=qwen3.8-flash` / `LLM_BASE_URL=https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` / `LLM_API_KEY=<与 DASHSCOPE_API_KEY 同值>`；⛔ **不要写 `LLM_API_KEY=${DASHSCOPE_API_KEY}`**（`env_file` 原样传值、应用内插值只做一遍 ⇒ 会变成字面量）；⚠️ **设** `LINGDOC_T10_ACCEPTANCE_PROFILE` 会把 F01 的 chat 强制成 DeepSeek ⇒ 用 Qwen 时不要设 | **是**（卡 F01-07） |
 | 2 | 隔离 PostgreSQL ＋ 重启读回 | **已解除**（本批前完成，见 §20.11 第 4 项；「重启读回」已做） | 隔离 PG 库 `weknora_iso_r7`（容器 `WeKnora-postgres-dev`）＋ 真实进程重启：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider**（证据 `D:/wt/lingdoc-484-evidence/pg-r7/`）。⚠️ **章节级 `source_ids` 非空仍 `NOT RUN`**（需真实 WeKnora 解析 ⇒ 依赖 embedding 授权 **#546**），那一部分随 **§6 表第 5 行**（WeKnora 真实接入/处理/检索）与 §20.11 第 6 项阻塞 | 否（重启读回已解除；`source_ids` 随第 5/6 项） |
 | 3 | 两章合成材料 ＋ `--material` SHA-256 | **材料已备好**（仓外 `lingdoc-prep/` ＋ 本轮 `synth-chapter-c.md` 2004 B）⚠️ 但**「同一套两章材料 ＋ 权威 SHA-256」未按协议登记** | 库中材料 `128b88fd…` 的 `file_hash=21c29a574dbbdb6ff156ebdc5071dafc` 已记录，但**原文文件已从盘上丢失**（`resources` 行指向的物理路径在所有 storage 根下都不存在）⇒ 无法给出「同一套两章材料」的权威哈希 ⇒ 缺口 `GAP-MATERIAL-HASH`（**#480** 缺口 4）＋ `GAP-D4`（**#484**）。⚠️ 该材料的分块内容与其坐标**不自洽**（缺陷 D1）⇒ 材料本身**不合格**，需按 #484 的接入路径重新接入（§1 第 7 行）。**解除条件**：原文文件在盘上后用 `--material <名称>=<sha256>` 登记本轮合成材料的哈希（跟进票 **#480**；材料重做见 **#484**） | **是**（卡 F01-06） |
 | 4 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL**（**协议 §4 的机械动作与结构完整性已全部满足并 PASS，见 §20.9**；剩两项人眼确认） | 代码侧已具备：仓内 `docs/08-本轮实施方案/acceptance/beta-first/<sha>/<run>/word-check.md` 模板与五个必填字段的校验已就位。**DOCX 已落盘并已用真实 Microsoft Word 跑完「开/改/存/关/重开」**（`export-196b61e0….docx`，sha256 `df5549b0…`；修改后 `…word-modified.docx`，sha256 `3e336eeb…`；12 项全过；原始文件逐字节未变 ⇒ §20.9）⇒ **只差负责人本人的两项人眼确认**（「基本格式仍可用」的观感 ＋「3 条待核项保留理由表述是否恰当」）⇒ 缺口 `GAP-WORD`（**#480** 缺口 5）。**解除条件**：负责人打开修改后的文件看一眼版面，并把两项人眼确认写回 `word-check.md`（跟进票 **#480**） | **是**（**验收协议 §6** 第 5 项，见 §20.11） |
-| 5 | WeKnora 真实接入 / 处理 / 检索 | NOT RUN（**接入与解析本轮已真调过**；「处理完成 ＋ 检索命中」仍未取得） | 端点已定位：上传 `POST /api/v1/knowledge-bases/{id}/knowledge/file`（`routes_knowledge.go:73`、`handler/knowledge.go:254`，multipart 字段 `file`）；解析状态表 `knowledges.parse_status`＝`completed`（`types/knowledge.go:43-64`），`GET /api/v1/knowledge/:id`；检索 `POST /api/v1/knowledge-bases/{id}/hybrid-search`（`routes_knowledge.go:229`）。三个容器**本机全在跑**。⚠️ `env_facts.py` **已不在机器上**（要重写：幂等标识必须**与时间无关**＝固定标题前缀＋文件 SHA-256，否则每次造新知识、id 每次变；输出须按 starting_state 裁剪，否则 `load_state.py` 的 `preflight()` 在首个写请求前退 1）。**2026-10-24 #485 实跑的新事实（推翻了本行先前「docreader 解析接口从未真调过」的说法）**：新建关键词型 KB 后上传材料**成功**、docreader **真的解析出 2 个分块**（`Split document into 2 chunks`），但随后 `processChunks get embedding model failed`（`error_message = "Embedding model unavailable: model ID cannot be empty"`）⇒ **`parse_status=failed`、0 分块落库** ⇒ 「处理完成」与「检索命中」**仍未取得** ⇒ 缺口 **D5**（**#484**）＋ 受控 profile 拒 embedding（**#546**） | **是**（卡 F01-06） |
+| 5 | WeKnora 真实接入 / 处理 / 检索 | NOT RUN（**接入 ✔、解析 ✔、词法检索命中 ✔**（2026-10-25，§20.13）；**「向量处理 ＋ 向量检索」仍未取得**） | 端点已定位：上传 `POST /api/v1/knowledge-bases/{id}/knowledge/file`（`routes_knowledge.go:73`、`handler/knowledge.go:254`，multipart 字段 `file`）；解析状态表 `knowledges.parse_status`＝`completed`（`types/knowledge.go:43-64`），`GET /api/v1/knowledge/:id`；检索 `POST /api/v1/knowledge-bases/{id}/hybrid-search`（`routes_knowledge.go:229`）。三个容器**本机全在跑**。⚠️ `env_facts.py` **已不在机器上**（要重写：幂等标识必须**与时间无关**＝固定标题前缀＋文件 SHA-256，否则每次造新知识、id 每次变；输出须按 starting_state 裁剪，否则 `load_state.py` 的 `preflight()` 在首个写请求前退 1）。**2026-10-24 #485 实跑的新事实（推翻了本行先前「docreader 解析接口从未真调过」的说法）**：新建关键词型 KB 后上传材料**成功**、docreader **真的解析出 2 个分块**（`Split document into 2 chunks`），但随后 `processChunks get embedding model failed`（`error_message = "Embedding model unavailable: model ID cannot be empty"`）⇒ **`parse_status=failed`、0 分块落库** ⇒ 「处理完成」与「检索命中」**仍未取得** ⇒ 缺口 **D5**（**#484**）＋ 受控 profile 拒 embedding（**#546**）—— ⚠️ **2026-10-25 更新（§20.13）**：受控 profile **已不再拒 embedding**（新 priced embedding profile，PR #668），**词法检索命中已取得**（目标 KB 2 条查询各命中 2 个分块、全部属目标材料、**0 次模型调用**），**章节级 `source_ids` 已逐条直接核实（8/8 PASS）**；**仍未取得的是向量处理与向量检索**（provider **403 `insufficient_quota`** ⇒ 0 向量，票 **#671**） | **是**（卡 F01-06） |
 | 6 | 第二人独立复现 | NOT RUN（记录项；**已由负责人豁免 `WAIVED_BY_OWNER`**，见 §20.10） | **未完成项**（按 §5 口径 1：第二人独立复现**不是** Beta 首版硬门槛 ⇒ **不写** `DEFERRED_MANUAL`，但**必须**登记原因＋解除条件，**不得**记为已通过）。**原因**：本轮没有第二名开发者执行独立复现；**负责人已决定本次 Beta 不再执行、不再等待**（豁免标记 `WAIVED_BY_OWNER`，事实状态仍 `NOT_RUN`）。**解除条件**：由第二名开发者按 #489 的步骤独立复现 F01 契约并把证据绑到当前 head（跟进票 **#489**）。第二个开发者 | 否（不阻塞） |
 
 ## 7. 本批（第一批）完成汇报
@@ -572,7 +572,7 @@ model is outside the acceptance budget profile
 
 ⇒ **embedding 请求在受控 profile 的边界上被拒（transport 之前）**，不是「发出去被上游拒绝」。这与契约把 F01-07 声明为 `retrieval: vector_required` 一致（`workflow.json` 实测：**只有 F01-07 带 `retrieval` 标签**），也与 #546 的口径①一致。
 
-**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`（跟进票 **#546**／**#480**）。
+**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权已批并已执行（2026-10-25）**：口径裁定与新 priced embedding profile 已落地（PR #668，合并提交 `79613798`），真实 provider 请求 **1 次**被 provider **403 `insufficient_quota`** 挡住 ⇒ **向量检索仍未验证**，详见 §20.13）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`（跟进票 **#546**／**#480**）。
 ⚠️ **不能做的事**（明确记下）：不得改 `retrieval` 标签、不得关限制、不得伪造结果让 F01-07 变绿；**也不得**把「F01-06b 通过」说成「F01 通过」；**也不得**把 F01-07 记成 FAIL —— 那是授权边界，不是代码缺陷。
 
 ⚠️ **机器产物的缺口（必须记下，见 §16.7 的 #592）**：上面这段 503 状态码与根因**全部是人工从服务端日志补齐的** —— `track-c/f01-report.json` 里**没有 `failures` 键、没有 503、没有 `dependency_unavailable`**，只有 `{"failed_step": {"id": "F01-07", "operation_id": "startGeneration"}}` ⇒ **机器产物本身无法区分「503 被策略拒绝」与「503 依赖挂了」**。⇒ **在 #592 修好之前，任何只读机器产物的下游消费者都会把 F01-07 的真实原因丢掉。**
@@ -1069,16 +1069,16 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 | 3 | **浏览器检查**（协议 §2 第 4 步） | **PASS**（**PASS 覆盖三方一致性 10 项**；§2 第 4 步的「**候选取消**」交互面本轮未执行，见 §20.12 的覆盖边界） | §20.12：**真实浏览器 ＝ HTTP ＝ 刷新后读回，10 项逐项一致、0 处不符**（`parity.json` → `status = PASS`、`consistent = true`、`checked = 10`、`mismatches = []`）；真实前端（Vite dev server ＋ headless Chrome ＋ 真实登录表单）对**最终 F01 项目**渲染出交付快照，摘要 `df5549b0…` 就是 Word 检查所用那一份。**零 provider、零库改动**（前后状态文件 sha256 相同） |
 | 4 | **重启恢复** | **PASS** | 隔离 PG 库 `weknora_iso_r7` ＋ 真实进程重启：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider** |
 | 5 | **Word 检查** | **`DEFERRED_MANUAL`**（协议 §4 的**机械动作与结构完整性已全部满足并 PASS**；**两项人眼确认尚未做出**） | §20.9：真实 Microsoft Word 16.0 打开→改一处正文→另存→关闭→重开→逐项检查，**12 项全过**（§20.9 摘录其中 8 项，完整 12 项见 `word-check.md`）；原始文件逐字节未变。**解除条件**：负责人打开修改后的文件确认「基本格式仍可用」，并给出「3 条待核项保留理由表述是否恰当」的结论，写回 `word-check.md`（跟进票 **#480**） |
-| 6 | 真实依赖均已验证 | **`NOT RUN`** | 向量检索行为与章节级 `source_ids` **仍未验证**：#546 的授权材料已备好（模型/次数/费用上限/材料范围/独立记账/验证方法/风险 ＋ 三个必须先解决的缺口），**待负责人批复**；**未发起任何 embedding 请求** |
+| 6 | 真实依赖均已验证 | **`NOT RUN`**（**部分闭合**：章节级 `source_ids` 与**词法**检索命中已**直接核实**；**向量检索行为仍未验证**） | §20.13：**授权已批并已执行**（2026-10-25）。① **章节级 `source_ids` 逐条直接核实 PASS**（8/8）：最终项目两个当前版本的 `source_ids` 逐条解析到 chunk ⇒ 落在目标 KB `7c104e1b…` 的目标材料内，**坐标档引文与材料原文逐字一致**（坐标系＝**字符偏移**，不是字节偏移），正文 `citation_usages_json` 与版本记录一致（`embedding-run/source_ids-verification.json`）。② **词法检索命中 PASS**（10/10）：目标 KB 2 条查询各命中 2 个分块、全部属目标材料，**chat 两本账本 sha256 检索前后逐字节相同 ⇒ 0 次模型调用**（`embedding-run/retrieval-source-consistency.json`）。③ **向量检索行为仍未验证**：口径裁定已落地（PR #668 新 priced embedding profile，合并提交 `79613798`），真实 provider 请求 **1 次**即被 provider **403 `insufficient_quota`**（账号「仅免费层」额度耗尽）拒绝 ⇒ **0 向量**、F01-07 仍 `NOT RUN`；账本 **1 行**且 `blocked=true`（一次 4xx 即冻结，且该 profile **无核对/解冻通道** ⇒ 票 **#671**）。④ 另立票 **#670**：前两轮「0 次出网」的根因是 **asynq 队列跨实例无 namespace 隔离**，任务被 chat profile 的实例取走 |
 | — | 人工判定（四条散文断言） | **PASS**（已取得服务端权威审计证明） | §20.7：4×201、`authority=server_attested`、`channel_verifiability=verified` |
 | — | 第二人独立复现（**非 §6 门槛项**） | **`WAIVED_BY_OWNER`** ／ 事实 `NOT_RUN` | §20.10：负责人豁免；**不连带**任何其它项 |
 
 **最终结论：Beta 首版【仍不予放行】。**
 
 - **契约验收两条路径已实际判 PASS**（`main_path_evidence` = PASS、`beta_evidence` = PASS、`provider_semantics_status` = `verified`）—— 这是系统自身的规则跑出来的，**不是**人工宣称的。
-- **第 3 项（浏览器检查）本轮已从 `NOT RUN` 变为 `PASS`**（§20.12）⇒ §6 六项门槛里现在还剩两项未闭合：**第 5 项（Word 检查）＝ `DEFERRED_MANUAL`**（协议 §4 的机械动作与结构完整性已 PASS，但**两项人眼确认尚未做出**）与**第 6 项（真实依赖均已验证 / embedding 与章节级 `source_ids`）＝ `NOT RUN`** ⇒ 主流程仍含 `DEFERRED_MANUAL` 与 `NOT RUN` ⇒ **不满足「主流程不能含 `NOT RUN` / `DEFERRED_MANUAL`」** ⇒ **不予放行**。
+- **第 3 项（浏览器检查）本轮已从 `NOT RUN` 变为 `PASS`**（§20.12）⇒ §6 六项门槛里现在还剩两项未闭合：**第 5 项（Word 检查）＝ `DEFERRED_MANUAL`**（协议 §4 的机械动作与结构完整性已 PASS，但**两项人眼确认尚未做出**）与**第 6 项（真实依赖均已验证）＝ `NOT RUN`**（章节级 `source_ids` 与**词法**检索命中已直接核实，**向量检索仍未验证**，§20.13） ⇒ 主流程仍含 `DEFERRED_MANUAL` 与 `NOT RUN` ⇒ **不满足「主流程不能含 `NOT RUN` / `DEFERRED_MANUAL`」** ⇒ **不予放行**。
 - **#489 的豁免不改变这个结论**：它只覆盖「第二人独立复现」这一项，而该项**本来就不在** §6 门槛里。**豁免不连带**embedding 验收与 Word 的人眼确认。
-- **解除放行的最小剩余动作**：① 批复 #546 的 embedding 授权并执行，据实核实章节级 `source_ids` 与向量检索行为；② 完成 Word 检查的两项人眼确认（版面观感、待核项保留理由的表述）。这两项**各自独立**，任何一项未完成都仍不放行。
+- **解除放行的最小剩余动作**：① **向量检索行为**（embedding 授权**已批并已执行**，§20.13；现在卡在 **provider 侧额度**（403 `insufficient_quota`）＋ **#671**（该 profile 一次 4xx 即冻结且**无解冻通道**）⇒ 需要负责人先解掉额度，并在解冻通道落地后用**新窗口**重跑）；② 完成 Word 检查的两项人眼确认（版面观感、待核项保留理由的表述）。这两项**各自独立**，任何一项未完成都仍不放行。
 
 > **口径提醒（不变）**：机器断言全过 **不等于** Beta 放行通过；放行判定按验收协议 §6 逐项核对，**主流程不得含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL**。
 
@@ -1144,3 +1144,90 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 - 复核脚本：`D:\wt\lingdoc-485-evidence\scripts\exp_633_browser_check.py`（幂等）、`exp_636_browser_shot.mjs`
 - ⚠️ 产物目录里另有一份 `http-readback.log`，内容是「NOT RUN: HTTP side produced no comparable items (http://127.0.0.1:18087/api/v1/lingdoc)」—— 那是**一次失败的执行**留下的残留日志，**不是**结论那一次（结论那一次的 HTTP 侧走的是内联路径，不写 `.log`）。⚠️ **单凭这一行无法区分失败原因**（仓内执行器在「没产出可比对项」与「RunnerError」两条路径上打印的是同一句；日志里的 base-url 是**正确的** API 根，不能读成「base-url 写错」）。那次失败的真实原因当时写在 `http-readback.json` 的 `not_run[]` 里（`POST /api/v1/auth/register returned 400 (code=1000)`，即下面「执行方式偏离」第 ① 条），而该 json 已被后来成功那一次覆盖。它**零删除**保留在此，仅作痕迹；判定以 `parity.json` 与 `http-readback.json` 为准。
 - 跟进票 **#480** 的「浏览器端到端 / 三方一致性实测」缺口，**本项已解除**。
+
+### 20.13 #546 授权 embedding 的执行轮（2026-10-25）：**请求真的出网了，但 provider 403**；并查明了前两轮「0 次出网」的真正根因
+
+**这一轮把 #546 的授权执行掉了**，也第一次真正触到了 provider 边界。结论先说：**向量检索行为仍未验证**（provider 侧额度阻塞）⇒ §6 第 6 项**仍是 `NOT RUN`**；但**章节级 `source_ids` 与词法检索命中已直接核实**（不是推断），并且**查明了此前两轮「0 次出网」的真正根因** —— 它不在模型行、不在端点、也不在 provider 路由上。
+
+#### 口径裁定与实现（已合入 `main`）
+
+- **选「把 embedding 纳入受控」**，但**不改共享计价层**，而是**新开一个 profile**：PR **#668**（合并提交 `79613798`）新增 `lingdoc-qwen-embedding-budget-20261025`（`maxCalls=4`、累计预留上限 `8000`、单次 input ≤`16000`、output ≤`0`、自带计价基准 `CostBasisQwenEmbeddingNanoCNY`、允许模型 `qwen3.7-text-embedding` / `qwen3.7-text-embedding-flash`）。
+- 该 profile **必须自带 chat 闸门**（`ProfileApprovedChatModel` ＋ 聊天路径在预留前拒绝）：否则聊天路径会按「profile 批准的那个模型」去预留 embedding 模型、而白名单又放行 ⇒ 真 chat 会出网，并把 embedding 窗口打成 `limit_violation` ＋冻结。既有 profile 的行为**逐字未变**。
+- 授权数字**按字面值钉住**（常量 4→5、8000→9000 原本全绿 ⇒ 新增字面值守护用例）。
+- **6 轮独立复核**全部收口（12 项发现：1 阻断 ＋ 2 需修正 ＋ 9 提示）；门禁 `LingDoc PR gate` pass、`integration` pass。
+
+#### 此前两轮「embedding 阶段失败、0 次出网」的根因：asynq 队列**跨实例无 namespace 隔离**（新票 **#670**）
+
+| 项 | 实测事实 |
+| --- | --- |
+| 代码事实 | `internal/router/task.go:72-93` 的 `getAsynqRedisClientOpt()` 只读 `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`，**不设 asynq namespace** ⇒ **`REDIS_PREFIX` 隔离不了任务队列** |
+| 环境事实 | 18096（embedding profile）与 18087（chat profile）都连 `127.0.0.1:6381` / **Redis DB 1**，只有 key 前缀不同 ⇒ 同一条队列 |
+| 现象 | 18096 上 `POST /api/v1/knowledge/:id/reparse` 排的任务**两次都被 18087 取走**：失败原文在 **`server-trackd.stdout.log`**（不在 18096 的日志里）；18096 的 `llm_debug_embedding/` **0 文件**；两本 embedding 账本**都不存在** ⇒ **真实 provider 请求 0 次** |
+| 错误身份 | `model is outside the acceptance budget profile`＝chat profile 的 `allowedModels` 只有 `qwen3.8-flash` ⇒ embedding 模型在 **transport 之前**被拒（`ledger.go:230` 的 `ProfileAllowsModel`） |
+| 阶段记录 | `knowledge_processing_spans`：`embedding` 阶段 `failed`、`error_detail=model is outside the acceptance budget profile`、`duration_ms ≈ 3042`（＝5 次重试的 200/400/800/1600 ms 退避之和）⇒ 每次都**立即失败** |
+| 被排除的方向 | 隔离库的 embedding 模型行**与 chat 行同端点同密文**（`base_url`＝`https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`，`api_key` 密文**逐字节相同**）；profile 白名单与端点白名单**实测全部通过** ⇒ 先前怀疑的「模型行/端点/provider 路由」三个方向均被实测排除 |
+| 环境侧处置 | 18096 改用 **Redis DB 2**（实测原为 0 键）⇒ 队列隔离生效（DB 2 里只有它自己的 6 个 worker 注册，DB 1 里没有它）。**18087／18095 全程未停未重启** |
+
+⇒ 该缺陷的真实危害是**跨实例的受控预算会互相串**（任务在错误的 profile 下执行 ⇒ 看起来像产品缺陷，其实是队列串台），且失败信息出现在**错误的服务的日志里** ⇒ 排查方向被带偏。已立票 **#670**（namespace 隔离 / payload 带执行者 / 两者都做，验收要求含「A 排的任务必须由 A 执行、两边账本不得互串」）。
+
+#### 隔离队列后的真实调用：provider **403 `insufficient_quota`**
+
+```
+OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
+{"error":{"message":"Free quota exhausted. To continue accessing the model on a paid basis, please add funds or disable the \"use free tier only\" mode in the management console.","id":"6d319ec6-…","type":"insufficient_quota","code":"insufficient_quota"}}
+```
+
+- provider **凭据有效、端点可达、请求体被接受**；拒绝理由是**账号侧「仅免费层」额度耗尽**（**不是** 401 鉴权失败、**不是** 404 model_not_found、**不是** 400 参数错）。
+- **账本行数 ＝ 实际调用数 ＝ 1**：embedding 账本 1 行，`status=http_error`、`input_upper_bound=3085`、`actual_nano_cny=1542500`（＝3085×500 nano-CNY，计价正确）、`cost_basis=qwen_embedding_nano_cny_2026_10_25`。
+- 索引器随后的 4 次重试**全部在 transport 之前**被账本挡下（`model acceptance budget requires reconciliation`）⇒ **provider 只收到 1 个请求**，额度没有被继续消耗（这一点是**对的**）。
+- **向量没有生成**：`lite_embeddings` 0 行、无 `vec_<dim>` 表、chunk `index_status=failed`、阶段记录 `error_code=VECTORSTORE_WRITE_FAILED`。**没有任何一处显示假成功。**
+
+#### 由此暴露的第二处产品缺口：该 profile **没有核对/解冻通道**（新票 **#671**）
+
+- `Reservation.Unknown("http_error")` ⇒ `ledger.Blocked = true` ⇒ 之后所有 `Reserve` 返回 `ErrBlocked`（`model acceptance budget requires reconciliation`）。
+- 唯一能写 `Reconciliation` 的操作者 `ReconcileEmbeddingHTTPError` 的第一道闸门是 `reconcile.go:62` 的 `b.profile != CostOnlyProfile` ⇒ **本 profile 用不了**；`reconcile.go:201` / `ledger.go:644` 也规定只有 `CostOnlyProfile` 的账本才允许带 `Reconciliation`。
+- ⇒ 授权给的「≤4 次」在第 1 次撞上 4xx 后**再也用不掉**，且不能正规结清（手改账本文件属于篡改记账，不允许）。
+
+#### 不依赖 embedding 的两项**已直接核实**（PASS，且不是推断）
+
+**（a）章节级 `source_ids` 逐条直接核实 —— 8/8 PASS**（`D:\wt\lingdoc-485-evidence\embedding-run\source_ids-verification.json`）
+
+- 最终项目 `0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0` 的两个**当前版本**：研究问题章 `72d16400…` 声明 `source_ids=["1e849f5f-83e7-4138-a39f-d1aa1928054a"]`；研究方案章 `1a090fd0…` 声明 `[]`（该章正文 23 字、无引用）。
+- 逐条解析到 chunk ⇒ 落在**目标 KB `7c104e1b…` 的目标材料** `c1197b70…` 内；**坐标档的引文与材料原文逐字一致**。
+- ⚠️ **坐标系是字符（rune）偏移，不是字节偏移**（材料是 UTF-8 中文：2004 字节 / 902 字符；两个 chunk 在**字符口径下逐字相等、字节口径下不等**）。此前把这一项记成「坐标档对不上」是**比对单位用错**，不是材料缺陷。
+- 章节正文的 `citation_usages_json` 与版本记录的 `source_ids_json` **一致**（正文里就带着 `[[source:1e849f5f-…]]` 标记）；**无任何章节 `source_id` 指向本轮的隔离 KB**。
+
+**（b）目标 KB 的检索命中与来源一致性 —— 10/10 PASS**（`D:\wt\lingdoc-485-evidence\embedding-run\retrieval-source-consistency.json`）
+
+- 目标 KB 是 keyword-only（`vector_enabled=false`、`embedding_model_id` 为空）⇒ 检索走 FTS5 关键词引擎，**不产生任何模型调用**：chat 两本账本 sha256 检索前后**逐字节相同**（`dd39a0cb…` → `dd39a0cb…`）。
+- 2 条查询（`PC-08 样品的抗压强度是多少` / `这份合成材料的文档编号和合成日期是什么`）各命中 **2 个分块**，全部是目标材料的 chunk（`91a28f35…` score 10.99、`1e849f5f…` score 7.90；`1e849f5f…` 11.46、`91a28f35…` 4.46），命中里包含章节声明的那个 source。
+- ⚠️ **口径说明**：这是**词法检索**，**不是**向量检索 —— 向量检索仍需 embedding，而 embedding 仍被 provider 403 挡着。
+
+#### 隔离口径（对授权的一处**缩小**，已如实登记）
+
+授权原文的「知识库范围＝仅目标 KB `7c104e1b…` 的重新索引」在执行上被调整为「**新建隔离 vector-enabled KB 同材料**」，理由是技术事实：重跑目标 KB 的处理会**删旧 chunk、换 chunk id**，使章节的 `source_ids` 悬空并伤及 F01 的证据链。隔离 KB `895c0a35…`（同租户、同材料 `synth-chapter-c.md`、sha256 `001ba50c…`）承担了向量化；**目标 KB 与其 2 个 chunk 全程未被触碰**（`index_status=ready`、未删除）。
+
+#### 对账（执行后快照 `embedding-run\after-state-attempt3.json`）
+
+| 项 | 执行前 | 执行后 |
+| --- | --- | --- |
+| chat 账本 `qwen-beta-sqlite.json` sha256 | `74e86abc…` | **`74e86abc…`（逐字节未变，mtime 也未变）** |
+| chat 账本 `.calls.json` sha256 | `dd39a0cb…` | **`dd39a0cb…`（逐字节未变）** |
+| embedding 账本两本 | **不存在** | 存在，**1 行**、`blocked=true` |
+| DB `lingdoc_model_call_ledger` 行数 | 4（全 chat） | **4**（embedding 路径**不写**该表 ⇒ 独立文件账本是它唯一的账本） |
+| 隔离 KB 向量行 | 0 | **0** |
+| 目标 KB chunk 行 | 2（`ready`） | **2（`ready`，未动）** |
+| 章节 `source_ids` | 研究问题 `[1e849f5f…]`／研究方案 `[]` | **逐字未变** |
+
+#### 结论与**需要负责人裁定**的一项
+
+- **§6 第 6 项「真实依赖均已验证」仍是 `NOT RUN`**：向量检索行为**没有**验证（provider 403 ⇒ 0 向量）；F01-07 仍 `NOT RUN`。**没有把任何未达成的项改判 PASS。**
+- **需要负责人决定的一件事**：provider 侧的「仅免费层」额度耗尽不在代码侧、也不在授权侧。可选项：① 在百炼控制台充值或关闭「仅免费层」模式后，用**新授权窗口**重跑（⚠️ **但 #671 未解前，撞到 4xx 依旧会废掉整个窗口**）；② 授权另一条端点/凭据（超出当前授权范围，需重新批复）；③ 接受 §6 第 6 项在本轮维持 `NOT RUN`。
+- 与 **Word 检查的两项人眼确认**（§6 第 5 项，`DEFERRED_MANUAL`）**各自独立**，任何一项未完成都仍不放行。
+
+#### 证据（本轮全部在仓外，**未删任何东西**）
+
+- `D:\wt\lingdoc-485-evidence\embedding-run\`：`before-state.json`（整轮前置）、`after-state-attempt3.json`、`provider-403-response.txt`（provider 原文，sha256 `2915D119…`）、`source_ids-verification.json`、`retrieval-source-consistency.json`、`g2_attempt3_result.json`、`g1_add_embedding_model_row.py`、`g2_retry_vector.py`、`verify_chapter_source_ids.py`、`verify_retrieval_sources.py`、`check_coordinate_unit.py`、`inspect_redis.py`、`capture_before_attempt3.py`、`dump_model_params.py`、`dump_stage_failure.py`、`start-embedding-service.ps1`（含 DB 2 隔离的理由注释）、`stop-embedding-service.ps1`、`extract-provider-403.ps1`、`ticket-asynq-queue-isolation.md`、`ticket-embedding-profile-no-reconcile.md`
+- 服务日志：`D:\wt\lingdoc-484-evidence\logs\server-embedding-20261025-215322.log`（本次真实调用与 403 原文）、`server-trackd.stdout.log`（**证明前两轮的任务被 18087 抢走**的日志）
+- 隔离环境：DB `D:\wt\lingdoc-484-evidence\data\lingdoc-484-final.db`；账本 `ledger\qwen-embedding-budget.json[.calls.json]`（**1 行**）与 `ledger\qwen-beta-sqlite.json[.calls.json]`（**未变**）
+- 新立票：**#670**（asynq 队列跨实例无 namespace 隔离）、**#671**（新 priced embedding profile 无核对/解冻通道）；票 **#546** 已回写本轮事实。
