@@ -45,7 +45,17 @@ var (
 	ErrAssetNotAuthorized   = clienterror.New(clienterror.Form{Status: 422, Code: "asset_not_authorized", Message: "请求中存在未获授权的资料，未开始处理。", Retryable: false}, "asset_not_authorized")
 	ErrVersionConflict      = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "输入版本已变化，请重新读取。", Retryable: false}, "version_conflict")
 	ErrSourceAccessDenied   = clienterror.New(clienterror.SourceAccessDenied, "source_access_denied")
-	ErrSourceStale          = errors.New("source_stale")
+	// ErrSourceStale is a source that drifted away from the snapshot the run
+	// was captured against: the asset was revised, the quoted text changed or
+	// the anchor moved.
+	//
+	// It used to declare no form of its own, so the transport answered it with
+	// the generic internal error (500) whose promise is "retryable". That
+	// promise was wrong in the expensive direction: repeating the same request
+	// cannot heal the drift, because the captured snapshot does not drift
+	// back. It now states its own 409 source_stale form, next to the stale
+	// input form that already answered the same kind of question with a 4xx.
+	ErrSourceStale = clienterror.New(clienterror.Form{Status: 409, Code: "source_stale", Message: "来源版本或定位已变化，请重新核对来源后再生成。", Retryable: false}, "source_stale")
 	// ErrStaleInput is an input basis that changed before the run started.
 	// It used to fall through the transport's error table and be answered
 	// with a generic internal error; it now states the stale input form.

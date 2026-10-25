@@ -568,6 +568,82 @@ func TestManualJudgementChannelStatesOnlyWhatTheServerCanProve(t *testing.T) {
 	require.True(t, unbound, "a call without a bound principal must not be dressed up as a UI session")
 }
 
+// The business key is (project, run, assertion). The same assertion judged
+// in two different batches is TWO judgements, not one judgement and a
+// conflict.
+//
+// This is the test that pins the key's identity. The record's id is a digest
+// of that key, so if the digest ever loses the batch, the second judgement
+// would find the first one's record, read it as the same judgement, and
+// either replay it - losing the second batch's judgement - or refuse it as a
+// conflict. The suite has to notice that, so the digest and the behaviour
+// are both pinned here.
+func TestManualJudgementKeepsOneAssertionOfTwoBatchesApart(t *testing.T) {
+	svc, owner, project := manualJudgementFixture(t, "mj-two-batches")
+
+	// The key's identity: the batch is part of it.
+	require.NotEqual(t,
+		manualJudgementRecordID("f01-run-a", "F01-06b"),
+		manualJudgementRecordID("f01-run-b", "F01-06b"),
+		"the record's id must carry the batch: the same assertion of two batches is two records")
+
+	first := decodeManualJudgement(t, submitManualJudgement(t, svc, owner, project.ID,
+		"manual-judgement-0013", manualJudgementInput("f01-run-a", "F01-06b")))
+
+	raw, _, replayed, err := svc.SubmitManualJudgement(context.Background(), owner, project.ID,
+		"manual-judgement-0014", manualJudgementInput("f01-run-b", "F01-06b"))
+	require.NoError(t, err, "the same assertion of another batch must not be refused")
+	require.False(t, errors.Is(err, ErrIdempotencyConflict),
+		"another batch's judgement must not be a conflict, got %v", err)
+	require.False(t, replayed, "another batch's judgement must not be reported as a replay")
+
+	var second ManualJudgementRecord
+	require.NoError(t, json.Unmarshal(raw, &second))
+	require.Equal(t, "f01-run-a", first.RunID)
+	require.Equal(t, "f01-run-b", second.RunID)
+	require.NotEqual(t, first.AuditID, second.AuditID, "two judgements must have two audit ids")
+
+	// Two judgement results and two audit rows.
+	require.Equal(t, int64(2), countManualJudgementRecords(t, svc, project.ID),
+		"two batches must leave two judgement results")
+	require.Equal(t, int64(2), countAuditEvents(t, svc, manualJudgementAuditAction),
+		"two batches must leave two audit rows")
+
+	// And the export holds both, each with its own batch.
+	exported, err := svc.ExportManualJudgements(context.Background(), owner, project.ID)
+	require.NoError(t, err)
+	require.Len(t, exported, 2)
+	runs := []string{}
+	for _, entry := range exported {
+		runs = append(runs, entry.RunID)
+	}
+	require.Contains(t, runs, "f01-run-a")
+	require.Contains(t, runs, "f01-run-b")
+}
+
+// An IM identity is not a machine identity, so it may judge - and the server
+// proves exactly one thing about it: the credential class. An IM identity is
+// no more a person at a keyboard than a session credential is.
+func TestManualJudgementClassifiesAnIMIdentityAsItsOwnCredentialClass(t *testing.T) {
+	svc, owner, project := manualJudgementFixture(t, "mj-im")
+
+	ctx := types.WithPrincipal(context.Background(), types.Principal{Type: types.PrincipalIMUser, ID: owner.UserID})
+	record := decodeManualJudgement(t, submitManualJudgement(t, svc, owner, project.ID,
+		"manual-judgement-0015", manualJudgementInput("f01-run-0015", "F01-06b"), ctx))
+	require.Equal(t, manualJudgementChannelUnverified, record.Channel,
+		"an IM identity does not prove a UI click either")
+
+	exported, err := svc.ExportManualJudgements(context.Background(), owner, project.ID)
+	require.NoError(t, err)
+	require.Len(t, exported, 1)
+	require.Equal(t, stabilizationChannelIM, exported[0].ChannelClass,
+		"the credential class is the strongest fact the server holds")
+	require.Equal(t, stabilizationUnprovable, exported[0].ChannelUIOrigin,
+		"an IM identity does not prove a UI click")
+	require.Equal(t, stabilizationUnprovable, exported[0].ChannelAutomation,
+		"an IM identity does not prove a person rather than an automation")
+}
+
 // submitManualJudgement submits one judgement and returns the raw response.
 func submitManualJudgement(t *testing.T, svc *Service, actor Actor, projectID, key string, input ManualJudgementInput, ctx ...context.Context) json.RawMessage {
 	t.Helper()
