@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
@@ -30,8 +31,35 @@ from scripts.lingdoc_mock.run_f01 import (
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
+DOMAIN_SOURCE = ROOT / "internal/lingdoc/workspacecore/manual_judgement_audit.go"
+
+
+def go_struct_json_tags(name: str) -> list[str]:
+    """The JSON fields of one Go struct, in the order the struct declares them.
+
+    The server's shapes are the domain side's Go types.  Reading their tags
+    straight out of the source is what lets the contract follow the
+    implementation instead of copying it.
+    """
+    source = DOMAIN_SOURCE.read_text(encoding="utf-8")
+    start = source.index("type " + name + " struct {")
+    body = source[start:]
+    body = body[:body.index("\n}")]
+    tags = []
+    for line in body.splitlines():
+        match = re.search(r'json:"([^",]+)', line)
+        if match:
+            tags.append(match.group(1))
+    return tags
 
 RUN_ID = "f01-20261025T010000Z-batch01"
+
+# The server side of the channel (#649) answers with the string it stored.
+# The timestamp is deliberately not the canonical form: the export has to
+# echo what was written down, not a reformatted copy of it.
+SERVER_OCCURRED_AT = "2026-10-25T01:33:41.5105+00:00"
+SERVER_EVIDENCE_REF = f"run:{RUN_ID}/f01-report.json"
+SERVER_AUDIT_ID = "audit-649-0001"
 
 PROSE = {
     "F01-06b": "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。",
@@ -331,6 +359,464 @@ class ChannelGuardTests(unittest.TestCase):
         self.assertEqual(captured.get("run_id"), RUN_ID)
         self.assertEqual(str(captured.get("decision_ledger")), "ledger.jsonl")
         self.assertEqual(captured.get("audit_source"), "audit.json")
+
+
+class ServerExportShapeTests(unittest.TestCase):
+    """The server's export shape is what the runner can actually consume.
+
+    Issue #649 adds the server side of this channel: a write route that
+    answers with the authoritative judgement record, and a read route that
+    exports the audit records.  The runner checks a judgement against those
+    exported records, so the export's shape is not a documentation detail:
+    a field the runner cannot read by name is a field the runner cannot
+    check, and a judgement that cannot be checked stays a claim.
+
+    These cases feed the export shape the server publishes into the runner's
+    own ``audit_index`` / ``verify_against_audit`` and read the authority off
+    the result, so the tier the release paths read is the tier the server's
+    shape earns.
+    """
+
+    def server_ledger_record(self) -> dict[str, str]:
+        """The ten fields the write route answers with.
+
+        The answer is filed as a ledger line unchanged, so it carries
+        exactly the fields the ledger requires -- no more, no less.
+        """
+        return {
+            "run_id": RUN_ID,
+            "assertion_id": "F01-06c",
+            "assertion_text": PROSE["F01-06c"],
+            "verdict": "passed",
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "audit_id": SERVER_AUDIT_ID,
+        }
+
+    def server_export_record(self) -> dict[str, str]:
+        """The exported audit record: the seven audit fields at the top level.
+
+        The three channel keys are the two-layer channel semantics; the
+        runner compares the seven named fields and ignores the rest.
+        """
+        return {
+            "audit_id": SERVER_AUDIT_ID,
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "assertion_id": "F01-06c",
+            "run_id": RUN_ID,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "assertion_text": PROSE["F01-06c"],
+            "channel_class": "user_session",
+            "channel_ui_origin": "unprovable",
+            "channel_automation": "unprovable",
+        }
+
+    def test_the_server_export_shape_attests_the_judgement(self):
+        """The export shape earns the tier the release paths read.
+
+        This is the whole point of the export: the runner can check the
+        judgement against it, so the judgement is ``server_attested`` and
+        not a ``claimed`` one.
+        """
+        record = self.server_ledger_record()
+        index = manual_decision_audit.audit_index([self.server_export_record()])
+        self.assertTrue(manual_decision_audit.verify_against_audit(record, index))
+        self.assertEqual(
+            manual_decision_audit.resolve_authority(record, index),
+            manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+        self.assertEqual(
+            manual_decision_audit.decision_status(
+                record["verdict"], manual_decision_audit.resolve_authority(record, index)),
+            manual_decision_audit.PASSED_STATUS)
+
+    def test_the_runner_ingests_the_server_export_as_an_attested_judgement(self):
+        """The whole runner path, on the server's own shape.
+
+        The ledger holds what the write route answered; the index holds what
+        the export answered.  The runner binds them and says how much of the
+        judgement it is willing to believe.
+        """
+        record = self.server_ledger_record()
+        index = manual_decision_audit.audit_index([self.server_export_record()])
+        decisions = manual_decision_audit.ingest(
+            [record], RUN_ID, {"F01-06c": [PROSE["F01-06c"]]}, index)
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
+        self.assertEqual(decision["authority"], manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+        self.assertEqual(decision["channel_verifiability"], "verified")
+        self.assertEqual(decision["assertion_status"], manual_decision_audit.PASSED_STATUS)
+
+    def test_the_exported_records_are_readable_from_a_file_by_the_runner(self):
+        """The runner reads the export the way it reads any audit source.
+
+        ``load_audit_source`` is the runner's own door into an audit
+        export, so the export shape has to survive it: the array of records
+        is what the runner indexes.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "audit-records.json"
+            source.write_text(
+                json.dumps([self.server_export_record()], ensure_ascii=False),
+                encoding="utf-8")
+            loaded = manual_decision_audit.load_audit_source(source)
+            self.assertEqual(len(loaded), 1)
+            index = manual_decision_audit.audit_index(loaded)
+            record = self.server_ledger_record()
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_a_missing_audit_field_does_not_attest(self):
+        """An audit record that leaves a field out cannot prove that field.
+
+        One field short of the seven, the judgement stays a claim: the
+        runner says so instead of pretending the field was there.
+        """
+        record = self.server_ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.server_export_record()
+                del exported[field]
+                index = manual_decision_audit.audit_index([exported])
+                self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                self.assertEqual(
+                    manual_decision_audit.resolve_authority(record, index),
+                    manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_a_differing_audit_field_does_not_attest(self):
+        """A field the export states differently does not prove the judgement.
+
+        The comparison is byte for byte, so even a differently formatted
+        timestamp is a disagreement.
+        """
+        record = self.server_ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.server_export_record()
+                exported[field] = exported[field] + "-different"
+                index = manual_decision_audit.audit_index([exported])
+                self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                self.assertEqual(
+                    manual_decision_audit.resolve_authority(record, index),
+                    manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_a_nested_audit_field_does_not_attest(self):
+        """The audit fields have to be at the top level.
+
+        A record that hides one of them one level down cannot be read by
+        name, so the runner cannot check it.
+        """
+        record = self.server_ledger_record()
+        exported = self.server_export_record()
+        exported["judgement"] = {field: exported.pop(field)
+                                 for field in manual_decision_audit.AUDIT_FIELDS}
+        index = manual_decision_audit.audit_index([exported])
+        self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+        self.assertEqual(
+            manual_decision_audit.resolve_authority(record, index),
+            manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_the_extra_channel_keys_do_not_disturb_the_comparison(self):
+        """The extra keys are extra, and extras do not count.
+
+        The runner compares seven named fields; the export carries the quote
+        and the three channel keys besides, and none of them is compared.
+        """
+        exported = self.server_export_record()
+        self.assertEqual(
+            set(exported) - set(manual_decision_audit.AUDIT_FIELDS) - {"audit_id"},
+            {"assertion_text", "channel_class", "channel_ui_origin", "channel_automation"})
+        index = manual_decision_audit.audit_index([exported])
+        record = self.server_ledger_record()
+        self.assertEqual(
+            manual_decision_audit.resolve_authority(record, index),
+            manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_the_export_carries_the_quote_the_judgement_rests_on(self):
+        """An auditor sees WHICH sentence the judgement was made about.
+
+        The runner does not compare the quote - it compares seven facts, not
+        the prose - but the export carries it, so a reader of the export does
+        not have to open the audit row's details to learn it.  The quote in
+        the export is the very string the write side answered with.
+        """
+        exported = self.server_export_record()
+        record = self.server_ledger_record()
+        self.assertEqual(exported["assertion_text"], record["assertion_text"])
+        self.assertEqual(exported["assertion_text"], PROSE["F01-06c"])
+        # It is an extra key for the runner: it does not enter the comparison.
+        index = manual_decision_audit.audit_index([exported])
+        self.assertEqual(
+            manual_decision_audit.resolve_authority(record, index),
+            manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_the_export_names_only_the_channel_the_server_can_prove(self):
+        """The channel the server cannot prove says so.
+
+        A UI click and a script replay are the same credential, so the
+        server claims the credential class and refuses to claim more.
+        """
+        exported = self.server_export_record()
+        self.assertEqual(exported["channel"], "unverified_channel")
+        self.assertEqual(exported["channel_ui_origin"], "unprovable")
+        self.assertEqual(exported["channel_automation"], "unprovable")
+
+
+class ServerContractShapeTests(unittest.TestCase):
+    """The published contract is the shape the server and the runner share.
+
+    The transport refuses a request that names the server-derived fields,
+    and the export publishes the seven audit fields at the top level.  Both
+    facts live in the contract, so they are read from the contract here:
+    a contract that drifts from the server stops being a description of it.
+    """
+
+    def setUp(self):
+        self.contract = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
+        self.schemas = self.contract["components"]["schemas"]
+
+    def test_the_request_schema_names_only_the_five_caller_fields(self):
+        """A caller cannot say who judged.
+
+        The five fields a caller may send are the whole request body, and
+        the body is closed: the four server-derived fields cannot even be
+        written down, let alone believed.
+        """
+        schema = self.schemas["ManualJudgementInput"]
+        self.assertIs(schema.get("additionalProperties"), False)
+        self.assertEqual(
+            set(schema["properties"]),
+            {"assertion_id", "assertion_text", "verdict", "run_id", "evidence_ref"})
+        for forbidden in ("actor", "authorization", "channel", "occurred_at", "audit_id"):
+            self.assertNotIn(forbidden, schema["properties"])
+
+    def test_the_answer_carries_exactly_the_ten_ledger_fields(self):
+        """The answer can be filed as a ledger line unchanged."""
+        schema = self.schemas["ManualJudgementRecord"]
+        self.assertIs(schema.get("additionalProperties"), False)
+        self.assertEqual(set(schema["properties"]), set(manual_decision_audit.REQUIRED_FIELDS))
+        self.assertEqual(set(schema["required"]), set(manual_decision_audit.REQUIRED_FIELDS))
+
+    def test_the_export_schema_keeps_the_audit_fields_at_the_top_level(self):
+        """The published export carries the seven fields by name."""
+        schema = self.schemas["ManualJudgementAudit"]
+        self.assertIs(schema.get("additionalProperties"), False)
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            self.assertIn(field, schema["properties"])
+        self.assertIn("audit_id", schema["properties"])
+        # The quote the judgement rests on is published too: an auditor
+        # reads it out of the export.
+        self.assertIn("assertion_text", schema["properties"])
+        for extra in ("channel_class", "channel_ui_origin", "channel_automation"):
+            self.assertIn(extra, schema["properties"])
+
+    def test_the_contract_pins_the_channel_the_server_can_prove(self):
+        """The published channel is the one the server can stand behind."""
+        for name in ("ManualJudgementRecord", "ManualJudgementAudit"):
+            with self.subTest(schema=name):
+                schema = self.schemas[name]
+                self.assertEqual(schema["properties"]["channel"].get("enum"),
+                                 ["unverified_channel"])
+        # The two layers the server cannot prove are named on the export
+        # record; the ten-field answer carries the channel itself.
+        export = self.schemas["ManualJudgementAudit"]
+        self.assertEqual(export["properties"]["channel_ui_origin"].get("enum"),
+                         ["unprovable"])
+        self.assertEqual(export["properties"]["channel_automation"].get("enum"),
+                         ["unprovable"])
+        self.assertNotIn("channel_ui_origin", self.schemas["ManualJudgementRecord"]["properties"])
+
+    def test_the_published_shapes_follow_the_domain_types_field_for_field(self):
+        """The contract is the domain's own shapes, not a copy of them.
+
+        The three shapes are the domain side's Go types: the request body,
+        the authoritative record and the export record.  The published
+        schemas follow them field for field, in the order the structs
+        declare them, so a field the domain adds or renames shows up here
+        instead of on the wire.
+        """
+        for go_type, schema_name in (("ManualJudgementInput", "ManualJudgementInput"),
+                                     ("ManualJudgementRecord", "ManualJudgementRecord"),
+                                     ("ManualJudgementAudit", "ManualJudgementAudit")):
+            with self.subTest(go_type=go_type):
+                tags = go_struct_json_tags(go_type)
+                self.assertTrue(tags, "the Go type " + go_type + " declares no JSON field")
+                self.assertEqual(list(self.schemas[schema_name]["properties"]), tags)
+                self.assertEqual(set(self.schemas[schema_name]["required"]), set(tags))
+
+    def test_the_two_operations_are_published(self):
+        """Both routes are published, and they say where they are registered."""
+        paths = self.contract["paths"]
+        write = paths["/projects/{projectId}/manual-judgements"]["post"]
+        read = paths["/projects/{projectId}/manual-judgements/audit-records"]["get"]
+        self.assertEqual(write["operationId"], "recordManualJudgement")
+        self.assertEqual(read["operationId"], "listManualJudgementAuditRecords")
+        for operation in (write, read):
+            self.assertEqual(operation["x-lingdoc-route-source"], "manual_judgement_routes.go")
+
+
+class ServerEnvelopeTests(unittest.TestCase):
+    """The runner reads what the server actually answers.
+
+    The server answers an audit export with an envelope - the records live
+    under ``data`` - so the reader opens the envelope.  The opening is a
+    READ-side adaptation: it says where the records are, nothing more.
+    These cases pin that the convenience does not weaken the check: a
+    record that came out of an envelope is compared exactly as it would
+    have been without one.
+    """
+
+    def envelope(self, records: list) -> dict:
+        """The answer the export route gives."""
+        return {"data": records, "request_id": "req-manual-judgement-1",
+                "meta": {"replayed": False, "refresh_required": False}}
+
+    def exported_record(self) -> dict[str, str]:
+        return {
+            "audit_id": SERVER_AUDIT_ID,
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "assertion_id": "F01-06c",
+            "run_id": RUN_ID,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "assertion_text": PROSE["F01-06c"],
+            "channel_class": "user_session",
+            "channel_ui_origin": "unprovable",
+            "channel_automation": "unprovable",
+        }
+
+    def ledger_record(self) -> dict[str, str]:
+        return {
+            "run_id": RUN_ID,
+            "assertion_id": "F01-06c",
+            "assertion_text": PROSE["F01-06c"],
+            "verdict": "passed",
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "audit_id": SERVER_AUDIT_ID,
+        }
+
+    def load(self, directory: Path, document: object) -> list:
+        """Read a document the way the runner reads an audit source."""
+        source = directory / "audit-source.json"
+        source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return manual_decision_audit.load_audit_source(source)
+
+    def test_the_envelope_is_opened_and_the_judgement_is_attested(self):
+        """The runner reads the answer the server actually gives."""
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), self.envelope([self.exported_record()]))
+            self.assertEqual(len(loaded), 1)
+            index = manual_decision_audit.audit_index(loaded)
+            record = self.ledger_record()
+            self.assertTrue(manual_decision_audit.verify_against_audit(record, index))
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_an_envelope_that_leaves_a_field_out_does_not_attest(self):
+        """The envelope is not a back door: a short record stays short.
+
+        Opening the envelope says where the records are.  It does not say
+        that a record inside it may be incomplete.
+        """
+        record = self.ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.exported_record()
+                del exported[field]
+                with tempfile.TemporaryDirectory() as directory:
+                    loaded = self.load(Path(directory), self.envelope([exported]))
+                    index = manual_decision_audit.audit_index(loaded)
+                    self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                    self.assertEqual(
+                        manual_decision_audit.resolve_authority(record, index),
+                        manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_an_envelope_that_states_a_field_differently_does_not_attest(self):
+        """A record inside an envelope is compared exactly as before."""
+        record = self.ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.exported_record()
+                exported[field] = exported[field] + "-different"
+                with tempfile.TemporaryDirectory() as directory:
+                    loaded = self.load(Path(directory), self.envelope([exported]))
+                    index = manual_decision_audit.audit_index(loaded)
+                    self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                    self.assertEqual(
+                        manual_decision_audit.resolve_authority(record, index),
+                        manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_an_envelope_cannot_hide_the_fields_one_level_down(self):
+        """The records inside an envelope are read the same way.
+
+        A record whose fields are nested is not a record the runner can
+        read, and the envelope does not change that.
+        """
+        exported = self.exported_record()
+        exported["judgement"] = {field: exported.pop(field)
+                                 for field in manual_decision_audit.AUDIT_FIELDS}
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), self.envelope([exported]))
+            index = manual_decision_audit.audit_index(loaded)
+            record = self.ledger_record()
+            self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_the_bare_array_still_works(self):
+        """The old form is not broken by the envelope.
+
+        A consumer that saves the records as a plain JSON array must go on
+        reading them the same way.
+        """
+        record = self.ledger_record()
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), [self.exported_record()])
+            self.assertEqual(len(loaded), 1)
+            index = manual_decision_audit.audit_index(loaded)
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_the_ledger_of_judgements_is_not_read_as_an_envelope(self):
+        """The ledger is a list of judgements, and it stays that.
+
+        Only the audit door opens an envelope.  A ledger line that happens
+        to carry a ``data`` array is still one judgement, not an export.
+        """
+        record = dict(self.ledger_record())
+        record["data"] = ["not", "an", "export"]
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "ledger.jsonl"
+            ledger.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+            loaded = manual_decision_audit.load_ledger(ledger)
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0]["audit_id"], SERVER_AUDIT_ID)
+            self.assertEqual(loaded[0]["data"], ["not", "an", "export"])
+
+    def test_the_comparison_itself_is_untouched(self):
+        """The seven fields the runner compares are the seven it compared.
+
+        The envelope is a read-side adaptation; the comparison it feeds is
+        the same comparison, field for field.
+        """
+        self.assertEqual(manual_decision_audit.AUDIT_FIELDS,
+                         ("actor", "authorization", "channel", "occurred_at",
+                          "assertion_id", "run_id", "evidence_ref"))
 
 
 if __name__ == "__main__":

@@ -98,6 +98,12 @@ type RouterParams struct {
 	LingDocDeliveryExportHandler    *workspace.DeliveryExportHandler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
 	LingDocGenerationHandler        *generation.Handler `optional:"true"`
+	// The manual-judgement channel of the F01 runner (#649). The port is
+	// optional because the domain side of that channel is not always
+	// composed: an absent port means the two routes are not registered at
+	// all, which is a decision rather than a nil dereference on the first
+	// request.
+	LingDocManualJudgement workspace.ManualJudgementApplication `optional:"true"`
 }
 
 // NewRouter 创建新的路由
@@ -321,6 +327,13 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		if params.LingDocWorkspace != nil {
 			registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
+		}
+		if params.LingDocManualJudgement != nil {
+			// The manual-judgement routes are their own registration: they
+			// do not belong to the workspace handler, so the handler's own
+			// route surface (and its count) does not move.
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
+			workspace.RegisterManualJudgementRoutes(lingdoc.groups(), params.LingDocManualJudgement)
 		}
 		if params.LingDocRuleSetHandler != nil {
 			registerLingDocRuleSetRoutes(v1, rbacGuards, params.LingDocRuleSetHandler)

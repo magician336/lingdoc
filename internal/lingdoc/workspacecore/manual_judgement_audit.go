@@ -176,6 +176,11 @@ type ManualJudgementRecord struct {
 // Every value is the string that was stored when the judgement was written,
 // read back byte for byte. Nothing here is recomputed: a projection that
 // recomputed a timestamp would lose the byte equality the runner needs.
+//
+// The quote the judgement rests on travels with it.  The runner does not
+// compare it - it compares seven facts, not the prose - but an auditor
+// reading an exported record has to be able to see WHICH sentence the
+// judgement was made about, without opening the audit row's details.
 type ManualJudgementAudit struct {
 	AuditID           string `json:"audit_id"`
 	Actor             string `json:"actor"`
@@ -185,6 +190,7 @@ type ManualJudgementAudit struct {
 	AssertionID       string `json:"assertion_id"`
 	RunID             string `json:"run_id"`
 	EvidenceRef       string `json:"evidence_ref"`
+	AssertionText     string `json:"assertion_text"`
 	ChannelClass      string `json:"channel_class"`
 	ChannelUIOrigin   string `json:"channel_ui_origin"`
 	ChannelAutomation string `json:"channel_automation"`
@@ -606,6 +612,7 @@ func manualJudgementAuditProjection(event AuditEvent) (ManualJudgementAudit, boo
 		AssertionID:       manualJudgementDetail(event.Details, "assertion_id"),
 		RunID:             manualJudgementDetail(event.Details, "run_id"),
 		EvidenceRef:       manualJudgementDetail(event.Details, "evidence_ref"),
+		AssertionText:     manualJudgementDetail(event.Details, "assertion_text"),
 		ChannelClass:      manualJudgementDetail(event.Details, "channel_class"),
 		ChannelUIOrigin:   manualJudgementDetail(event.Details, "channel_ui_origin"),
 		ChannelAutomation: manualJudgementDetail(event.Details, "channel_automation"),
