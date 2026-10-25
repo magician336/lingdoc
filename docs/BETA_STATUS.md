@@ -87,12 +87,12 @@
 
 | # | 项 | 状态 | 缺什么 | 是否阻塞 |
 |---|---|---|---|---|
-| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | **DEFERRED_MANUAL**（本轮 #485 在真实后端上实跑：**provider 请求 0 次、4 次额度一次未用**；F01-07 那一次**仍未发生**） | **本轮实测事实（#485，2026-10-24）**：受控 profile ＝ **v2** `lingdoc-qwen-token-budget-20261024-v2`（PR #583 `b63aa79f`：调用数上限 **4**、累计预留上限 **90,000** token、单次 input ≤16,000 / output ≤4,096、获准模型仍**只有** `qwen3.8-flash`、v1 行为逐字未变）；**真实 provider 请求数 = 0**；**4 次额度一次未用**（累计预留 0/90,000）；**两本账本文件都不存在**（`qwen-beta.json` ＋ `.calls.json`）⇒ 窗口**零预留零消耗**；DB 账本 `lingdoc_model_call_ledger` 总行数仍 **1** —— 那一行是 **v1 窗口 2026-10-23 的历史行**（`source_kind=generation_run`／`run_mode=real`／2051/519 tokens，§14.2），**本轮新增 0 行**；环境检查 CHECK1–CHECK9 全 true ＋ `ALL_PASS=true`。**仍未做**（**第三轮后的唯一原因**）：① ~~**D2** 许可链断在 F01-06b（409 `stale_input`）~~ ⇒ **已解除**（PR #588 `4b73e8e7` 合入；**第三轮 Track-C 实测 F01-06b = 201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）② ~~Run B 实测：许可缺失时 `POST /generations` 返 **422 `asset_not_authorized`**~~ ⇒ **该前置已不成立**（许可已真实建立）③ **D3 仍在**：契约把 F01-07 声明为 `retrieval: vector_required`（`workflow.json` 实测只有 F01-07 带这个标签），而受控 profile 只放行 chat、**拒 embedding** ⇒ **第三轮 Track-C 实测 F01-07 返 503 `dependency_unavailable`**（`retryable=true`），embedding 请求在 **transport 之前**被受控 profile 拒掉（原文 `model is outside the acceptance budget profile`）⇒ 真实 provider 请求仍为 **0**。⇒ **契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 的口径；机器产物里它是 `failed_step` —— 两个视角见 §16.3）⇒ **不是**代码缺陷。**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`；之后在受控 profile v2 下重跑 F01-07 ⇒ 账本出现 `source_kind=generation_run` 的真实行（跟进票 **#546**／**#480**；配套 **#484**（材料接入，**D1**／**D5** 仍未解除））。⚠️ **不得**改 `retrieval` 标签或关限制来让 F01-07 变绿。⚠️ **一次受控调用成功 ≠ F01-07 验收通过 ≠ Beta 放行通过**（§15.5）。⚠️ **不设** `LINGDOC_T10_ACCEPTANCE_PROFILE` ⇒ 空预算 ⇒ **没有调用次数上限、没有费用口径、没有预留/实付记账** ⇒ 「一次真实调用在预算内」**没有机器强制**；映射与坑不变：`LLM_MODEL_NAME=qwen3.8-flash` / `LLM_BASE_URL=https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` / `LLM_API_KEY=<与 DASHSCOPE_API_KEY 同值>`；⛔ **不要写 `LLM_API_KEY=${DASHSCOPE_API_KEY}`**（`env_file` 原样传值、应用内插值只做一遍 ⇒ 会变成字面量）；⚠️ **设** `LINGDOC_T10_ACCEPTANCE_PROFILE` 会把 F01 的 chat 强制成 DeepSeek ⇒ 用 Qwen 时不要设 | **是**（卡 F01-07） |
-| 2 | 隔离 PostgreSQL ＋ 重启读回 | NOT RUN（**隔离 PG 本轮已用于 F01 实跑**；「重启读回」未做） | 本轮 #485 已在隔离 PostgreSQL（`weknora_iso`、容器 `WeKnora-postgres-dev`、Redis DB 3、`AUTO_MIGRATE=false`）上真跑 F01 28 节点 ⇒ **隔离实例这半已具备**；**仍缺**「服务重启后的读回」—— 本轮未执行 `scripts/acceptance/lingdoc_full_server_restart.py` ⇒ 缺口 `GAP-RESTART`。**解除条件**：用 `--db-driver postgres --db-dsn <隔离库 DSN>` 跑重启读回，重启后重读项目/资料/许可/账本四类行并留证（跟进票 **#480** 缺口 3，缺口标识 `GAP-ISOLATED-PG`） | 否（后置） |
+| 1 | Qwen 真实模型调用（`qwen3.8-flash` / OpenAI 兼容） | **DEFERRED_MANUAL**（⚠️ **本行记的是 #485 那一轮（2026-10-24）的事实**；最新一轮的真实调用事实见 §20.6 与 §20.11 第 6 项：模型账本**累计 4 行**（其中 **3 行属 10-24 更早的轮次**，**第 4 次**才落在最终跑批 `f01-20261025T013341Z-5105ae32` 那一轮）、额度 **4/4 用尽**，且**检索与向量相关的那部分仍 `NOT RUN`**）｜#485 那一轮在真实后端上实跑：**provider 请求 0 次、4 次额度一次未用**；F01-07 那一次**仍未发生** | **本轮实测事实（#485，2026-10-24）**：受控 profile ＝ **v2** `lingdoc-qwen-token-budget-20261024-v2`（PR #583 `b63aa79f`：调用数上限 **4**、累计预留上限 **90,000** token、单次 input ≤16,000 / output ≤4,096、获准模型仍**只有** `qwen3.8-flash`、v1 行为逐字未变）；**真实 provider 请求数 = 0**；**4 次额度一次未用**（累计预留 0/90,000）；**两本账本文件都不存在**（`qwen-beta.json` ＋ `.calls.json`）⇒ 窗口**零预留零消耗**；DB 账本 `lingdoc_model_call_ledger` 总行数仍 **1** —— 那一行是 **v1 窗口 2026-10-23 的历史行**（`source_kind=generation_run`／`run_mode=real`／2051/519 tokens，§14.2），**本轮新增 0 行**；环境检查 CHECK1–CHECK9 全 true ＋ `ALL_PASS=true`。**仍未做**（**第三轮后的唯一原因**）：① ~~**D2** 许可链断在 F01-06b（409 `stale_input`）~~ ⇒ **已解除**（PR #588 `4b73e8e7` 合入；**第三轮 Track-C 实测 F01-06b = 201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）② ~~Run B 实测：许可缺失时 `POST /generations` 返 **422 `asset_not_authorized`**~~ ⇒ **该前置已不成立**（许可已真实建立）③ **D3 仍在**：契约把 F01-07 声明为 `retrieval: vector_required`（`workflow.json` 实测只有 F01-07 带这个标签），而受控 profile 只放行 chat、**拒 embedding** ⇒ **第三轮 Track-C 实测 F01-07 返 503 `dependency_unavailable`**（`retryable=true`），embedding 请求在 **transport 之前**被受控 profile 拒掉（原文 `model is outside the acceptance budget profile`）⇒ 真实 provider 请求仍为 **0**。⇒ **契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 的口径；机器产物里它是 `failed_step` —— 两个视角见 §16.3）⇒ **不是**代码缺陷。**解除条件（唯一）**：把 **embedding 纳入受控 profile 并拆分 chat / embedding 额度**（#546 口径①；**embedding 授权当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`；之后在受控 profile v2 下重跑 F01-07 ⇒ 账本出现 `source_kind=generation_run` 的真实行（跟进票 **#546**／**#480**；配套 **#484**（材料接入，**D1**／**D5** 仍未解除））。⚠️ **不得**改 `retrieval` 标签或关限制来让 F01-07 变绿。⚠️ **一次受控调用成功 ≠ F01-07 验收通过 ≠ Beta 放行通过**（§15.5）。⚠️ **不设** `LINGDOC_T10_ACCEPTANCE_PROFILE` ⇒ 空预算 ⇒ **没有调用次数上限、没有费用口径、没有预留/实付记账** ⇒ 「一次真实调用在预算内」**没有机器强制**；映射与坑不变：`LLM_MODEL_NAME=qwen3.8-flash` / `LLM_BASE_URL=https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` / `LLM_API_KEY=<与 DASHSCOPE_API_KEY 同值>`；⛔ **不要写 `LLM_API_KEY=${DASHSCOPE_API_KEY}`**（`env_file` 原样传值、应用内插值只做一遍 ⇒ 会变成字面量）；⚠️ **设** `LINGDOC_T10_ACCEPTANCE_PROFILE` 会把 F01 的 chat 强制成 DeepSeek ⇒ 用 Qwen 时不要设 | **是**（卡 F01-07） |
+| 2 | 隔离 PostgreSQL ＋ 重启读回 | **已解除**（本批前完成，见 §20.11 第 4 项；「重启读回」已做） | 隔离 PG 库 `weknora_iso_r7`（容器 `WeKnora-postgres-dev`）＋ 真实进程重启：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider**（证据 `D:/wt/lingdoc-484-evidence/pg-r7/`）。⚠️ **章节级 `source_ids` 非空仍 `NOT RUN`**（需真实 WeKnora 解析 ⇒ 依赖 embedding 授权 **#546**），那一部分随 **§6 表第 5 行**（WeKnora 真实接入/处理/检索）与 §20.11 第 6 项阻塞 | 否（重启读回已解除；`source_ids` 随第 5/6 项） |
 | 3 | 两章合成材料 ＋ `--material` SHA-256 | **材料已备好**（仓外 `lingdoc-prep/` ＋ 本轮 `synth-chapter-c.md` 2004 B）⚠️ 但**「同一套两章材料 ＋ 权威 SHA-256」未按协议登记** | 库中材料 `128b88fd…` 的 `file_hash=21c29a574dbbdb6ff156ebdc5071dafc` 已记录，但**原文文件已从盘上丢失**（`resources` 行指向的物理路径在所有 storage 根下都不存在）⇒ 无法给出「同一套两章材料」的权威哈希 ⇒ 缺口 `GAP-MATERIAL-HASH`（**#480** 缺口 4）＋ `GAP-D4`（**#484**）。⚠️ 该材料的分块内容与其坐标**不自洽**（缺陷 D1）⇒ 材料本身**不合格**，需按 #484 的接入路径重新接入（§1 第 7 行）。**解除条件**：原文文件在盘上后用 `--material <名称>=<sha256>` 登记本轮合成材料的哈希（跟进票 **#480**；材料重做见 **#484**） | **是**（卡 F01-06） |
-| 4 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL** | 代码侧已具备：仓内 `docs/08-本轮实施方案/acceptance/beta-first/<sha>/<run>/word-check.md` 模板与五个必填字段的校验已就位 ⇒ **只差真人用 Microsoft Word 操作**；⚠️ 本轮 F01 未走到 F01-21…F01-23 ⇒ **还没有 DOCX 可查** ⇒ 缺口 `GAP-WORD`（**#480** 缺口 5）。**解除条件**：F01 走到下载后，用真实 Microsoft Word 跑完「开/改/存/关/重开」，填完 `word-check.md` 的五个必填字段（Word 产品版本 / Windows 版本 / 原始 DOCX SHA-256 / 修改后 SHA-256 / 检查结果）并用 `--word-check <该文件>` 重跑证据脚本（跟进票 **#480**） | 否 |
+| 4 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL**（**协议 §4 的机械动作与结构完整性已全部满足并 PASS，见 §20.9**；剩两项人眼确认） | 代码侧已具备：仓内 `docs/08-本轮实施方案/acceptance/beta-first/<sha>/<run>/word-check.md` 模板与五个必填字段的校验已就位。**DOCX 已落盘并已用真实 Microsoft Word 跑完「开/改/存/关/重开」**（`export-196b61e0….docx`，sha256 `df5549b0…`；修改后 `…word-modified.docx`，sha256 `3e336eeb…`；12 项全过；原始文件逐字节未变 ⇒ §20.9）⇒ **只差负责人本人的两项人眼确认**（「基本格式仍可用」的观感 ＋「3 条待核项保留理由表述是否恰当」）⇒ 缺口 `GAP-WORD`（**#480** 缺口 5）。**解除条件**：负责人打开修改后的文件看一眼版面，并把两项人眼确认写回 `word-check.md`（跟进票 **#480**） | **是**（**验收协议 §6** 第 5 项，见 §20.11） |
 | 5 | WeKnora 真实接入 / 处理 / 检索 | NOT RUN（**接入与解析本轮已真调过**；「处理完成 ＋ 检索命中」仍未取得） | 端点已定位：上传 `POST /api/v1/knowledge-bases/{id}/knowledge/file`（`routes_knowledge.go:73`、`handler/knowledge.go:254`，multipart 字段 `file`）；解析状态表 `knowledges.parse_status`＝`completed`（`types/knowledge.go:43-64`），`GET /api/v1/knowledge/:id`；检索 `POST /api/v1/knowledge-bases/{id}/hybrid-search`（`routes_knowledge.go:229`）。三个容器**本机全在跑**。⚠️ `env_facts.py` **已不在机器上**（要重写：幂等标识必须**与时间无关**＝固定标题前缀＋文件 SHA-256，否则每次造新知识、id 每次变；输出须按 starting_state 裁剪，否则 `load_state.py` 的 `preflight()` 在首个写请求前退 1）。**2026-10-24 #485 实跑的新事实（推翻了本行先前「docreader 解析接口从未真调过」的说法）**：新建关键词型 KB 后上传材料**成功**、docreader **真的解析出 2 个分块**（`Split document into 2 chunks`），但随后 `processChunks get embedding model failed`（`error_message = "Embedding model unavailable: model ID cannot be empty"`）⇒ **`parse_status=failed`、0 分块落库** ⇒ 「处理完成」与「检索命中」**仍未取得** ⇒ 缺口 **D5**（**#484**）＋ 受控 profile 拒 embedding（**#546**） | **是**（卡 F01-06） |
-| 6 | 第二人独立复现 | NOT RUN（记录项） | **未完成项**（按 §5 口径 1：第二人独立复现**不是** Beta 首版硬门槛 ⇒ **不写** `DEFERRED_MANUAL`，但**必须**登记原因＋解除条件，**不得**记为已通过）。**原因**：本轮没有第二名开发者执行独立复现。**解除条件**：由第二名开发者按 #489 的步骤独立复现 F01 契约并把证据绑到当前 head（跟进票 **#489**）。第二个开发者 | 否（不阻塞） |
+| 6 | 第二人独立复现 | NOT RUN（记录项；**已由负责人豁免 `WAIVED_BY_OWNER`**，见 §20.10） | **未完成项**（按 §5 口径 1：第二人独立复现**不是** Beta 首版硬门槛 ⇒ **不写** `DEFERRED_MANUAL`，但**必须**登记原因＋解除条件，**不得**记为已通过）。**原因**：本轮没有第二名开发者执行独立复现；**负责人已决定本次 Beta 不再执行、不再等待**（豁免标记 `WAIVED_BY_OWNER`，事实状态仍 `NOT_RUN`）。**解除条件**：由第二名开发者按 #489 的步骤独立复现 F01 契约并把证据绑到当前 head（跟进票 **#489**）。第二个开发者 | 否（不阻塞） |
 
 ## 7. 本批（第一批）完成汇报
 
@@ -958,10 +958,12 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 
 ### 20.5 本批之后仍未解除的事项（逐条带解除条件）
 
+> **本节的状态词以本节为准**：§6「人工前置 6 项（当前状态）」中**本批动过的三行**（第 2 行重启读回、第 4 行 Word、第 6 行第二人独立复现）已同步到本批现状；**第 1 行**（Qwen 真实模型调用）仍以 **#485 那一轮**的事实为主体（其最新一轮事实见 §20.6 与 §20.11 第 6 项，已在该行就地标注）；**第 3、5 行**保留 **#485 那一轮**的快照（未就地标注最新一轮）。§19.9 是**第六轮的历史记录**，其中 Word 行描述的是**当时**的状态（「还没有 DOCX 可查」）⇒ **一律不改写历史** —— 现状读 §20.5 与 §20.11。
+
 | # | 事项 | 性质 | 解除条件 |
 |---|---|---|---|
 | 1 | 4 条契约散文断言（F01-06b～06e）的**人工判定** | **已解除**（本批完成） | **已由票主本人作出判定并经正式服务端接口落审计记录**（4×201，`audit_id` 见 §20.7；`authority=server_attested`），再经 **#654 的零额度重判路径**接入既有跑批报告 ⇒ 两条放行路径**实际**判 PASS（§20.6）。⚠️ 剩余的**工程**约束：额度已 4/4 用尽 ⇒ **不能**再带新判定重跑 F01 主流程，只能走零额度重判（已如此做）。⚠️ **F01-06c 的 422 行为仍未验证**（见第 6 条与 #656）。 |
-| 2 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL** | 用真实 Microsoft Word 打开 `export-196b61e0….docx`（sha256 `df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a`）核对打开/内容完整性/排版/3 条待核项附录/保留警告，填回 `word-check.md` 的五个必填字段。⚠️ 「DOCX 生成成功」**不等于**「Word 检查通过」。 |
+| 2 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL**（**协议 §4 的机械动作与结构完整性已全部满足并 PASS，见 §20.9**；剩两项人眼确认） | **解除条件**：负责人打开修改后的文件 `export-196b61e0….word-modified.docx`（sha256 `3e336eeb…`）确认「基本格式仍可用」，并给出「3 条待核项保留理由表述是否恰当」的结论，写回 `word-check.md`（跟进票 **#480**）。⚠️ 「DOCX 生成成功」**不等于**「Word 检查通过」；「机械动作已做」也**不等于**「人眼确认已做」。 |
 | 3 | 第二人独立复现 | **记录项**（不阻塞首版） | 由**第二名真人**开发者按 #489 的步骤独立复现（干净工作树 ＋ 新身份 ＋ 新隔离数据库 ＋ 独立报告）并把证据绑到当前 head。⚠️ AI 会话**不计入**「另一位开发者」。 |
 | 4 | 隔离 PostgreSQL 的「重启后读回」 | **已解除**（本批前完成） | 已用隔离 PG 库 `weknora_iso_r7` ＋ 真实进程重启完成：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider**。证据 `D:/wt/lingdoc-484-evidence/pg-r7/`。⚠️ **章节级 `source_ids` 非空仍 NOT RUN**（需真实 WeKnora 解析 ⇒ 依赖 embedding 授权）。 |
 | 5 | 向量开启的知识库上的检索行为 | **未授权**（embedding 授权为 0 次） | 把 embedding 纳入受控 profile 并拆分 chat / embedding 额度（跟进票 **#546**；等待票主批复范围：模型、预计调用数、费用、与 chat 分开记账、材料、验证方法、风险）。 |
@@ -975,7 +977,7 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 - **第一层（机器执行事实）**：**未变** —— 最近一次真实跑批仍是 `f01-20261025T013341Z-5105ae32`（31/31 节点、64/64 机器断言）。本批**未发起任何真实 provider 调用**（额度 4/4 用尽）。
 - **第二层（契约验收结果）**：**已由 NOT RUN 变为 PASS**。用 #654 的**零额度重判路径**把四条人工判定接入既有跑批报告后，两条判定路径**实际**判 PASS（`main_path_evidence` = PASS、`beta_evidence` = PASS，`provider_semantics_status` = `verified`；outcome 数 105 → 97，8 条 `not_run` 全部消除）。**机器事实逐字节不变**（9 个机器事实键逐字节相等，顶层键集与顺序一致），`run_id` 不变，**新增 provider 请求 = 0、新增账本行 = 0**。
 - **第三层（人工判定结果）**：4 条**已由 `not_run` 变为 `passed`**，且**全部取得服务端权威审计证明**（`authority=server_attested`、`channel_verifiability=verified`）。四条各自的 `audit_id`、`actor`、`authorization`、`occurred_at`、`evidence_ref` 见 §20.7。⚠️ **渠道本身仍不可证明**：服务端能证明的只有凭据类别（`user_session`），**不能**证明「本人现场操作」⇒ `channel` 恒为 `unverified_channel`、`ui_origin`/`automation` 恒 `unprovable`。
-- **第四层（正式 Beta 放行结论）**：**仍不予放行**，但**「判定能否被核验为权威」与「有没有判定」两个阻塞项均已解除**。剩余放行条件：**① Word 人工检查**（DEFERRED_MANUAL）＋ **② 隔离 PG 章节级 `source_ids`**（NOT RUN，依赖 embedding 授权）＋ **③ 向量检索行为**（#546，未授权）＋ **④ 第二人独立复现**（#489，记录项，须真人）。
+- **第四层（正式 Beta 放行结论）**：**仍不予放行**，但阻塞项已从四项减到两项。**① Word 人工检查（`DEFERRED_MANUAL`）** —— 协议 §4 的机械动作与结构完整性已 PASS（§20.9），**两项人眼确认尚未做出**；**② 真实依赖均已验证**（`NOT RUN`）—— 向量检索行为与章节级 `source_ids`，依赖 #546 的 embedding 授权。⚠️ **本节（第 20.6）与 §20.11 的口径差异已对齐**：**浏览器检查已在本轮由 `NOT RUN` 变为 `PASS`**（§20.12），**第二人独立复现已由负责人豁免**（`WAIVED_BY_OWNER`，§20.10）⇒ 这两项**都不再是**剩余放行条件。
 
 > **口径提醒（不变）**：机器断言全过 **不等于** Beta 放行通过；放行判定按验收协议 §6，主流程不得含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL。`DEFERRED_MANUAL` 不阻塞代码合并，但**阻塞** Beta 首版放行。
 > **本批新增的一条口径**：`#649` 落地后，**「判定能否被核验为权威」已不再是阻塞项**；**「有没有判定」才是**。这两件事在 19.8 里是同一条阻塞项（#1），现在必须分开读。
@@ -999,6 +1001,146 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 
 ⚠️ **保留的证据限制（未淡化）**：① **F01-06c 的状态机合法前态与 422 行为仍未直接验证** —— A-2 的负向拒绝发生在**来源解码阶段**，错误码是 **404 `not_found`** 而非 422 `invalid_state`（调用方分不清「不存在」与「未评估」）⇒ **已开票 #656**；② **F01-06d 没有机器 checks**，其 `content_hash` 两版**相同**，且**不替代** F01-06e 的指纹绑定核验；③ **F01-06e 的理由必须保留为「同意」**，不得改写成用户曾逐项表达的理由；④ 服务端**不能**校验 `assertion_id` 是否是契约散文节点（契约是 docs 产物），逐字核验由跑批器按 #633 承担。
 
-### 20.8 本批留下的一处覆盖缺口（**非阻塞，待补**）
+### 20.8 本批留下的一处覆盖缺口（**已闭合**）
 
-#660 的独立复核发现：**真实 router 的注册分支没有回归测试** —— 把 `internal/router/router.go:331` 的注册分支废掉后，PR 自带的 `router` ＋ `container` 两个套件**仍全绿**（退出码 0），而生产 router 已不再服务这两个端点。复核用**自己写的**测试证明了生产接线是对的（真实 router ＋ 真实组合根 ⇒ 201/200）。⇒ **该接缝缺一条守护**，待补。
+#660 的独立复核发现：**真实 router 的注册分支没有回归测试** —— 把 `internal/router/router.go:331` 的注册分支废掉后，PR 自带的 `router` ＋ `container` 两个套件**仍全绿**（退出码 0），而生产 router 已不再服务这两个端点。复核用**自己写的**测试证明了生产接线是对的（真实 router ＋ 真实组合根 ⇒ 201/200）。
+
+⇒ **PR #664 已补上这条守卫并合入 main**（合并提交 `7612f92c`）：新增 `internal/router/lingdoc_manual_judgement_registration_test.go`（**只新增**，零既有文件改动），两条用例都经 **`router.NewRouter` ＋ dig 真实装配**（不再直接调 `workspace.RegisterManualJudgementRoutes`）⇒ 端口存在 ⇒ 两条生产路径在 `engine.Routes()` 里；端口为 nil ⇒ 不在。既有路由总数断言 **79 / 54** 均未变。
+
+独立复核 **PASS**：4 处独立变异全部干净转红（M1 废掉注册分支 ⇒ `TestNewRouterServesTheManualJudgementRoutesWhenThePortIsComposed` 唯一转红；M2 去掉 `optional:"true"` ⇒ `TestNewRouterOmitsTheManualJudgementRoutesWhenThePortIsAbsent` 唯一转红；M3 路径字面量改一字符、M4 `POST`→`PUT` ⇒ 两条同时转红），逐字节还原、sha256 与基线一致、工作树干净。门禁 **21 行 0 fail / 0 pending**（`LingDoc PR gate` pass 1m38s、`integration` pass 23m2s）。
+
+### 20.9 Word 人工检查（协议 §4）：**已用真实的 Microsoft Word 执行**
+
+| 项 | 值 |
+| --- | --- |
+| 被检查的文件 | `export-196b61e0de1242e6247ddb6bf2e91747.docx`（3176 字节） |
+| 原始 SHA-256 | `df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a`（与本轮 F01-23 下载产物的 `file_sha256` 一致） |
+| 修改后文件 SHA-256 | `3e336eeb73254690b2c7d4301a022f703fe5fdeb4a7f165a79d9a87e0070982c`（16138 字节，由 **Word 自己**保存产生） |
+| Word 产品版本 | **Microsoft Word 16.0（build 16.0.20430）** |
+| Windows 版本 | 10.0.26200 |
+| 机器校验 | `beta_evidence.word_check(...)` ⇒ **status = `held`**（`held` ＝ 这条期望成立；`overall_result` 的阻塞集合是 `{failed, blocked, not_run}`，不含 `held`） |
+
+> ⚠️ **机器层的 `held` 与放行口径的状态词不在同一层**：机器层（`beta_evidence.word_check`）只回答「五个必填字段**是否存在且非占位**、结论词**是否不含「不通过」**」⇒ `held`；⚠️ 它**不比较**表单里填的 SHA-256 与文档实际哈希（代码注释就写着「the executor checks the fields, never the document's content」）——「两份 DOCX 哈希与表单所填是否相等」是**本轮另行核对**的事实，见本节表格的 SHA-256 行。**放行判定按协议 §6 逐项核对**，而协议 §5 规定「人工前置项尚未完成就是 `DEFERRED_MANUAL`，**不是** `PASS`」⇒ 本项在 §6 门槛表里的状态词是 **`DEFERRED_MANUAL`**（**验收协议 §6** 第 5 项，见 §20.11），**仍然阻塞放行**。**机器层不阻塞 ≠ 放行层不阻塞。**
+
+**执行的正是协议 §4 的整段动作**（**真实 Microsoft Word 的 COM 自动化，不是程序库 roundtrip**）：打开下载的文件 → 修改**第 6 段正文**（`正文` 样式：`使用合成记录检验软件流程，结果仅用于内部演示。` → 追加「（Word 人工检查：已修改此处正文。）」）→ `SaveAs2` **另存为新文件** → 关闭整个 Word 实例 → **重新起一个 Word 实例重新打开** → 逐项检查。
+
+| # | 检查项 | 结果 |
+| --- | --- | --- |
+| 1 | 修改保留（关掉 Word 后重新打开仍在） | **通过** |
+| 2 | 逐段对比：12 段**恰好 1 段不同**（被改的那段），其余 11 段逐字相同 | **通过** |
+| 3 | 标题层级不变（`标题` ×1、`副标题` ×1、`标题 1` ×4 仍在原位；大纲级别 10/1 未变） | **通过** |
+| 4 | 引用仍在：`[1] synth-chapter-c.md`、`定位：synth-chapter-c.md · 第 0 段`、引用的原文 | **通过** |
+| 5 | 正文里的行内引用标记 `包含100条虚构记录 [1]。` 仍在 | **通过** |
+| 6 | 附录仍列出 **3 条**待核项，各带「处理：保留警示」「理由：仅作内部演示，保留该项并随文件明确列出」 | **通过** |
+| 7 | 内部演示标识仍在：副标题 `仅供内部演示；并非正式申报材料` ＋ 正文 `不把它视为真实科研结果` | **通过** |
+| 8 | 文档仍可正常渲染：页数 1、词数 280（275 ＋ 插入的 5 个词） | **通过** |
+
+**原始文件逐字节未变**（检查前后 sha256 相同）—— 修改只落在另存的新文件上。
+
+⚠️ **两项人眼确认尚未做出**（如实标注，**不**记为已通过）：**版面观感**（行距、页边距、字体在屏幕上看起来是否可接受）与**「3 条待核项的保留理由表述是否恰当」**。这两项本质上是人的观察，脚本只能证明结构没坏、证明不了观感。⇒ 记录：**机械性动作与结构完整性全部成立；人眼确认待负责人完成**。
+
+证据：`D:\wt\lingdoc-485-evidence\track-d-experiment\run-final-20261025-093259-c2345229\word-check.md`。
+
+### 20.10 #489 第二人独立复现：**`WAIVED_BY_OWNER`**（事实状态仍 `NOT_RUN`）
+
+**项目负责人决定**：本次 Beta 首版收尾**不再执行**第二人独立复现，**不再等待**真人复现。
+
+| 字段 | 值 |
+| --- | --- |
+| **豁免标记** | **`WAIVED_BY_OWNER`** —— 由项目负责人明确决定跳过本次独立复现 |
+| **事实状态** | **`NOT_RUN`** —— 独立复现**尚未执行** |
+
+⚠️ **没有**伪造任何复现记录、复现证据或 `PASS` 结果；**本票的 4 条验收标准全部保持未勾选**。`NOT_RUN` 与 `WAIVED_BY_OWNER` 是**两件事**：前者说「没做」，后者说「不再要求做」。
+
+**放行判定机制未做任何改动** —— 本项**本来就不在** Beta 首版的放行判定里：验收协议 §1「**一位执行者**完成整套验收，不要求第二位开发者独立复现」；§6 的总门槛逐项列举为「F01 原 23 个业务步骤及当前必需前置节点、业务语义/读回断言、**浏览器检查**、**重启恢复**和 **Word 检查**」（§6 原文括注为「即契约当前的 24 个节点」；**§3 的口径为 31 个节点**，§20.11 的表格按 31 记）—— **不含**第二人独立复现；机器侧 `beta_evidence.overall_result` 只看 F01 契约的 outcomes ＋ `provider_semantics_status`，`manual_decision_audit.AUDIT_FIELDS` 里也没有这一项 ⇒ 本项**不进**任何放行判定的输入。**本票没有任何「阻塞条件」需要被移除** —— 它自建票起就是「记录项，不阻塞首版」。
+
+**残余风险（如实披露）**：① **单点执行者风险** —— 本次放行**没有**「第二位开发者用独立环境独立复现」的证据背书，任何执行错误只会被同一人发现；② 豁免的是「本次 Beta」，若日后要恢复该项的证据效力，仍需**真实执行**一次，**本次豁免不能当作那次执行的替代**，也**不能**被引用为「已复现」；③ 本豁免**仅适用于 #489**，**不连带**任何其它项。
+
+票面记录：https://github.com/magician336/lingdoc/issues/489#issuecomment-6396424884
+
+### 20.11 按协议 §6 逐项核对的最终 Beta 放行结论
+
+协议 §6 的总门槛原文：「**只有一位执行者**完成 F01 原23个业务步骤及当前必需前置节点（即契约当前的 24 个节点）、业务语义/读回断言、浏览器检查、重启恢复和 Word 检查，且真实依赖均已验证，才标记 Beta 首版通过。**主流程不能含 `FAIL`、`BLOCKED`、`NOT RUN` 或 `DEFERRED_MANUAL`。**」
+
+| # | §6 门槛项 | 本轮状态 | 证据 |
+| --- | --- | --- | --- |
+| 1 | F01 原 23 个业务步骤 ＋ 当前必需前置节点（契约当前 **31** 个节点） | **PASS** | 31/31 节点执行，HTTP 状态与契约逐条一致；`f01-report.json` |
+| 2 | 业务语义/读回断言 | **PASS** | 64/64 机器断言（`checks`）；**外加**四条散文断言由服务端权威审计证明 ⇒ `provider_semantics_status` = `verified`（§20.7） |
+| 3 | **浏览器检查**（协议 §2 第 4 步） | **PASS**（**PASS 覆盖三方一致性 10 项**；§2 第 4 步的「**候选取消**」交互面本轮未执行，见 §20.12 的覆盖边界） | §20.12：**真实浏览器 ＝ HTTP ＝ 刷新后读回，10 项逐项一致、0 处不符**（`parity.json` → `status = PASS`、`consistent = true`、`checked = 10`、`mismatches = []`）；真实前端（Vite dev server ＋ headless Chrome ＋ 真实登录表单）对**最终 F01 项目**渲染出交付快照，摘要 `df5549b0…` 就是 Word 检查所用那一份。**零 provider、零库改动**（前后状态文件 sha256 相同） |
+| 4 | **重启恢复** | **PASS** | 隔离 PG 库 `weknora_iso_r7` ＋ 真实进程重启：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider** |
+| 5 | **Word 检查** | **`DEFERRED_MANUAL`**（协议 §4 的**机械动作与结构完整性已全部满足并 PASS**；**两项人眼确认尚未做出**） | §20.9：真实 Microsoft Word 16.0 打开→改一处正文→另存→关闭→重开→逐项检查，**12 项全过**（§20.9 摘录其中 8 项，完整 12 项见 `word-check.md`）；原始文件逐字节未变。**解除条件**：负责人打开修改后的文件确认「基本格式仍可用」，并给出「3 条待核项保留理由表述是否恰当」的结论，写回 `word-check.md`（跟进票 **#480**） |
+| 6 | 真实依赖均已验证 | **`NOT RUN`** | 向量检索行为与章节级 `source_ids` **仍未验证**：#546 的授权材料已备好（模型/次数/费用上限/材料范围/独立记账/验证方法/风险 ＋ 三个必须先解决的缺口），**待负责人批复**；**未发起任何 embedding 请求** |
+| — | 人工判定（四条散文断言） | **PASS**（已取得服务端权威审计证明） | §20.7：4×201、`authority=server_attested`、`channel_verifiability=verified` |
+| — | 第二人独立复现（**非 §6 门槛项**） | **`WAIVED_BY_OWNER`** ／ 事实 `NOT_RUN` | §20.10：负责人豁免；**不连带**任何其它项 |
+
+**最终结论：Beta 首版【仍不予放行】。**
+
+- **契约验收两条路径已实际判 PASS**（`main_path_evidence` = PASS、`beta_evidence` = PASS、`provider_semantics_status` = `verified`）—— 这是系统自身的规则跑出来的，**不是**人工宣称的。
+- **第 3 项（浏览器检查）本轮已从 `NOT RUN` 变为 `PASS`**（§20.12）⇒ §6 六项门槛里现在还剩两项未闭合：**第 5 项（Word 检查）＝ `DEFERRED_MANUAL`**（协议 §4 的机械动作与结构完整性已 PASS，但**两项人眼确认尚未做出**）与**第 6 项（真实依赖均已验证 / embedding 与章节级 `source_ids`）＝ `NOT RUN`** ⇒ 主流程仍含 `DEFERRED_MANUAL` 与 `NOT RUN` ⇒ **不满足「主流程不能含 `NOT RUN` / `DEFERRED_MANUAL`」** ⇒ **不予放行**。
+- **#489 的豁免不改变这个结论**：它只覆盖「第二人独立复现」这一项，而该项**本来就不在** §6 门槛里。**豁免不连带**embedding 验收与 Word 的人眼确认。
+- **解除放行的最小剩余动作**：① 批复 #546 的 embedding 授权并执行，据实核实章节级 `source_ids` 与向量检索行为；② 完成 Word 检查的两项人眼确认（版面观感、待核项保留理由的表述）。这两项**各自独立**，任何一项未完成都仍不放行。
+
+> **口径提醒（不变）**：机器断言全过 **不等于** Beta 放行通过；放行判定按验收协议 §6 逐项核对，**主流程不得含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL**。
+
+### 20.12 浏览器端到端检查（协议 §2 第 4 步）：**已真跑，三方一致**
+
+**这一项此前一直是 `NOT RUN`**（本轮之前**从未**执行过）：没有真实前端、没有 CDP 浏览器、没有三方比对产物。本轮**实际执行了**，结论 **PASS**。
+
+#### 环境（全部是真实依赖，无 Mock、无假模型）
+
+| 项 | 值 |
+| --- | --- |
+| 绑定的 head | `7612f92c73649a1f7eeaf025e728de233195e76e`（＝ `origin/main`） |
+| 后端 | **真实服务进程** `weknora-trackd-20261025-093259.exe`（pid 59008，source_head `c2345229`），API root `http://127.0.0.1:18087/api/v1/lingdoc`；**18087 全程未停未重启**，18095 也未动 |
+| 前端 | **真实 Vite dev server**（`node node_modules/vite/bin/vite.js --port 5173 --strictPort`，worktree `D:\wt\lingdoc-beta-status`），代理目标 `VITE_DEV_PROXY_TARGET=http://127.0.0.1:18087` |
+| 浏览器 | **真实 Chrome/Edge（headless=new）＋ CDP**，走**真实登录表单**（邮箱 + 口令）拿到会话 |
+| 身份 | 隔离环境 owner `trackd-4ec1487@weknora.local`（tenant 9，role owner）；口令只从仓外凭据文件读入，**全程不打印、不写入证据**；手写文件用完即删（同仓内编排器的处置） |
+| 被检查的项目 | `0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0` —— **就是最终 F01 跑批 `f01-20261025T013341Z-5105ae32` 的那个项目**（不是新建的空项目） |
+
+#### 三方比对结果
+
+| 快照 | 时刻（**取自产物里的 `at` 字段**） | 比对项数 |
+| --- | --- | --- |
+| HTTP 侧 | 2026-10-25T10:34:07Z | 10 |
+| 浏览器侧 | 2026-10-25T10:34:17Z | 10 |
+| 刷新后读回 | 2026-10-25T10:34:17Z | 10 |
+
+（三方比对本身的结论落在 `parity.json` 的 `at` ＝ `2026-10-25T10:34:18Z`。）
+
+**10 项逐项一致、0 处不符**（`parity.json` → `status = PASS`、`consistent = true`、`checked = 10`、`mismatches = []`）：快照摘要 `1a61a9e98601`、快照 id、课题版本 `9`、研究条件版本 `1`、章节 `2`、资料 `1`、冻结时检查 `passed`、当前检查 `passed`、交付文件 id `export-1`、交付文件摘要 `df5549b04426`。浏览器侧**零 JS 异常**。
+
+- 交付文件摘要 `df5549b04426…` **就是 Word 人工检查所用的那一份**（`export-196b61e0….docx`，sha256 `df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a`）⇒ 浏览器里看到的交付文件与人工打开检查的文件是**同一份**。
+- 仓内证据层（`scripts/acceptance/beta_evidence.py`）对这三项的口径是 **HELD**（＝「这一项成立」；`overall_result` 的阻塞集合 `{failed, blocked, not_run}` 不含 `held`）。
+
+#### 零 provider、零副作用（前后对照）
+
+| 项 | 前 | 后 |
+| --- | --- | --- |
+| `lingdoc_model_call_ledger` 行数 | 4 | **4** |
+| LLM 调试目录文件数 | 4 | **4** |
+| JSON 账本 `qwen-beta-sqlite.json` sha256 | `74e86abc…` | **`74e86abc…`**（mtime 也未变） |
+| JSON 账本 `…json.calls.json` sha256 | `dd39a0cb…` | **`dd39a0cb…`** |
+| `lingdoc_release_snapshots` 行数 | 2 | **2** |
+| `lingdoc_export_artifacts` 行数 | 1 | **1** |
+| 最终项目 `project_version` | 9 | **9** |
+
+⇒ **最强的单条证据**：前后状态文件 `state-before.json` 与 `state-after.json` 的 sha256 **完全相同**（`27df80f11333c286…`）。
+
+#### 哪些动作走 UI、哪些走 API（协议 §2 第 4 步要求注明）
+
+- **走 UI（本轮真实浏览器）**：真实登录表单提交 ⇒ 进入真实前端的灵档工作台 ⇒ 页面真实渲染出该课题（研究条件版本 1 · 课题版本 9 · 课题成员 1 人 · 两章正文）⇒ 打开「交付」面板读取冻结快照/检查结论/交付文件 ⇒ **刷新页面后再读一次**（10 项与刷新前逐字相同）。
+- **走 API（F01 跑批内执行，UI 未逐一点击）**：项目与资料（F01-02/06/10）、**候选预览**（F01-09）、**采纳**（F01-11/12）、**章节编辑与确认**（F01-13～17）、**冻结**（F01-19a～20）、**导出与下载**（F01-21～23，DOCX 已下载并做了 Word 人工检查）。
+- **未执行**：**候选取消** —— F01 契约里没有取消节点；浏览器对偶把「候选采纳/取消的读回」列为**模型门控**面（54-Spec 决策 9）⇒ 这两条在 `parity.json` 里记 `not_run`，但按执行器自身的设计**不降级**「三方一致性」这一结论项。作为**覆盖边界**如实登记。
+
+#### 本轮的两处执行方式偏离（如实登记）
+
+1. **取令牌用登录而不是注册**：仓内执行器 `beta_http_readback.py` 的 `register_login()` **总是先注册**，对已存在的邮箱答 **400** 并当成致命错误 ⇒ `--email` 的「复用已有账号」路径**实际不可用**；而最终 F01 项目属于一个**已存在**的 owner 账号，新注册账号会落在别的租户、根本读不回该项目。本轮改为用**同一个生产端点** `/api/v1/auth/login` 取令牌，之后**所有比对逻辑仍是执行器自己的未改动代码**。⚠️ 这是**执行器的一处缺陷**，本轮**未修**（本轮不施工），建议另开票。
+2. **不跑 `prepare_delivery()`**：F01 已冻结 `snapshot-09c6230b…` 并导出 `export-196b61e0…`（Word 检查过的那一份）。再冻一份会让导出与快照脱钩、并把 F01 快照的 `is_current` 翻掉 ⇒ **削弱**本轮其余证据之间的连贯性。交付检查本身**仍被真实调用**（`read_items()` 会 `POST /projects/{id}/checks`），而该调用是只读的（实测 `project_version` 前后都是 9、结论 `passed`、1 条 warning＝保留待核项）。
+
+#### 证据位置
+
+- 证据文件：`D:\wt\lingdoc-485-evidence\browser-check.md`
+- 产物目录：`D:\wt\lingdoc-485-evidence\browser-run-20261025\`（`parity.json`、`http-readback.json`、`browser-readback.json`、`state-before.json`、`state-after.json`、`delivery-panel.png`（真实前端「交付」面板截图，人工可复核）、`run-summary.json`、`evidence-index.json`）
+- 复核脚本：`D:\wt\lingdoc-485-evidence\scripts\exp_633_browser_check.py`（幂等）、`exp_636_browser_shot.mjs`
+- ⚠️ 产物目录里另有一份 `http-readback.log`，内容是「NOT RUN: HTTP side produced no comparable items (http://127.0.0.1:18087/api/v1/lingdoc)」—— 那是**一次失败的执行**留下的残留日志，**不是**结论那一次（结论那一次的 HTTP 侧走的是内联路径，不写 `.log`）。⚠️ **单凭这一行无法区分失败原因**（仓内执行器在「没产出可比对项」与「RunnerError」两条路径上打印的是同一句；日志里的 base-url 是**正确的** API 根，不能读成「base-url 写错」）。那次失败的真实原因当时写在 `http-readback.json` 的 `not_run[]` 里（`POST /api/v1/auth/register returned 400 (code=1000)`，即下面「执行方式偏离」第 ① 条），而该 json 已被后来成功那一次覆盖。它**零删除**保留在此，仅作痕迹；判定以 `parity.json` 与 `http-readback.json` 为准。
+- 跟进票 **#480** 的「浏览器端到端 / 三方一致性实测」缺口，**本项已解除**。
