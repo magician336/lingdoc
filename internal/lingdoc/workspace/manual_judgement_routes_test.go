@@ -97,6 +97,7 @@ func (f *manualJudgementFake) SubmitManualJudgement(ctx context.Context, actor c
 		AssertionID:       record.AssertionID,
 		RunID:             record.RunID,
 		EvidenceRef:       record.EvidenceRef,
+		AssertionText:     record.AssertionText,
 		ChannelClass:      "user_session",
 		ChannelUIOrigin:   manualJudgementUnprovable,
 		ChannelAutomation: manualJudgementUnprovable,
@@ -313,18 +314,20 @@ func TestManualJudgementHTTPRequestTypeNamesOnlyTheFiveCallerFields(t *testing.T
 }
 
 // The export record is the domain side's own type, and its JSON fields are
-// the eleven the runner and the contract read: the seven audit fields and
-// the audit identifier at the top level, plus the three channel keys.
+// the twelve the runner, the auditor and the contract read: the seven audit
+// fields and the audit identifier at the top level, the quote the judgement
+// rests on, and the three channel keys.
 func TestManualJudgementHTTPExportRecordCarriesTheDomainFields(t *testing.T) {
 	fields := jsonTags(core.ManualJudgementAudit{})
 	for _, wanted := range []string{"audit_id", "actor", "authorization", "channel", "occurred_at",
-		"assertion_id", "run_id", "evidence_ref", "channel_class", "channel_ui_origin", "channel_automation"} {
+		"assertion_id", "run_id", "evidence_ref", "assertion_text", "channel_class",
+		"channel_ui_origin", "channel_automation"} {
 		if !fields[wanted] {
 			t.Fatalf("the export record type carries no %q: %v", wanted, fields)
 		}
 	}
-	if len(fields) != 11 {
-		t.Fatalf("the export record type carries %d fields (%v), want eleven", len(fields), fields)
+	if len(fields) != 12 {
+		t.Fatalf("the export record type carries %d fields (%v), want twelve", len(fields), fields)
 	}
 }
 
@@ -358,7 +361,7 @@ func TestManualJudgementHTTPExportCarriesTheAuditFieldsAtTheTopLevel(t *testing.
 		t.Fatalf("the export record = %v, want an object", records[0])
 	}
 	top := []string{"audit_id", "actor", "authorization", "channel", "occurred_at",
-		"assertion_id", "run_id", "evidence_ref"}
+		"assertion_id", "run_id", "evidence_ref", "assertion_text"}
 	for _, field := range top {
 		if _, ok := record[field]; !ok {
 			t.Fatalf("the export record carries no top-level %q: %v", field, record)
@@ -371,6 +374,49 @@ func TestManualJudgementHTTPExportCarriesTheAuditFieldsAtTheTopLevel(t *testing.
 	}
 	if len(record) != len(top)+3 {
 		t.Fatalf("the export record carries %d keys (%v), want %d", len(record), record, len(top)+3)
+	}
+}
+
+// The export carries the quote the judgement rests on, so an auditor reading
+// an exported record sees WHICH sentence it was made about without opening
+// the audit row's details.  The quote is the very string the write side
+// answered with.
+func TestManualJudgementHTTPExportCarriesTheQuoteTheJudgementRestsOn(t *testing.T) {
+	fake := &manualJudgementFake{}
+	engine := manualJudgementEngine(t, fake)
+	recorded := manualJudgementServe(t, engine, http.MethodPost, "/api/projects/project-1/manual-judgements",
+		manualJudgementBody(), "manual-judgement-http-quote")
+	if recorded.Code != http.StatusCreated {
+		t.Fatalf("record judgement = %d, want 201: %s", recorded.Code, recorded.Body.String())
+	}
+	authoritative, ok := manualJudgementEnvelope(t, recorded)["data"].(map[string]any)
+	if !ok {
+		t.Fatal("the authoritative answer carries no record")
+	}
+
+	response := manualJudgementServe(t, engine, http.MethodGet,
+		"/api/projects/project-1/manual-judgements/audit-records", "", "")
+	records, ok := manualJudgementEnvelope(t, response)["data"].([]any)
+	if !ok || len(records) != 1 {
+		t.Fatalf("the export holds %v, want one record", manualJudgementEnvelope(t, response)["data"])
+	}
+	exported, ok := records[0].(map[string]any)
+	if !ok {
+		t.Fatalf("the export record = %v, want an object", records[0])
+	}
+	mine, err := json.Marshal(authoritative["assertion_text"])
+	if err != nil {
+		t.Fatalf("encode the authoritative quote: %v", err)
+	}
+	theirs, err := json.Marshal(exported["assertion_text"])
+	if err != nil {
+		t.Fatalf("encode the exported quote: %v", err)
+	}
+	if string(mine) != string(theirs) {
+		t.Fatalf("the exported quote = %s, but the authoritative record says %s", theirs, mine)
+	}
+	if exported["assertion_text"] != manualJudgementProse {
+		t.Fatalf("the exported quote = %v, want the contract's prose", exported["assertion_text"])
 	}
 }
 

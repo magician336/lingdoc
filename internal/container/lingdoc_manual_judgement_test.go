@@ -206,13 +206,20 @@ func TestLingDocProductionCompositionServesTheManualJudgementRoutes(t *testing.T
 	}
 	record := export.Data[0]
 	for _, field := range []string{"audit_id", "actor", "authorization", "channel", "occurred_at",
-		"assertion_id", "run_id", "evidence_ref", "channel_class", "channel_ui_origin", "channel_automation"} {
+		"assertion_id", "run_id", "evidence_ref", "assertion_text", "channel_class",
+		"channel_ui_origin", "channel_automation"} {
 		if _, ok := record[field]; !ok {
 			t.Fatalf("the export record carries no %q: %v", field, record)
 		}
 	}
-	if len(record) != 11 {
-		t.Fatalf("the export record carries %d keys (%v), want eleven", len(record), record)
+	if len(record) != 12 {
+		t.Fatalf("the export record carries %d keys (%v), want twelve", len(record), record)
+	}
+	// The quote the judgement rests on travels with the export, so an auditor
+	// reading it sees which sentence it was made about.
+	if record["assertion_text"] != envelope.Data["assertion_text"] {
+		t.Fatalf("the exported quote = %v, but the authoritative record says %v",
+			record["assertion_text"], envelope.Data["assertion_text"])
 	}
 	// The seven facts the runner compares are equal, byte for byte, between
 	// the authoritative record and the exported row.

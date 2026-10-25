@@ -38880,6 +38880,7 @@
                           "assertion_id": "F01-06c",
                           "run_id": "f01-20261025T013341Z-5105ae32",
                           "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
+                          "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
                           "channel_class": "user_session",
                           "channel_ui_origin": "unprovable",
                           "channel_automation": "unprovable"
@@ -54742,6 +54743,7 @@
           "assertion_id",
           "run_id",
           "evidence_ref",
+          "assertion_text",
           "channel_class",
           "channel_ui_origin",
           "channel_automation"
@@ -54781,6 +54783,11 @@
             "type": "string",
             "minLength": 1
           },
+          "assertion_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这条判定引的契约原文，逐字节来自落库时存下的字符串。跑批器不比这一项（它比七个事实），但审计读者不必去翻 details_json。"
+          },
           "channel_class": {
             "type": "string",
             "minLength": 1,
@@ -54801,7 +54808,7 @@
             "description": "自动化来源无法证明，服务端不声称能证明。"
           }
         },
-        "description": "导出记录：七个审计字段与 audit_id 都在顶层，值逐字节来自落库时存下的字符串。跑批器只比那七个具名字段，附加的三个渠道键不影响相等判定。"
+        "description": "导出记录：七个审计字段与 audit_id 都在顶层，值逐字节来自落库时存下的字符串；assertion_text 是这条判定引的契约原文，附加的三个渠道键是渠道的两层语义。跑批器只比那七个具名字段，附加的键不影响相等判定。"
       },
       "ManualJudgementRecordResponse": {
         "type": "object",

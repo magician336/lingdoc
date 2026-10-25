@@ -411,6 +411,7 @@ class ServerExportShapeTests(unittest.TestCase):
             "assertion_id": "F01-06c",
             "run_id": RUN_ID,
             "evidence_ref": SERVER_EVIDENCE_REF,
+            "assertion_text": PROSE["F01-06c"],
             "channel_class": "user_session",
             "channel_ui_origin": "unprovable",
             "channel_automation": "unprovable",
@@ -522,17 +523,35 @@ class ServerExportShapeTests(unittest.TestCase):
             manual_decision_audit.AUTHORITY_CLAIMED)
 
     def test_the_extra_channel_keys_do_not_disturb_the_comparison(self):
-        """The three channel keys are extra, and extras do not count.
+        """The extra keys are extra, and extras do not count.
 
-        The runner compares seven named fields; the export carries three
-        more that say what the server could prove about the channel.
+        The runner compares seven named fields; the export carries the quote
+        and the three channel keys besides, and none of them is compared.
         """
         exported = self.server_export_record()
         self.assertEqual(
             set(exported) - set(manual_decision_audit.AUDIT_FIELDS) - {"audit_id"},
-            {"channel_class", "channel_ui_origin", "channel_automation"})
+            {"assertion_text", "channel_class", "channel_ui_origin", "channel_automation"})
         index = manual_decision_audit.audit_index([exported])
         record = self.server_ledger_record()
+        self.assertEqual(
+            manual_decision_audit.resolve_authority(record, index),
+            manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_the_export_carries_the_quote_the_judgement_rests_on(self):
+        """An auditor sees WHICH sentence the judgement was made about.
+
+        The runner does not compare the quote - it compares seven facts, not
+        the prose - but the export carries it, so a reader of the export does
+        not have to open the audit row's details to learn it.  The quote in
+        the export is the very string the write side answered with.
+        """
+        exported = self.server_export_record()
+        record = self.server_ledger_record()
+        self.assertEqual(exported["assertion_text"], record["assertion_text"])
+        self.assertEqual(exported["assertion_text"], PROSE["F01-06c"])
+        # It is an extra key for the runner: it does not enter the comparison.
+        index = manual_decision_audit.audit_index([exported])
         self.assertEqual(
             manual_decision_audit.resolve_authority(record, index),
             manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
@@ -591,6 +610,9 @@ class ServerContractShapeTests(unittest.TestCase):
         for field in manual_decision_audit.AUDIT_FIELDS:
             self.assertIn(field, schema["properties"])
         self.assertIn("audit_id", schema["properties"])
+        # The quote the judgement rests on is published too: an auditor
+        # reads it out of the export.
+        self.assertIn("assertion_text", schema["properties"])
         for extra in ("channel_class", "channel_ui_origin", "channel_automation"):
             self.assertIn(extra, schema["properties"])
 
@@ -665,6 +687,7 @@ class ServerEnvelopeTests(unittest.TestCase):
             "assertion_id": "F01-06c",
             "run_id": RUN_ID,
             "evidence_ref": SERVER_EVIDENCE_REF,
+            "assertion_text": PROSE["F01-06c"],
             "channel_class": "user_session",
             "channel_ui_origin": "unprovable",
             "channel_automation": "unprovable",
