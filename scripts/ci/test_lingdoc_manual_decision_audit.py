@@ -639,5 +639,162 @@ class ServerContractShapeTests(unittest.TestCase):
             self.assertEqual(operation["x-lingdoc-route-source"], "manual_judgement_routes.go")
 
 
+class ServerEnvelopeTests(unittest.TestCase):
+    """The runner reads what the server actually answers.
+
+    The server answers an audit export with an envelope - the records live
+    under ``data`` - so the reader opens the envelope.  The opening is a
+    READ-side adaptation: it says where the records are, nothing more.
+    These cases pin that the convenience does not weaken the check: a
+    record that came out of an envelope is compared exactly as it would
+    have been without one.
+    """
+
+    def envelope(self, records: list) -> dict:
+        """The answer the export route gives."""
+        return {"data": records, "request_id": "req-manual-judgement-1",
+                "meta": {"replayed": False, "refresh_required": False}}
+
+    def exported_record(self) -> dict[str, str]:
+        return {
+            "audit_id": SERVER_AUDIT_ID,
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "assertion_id": "F01-06c",
+            "run_id": RUN_ID,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "channel_class": "user_session",
+            "channel_ui_origin": "unprovable",
+            "channel_automation": "unprovable",
+        }
+
+    def ledger_record(self) -> dict[str, str]:
+        return {
+            "run_id": RUN_ID,
+            "assertion_id": "F01-06c",
+            "assertion_text": PROSE["F01-06c"],
+            "verdict": "passed",
+            "actor": "user-owner",
+            "authorization": "project_owner",
+            "channel": "unverified_channel",
+            "occurred_at": SERVER_OCCURRED_AT,
+            "evidence_ref": SERVER_EVIDENCE_REF,
+            "audit_id": SERVER_AUDIT_ID,
+        }
+
+    def load(self, directory: Path, document: object) -> list:
+        """Read a document the way the runner reads an audit source."""
+        source = directory / "audit-source.json"
+        source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return manual_decision_audit.load_audit_source(source)
+
+    def test_the_envelope_is_opened_and_the_judgement_is_attested(self):
+        """The runner reads the answer the server actually gives."""
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), self.envelope([self.exported_record()]))
+            self.assertEqual(len(loaded), 1)
+            index = manual_decision_audit.audit_index(loaded)
+            record = self.ledger_record()
+            self.assertTrue(manual_decision_audit.verify_against_audit(record, index))
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_an_envelope_that_leaves_a_field_out_does_not_attest(self):
+        """The envelope is not a back door: a short record stays short.
+
+        Opening the envelope says where the records are.  It does not say
+        that a record inside it may be incomplete.
+        """
+        record = self.ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.exported_record()
+                del exported[field]
+                with tempfile.TemporaryDirectory() as directory:
+                    loaded = self.load(Path(directory), self.envelope([exported]))
+                    index = manual_decision_audit.audit_index(loaded)
+                    self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                    self.assertEqual(
+                        manual_decision_audit.resolve_authority(record, index),
+                        manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_an_envelope_that_states_a_field_differently_does_not_attest(self):
+        """A record inside an envelope is compared exactly as before."""
+        record = self.ledger_record()
+        for field in manual_decision_audit.AUDIT_FIELDS:
+            with self.subTest(field=field):
+                exported = self.exported_record()
+                exported[field] = exported[field] + "-different"
+                with tempfile.TemporaryDirectory() as directory:
+                    loaded = self.load(Path(directory), self.envelope([exported]))
+                    index = manual_decision_audit.audit_index(loaded)
+                    self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+                    self.assertEqual(
+                        manual_decision_audit.resolve_authority(record, index),
+                        manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_an_envelope_cannot_hide_the_fields_one_level_down(self):
+        """The records inside an envelope are read the same way.
+
+        A record whose fields are nested is not a record the runner can
+        read, and the envelope does not change that.
+        """
+        exported = self.exported_record()
+        exported["judgement"] = {field: exported.pop(field)
+                                 for field in manual_decision_audit.AUDIT_FIELDS}
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), self.envelope([exported]))
+            index = manual_decision_audit.audit_index(loaded)
+            record = self.ledger_record()
+            self.assertFalse(manual_decision_audit.verify_against_audit(record, index))
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_CLAIMED)
+
+    def test_the_bare_array_still_works(self):
+        """The old form is not broken by the envelope.
+
+        A consumer that saves the records as a plain JSON array must go on
+        reading them the same way.
+        """
+        record = self.ledger_record()
+        with tempfile.TemporaryDirectory() as directory:
+            loaded = self.load(Path(directory), [self.exported_record()])
+            self.assertEqual(len(loaded), 1)
+            index = manual_decision_audit.audit_index(loaded)
+            self.assertEqual(
+                manual_decision_audit.resolve_authority(record, index),
+                manual_decision_audit.AUTHORITY_SERVER_ATTESTED)
+
+    def test_the_ledger_of_judgements_is_not_read_as_an_envelope(self):
+        """The ledger is a list of judgements, and it stays that.
+
+        Only the audit door opens an envelope.  A ledger line that happens
+        to carry a ``data`` array is still one judgement, not an export.
+        """
+        record = dict(self.ledger_record())
+        record["data"] = ["not", "an", "export"]
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "ledger.jsonl"
+            ledger.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+            loaded = manual_decision_audit.load_ledger(ledger)
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0]["audit_id"], SERVER_AUDIT_ID)
+            self.assertEqual(loaded[0]["data"], ["not", "an", "export"])
+
+    def test_the_comparison_itself_is_untouched(self):
+        """The seven fields the runner compares are the seven it compared.
+
+        The envelope is a read-side adaptation; the comparison it feeds is
+        the same comparison, field for field.
+        """
+        self.assertEqual(manual_decision_audit.AUDIT_FIELDS,
+                         ("actor", "authorization", "channel", "occurred_at",
+                          "assertion_id", "run_id", "evidence_ref"))
+
+
 if __name__ == "__main__":
     unittest.main()
