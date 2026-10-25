@@ -157,6 +157,15 @@ def is_marked(value):
     restatements are tied together by
     ``scripts/ci/test_lingdoc_nonempty_parity.py``: a rule that drifts in one
     place turns the other one red.
+
+    The three places that judge emptiness -- ``marked_or_absent``,
+    ``non_empty`` and ``all_non_empty`` -- call this one rule instead of
+    carrying a copy of it.  They used to carry their own copy, and that copy
+    was older and weaker: it let a whitespace-only string, a ``False`` and an
+    empty tuple through as "not empty", while the runner called the very same
+    values empty.  ``scripts/ci/test_lingdoc_nonempty_and_evidence_wording.py``
+    ties the three call sites themselves to the runner, value by value, so a
+    site that drifts back turns red.
     """
     if value is None or value is False:
         return False
@@ -200,7 +209,7 @@ def tie_expectation(check,kind,example,at,siblings=None):
         if not found: return 'tied'
         marker_found,marker=lookup(actual,value)
         assert marker_found,at+': the example does not carry the marker '+value
-        assert marker not in (None,'',[],{}),at+': the example marks the item with nothing'
+        assert is_marked(marker),at+': the example marks the item with nothing'
         return 'tied'
     if kind in ('ref_in','not_in'):
         array_found,collection=lookup(example,value)
@@ -230,13 +239,13 @@ def tie_expectation(check,kind,example,at,siblings=None):
         return 'tied'
     if kind=='non_empty':
         assert found,at+': the example does not carry '+path
-        assert actual not in (None,'',[],{}),at+': the example holds an empty value'
+        assert is_marked(actual),at+': the example holds an empty value'
         return 'tied'
     if kind=='all_non_empty':
         assert found,at+': the example does not carry '+path
         assert isinstance(actual,list) and actual,at+': the example holds an empty collection'
         for entry in actual:
-            assert entry not in (None,'',[],{}),at+': the example holds an empty entry'
+            assert is_marked(entry),at+': the example holds an empty entry'
         return 'tied'
     if kind=='http_error':
         assert found,at+': the example does not carry '+path
