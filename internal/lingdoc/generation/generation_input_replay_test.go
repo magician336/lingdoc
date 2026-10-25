@@ -57,6 +57,23 @@ func (r *replayRepository) LoadGenerationInput(context.Context, Actor, string, s
 	return r.storedInput, nil
 }
 
+// FindReplay answers the replay question WITHOUT marking the run as a replay.
+//
+// The SQLite repository does mark it, but the marker belongs to the service:
+// a repository that did not would still have to see the service promise it.
+// Marking it here would let the fake answer the assertion on the service's
+// behalf, and the service's own line would go unpinned.
+func (r *replayRepository) FindReplay(_ context.Context, _ Actor, _ string, key, hash string) (Run, bool, error) {
+	r.findReplayCalls++
+	if r.run.ID == "" || key != r.idempotencyKey {
+		return Run{}, false, nil
+	}
+	if hash != r.requestHash {
+		return Run{}, false, ErrIdempotencyConflict
+	}
+	return r.run, true, nil
+}
+
 // budgetGatedModel mirrors the production model adapter's budget gate: the
 // reservation is taken BEFORE the provider is called, and a refused
 // reservation never reaches a provider.
