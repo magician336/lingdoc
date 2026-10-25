@@ -262,6 +262,13 @@ func TestTheEmbeddingProfileLeavesEveryOtherProfileAlone(t *testing.T) {
 			}
 		})
 	}
+	// The legacy human backstop is a CONSTANT, and the table reads it: a
+	// change to the constant would move every profile's backstop together,
+	// and the table assertion above would not notice. Its literal value is
+	// pinned here so that it cannot drift unnoticed.
+	if HumanBackstopCNY != 5 {
+		t.Fatalf("the legacy human backstop = %d CNY, want 5", HumanBackstopCNY)
+	}
 }
 
 // The authorization names four calls, eight thousand tokens and a sixteen

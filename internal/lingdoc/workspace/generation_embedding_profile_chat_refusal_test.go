@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -20,15 +22,30 @@ import (
 // chat path keeps working under them.
 func TestTheChatPathRefusesAProfileThatApprovesNoChatModel(t *testing.T) {
 	t.Setenv(acceptancebudget.ProfileEnv, acceptancebudget.QwenEmbeddingProfile)
-	budget := &generationAcceptanceBudget{profile: acceptancebudget.QwenEmbeddingProfile}
+	// A real ledger path, so that "the refusal wrote nothing" is a fact
+	// about the FILESYSTEM and not a fact about a field this test left empty.
+	ledgerPath := filepath.Join(t.TempDir(), "calls.json")
+	budget := &generationAcceptanceBudget{
+		profile:    acceptancebudget.QwenEmbeddingProfile,
+		ledgerPath: ledgerPath,
+	}
 
 	if _, err := budget.approvedModel(generationAcceptanceModel); !errors.Is(err, errAcceptanceWrongModel) {
 		t.Fatalf("chat call under the embedding profile: err = %v, want a refusal", err)
 	}
-	// The refusal must not have written anything: the budget is not the
-	// ledger's business, and the ledger must stay untouched.
-	if budget.ledgerPath != "" {
-		t.Fatalf("the refusal wrote a ledger path: %q", budget.ledgerPath)
+	// The refusal must happen BEFORE the reservation, so the test goes
+	// through reserve() -- the path that writes the ledgers. A gate that was
+	// moved after the reservation would leave the round ledger on disk, and
+	// this assertion would turn red.
+	if _, err := budget.reserve(context.Background(), generationAcceptanceModel, 128); !errors.Is(err, errAcceptanceWrongModel) {
+		t.Fatalf("reserve under the embedding profile: err = %v, want a refusal", err)
+	}
+	// Neither the round ledger nor the shared budget ledger may exist
+	// afterwards.
+	for _, path := range []string{ledgerPath, ledgerPath + ".calls.json"} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the refusal wrote %s: %v", path, err)
+		}
 	}
 }
 
