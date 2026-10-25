@@ -1,0 +1,38 @@
+WORD_VERSION: 16.0 / build 16.0.20430
+OS:
+OPEN: OK (ReadOnly, no repair prompt path taken)
+PARAGRAPHS: 44
+TABLES: 1
+SECTIONS: 1
+WORDS: 291
+PAGES: 2
+STYLES_BEGIN
+  标题 = 1
+  Cite Source = 1
+  标题 3 = 2
+  副标题 = 1
+  正文 = 24
+  列表段落 = 8
+  标题 1 = 4
+  标题 4 = 3
+STYLES_END
+CHECK_OPEN_normal: PASS (COM Open succeeded, no exception, document not empty)
+CHECK_100: PASS
+CHECK_cite_source: PASS
+CHECK_locate: PASS
+CHECK_subtitle_decl: PASS
+CHECK_not_real_research: PASS
+CHECK_review_items_3: PASS (处理：保留警示 x 3)
+CHECK_review_reasons_3: PASS (理由 x 3)
+CHECK_markdown_exposure_zero: PASS (## / '### ' occurrences: 0)
+CHECK_bullets_8: PASS (bullet paragraphs: 8)
+TABLE_SHAPE: 4x3
+TABLE_HEADER_REPEAT: FAIL
+REOPEN: OK
+HEADING_FORMAT_RAW: -1  (type Int32; -1 = True, 0 = False)
+TABLE_ROW1_TEXT: 待核事项 /  / 处理结论 /  / 理由 /  /  /  /
+TABLE_LAST_CELL_TEXT: 理由：仅作内部演示，保留该项并随文件明确列出。
+OPEN OK (visible)
+PS_EXIT=124
+OPEN OK, printer=Microsoft Print to PDF
+PS_EXIT=124
