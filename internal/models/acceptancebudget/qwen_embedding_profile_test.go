@@ -190,16 +190,23 @@ func TestTheEmbeddingProfileLeavesEveryOtherProfileAlone(t *testing.T) {
 		cumulative     int
 		inputMax       int
 		outputMax      int
+		totalMax       int
+		backstopCNY    int
 		approved       string
+		allowedModels  []string
 		allowsEmbed    bool
 		allowsApproved bool
 		priced         bool
 		moneyCeiling   int64
 	}{
-		{Profile, MaxCalls, 0, InputMax, OutputMax, DeepSeekModel, true, true, true, MaxBudgetNanoCNY},
-		{CostOnlyProfile, 0, 0, InputMax, OutputMax, DeepSeekModel, true, true, true, CostOnlyMaxBudgetNanoCNY},
-		{QwenProfile, QwenMaxCalls, 0, QwenInputMax, QwenOutputMax, QwenChatModel, false, true, false, 0},
-		{QwenProfileV2, QwenV2MaxCalls, QwenV2CumulativeTokenMax, QwenInputMax, QwenOutputMax, QwenChatModel, false, true, false, 0},
+		{Profile, MaxCalls, 0, InputMax, OutputMax, InputMax + OutputMax, HumanBackstopCNY,
+			DeepSeekModel, []string{DeepSeekModel, QwenEmbedding}, true, true, true, MaxBudgetNanoCNY},
+		{CostOnlyProfile, 0, 0, InputMax, OutputMax, InputMax + OutputMax, 20,
+			DeepSeekModel, []string{DeepSeekModel, QwenEmbedding, QwenEmbeddingFlash}, true, true, true, CostOnlyMaxBudgetNanoCNY},
+		{QwenProfile, QwenMaxCalls, 0, QwenInputMax, QwenOutputMax, QwenTotalMax, 0,
+			QwenChatModel, []string{QwenChatModel}, false, true, false, 0},
+		{QwenProfileV2, QwenV2MaxCalls, QwenV2CumulativeTokenMax, QwenInputMax, QwenOutputMax, QwenTotalMax, 0,
+			QwenChatModel, []string{QwenChatModel}, false, true, false, 0},
 	}
 	for _, test := range cases {
 		t.Run(test.profile, func(t *testing.T) {
@@ -209,9 +216,33 @@ func TestTheEmbeddingProfileLeavesEveryOtherProfileAlone(t *testing.T) {
 			if got := ProfileCumulativeTokenMax(test.profile); got != test.cumulative {
 				t.Fatalf("cumulative ceiling = %d, want %d", got, test.cumulative)
 			}
-			inputMax, outputMax, _ := ProfileTokenLimits(test.profile)
-			if inputMax != test.inputMax || outputMax != test.outputMax {
-				t.Fatalf("token ceilings = (%d, %d), want (%d, %d)", inputMax, outputMax, test.inputMax, test.outputMax)
+			inputMax, outputMax, totalMax := ProfileTokenLimits(test.profile)
+			if inputMax != test.inputMax || outputMax != test.outputMax || totalMax != test.totalMax {
+				t.Fatalf("token ceilings = (%d, %d, %d), want (%d, %d, %d)",
+					inputMax, outputMax, totalMax,
+					test.inputMax, test.outputMax, test.totalMax)
+			}
+			// The human backstop is part of the profile's numbers too: it is
+			// the amount a person must be willing to stand behind.
+			_, _, backstop := ProfileLimits(test.profile)
+			if backstop != test.backstopCNY {
+				t.Fatalf("human backstop = %d CNY, want %d", backstop, test.backstopCNY)
+			}
+			// The whole allowlist, not one member of it.
+			for _, model := range []string{
+				DeepSeekModel, QwenChatModel, QwenEmbedding, QwenEmbeddingFlash,
+				"qwen3.8-flash-plus", "",
+			} {
+				want := false
+				for _, allowed := range test.allowedModels {
+					if model == allowed {
+						want = true
+						break
+					}
+				}
+				if got := ProfileAllowsModel(test.profile, model); got != want {
+					t.Fatalf("allows %q = %v, want %v", model, got, want)
+				}
 			}
 			if got := ProfileApprovedModel(test.profile); got != test.approved {
 				t.Fatalf("approved model = %q, want %q", got, test.approved)
@@ -233,6 +264,63 @@ func TestTheEmbeddingProfileLeavesEveryOtherProfileAlone(t *testing.T) {
 	}
 }
 
+// The authorization names four calls, eight thousand tokens and a sixteen
+// thousand token input ceiling.
+//
+// Those numbers are the CONTRACT, and a test that compared the profile
+// against the constants would keep passing after somebody changed a
+// constant: the profile and the test would move together. So the literals
+// are pinned here, against the constants, and the constants are pinned
+// against the profile by the ledger test above.
+func TestTheEmbeddingProfileCarriesTheAuthorizedNumbers(t *testing.T) {
+	if QwenEmbeddingProfile != "lingdoc-qwen-embedding-budget-20261025" {
+		t.Fatalf("profile name = %q, want the authorized name", QwenEmbeddingProfile)
+	}
+	if QwenEmbeddingMaxCalls != 4 {
+		t.Fatalf("call ceiling = %d, want the authorized 4", QwenEmbeddingMaxCalls)
+	}
+	if QwenEmbeddingCumulativeTokenMax != 8000 {
+		t.Fatalf("cumulative token ceiling = %d, want the authorized 8000", QwenEmbeddingCumulativeTokenMax)
+	}
+	if QwenEmbeddingInputMax != 16000 {
+		t.Fatalf("input ceiling = %d, want the authorized 16000", QwenEmbeddingInputMax)
+	}
+	if QwenEmbeddingOutputMax != 0 {
+		t.Fatalf("output ceiling = %d, want 0 (an embedding call produces no output tokens)", QwenEmbeddingOutputMax)
+	}
+	if QwenEmbeddingTotalMax != 16000 {
+		t.Fatalf("total ceiling = %d, want 16000", QwenEmbeddingTotalMax)
+	}
+	// The money ceiling is the money value of ONE maximum-size call at the
+	// embedding input price: 16,000 x 500 nano-CNY.
+	if QwenEmbeddingMaxReserveNanoCNY != 8_000_000 {
+		t.Fatalf("money ceiling = %d, want 8000000", QwenEmbeddingMaxReserveNanoCNY)
+	}
+	if QwenEmbeddingBackstopCNY != 1 {
+		t.Fatalf("human backstop = %d CNY, want 1", QwenEmbeddingBackstopCNY)
+	}
+	// The table must carry the constants, not a copy of them that can drift.
+	inputMax, outputMax, totalMax := ProfileTokenLimits(QwenEmbeddingProfile)
+	if inputMax != QwenEmbeddingInputMax || outputMax != QwenEmbeddingOutputMax ||
+		totalMax != QwenEmbeddingTotalMax {
+		t.Fatalf("table token ceilings = (%d, %d, %d), want (%d, %d, %d)",
+			inputMax, outputMax, totalMax,
+			QwenEmbeddingInputMax, QwenEmbeddingOutputMax, QwenEmbeddingTotalMax)
+	}
+	if ProfileMaxCalls(QwenEmbeddingProfile) != QwenEmbeddingMaxCalls {
+		t.Fatalf("table call ceiling = %d, want %d",
+			ProfileMaxCalls(QwenEmbeddingProfile), QwenEmbeddingMaxCalls)
+	}
+	if ProfileCumulativeTokenMax(QwenEmbeddingProfile) != QwenEmbeddingCumulativeTokenMax {
+		t.Fatalf("table cumulative ceiling = %d, want %d",
+			ProfileCumulativeTokenMax(QwenEmbeddingProfile), QwenEmbeddingCumulativeTokenMax)
+	}
+	_, money, _ := ProfileLimits(QwenEmbeddingProfile)
+	if money != QwenEmbeddingMaxReserveNanoCNY {
+		t.Fatalf("table money ceiling = %d, want %d", money, QwenEmbeddingMaxReserveNanoCNY)
+	}
+}
+
 // The chat profiles still refuse the embedding model. That refusal is WHY
 // this profile exists, and a new profile must not quietly take it away.
 func TestTheChatProfilesStillRefuseTheEmbeddingModel(t *testing.T) {
@@ -240,6 +328,31 @@ func TestTheChatProfilesStillRefuseTheEmbeddingModel(t *testing.T) {
 		budget := New(profile, filepath.Join(t.TempDir(), "calls.json"))
 		if _, err := budget.Reserve(context.Background(), QwenEmbedding, 128, 0); !errors.Is(err, ErrWrongModel) {
 			t.Fatalf("profile %q reserved the embedding model: %v", profile, err)
+		}
+	}
+}
+
+// A profile that approves an embedding model approves NO chat model.
+//
+// This is the answer the chat path asks before it reserves anything: the
+// reservation uses the profile's APPROVED model, so a chat request under an
+// embedding profile would otherwise be reserved -- and counted -- as an
+// embedding call, and the provider would answer a chat request that no chat
+// budget was written for.
+//
+// The existing profiles are unaffected: they all approve a chat model.
+func TestOnlyTheEmbeddingProfileApprovesNoChatModel(t *testing.T) {
+	if model, ok := ProfileApprovedChatModel(QwenEmbeddingProfile); ok {
+		t.Fatalf("the embedding profile approves the chat model %q", model)
+	}
+	for _, profile := range []string{Profile, CostOnlyProfile, QwenProfile, QwenProfileV2} {
+		model, ok := ProfileApprovedChatModel(profile)
+		if !ok {
+			t.Fatalf("profile %q approves no chat model", profile)
+		}
+		if model != ProfileApprovedModel(profile) {
+			t.Fatalf("profile %q approves the chat model %q, want %q",
+				profile, model, ProfileApprovedModel(profile))
 		}
 	}
 }

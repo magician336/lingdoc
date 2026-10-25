@@ -1095,6 +1095,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # **拒绝 chat 模型** ⇒ 该 profile 下进程发不出 chat 调用）、账本自带自己的上限与
             # 计价基准、账本可被自己的校验器读回、**既有 profile 逐字未变**。
             ("internal/models/acceptancebudget/qwen_embedding_profile_test.go", "file"),
+            # #546 的聊天侧闸门：聊天路径预留的是 profile 的**批准模型**，所以一个只批准
+            # embedding 模型的 profile 必须**在出网前**拒绝 chat 调用（否则 chat 请求会被当成
+            # embedding 调用记账，而那个端点根本不提供 chat）。
+            ("internal/lingdoc/workspace/generation_acceptance_budget.go", "file"),
+            # #546 的守护：该 profile 下的 chat 调用被拒（且不写账本），四个 chat profile 下的
+            # chat 调用照旧可用。
+            ("internal/lingdoc/workspace/generation_embedding_profile_chat_refusal_test.go", "file"),
             # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
             ("internal/models/acceptancebudget/token_budget_state.go", "file"),
             # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。

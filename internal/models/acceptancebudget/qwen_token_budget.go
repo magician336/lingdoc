@@ -239,6 +239,30 @@ func ProfileApprovedModel(profile string) string {
 	return profileConfigOf(profile).approvedModel
 }
 
+// ProfileApprovedChatModel returns the model one profile may call for a CHAT
+// request, and whether there is one.
+//
+// A profile that approves an EMBEDDING model approves no chat model.
+//
+// The embedding models are not chat models: an embedding endpoint answers with
+// vectors, and a chat request sent there is a request the endpoint does not
+// serve. It is also the wrong bookkeeping: the chat path reserves the
+// profile's APPROVED model, so under such a profile a chat request would be
+// reserved -- and therefore counted -- as an embedding call, and the provider
+// would answer a chat request that no budget was written for.
+//
+// The refusal belongs here, where the approved model is the single source of
+// truth, so that a profile which cannot serve a chat call says so BEFORE
+// anything leaves the process. The embedding models are the ones this
+// package knows by name, so the answer is exact rather than a guess.
+func ProfileApprovedChatModel(profile string) (string, bool) {
+	approved := ProfileApprovedModel(profile)
+	if _, isEmbedding := EmbeddingInputNanoCNYPerToken(approved); isEmbedding {
+		return "", false
+	}
+	return approved, true
+}
+
 // ProfileAllowsModel reports whether one profile may reserve one model.
 //
 // The Qwen profiles allow exactly one model: the approved Qwen chat model.
