@@ -468,6 +468,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/router/routes_lingdoc_owner_410_test.go", "file"),
             ("docs/08-本轮实施方案/Spec-49-owner_unavailable派生状态与Owner-only冻结.md", "file"),
             ("docs/08-本轮实施方案/contracts/validation-result.json", "file"),
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：PF-10 **借用**本面
+            #   持有的两条路径 ——
+            #   docs/08-本轮实施方案/contracts/openapi.json：给 CheckResult 补 receipt_id（服务端真实
+            #     返回，而 CheckResult 是 additionalProperties:false ⇒ 改之前真实响应违反契约）；
+            #     给 ObjectVersionRef.kind 枚举补 DeliveryPreflight（服务端真的在发这个 kind ⇒
+            #     真实响应违反契约）；给 ImpactBlocker.code 的描述登记新码
+            #     impact_object_authorization_invalid。**owner 仍是本面**，不变更归属。
+            #   docs/08-本轮实施方案/contracts/validation-result.json：契约静态校验器重新生成的产物。
+            #   依据票：#619（PR #646）、#633（PR #643）。
             ("migrations/sqlite/000053_lingdoc_project_archive.up.sql", "file"),
             ("migrations/sqlite/000053_lingdoc_project_archive.down.sql", "file"),
             ("migrations/versioned/000132_lingdoc_project_archive.up.sql", "file"),
@@ -601,6 +610,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
+            # 2026-10-25 #619 服务端（PR #645，内容提交 295bc5f2）：PF-10 **借用**本面持有的这条路径 ——
+            #   该 PR 改了 1 行：ApplyProjectAssetPolicyDelta 的 Version/AssetRevision 改为使用
+            #   新增的共享常量 assetPolicyVersionAdvance（＝1），好让 apply 的推进量与 A1 的判定式
+            #   **共用同一个常量**（两处不可能各自漂移）。**owner 仍是本面**，不变更归属；
+            #   本面不把它借给别的面。
+            #   依据票：#619（PR #645）、#634（A 的决策记录）。
             ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
             # The 研究提案 contract: the model-output contract that owns the
             # shape of a research proposal.  It is a module of its own,
@@ -813,11 +828,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
             ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
             # F01 契约：协议 §3 的语义读回落成这里的 check
-            # （steps 28 个、checks 58 条；一条 check 的断言键就是它的 kind：
+            # （steps 31 个、checks 64 条；一条 check 的断言键就是它的 kind：
             #  equals / ref_in / readback_equals / non_empty / length /
             #  version_bound / marked_or_absent / hash_equals）。
-            #  28 个 ＝ 原 23 个业务步骤 ＋ activation-read 前置 ＋ #545 的四个
-            #  model-use 许可节点（F01-06b～06e：为建立同意记录而存在，不是业务步骤）。
+            #  31 个 ＝ 原 23 个业务步骤 ＋ activation-read 前置 ＋ #545 的四个
+            #  model-use 许可节点（F01-06b～06e：为建立同意记录而存在，不是业务步骤）
+            #  ＋ #619 的三个稳定化节点（F01-19a～19c：交付检查回执 → 闭环影响任务 → 稳定化）。
             ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
             # 协议 §6 的证据产物目录：<SHA>/<运行标识>/ 下的六件产物。
             # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
@@ -825,6 +841,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("docs/08-本轮实施方案/acceptance/beta-first/", "dir"),
             ("scripts/lingdoc_mock/workflow_expand.py", "file"),
             ("scripts/ci/test_lingdoc_review_decision_expansion.py", "file"),
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：本面认领该 PR 新增的三条路径 ——
+            #   scripts/lingdoc_mock/manual_decision_audit.py  （人工判定台账与权威性三档）
+            #   scripts/lingdoc_mock/test_workflow_manual_decisions.py（42 条验收/负向/端到端用例）
+            #   scripts/ci/test_lingdoc_manual_decision_audit.py  （跨路径守护，由 LingDoc PR gate 执行）
+            ("scripts/lingdoc_mock/manual_decision_audit.py", "file"),
+            ("scripts/lingdoc_mock/test_workflow_manual_decisions.py", "file"),
+            ("scripts/ci/test_lingdoc_manual_decision_audit.py", "file"),
             # 2026-10-24 #618（PR #620，合并提交 f404fd02）：本面认领本 PR 新增的两条路径 ——
             #   scripts/lingdoc_mock/workflow_expand.py            （展开规则的唯一实现）
             #   scripts/ci/test_lingdoc_review_decision_expansion.py（守护测试，由 LingDoc PR gate 执行）。
@@ -832,6 +855,46 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   （让契约静态校验器与 F01 跑批执行器共用同一份展开实现）—— 那是**跨面借用**，
             #   owner 仍是 PF-14，本面不声明该路径（登记处 loader 拒绝两个面声明同一条路径）。
             #   依据票：#618（PR #620）、#490（放行结论表）。
+            # 2026-10-24 #626（PR #637，内容提交 ab9fd141，合并提交 6b394ca7）：本面**再次借用**
+            #   PF-14 持有的 docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 在校验器里
+            #   新增 is_marked()（逐条复刻 runner 的 _is_marked）并把 one_to_one 的 entry_non_empty
+            #   改用同一口径（纯空白字符串在两边都算空）。**owner 仍是 PF-14**，本面不声明该路径
+            #   （登记处 loader 拒绝两个面声明同一条路径）。
+            #   同 PR 新增的三条路径 —— scripts/lingdoc_mock/test_check_operators.py、
+            #   scripts/ci/test_lingdoc_check_operator_discovery.py、scripts/ci/test_lingdoc_nonempty_parity.py
+            #   —— 经登记处自身的 PathClaim.overlaps 逐条核对为**自由路径**（本仓无面声明），
+            #   按本轮约定不声明进任何面的路径集；此处只记录改动事实，不改本面既有路径集。
+            #   依据票：#626（PR #637）、#621（引入 one_to_one 的那轮）、#490（放行结论表）。
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：本面**认领**该 PR 新增的三条路径 ——
+            #   scripts/lingdoc_mock/manual_decision_audit.py  （人工判定台账与权威性三档）
+            #   scripts/lingdoc_mock/test_workflow_manual_decisions.py（42 条验收/负向/端到端用例）
+            #   scripts/ci/test_lingdoc_manual_decision_audit.py  （跨路径守护，由 LingDoc PR gate 执行）
+            #   同 PR 还**借用** PF-14 持有的两条路径（owner 不变，故不声明进本面 paths；登记处 loader
+            #   拒绝两个面声明同一条路径）：
+            #   scripts/lingdoc_mock/test_workflow_runner.py、scripts/lingdoc_mock/test_workflow_reports.py
+            #   —— 理由是「跑批器新增了 run_id / manual_decisions 两个报告键，那两处的精确 key 集合断言
+            #   必须同步扩充」。改动只是**扩充**断言（未删未弱化）。
+            #   依据票：#633（PR #643）、#490（放行结论表）。
+            # 2026-10-25 #639（PR #644，内容提交 e0d1df5f）：本面**再次借用** PF-14 持有的
+            #   docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 把校验器里
+            #   marked_or_absent / non_empty / all_non_empty 三处判断点改调 is_marked()，
+            #   使校验器与跑批器对「什么算空」同一口径。**owner 仍是 PF-14**，本面不声明该路径。
+            #   依据票：#639（PR #644）、#621（引入 one_to_one 的那轮）。
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：本面认领
+            #   docs/08-本轮实施方案/contracts/workflow.json（**本面自有路径**），并**借用**下列
+            #   **别的面拥有**的路径（owner 全部不变，本面一律不声明）：
+            #   docs/08-本轮实施方案/contracts/scenarios.json（PF-14）
+            #   docs/08-本轮实施方案/contracts/openapi.json（PF-4）
+            #   docs/08-本轮实施方案/contracts/validation-result.json（PF-4）
+            #   scripts/lingdoc_mock/test_workflow_specs.py（PF-14）
+            #   scripts/lingdoc_mock/test_workflow_twostep.py（PF-14）
+            #   scripts/lingdoc_mock/test_workflow_runner.py（PF-14）
+            #   docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md（PF-14）
+            #   —— 理由分别是：补稳定化链节点与两条场景；给 CheckResult 补 receipt_id、
+            #   给 ObjectVersionRef.kind 补 DeliveryPreflight（服务端真在发 ⇒ 真实响应违反契约）、
+            #   登记新阻断码 impact_object_authorization_invalid；节点数 28 → 31 的连锁断言；
+            #   协议与放行 Spec 里的节点数与构成同步。
+            #   依据票：#619（PR #646）、#633（PR #643）、#490（放行结论表）。
         ),
         "resolves": (),
         "summary": (
@@ -1171,6 +1234,38 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   docs/08-本轮实施方案/contracts/validate_artifacts.py（让契约静态校验器与
             #   F01 跑批执行器共用同一份展开实现）。**owner 仍是本面**，不变更归属。
             #   依据票：#618（PR #620）。
+            # 2026-10-24 #626（PR #637，内容提交 ab9fd141，合并提交 6b394ca7）：PF-10 **再次借用**
+            #   本面持有的 docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 在校验器里
+            #   新增 is_marked()（逐条复刻 runner 的 _is_marked）并把 one_to_one 的 entry_non_empty
+            #   改用同一口径。**owner 仍是本面**，不变更归属；本面不把它借给别的面。
+            #   依据票：#626（PR #637）、#621。
+            # 2026-10-25 #639（PR #644，内容提交 e0d1df5f）：PF-10 **再次借用**本面持有的
+            #   docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 把校验器里
+            #   marked_or_absent / non_empty / all_non_empty 三处判断点改调 is_marked()，
+            #   使校验器与跑批器对「什么算空」同一口径。**owner 仍是本面**，不变更归属。
+            #   依据票：#639（PR #644）、#621。
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：PF-10 **借用**本面持有的两条路径 ——
+            #   scripts/lingdoc_mock/test_workflow_runner.py、scripts/lingdoc_mock/test_workflow_reports.py
+            #   —— 理由是「跑批器新增了 run_id / manual_decisions 两个报告键，那两处的精确 key 集合断言
+            #   必须同步扩充」。改动只是**扩充**断言（未删未弱化）。**owner 仍是本面**，不变更归属。
+            #   依据票：#633（PR #643）。
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：PF-10 **借用**本面
+            #   持有的五条路径 ——
+            #   docs/08-本轮实施方案/contracts/scenarios.json（补 F34/F35 两条稳定化场景）
+            #   scripts/lingdoc_mock/test_workflow_specs.py（节点数 28 → 31 的连锁断言）
+            #   scripts/lingdoc_mock/test_workflow_twostep.py（同上）
+            #   scripts/lingdoc_mock/test_workflow_runner.py（同上）
+            #   docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md（沿用它自己的日期化更新形态
+            #   补一条节点数 28 → 31，**不改写它的历史问题陈述**）
+            #   **owner 全部仍是本面**，不变更归属；本面不把它们借给别的面。
+            #   依据票：#619（PR #646）、#633（PR #643）。
+            # 2026-10-25 #654（PR #654，合并提交 5ed7ae06）：本面**认领**该 PR 新增的三条路径 ——
+            #   scripts/lingdoc_mock/rejudge_report.py（零额度重判路径：只重算人工判定层，机器事实逐字节保留）
+            #   scripts/lingdoc_mock/test_rejudge_report.py（26 条验收/负向/端到端用例，由 lingdoc-mock.yml discover）
+            #   scripts/ci/test_lingdoc_rejudge_report.py（7 条跨路径守护，由 LingDoc PR gate 执行）
+            ("scripts/lingdoc_mock/rejudge_report.py", "file"),
+            ("scripts/lingdoc_mock/test_rejudge_report.py", "file"),
+            ("scripts/ci/test_lingdoc_rejudge_report.py", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1221,7 +1316,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "守护测试 scripts/acceptance/test_lingdoc_full_server_restart.py 此前不在任何面的路径集里（自由路径），本面改它；"
             "**2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（PF-10 的文件级声明；本面只改 F01-07 那一个节点的 retrieval 字段与 retrieval_modes 的两段说明文字）。 **2026-10-24 #546 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#546 口径②：F01-07 的检索方式声明由 vector_required 改为 keyword_only（裁定记录：docs/08-本轮实施方案/Spec-Beta-F01-07-检索方式口径变更.md） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明；本面把「恰好一个节点声明检索方式」那条守护改成新事实，并补 keyword_only 的三态守护）。 **未登记进本面 paths 的理由与上面一致**：登记处 loader 拒绝两个面声明同一条路径。"
             "**2026-10-24 #576 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#576（PR #589，已于 2026-10-24 合入 main，合并提交 a9374cab）把前端租户角色的中文说法收口为唯一来源（新增 frontend/src/i18n/tenantRoleLabel.ts 与它的守护测试；本面已拥有的 auditActorRoleLabel.ts 改为引用它）。该 PR 另改了两个**别的面拥有**的文件，且只做**维度标注**（不改行为、不改判定）：① **PF-4** 拥有的 frontend/src/views/lingdoc/ProjectMembers.vue（项目治理角色）；② **PF-13** 拥有的 frontend/src/views/lingdoc/firstPassEntryState.ts（课题角色）。这两条与租户角色词表是**不同维度**，按 #535 段二的裁定口径不得并入 A ⇒ 本面**借用**这两条路径，owner 不变。"
-            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/openapi.json`（docs/08-本轮实施方案/contracts/openapi.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（docs/08-本轮实施方案/contracts/workflow.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/lingdoc/candidateadoption/adoption_confirmation_http_test.go`（internal/lingdoc/candidateadoption/）；`internal/lingdoc/candidateadoption/adoption_contract_body_http_test.go`（internal/lingdoc/candidateadoption/）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"),
+            "**2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/openapi.json`（docs/08-本轮实施方案/contracts/openapi.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`docs/08-本轮实施方案/contracts/workflow.json`（docs/08-本轮实施方案/contracts/workflow.json）。 **2026-10-24 #608 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#608（F01-11 采纳节点按服务端 HTTP 契约补齐确认载荷与工作副本声明，PR #612 已合入 main） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/lingdoc/candidateadoption/adoption_confirmation_http_test.go`（internal/lingdoc/candidateadoption/）；`internal/lingdoc/candidateadoption/adoption_contract_body_http_test.go`（internal/lingdoc/candidateadoption/）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/container/lingdoc.go`（internal/container/lingdoc.go）。 **2026-10-24 #590 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#590（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦，已于 2026-10-24 合入 main，合并提交 781295c7） 改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/lingdoc_mock/run_f01.py`（scripts/lingdoc_mock/run_f01.py）。 **2026-10-24 #592 跨面借用两条（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#592（PR #601，放行判定不得产生假 PASS：人工断言未判定、契约里没跑到的 checks、受控窗口核验接入放行链）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`scripts/acceptance/beta_evidence.py`（PF-10 的文件级声明）、`scripts/ci/test_lingdoc_beta_evidence.py`（PF-10 的文件级声明）；另 `scripts/lingdoc_mock/controlled_window_check.py` 是**本面自有**路径（PF-14），owner 不变。**本面自有路径的语义变化**：受控窗口的 `retrieval` 声明由两态变三态（`keyword_only` / `vector_required` / `undeclared`），未知声明**被点名拒绝**，`vector_required` 在受控窗口恒为 NOT RUN，窗口出现 embedding 行则整窗失败，两本账本**读不到**则为 NOT RUN（不得推断为零调用或 PASS）。 **2026-10-24 #593 跨面借用（owner 不变，故不声明进本面 paths；重复声明会被登记处 loader 直接拒绝）**：#593（PR #595，检索侧的受控 profile 策略拒绝保留自己的错误形态 ＋ D14 的权威常量，已于 2026-10-24 合入 main，合并提交 5a3e3793）改动了下列**别的面拥有**的文件，本面**借用**它们、owner 不变：`internal/clienterror/catalog.go`（internal/clienterror/catalog.go）；`internal/lingdoc/generation/client_form_contract_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/http_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/service.go`（internal/lingdoc/generation/）；`internal/lingdoc/generation/source_status_vocabulary_guard_test.go`（internal/lingdoc/generation/）；`internal/lingdoc/workspace/generation.go`（internal/lingdoc/workspace/generation.go）。"
+            "**2026-10-25 #654 认领三条新路径（owner 是本面，loader 不接受重复声明）**：#654（PR #654，"
+            "合并提交 5ed7ae06，独立复核 PASS、门禁 22 行 0 fail）新增了零额度重判路径的三条文件："
+            "`scripts/lingdoc_mock/rejudge_report.py`（只重算人工判定层，机器事实逐字节保留、run_id 不变）、"
+            "`scripts/lingdoc_mock/test_rejudge_report.py`（26 条用例）、"
+            "`scripts/ci/test_lingdoc_rejudge_report.py`（7 条守护）。该 PR **未改动别的面拥有的路径**。"
+            "**口径备注（管理会话 2026-10-25 裁决）**：重算的键是**人工判定层三个**"
+            "（manual_assertions / manual_decisions / provider_semantics_status），不是两个——"
+            "manual_decisions 本就是跑批器自己产出的报告键，属于人工层；实现与该口径一致。"
+            "**该 PR 只证明路径可用，不构成放行证据**（真实人工判定尚不存在，PASS 档位全部来自合成数据）。"
+            "依据票：#654（PR #654）、#633（人工判定录入通道）、#490（放行结论表）。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",

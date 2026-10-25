@@ -135,6 +135,46 @@ def ids_of(collection,id_field):
         elif isinstance(item,dict) and id_field in item: found.add(item[id_field])
     return found
 
+def ids_in_order(collection,id_field):
+    """The ids an array carries, in order; None when an entry carries no id."""
+    if not isinstance(collection,list): return None
+    found=[]
+    for item in collection:
+        if isinstance(item,str): found.append(item)
+        elif isinstance(item,dict) and id_field in item: found.append(item[id_field])
+        else: return None
+    return found
+
+def is_marked(value):
+    """Whether a value carries a mark: something is there and it is not empty.
+
+    This is the runner's own emptiness test
+    (``scripts/lingdoc_mock/run_f01.py``'s ``ScenarioRunner._is_marked``), restated
+    here so that the static check and the run judge the same value the same way:
+    a whitespace-only string is empty for both, and so is an empty collection.
+    The validator deliberately does not import the runner -- a contract check has
+    to be able to run without any implementation beside it -- so the two
+    restatements are tied together by
+    ``scripts/ci/test_lingdoc_nonempty_parity.py``: a rule that drifts in one
+    place turns the other one red.
+
+    The three places that judge emptiness -- ``marked_or_absent``,
+    ``non_empty`` and ``all_non_empty`` -- call this one rule instead of
+    carrying a copy of it.  They used to carry their own copy, and that copy
+    was older and weaker: it let a whitespace-only string, a ``False`` and an
+    empty tuple through as "not empty", while the runner called the very same
+    values empty.  ``scripts/ci/test_lingdoc_nonempty_and_evidence_wording.py``
+    ties the three call sites themselves to the runner, value by value, so a
+    site that drifts back turns red.
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value,str):
+        return bool(value.strip())
+    if isinstance(value,(list,tuple,dict,set)):
+        return bool(value)
+    return True
+
 def tie_expectation(check,kind,example,at,siblings=None):
     """Tie one expectation to the example it is about.
 
@@ -169,7 +209,7 @@ def tie_expectation(check,kind,example,at,siblings=None):
         if not found: return 'tied'
         marker_found,marker=lookup(actual,value)
         assert marker_found,at+': the example does not carry the marker '+value
-        assert marker not in (None,'',[],{}),at+': the example marks the item with nothing'
+        assert is_marked(marker),at+': the example marks the item with nothing'
         return 'tied'
     if kind in ('ref_in','not_in'):
         array_found,collection=lookup(example,value)
@@ -199,13 +239,13 @@ def tie_expectation(check,kind,example,at,siblings=None):
         return 'tied'
     if kind=='non_empty':
         assert found,at+': the example does not carry '+path
-        assert actual not in (None,'',[],{}),at+': the example holds an empty value'
+        assert is_marked(actual),at+': the example holds an empty value'
         return 'tied'
     if kind=='all_non_empty':
         assert found,at+': the example does not carry '+path
         assert isinstance(actual,list) and actual,at+': the example holds an empty collection'
         for entry in actual:
-            assert entry not in (None,'',[],{}),at+': the example holds an empty entry'
+            assert is_marked(entry),at+': the example holds an empty entry'
         return 'tied'
     if kind=='http_error':
         assert found,at+': the example does not carry '+path
@@ -227,6 +267,31 @@ def tie_expectation(check,kind,example,at,siblings=None):
         # does not declare one yet.  Then the example cannot speak about it.
         if not found: return 'unresolved'
         assert actual in check_kinds.REAL_PROVENANCE_VALUES,at+': the example holds the provenance '+repr(actual)
+        return 'tied'
+    if kind=='one_to_one':
+        # The two collections have to answer each other one to one.  The ids are
+        # compared as sets: the order the provider returns is not the contract's
+        # business.  A repeated id is not a mapping either.
+        other=(siblings or {}).get(value['from_step'])
+        assert other is not None,at+': one_to_one names a step this contract does not have'
+        other_found,other_collection=lookup(other,value['path'])
+        assert other_found,at+': the named step does not carry '+value['path']
+        assert found,at+': the example does not carry '+path
+        assert isinstance(actual,list) and actual,at+': the example holds an empty collection'
+        assert isinstance(other_collection,list) and other_collection,at+': the named step holds an empty collection'
+        ids=ids_in_order(actual,value.get('id_field','id'))
+        other_ids=ids_in_order(other_collection,value.get('other_id_field','id'))
+        assert ids is not None,at+': an entry of the example carries no id'
+        assert other_ids is not None,at+': an entry of the named step carries no id'
+        assert len(ids)==len(set(ids)),at+': the example repeats an id'
+        assert len(other_ids)==len(set(other_ids)),at+': the named step repeats an id'
+        assert set(ids)==set(other_ids),at+': the two collections do not answer each other one to one'
+        for name,wanted in (value.get('entry_equals') or {}).items():
+            for entry in actual:
+                assert entry.get(name)==wanted,at+': an entry does not carry '+name+' as the contract states'
+        for name in (value.get('entry_non_empty') or []):
+            for entry in actual:
+                assert is_marked(entry.get(name)),at+': an entry leaves '+name+' empty'
         return 'tied'
     raise AssertionError(at+': no tie is defined for the kind '+kind)
 

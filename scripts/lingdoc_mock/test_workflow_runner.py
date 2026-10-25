@@ -49,11 +49,13 @@ class WorkflowRunnerTest(unittest.TestCase):
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
         )
         self.assertEqual(runner.spec.id, "F01")
-        self.assertEqual(len(runner.spec.steps), 28)
+        self.assertEqual(len(runner.spec.steps), 31)
         self.assertEqual([step["id"] for step in runner.spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{n:02d}" for n in range(7, 24)])
+                         + [f"F01-{n:02d}" for n in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{n:02d}" for n in range(19, 24)])
         self.assertEqual([step["id"] for step in runner.spec.steps][2:5],
                          ["F01-03", "F01-03b", "F01-04"])
         for step in runner.spec.steps:
@@ -89,9 +91,9 @@ class WorkflowRunnerTest(unittest.TestCase):
 
         runner.client.opener = opener
         result = runner.run()
-        self.assertEqual(result["completed_steps"], 28)
-        self.assertEqual(len(result["steps"]), 28)
-        self.assertEqual(len(requests), 28)
+        self.assertEqual(result["completed_steps"], 31)
+        self.assertEqual(len(result["steps"]), 31)
+        self.assertEqual(len(requests), 31)
         self.assertEqual(requests[1].method, "POST")
         self.assertTrue(requests[3].full_url.endswith("/activation-read"))
         activation = json.loads(requests[4].data.decode("utf-8"))
@@ -405,9 +407,15 @@ class RecordedOutcomeTest(unittest.TestCase):
         runner, _ = driven([CheckedStep(status_expected=200)], answering([({"ok": True}, 200)]))
         runner.run()
         report = runner.report("completed")
-        self.assertEqual(set(report), {"workflow", "runner_status", "completed_steps", "total_steps", "steps",
+        self.assertEqual(set(report), {"workflow", "run_id", "runner_status", "completed_steps", "total_steps", "steps",
                                       "material_gate_stages",
-                                       "verification_scope", "provider_semantics_status", "manual_assertions"})
+                                       "verification_scope", "provider_semantics_status", "manual_assertions",
+                                       "manual_decisions"})
+        # The batch the report is one run of, and the judgements it read:
+        # a report that cannot name its batch cannot say which judgements
+        # belong to it.
+        self.assertEqual(report["run_id"], runner.run_id)
+        self.assertEqual(report["manual_decisions"], [])
 
     def test_seeded_variables_reach_the_steps_and_a_second_run_reproduces_the_first(self):
         document = {"id": "F22", "steps": [{"id": "F22-01", "operation_id": "createProject", "expected_http": 200,

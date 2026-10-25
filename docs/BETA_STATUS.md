@@ -2,7 +2,7 @@
 
 > **本文件是 lingdoc Beta 实施的唯一进度源。** 每批任务结束后更新它；不要另建进度表。
 > **基线**：`origin/main`（本文件合并后即最新基线；每次更新在本行下写明本文件对应的合并提交，避免基线行本身过期）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
-> **本轮同步基线（第四轮）**：`origin/main` = `15e26077`（PR #607 合并提交）。本轮新合入：**#590**（#484 材料分块/坐标逐字自洽 ＋ 分块与 embedding 解耦，合并提交 `781295c7`）、**#604**（#602 门禁作用域覆盖修复：基线前移 ⇒ 触及的面必须重测；「被跳过的面」必须有验证者，聚合门禁 `--require-coverage` 不放行，合并提交 `78f31f16`）、**#607**（登记处补登记 #590 的 30 条无主路径 ＋ 2 处跨面借用，PF-14 路径集 65 → 95，合并提交 `15e26077`）。**第三轮**同步基线＝`c14770f9`（PR #591）；**第二轮**＝`6b382132`（PR #585）；**第一轮**＝`a98138af`（PR #561）。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
+> **本轮同步基线（第六轮）**：见 **§19**（第十一批）。本轮把 #619 的裁定（A1 / B / C）落地（服务端根因 ＋ 契约侧稳定化链节点），给跑批器补上人工判定录入通道（#633），并把两条判定路径的三处口径残留收干净（#639 / #640）。**F01 契约节点数 28 → 31、checks 58 → 64**（新增三个稳定化节点）。本轮**没有**发起新的真实模型调用；稳定化链在隔离环境上以**零 provider 消耗**实测跑通（`stabilizeRevision` → `STABILIZED`、`prepareRelease` → 201）。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **上一轮（第三轮）同步基线**：`origin/main` = `c14770f9`（PR #591 合并提交）。本轮新合入：**#587**（#578 两本账的「超限」判据收敛为**一份权威清单**，合并提交 `6ed1f3c4`）、**#588**（#545 许可提案不再把待授权资料计入本次操作的来源复核，合并提交 `4b73e8e7`）、**#589**（#576 前端租户角色中文标签收口为唯一来源，合并提交 `a9374cab`）、**#591**（登记处补登记 #576 的 6 条前端路径，PF-14 路径集 57 → 63）。**第二轮**同步（PR #585，合并提交 `24262070`）的基线是 `6b382132`；**第一轮**同步（PR #561，合并提交 `2a664c56`）的基线是 `a98138af`。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **F01 契约基线（第三轮实测）**：`docs/08-本轮实施方案/contracts/workflow.json` = **28 节点 / 58 checks**（`version 0.5.0`，`mode = specification_not_executed_against_provider`）——在 `c14770f9` 的工作树上直接数出，且 `git diff 4b73e8e7..c14770f9 -- contracts/workflow.json` **为空** ⇒ 与最新一轮真实验收（Track-C）所用的契约**逐字相同**。
 > **最新一轮真实验收 ＝ Track-D（不是 Track-A／Track-B／Track-C）**：2026-10-24 17:37，代码 `781295c7`（#590 合入后的 main）⇒ **PASS 11 / NOT RUN 16 / FAIL 1**（＝ 28）。⚠️ **判定口径以契约为准**：`workflow.json` 的 `retrieval_modes.meaning.vector_required` 原文写明「该节点确实需要向量检索：**在受控窗口里它是 NOT RUN**」⇒ **F01-07 的放行判定仍是 NOT RUN，不是 FAIL**。⚠️ 但 Track-D 改变了**事实**：它证明了**无 embedding 路线能真的跑通生成链**（全新 keyword-only KB ＋ 真实 Qwen chat 1 次 ＋ 候选稿产出），**并且**暴露出**一个新的真实 FAIL**（F01-11，契约请求体与服务端 HTTP 契约不一致）。逐条事实见 **§17**。**上一轮＝Track-C**（2026-10-24 12:44，代码 `4b73e8e7`）＝ PASS 11 / NOT RUN 17（**无 FAIL**）—— 详见 §16。
@@ -29,7 +29,7 @@
 | 5 | #499 断言能力补齐 ＋ **穷举校验** | #499 | pf-10 | **PASS**（PR #530 合并提交 `aa2edb12`；后续 PR #536 `2cdd6656`：求值分派不再落空——没有分支的算子一律报错 ＋ 守护守住「词表 ⊆ 求值分支」） | **PASS**（`aa2edb12`／`2cdd6656`） | PASS（`LingDoc PR gate` = pass、`F01 runner regression` = pass（**146/146**，本轮实测）） | NOT RUN | 3 | 审计：16/67 条缺 kind；kind 词表/校验/求值分三处且**无穷举检查**。**已落地**：`scripts/lingdoc_check_kinds.py`（单一权威 ＋ 穷举校验）＋ `scripts/ci/test_lingdoc_check_kinds.py` ＋ `run_f01.py` 增 5 个 kind ＋ `contracts/validate_artifacts.py` 改 229 行 | pf-10 实施（**已合并**）。⚠️ 两张缺口**仍未解除**：`GAP-PROVENANCE-FIELD`（OpenAPI 无 `provenance` 字段 ⇒ `provenance_real` 断言挂不上）与 `GAP-FAILURE-PATH-NODES`（4xx 节点仍未挂进 F01 序列 —— #501 只落地了形状）⇒ **解除条件**：由 OpenAPI 拥有面声明 `provenance` 字段；由 24 节点口径的拥有方先裁定序列可增节点，再挂 4xx 节点（跟进票 **#499**） |
 | 6 | #501 先操作后断言（契约形状） | #501 | pf-10 | **PASS**（PR #574 合并提交 `06d37b69`：契约新增步骤级 `after_step` ＋ 同资源约束；执行器语义「前一步不成立 ⇒ 后继记 `BLOCKED`、不发请求、不求值断言」） | **PASS**（`06d37b69`） | PASS（`scripts.lingdoc_mock.test_workflow_twostep` **16/16 PASS**、F01 runner 回归 **146/146 PASS**，本轮实测；`contracts/validate_artifacts.py` 新增 `after_step` 静态校验 ＋ 4 条反例） | NOT RUN | 5 | 落地用例 **F24「成员撤权后同一资源不再放行」**（`contracts/scenarios.json`）；机器可读形态＝步骤字段 `after_step` ＋ 两步 `request.path_params` 键集与值表达式逐项相同；守护断言＝`scripts/lingdoc_mock/test_workflow_twostep.py` ＋ `validate_artifacts.py::check_same_resource` | 真实后端上的 F24 实跑 **NOT RUN**（本轮 provider 请求数必须为 0）；**资料级撤权**在 WeKnora 侧（`kbShares.RemoveShare`）、不在 OpenAPI 内 ⇒ 契约驱动不了，**仍记为未完成**；`GAP-FAILURE-PATH-NODES` **未解除**（跟进票 **#499**） |
 | 7 | #484 材料接入与处理就绪（代码 ＋ 真实验收） | #484 | pf-10 | **PASS**（服务能力已交付：`internal/lingdoc/materiallingest/`，PR #515 → `2966045b`；编排模块 PR #528 → `ac5c869d`） | **PASS**（`2966045b`） | PASS（19 个测试全过、`-race` 过、lint 0 issues、`go build ./...` 过） | **PASS（F01-06 契约节点在隔离环境真实通过）** ⚠️ **但「材料合格」这层不成立**（见证据列） | 5（#499 只影响**断言能力**，不影响本行的**服务端能力**；本行的 PASS 指服务端能力 ＋ F01-06 节点） | 材料身份＝固定前缀＋文件 SHA-256（不含时间戳）⇒ 同一份材料恒等；处理状态取数落在 `evidence.ProcessingStateOf` → `evidence.AssetStateReady` 这条链 ⇒ 与 F01-06 响应里的「就绪」同口径。**实测**：隔离库 `weknora_iso` 上以 owner 身份跑 F01-01～F01-06 ⇒ **7/7 节点 PASS、10/10 checks passed**；F01-06 真实发出 `POST …/assets`（请求体只有 `knowledge_id`）⇒ 响应 `data.processing_state="ready"`；**本轮新增 chat = 0、embedding = 0**（详见 §13）。⚠️ **2026-10-24 #485 实跑的新事实**：F01-06 仍 PASS，但**绑定的材料本身不合格** —— 6 个分块里 2 段引用文本长度 **0**，另 2 段内容长度（477/397）**大于**其坐标跨度（399/328）⇒ 坐标档不可能逐字对上。**第三轮（Track-C，代码 `4b73e8e7`）实测的新事实**：**D1 不再卡 F01-06b** —— #588 修掉的是 **D2**（「授予权限」的操作把**待授权资料的分块**计入本次操作的来源复核），**不是** D1 ⇒ F01-06b/06c/06d/06e 本轮全部 PASS（§16.2）；**但 D1 本身仍未解除** ⇒ 仍需**来源复核**的 F01-09／F01-11／F01-12／F01-16／F01-17 这 5 个节点**本轮未执行** ⇒ **不得**把本行记成「材料合格」。解除路径＝PR **#590**（材料分块与坐标逐字自洽 ＋ 分块与 embedding 解耦），**该 PR 当前 OPEN、未合入 main** ⇒ 不计入「集成」维度 | 按 **#484** 的接入路径**重新接入**一份「分块内容与其坐标在原文上逐字一致」的材料；重跑前先做一次可复跑的前置比对：`GET /projects/{id}/sources/{chunk}` 的 `quoted_text` 与原文 `[start_at,end_at)` 切片逐字相等（不等 ⇒ 材料不合格，不进入 F01）。⚠️ 受控窗口内**无法**重新接入（缺陷 **D5**：无 embedding 模型时解析中止、给了 embedding 模型则被 profile 以 1007 拒；且 KB 更新接口**静默丢弃** `embedding_model_id`）⇒ 需先裁定「材料接入是否划到受控窗口之外」 |
-| 8 | #485 在**真实后端**上跑完 F01 全流程（**契约现为 28 节点**，第一个里程碑） | #485 | pf-10 | **PASS**（契约 `workflow.json` ＋ 执行器 `run_f01.py` ＋ 后端生产链就位；本轮 **28/28 节点都有结论**） | **PASS**（`origin/main` = `c14770f9`） | PASS（F01 runner 回归 **146/146 PASS**、契约静态校验 **PASS**（`continuous_trace_steps=28`、`shape_checks=976`），**第三轮在 `c14770f9` 上实测**） | **PASS 11 / NOT RUN 16 / FAIL 1** —— **最新一轮＝Track-D**（2026-10-24 17:37，代码 `781295c7`）：F01-01～F01-06e **11 个节点真实执行 PASS**（**材料闸门两阶段都跑且都合格**）；**F01-07 ＝ NOT RUN**（契约把它声明为 `retrieval: vector_required` ⇒ 受控窗口里它就是 NOT RUN；**本轮口径不变**）——但 Track-D 已证明**这条生成链在 keyword-only KB 上真的跑通了**：**真实 Qwen chat 1 次**（provider 上报 usage：1037/521/1558，`finish_reason=stop`）、**候选稿产出**、**embedding 请求 0 次**（五路交叉核对）；**F01-08～F01-10 在 Track-D 里真实执行 PASS**（`getGeneration` / `getCandidate` / `getSource` 全 200），但按放行口径它们挂在 F01-07 后面 ⇒ 仍记 **NOT RUN**；**F01-11 ＝ FAIL**（`acceptCandidate` HTTP 400 `invalid_request`；根因＝契约请求体缺服务端 `binding:"required"` 的 `confirmation` 载荷 ⇒ **票 #608**）；F01-12～F01-23 **NOT RUN**（挂在 F01-11 后面）。⚠️ 与上一轮相比**新增一个真实 FAIL**（此前 17 个 NOT RUN 里没有 FAIL）⇒ 放行结论**仍未通过**，但缺口从「授权边界」变成了「可修的契约缺陷」。—— 上一轮（Track-C）＝ **PASS 11 / NOT RUN 17**（无 FAIL），其明细如下 ⇒（2026-10-24 12:44，代码 `4b73e8e7`）：F01-01～F01-06e **11 个节点真实执行 PASS**（**15 条 checks 全过**；**F01-06b 由上一轮的 409 `stale_input` 变为 201**，**F01-06c/06d/06e 首次打通**）；**F01-07 ＝ NOT RUN**（契约把它声明为 `retrieval: vector_required` ⇒ 按 `retrieval_modes` 的口径，受控窗口里它就是 NOT RUN）＋ **F01-08～F01-23 共 16 个节点 NOT RUN**（挂在那次生成运行后面）⇒ 合计 **NOT RUN 17**（**11 + 17 = 28 = 契约节点数**）⇒ 协议 §6「主流程不能含 FAIL/BLOCKED/NOT RUN」⇒ **不通过**。⚠️ **两个视角要分开读**：**机器产物**（`track-c/f01-report.json`）把 F01-07 记为 `runner_status = "failed"` ＋ `failed_step = {id: F01-07}`（执行器视角：它**被尝试过**并返回 503 `dependency_unavailable`）；**契约判定**（放行口径）是 **NOT RUN**（根因＝**授权边界**，不是代码缺陷，见 §16.4）⇒ **不得**因为机器产物写了 `failed` 就把 F01-07 记成 FAIL。⚠️ **不得**把「F01-06b 通过」说成「F01 通过」；⚠️ F01-06b～06e 的**语义**断言是人工判定的（机器口径 `manual_assertions.status = not_run`，见 §16.3） | 1–7（#501 已合入 ⇒ 依赖解除；#545 已合入 ⇒ 许可节点在序列里） | **最新一轮（Track-C）证据目录**：`D:\wt\lingdoc-485-evidence\track-c\`（`TRACK-C-REPORT.md` 完整报告 ＋ `f01-report.json` 契约执行报告）；**服务端原始日志** `D:\wt\lingdoc-485-evidence\logs\server-next.stdout.log`（第 433–437 行＝F01-07 的检索→embedding→503 全链）；**embedding 被拒的原始证据** `D:\wt\lingdoc-485-evidence\logs\llm_debug\3724894d-490d-4599-a63c-9c31d491f625.log`（错误原文 `model is outside the acceptance budget profile`）。**上一轮（Track-A，代码 `b63aa79f`）的证据**仍在同一目录根下（`node-verdicts.md` 逐节点结论 ＋ `defects.md` ＋ `gaps.md` ＋ `ledger-status.md` ＋ `track-a/f01-report.json` ＋ `track-a-409-log.txt`），用于对比。**契约实测规模**：`steps = 28`（原 24 ＋ #545 的 4 个 model-use 许可节点 `F01-06b`～`F01-06e`）、**`checks = 58`**（原 50）⇒ 登记处注记已同步（PR #582 `e232bf0d`） | **D2 已解除**（PR #588 `4b73e8e7` 合入 ⇒ F01-06b 由 409 `stale_input` 变 **201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）⇒ **当前只剩一条阻塞**（且**不是**代码缺陷）：**F01-07 需要的 embedding 不在受控 profile 白名单内** ⇒ 受控 profile 在 **transport 之前**就拒了它（`model is outside the acceptance budget profile`）⇒ 真实 provider 请求 **0 次**。**契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 口径；机器产物里它是 `failed_step` ⇒ 两个视角见 §16.3）—— **不得**把它记成 FAIL。**解除条件（唯一）**：把 embedding 纳入受控 profile 并**拆分 chat / embedding 额度**（#546 口径①；embedding 授权**当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`（跟进票 **#546**／**#480**）。**仍未解除的两条材料侧缺陷**：**D1** 材料分块内容与坐标不自洽（⇒ **#484**；跟进 PR **#590** **未合**，不得记为已修）｜**D5** 受控窗口内无法重新接入材料 ＋ KB 更新接口静默丢弃 `embedding_model_id`（⇒ **#484**）。⚠️ **不得**改 `retrieval` 标签、**不得**关限制、**不得**伪造结果让 F01-07 变绿 |
+| 8 | #485 在**真实后端**上跑完 F01 全流程（**契约现为 28 节点**，第一个里程碑） | #485 | pf-10 | **PASS**（契约 `workflow.json` ＋ 执行器 `run_f01.py` ＋ 后端生产链就位；本轮 **28/28 节点都有结论**） | **PASS**（`origin/main` = `c14770f9`） | PASS（F01 runner 回归 **146/146 PASS**、契约静态校验 **PASS**（`continuous_trace_steps=28`、`shape_checks=976`），**第三轮在 `c14770f9` 上实测**） | **最新一轮＝第六轮**（2026-10-25）：机器事实 **节点 31/31、机器断言 64 条中 passed 64、failed 0**；**契约判定＝NOT RUN**（唯一原因：4 条散文断言中 4 条尚无人工判定⇒ 提供方语义随之 not_verified；机器侧 0 failed、0 未求值）；**正式 Beta 放行结论＝不予放行**（逐条阻塞项与解除条件见 §19.8–§19.9）。—— **上一轮＝Track-D**（2026-10-24 17:37，代码 `781295c7`）：F01-01～F01-06e **11 个节点真实执行 PASS**（**材料闸门两阶段都跑且都合格**）；**F01-07 ＝ NOT RUN**（契约把它声明为 `retrieval: vector_required` ⇒ 受控窗口里它就是 NOT RUN；**本轮口径不变**）——但 Track-D 已证明**这条生成链在 keyword-only KB 上真的跑通了**：**真实 Qwen chat 1 次**（provider 上报 usage：1037/521/1558，`finish_reason=stop`）、**候选稿产出**、**embedding 请求 0 次**（五路交叉核对）；**F01-08～F01-10 在 Track-D 里真实执行 PASS**（`getGeneration` / `getCandidate` / `getSource` 全 200），但按放行口径它们挂在 F01-07 后面 ⇒ 仍记 **NOT RUN**；**F01-11 ＝ FAIL**（`acceptCandidate` HTTP 400 `invalid_request`；根因＝契约请求体缺服务端 `binding:"required"` 的 `confirmation` 载荷 ⇒ **票 #608**）；F01-12～F01-23 **NOT RUN**（挂在 F01-11 后面）。⚠️ 与上一轮相比**新增一个真实 FAIL**（此前 17 个 NOT RUN 里没有 FAIL）⇒ 放行结论**仍未通过**，但缺口从「授权边界」变成了「可修的契约缺陷」。—— 上一轮（Track-C）＝ **PASS 11 / NOT RUN 17**（无 FAIL），其明细如下 ⇒（2026-10-24 12:44，代码 `4b73e8e7`）：F01-01～F01-06e **11 个节点真实执行 PASS**（**15 条 checks 全过**；**F01-06b 由上一轮的 409 `stale_input` 变为 201**，**F01-06c/06d/06e 首次打通**）；**F01-07 ＝ NOT RUN**（契约把它声明为 `retrieval: vector_required` ⇒ 按 `retrieval_modes` 的口径，受控窗口里它就是 NOT RUN）＋ **F01-08～F01-23 共 16 个节点 NOT RUN**（挂在那次生成运行后面）⇒ 合计 **NOT RUN 17**（**11 + 17 = 28 = 契约节点数**）⇒ 协议 §6「主流程不能含 FAIL/BLOCKED/NOT RUN」⇒ **不通过**。⚠️ **两个视角要分开读**：**机器产物**（`track-c/f01-report.json`）把 F01-07 记为 `runner_status = "failed"` ＋ `failed_step = {id: F01-07}`（执行器视角：它**被尝试过**并返回 503 `dependency_unavailable`）；**契约判定**（放行口径）是 **NOT RUN**（根因＝**授权边界**，不是代码缺陷，见 §16.4）⇒ **不得**因为机器产物写了 `failed` 就把 F01-07 记成 FAIL。⚠️ **不得**把「F01-06b 通过」说成「F01 通过」；⚠️ F01-06b～06e 的**语义**断言是人工判定的（机器口径 `manual_assertions.status = not_run`，见 §16.3） | 1–7（#501 已合入 ⇒ 依赖解除；#545 已合入 ⇒ 许可节点在序列里） | **最新一轮（Track-C）证据目录**：`D:\wt\lingdoc-485-evidence\track-c\`（`TRACK-C-REPORT.md` 完整报告 ＋ `f01-report.json` 契约执行报告）；**服务端原始日志** `D:\wt\lingdoc-485-evidence\logs\server-next.stdout.log`（第 433–437 行＝F01-07 的检索→embedding→503 全链）；**embedding 被拒的原始证据** `D:\wt\lingdoc-485-evidence\logs\llm_debug\3724894d-490d-4599-a63c-9c31d491f625.log`（错误原文 `model is outside the acceptance budget profile`）。**上一轮（Track-A，代码 `b63aa79f`）的证据**仍在同一目录根下（`node-verdicts.md` 逐节点结论 ＋ `defects.md` ＋ `gaps.md` ＋ `ledger-status.md` ＋ `track-a/f01-report.json` ＋ `track-a-409-log.txt`），用于对比。**契约实测规模**：`steps = 28`（原 24 ＋ #545 的 4 个 model-use 许可节点 `F01-06b`～`F01-06e`）、**`checks = 58`**（原 50）⇒ 登记处注记已同步（PR #582 `e232bf0d`） | **D2 已解除**（PR #588 `4b73e8e7` 合入 ⇒ F01-06b 由 409 `stale_input` 变 **201**，06c/06d/06e 一路打通，许可读回 `model_use_allowed=true` 且钉在 `asset_revision=2`）⇒ **当前只剩一条阻塞**（且**不是**代码缺陷）：**F01-07 需要的 embedding 不在受控 profile 白名单内** ⇒ 受控 profile 在 **transport 之前**就拒了它（`model is outside the acceptance budget profile`）⇒ 真实 provider 请求 **0 次**。**契约判定：F01-07 ＝ NOT RUN**（`retrieval_modes` 口径；机器产物里它是 `failed_step` ⇒ 两个视角见 §16.3）—— **不得**把它记成 FAIL。**解除条件（唯一）**：把 embedding 纳入受控 profile 并**拆分 chat / embedding 额度**（#546 口径①；embedding 授权**当前未批**）⇒ 解除条件载体＝`scripts/lingdoc_mock/controlled_window_check.py` 的 `VECTOR_REQUIRED_UNBLOCK`（跟进票 **#546**／**#480**）。**仍未解除的两条材料侧缺陷**：**D1** 材料分块内容与坐标不自洽（⇒ **#484**；跟进 PR **#590** **未合**，不得记为已修）｜**D5** 受控窗口内无法重新接入材料 ＋ KB 更新接口静默丢弃 `embedding_model_id`（⇒ **#484**）。⚠️ **不得**改 `retrieval` 标签、**不得**关限制、**不得**伪造结果让 F01-07 变绿 |
 | 9 | #486 真实模型选段改写（账本非 0 行＋switch 行） | #486 | 待派 | NOT STARTED | — | — | NOT RUN | 8 ＋ 人工前置 1 ＋ **受控 Qwen profile（PR #526 `dfa52944` ＋ #544 `232e0899`；v2 profile PR #583 `b63aa79f`）** | **账本非 0 行仍成立但只有历史那一行**：DB `lingdoc_model_call_ledger` 总行数 **1**（v1 窗口 2026-10-23 的调用，`source_kind=generation_run`／`run_mode=real`／`model_id=lingdoc-chat-qwen3.8-flash-iso`），**2026-10-24 的 #485 实跑新增 0 行**（provider 请求 **0** 次）。⚠️ **switch 行仍未产生**：该次调用没有模型切换，且 `RecordModelSwitch` 在 `origin/main` 上**只有接口定义与实现、没有生产调用点**（`internal/lingdoc/workspacecore/model_call_ledger.go:115`／`:185`，其余命中全在测试文件里）⇒ 本行口径「账本非 0 行**＋switch 行**」**只满足一半** ⇒ 按 §5 口径记 `NOT RUN`（**非** `DEFERRED_MANUAL`：代码侧条件不具备） | 人工前置 1 就位后派；执行前置三条：① 注册一行 `type=KnowledgeQA` 的 Qwen chat 行（`config/builtin_models.yaml` **不在仓内** ⇒ 本地 yaml 或直接注册；受控调用那次用的是隔离库行 `lingdoc-chat-qwen3.8-flash-iso`、`parameters.provider` 字面 `aliyun`）② 显式设置受控 profile（**不设 ⇒ 无次数上限、无费用口径**，见 §6 人工前置 1）③ 凭据：用正确的 `SYSTEM_AES_KEY` 或用该 key 重新注册模型行（**注意别把密钥明文落库**，见 §12.4 风险 3）。⚠️ **另需**：switch 行的写入路径（`RecordModelSwitch`）尚无生产调用点 ⇒ 需开票 |
 | 10 | #487 隔离 PostgreSQL 那一轮 | #487 | 待派 | NOT STARTED | — | — | NOT RUN | 9 ＋ 人工前置 2 | **本轮已在隔离 PostgreSQL 上真跑 F01**（隔离库 `weknora_iso`、容器 `WeKnora-postgres-dev`、Redis DB 3、`AUTO_MIGRATE=false`）；但**「服务重启后的读回」未做**（本轮未执行 `scripts/acceptance/lingdoc_full_server_restart.py`）⇒ 缺口 `GAP-RESTART`（跟进票 **#480** 缺口 3） | 用 `--db-driver postgres --db-dsn <隔离库 DSN>` 跑重启读回（协议 §1 要求隔离 PostgreSQL）—— **解除条件**：重启后重读项目/资料/许可/账本四类行并留证（跟进票 **#480**） |
 | 11 | #488 Word 人工检查 | #488 | 待派 | — | — | — | NOT RUN | 9 ＋ 人工前置 4 | 协议 §4：**程序库 round-trip 不能替代**。本轮 F01 未走到 F01-21…F01-23 ⇒ **没有 DOCX 可查** ⇒ 缺口 `GAP-WORD`（跟进票 **#480** 缺口 5） | F01 走到下载后，填写 `word-check.md` 的五个必填字段（Word 产品版本 / Windows 版本 / 原始 DOCX SHA-256 / 修改后 SHA-256 / 检查结果）—— **解除条件**：用真实 Microsoft Word 跑完「开/改/存/关/重开」并回填五个必填字段（跟进票 **#480**） |
@@ -80,7 +80,7 @@
 
 1. **第二人独立复现 = 记录项**，不是 Beta 首版硬门槛；但必须登记为未完成项（原因＋解除条件），不得记为已通过。依据：验收协议 §1/§6（专门定义「通过」、穷举列举）vs 18 号 §3/§8/§9（开发计划叙述）⇒ 以协议为准。
 2. **真实 Word 检查以 Microsoft Word 为准**，WPS 不增加为硬门槛（协议 §4）。
-3. **F01 按实际契约的节点数执行**（**第三轮实测：28 个节点**＝24 ＋ #545 的 4 个 model-use 许可节点 `F01-06b`～`F01-06e`；`checks = 58`）——⚠️ **本条的数字随契约演进**：第一轮口径统一（PR #497）时是 24（23 业务步 ＋ `F01-03b recordActivationRead`；文档里的「23」是同义拆法），#545 的许可节点合入后（PR #577 `88845c5d`）变为 28，登记处注记已同步（PR #582 `e232bf0d`）⇒ **以 `docs/08-本轮实施方案/contracts/workflow.json` 的当轮实测为准**，不要引用本文件里的历史数字。
+3. **F01 按实际契约的节点数执行**（**第六轮实测：31 个节点**＝24 ＋ #545 的 4 个 model-use 许可节点 `F01-06b`～`F01-06e` ＋ #619 的 3 个稳定化节点 `F01-19a`～`F01-19c`（交付检查回执 → 闭环发布阻断任务 → 稳定化）；`checks = 64`）——⚠️ **本条的数字随契约演进**：第一轮口径统一（PR #497）时是 24（23 业务步 ＋ `F01-03b recordActivationRead`；文档里的「23」是同义拆法），#545 的许可节点合入后（PR #577 `88845c5d`）变为 28，登记处注记已同步（PR #582 `e232bf0d`）⇒ **以 `docs/08-本轮实施方案/contracts/workflow.json` 的当轮实测为准**，不要引用本文件里的历史数字。
 4. **Beta 首版 = 验收协议定义的减量范围**；不等于完整 Beta 设计，也不等于完整 G1–G7。
 
 ## 6. 人工前置 6 项（当前状态）
@@ -735,3 +735,154 @@ model is outside the acceptance budget profile
 
 - **尚未验证**：合并后 head 上的门禁证据；下一轮完整 F01 的逐节点结论（材料闸门两阶段 ＋ 采纳节点 ＋ 放行链的逐节点判定）；`acceptance/beta-first/` 目录的实际落盘内容；**向量开启的知识库**上的检索行为（无这样的 KB 可实测）。
 - **下一步**：① 重建隔离环境二进制（合并后 main）并重跑一轮完整 F01（用掉剩余额度里的 1 次）；② 出 #490 的放行结论表；③ #546 口径②的变更要在放行链上真的被执行（`controlled_window_check.py` 已被放行链接入，但「窗口 PASS 只等于账本里没有 embedding 行、不蕴含没有尝试过 embedding」这条口径强度限制要一起交代）。
+
+## 19. 第十一批（第六轮同步）：#619 裁定落地 ＋ 判定层三处收口 ＋ 人工判定录入通道
+
+**基线**：`origin/main` = `c2345229`（本文件合并后的 main）。本批把「交付稳定化」这条线一次收口，并把两条判定路径的口径残留清干净。
+
+**本批的核心事实**：#619 的服务端根因（许可类变更集 apply 自己推进了被评估对象的版本 ⇒ 正式变更**结构上不可能稳定化**）已按已获批准的裁定 **A1 / B / C** 实施；F01 契约补上了**真实缺失**的稳定化链节点；跑批器补上了**人工判定录入通道**。三者合起来，`prepareRelease` 的 422 `context_unstable` 这条阻塞**在真实后端上被解除**（见 §19.4 的零额度实测）。
+
+### 19.1 已合入的实现（逐项：票 → PR → 合并提交 → 它修的是什么）
+
+| 项 | 票 | PR | 合并提交 | 它修的是什么 |
+|---|---|---|---|---|
+| 候选采纳的 review 决策必须**一一对应** | #618 | #620 | `f404fd02` | 契约与服务端对「采纳要覆盖全部待核项」的理解不一致 ⇒ 采纳节点永远 422 |
+| F01-16 的处置断言说清「一一对应」 | #621 | #624 | `1aee3f21` | 新增 check kind `one_to_one`（ID 集合相等、顺序无关、两侧无重复）⇒ 断言不再依赖未经契约保证的数组顺序 |
+| 放行判定层加固（任务四） | — | #625 | `8bffdc4d` | 第二条判定路径也读人工断言与提供方语义 ⇒ 两条路径同口径 |
+| 6 条 `one_to_one` 自测进 CI ＋ 非空口径统一 | #626 | #637 | `6b394ca7` | 自测原本只有手动 `--self-test` 会跑，任何 CI job 都不收它 |
+| **未求值的 checks 不得被当作通过** | #632 | #638 | `655dde3f` | 差集非空 ⇒ NOT RUN；结果集合对不上 ⇒ BLOCKED |
+| **人工判定录入通道** | #633 | #643 | `3d7ee440` | 跑批器恒把散文断言记成 `not_run` ⇒ G6-01 对真实证据**永不可能 PASS** |
+| 校验器非空口径统一 ＋ 未求值断言独立表示 | #639 / #640 | #644 | `2e5ce854` | 两个裁判对同一个值给出不同答案；未求值条目被伪装成「失败」 |
+| **#619 服务端根因（A1 ＋ B ＋ C）** | #619 | #645 | `68aa3fd6` | 许可类变更集 apply 自己推进了被评估对象的版本 ⇒ 稳定化**结构上不可能**；并落真实审计记录 |
+| **#619 契约侧（稳定化链节点 ＋ `receipt_id` ＋ 场景）** | #619 | #646 | `bb0081a5` | 契约里**根本没有**稳定化节点 ⇒ 交付链无法表达「回执 → 闭环 → 稳定化 → 冻结」 |
+| 登记处补记 #626 的跨面借用 | #626 | #642 | `9738ea81` | 两侧各记一条，owner 不变 |
+
+### 19.2 #619 的裁定与实施（A1 / B / C）
+
+| 裁定 | 内容 | 实施落点 |
+|---|---|---|
+| **A1** | **仅**豁免「当前变更集自身造成**且可证明**」的预期版本推进；外部漂移 / 并发修改 / 非预期变化 / 无法证明来源 ⇒ **仍须阻断**；比较必须**精确相等**（不是 `>=`） | `internal/lingdoc/workspacecore/impact_self_attributed_advance.go`：声明来自**变更集自己持久化的语义计划**（`semantic_deltas[].expected_version`），apply 前后的乐观锁（版本 ＋ 内容哈希）保证**只有 apply 自己能产生 `ExpectedVersion + 1`**；读不到变更集 ⇒ 无豁免（fail closed） |
+| **B** | `ProjectAsset` 在稳定化检查中**只要求版本仍有效**，不额外要求复核确认；**其它对象**的确认要求**一行未改** | 同文件：判据两半 ——（a）修订号必须是评估时那版或**恰好**是本变更集声明的目标版；（b）**许可钉住的内容指纹**必须仍是资料当前内容（内容被换 ⇒ 指纹变 ⇒ 许可失效） |
+| **C** | 授权 Owner 可经 API 完成稳定化，但须落**真实审计**，且**无法证明的事实记为「无法证明」** | `internal/lingdoc/workspacecore/stabilization_audit.go`：审计行与稳定化**同事务**落 `lingdoc_project_audits`（action `revision.stabilize`）；渠道分两层 —— `class` 是服务端**能证明**的凭据类别，`ui_origin` / `automation` **恒为 `unprovable`**；`verdict_source = machine_evaluation`（不冒充人工判定）；审计字段缺失 ⇒ **拒绝稳定化**（硬闸门） |
+
+**规范核对（无冲突）**：`G3-pcc-change-coordination.md` §10.1 第 3 条枚举的对象集**不含** ProjectAsset，第 4 条把 ProjectAsset/SourceAnchor 单列为「版本仍有效」⇒ 与 B 逐字对应；§4.2 动作表里 `APPLIED` 的可执行动作含「稳定化」⇒ 一致。
+
+### 19.3 三层判定必须分开读（本批把这条钉进了机器）
+
+| 层 | 谁判 | 本批的落点 |
+|---|---|---|
+| **机器执行事实** | 执行器 | `run_f01.py` 的报告：每步 HTTP 码、每条 check 的求值结果、**每条散文断言的判定状态与出处**（`status` / `verdict` / `authority` / `actor` / `authorization` / `channel` / `channel_verifiability` / `occurred_at` / `evidence_ref` / `audit_id` / `run_id`） |
+| **契约验收结果** | 契约 + 判定层 | `checks[]` 的求值结果；**未求值的断言有独立的取值与形状**（`not_run` ＋ `evaluated: false`），不再伪装成 `failed` |
+| **人工判定结果** | 人（经审计留痕） | **权威性三档**：`server_attested`（服务端审计记录逐字段相等）/ `claimed`（无从核验）/ `absent`（缺字段 ⇒ **整条拒绝**）。**只有「权威 ∧ passed」能让散文断言被满足**；`held` / `rejected` 判了但没过 ⇒ 不得放行 |
+| **正式 Beta 放行结论** | 协议 §6 | 主流程无 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL 才算通过；`DEFERRED_MANUAL` **不阻塞**代码合并但**阻塞**放行 |
+
+⚠️ **口径提醒**：`held` / `rejected` 在放行层显示为 `NOT RUN`（现有档位只有 `PASS/FAIL/BLOCKED/NOT RUN`），红线的实质要求（「不得让放行通过」）**已满足**；把「判了但没过」单独做成 `FAIL` 需要改两条判定路径的档位集，是另走票的施工。
+
+### 19.4 零额度实测：稳定化链在真实后端上跑通了（**本批最硬的一条证据**）
+
+**为什么先做这一步**：最后一次真实 chat 额度只剩 1 次；在把它花掉之前，必须先证明「稳定化真的能成」。稳定化链（`checkCurrent` → `acknowledgeImpactPreflight` → `stabilizeRevision` → `prepareRelease`）**不调用模型**，所以可以**零额度**先验。
+
+**实测（隔离环境 18087，服务端二进制由 #619 分支重建，DB 账本前后都是 3 行 ⇒ 零 provider 消耗）**：
+
+| 步 | 端点 | 结果 |
+|---|---|---|
+| 1 | `getProject` | 200，`project_version=10`、`current_context_revision=2` |
+| 2 | `checkCurrent` | 200，`receipt_id=5077fd65-…`、`status=passed` |
+| 3 | `acknowledgeImpactPreflight` | 200，`closed_task_ids` 非空、`proof_id` 回显该回执 |
+| 4 | `stabilizeRevision` | **200、`status=STABILIZED`、`blockers=[]`** ← **A1 ＋ B 生效** |
+| 5 | `prepareRelease` | **201**（冻结快照产出）← **F01-19 的阻塞解除** |
+
+⚠️ **同一条链上的一个真实陷阱（已写入运维脚本）**：稳定化会**复核闭环证据是否仍属当前版本**。若闭环证据是**旧批次**留下的、而项目版本已经前进，`stabilizeRevision` 会返回 **409 `version_conflict`**（不是 422）。⇒ 契约里**交付检查回执必须与闭环、稳定化相邻**（F01-19a → 19b → 19c 三个节点紧挨着），中间不能有推进项目版本的步骤。
+
+### 19.5 契约侧补齐（节点数 28 → 31，checks 58 → 64）
+
+| 节点 | operation | 断言 |
+|---|---|---|
+| **F01-19a** | `checkCurrent` | `/data/status` = `passed`；`/data/receipt_id` 非空 |
+| **F01-19b** | `acknowledgeImpactPreflight` | `/data/closed_task_ids` 非空；`/data/proof_id` = **上一步捕获的 `receipt_id`**（不是幂等键、不是冻结快照 id） |
+| **F01-19c** | `stabilizeRevision` | `/data/status` = `STABILIZED`；`/data/blockers` 长度 = 0 |
+
+- `CheckResult` 补 `receipt_id`（服务端真实返回，而 schema 是 `additionalProperties: false` ⇒ 改之前真实响应**违反契约**）。**不列入 `required`**：`CheckResult` 同时描述冻结快照里的 check，而那里服务端不给 receipt（依据：`internal/lingdoc/delivery/snapshot.go:154-161`、`internal/lingdoc/workspace/full_workflow_guard.go:197-201`）。
+- `ObjectVersionRef.kind` 枚举补 **`DeliveryPreflight`** —— 服务端真的在发这个 kind（`impact_preflight.go:97`、`impact_source_operation.go:503`，实测 `listImpactTasks` 的 `closure_evidence[0].kind` 就是它），枚举里没有 ⇒ **真实响应违反契约**。这是本批顺带修掉的**既有缺口**。
+- `scenarios.json` 35 → **37** 条：补 F34「影响任务未闭环 ⇒ 稳定化被阻断（`impact_task_open`）」与 F35「回执闭环后仍因受影响对象版本被替换而阻断（`impact_object_stale`）」。
+- `checkCurrent` **不带 `Idempotency-Key`**：服务端明确说明该操作不落快照、不需要幂等键（`internal/lingdoc/workspace/delivery_http.go:114-115`），OpenAPI 也没声明 ⇒ 契约不得发它没声明的头。
+
+### 19.6 真实调用与账本对账（截至本批）
+
+- **真实 chat 请求：3 次**（授权 4 次，**余 1 次**）；**embedding 请求：0 次**（未授权，也没有发生）。
+- 两本 JSON 账本记录的是**同一批**调用 ⇒ 计数取**较大值**（3），**不是相加**（相加会把同一事件数两次）；DB 账本 `lingdoc_model_call_ledger` **3 行**是独立见证。
+- `actual_tokens = 4594`（provider 实报）、`reserved_tokens = 26835`（**预留**，不是消耗）、`blocked = false`。
+- `lite_embeddings` 24 行、**维度全为 0** ⇒ 没有向量落库 ⇒ 与「embedding 0 次」一致。
+
+### 19.7 最终一轮：31 节点 / 64 checks 的完整 F01 实跑
+
+- **运行批次**：`f01-20261025T013341Z-5105ae32`
+- **代码 head**：`c23452293396b0f303e85a9c5aea4f8bd52802af`
+- **runner_status** = **completed**；完成节点 **31 / 31**
+- **机器断言**：64 条，passed **64**、failed **0**
+- **材料闸门两阶段**：`['content', 'full']`
+- **runner 退出码** = 0；耗时 12 秒
+
+**真实调用与账本对账（这一轮）**
+
+- 账本行数：跑前 **3** → 跑后 **4**（两本 JSON 账本记录**同一批**调用 ⇒ 取较大值；DB 账本 `lingdoc_model_call_ledger` 是独立见证）
+- 零 embedding 判定：**PASS**（产物 `zeroemb-verdict.json`）
+
+**逐节点结论**
+
+逐节点表见 `D:\wt\lingdoc-485-evidence\track-d-experiment\run-final-20261025-093259-c2345229\f01-per-node.md`（执行状态、HTTP 结果、checks 求值计数、人工判定状态、证据与审计）。
+
+### 19.8 本轮的放行结论
+
+**四层分列的结论表**（机器执行事实／契约验收结果／人工判定结果／正式放行结论）见本节末尾。
+
+# 最终 Beta 放行结论表（机器事实／契约结果／人工判定／放行结论 四层分列）
+
+- 运行批次：`f01-20261025T013341Z-5105ae32`
+- 契约：`workflow.json` = **31 节点 / 64 checks**
+- 代码 head：`(见 f01-run-meta.json)`
+
+## 一、机器执行事实（执行器视角的事实，不含任何判定）
+
+- `runner_status` = **completed**
+- 节点：完成 **31 / 31**
+- 机器断言：**64 条**，passed **64**、failed **0**
+- 材料闸门两阶段：`['content', 'full']`
+
+## 二、契约验收结果（放行口径判定，两条路径分别给出）
+
+| 路径 | 判定 | 依据 |
+|---|---|---|
+| 第二条判定路径（`main_path_evidence`） | **NOT RUN** | failed 0、unevaluated 0、未判定散文断言 4、语义 not_verified |
+| 主路径（`beta_evidence`） | **NOT RUN** | 逐条 outcome 100 条 |
+
+## 三、人工判定结果（逐条，判定与可证明性分开）
+
+| 节点 | 状态 | 判定 | 权威性 | 渠道 | 渠道可证明性 | 审计标识 |
+|---|---|---|---|---|---|---|
+| `F01-06b` | `not_run` | `—` | `—` | `—` | `—` | `—` |
+| `F01-06c` | `not_run` | `—` | `—` | `—` | `—` | `—` |
+| `F01-06d` | `not_run` | `—` | `—` | `—` | `—` | `—` |
+| `F01-06e` | `not_run` | `—` | `—` | `—` | `—` | `—` |
+
+## 四、正式 Beta 放行结论
+
+**不予放行**。阻塞项逐条如下（每条都带解除条件）：
+
+| # | 阻塞项 | 事实 | 解除条件 |
+|---|---|---|---|
+| 1 | 人工判定未完成 | 4 条契约散文断言尚无人工判定（其中 4 条未判定） | 用 #633 的录入通道写一条判定（绑定本批次 run_id ＋ 逐字引文），并由服务端落审计记录使其可核验；权威性核验口径见跟进票 |
+| 2 | 提供方语义未核验 | provider_semantics_status = 'not_verified' | 散文断言全部被权威判定为 passed 且机器断言全过后才会变为 verified |
+
+> **口径提醒**：机器断言全过 **不等于** Beta 放行通过；放行判定按验收协议 §6，主流程不得含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL。`DEFERRED_MANUAL` 不阻塞代码合并，但**阻塞** Beta 首版放行。
+
+### 19.9 本轮之后仍未解除的事项（逐条带解除条件）
+
+| # | 事项 | 性质 | 解除条件 |
+|---|---|---|---|
+| 1 | 4 条契约散文断言（F01-06b～06e）的人工判定 | **人工前置**（#633 的录入通道已就位；缺的是判定本身 ＋ 服务端可核验的审计记录） | 跟进票 **#649**：服务端补一类「人工判定」审计记录后，写 4 条判定（绑定本批次 `run_id` ＋ 逐字引文）并在**同一批次**上重跑（生成节点带固定 `Idempotency-Key` ⇒ **重放、不产生新的 provider 请求**） |
+| 2 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL** | 本轮**已产出**可检查的 DOCX（导出产物 `export-196b61e0de1242e6247ddb6bf2e91747`，status = `verified`，`file_sha256 = df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a`，快照 `snapshot-09c6230b71d5024ed19e155e840f8635`；跑批器下载并校验了它但**未落盘**）⇒ 用 `GET /projects/{projectId}/exports/{exportId}` 下载到盘上，用真实 Microsoft Word 操作后填回 `acceptance/beta-first/<sha>/<run>/word-check.md` 的五个必填字段（跟进票 **#480**） |
+| 3 | 第二人独立复现 | **记录项**（不阻塞首版） | 由第二名开发者按 #489 的步骤独立复现并把证据绑到当前 head（跟进票 **#489**） |
+| 4 | 隔离 PostgreSQL 的「重启后读回」 | **NOT RUN**（本轮用隔离 SQLite） | 用 `--db-driver postgres --db-dsn <隔离库 DSN>` 跑重启读回（跟进票 **#480**） |
+| 5 | 向量开启的知识库上的检索行为 | **未授权**（embedding 授权为 0 次） | 把 embedding 纳入受控 profile 并拆分 chat / embedding 额度（跟进票 **#546**） |
+| 6 | #619 服务端的三项残留（声明口径、三条承重测试、API 密钥主体授权边界、存量变更集） | **已登记** | 跟进票 **#647** |

@@ -1165,19 +1165,19 @@ class ReleaseGateVerdictTests(unittest.TestCase):
             self.assertTrue(outcome.unblock.strip(), outcome.id)
 
     def test_the_contract_s_own_check_account_is_visible_in_the_verdict(self):
-        """The repository's contract declares 58 checks; a run that reached
-        eleven of its steps evaluated 15 of them.  The other 43 have to be
+        """The repository's contract declares 64 checks; a run that reached
+        eleven of its steps evaluated 15 of them.  The other 49 have to be
         visible as NOT RUN, not absent."""
         contract = self.contract()
         _, declared_checks = beta_evidence.contract_expectations(contract)
-        self.assertEqual(len(declared_checks), 58)
+        self.assertEqual(len(declared_checks), 64)
         report = self.report_for(contract, steps=11)
         self.assertEqual(len(report["checks"]), 15)
         outcomes = beta_evidence.check_outcomes(report, contract)
         not_run_checks = [outcome for outcome in outcomes
                           if outcome.status == beta_evidence.NOT_RUN
                           and outcome.id.count(" ") == 2]
-        self.assertEqual(len(not_run_checks), 58 - 15)
+        self.assertEqual(len(not_run_checks), 64 - 15)
 
     def test_a_run_that_evaluated_everything_has_nothing_to_report_as_not_run(self):
         """The difference set is empty when the run really did everything."""
@@ -1377,7 +1377,7 @@ class ReleaseGateVerdictTests(unittest.TestCase):
         """Nobody declared it does not mean nobody owns it."""
         contract = self.contract()
         undeclared = [step["id"] for step in contract["steps"] if "retrieval" not in step]
-        self.assertEqual(len(undeclared), 27)
+        self.assertEqual(len(undeclared), 30)
         with tempfile.TemporaryDirectory(prefix="lingdoc-window-") as directory:
             ledger = self.write_window_ledger(directory, "budget.json", ["qwen3.8-flash"])
             calls = self.write_window_ledger(directory, "budget.json.calls.json", [])

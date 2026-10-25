@@ -279,19 +279,69 @@ def run_command(command: list[str], *, cwd: Path = ROOT, timeout: float = 900.0)
 # ---------------------------------------------------------------------------
 # The F01 sequence
 # ---------------------------------------------------------------------------
+def f01_node_count() -> int | None:
+    """How many nodes the F01 contract declares, read from the contract.
+
+    The number is never written down here: a hardcoded count goes stale the
+    moment the contract gains a node, and the evidence then tells the reader
+    the contract is shorter than it is.  ``None`` means the contract could not
+    be read, and the caller has to say so rather than fall back to a guess.
+    """
+    document = read_json(WORKFLOW_PATH)
+    if document is None:
+        return None
+    steps = document.get("steps")
+    if not isinstance(steps, list):
+        return None
+    return len(steps)
+
+
+def f01_sequence_label() -> str:
+    """The name of the F01 sequence item, with the contract's own node count.
+
+    When the contract cannot be read, the item says that the count is
+    unknown: "24" was a number nobody had checked, and an unchecked number in
+    the name of the item is how a reader ends up believing a sequence is
+    shorter than it is.
+    """
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约序列（节点数未读到）"
+    return f"F01 契约序列（{count} 个节点）"
+
+
+def f01_scope_label() -> str:
+    """The scope line that says how long the F01 sequence is."""
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约的节点数未读到（contracts/workflow.json 读不到，本轮用契约的断言求值）"
+    return f"F01 契约的 {count} 个节点（本轮用 contracts/workflow.json 的断言求值）"
+
+
 def run_f01(base_url: str, token: str | None, identities: dict[str, str],
-             knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
+             knowledge_id: str = "", *,
+             run_id: str | None = None,
+             decision_ledger: Path | str | None = None,
+             audit_source: str | None = None) -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
 
     The runner is the one in ``scripts/lingdoc_mock/run_f01.py``: the steps and
     the assertions live in the contract, and this script only asks for the
     result.  A provider that cannot be reached is BLOCKED, not a failure of
     the assertions and not a pass either.
+
+    The human judgements travel with the run: ``decision_ledger``
+    is the ledger of judgements this run may read, ``audit_source`` is the
+    server-side audit export the runner checks them against, and ``run_id``
+    names the batch they belong to.  Without them the contract's prose
+    assertions stay ``not_run`` and the sequence cannot reach PASS -- which is
+    the honest answer for a run nobody judged, not a defect of this function.
     """
     outcomes: list[Outcome] = []
+    label = f01_sequence_label()
     if not base_url:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence="没有给出 --base-url，本轮没有对任何提供方执行。",
             reason="未提供真实后端地址，F01 契约序列没有执行。",
             unblock="用 --base-url <真实后端地址> 重跑本脚本。"))
@@ -300,10 +350,13 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner = ScenarioRunner.from_files(
             OPENAPI_PATH, WORKFLOW_PATH, base_url=base_url, token=token,
             identities=identities,
-            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
+            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}),
+            run_id=run_id,
+            decision_ledger=Path(decision_ledger) if decision_ledger else None,
+            audit_source=audit_source)
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"执行器拒绝了这轮配置：{error}",
             reason=f"执行器在发出第一个请求前就拒绝了本轮配置：{error}",
             unblock="按错误信息补齐 --token / --identity 后重跑本脚本。"))
@@ -312,7 +365,7 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner.run(stop_on_mismatch=False)
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"序列中断：{error}",
             reason=f"主流程缺依赖或无法继续：{error}",
             unblock="让真实后端可达（隔离 PostgreSQL + 迁移 + 启动）后重跑本脚本。"))
@@ -463,9 +516,9 @@ def unevaluated_outcomes(report: dict[str, Any], contract: dict[str, Any]) -> li
     """One NOT RUN outcome per step and per check the contract declares and
     this run never evaluated.
 
-    This is the difference between "the run verified 15 of the contract's 58
+    This is the difference between "the run verified 15 of the contract's 64
     assertions" and "the run verified 15 and nobody said anything about the
-    other 43".  The second reading is how a run that did not finish turns into
+    other 49".  The second reading is how a run that did not finish turns into
     a release that looks finished.
     """
     outcomes: list[Outcome] = []
@@ -1159,6 +1212,14 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
                         help="F01-06 绑定的真实资料标识；它作为 {{knowledge_id}} 变量注入执行器。"
                              "没有默认值：不提供时执行器在第一个请求前就报错，不得回退到演示标识")
     parser.add_argument("--word-check", type=Path, default=None, help="执行者填好的 Word 检查表")
+    parser.add_argument("--manual-decisions", type=Path, default=None,
+                        help="人工判定台账：本轮可读的人工判定。没有它，"
+                             "契约里的散文断言保持 not_run，序列不可能判 PASS。")
+    parser.add_argument("--audit-source", default=None,
+                        help="服务端审计导出（文件路径或只读 URL）：跑批器用它核验人工判定。"
+                             "不给它，每条判定都只是「声明」，不能被当作已满足。")
+    parser.add_argument("--run-id", default=None,
+                        help="本轮运行批次标识：人工判定必须绑定同一个批次。")
     parser.add_argument("--docx", type=Path, default=None, help="本轮下载的 DOCX（算哈希）")
     parser.add_argument("--modified-docx", type=Path, default=None, help="修改后的 DOCX（算哈希）")
     parser.add_argument("--ledger-dsn", default=os.environ.get("LINGDOC_LEDGER_DSN", ""),
@@ -1240,7 +1301,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.append("python scripts/lingdoc_mock/run_f01.py --base-url <base-url> "
                     "--report <f01-report.json>   # by scripts/acceptance/beta_evidence.py")
     f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities,
-                                    arguments.knowledge_id or "")
+                                    arguments.knowledge_id or "",
+                                    run_id=arguments.run_id,
+                                    decision_ledger=arguments.manual_decisions,
+                                    audit_source=arguments.audit_source)
     outcomes.extend(f01_outcomes)
 
     # ---- the browser side -------------------------------------------------
@@ -1415,7 +1479,7 @@ def main(argv: list[str] | None = None) -> int:
         "迁移版本": str(manifest["database"]["migrations"].get("version") or "（没有读到）"),
     }
     scope = [
-        "F01 契约的 24 个节点（本轮用 contracts/workflow.json 的断言求值）",
+        f01_scope_label(),
         "浏览器对偶三方比对（HTTP = 浏览器 = 刷新后读回）",
         "服务端真实重启后的读回",
         "Word 人工检查（执行者填写，执行器只算哈希与校验必填字段）",

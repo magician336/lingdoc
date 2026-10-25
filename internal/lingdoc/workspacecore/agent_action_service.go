@@ -2560,7 +2560,7 @@ func (s *Service) ApplyProjectAssetPolicyDelta(tx Transaction, actor Actor, next
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return previous, err
 	}
-	next := ProjectAssetPolicy{ID: assetID, ProjectID: p.ID, AssetID: assetID, Version: truth.Asset.AssetRevision + 1, AssetRevision: truth.Asset.AssetRevision + 1, PolicyVersion: stored.Version + 1, Scope: input.Scope, Purpose: input.Purpose, AllowedUserIDs: allowed, ModelUseAllowed: input.ModelUseAllowed, Reason: input.Reason, CreatedBy: previous.CreatedBy, GrantedBy: actor.UserID, SourceVersionHash: truth.Fingerprint, ContextRevision: nextProject.CurrentContextRevision, UpdatedAt: time.Now().UTC()}
+	next := ProjectAssetPolicy{ID: assetID, ProjectID: p.ID, AssetID: assetID, Version: truth.Asset.AssetRevision + assetPolicyVersionAdvance, AssetRevision: truth.Asset.AssetRevision + assetPolicyVersionAdvance, PolicyVersion: stored.Version + 1, Scope: input.Scope, Purpose: input.Purpose, AllowedUserIDs: allowed, ModelUseAllowed: input.ModelUseAllowed, Reason: input.Reason, CreatedBy: previous.CreatedBy, GrantedBy: actor.UserID, SourceVersionHash: truth.Fingerprint, ContextRevision: nextProject.CurrentContextRevision, UpdatedAt: time.Now().UTC()}
 	if input.Scope == "personal" {
 		next.CreatedBy = actor.UserID
 	}

@@ -64,7 +64,7 @@
   "failure_states": {
     "how_expressed": "失败态用「失败路径节点 + http_error 断言」表达：失败响应必须真的是错误状态码，且错误信封的 code 与契约声明的一致（光有错误体不算失败路径）。",
     "where_they_are": "contracts/scenarios.json 已有的失败路径节点上：F05-04 的 409 version_conflict、F06 的 409 stale_input、F07 的 403 source_access_denied、F11-10 的 409 stale_input、F12-04 的 409 version_conflict、F22-01 的 422 asset_not_authorized。",
-    "why_not_in_this_sequence": "F01 这 24 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容）；该结构已由 #501 落地（形状与用例见 contracts/scenarios.json 的 F24），但 F01 序列的节点数由验收协议 §2 钉死（24 个节点 = 原 23 个业务步骤 + F01-03b 前置），4xx 节点仍未挂进本序列 ⇒ GAP-FAILURE-PATH-NODES 未解除。",
+    "why_not_in_this_sequence": "F01 这 31 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容）；该结构已由 #501 落地（形状与用例见 contracts/scenarios.json 的 F24），但 F01 序列的节点数由验收协议 §2 钉死（31 个节点 = 原 23 个业务步骤 + F01-03b 前置 + F01-06b…F01-06e 四个 model-use 许可节点 + F01-19a…F01-19c 三个稳定化节点），4xx 节点仍未挂进本序列 ⇒ GAP-FAILURE-PATH-NODES 未解除。",
     "until_then": "涉及失败态的放行要求一律登记为未完成项（NOT RUN），不得记为已通过；解除条件见 acceptance/gaps.json 的 GAP-FAILURE-PATH-NODES。",
     "gap": "GAP-FAILURE-PATH-NODES"
   },
@@ -1333,9 +1333,20 @@
           "intent": "确认结果有效"
         },
         {
-          "path": "/data/review_decisions/0/review_item_id",
-          "equals": "{{review_id}}",
-          "intent": "待核事项有明确处置（保留并说明原因）"
+          "path": "/data/review_decisions",
+          "one_to_one": {
+            "from_step": "F01-13",
+            "path": "/data/review_items",
+            "id_field": "review_item_id",
+            "other_id_field": "id",
+            "entry_equals": {
+              "disposition": "retained_warning"
+            },
+            "entry_non_empty": [
+              "reason"
+            ]
+          },
+          "intent": "待核事项有明确处置（保留并说明原因）：处置集合与该章节的待核项集合一一对应，与顺序无关"
         }
       ],
       "assertions": []
@@ -1457,6 +1468,154 @@
           "path": "/data/status",
           "equals": "active",
           "intent": "读回的项目仍是激活状态"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19a",
+      "operation_id": "checkCurrent",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}"
+        },
+        "headers": {},
+        "json": {
+          "expected_project_version": "{{project_version}}"
+        }
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "receipt_id": "receipt-demo",
+          "project_version": 9,
+          "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+          "status": "passed",
+          "issues": [
+            {
+              "id": "warning-review-1",
+              "rule_id": "review-items-decided",
+              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+              "severity": "warning",
+              "target_id": "ch-question",
+              "target_version": "cv-question-2",
+              "evidence": [],
+              "evaluator_version": "lingdoc-rules/1",
+              "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+            }
+          ]
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {
+        "receipt_id": "/data/receipt_id"
+      },
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "passed",
+          "intent": "冻结之前先在当前基线上跑一次交付检查并确认它通过；没有这份结论，后面闭环影响任务用的回执就没有依据。"
+        },
+        {
+          "path": "/data/receipt_id",
+          "non_empty": true,
+          "intent": "这次检查产出一份可读回的计算回执：闭环影响任务要用的就是它的 ID，缺了它就只剩一句结论而没有凭据。"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19b",
+      "operation_id": "acknowledgeImpactPreflight",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-preflight-ack-0001"
+        },
+        "json": {
+          "proof_id": "{{receipt_id}}"
+        }
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "closed_task_ids": [
+            "impact-task-demo"
+          ],
+          "proof_id": "receipt-demo",
+          "context_revision": 2
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {},
+      "checks": [
+        {
+          "path": "/data/closed_task_ids",
+          "non_empty": true,
+          "intent": "这次闭环确实关掉了发布阻断任务：服务端认下的是当前基线下真实存在的 BLOCK_RELEASE 任务，不是凭据上的一个说法。"
+        },
+        {
+          "path": "/data/proof_id",
+          "equals": "{{receipt_id}}",
+          "intent": "闭环用的凭据就是上一步交付检查回执的 ID（不是冻结快照 ID，也不是幂等键）；服务端回显它，因此这里能逐字对上。"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19c",
+      "operation_id": "stabilizeRevision",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-stabilize-0001"
+        },
+        "json": {}
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "change_set_id": "cs-policy-demo",
+          "context_revision": 2,
+          "status": "STABILIZED",
+          "blockers": [],
+          "checked_at": "2026-10-19T14:30:00Z",
+          "stale_task_ids": []
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {},
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "STABILIZED",
+          "intent": "稳定化不是用状态码表达的：BLOCKED 与 STABILIZED 都是 200，结论在 status 字段里。这条断言读的就是那个字段，不是 HTTP 码。"
+        },
+        {
+          "path": "/data/blockers",
+          "length": 0,
+          "intent": "服务端给出的全部阻断清单为空：没有任何一条未闭环的影响任务或失效的受影响对象挡住这次冻结。"
         }
       ],
       "assertions": []

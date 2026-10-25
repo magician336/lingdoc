@@ -1580,14 +1580,14 @@
   "core_operations": 178,
   "schemas": 368,
   "local_refs": 1755,
-  "shape_checks": 976,
-  "scenarios": 35,
-  "scenario_example_references": 154,
-  "continuous_trace_steps": 28,
-  "scenario_steps_with_requests": 122,
-  "scenario_checks_tied_to_a_published_example": 92,
-  "scenario_checks_left_to_the_run": 20,
-  "continuous_trace_checks_tied_to_a_reference_response": 35,
+  "shape_checks": 993,
+  "scenarios": 37,
+  "scenario_example_references": 159,
+  "continuous_trace_steps": 31,
+  "scenario_steps_with_requests": 127,
+  "scenario_checks_tied_to_a_published_example": 101,
+  "scenario_checks_left_to_the_run": 21,
+  "continuous_trace_checks_tied_to_a_reference_response": 41,
   "continuous_trace_checks_left_to_the_run": 23,
   "check_kinds": [
     "equals",
@@ -1604,7 +1604,8 @@
     "not_in",
     "all_non_empty",
     "equals_step",
-    "provenance_real"
+    "provenance_real",
+    "one_to_one"
   ],
   "starting_states": 8,
   "starting_state_parts_buildable": [
