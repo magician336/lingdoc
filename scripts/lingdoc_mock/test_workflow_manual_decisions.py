@@ -773,9 +773,9 @@ class ContractFactTests(unittest.TestCase):
         self.assertEqual(dict(prose), PROSE)
         self.assertEqual(contract["manual_assertions"], [])
 
-    def test_the_contract_has_twenty_eight_steps(self):
+    def test_the_contract_has_thirty_one_steps(self):
         contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(len(contract["steps"]), 28)
+        self.assertEqual(len(contract["steps"]), 31)
 
 
 if __name__ == "__main__":

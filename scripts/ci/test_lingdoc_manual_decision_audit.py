@@ -20,7 +20,12 @@ import unittest
 from scripts.acceptance import beta_evidence
 from scripts.lingdoc_check_kinds import declared_kind
 from scripts.lingdoc_mock import main_path_evidence, manual_decision_audit
-from scripts.lingdoc_mock.run_f01 import ScenarioRunner, read_json_object, spec_from_document
+from scripts.lingdoc_mock.run_f01 import (
+    ScenarioRunner,
+    WorkflowError,
+    read_json_object,
+    spec_from_document,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
@@ -263,6 +268,69 @@ class ContractFactTests(unittest.TestCase):
             self.assertEqual(report["run_id"], RUN_ID)
             self.assertEqual(len(report["manual_decisions"]), 4)
             self.assertEqual(len(report["manual_assertions"]), 4)
+
+
+class ChannelGuardTests(unittest.TestCase):
+    """The guards an independent review found unpinned.
+
+    An independent review of issue #633 ran nine mutations and found three
+    that left the suite green: the authority sub-clause (redundant with
+    ``decision_status``), the truncated-quote direction of the verbatim
+    comparison, and the channel vocabulary check.  The last two are behaviour
+    that is correct today but had no regression protection, so they are pinned
+    here.
+    """
+
+    def test_a_truncated_quote_is_refused(self):
+        """A judgement that quotes only part of the sentence is not a judgement of it."""
+        record = judgement(1, "F01-06b", assertion_text=PROSE["F01-06b"][:20])
+        with self.assertRaises(manual_decision_audit.ManualDecisionError):
+            manual_decision_audit.ingest(
+                [record], RUN_ID, {"F01-06b": [PROSE["F01-06b"]]}, {})
+
+    def test_a_channel_outside_the_vocabulary_is_refused(self):
+        """The channel names five things; anything else is not a channel."""
+        record = judgement(1, "F01-06b", channel="telepathy")
+        with self.assertRaises(manual_decision_audit.ManualDecisionError):
+            manual_decision_audit.validate_record(record)
+
+    def test_the_release_path_can_carry_the_judgements_into_the_run(self):
+        """``beta_evidence.run_f01`` must be able to hand the ledger to the runner.
+
+        Without this the release path could never reach PASS on real evidence:
+        the runner would never see a judgement, the contract's prose would
+        stay ``not_run``, and the sequence would stay NOT RUN.
+        """
+        captured: dict = {}
+
+        class _FakeRunner:
+            def run(self, stop_on_mismatch: bool = True):
+                raise WorkflowError("the fake runner stops here")
+
+            def report(self, status: str) -> dict:
+                return {"workflow": "F01", "runner_status": status,
+                        "completed_steps": 0, "total_steps": 0, "steps": [],
+                        "checks": [], "manual_assertions": [],
+                        "provider_semantics_status": "not_verified"}
+
+        class _FakeScenarioRunner:
+            @staticmethod
+            def from_files(*args, **kwargs):
+                captured.update(kwargs)
+                return _FakeRunner()
+
+        original = beta_evidence.ScenarioRunner
+        beta_evidence.ScenarioRunner = _FakeScenarioRunner
+        try:
+            beta_evidence.run_f01("http://example.invalid", "token", {}, "",
+                                  run_id=RUN_ID,
+                                  decision_ledger=Path("ledger.jsonl"),
+                                  audit_source="audit.json")
+        finally:
+            beta_evidence.ScenarioRunner = original
+        self.assertEqual(captured.get("run_id"), RUN_ID)
+        self.assertEqual(str(captured.get("decision_ledger")), "ledger.jsonl")
+        self.assertEqual(captured.get("audit_source"), "audit.json")
 
 
 if __name__ == "__main__":

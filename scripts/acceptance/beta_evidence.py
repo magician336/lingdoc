@@ -319,13 +319,23 @@ def f01_scope_label() -> str:
 
 
 def run_f01(base_url: str, token: str | None, identities: dict[str, str],
-             knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
+             knowledge_id: str = "", *,
+             run_id: str | None = None,
+             decision_ledger: Path | str | None = None,
+             audit_source: str | None = None) -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
 
     The runner is the one in ``scripts/lingdoc_mock/run_f01.py``: the steps and
     the assertions live in the contract, and this script only asks for the
     result.  A provider that cannot be reached is BLOCKED, not a failure of
     the assertions and not a pass either.
+
+    The human judgements travel with the run: ``decision_ledger``
+    is the ledger of judgements this run may read, ``audit_source`` is the
+    server-side audit export the runner checks them against, and ``run_id``
+    names the batch they belong to.  Without them the contract's prose
+    assertions stay ``not_run`` and the sequence cannot reach PASS -- which is
+    the honest answer for a run nobody judged, not a defect of this function.
     """
     outcomes: list[Outcome] = []
     label = f01_sequence_label()
@@ -340,7 +350,10 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner = ScenarioRunner.from_files(
             OPENAPI_PATH, WORKFLOW_PATH, base_url=base_url, token=token,
             identities=identities,
-            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
+            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}),
+            run_id=run_id,
+            decision_ledger=Path(decision_ledger) if decision_ledger else None,
+            audit_source=audit_source)
     except WorkflowError as error:
         outcomes.append(Outcome(
             id=label, status=BLOCKED,
@@ -503,9 +516,9 @@ def unevaluated_outcomes(report: dict[str, Any], contract: dict[str, Any]) -> li
     """One NOT RUN outcome per step and per check the contract declares and
     this run never evaluated.
 
-    This is the difference between "the run verified 15 of the contract's 58
+    This is the difference between "the run verified 15 of the contract's 64
     assertions" and "the run verified 15 and nobody said anything about the
-    other 43".  The second reading is how a run that did not finish turns into
+    other 49".  The second reading is how a run that did not finish turns into
     a release that looks finished.
     """
     outcomes: list[Outcome] = []
@@ -1199,6 +1212,14 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
                         help="F01-06 绑定的真实资料标识；它作为 {{knowledge_id}} 变量注入执行器。"
                              "没有默认值：不提供时执行器在第一个请求前就报错，不得回退到演示标识")
     parser.add_argument("--word-check", type=Path, default=None, help="执行者填好的 Word 检查表")
+    parser.add_argument("--manual-decisions", type=Path, default=None,
+                        help="人工判定台账：本轮可读的人工判定。没有它，"
+                             "契约里的散文断言保持 not_run，序列不可能判 PASS。")
+    parser.add_argument("--audit-source", default=None,
+                        help="服务端审计导出（文件路径或只读 URL）：跑批器用它核验人工判定。"
+                             "不给它，每条判定都只是「声明」，不能被当作已满足。")
+    parser.add_argument("--run-id", default=None,
+                        help="本轮运行批次标识：人工判定必须绑定同一个批次。")
     parser.add_argument("--docx", type=Path, default=None, help="本轮下载的 DOCX（算哈希）")
     parser.add_argument("--modified-docx", type=Path, default=None, help="修改后的 DOCX（算哈希）")
     parser.add_argument("--ledger-dsn", default=os.environ.get("LINGDOC_LEDGER_DSN", ""),
@@ -1280,7 +1301,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.append("python scripts/lingdoc_mock/run_f01.py --base-url <base-url> "
                     "--report <f01-report.json>   # by scripts/acceptance/beta_evidence.py")
     f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities,
-                                    arguments.knowledge_id or "")
+                                    arguments.knowledge_id or "",
+                                    run_id=arguments.run_id,
+                                    decision_ledger=arguments.manual_decisions,
+                                    audit_source=arguments.audit_source)
     outcomes.extend(f01_outcomes)
 
     # ---- the browser side -------------------------------------------------
