@@ -886,3 +886,119 @@ model is outside the acceptance budget profile
 | 4 | 隔离 PostgreSQL 的「重启后读回」 | **NOT RUN**（本轮用隔离 SQLite） | 用 `--db-driver postgres --db-dsn <隔离库 DSN>` 跑重启读回（跟进票 **#480**） |
 | 5 | 向量开启的知识库上的检索行为 | **未授权**（embedding 授权为 0 次） | 把 embedding 纳入受控 profile 并拆分 chat / embedding 额度（跟进票 **#546**） |
 | 6 | #619 服务端的三项残留（声明口径、三条承重测试、API 密钥主体授权边界、存量变更集） | **已登记** | 跟进票 **#647** |
+## 20. 第十二批（第七轮同步）：#649 服务端权威人工判定落地 ＋ 判定层自证补强 ＋ 一处契约缺陷收口
+
+### 20.1 本批合入的实现（逐项：票 → PR → 合并提交 → 它修的是什么）
+
+| 票 | PR | 合并提交 | 它修的是什么 |
+|---|---|---|---|
+| #651 | **#652** | `d4cc1b09` | 生成运行的**幂等重放在生产装配下必然 503**（`validateReplayInput` 是唯一仍硬要求 `s.Currentness != nil` 的地方，而生产走 `NewServiceWithAccessPolicy` 设 `Access` 不设 `Currentness`）。同时补上**复核点名的 5 处钉子**（M4 终局集合的 failed/interrupted 两支、M6 重放路径的来源校验、M7 存储输入的证据校验、HTTP 接缝用例、「不写候选」断言）—— 这 5 处在补测前**删掉仍全仓全绿**。 |
+| #647 | **#653** | `ef0fbdd0` | #619 的三条**承重属性**与稳定化授权边界的仓内自带测试（7 条包级 ＋ 3 条 HTTP 级）。**判定式一行未改**。 |
+| #655 | **#658** | `b1c8b272` | 来源漂移的重放被答成 **500 `internal_error`（retryable=true）** ⇒ 改为 **409 `source_stale`（retryable=false）**。500 的承诺把调用方引向重试，而重试救不了漂移（捕获时的那份快照不会自己变回去）—— 在额度只剩 1 次的窗口里，这是**会烧额度的方向**。 |
+| #633 | **#654** | `5ed7ae06` | 跑批器的**零额度重判路径**：只重算人工判定层，机器事实**逐字节保留**、`run_id` 不变、语义判据**复用跑批器那一条**（不写第二份）。 |
+| #654 | **#657** | `fd55737e` | 登记处补记 #654 的三条新路径到 PF-14。 |
+| #649 | **#659** | `540f77e4` | **服务端落下权威的人工判定审计记录**（领域层）：`actor`/`authorization`/`channel`/`occurred_at`/`audit_id` **全部由服务端推导**（入参只有 5 个调用方字段 ⇒ 这 5 个派生事实**物理上无处可填**）。审计行落 `lingdoc_project_audits`（action = `manual.judgement`，`details` **顶层扁平**）；判定结果落 `lingdoc_g5_records`（kind = `manual_judgement`，id = `sha256(run_id + "\x00" + assertion_id)`）；**同一写事务**，先判定结果后审计行，任一失败整体回滚；**不需要迁移**。 |
+| #649 | **#660** | （见 20.2） | HTTP 接缝（两个端点 ＋ 窄端口）、组合根显式交接、契约、跑批器读端认得服务端信封。 |
+| #649 | 登记处补记 | （见 20.2） | 9 条路径的归属（6 条新增 ＋ 4 条跨面单向移交的记录）。 |
+
+### 20.2 #649：人工判定为什么此前**永远**不可能被核验为权威
+
+跑批器的核验判据是**逐字段相等**（`scripts/lingdoc_mock/manual_decision_audit.py` 的 `verify_against_audit`）：审计源里要有一条以 `audit_id` 为键、**顶层**带齐 7 个字段（`actor`/`authorization`/`channel`/`occurred_at`/`assertion_id`/`run_id`/`evidence_ref`）的记录，且每个字段与判定记录**完全相等**。
+
+⇒ **服务端此前没有一类记录能提供这 7 个字段** ⇒ 判定只能停在 `claimed` ⇒ `provider_semantics_status` 恒 `not_verified` ⇒ 两条放行路径都判 NOT RUN。**这就是 19.8 里那两个阻塞项的根因。**
+
+本批把它拆成两条线落地（领域层 ＋ HTTP 侧），并由**管理会话裁定了 5 项口径**（记录如下，避免后续再翻旧账）：
+
+| # | 裁定 | 依据 |
+|---|---|---|
+| 1 | 导出记录里 flat `channel` = **`unverified_channel`** | 服务端能证明的只有**凭据类别**；UI 点击与脚本重放**同属 `user_session` 凭据** ⇒ 结构上无法区分 ⇒ 按「不可证明的一律 `unprovable`」⇒ **宁可低估不可高估**。 |
+| 2 | `occurred_at` 必须**由服务端存字符串、导出时原样回吐** | 若走「DB 里的 `time.Time` 再格式化」，精度/时区会在往返里漂，**字节相等就断了**。 |
+| 3 | 渠道两层语义放**附加键**（`channel_class`/`channel_ui_origin`/`channel_automation`） | 跑批器只比 7 个具名字段、忽略额外键 ⇒ 附加键**不影响**相等判定；后两者**恒为 `unprovable`**。 |
+| 4 | 路由注册接缝 = `internal/router/router.go`（**无主**路径），**不改** `http.go` | `http.go` 属 PF-2 且会破两条路由总数断言；`router.go` 不在任何面的路径集里 ⇒ 改它不越界。 |
+| 5 | 跑批器读端**允许拆信封**，但**只准拆** | 导出端点返回信封而 `_read_records` 只吃数组/JSONL ⇒ 不拆则判定**静默**停在 `claimed`。**判定语义（`verify_against_audit`/`audit_index`/`resolve_authority`/`AUDIT_FIELDS`）一字未改**，且补了守护：拆信封后**仍缺字段/值不等仍不成立**。 |
+
+**跨语言端到端已跑通**（真实服务端导出信封 → 真实跑批器）：
+
+```
+records the runner read: 1 | audit_index size: 1
+verify_against_audit: True      authority: server_attested      decision_status: passed
+export quote == write-side quote: True
+ingest: server_attested passed verified
+```
+
+⇒ **19.9 的第 1 条（人工判定未完成）的「服务端可核验的审计记录」这一半已解除**；剩下的仍是**判定本身**（人工前置，见 20.5）。
+
+### 20.3 判定层的三处补强（#652 的 5 处钉子 ＋ #653 的三条承重属性 ＋ #655 的错误形态）
+
+- **#652**：复核在原 head 上发现 M4/M6/M7 三处**删掉仍全仓全绿**（重放路径**没有第二道来源防线**）⇒ 补测后每处都有会转红的用例。**管理会话独立重做**两处变异：删来源校验 ⇒ **恰好** `TestReplayStillValidatesTheSources` 转红（其余 9 条仍绿）；删证据校验 ⇒ **恰好** `TestReplayStillValidatesTheStoredEvidence` 转红；文件逐字节还原、工作树干净。
+- **#653**：9 处独立反向变异，8 处决定性转红；**MUT3/MUT5/MUT9 在 merge-base `db582027` 与 HEAD 两端全部复现** ⇒ 这三条性质**并入前确实未被钉住**。另有一处**存活变异体**（业务键的 `run_id` 维度零覆盖）⇒ 已补测试并由管理会话独立重做该变异，**恰好** `TestManualJudgementKeepsOneAssertionOfTwoBatchesApart` 转红。
+- **#658**：管理会话独立重做三处变异（去 Form / `Retryable:true` / `Status:500`）⇒ 全部让三条 HTTP 级用例转红；契约与实现**机械交叉核对 4/4 全匹配**。
+
+### 20.4 A-2 负向验证：F01-06c 现在有了**负向**证据（结论 PASS）
+
+F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态只有 assessed。」此前只有**正向**证据（审计序列里 `change_set.assess` 先于 `project.change_set.apply`）。A-2 用**唯一一次**负向 apply 补上了负向证据：
+
+- 前置状态（psql 直读）：变更集 `status='draft'`、`applied_at` 空；`g3_records` 里 `kind='assessment'` **0 条**；`status='applied'` **0 行**；无 apply 审计；无 `applyChangeSet` 幂等行；服务端 `GET …/impact-assessment` **自身返回 404**。
+- 负向 apply：**HTTP 404 `not_found`**（`retryable=false`）。
+- 归因：`service_facade.go:2144` → `typed_contracts.go:624-633` → `impact_source_operation.go:169` → `:389-392`（取评估记录失败时**原样透传** `ErrNotFound`）；服务端 SQL 日志时序佐证（`lingdoc_g3_records kind='assessment'` → record not found → 404），且 `lingdoc_change_sets` 全程无 not-found ⇒ 变更集**被找到了**。
+- 阳性对照（同二进制／同库／同端口／同权限，唯一差异＝**评估记录的有无**）⇒ **HTTP 200**、`status=applied`。
+- 副作用：44 张 `lingdoc_%` 表 ＋ `models` 逐表行数与内容指纹前后对比 ⇒ 除 **1 条 `authorization.manage` 审计**外**零差异**。
+- 成本：`LLM_DEBUG_LOG` 0 文件、`models` 0 行、账本 0 行 ⇒ **provider 请求 0 次、额度消耗 0**。
+
+**两项口径缺口（交票主裁决，本轮不代判）**：
+
+| # | 缺口 | 事实 | 处置 |
+|---|---|---|---|
+| L1 | 拒绝是 **404 `not_found`** 而非状态机对应的 **422 `invalid_state`** | 调用方**无法区分**「变更集不存在」与「变更集未评估」⇒ 该门禁在**可观测口径上偏弱**（不影响「不能被应用」这一事实） | **已开独立票 #656**（含最小复现、根因行号、5 条验收矩阵） |
+| L2 | 「合法前态只有 `assessed`」对应的状态机检查（`ChangeSetStatusCanMove("apply", status)`）在 HTTP 路径上**未被执行到** | 拒绝发生在更早的来源解码阶段 ⇒ 该后半句目前只有**静态**证据（契约表、DB CHECK 约束、既有测试），**未被本次实验直接实测** | 如实标注；补它需要先修 L1（见 #656） |
+
+**F01-06c 的读法（供票主裁决）**：读作「**未评估的变更集不得被应用**」⇒ A-2 **支持**，可判 `passed`；读作「**服务端以状态非法（422 `invalid_state`）拒绝，且合法前态集合恰为 `{assessed}`**」⇒ A-2 **仅部分支持**（拒绝确实发生且归因确凿，但错误码是 404，且状态机检查从未被执行）⇒ 该读法下应记 **PARTIAL**。**本轮未改动任何人工判定记录。**
+
+证据目录：`D:/wt/lingdoc-485-evidence/a2-negative/`（索引 `REPORT.md`；15 份 JSON/日志/脚本带 sha256）。
+
+### 20.5 本批之后仍未解除的事项（逐条带解除条件）
+
+| # | 事项 | 性质 | 解除条件 |
+|---|---|---|---|
+| 1 | 4 条契约散文断言（F01-06b～06e）的**人工判定** | **已解除**（本批完成） | **已由票主本人作出判定并经正式服务端接口落审计记录**（4×201，`audit_id` 见 §20.7；`authority=server_attested`），再经 **#654 的零额度重判路径**接入既有跑批报告 ⇒ 两条放行路径**实际**判 PASS（§20.6）。⚠️ 剩余的**工程**约束：额度已 4/4 用尽 ⇒ **不能**再带新判定重跑 F01 主流程，只能走零额度重判（已如此做）。⚠️ **F01-06c 的 422 行为仍未验证**（见第 6 条与 #656）。 |
+| 2 | Word 人工检查（开/改/存/关/重开） | **DEFERRED_MANUAL** | 用真实 Microsoft Word 打开 `export-196b61e0….docx`（sha256 `df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a`）核对打开/内容完整性/排版/3 条待核项附录/保留警告，填回 `word-check.md` 的五个必填字段。⚠️ 「DOCX 生成成功」**不等于**「Word 检查通过」。 |
+| 3 | 第二人独立复现 | **记录项**（不阻塞首版） | 由**第二名真人**开发者按 #489 的步骤独立复现（干净工作树 ＋ 新身份 ＋ 新隔离数据库 ＋ 独立报告）并把证据绑到当前 head。⚠️ AI 会话**不计入**「另一位开发者」。 |
+| 4 | 隔离 PostgreSQL 的「重启后读回」 | **已解除**（本批前完成） | 已用隔离 PG 库 `weknora_iso_r7` ＋ 真实进程重启完成：项目/章节/来源绑定/下载哈希**逐字段相等**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**）；psql 直读证明行物理在 PG 内；**零 provider**。证据 `D:/wt/lingdoc-484-evidence/pg-r7/`。⚠️ **章节级 `source_ids` 非空仍 NOT RUN**（需真实 WeKnora 解析 ⇒ 依赖 embedding 授权）。 |
+| 5 | 向量开启的知识库上的检索行为 | **未授权**（embedding 授权为 0 次） | 把 embedding 纳入受控 profile 并拆分 chat / embedding 额度（跟进票 **#546**；等待票主批复范围：模型、预计调用数、费用、与 chat 分开记账、材料、验证方法、风险）。 |
+| 6 | F01-06c 的**负向拒绝形态** | **已登记**（票 #656） | apply 未评估的变更集现在答 **404 `not_found`** 而非 422 `invalid_state` ⇒ 调用方分不清「不存在」与「未评估」。修法：把「评估记录不存在」从 `ErrNotFound` 改成可区分的领域错误，并让状态机检查在来源解码**之前**执行。 |
+| 7 | #619 服务端的三项残留 | **已登记** | 跟进票 **#647**：① 声明口径；② 三条承重测试（**本批 #653 已补上**）；③ API 密钥主体授权边界（**已登记为已知承重耦合**：Owner 判定必须读项目成员记录里的 owner 身份，不得改读 `Actor.Role`）；④ 存量变更集（**不迁移不回填**）。 |
+
+### 20.6 四层结论的更新（相对 19.8）
+
+**相对第六轮，本批**：
+
+- **第一层（机器执行事实）**：**未变** —— 最近一次真实跑批仍是 `f01-20261025T013341Z-5105ae32`（31/31 节点、64/64 机器断言）。本批**未发起任何真实 provider 调用**（额度 4/4 用尽）。
+- **第二层（契约验收结果）**：**已由 NOT RUN 变为 PASS**。用 #654 的**零额度重判路径**把四条人工判定接入既有跑批报告后，两条判定路径**实际**判 PASS（`main_path_evidence` = PASS、`beta_evidence` = PASS，`provider_semantics_status` = `verified`；outcome 数 105 → 97，8 条 `not_run` 全部消除）。**机器事实逐字节不变**（9 个机器事实键逐字节相等，顶层键集与顺序一致），`run_id` 不变，**新增 provider 请求 = 0、新增账本行 = 0**。
+- **第三层（人工判定结果）**：4 条**已由 `not_run` 变为 `passed`**，且**全部取得服务端权威审计证明**（`authority=server_attested`、`channel_verifiability=verified`）。四条各自的 `audit_id`、`actor`、`authorization`、`occurred_at`、`evidence_ref` 见 §20.7。⚠️ **渠道本身仍不可证明**：服务端能证明的只有凭据类别（`user_session`），**不能**证明「本人现场操作」⇒ `channel` 恒为 `unverified_channel`、`ui_origin`/`automation` 恒 `unprovable`。
+- **第四层（正式 Beta 放行结论）**：**仍不予放行**，但**「判定能否被核验为权威」与「有没有判定」两个阻塞项均已解除**。剩余放行条件：**① Word 人工检查**（DEFERRED_MANUAL）＋ **② 隔离 PG 章节级 `source_ids`**（NOT RUN，依赖 embedding 授权）＋ **③ 向量检索行为**（#546，未授权）＋ **④ 第二人独立复现**（#489，记录项，须真人）。
+
+> **口径提醒（不变）**：机器断言全过 **不等于** Beta 放行通过；放行判定按验收协议 §6，主流程不得含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL。`DEFERRED_MANUAL` 不阻塞代码合并，但**阻塞** Beta 首版放行。
+> **本批新增的一条口径**：`#649` 落地后，**「判定能否被核验为权威」已不再是阻塞项**；**「有没有判定」才是**。这两件事在 19.8 里是同一条阻塞项（#1），现在必须分开读。
+> **再一条**（本批新事）：**四条判定被记录 ＋ 契约验收两条路径 PASS ≠ 整个 Beta 自动放行**。放行结论仍按协议 §6 逐条判。
+
+### 20.7 四条人工判定的服务端审计记录（**权威证明已取得**）
+
+执行方式：**正式服务端 HTTP 接口**（`POST /api/v1/lingdoc/projects/{projectId}/manual-judgements`），不是写库、不是手工插审计行。判定服务跑在**独立端口 18095**（二进制 source_head `ac6ee9a5`，含 #659 领域层 ＋ #660 HTTP 侧）；**18087 上那轮服务全程未停未动**。
+
+| 断言 | verdict | `audit_id` | `actor` | `channel` | `occurred_at` | `evidence_ref` |
+|---|---|---|---|---|---|---|
+| `F01-06b` | `passed` | `9bdeffbc-aff5-4d64-a4f2-4460da4b645f` | `619a1613…`（认证到的 owner） | `unverified_channel` | `2026-10-25T09:10:49Z` | `run:<run_id>/human-action-sheet.md#A-1` |
+| `F01-06c` | `passed` | `9d180db7-7bcc-4fa2-98b3-a8e3bf8b92c5` | 同上 | 同上 | `2026-10-25T09:13:01Z` | `run:<run_id>/a2-negative/REPORT.md` |
+| `F01-06d` | `passed` | `5e6c2b90-c06b-4ea5-8043-70b03dda4d6f` | 同上 | 同上 | `2026-10-25T09:13:01Z` | `run:<run_id>/human-action-sheet.md#A-3` |
+| `F01-06e` | `passed` | `c6d9afdc-32d7-4786-9132-2f04bdb8b0c2` | 同上 | 同上 | `2026-10-25T09:13:01Z` | `run:<run_id>/human-action-sheet.md#A-4` |
+
+- **授权事实**（服务端推导，四条相同）：`method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal` ⇒ 读的是**项目成员记录**里的 owner 身份，**不是** `Actor.Role`。
+- **判定来源**：`verdict_source = human_judgement`（**人工**，不是机器求值升级）。
+- **逐字段读回**：每条 15 项检查全过（verdict／契约原文逐字／run_id／evidence_ref／actor／channel 三项／occurred_at／audit_id／authorization 两项／7 字段顶层／恰 12 键）；**审计行 details 与判定记录 payload 的 7 个字段逐字段相等**（28/28 项）。
+- **F01-06e 的原始 HTTP 响应体已补证**：从**最终批次服务端访问日志第 429 行**取得 `GET …/assets/cac1fd1f…/policy` 的**响应原文**（`status_code=200`，body sha256 `d19ff67c…`；12 项字段检查全过，`model_use_allowed=true`、`asset_revision=2`、`source_version_hash=33998f49…`），**不是**从数据库重建的。
+
+⚠️ **保留的证据限制（未淡化）**：① **F01-06c 的状态机合法前态与 422 行为仍未直接验证** —— A-2 的负向拒绝发生在**来源解码阶段**，错误码是 **404 `not_found`** 而非 422 `invalid_state`（调用方分不清「不存在」与「未评估」）⇒ **已开票 #656**；② **F01-06d 没有机器 checks**，其 `content_hash` 两版**相同**，且**不替代** F01-06e 的指纹绑定核验；③ **F01-06e 的理由必须保留为「同意」**，不得改写成用户曾逐项表达的理由；④ 服务端**不能**校验 `assertion_id` 是否是契约散文节点（契约是 docs 产物），逐字核验由跑批器按 #633 承担。
+
+### 20.8 本批留下的一处覆盖缺口（**非阻塞，待补**）
+
+#660 的独立复核发现：**真实 router 的注册分支没有回归测试** —— 把 `internal/router/router.go:331` 的注册分支废掉后，PR 自带的 `router` ＋ `container` 两个套件**仍全绿**（退出码 0），而生产 router 已不再服务这两个端点。复核用**自己写的**测试证明了生产接线是对的（真实 router ＋ 真实组合根 ⇒ 201/200）。⇒ **该接缝缺一条守护**，待补。
