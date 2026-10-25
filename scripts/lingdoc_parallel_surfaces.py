@@ -468,6 +468,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/router/routes_lingdoc_owner_410_test.go", "file"),
             ("docs/08-本轮实施方案/Spec-49-owner_unavailable派生状态与Owner-only冻结.md", "file"),
             ("docs/08-本轮实施方案/contracts/validation-result.json", "file"),
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：PF-10 **借用**本面
+            #   持有的两条路径 ——
+            #   docs/08-本轮实施方案/contracts/openapi.json：给 CheckResult 补 receipt_id（服务端真实
+            #     返回，而 CheckResult 是 additionalProperties:false ⇒ 改之前真实响应违反契约）；
+            #     给 ObjectVersionRef.kind 枚举补 DeliveryPreflight（服务端真的在发这个 kind ⇒
+            #     真实响应违反契约）；给 ImpactBlocker.code 的描述登记新码
+            #     impact_object_authorization_invalid。**owner 仍是本面**，不变更归属。
+            #   docs/08-本轮实施方案/contracts/validation-result.json：契约静态校验器重新生成的产物。
+            #   依据票：#619（PR #646）、#633（PR #643）。
             ("migrations/sqlite/000053_lingdoc_project_archive.up.sql", "file"),
             ("migrations/sqlite/000053_lingdoc_project_archive.down.sql", "file"),
             ("migrations/versioned/000132_lingdoc_project_archive.up.sql", "file"),
@@ -601,6 +610,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "claimed_by": "",
         "paths": (
             ("internal/lingdoc/workspacecore/agent_action_service.go", "file"),
+            # 2026-10-25 #619 服务端（PR #645，内容提交 295bc5f2）：PF-10 **借用**本面持有的这条路径 ——
+            #   该 PR 改了 1 行：ApplyProjectAssetPolicyDelta 的 Version/AssetRevision 改为使用
+            #   新增的共享常量 assetPolicyVersionAdvance（＝1），好让 apply 的推进量与 A1 的判定式
+            #   **共用同一个常量**（两处不可能各自漂移）。**owner 仍是本面**，不变更归属；
+            #   本面不把它借给别的面。
+            #   依据票：#619（PR #645）、#634（A 的决策记录）。
             ("internal/lingdoc/workspacecore/agent_research_model.go", "file"),
             # The 研究提案 contract: the model-output contract that owns the
             # shape of a research proposal.  It is a module of its own,
@@ -813,11 +828,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 重启脚本：参数化隔离 PostgreSQL 与 SQLite（协议 §1 要求隔离 PG）。
             ("scripts/acceptance/lingdoc_full_server_restart.py", "file"),
             # F01 契约：协议 §3 的语义读回落成这里的 check
-            # （steps 28 个、checks 58 条；一条 check 的断言键就是它的 kind：
+            # （steps 31 个、checks 64 条；一条 check 的断言键就是它的 kind：
             #  equals / ref_in / readback_equals / non_empty / length /
             #  version_bound / marked_or_absent / hash_equals）。
-            #  28 个 ＝ 原 23 个业务步骤 ＋ activation-read 前置 ＋ #545 的四个
-            #  model-use 许可节点（F01-06b～06e：为建立同意记录而存在，不是业务步骤）。
+            #  31 个 ＝ 原 23 个业务步骤 ＋ activation-read 前置 ＋ #545 的四个
+            #  model-use 许可节点（F01-06b～06e：为建立同意记录而存在，不是业务步骤）
+            #  ＋ #619 的三个稳定化节点（F01-19a～19c：交付检查回执 → 闭环影响任务 → 稳定化）。
             ("docs/08-本轮实施方案/contracts/workflow.json", "file"),
             # 协议 §6 的证据产物目录：<SHA>/<运行标识>/ 下的六件产物。
             # 用**目录级**声明覆盖整棵子树——每次验收新增一个运行目录，
@@ -825,6 +841,13 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("docs/08-本轮实施方案/acceptance/beta-first/", "dir"),
             ("scripts/lingdoc_mock/workflow_expand.py", "file"),
             ("scripts/ci/test_lingdoc_review_decision_expansion.py", "file"),
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：本面认领该 PR 新增的三条路径 ——
+            #   scripts/lingdoc_mock/manual_decision_audit.py  （人工判定台账与权威性三档）
+            #   scripts/lingdoc_mock/test_workflow_manual_decisions.py（42 条验收/负向/端到端用例）
+            #   scripts/ci/test_lingdoc_manual_decision_audit.py  （跨路径守护，由 LingDoc PR gate 执行）
+            ("scripts/lingdoc_mock/manual_decision_audit.py", "file"),
+            ("scripts/lingdoc_mock/test_workflow_manual_decisions.py", "file"),
+            ("scripts/ci/test_lingdoc_manual_decision_audit.py", "file"),
             # 2026-10-24 #618（PR #620，合并提交 f404fd02）：本面认领本 PR 新增的两条路径 ——
             #   scripts/lingdoc_mock/workflow_expand.py            （展开规则的唯一实现）
             #   scripts/ci/test_lingdoc_review_decision_expansion.py（守护测试，由 LingDoc PR gate 执行）。
@@ -842,6 +865,36 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   —— 经登记处自身的 PathClaim.overlaps 逐条核对为**自由路径**（本仓无面声明），
             #   按本轮约定不声明进任何面的路径集；此处只记录改动事实，不改本面既有路径集。
             #   依据票：#626（PR #637）、#621（引入 one_to_one 的那轮）、#490（放行结论表）。
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：本面**认领**该 PR 新增的三条路径 ——
+            #   scripts/lingdoc_mock/manual_decision_audit.py  （人工判定台账与权威性三档）
+            #   scripts/lingdoc_mock/test_workflow_manual_decisions.py（42 条验收/负向/端到端用例）
+            #   scripts/ci/test_lingdoc_manual_decision_audit.py  （跨路径守护，由 LingDoc PR gate 执行）
+            #   同 PR 还**借用** PF-14 持有的两条路径（owner 不变，故不声明进本面 paths；登记处 loader
+            #   拒绝两个面声明同一条路径）：
+            #   scripts/lingdoc_mock/test_workflow_runner.py、scripts/lingdoc_mock/test_workflow_reports.py
+            #   —— 理由是「跑批器新增了 run_id / manual_decisions 两个报告键，那两处的精确 key 集合断言
+            #   必须同步扩充」。改动只是**扩充**断言（未删未弱化）。
+            #   依据票：#633（PR #643）、#490（放行结论表）。
+            # 2026-10-25 #639（PR #644，内容提交 e0d1df5f）：本面**再次借用** PF-14 持有的
+            #   docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 把校验器里
+            #   marked_or_absent / non_empty / all_non_empty 三处判断点改调 is_marked()，
+            #   使校验器与跑批器对「什么算空」同一口径。**owner 仍是 PF-14**，本面不声明该路径。
+            #   依据票：#639（PR #644）、#621（引入 one_to_one 的那轮）。
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：本面认领
+            #   docs/08-本轮实施方案/contracts/workflow.json（**本面自有路径**），并**借用**下列
+            #   **别的面拥有**的路径（owner 全部不变，本面一律不声明）：
+            #   docs/08-本轮实施方案/contracts/scenarios.json（PF-14）
+            #   docs/08-本轮实施方案/contracts/openapi.json（PF-4）
+            #   docs/08-本轮实施方案/contracts/validation-result.json（PF-4）
+            #   scripts/lingdoc_mock/test_workflow_specs.py（PF-14）
+            #   scripts/lingdoc_mock/test_workflow_twostep.py（PF-14）
+            #   scripts/lingdoc_mock/test_workflow_runner.py（PF-14）
+            #   docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md（PF-14）
+            #   —— 理由分别是：补稳定化链节点与两条场景；给 CheckResult 补 receipt_id、
+            #   给 ObjectVersionRef.kind 补 DeliveryPreflight（服务端真在发 ⇒ 真实响应违反契约）、
+            #   登记新阻断码 impact_object_authorization_invalid；节点数 28 → 31 的连锁断言；
+            #   协议与放行 Spec 里的节点数与构成同步。
+            #   依据票：#619（PR #646）、#633（PR #643）、#490（放行结论表）。
         ),
         "resolves": (),
         "summary": (
@@ -1186,6 +1239,26 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   新增 is_marked()（逐条复刻 runner 的 _is_marked）并把 one_to_one 的 entry_non_empty
             #   改用同一口径。**owner 仍是本面**，不变更归属；本面不把它借给别的面。
             #   依据票：#626（PR #637）、#621。
+            # 2026-10-25 #639（PR #644，内容提交 e0d1df5f）：PF-10 **再次借用**本面持有的
+            #   docs/08-本轮实施方案/contracts/validate_artifacts.py —— 该 PR 把校验器里
+            #   marked_or_absent / non_empty / all_non_empty 三处判断点改调 is_marked()，
+            #   使校验器与跑批器对「什么算空」同一口径。**owner 仍是本面**，不变更归属。
+            #   依据票：#639（PR #644）、#621。
+            # 2026-10-25 #633（PR #643，内容提交 e01487b5）：PF-10 **借用**本面持有的两条路径 ——
+            #   scripts/lingdoc_mock/test_workflow_runner.py、scripts/lingdoc_mock/test_workflow_reports.py
+            #   —— 理由是「跑批器新增了 run_id / manual_decisions 两个报告键，那两处的精确 key 集合断言
+            #   必须同步扩充」。改动只是**扩充**断言（未删未弱化）。**owner 仍是本面**，不变更归属。
+            #   依据票：#633（PR #643）。
+            # 2026-10-25 #619 契约侧（PR #646，内容提交 389a8df5 ＋ 0b86cc01）：PF-10 **借用**本面
+            #   持有的五条路径 ——
+            #   docs/08-本轮实施方案/contracts/scenarios.json（补 F34/F35 两条稳定化场景）
+            #   scripts/lingdoc_mock/test_workflow_specs.py（节点数 28 → 31 的连锁断言）
+            #   scripts/lingdoc_mock/test_workflow_twostep.py（同上）
+            #   scripts/lingdoc_mock/test_workflow_runner.py（同上）
+            #   docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md（沿用它自己的日期化更新形态
+            #   补一条节点数 28 → 31，**不改写它的历史问题陈述**）
+            #   **owner 全部仍是本面**，不变更归属；本面不把它们借给别的面。
+            #   依据票：#619（PR #646）、#633（PR #643）。
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
