@@ -405,9 +405,15 @@ class RecordedOutcomeTest(unittest.TestCase):
         runner, _ = driven([CheckedStep(status_expected=200)], answering([({"ok": True}, 200)]))
         runner.run()
         report = runner.report("completed")
-        self.assertEqual(set(report), {"workflow", "runner_status", "completed_steps", "total_steps", "steps",
+        self.assertEqual(set(report), {"workflow", "run_id", "runner_status", "completed_steps", "total_steps", "steps",
                                       "material_gate_stages",
-                                       "verification_scope", "provider_semantics_status", "manual_assertions"})
+                                       "verification_scope", "provider_semantics_status", "manual_assertions",
+                                       "manual_decisions"})
+        # The batch the report is one run of, and the judgements it read:
+        # a report that cannot name its batch cannot say which judgements
+        # belong to it.
+        self.assertEqual(report["run_id"], runner.run_id)
+        self.assertEqual(report["manual_decisions"], [])
 
     def test_seeded_variables_reach_the_steps_and_a_second_run_reproduces_the_first(self):
         document = {"id": "F22", "steps": [{"id": "F22-01", "operation_id": "createProject", "expected_http": 200,

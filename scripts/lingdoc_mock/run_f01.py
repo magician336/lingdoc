@@ -54,6 +54,12 @@ from scripts.lingdoc_check_kinds import (  # noqa: E402  (the path must be set f
 # copies that drift, and a contract the runner and the validator judge
 # differently is a contract nobody can trust.
 from scripts.lingdoc_mock import workflow_expand  # noqa: E402  (the path must be set first)
+# The channel a human judgement travels through (issue #633): the ledger of
+# judgements, the rules that bind one to a run and to the contract's prose,
+# and the three tiers of authority the runner may claim.  It lives in its own
+# module because the recorder has to be runnable without the runner -- and
+# because the runner must not own a second copy of those rules.
+from scripts.lingdoc_mock import manual_decision_audit  # noqa: E402  (the path must be set first)
 
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
 WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
@@ -558,6 +564,9 @@ class ScenarioRunner:
         identities: dict[str, str] | None = None,
         variables: dict[str, Any] | None = None,
         redactions: dict[str, str] | None = None,
+        run_id: str | None = None,
+        decision_ledger: Path | None = None,
+        audit_source: str | None = None,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
         # The API root this contract speaks to: the path of ``servers[0].url``.
@@ -607,6 +616,25 @@ class ScenarioRunner:
         # step's answer (the export record's hash against the downloaded bytes).
         self.responses: dict[str, Any] = {}
         self.active_step: dict[str, str] | None = None
+        # Which batch this run is one instance of.  A human judgement names
+        # the batch it belongs to, and the runner refuses a judgement that
+        # names another one: a judgement about last week's run says nothing
+        # about this one.
+        self.run_id = run_id or manual_decision_audit.generate_run_id()
+        # The human judgements this run may read.  They are read before the
+        # first request: a judgement the runner refuses has to stop the run,
+        # not turn into a "nobody judged" after the provider answered.
+        self.manual_decisions: list[dict[str, Any]] = []
+        if decision_ledger is not None:
+            try:
+                self.manual_decisions = self._ingest_manual_decisions(decision_ledger, audit_source)
+            except manual_decision_audit.ManualDecisionError as error:
+                refusal = manual_decision_audit.ManualDecisionError(
+                    f"{self.spec.id}: {error}")
+                # The refusal names the specification it belongs to, so a
+                # report written about it does not have to guess.
+                refusal.workflow_id = self.spec.id
+                raise refusal from error
         self._preflight_identities()
 
     def _preflight_identities(self) -> None:
@@ -830,7 +858,7 @@ class ScenarioRunner:
         if manual:
             print(f"{self.spec.id} completed {completed} steps; {len(manual)} provider assertions remain evidence items.")
             for entry in manual:
-                print(f"MANUAL {entry['step_id']}: {entry['assertion']}")
+                print(f"MANUAL {entry['step_id']} [{entry['status']}]: {entry['assertion']}")
         self.active_step = None
         self.aborted_at = None
         return {**self.report("completed"), "variables": self.variables}
@@ -1197,11 +1225,44 @@ class ScenarioRunner:
             })
         return recorded
 
-    def manual_assertions(self) -> list[dict[str, Any]]:
-        """Every prose expectation this run could not judge, as evidence items.
+    def prose_assertions(self) -> dict[str, list[str]]:
+        """The contract's prose, by the node it belongs to.
 
-        A prose expectation is one no machine can read: it stays `not_run` until a
-        human judges it, and it keeps the provider's semantics unverified.
+        The runner needs this to bind a human judgement to the sentence it
+        judges: the judgement has to quote the contract's own words, not a
+        paraphrase of them.
+        """
+        index: dict[str, list[str]] = {}
+        for step in self.spec.steps:
+            for text in step.get("assertions", []):
+                index.setdefault(step["id"], []).append(text)
+        for entry in self.spec.manual_assertions:
+            index.setdefault(entry.get("step_id") or "", []).append(entry["assertion"])
+        return index
+
+    def _ingest_manual_decisions(self, ledger: Path, audit_source: str | None) -> list[dict[str, Any]]:
+        """Read the ledger of human judgements and decide how much to believe.
+
+        The audit source is what makes a judgement authoritative: a
+        server-side audit record the runner can check the judgement against.
+        Without one, every judgement is a claim, and a claim does not
+        satisfy an assertion.
+        """
+        records = manual_decision_audit.load_ledger(ledger)
+        audits = manual_decision_audit.load_audit_source(audit_source)
+        return manual_decision_audit.ingest(
+            records, self.run_id, self.prose_assertions(),
+            manual_decision_audit.audit_index(audits))
+
+    def manual_assertions(self) -> list[dict[str, Any]]:
+        """Every prose expectation this run had to judge, and what a human said.
+
+        A prose expectation is one no machine can read: it stays `not_run`
+        until a human judges it, and it keeps the provider's semantics
+        unverified.  A judgement the runner could check against a
+        server-side audit record carries that judgement's own words -- who
+        decided, under which authorization, through which channel, on which
+        evidence, under which audit record -- next to the status it earned.
         """
         entries = [
             {"step_id": step["id"], "assertion": assertion, "status": "not_run"}
@@ -1210,22 +1271,35 @@ class ScenarioRunner:
         ]
         entries.extend({"step_id": entry["step_id"], "assertion": entry["assertion"], "status": "not_run"}
                        for entry in self.spec.manual_assertions)
+        judged = {(decision["assertion_id"], decision["assertion_text"]): decision
+                  for decision in self.manual_decisions}
+        for entry in entries:
+            decision = judged.get((entry["step_id"], entry["assertion"]))
+            if decision is None:
+                continue
+            entry.update(manual_decision_audit.report_entry(decision))
         return entries
 
     def _provider_semantics_status(self) -> str:
         """Whether the provider's semantics were verified by this run.
 
-        The contract's prose is the thing that decides it: a sentence that is still
-        prose was not verified by anybody. The run's own result decides the rest: a
-        check that did not hold leaves the semantics unverified, and a run that
-        evaluated no check at all verified nothing.
+        The contract's prose is the thing that decides it, and a human
+        judgement may now decide it -- but only a judgement the runner could
+        check against a server-side audit record.  A judgement nobody could
+        verify proves nothing, and a judgement that held its assertion back
+        does not verify it either.  The run's own result decides the rest: a
+        check that did not hold leaves the semantics unverified, and a run
+        that evaluated no check at all verified nothing.
         """
-        if self.manual_assertions():
-            return "not_verified"
         if not self.check_results:
             return "not_verified"
         if any(check.get("status") != "passed" for check in self.check_results):
             return "not_verified"
+        for entry in self.manual_assertions():
+            if entry.get("status") != manual_decision_audit.PASSED_STATUS:
+                return "not_verified"
+            if entry.get("authority") != manual_decision_audit.AUTHORITY_SERVER_ATTESTED:
+                return "not_verified"
         return "verified"
 
     def report(self, status: str) -> dict[str, Any]:
@@ -1235,6 +1309,10 @@ class ScenarioRunner:
         # the scenario-driven step; the matrix report renames it later.
         result = {
             "workflow": self.spec.id,
+            # Which batch this record is one run of.  A human judgement
+            # names the batch it belongs to, so a reader of this report can
+            # tell which judgements it may read at all.
+            "run_id": self.run_id,
             "runner_status": status,
             "completed_steps": len(self.step_results),
             "total_steps": len(self.spec.steps),
@@ -1242,6 +1320,11 @@ class ScenarioRunner:
             "verification_scope": "http_smoke_only",
             "provider_semantics_status": self._provider_semantics_status(),
             "manual_assertions": self.manual_assertions(),
+            # The judgements this run read, as they were recorded: what a
+            # human wrote down, plus what the runner could prove about it.
+            # The prose assertions above carry the status each judgement
+            # earned; this list carries the provenance.
+            "manual_decisions": [dict(decision) for decision in self.manual_decisions],
             # Which stages of the material gate really ran. The failure side
             # is machine-readable ("material_gate_failed" /
             # "material_gate_not_run"); the SUCCESS side must be too: a reader
@@ -2343,6 +2426,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--poll-interval", type=float, default=1)
     parser.add_argument("--poll-timeout", type=float, default=120)
     parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed steps")
+    parser.add_argument("--run-id",
+                        help="the batch this run is one instance of; a manual judgement names the "
+                             "batch it belongs to, so the two have to be the same string "
+                             "(one is generated when it is not given)")
+    parser.add_argument("--manual-decisions", type=Path,
+                        help="a ledger of human judgements (JSON Lines) this run may read; a "
+                             "judgement that names another batch, that does not quote the "
+                             "contract's prose verbatim, or that repeats a judgement is refused "
+                             "and the run stops before the first request")
+    parser.add_argument("--audit-source",
+                        help="the server-side audit export (a file path, or a read-only URL) the "
+                             "runner checks the manual judgements against; without it every "
+                             "judgement is a claim and no prose assertion may be satisfied by it")
     parser.add_argument("--material-origin", type=Path,
                         help="the material's origin text; enables the material qualification gate "
                              "before the first node")
@@ -2364,6 +2460,10 @@ def main(argv: list[str] | None = None) -> int:
     spec_path = args.spec or (SCENARIOS_PATH if args.scenario else WORKFLOW_PATH)
     runner: ScenarioRunner | None = None
     report_started = False
+    # The batch identifier is decided before the runner exists, so that a
+    # report written about a refused run still names the batch the run was
+    # for.
+    run_id = args.run_id or manual_decision_audit.generate_run_id()
     try:
         runner = ScenarioRunner.from_files(
             args.openapi,
@@ -2376,6 +2476,9 @@ def main(argv: list[str] | None = None) -> int:
             poll_timeout=args.poll_timeout,
             identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
             variables=({"knowledge_id": args.knowledge_id} if args.knowledge_id else {}),
+            run_id=run_id,
+            decision_ledger=args.manual_decisions,
+            audit_source=args.audit_source,
         )
         if args.report:
             # Verify the destination before any provider mutation and replace a
@@ -2449,6 +2552,34 @@ def main(argv: list[str] | None = None) -> int:
         if args.report:
             write_report(args.report, runner.report("completed"))
             print(f"{runner.spec.id} report written to {args.report}")
+    except manual_decision_audit.ManualDecisionError as error:
+        # A judgement the runner refuses stops the run before the first
+        # request.  The refusal has to be visible: a run that went on would
+        # publish a report that says "nobody judged", which is a different
+        # story from "somebody tried and the record was refused".
+        print(f"{args.scenario or spec_path.name} FAILED: {error}", file=sys.stderr)
+        if args.report:
+            workflow = getattr(error, "workflow_id", None) or args.scenario or spec_path.name
+            try:
+                write_report(args.report, {
+                    "workflow": workflow,
+                    "run_id": run_id,
+                    "runner_status": "failed",
+                    "completed_steps": 0,
+                    "total_steps": 0,
+                    "steps": [],
+                    "verification_scope": "http_smoke_only",
+                    "provider_semantics_status": "not_verified",
+                    "material_gate_stages": [],
+                    "manual_assertions": [],
+                    "manual_decisions": [],
+                    "failures": [{"step_id": "", "operation_id": "",
+                                  "kind": "manual_decision_rejected",
+                                  "detail": str(error)}],
+                })
+            except WorkflowError as report_error:
+                print(f"REPORT FAILED: {report_error}", file=sys.stderr)
+        return 1
     except (WorkflowError, OSError) as error:
         # Name the specification that failed; a load failure has no spec id yet.
         failed = runner.spec.id if runner is not None else args.scenario or spec_path.name
@@ -2466,6 +2597,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 write_report(args.report, {
                     "workflow": failed,
+                    "run_id": run_id,
                     "runner_status": "failed",
                     "completed_steps": 0,
                     "total_steps": 0,
@@ -2473,6 +2605,8 @@ def main(argv: list[str] | None = None) -> int:
                     "verification_scope": "http_smoke_only",
                     "provider_semantics_status": "not_verified",
                     "material_gate_stages": [],
+                    "manual_assertions": [],
+                    "manual_decisions": [],
                     "failures": [{"step_id": "", "operation_id": "",
                                   "kind": "specification_not_loaded",
                                   "detail": str(error)}],
