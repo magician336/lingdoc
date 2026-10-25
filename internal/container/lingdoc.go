@@ -38,6 +38,13 @@ type LingDocWorkspace struct {
 	Runtime            *workspace.SourceRuntime
 	Audit              workspacecore.AuditSink
 	CapabilityObserver delivery.TransactionalCapabilityObserver
+	// The manual-judgement channel of the F01 runner (#649). The project
+	// service implements this narrow port too, and the composition root
+	// hands it over by name, the way the four optional capabilities above
+	// are handed over: a run-time type assertion would be a back door,
+	// because it could hand back any operation of the aggregate rather
+	// than only the ones the narrow port names.
+	ManualJudgement workspace.ManualJudgementApplication
 }
 
 func NewLingDocWorkspaceHandler(
@@ -176,7 +183,10 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, err
 	}
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
+	// The manual-judgement channel of the F01 runner (#649): the same
+	// project service, handed over by name as the narrow port the two
+	// routes speak to.
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore, ManualJudgement: projectService}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
