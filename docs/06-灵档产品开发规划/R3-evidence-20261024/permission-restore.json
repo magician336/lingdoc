@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-24T14:47:26.161Z",
+  "mode": "real permission lifecycle HTTP on synthetic project",
+  "action": "restore",
+  "project_id": "4deac7b7-7850-46a0-ad69-259bef1d5326",
+  "member_id": "5b4bf4f6-2561-41f2-b8f2-667593842b1d",
+  "project_version": 7,
+  "member_status": "active",
+  "read_status": 200,
+  "preview_status": 200,
+  "result": "PASS"
+}
