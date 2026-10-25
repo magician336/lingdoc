@@ -38667,6 +38667,279 @@
         }
       }
     }
+,
+    "/projects/{projectId}/manual-judgements": {
+      "post": {
+        "operationId": "recordManualJudgement",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "Owner 提交一条人工判定",
+        "description": "服务端依据调用方身份推导判定人、授权依据、渠道与发生时间，落库后返回**权威判定记录**（台账形状的十个字段）。操作者把这个回答原样写进跑批器的判定台账，台账与服务端导出便逐字段相等，跑批器因此判 server_attested。请求体只有调用方能给的五个字段：actor/authorization/channel/occurred_at/audit_id 一律由服务端推导，契约 additionalProperties 为 false，服务端解码同样严格拒绝未知字段，因此调用方无法自称这五项。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualJudgementInput"
+              },
+              "example": {
+                "assertion_id": "F01-06c",
+                "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+                "verdict": "passed",
+                "run_id": "f01-20261025T013341Z-5105ae32",
+                "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json"
+              }
+            }
+          }
+        },
+        "responses": {
+            "200": {
+              "description": "同一次判定的重放（同一个幂等键、同一份请求）",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManualJudgementRecordResponse"
+                  },
+                  "examples": {
+                    "synthetic_replay": {
+                      "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                      "value": {
+                        "data": {
+                          "run_id": "f01-20261025T013341Z-5105ae32",
+                          "assertion_id": "F01-06c",
+                          "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+                          "verdict": "passed",
+                          "actor": "u-owner",
+                          "authorization": "project_owner",
+                          "channel": "unverified_channel",
+                          "occurred_at": "2026-10-25T01:33:41.5105+00:00",
+                          "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
+                          "audit_id": "audit-649-0001"
+                        },
+                        "request_id": "req-manual-judgement-1",
+                        "meta": {
+                          "replayed": true,
+                          "refresh_required": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+          "201": {
+            "description": "已记录的人工判定（权威判定记录）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualJudgementRecordResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "run_id": "f01-20261025T013341Z-5105ae32",
+                        "assertion_id": "F01-06c",
+                        "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+                        "verdict": "passed",
+                        "actor": "u-owner",
+                        "authorization": "project_owner",
+                        "channel": "unverified_channel",
+                        "occurred_at": "2026-10-25T01:33:41.5105+00:00",
+                        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
+                        "audit_id": "audit-649-0001"
+                      },
+                      "request_id": "req-manual-judgement-1",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误（含调用方自称服务端推导字段）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权记录人工判定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "manual_judgement_routes.go",
+        "x-lingdoc-route-line": 71,
+        "x-lingdoc-service": "SubmitManualJudgement",
+        "x-lingdoc-go-response": "ManualJudgementRecord",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "workspacecore manual-judgement domain: the domain side owns who may record a judgement; this transport only publishes the answer."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/manual-judgements/audit-records": {
+      "get": {
+        "operationId": "listManualJudgementAuditRecords",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "导出该项目的人工判定审计记录",
+        "description": "跑批器核对人工判定时读的就是这份导出。每条记录把 audit_id 与七个审计字段（actor/authorization/channel/occurred_at/assertion_id/run_id/evidence_ref）放在**顶层**，值逐字节来自落库时存下的字符串；附加的 channel_class/channel_ui_origin/channel_automation 三个键是渠道的两层语义，跑批器只比那七个具名字段、忽略额外键。channel 恒为 unverified_channel：服务端只能证明凭据类别，UI 点击与脚本重放同属 user_session 凭据、无法区分，故宁可低估不可高估；channel_ui_origin 与 channel_automation 恒为 unprovable。occurred_at 是服务端落库时存下的那个原始字符串，原样回吐，不从 created_at 重新格式化。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "人工判定审计记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualJudgementAuditResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "audit_id": "audit-649-0001",
+                          "actor": "u-owner",
+                          "authorization": "project_owner",
+                          "channel": "unverified_channel",
+                          "occurred_at": "2026-10-25T01:33:41.5105+00:00",
+                          "assertion_id": "F01-06c",
+                          "run_id": "f01-20261025T013341Z-5105ae32",
+                          "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
+                          "channel_class": "user_session",
+                          "channel_ui_origin": "unprovable",
+                          "channel_automation": "unprovable"
+                        }
+                      ],
+                      "request_id": "req-manual-judgement-1",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权读取该项目的审计记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "manual_judgement_routes.go",
+        "x-lingdoc-route-line": 72,
+        "x-lingdoc-service": "ExportManualJudgements",
+        "x-lingdoc-go-response": "ManualJudgementAudit",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    }
   },
   "components": {
     "securitySchemes": {
@@ -54342,6 +54615,236 @@
         "additionalProperties": false,
         "x-go-type": "core.RuntimeRollbackInput",
         "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
+      }
+,
+      "ManualJudgementInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assertion_id",
+          "assertion_text",
+          "run_id",
+          "verdict",
+          "evidence_ref"
+        ],
+        "properties": {
+          "assertion_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "被判定的那条散文断言的编号（例如 F01-06c）。"
+          },
+          "assertion_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "契约里那条散文断言的原文，逐字引用。"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这一批的标识；证据引用必须点名它。"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "held",
+              "rejected"
+            ],
+            "description": "人给出的结论。"
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这一批里被援引的产物。"
+          }
+        },
+        "description": "调用方能给的五个字段。actor/authorization/channel/occurred_at/audit_id 不在这里：它们由服务端推导，而 additionalProperties 为 false，所以客户端无法自称这五项。"
+      },
+      "ManualJudgementRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "run_id",
+          "assertion_id",
+          "assertion_text",
+          "verdict",
+          "actor",
+          "authorization",
+          "channel",
+          "occurred_at",
+          "evidence_ref",
+          "audit_id"
+        ],
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assertion_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assertion_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "held",
+              "rejected"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务端推导的判定人。"
+          },
+          "authorization": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务端推导的授权依据。"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "unverified_channel"
+            ],
+            "description": "服务端只能证明凭据类别：UI 点击与脚本重放同属 user_session 凭据，无法区分，故宁可低估不可高估。"
+          },
+          "occurred_at": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务端落库时存下的那个原始字符串，原样回吐。"
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "audit_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这条判定所属的审计记录编号。"
+          }
+        },
+        "description": "权威判定记录：台账要写的形状，恰好十个字段。"
+      },
+      "ManualJudgementAudit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audit_id",
+          "actor",
+          "authorization",
+          "channel",
+          "occurred_at",
+          "assertion_id",
+          "run_id",
+          "evidence_ref",
+          "channel_class",
+          "channel_ui_origin",
+          "channel_automation"
+        ],
+        "properties": {
+          "audit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorization": {
+            "type": "string",
+            "minLength": 1
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "unverified_channel"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assertion_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "channel_class": {
+            "type": "string",
+            "minLength": 1,
+            "description": "凭据类别：服务端能证明的那一层。"
+          },
+          "channel_ui_origin": {
+            "type": "string",
+            "enum": [
+              "unprovable"
+            ],
+            "description": "UI 点击与脚本重放无法区分，服务端不声称能证明。"
+          },
+          "channel_automation": {
+            "type": "string",
+            "enum": [
+              "unprovable"
+            ],
+            "description": "自动化来源无法证明，服务端不声称能证明。"
+          }
+        },
+        "description": "导出记录：七个审计字段与 audit_id 都在顶层，值逐字节来自落库时存下的字符串。跑批器只比那七个具名字段，附加的三个渠道键不影响相等判定。"
+      },
+      "ManualJudgementRecordResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ManualJudgementRecord"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ManualJudgementAuditResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualJudgementAudit"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
       }
     }
   },
