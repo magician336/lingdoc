@@ -1287,6 +1287,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             #   路径集里），本面在其中加了一个可选端口与一行注册 ⇒ 改它不构成跨面越界，
             #   但按「改了要记录」约定登记进本面。
             ("internal/router/router.go", "file"),
+            # 2026-10-25 #664（PR #664）：本面**认领**该守卫测试文件 ——
+            #   internal/router/lingdoc_manual_judgement_registration_test.go
+            #     （守住人工判定端点在**生产 router**（router.NewRouter ＋ dig 真实装配）上的
+            #      注册接缝：端口存在 ⇒ 两条路径在 engine.Routes() 里；端口为 nil ⇒ 不在。
+            #      这条守卫补上了 #660 独立复核指出的 F1 覆盖缺口。）
+            ("internal/router/lingdoc_manual_judgement_registration_test.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
