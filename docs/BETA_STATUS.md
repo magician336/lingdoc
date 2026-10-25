@@ -1162,9 +1162,9 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 | --- | --- |
 | 代码事实 | `internal/router/task.go:72-93` 的 `getAsynqRedisClientOpt()` 只读 `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`，**不设 asynq namespace** ⇒ **`REDIS_PREFIX` 隔离不了任务队列** |
 | 环境事实 | 18096（embedding profile）与 18087（chat profile）都连 `127.0.0.1:6381` / **Redis DB 1**，只有 key 前缀不同 ⇒ 同一条队列 |
-| 现象 | 18096 上 `POST /api/v1/knowledge/:id/reparse` 排的任务**两次都被 18087 取走**：失败原文在 **`server-trackd.stdout.log`**（不在 18096 的日志里）；18096 的 `llm_debug_embedding/` **0 文件**；两本 embedding 账本**都不存在** ⇒ **真实 provider 请求 0 次** |
+| 现象 | 18096 上 `POST /api/v1/knowledge/:id/reparse` 排的任务**两次都被 18087 取走**：失败原文在 **`server-trackd.stdout.log`**（不在 18096 的日志里）；18096 的 `llm_debug_embedding/` **0 文件**（**该计数截至 21:30 那两轮**；隔离队列后的第三轮在该目录留下了 1 个文件）；embedding 账本（`.calls.json`）**当时不存在** ⇒ **真实 provider 请求 0 次** |
 | 错误身份 | `model is outside the acceptance budget profile`＝chat profile 的 `allowedModels` 只有 `qwen3.8-flash` ⇒ embedding 模型在 **transport 之前**被拒（`ledger.go:230` 的 `ProfileAllowsModel`） |
-| 阶段记录 | `knowledge_processing_spans`：`embedding` 阶段 `failed`、`error_detail=model is outside the acceptance budget profile`、`duration_ms ≈ 3042`（＝5 次重试的 200/400/800/1600 ms 退避之和）⇒ 每次都**立即失败** |
+| 阶段记录 | `knowledge_processing_spans`：`embedding` 阶段 `failed`、`error_detail=model is outside the acceptance budget profile`、`duration_ms` ＝ **3042**（21:02 那次）／**3013**（21:30 那次）＝ 5 次尝试之间的 4 次退避（200/400/800/1600 ms）之和 ⇒ 每次都**立即失败** |
 | 被排除的方向 | 隔离库的 embedding 模型行**与 chat 行同端点同密文**（`base_url`＝`https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`，`api_key` 密文**逐字节相同**）；profile 白名单与端点白名单**实测全部通过** ⇒ 先前怀疑的「模型行/端点/provider 路由」三个方向均被实测排除 |
 | 环境侧处置 | 18096 改用 **Redis DB 2**（实测原为 0 键）⇒ 队列隔离生效（DB 2 里只有它自己的 6 个 worker 注册，DB 1 里没有它）。**18087／18095 全程未停未重启** |
 
@@ -1213,7 +1213,7 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | --- | --- | --- |
 | chat 账本 `qwen-beta-sqlite.json` sha256 | `74e86abc…` | **`74e86abc…`（逐字节未变，mtime 也未变）** |
 | chat 账本 `.calls.json` sha256 | `dd39a0cb…` | **`dd39a0cb…`（逐字节未变）** |
-| embedding 账本两本 | **不存在** | 存在，**1 行**、`blocked=true` |
+| embedding 账本（**只有 `.calls.json` 一本**：当前代码只在 `…+.calls.json` 上记账，`ledger.go:206-210` 的 `NewFromEnv` 会给 env 基础路径拼上后缀；基础名文件 `qwen-embedding-budget.json` **从不存在** —— chat 之所以有两本，是因为 `qwen-beta-sqlite.json` 是**旧 v1 schema** 的历史遗留） | **不存在** | **存在，1 行**、`blocked=true` |
 | DB `lingdoc_model_call_ledger` 行数 | 4（全 chat） | **4**（embedding 路径**不写**该表 ⇒ 独立文件账本是它唯一的账本） |
 | 隔离 KB 向量行 | 0 | **0** |
 | 目标 KB chunk 行 | 2（`ready`） | **2（`ready`，未动）** |
@@ -1229,5 +1229,5 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 
 - `D:\wt\lingdoc-485-evidence\embedding-run\`：`before-state.json`（整轮前置）、`after-state-attempt3.json`、`provider-403-response.txt`（provider 原文，sha256 `2915D119…`）、`source_ids-verification.json`、`retrieval-source-consistency.json`、`g2_attempt3_result.json`、`g1_add_embedding_model_row.py`、`g2_retry_vector.py`、`verify_chapter_source_ids.py`、`verify_retrieval_sources.py`、`check_coordinate_unit.py`、`inspect_redis.py`、`capture_before_attempt3.py`、`dump_model_params.py`、`dump_stage_failure.py`、`start-embedding-service.ps1`（含 DB 2 隔离的理由注释）、`stop-embedding-service.ps1`、`extract-provider-403.ps1`、`ticket-asynq-queue-isolation.md`、`ticket-embedding-profile-no-reconcile.md`
 - 服务日志：`D:\wt\lingdoc-484-evidence\logs\server-embedding-20261025-215322.log`（本次真实调用与 403 原文）、`server-trackd.stdout.log`（**证明前两轮的任务被 18087 抢走**的日志）
-- 隔离环境：DB `D:\wt\lingdoc-484-evidence\data\lingdoc-484-final.db`；账本 `ledger\qwen-embedding-budget.json[.calls.json]`（**1 行**）与 `ledger\qwen-beta-sqlite.json[.calls.json]`（**未变**）
+- 隔离环境：DB `D:\wt\lingdoc-484-evidence\data\lingdoc-484-final.db`；embedding 账本 `ledger\qwen-embedding-budget.json.calls.json`（**1 行**；基础名文件从未生成）与 chat 两本 `ledger\qwen-beta-sqlite.json` ＋ `.calls.json`（**未变**）
 - 新立票：**#670**（asynq 队列跨实例无 namespace 隔离）、**#671**（新 priced embedding profile 无核对/解冻通道）；票 **#546** 已回写本轮事实。
