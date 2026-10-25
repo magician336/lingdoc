@@ -19,6 +19,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
 )
 
@@ -150,6 +151,34 @@ func readAsynqQueueIdentity() asynqQueueIdentity {
 func asynqQueueLogFields() string {
 	queue := readAsynqQueueIdentity()
 	return fmt.Sprintf("queue_redis_db=%d queue_db_source=%s", queue.DBIndex, queue.Source)
+}
+
+// QueueRedisClient is the Redis client of the ASYNC TASK QUEUE's database.
+//
+// It is a distinct type on purpose: the queue may live in its OWN database
+// (LINGDOC_ASYNQ_REDIS_DB) while the application-level Redis client stays on
+// REDIS_DB. Everything that inspects the QUEUE -- the task inspector, the
+// runtime task list, the cancel-by-knowledge path -- must use this client:
+// inspecting the wrong database reports "no tasks" for everything and breaks
+// the cancel path SILENTLY.
+type QueueRedisClient struct {
+	*redis.Client
+}
+
+// NewAsynqQueueRedisClient builds the Redis client for the queue's database.
+//
+// It does not ping: a PING succeeds on any database, so it would not prove
+// anything about the database index. The asynq client pings on startup
+// (NewAsyncqClient), and a wrong address therefore still fails fast.
+func NewAsynqQueueRedisClient() QueueRedisClient {
+	queue := readAsynqQueueIdentity()
+	return QueueRedisClient{Client: redis.NewClient(&redis.Options{
+		Addr:      os.Getenv("REDIS_ADDR"),
+		Username:  os.Getenv("REDIS_USERNAME"),
+		Password:  os.Getenv("REDIS_PASSWORD"),
+		DB:        queue.DBIndex,
+		TLSConfig: common.RedisTLSConfig(),
+	})}
 }
 
 func getAsynqRedisClientOpt() *asynq.RedisClientOpt {

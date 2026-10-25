@@ -1114,6 +1114,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # 不被静默忽略、启动日志里的队列身份可见，以及「同一 Redis 上两个队列世界互不消费
             # 对方任务」的行为验证（miniredis 里真跑 asynq worker ＋ 同库对照）。
             ("internal/router/task_queue_isolation_test.go", "file"),
+            # #670：task inspector 必须查**队列自己的库** —— 队列被隔离到自己的 DB 索引后，
+            # 查应用级 Redis 的 inspector 会对一切任务报「没有任务」，按 knowledge 取消任务
+            # 的路径随之静默失效。此文件此前无主，现由 PF-14 认领。
+            ("internal/router/task_inspector.go", "file"),
+            # #670：组合根（dig 装配）里把队列的 Redis client 接到 inspector 上。
+            ("internal/container/container.go", "file"),
             # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
             ("internal/models/acceptancebudget/token_budget_state.go", "file"),
             # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。

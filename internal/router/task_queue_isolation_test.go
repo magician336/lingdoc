@@ -71,6 +71,20 @@ func TestTheOperatorCanSeeWhichQueueTheWorkerServes(t *testing.T) {
 	}
 }
 
+func TestTheQueueRedisClientUsesTheQueueDatabase(t *testing.T) {
+	// Everything that inspects the QUEUE -- the task inspector, the runtime
+	// task list, the cancel-by-knowledge path -- must look at the QUEUE's
+	// database. An inspector left on the application-wide database would
+	// report "no tasks" for everything as soon as a deployment isolates its
+	// queue, and the cancel path would break SILENTLY.
+	t.Setenv(AsynqQueueDBEnv, "6")
+	t.Setenv("REDIS_DB", "1")
+	client := NewAsynqQueueRedisClient()
+	if client.Options().DB != 6 {
+		t.Fatalf("the queue redis client is on database %d, want the queue's own 6", client.Options().DB)
+	}
+}
+
 // startQueueWorld starts one worker pool through the PRODUCTION construction
 // path (newAsynqServer -> getAsynqRedisClientOpt), so the test exercises the
 // same code the running service uses, and returns the channel that receives

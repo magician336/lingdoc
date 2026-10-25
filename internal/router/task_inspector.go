@@ -16,9 +16,14 @@ import (
 )
 
 // NewAsynqInspector constructs an *asynq.Inspector pointed at the same
-// Redis used by the asynq client. Only registered in asynq mode.
-func NewAsynqInspector(redisClient *redis.Client) *asynq.Inspector {
-	return asynq.NewInspectorFromRedisClient(redisClient)
+// Redis database the ASYNC TASK QUEUE lives in. Only registered in asynq mode.
+//
+// It takes the QUEUE's client, not the application-level one: when a
+// deployment gives its queue its own database index, an inspector on the
+// application database would report "no tasks" for everything and break the
+// cancel-by-knowledge path silently.
+func NewAsynqInspector(queueClient QueueRedisClient) *asynq.Inspector {
+	return asynq.NewInspectorFromRedisClient(queueClient.Client)
 }
 
 // asynqTaskInspector implements interfaces.TaskInspector backed by an
@@ -35,11 +40,14 @@ type asynqTaskInspector struct {
 // NewAsynqTaskInspector returns a TaskInspector wrapping the given
 // *asynq.Inspector. nil-safe: a nil inspector degrades to a no-op so
 // the cancel path remains usable when the inspector failed to init.
-func NewAsynqTaskInspector(inspector *asynq.Inspector, redisClient *redis.Client) interfaces.TaskInspector {
-	if inspector == nil || redisClient == nil {
+//
+// The Redis client is the QUEUE's client: the pending/active/retry state keys
+// this inspector scans live in the queue's database.
+func NewAsynqTaskInspector(inspector *asynq.Inspector, queueClient QueueRedisClient) interfaces.TaskInspector {
+	if inspector == nil || queueClient.Client == nil {
 		return noopTaskInspector{}
 	}
-	return &asynqTaskInspector{inspector: inspector, redis: redisClient}
+	return &asynqTaskInspector{inspector: inspector, redis: queueClient.Client}
 }
 
 // knowledgeIDProbe is the minimal payload shape we need to filter
