@@ -38692,7 +38692,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "机器可读的阻断分类，例如 impact_task_open、closure_stale、result_receipt_stale、required_route_not_current"
+            "description": "机器可读的阻断分类，例如 impact_task_open、closure_stale、result_receipt_stale、required_route_not_current、impact_object_authorization_invalid（受影响资料的内容已变更、原授权不再适用，需重新授权；与 impact_object_stale（受影响对象的版本已被替换，需重新评估影响）是两件不同的事，修复动作也不同）"
           },
           "target_id": {
             "type": "string",
@@ -44380,7 +44380,7 @@
               "RuleBinding",
               "RouteNode",
               "ResearchRun",
-              "ComputationReceipt"
+              "ComputationReceipt", "DeliveryPreflight"
             ]
           },
           "id": {

@@ -49,11 +49,13 @@ class WorkflowRunnerTest(unittest.TestCase):
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
         )
         self.assertEqual(runner.spec.id, "F01")
-        self.assertEqual(len(runner.spec.steps), 28)
+        self.assertEqual(len(runner.spec.steps), 31)
         self.assertEqual([step["id"] for step in runner.spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{n:02d}" for n in range(7, 24)])
+                         + [f"F01-{n:02d}" for n in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{n:02d}" for n in range(19, 24)])
         self.assertEqual([step["id"] for step in runner.spec.steps][2:5],
                          ["F01-03", "F01-03b", "F01-04"])
         for step in runner.spec.steps:
@@ -89,9 +91,9 @@ class WorkflowRunnerTest(unittest.TestCase):
 
         runner.client.opener = opener
         result = runner.run()
-        self.assertEqual(result["completed_steps"], 28)
-        self.assertEqual(len(result["steps"]), 28)
-        self.assertEqual(len(requests), 28)
+        self.assertEqual(result["completed_steps"], 31)
+        self.assertEqual(len(result["steps"]), 31)
+        self.assertEqual(len(requests), 31)
         self.assertEqual(requests[1].method, "POST")
         self.assertTrue(requests[3].full_url.endswith("/activation-read"))
         activation = json.loads(requests[4].data.decode("utf-8"))
