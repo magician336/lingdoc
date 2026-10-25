@@ -22,6 +22,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("acceptance-budget-reconcile", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	ledger := flags.String("ledger", "", "explicit absolute calls-ledger JSON path")
+	profile := flags.String("profile", acceptancebudget.CostOnlyProfile,
+		"the controlled budget profile that owns this ledger (must support embedding HTTP error reconciliation)")
 	expected := flags.String("expected-ledger-sha256", "", "SHA256 of the complete current ledger bytes")
 	number := flags.Int("request", 0, "exact failed request number")
 	reason := flags.String("reason", "", "exact operator reason present in the evidence JSON")
@@ -33,6 +35,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if !*apply || !*confirm || flags.NArg() != 0 || !filepath.IsAbs(*ledger) || filepath.Ext(*ledger) != ".json" || !filepath.IsAbs(*evidencePath) {
 		_, _ = fmt.Fprintln(stderr, "explicit apply, full-reserve confirmation and absolute ledger/evidence paths are required")
+		return 2
+	}
+	// The profile is named, not assumed: the ledger's owner decides which
+	// rules apply to it, and a profile that cannot carry an embedding HTTP
+	// error reconciliation is refused here -- before any file is read.
+	if !acceptancebudget.SupportedProfile(*profile) ||
+		!acceptancebudget.ProfileSupportsEmbeddingHTTPErrorReconciliation(*profile) {
+		_, _ = fmt.Fprintln(stderr, "profile does not support embedding HTTP error reconciliation:", *profile)
 		return 2
 	}
 	data, err := os.ReadFile(*evidencePath)
@@ -53,7 +63,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	budget := acceptancebudget.New(acceptancebudget.CostOnlyProfile, *ledger)
+	budget := acceptancebudget.New(*profile, *ledger)
 	err = budget.ReconcileEmbeddingHTTPError(ctx, acceptancebudget.ReconcileEmbeddingHTTPErrorInput{
 		ExpectedLedgerSHA256: *expected, RequestNumber: *number, ExpectedStatus: "http_error",
 		ExpectedBlockedReason: "http_error", ExpectedReason: *reason, ConfirmFullReserveCharge: *confirm, Evidence: evidence,
@@ -62,6 +72,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "reconciliation refused; ledger retained:", err)
 		return 1
 	}
-	_, _ = fmt.Fprintln(stdout, "local full-reserve reconciliation recorded; original http_error and unknown provider usage retained")
+	_, _ = fmt.Fprintln(stdout, "local full-reserve reconciliation recorded on profile "+*profile+
+		"; original http_error and unknown provider usage retained")
 	return 0
 }

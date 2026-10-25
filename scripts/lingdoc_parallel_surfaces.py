@@ -1095,6 +1095,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # **拒绝 chat 模型** ⇒ 该 profile 下进程发不出 chat 调用）、账本自带自己的上限与
             # 计价基准、账本可被自己的校验器读回、**既有 profile 逐字未变**。
             ("internal/models/acceptancebudget/qwen_embedding_profile_test.go", "file"),
+            # 2026-10-25 #671（embedding 4xx 恢复）：受控 embedding profile 的一次 provider
+            # HTTP 错误曾让整个窗口永久冻结且**没有**核对/解冻通道 ⇒ 授权的额度在第一次失败后
+            # 就再也用不掉。下面的守护钉住恢复通道与它的保守不变量：失败请求逐字保留、
+            # 按全部预留上限计费、provider usage 仍记 unknown、不退钱、重复恢复被拒、
+            # 恢复后仍不得超预算，以及「预算包永远不触网」。
+            ("internal/models/acceptancebudget/embedding_profile_reconcile_test.go", "file"),
             # #546 的聊天侧闸门：聊天路径预留的是 profile 的**批准模型**，所以一个只批准
             # embedding 模型的 profile 必须**在出网前**拒绝 chat 调用（否则 chat 请求会被当成
             # embedding 调用记账，而那个端点根本不提供 chat）。
@@ -1148,6 +1154,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("cmd/lingdoc-material-check/main.go", "file"),
             # 材料闸门命令自身的单测：退出码、分页聚合、token 读取与三条 fail-closed 路径。
             ("cmd/lingdoc-material-check/main_test.go", "file"),
+            # 2026-10-25 #671（embedding 4xx 恢复）：操作者核对命令此前把 profile 写死成
+            # CostOnlyProfile ⇒ 受控 embedding 窗口的失败**无法**被正规恢复（只能手改账本，
+            # 那是篡改记账）。下面两条路径让命令**按账本归属的 profile** 行事：显式
+            # `-profile`、缺省保持原行为、能力之外与账本不匹配的 profile 一律拒绝且不碰账本。
+            ("cmd/acceptance-budget-reconcile/main.go", "file"),
+            # #671 的守护：受控 embedding profile 的恢复可经命令完成、重复应用被拒、
+            # 拿错 profile 与无能力 profile 被拒且账本逐字节未变。
+            ("cmd/acceptance-budget-reconcile/main_test.go", "file"),
             # 知识图谱查询工具的测试随本 PR 的分块语义调整。
             ("internal/agent/tools/query_knowledge_graph_test.go", "file"),
             # D1 的数据库级往返用例：PUT 写入 embedding_model_id 后走独立读回路径验证，删掉持久化调用必须转红。
