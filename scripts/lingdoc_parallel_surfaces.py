@@ -1266,6 +1266,27 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/lingdoc_mock/rejudge_report.py", "file"),
             ("scripts/lingdoc_mock/test_rejudge_report.py", "file"),
             ("scripts/ci/test_lingdoc_rejudge_report.py", "file"),
+            # 2026-10-25 #649（PR #659，合并提交 540f77e4）：本面**认领**领域层新增的两条路径 ——
+            #   internal/lingdoc/workspacecore/manual_judgement_audit.go
+            #     （权威人工判定审计：actor/authorization/channel/occurred_at 全部由服务端推导；
+            #      审计行落 lingdoc_project_audits，action=manual.judgement，details 顶层扁平）
+            #   internal/lingdoc/workspacecore/manual_judgement_audit_test.go
+            #     （14 条用例：服务端推导的事实、Owner 门禁、机器主体门禁、完整性闸门、
+            #      幂等语义、人工 FAIL、原子回滚、业务键 run 维度、IM 渠道分类）
+            ("internal/lingdoc/workspacecore/manual_judgement_audit.go", "file"),
+            ("internal/lingdoc/workspacecore/manual_judgement_audit_test.go", "file"),
+            # 2026-10-25 #649 HTTP 侧（本面）：本面**认领**HTTP 接缝与它的两条测试 ——
+            #   internal/lingdoc/workspace/manual_judgement_routes.go
+            #     （两个端点：POST 提交判定 / GET 导出审计记录；窄端口 ManualJudgementApplication）
+            #   internal/lingdoc/workspace/manual_judgement_routes_test.go（12 条 HTTP 级用例）
+            ("internal/lingdoc/workspace/manual_judgement_routes.go", "file"),
+            ("internal/lingdoc/workspace/manual_judgement_routes_test.go", "file"),
+            # 2026-10-25 #649 组合根侧的验收用例（生产装配下端点可调、窄端口是同一实例）——
+            ("internal/container/lingdoc_manual_judgement_test.go", "file"),
+            # 2026-10-25 #649 路由注册接缝：internal/router/router.go 此前**无主**（不在任何面的
+            #   路径集里），本面在其中加了一个可选端口与一行注册 ⇒ 改它不构成跨面越界，
+            #   但按「改了要记录」约定登记进本面。
+            ("internal/router/router.go", "file"),
         ),
         "resolves": (),
         "summary": ("**2026-10-23 #499 断言表达力补齐**：本面新增 check kind 的**单一权威**（scripts/lingdoc_check_kinds.py），"
@@ -1326,7 +1347,31 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（manual_assertions / manual_decisions / provider_semantics_status），不是两个——"
             "manual_decisions 本就是跑批器自己产出的报告键，属于人工层；实现与该口径一致。"
             "**该 PR 只证明路径可用，不构成放行证据**（真实人工判定尚不存在，PASS 档位全部来自合成数据）。"
-            "依据票：#654（PR #654）、#633（人工判定录入通道）、#490（放行结论表）。"),
+            "依据票：#654（PR #654）、#633（人工判定录入通道）、#490（放行结论表）。"
+            "**2026-10-25 #649（服务端权威人工判定审计）**："
+            "跑批器（#633）要能核验一条人工判定为 server_attested，服务端就得能产出一条"
+            "以 audit_id 为键、**顶层**带齐那七个可核验字段（actor / authorization / channel /"
+            "occurred_at / assertion_id / run_id / evidence_ref）且与判定记录**逐字节相等**的记录。"
+            "**本面**认领该能力的全部路径：领域层（internal/lingdoc/workspacecore/manual_judgement_audit.go，"
+            "审计行落 lingdoc_project_audits、action=manual.judgement、details 顶层扁平；判定结果落"
+            "lingdoc_g5_records、kind=manual_judgement、id=sha256(run_id+\"\\x00\"+assertion_id)；两者同一写事务，"
+            "先判定结果后审计行，任一失败整体回滚；**不需要迁移**）、HTTP 接缝（两个端点 + 窄端口）、"
+            "组合根显式交接（internal/container/lingdoc.go）、路由注册接缝（internal/router/router.go）、"
+            "以及跑批器读端认得服务端信封（scripts/lingdoc_mock/manual_decision_audit.py，**只拆信封、不动判定语义**）。"
+            "**关键事实**：actor/authorization/channel/occurred_at/audit_id **物理上无处可填**——领域层的"
+            "ManualJudgementInput 只有 5 个调用方字段；channel 对外恒为 unverified_channel（服务端只能证明"
+            "凭据类别，UI 点击与脚本重放同属 user_session 凭据 ⇒ 结构上无法区分 ⇒ **宁可低估不可高估**），"
+            "渠道两层语义在附加键 channel_class / channel_ui_origin / channel_automation（后两者恒 unprovable）。"
+            "**跨语言端到端已跑通**：真实服务端导出信封 → 真实跑批器 → server_attested / passed / verified。"
+            "**残留登记**：① 审计行 decision 列复用了 verdict 词汇（passed/held/rejected），而仓内其它行的"
+            "同名列语义是 allow/deny —— 全仓无任何查询按该列过滤 ⇒ 当前无功能影响，verdict 另有顶层键备份，"
+            "改它要动列语义或迁移 ⇒ 登记不改；② 审计完整性硬闸门在生产路径不可达（details 由已校验的非空值自建）"
+            "⇒ 纵深防御；③ 批次绑定是子串判定（strings.Contains(evidence_ref, run_id)），与跑批器同口径。"
+            "**跨面移交（本面按登记处约定单向取得 owner，其余面的路径不变）**：internal/container/lingdoc.go"
+            "（原属 PF-7：组合根要把窄端口显式交给 router，否则端点在生产装配下不可调）、"
+            "docs/08-本轮实施方案/contracts/openapi.json（原属 PF-4：新增两个端点与五个 schema）、"
+            "scripts/ci/test_lingdoc_manual_decision_audit.py 与 scripts/lingdoc_mock/manual_decision_audit.py"
+            "（原属 PF-10：跑批器读端认得服务端信封 + 守护扩充）。依据票：#649（PR #659 ＋ HTTP 侧 PR）、#633。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
