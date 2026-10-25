@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"math"
 	"slices"
@@ -1134,6 +1135,12 @@ func impactConfirmationBlockers(tx Transaction, p Project, store impactTransacti
 			accountedFor[ref.Kind+"/"+ref.ID] = true
 		}
 	}
+	// The change set's own semantic plan is the only declaration of which
+	// version this change set was expected to produce. It is read once, here,
+	// so the re-read below can tell this change set's own step from somebody
+	// else's work. A change set that cannot be read yields no declaration and
+	// therefore no exemption.
+	advances := selfAttributedAdvances(tx, p, changeID)
 	blockers := []ImpactBlocker{}
 	for _, object := range assessment.Objects {
 		identity := object.Ref.Kind + "/" + object.Ref.ID
@@ -1150,6 +1157,20 @@ func impactConfirmationBlockers(tx Transaction, p Project, store impactTransacti
 				Version: strconv.FormatInt(p.SpecRevision, 10)}); err != nil {
 				blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
 					Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			}
+			continue
+		}
+		// A material is judged on version validity, not on a re-confirmation.
+		// The spec asks for a re-review and a re-bound confirmation for
+		// EvidenceCard, ResearchClaim, Chapter and RouteNode; for ProjectAsset
+		// and SourceAnchor it asks only that the version is still valid. A
+		// material therefore carries no confirmation to re-bind, and its whole
+		// requirement is that its revision is the assessed one or exactly the
+		// one this change set's own apply produced, and that the grant pinned
+		// to its content still covers its content.
+		if object.Ref.Kind == "ProjectAsset" {
+			if blocker, blocked := projectAssetVersionBlocker(tx, p, object.Ref, advances); blocked {
+				blockers = append(blockers, blocker)
 			}
 			continue
 		}
@@ -1200,6 +1221,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 	var preflightIDs []string
 	var preflightProofs []ImpactPreflightEvidence
 	var closureSourceIDs []string
+	var closureEvidence []ObjectVersionRef
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
@@ -1221,6 +1243,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				if task.Action == "BLOCK_RELEASE" {
 					for _, ref := range task.ClosureEvidence {
 						preflightIDs = append(preflightIDs, ref.ID)
+						closureEvidence = append(closureEvidence, ref)
 					}
 					continue
 				}
@@ -1232,6 +1255,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 					// reason to refuse the request. The current version of the
 					// same object carries the sources that must stay
 					// authorized.
+					closureEvidence = append(closureEvidence, ref)
 					state, e := currentImpactObject(tx, p, ref)
 					if e != nil {
 						if !errors.Is(e, ErrVersionConflict) {
@@ -1332,7 +1356,39 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				}
 			}
 		}
-		if err := recordAuditEvent(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers, "reposted_task_ids": reposted}); err != nil {
+		// The audit record of a stabilization says who acted, how they were
+		// authorized, through which channel, and what the machine decided. It
+		// does not claim that a person was present at the UI, and it does not
+		// present the computed verdict as a human judgement.
+		record := stabilizationAuditRecord{
+			Executor: stabilizationAuditExecutor{
+				UserID:   actor.UserID,
+				TenantID: actor.TenantID,
+				Role:     string(actor.Role),
+			},
+			Authorization: stabilizationAuditAuthorization{
+				Method:            "project_membership_capability_and_owner_check",
+				Capability:        string(AuthorizationManage),
+				ProjectOwner:      true,
+				HumanDecisionGate: "passed_not_a_machine_principal",
+			},
+			Channel:            stabilizationChannel(ctx),
+			OccurredAt:         time.Now().UTC(),
+			Target:             stabilizationAuditTarget{ProjectID: projectID, ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision},
+			Evidence:           stabilizationAuditEvidence{ClosureEvidence: closureEvidence, PreflightProofs: preflightIDs, RepostedTaskIDs: reposted},
+			Decision:           stabilizationAuditDecision{Verdict: result.Status, VerdictSource: "machine_evaluation", Blockers: result.Blockers},
+			AuditCorrelationID: uuid.NewString(),
+		}
+		if requestID, ok := types.RequestIDFromContext(ctx); ok {
+			record.RequestID = requestID
+		}
+		if !stabilizationAuditComplete(record) {
+			// An audit that cannot say who acted is a missing audit, not a
+			// weaker one. Refuse rather than stabilize on nobody's authority.
+			return operationResult[StabilizationResult]{}, ErrInvalidState
+		}
+		details := map[string]any{"status": result.Status, "blockers": result.Blockers, "reposted_task_ids": reposted, "stabilization_audit": record}
+		if err := writeStabilizationAudit(tx, actor, record, details); err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
 		return operationResult[StabilizationResult]{Value: result, Status: operationStatusOK}, nil
