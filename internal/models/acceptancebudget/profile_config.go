@@ -64,6 +64,22 @@ type profileConfig struct {
 	// cumulativeTokenMax is the ceiling of the CUMULATIVE token reservation
 	// of one window. 0 means the profile has no cumulative token ceiling.
 	cumulativeTokenMax int
+	// embeddingHTTPErrorReconcilable says whether an operator may reconcile an
+	// embedding HTTP error on this profile's ledger.
+	//
+	// A provider 4xx leaves the window FROZEN: the failed call's usage
+	// cannot be confirmed, so the budget layer refuses every later
+	// reservation. Only an explicit operator reconciliation reopens it.
+	// A profile that can make embedding calls must therefore be able to
+	// RECOVER from one of them failing -- otherwise a single 4xx retires the
+	// whole window (ticket #671).
+	//
+	// The reconciliation keeps every conservative invariant: the failed
+	// request is preserved exactly, the FULL reserved upper bound is charged,
+	// and the provider's usage stays "unknown". It is a local ledger
+	// operation: it never calls a provider, never changes the profile, and
+	// never refunds anything.
+	embeddingHTTPErrorReconcilable bool
 }
 
 // profileConfigs is the configuration of every declared profile.
@@ -95,6 +111,10 @@ var profileConfigs = map[string]profileConfig{
 		costBasis:     CostBasisDeepSeekPeakUSD,
 		approvedModel: DeepSeekModel,
 		allowedModels: []string{DeepSeekModel, QwenEmbedding, QwenEmbeddingFlash},
+		// This profile has always been the one an operator could reconcile an
+		// embedding HTTP error on. The capability is now stated in the table
+		// instead of being hard-wired to this profile's name.
+		embeddingHTTPErrorReconcilable: true,
 	},
 	QwenProfile: {
 		family:        profileFamilyQwen,
@@ -138,6 +158,10 @@ var profileConfigs = map[string]profileConfig{
 		// The cumulative token ceiling is the window the authorization
 		// names: four calls, eight thousand tokens.
 		cumulativeTokenMax: QwenEmbeddingCumulativeTokenMax,
+		// A provider 4xx must not retire this window for good: the
+		// authorized budget (four calls, eight thousand tokens) would be
+		// unusable after the FIRST failure, with no way to recover it.
+		embeddingHTTPErrorReconcilable: true,
 	},
 }
 
@@ -192,6 +216,29 @@ func ProfileCumulativeTokenMax(profile string) int {
 // allows. It is 0 for a profile that does not limit the call count.
 func ProfileMaxCalls(profile string) int {
 	return profileConfigOf(profile).maxCalls
+}
+
+// ProfileSupportsEmbeddingHTTPErrorReconciliation reports whether an operator
+// may reconcile an embedding HTTP error on one profile's ledger.
+//
+// It answers a question about the PROFILE, not about a call: a profile that
+// can make embedding calls must be able to recover from one of them failing.
+// Without this, a single provider 4xx freezes the window and the authorized
+// budget (the call count and the token ceiling) is retired with no way back
+// (ticket #671).
+//
+// The reconciliation it authorises is a LOCAL LEDGER OPERATION with
+// conservative invariants: the failed request is preserved exactly, the full
+// reserved upper bound is charged, the provider's usage stays "unknown", and
+// nothing is refunded. It never calls a provider, never switches a profile,
+// and never loosens a budget limit.
+//
+// It is deliberately NOT a general "unblock anything" switch: a profile whose
+// money columns mean something else (the chat profiles carry no price basis)
+// is not covered by it, because the conservative charge has no defined
+// meaning there.
+func ProfileSupportsEmbeddingHTTPErrorReconciliation(profile string) bool {
+	return profileConfigOf(profile).embeddingHTTPErrorReconcilable
 }
 
 // The authoritative checklist of the question "did this call exceed a limit?".

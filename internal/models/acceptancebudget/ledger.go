@@ -641,7 +641,7 @@ func validLedger(ledger Ledger, profile string) bool {
 		if !ProfileAllowsModel(profile, request.Model) {
 			return false
 		}
-		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
+		if request.Reconciliation != nil && (!ProfileSupportsEmbeddingHTTPErrorReconciliation(profile) || !validEmbeddingHTTPErrorReconciliation(request)) {
 			return false
 		}
 		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > inputMax ||
@@ -716,11 +716,23 @@ func (l Ledger) tracksCumulativeTokens() bool {
 // Such a call is not a smaller usage: it is an UNKNOWN usage. The window
 // cannot promise that the next call stays inside the ceiling, because the
 // ceiling has to be measured against a number nobody can produce.
+//
+// A call that an operator SETTLED is not unverifiable: the reconciliation
+// charges the FULL reserved upper bound and the call's tokens were reserved
+// at that same bound, so the remaining budget is provable. Without this
+// exception a reconciled window would stay closed for ever -- the recovery
+// would be a record, not a recovery (ticket #671).
 func ledgerUsageUnverifiable(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.UsageStatus == UsageStatusUnavailable {
-			return true
+		if request.UsageStatus != UsageStatusUnavailable {
+			continue
 		}
+		if request.Reconciliation != nil &&
+			ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) &&
+			validEmbeddingHTTPErrorReconciliation(request) {
+			continue
+		}
+		return true
 	}
 	return false
 }
@@ -760,7 +772,7 @@ func validUsageStatus(status string) bool {
 
 func hasUnresolved(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.Reconciliation != nil && ledger.Profile != CostOnlyProfile {
+		if request.Reconciliation != nil && !ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) {
 			return true
 		}
 		if requestUnresolved(request) {
