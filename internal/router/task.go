@@ -97,7 +97,7 @@ const AsynqQueueDBEnv = "LINGDOC_ASYNQ_REDIS_DB"
 const (
 	asynqQueueDBSourceQueueEnv = "queue-db-env"
 	asynqQueueDBSourceRedisDB  = "redis-db-env"
-	asynqQueueDBSourceDefault   = "default"
+	asynqQueueDBSourceDefault  = "default"
 )
 
 // asynqQueueIdentity is the queue's identity: which Redis database index the
