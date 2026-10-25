@@ -1,0 +1,197 @@
+✖ mount reads the current baseline once then uses the original panel and API (497.8121ms)
+✖ project read failure is an error, not an empty successful context; explicit retry recovers (158.3438ms)
+✖ in-flight project switch never mounts or renders the previous project response (144.8185ms)
+✔ actual selection handlers refresh server facts; refresh preserves exact refs but rereads baseline (101.7243ms)
+✖ preview 403 clears old facts and does not auto-retry (92.0237ms)
+✖ preview 404 clears old facts and does not auto-retry (94.1059ms)
+✖ preview 409 clears old facts and does not auto-retry (95.6526ms)
+✖ preview 503 clears old facts and does not auto-retry (67.1416ms)
+✖ card catalog failure is explicitly unknown, not a successful empty list (71.9769ms)
+✖ late preview and candidate response cannot refill after identity switch (57.9846ms)
+✔ reopen mounts exactly once and starts a fresh local selection without persistent cache (61.6681ms)
+✔ mismatched project readback refuses to mount the preview (64.3042ms)
+✖ Workspace real navigation/render seam opens the context host and preserves other panel entries (275.2249ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 3
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2851.63
+
+✖ failing tests:
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:82:1
+✖ mount reads the current baseline once then uses the original panel and API (497.8121ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    [
+  +   'wrong-project'
+  -   'a'
+    ]
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:85:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'wrong-project' ],
+    expected: [ 'a' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:94:1
+✖ project read failure is an error, not an empty successful context; explicit retry recovers (158.3438ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-a · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:105:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-a · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:109:1
+✖ in-flight project switch never mounts or renders the previous project response (144.8185ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-b/. Input:
+
+  '上下文包 Project b · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-b · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:117:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project b · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-b · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-b/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:150:44
+✖ preview 403 clears old facts and does not auto-retry (92.0237ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:161:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:150:44
+✖ preview 404 clears old facts and does not auto-retry (94.1059ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:161:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:150:44
+✖ preview 409 clears old facts and does not auto-retry (95.6526ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:161:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:150:44
+✖ preview 503 clears old facts and does not auto-retry (67.1416ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:161:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:3 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 已人工确认 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 已人工确认  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:165:1
+✖ card catalog failure is explicitly unknown, not a successful empty list (71.9769ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。 证据卡清单暂不可读，不能据此判断没有证据卡；已返回的包中卡片状态将标为未知。请刷新重试。 前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:2 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 候选清单里没有这个版本 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 状态未知（清单读不到）  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:171:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。 证据卡清单暂不可读，不能据此判断没有证据卡；已返回的包中卡片状态将标为未知。请刷新重试。 前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:2 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡  card-a v2 候选清单里没有这个版本 移除这张卡   加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片  card-a v2 状态未知（清单读不到）  选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:175:1
+✖ late preview and candidate response cannot refill after identity switch (57.9846ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-b/. Input:
+
+  '上下文包 Project b · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。 尚无可加入的证据卡。可先在“调研与证据”整理资料与证据卡；无卡片的预览仍可核对项目基线和输出约束。 前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:187:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '上下文包 Project b · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。 尚无可加入的证据卡。可先在“调研与证据”整理资料与证据卡；无卡片的预览仍可核对项目基线和输出约束。 前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡    加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project  ',
+    expected: /server-b/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at src\views\lingdoc\projectContextWorkspace.test.js:215:1
+✖ Workspace real navigation/render seam opens the context host and preserves other panel entries (275.2249ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /server-a/. Input:
+
+  ' 研究条件 → 当前模板副本 → 调研与证据 → 上下文包 → 上传与项目资料 → 正式变更与运行 → 运行观测与试用 → 模板目录与规则 → 章节评审与批注 → 上下文包 返回文稿 ×  上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-a · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project        '
+
+      at TestContext.<anonymous> (file:///D:/C%E7%9B%98%E8%BF%81%E7%A7%BB/23312/Documents/Codex/2026-09-22/https-github-com-magician336-lingdoc-https/work/lingdoc-r3-context-workspace-20261024/frontend/src/views/lingdoc/projectContextWorkspace.test.js:253:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: ' 研究条件 → 当前模板副本 → 调研与证据 → 上下文包 → 上传与项目资料 → 正式变更与运行 → 运行观测与试用 → 模板目录与规则 → 章节评审与批注 → 上下文包 返回文稿 ×  上下文包 Project a · 按当前权限预览，不创建对话、不调用模型。 刷新上下文包  增删卡片后会重新读取服务端范围。版本冲突请刷新；不会自动替换所选卡片的版本，也不会替你确认敏感内容。  前往调研与证据 本轮上下文包 助手：task_assistant · 会话：workspace-preview:1 事实区只显示服务端这一轮组装好的范围；勾选只是意图，两者分开显示。 意图：勾选的证据卡 还没有勾选任何证据卡。  加入一张卡   card-a · v2  加入这张卡 事实：服务端组装的结果  本轮带的卡片 服务端这一轮没有带任何证据卡。 选择理由  服务端原文理由  本轮带的来源 服务端这一轮没有带任何来源。 版本基线 项目版本 v7 · 规范修订 2 · 上下文修订 3 章节版本 未关联 · 任务版本 未关联 · 模板 demo v1 授权结论与输出约束 授权结论：allowed  候选而非科学证明  关联标识 关联标识：server-wrong-project        ',
+    expected: /server-a/,
+    operator: 'match',
+    diff: 'simple'
+  }

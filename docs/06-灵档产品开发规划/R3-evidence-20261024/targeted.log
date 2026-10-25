@@ -1,0 +1,89 @@
+✔ 勾卡与去卡返回新意图，原意图不被就地修改 (600.5031ms)
+✔ 重复加入同一张卡不改变结果 (138.3601ms)
+✔ 加来源与去来源返回新意图，重复加入不改变结果 (188.5409ms)
+✔ 请求体按服务端契约逐字段构造，敏感上下文不由面板代确认 (216.9501ms)
+✔ 请求体的键就是意图里有值的那些字段：没有值的可选字段不进 (102.6619ms)
+✔ 请求体是意图的快照：改了意图，已经构造好的请求不动 (76.6887ms)
+✔ 卡片状态按 id 且 version 双重对齐，版本不等就是状态未知 (87.9596ms)
+✔ 状态未知分得清是版本变了，还是清单里没有这张卡 (68.2402ms)
+✔ 对齐按包里的卡片顺序来，每张卡各占一行 (74.5776ms)
+✔ 对齐规则只有一份：证据卡与候选卡摘要走出同一个结果 (105.592ms)
+✔ 候选卡摘要的状态取值与服务端那张卡一致，不是裸字符串 (76.5743ms)
+✔ 事实分成卡片、来源、理由、版本基线、权限、关联标识六组 (52.0222ms)
+✔ 事实里带关联标识：服务端的 correlation_id 原样透传，不加工 (57.3189ms)
+✔ 版本基线给出项目版本、规范修订、上下文修订、章节版本、任务版本与模板版本 (53.0648ms)
+✔ 来源保持服务端给的顺序，理由保持服务端给的条数与顺序 (52.1862ms)
+✔ 理由是不透明字符串：看着像条目的理由也原样透传，不解析成对应关系 (71.7345ms)
+✔ 预览编排调用既有的预览与证据卡接口，自己不写客户端 (63.7329ms)
+✔ 事实区只由这一次预览的结果刷新：上一次的不留、不合并 (66.2272ms)
+✔ 事实区不掺意图：意图里勾的卡没进包，事实里就没有 (54.9555ms)
+✔ 清单读不到时预览照常成功：范围在，卡片状态未知 (48.9795ms)
+✔ 预览失败时整体失败：调用方据此清空事实区 (75.547ms)
+✔ 契约类型由传输层拥有：门面不重新声明它们 (17.0471ms)
+✔ 门面不导出契约类型本身，也不重新声明契约的形状 (13248.5655ms)
+✔ 选择理由不做字符串匹配：模块里没有针对理由文本的匹配或解析 (6.4158ms)
+✔ 门面不自写 HTTP 客户端，只用传输层已有的那两组函数 (61.3747ms)
+✔ 层次方向单向：传输层不反过来依赖门面 (5.5006ms)
+✔ 意图的形状由本模块拥有：显式声明，不从传输层契约派生 (5.9686ms)
+✔ 意图与事实的字段集不相交：混用在类型层就暴露 (1.9396ms)
+✔ 面板显示服务端组装的那一份：卡片、理由、来源许可、版本基线、授权结论与输出约束 (34.5337ms)
+✔ 意图里多勾了一张卡、服务端包里没有它 ⇒ 事实区不显示它 (5.3305ms)
+✔ 预览失败 ⇒ 事实区清空并提示错误，上一次成功的包不留下来 (5.4458ms)
+✔ 版本冲突 ⇒ 事实区清空并提示基线已变，不自动重试 (5.3443ms)
+✔ 卡片版本与上下文包对不上 ⇒ 显示状态未知（版本已变），不回退到别的状态 (5.836ms)
+✔ 清单里根本没有这张卡 ⇒ 显示状态未知（清单里没有这张卡） (2.4282ms)
+✔ 证据卡清单读不到 ⇒ 卡片状态未知（清单读不到），范围照常显示 (3.1446ms)
+✔ 加入一张卡与移除一张卡都会重新预览，并把新的意图告诉宿主 (6.606ms)
+✔ 撤权后服务端不再返回受限条目 ⇒ 面板不再显示它 (1.5717ms)
+✔ 宿主更新了版本基线 ⇒ 面板下一次预览就用新基线，不卡在旧的冲突里 (5.0283ms)
+✔ 事实区显示服务端的关联标识 (2.7695ms)
+✔ 面板标出这一轮是哪个助手、哪个会话 (3.3902ms)
+✔ 换会话（助手机别变了）⇒ 意图与事实一并清空，新预览不带上一会话的勾选 (3.3606ms)
+✔ 换会话（会话标识变了）⇒ 同样清空意图与事实 (1.6267ms)
+✔ 两个助手的会话不合并：面板只显示当前助手这一轮 (6.9702ms)
+✔ 面板不引传输层：只依赖门面模块 (1.474ms)
+✔ 意图区复用门面的对齐函数：面板里没有第二份 id+version 对齐实现 (5.685ms)
+✔ 组件沿用仓内写法：script setup、类型式 props/emits、顶部接口评论、scoped + BEM + 字面色值、硬编码中文 (1.2928ms)
+✔ mount reads the current baseline once then uses the original panel and API (882.5786ms)
+✔ project read failure is an error, not an empty successful context; explicit retry recovers (382.4524ms)
+✔ in-flight project switch never mounts or renders the previous project response (314.363ms)
+✔ actual selection handlers refresh server facts; refresh preserves exact refs but rereads baseline (348.3351ms)
+✔ preview 403 clears old facts and does not auto-retry (227.6334ms)
+✔ preview 404 clears old facts and does not auto-retry (175.1997ms)
+✔ preview 409 clears old facts and does not auto-retry (203.952ms)
+✔ preview 503 clears old facts and does not auto-retry (181.8103ms)
+✔ card catalog failure is explicitly unknown, not a successful empty list (136.1586ms)
+✔ late preview and candidate response cannot refill after identity switch (128.8605ms)
+✔ reopen mounts exactly once and starts a fresh local selection without persistent cache (113.1956ms)
+✔ mismatched project readback refuses to mount the preview (163.505ms)
+✔ Workspace real navigation/render seam opens the context host and preserves other panel entries (707.7904ms)
+✔ individual removal preserves other exact refs and disables evidence rewrite only for an empty set (6.1335ms)
+✔ pending generation does not silently alter the already requested evidence set (0.7362ms)
+✔ the explicit evidence return opens the research panel for an exact selected ref (0.8901ms)
+✔ unselected or differently pinned evidence cannot trigger a stale panel return (0.6401ms)
+✔ 版本 tab click renders its actual form/history and selects the history display rule (416.6437ms)
+✔ actual history click cannot pass when every history visibility selector is removed (171.1166ms)
+✔ switching tabs and closing the inspector hides history and retains draft input (86.2637ms)
+✔ focus mode topbar 版本 click overrides the real focus hide rule (60.9227ms)
+[LingDoc] template catalog integrity failure {
+  project_id: 'p-owner-freeze',
+  template_id: 'demo',
+  template_version: '1',
+  error: '来源模板与当前课题不匹配'
+}
+[LingDoc] template catalog integrity failure {
+  project_id: 'p-owner-freeze',
+  template_id: 'demo',
+  template_version: '1',
+  error: '来源模板与当前课题不匹配'
+}
+✔ a frozen project greys the activation entry out and says why (103.7807ms)
+✔ a project that is not frozen leaves the activation entry alone (29.7927ms)
+ℹ tests 69
+ℹ suites 0
+ℹ pass 69
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19074.697
