@@ -34,7 +34,11 @@ func NewAsynqInspector(queueClient QueueRedisClient) *asynq.Inspector {
 // flaky.
 type asynqTaskInspector struct {
 	inspector *asynq.Inspector
-	redis     redis.UniversalClient
+	// redis is the QUEUE's client. It is a concrete client (not an
+	// interface) so that the database it reads is observable: a guard can
+	// check that the inspector and the queue are on the SAME database, which
+	// is exactly the mistake this wiring exists to prevent.
+	redis *redis.Client
 }
 
 // NewAsynqTaskInspector returns a TaskInspector wrapping the given

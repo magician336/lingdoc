@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,6 +118,27 @@ type asynqQueueIdentity struct {
 	Source string
 }
 
+// redisConnection is the connection part of the Redis settings: address,
+// credentials and TLS. The DATABASE INDEX is deliberately NOT part of it: the
+// queue resolves its own (readAsynqQueueIdentity) and the application-level
+// client resolves REDIS_DB. Keeping the shared part in one place means a new
+// connection setting cannot be added to one caller and forgotten in the other.
+type redisConnection struct {
+	Addr     string
+	Username string
+	Password string
+	TLS      *tls.Config
+}
+
+func readRedisConnection() redisConnection {
+	return redisConnection{
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Username: os.Getenv("REDIS_USERNAME"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		TLS:      common.RedisTLSConfig(),
+	}
+}
+
 // readAsynqQueueIdentity resolves the queue's Redis database index.
 //
 // Precedence: LINGDOC_ASYNQ_REDIS_DB (the queue's own index) wins over
@@ -124,15 +146,19 @@ type asynqQueueIdentity struct {
 // NOT silently ignored: it falls back to REDIS_DB and says so, because a typo
 // in the isolation setting would otherwise put the process back on a shared
 // queue without anyone noticing.
+//
+// The parsing is deliberately as strict as it was before this setting existed:
+// the value is used exactly as REDIS_DB always was, so a deployment that sets
+// nothing behaves byte for byte as before.
 func readAsynqQueueIdentity() asynqQueueIdentity {
-	if raw := strings.TrimSpace(os.Getenv(AsynqQueueDBEnv)); raw != "" {
+	if raw := os.Getenv(AsynqQueueDBEnv); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil {
 			return asynqQueueIdentity{DBIndex: parsed, Source: asynqQueueDBSourceQueueEnv}
 		}
 		log.Printf("asynq queue: %s=%q is not a database index; falling back to REDIS_DB",
 			AsynqQueueDBEnv, raw)
 	}
-	if raw := strings.TrimSpace(os.Getenv("REDIS_DB")); raw != "" {
+	if raw := os.Getenv("REDIS_DB"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil {
 			return asynqQueueIdentity{DBIndex: parsed, Source: asynqQueueDBSourceRedisDB}
 		}
@@ -172,29 +198,31 @@ type QueueRedisClient struct {
 // (NewAsyncqClient), and a wrong address therefore still fails fast.
 func NewAsynqQueueRedisClient() QueueRedisClient {
 	queue := readAsynqQueueIdentity()
+	connection := readRedisConnection()
 	return QueueRedisClient{Client: redis.NewClient(&redis.Options{
-		Addr:      os.Getenv("REDIS_ADDR"),
-		Username:  os.Getenv("REDIS_USERNAME"),
-		Password:  os.Getenv("REDIS_PASSWORD"),
+		Addr:      connection.Addr,
+		Username:  connection.Username,
+		Password:  connection.Password,
 		DB:        queue.DBIndex,
-		TLSConfig: common.RedisTLSConfig(),
+		TLSConfig: connection.TLS,
 	})}
 }
 
 func getAsynqRedisClientOpt() *asynq.RedisClientOpt {
 	queue := readAsynqQueueIdentity()
+	connection := readRedisConnection()
 	timeoutMs := readRedisOpTimeoutMs()
 	opt := &asynq.RedisClientOpt{
-		Addr:        os.Getenv("REDIS_ADDR"),
-		Username:    os.Getenv("REDIS_USERNAME"),
-		Password:    os.Getenv("REDIS_PASSWORD"),
+		Addr:        connection.Addr,
+		Username:    connection.Username,
+		Password:    connection.Password,
 		ReadTimeout: time.Duration(timeoutMs) * time.Millisecond,
 		// Writes are typically more sensitive to congestion than reads
 		// (RESP pipelining, BRPOPLPUSH on Asynq dequeue), so we keep
 		// WriteTimeout slightly larger to absorb head-of-line stalls.
 		WriteTimeout: time.Duration(timeoutMs*2) * time.Millisecond,
 		DB:           queue.DBIndex,
-		TLSConfig:    common.RedisTLSConfig(),
+		TLSConfig:    connection.TLS,
 	}
 	return opt
 }

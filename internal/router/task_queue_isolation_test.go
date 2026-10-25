@@ -85,6 +85,28 @@ func TestTheQueueRedisClientUsesTheQueueDatabase(t *testing.T) {
 	}
 }
 
+func TestTheTaskInspectorReadsTheQueueDatabase(t *testing.T) {
+	// The inspector is what the runtime task list and the cancel-by-knowledge
+	// path read. If it were built on the application-wide Redis database while
+	// the queue lives in its own database, it would report "no tasks" for
+	// everything -- and nothing would say so.
+	t.Setenv(AsynqQueueDBEnv, "4")
+	t.Setenv("REDIS_DB", "1")
+	queueClient := NewAsynqQueueRedisClient()
+	inspector := NewAsynqInspector(queueClient)
+	if inspector == nil {
+		t.Fatal("no inspector was built")
+	}
+	taskInspector, ok := NewAsynqTaskInspector(inspector, queueClient).(*asynqTaskInspector)
+	if !ok {
+		t.Fatal("the task inspector is not the asynq-backed one")
+	}
+	if taskInspector.redis.Options().DB != 4 {
+		t.Fatalf("the task inspector reads database %d, want the queue's own 4",
+			taskInspector.redis.Options().DB)
+	}
+}
+
 // startQueueWorld starts one worker pool through the PRODUCTION construction
 // path (newAsynqServer -> getAsynqRedisClientOpt), so the test exercises the
 // same code the running service uses, and returns the channel that receives
