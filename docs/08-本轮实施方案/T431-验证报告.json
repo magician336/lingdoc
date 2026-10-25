@@ -54,6 +54,16 @@
   },
   "passed": [
     {
+      "id": "AC-431-36",
+      "status": "PASS",
+      "evidence": "#476/R3，2026-10-24，frontend a121b8b2ad8a60986be53f1f52e24b21dde04f88 / backend main 2f029fcaf0adcf4c9881d6f0d821559814f3cf92。真实Workspace浏览器选卡/移除/刷新，停机恢复、项目成员暂停后旧包清空、恢复旧卡409和跨项目空包；见R3-验收报告-20261024.md及R3-evidence-20261024。正式manual合成资料，不代表上传来源定位#623通过。"
+    },
+    {
+      "id": "REAL-BACKEND-PREVIEW",
+      "status": "PASS",
+      "evidence": "同一次真实浏览器HTTP响应correlation a773d8c0-7d5c-48ff-b89b-4cd31432dbd4，对照DOM的卡片id/version/status、理由/来源顺序、版本基线、来源许可、授权及输出约束；browser-comparison.json全部断言通过。真实PG、双临时账号，无模型/embedding。"
+    },
+    {
       "id": "AC-431-01",
       "status": "PASS",
       "evidence": "面板用例「面板显示服务端组装的那一份：卡片、理由、来源许可、版本基线、授权结论与输出约束」；门面用例「事实分成卡片、来源、理由、版本基线、权限五组」。"
@@ -234,17 +244,35 @@
       "evidence": "面板未挂载到任何页面：frontend/src/views/lingdoc/Workspace.vue 是登记处的保留路径，集成归 #476。浏览器端到端因此无可验入口。已用 SSR 渲染与组件暴露面验证模板与行为。"
     }
   ],
+  "integration_r3": {
+    "issue": 476,
+    "date": "2026-10-24",
+    "frontend_sha": "a121b8b2ad8a60986be53f1f52e24b21dde04f88",
+    "backend_main_sha": "2f029fcaf0adcf4c9881d6f0d821559814f3cf92",
+    "report": "docs/06-灵档产品开发规划/R3-验收报告-20261024.md",
+    "evidence": "docs/06-灵档产品开发规划/R3-evidence-20261024/browser-comparison.json",
+    "commands": [
+      "node --test frontend/src/views/lingdoc/projectContextWorkspace.test.js: 13/13",
+      "cd frontend && npm test -- --test-concurrency=2: 1789 PASS / 3 SKIPPED / 0 FAIL",
+      "cd frontend && npm run type-check && npm run build: exit 0",
+      "node docs/06-灵档产品开发规划/R3-evidence-20261024/verify-browser-evidence.mjs: 同请求HTTP/DOM及权限/恢复证据断言PASS"
+    ],
+    "boundary": "真实HTTP/浏览器，隔离PG与合成manual资料。项目成员suspend/restore，不是外部KB ACL全矩阵；无模型/embedding。上传资料定位422另记#623。本报告其余SHA/CI/命令是PF-6历史，不改写成R3当前结果。R3新PR尚未发布，远端CI NOT RUN，未合并。",
+    "previous_not_run": [
+      {
+        "id": "AC-431-36",
+        "reason": "浏览器端到端：面板没有真实入口。Workspace.vue 是保留路径，本面不得独占。集成归属原记在 #384 票面（「PF-6 的上下文包面板也归这次集成」），但 #384 已于 2026-10-23 03:17 随 PF-8 交面关闭，它交付的是 G6 运维面板的挂载位、不含本面 ⇒ 集成归属另落一张开放票 #476。",
+        "unblock": "集成步（#476）把面板挂进 Workspace 后，在真实页面上跑一次「改勾选 → 事实区刷新 → 撤权后条目消失」。"
+      },
+      {
+        "id": "REAL-BACKEND-PREVIEW",
+        "reason": "面板的真实后端预览链路未跑：组件测试注入的是假客户端，真实预览要等集成后用真后端验一次。",
+        "unblock": "集成后手动触发一次真实预览，核对返回的上下文包与面板显示一致。"
+      }
+    ],
+    "resolved_limit": {"id": "PANEL-NOT-MOUNTED", "previous": "面板已交付但未挂载，只有组件级证据，没有页面级证据；集成归#476。", "current": "R3已挂载并实际验收，见passed新增两项。"}
+  },
   "not_run": [
-    {
-      "id": "AC-431-36",
-      "reason": "浏览器端到端：面板没有真实入口。Workspace.vue 是保留路径，本面不得独占。集成归属原记在 #384 票面（「PF-6 的上下文包面板也归这次集成」），但 #384 已于 2026-10-23 03:17 随 PF-8 交面关闭，它交付的是 G6 运维面板的挂载位、不含本面 ⇒ 集成归属另落一张开放票 #476。",
-      "unblock": "集成步（#476）把面板挂进 Workspace 后，在真实页面上跑一次「改勾选 → 事实区刷新 → 撤权后条目消失」。"
-    },
-    {
-      "id": "REAL-BACKEND-PREVIEW",
-      "reason": "面板的真实后端预览链路未跑：组件测试注入的是假客户端，真实预览要等集成后用真后端验一次。",
-      "unblock": "集成后手动触发一次真实预览，核对返回的上下文包与面板显示一致。"
-    },
     {
       "id": "GO-RACE-SUITE",
       "reason": "全仓 go test -race ./... 未跑（会覆盖 cmd/server、cli/、client/ 等本面无关模块）。门禁的 provider 档位因本 PR 改了 scripts/ 而判定 scope.backend=true，已在 provider 包范围内代跑 go test -race -count=1：run 39886819150 的 go-test.jsonl 末尾为 ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 340.399s（全部 PASS），go-vet.log 零输出。",
@@ -252,10 +280,6 @@
     }
   ],
   "known_limits": [
-    {
-      "id": "PANEL-NOT-MOUNTED",
-      "detail": "面板已交付但未挂载。Workspace.vue 是保留路径，集成归 #476（原记在 #384 票面，但该票已于 2026-10-23 03:17 随 PF-8 交面关闭，承载的是 G6 运维面板的集成、不含本面 ⇒ 另开 #476 承接，挂在本面票 #330 下）。本 PR 内面板只有组件级证据，没有页面级证据。"
-    },
     {
       "id": "NO-LOCAL-INFERENCE",
       "detail": "「本地推断」这条规则是类型层面保证的（意图与事实字段集不相交 + 静态断言），不是运行时断言。类型能挡住字段级混用，挡不住「先取 intent.card_refs 再手写进模板」这种写法——那一路由静态断言与评审挡住。"

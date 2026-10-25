@@ -1,0 +1,54 @@
+{
+  "at": "2026-10-24T14:54:02.174Z",
+  "frontend": "a121b8b2",
+  "backend": "2f029fcaf0adcf4c9881d6f0d821559814f3cf92",
+  "mode": "real browser DOM vs same-request HTTP response, synthetic manual original",
+  "result": "PASS",
+  "checks": [
+    "exact correlation",
+    "card ids/versions/status",
+    "reasons verbatim/in order",
+    "source ids/locators/revisions/permission",
+    "all visible version baselines",
+    "authorization and output constraints",
+    "open/add/remove/add/refresh actual request sequence",
+    "actual service outage clears facts and explicit refresh recovers",
+    "real member suspension rejects read/preview 404 and removes old package",
+    "restore does not silently rebase stale card; 409 then explicit removal recovers",
+    "other project has independent empty package"
+  ],
+  "correlation": "a773d8c0-7d5c-48ff-b89b-4cd31432dbd4",
+  "project_id": "4deac7b7-7850-46a0-ad69-259bef1d5326",
+  "sequence": [
+    {
+      "path": "/api/v1/lingdoc/projects/4deac7b7-7850-46a0-ad69-259bef1d5326/agent-context",
+      "selected": 0,
+      "status": 200
+    },
+    {
+      "path": "/api/v1/lingdoc/projects/4deac7b7-7850-46a0-ad69-259bef1d5326/agent-context",
+      "selected": 1,
+      "status": 200
+    },
+    {
+      "path": "/api/v1/lingdoc/projects/4deac7b7-7850-46a0-ad69-259bef1d5326/agent-context",
+      "selected": 0,
+      "status": 200
+    },
+    {
+      "path": "/api/v1/lingdoc/projects/4deac7b7-7850-46a0-ad69-259bef1d5326/agent-context",
+      "selected": 1,
+      "status": 200
+    },
+    {
+      "path": "/api/v1/lingdoc/projects/4deac7b7-7850-46a0-ad69-259bef1d5326/agent-context",
+      "selected": 1,
+      "status": 200
+    }
+  ],
+  "limitations": [
+    "No model or embedding calls",
+    "Uploaded-storage-URI anchor adapter failure retained; real manual material path used instead",
+    "Screenshot raw controller canvas retained with AX/DOM evidence"
+  ]
+}

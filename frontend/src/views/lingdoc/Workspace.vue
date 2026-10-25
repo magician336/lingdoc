@@ -127,6 +127,7 @@
           <button type="button" class="ghost" :disabled="!project" @click="specOpen = true">研究条件 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="templateOpen = true">当前模板副本 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('research')">调研与证据 →</button>
+          <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('context')">上下文包 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openInspector('sources')">上传与项目资料 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('changes')">正式变更与运行 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('operations')">运行观测与试用 →</button>
@@ -750,6 +751,7 @@
       <section class="full-workflow-dialog" role="dialog" aria-modal="true" :aria-label="fullPanelLabel" tabindex="-1">
         <header class="full-workflow-head"><strong>{{ fullPanelLabel }}</strong><button type="button" :disabled="fullPanelBusy" @click="closeFullPanel">返回文稿 ×</button></header>
         <ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
+        <ProjectContextPackagePanel v-if="fullPanel === 'context'" :key="materialIdentity + ':' + project.id" :project="project" :identity="materialIdentity" @research="openFullPanel('research')" />
         <ImpactOpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <RuntimeOpsPanel v-if="fullPanel === 'operations'" ref="runtimeOpsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" :can-manage-catalog="auth.hasRole('admin')" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
@@ -825,6 +827,7 @@ import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composa
 import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
 import ProjectMaterialIntakePanel from './ProjectMaterialIntakePanel.vue'
+import ProjectContextPackagePanel from './ProjectContextPackagePanel.vue'
 import { materialIntakeIdentity } from './projectMaterialIntake'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
@@ -858,12 +861,12 @@ const {
 const memberSaving = ref(false)
 const memberDraftDirty = ref(false)
 
-type FullPanel = 'research' | 'changes' | 'operations' | 'governance' | 'members' | 'review'
+type FullPanel = 'research' | 'changes' | 'operations' | 'governance' | 'members' | 'review' | 'context'
 const fullPanel=ref<FullPanel|null>(null),fullPanelDirty=ref(false),fullDrawerRef=ref<HTMLElement|null>(null)
 const researchPanelRef=ref<InstanceType<typeof ResearchPanel>|null>(null)
 const opsPanelRef=ref<InstanceType<typeof ImpactOpsPanel>|null>(null),runtimeOpsPanelRef=ref<InstanceType<typeof RuntimeOpsPanel>|null>(null),governancePanelRef=ref<InstanceType<typeof TemplateGovernancePanel>|null>(null),collaborationPanelRef=ref<InstanceType<typeof ProjectCollaborationPanel>|null>(null),chapterReviewPanelRef=ref<InstanceType<typeof ChapterReviewPanel>|null>(null)
 const fullPanelBusy=computed(()=>!!researchPanelRef.value?.operationBusy||!!opsPanelRef.value?.busy||!!runtimeOpsPanelRef.value?.busy||!!governancePanelRef.value?.busy||!!collaborationPanelRef.value?.busy||!!chapterReviewPanelRef.value?.busy)
-const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',operations:'运行观测与真实试用',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注'}[fullPanel.value??'research']))
+const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',operations:'运行观测与真实试用',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注',context:'上下文包'}[fullPanel.value??'research']))
 const fullReadonly=computed(()=>{const m=project.value?.members.find(x=>x.user_id===auth.currentUserId);return restricted.value||!m||m.status!==undefined&&m.status!==''&&m.status!=='active'||m.role!=='owner'&&m.governance_role!=='admin'&&!(m.function_roles??[]).some(x=>x!=='observer')})
 const commentSelection=ref<CommentSelection|undefined>(undefined)
 const generationEvidenceRefs=ref<VersionRef[]>([])

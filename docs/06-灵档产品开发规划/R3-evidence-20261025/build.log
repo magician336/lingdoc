@@ -1,0 +1,206 @@
+
+> knowledage-base@0.8.0 build
+> vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 6785 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/embed.html                                                                  1.40 kB │ gzip:   0.64 kB
+dist/assets/KaTeX_Size3-Regular-CTq5MqoE.woff                                    4.42 kB
+dist/assets/setting-green-3aMhjP7j.svg                                           4.45 kB │ gzip:   1.91 kB
+dist/assets/setting-tNA2sME1.svg                                                 4.46 kB │ gzip:   1.92 kB
+dist/assets/google-D0PZP9s8.svg                                                  4.54 kB │ gzip:   1.63 kB
+dist/assets/screenshot-4-zM_NSO4D.svg                                            4.56 kB │ gzip:   1.34 kB
+dist/index.html                                                                  4.73 kB │ gzip:   1.93 kB
+dist/assets/searxng-BrM4fgdN.svg                                                 4.88 kB │ gzip:   2.21 kB
+dist/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2                                   4.93 kB
+dist/assets/screenshot-1-bkTiTxD-.svg                                            5.06 kB │ gzip:   1.38 kB
+dist/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2                                   5.21 kB
+dist/assets/screenshot-2-DMYuKNyb.svg                                            5.38 kB │ gzip:   1.34 kB
+dist/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2                                   5.47 kB
+dist/assets/favicon-bEsoBimf.ico                                                 5.56 kB
+dist/assets/upload-mask-CXovx3bg.svg                                             5.81 kB │ gzip:   1.76 kB
+dist/assets/screenshot-3-GAVkb9Cw.svg                                            5.83 kB │ gzip:   1.42 kB
+dist/assets/KaTeX_Size4-Regular-BF-4gkZK.woff                                    5.98 kB
+dist/assets/KaTeX_Size2-Regular-oD1tc_U0.woff                                    6.19 kB
+dist/assets/mattermost-CevsdWTW.svg                                              6.41 kB │ gzip:   2.76 kB
+dist/assets/KaTeX_Size1-Regular-C195tn64.woff                                    6.50 kB
+dist/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2                             6.91 kB
+dist/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2                                6.91 kB
+dist/assets/bing-DyPZT28B.svg                                                    7.23 kB │ gzip:   3.38 kB
+dist/assets/weknora-BoLwP3xK.png                                                 7.30 kB
+dist/assets/KaTeX_Size3-Regular-DgpXs0kz.ttf                                     7.59 kB
+dist/assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff                              7.66 kB
+dist/assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff                                 7.72 kB
+dist/assets/duckduckgo-DCuc5BNO.svg                                              8.31 kB │ gzip:   2.98 kB
+dist/assets/ollama-dalUZNda.svg                                                  8.58 kB │ gzip:   3.91 kB
+dist/assets/KaTeX_Script-Regular-D3wIWfF6.woff2                                  9.64 kB
+dist/assets/datasource-feishu-C4OMrjCW.ico                                       9.66 kB
+dist/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2                              10.34 kB
+dist/assets/KaTeX_Size4-Regular-DWFBv043.ttf                                    10.36 kB
+dist/assets/upload-C_yVEICD.svg                                                 10.53 kB │ gzip:   2.99 kB
+dist/assets/KaTeX_Script-Regular-D5yQViql.woff                                  10.59 kB
+dist/assets/yunzhijia-BhMP_CUi.svg                                              10.76 kB │ gzip:   8.16 kB
+dist/assets/qdrant-ZFnN4lfC.svg                                                 10.88 kB │ gzip:   4.52 kB
+dist/assets/milvus-tnduJAvh.svg                                                 11.19 kB │ gzip:   4.59 kB
+dist/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2                                11.32 kB
+dist/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2                                   11.35 kB
+dist/assets/KaTeX_Size2-Regular-B7gKUWhC.ttf                                    11.51 kB
+dist/assets/sqlite-BBNzwdMx.svg                                                 11.64 kB │ gzip:   4.89 kB
+dist/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2                               12.03 kB
+dist/assets/opensearch-BLBYpkXj.svg                                             12.08 kB │ gzip:   4.95 kB
+dist/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2                                 12.22 kB
+dist/assets/KaTeX_Size1-Regular-Dbsnue_I.ttf                                    12.23 kB
+dist/assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff                               12.32 kB
+dist/assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf                              12.34 kB
+dist/assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf                                 12.37 kB
+dist/assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff                                 13.21 kB
+dist/assets/postgres-D-vtYnT7.svg                                               13.23 kB │ gzip:   6.22 kB
+dist/assets/KaTeX_Fraktur-Bold-BsDP51OF.woff                                    13.30 kB
+dist/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2                             13.57 kB
+dist/assets/KaTeX_SansSerif-Italic-DN2j7dab.woff                                14.11 kB
+dist/assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff                                  14.41 kB
+dist/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff                              16.03 kB
+dist/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2                                16.40 kB
+dist/assets/KaTeX_Math-Italic-t53AETM-.woff2                                    16.44 kB
+dist/assets/KaTeX_Script-Regular-C5JkGWo-.ttf                                   16.65 kB
+dist/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2                                16.78 kB
+dist/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2                                    16.99 kB
+dist/assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff                                 18.67 kB
+dist/assets/KaTeX_Math-Italic-DA0__PXp.woff                                     18.75 kB
+dist/assets/KaTeX_Main-BoldItalic-SpSLRI95.woff                                 19.41 kB
+dist/assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf                                19.44 kB
+dist/assets/KaTeX_Fraktur-Regular-CB_wures.ttf                                  19.57 kB
+dist/assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf                                     19.58 kB
+dist/assets/KaTeX_Main-Italic-BMLOBm91.woff                                     19.68 kB
+dist/assets/datasource-ima-F8Hh7NkT.png                                         20.92 kB
+dist/assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf                                 22.36 kB
+dist/assets/logo-CgXhuibh.png                                                   22.49 kB
+dist/assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf                                   24.50 kB
+dist/assets/KaTeX_Main-Bold-Cx986IdX.woff2                                      25.32 kB
+dist/assets/KaTeX_Main-Regular-B22Nviop.woff2                                   26.27 kB
+dist/assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf                               27.56 kB
+dist/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2                                    28.08 kB
+dist/assets/KaTeX_Main-Bold-Jm3AIy58.woff                                       29.91 kB
+dist/assets/KaTeX_Main-Regular-Dr94JaBh.woff                                    30.77 kB
+dist/assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf                                  31.20 kB
+dist/assets/KaTeX_Math-Italic-flOr_0UB.ttf                                      31.31 kB
+dist/assets/datasource-notion-BcmA6aa5.ico                                      32.04 kB
+dist/assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf                                  32.97 kB
+dist/assets/KaTeX_AMS-Regular-DMm9YOAa.woff                                     33.52 kB
+dist/assets/KaTeX_Main-Italic-3WenGoN9.ttf                                      33.58 kB
+dist/assets/KaTeX_Main-Bold-waoOVXN0.ttf                                        51.34 kB
+dist/assets/KaTeX_Main-Regular-ypZvNtVU.ttf                                     53.58 kB
+dist/assets/KaTeX_AMS-Regular-DRggAlZN.ttf                                      63.63 kB
+dist/assets/think-BeVQQp84.gif                                                 342.33 kB
+dist/assets/botanswer_loading-B46raelc.gif                                     555.93 kB
+dist/assets/TencentSans-FVsqr9g7.ttf                                         8,537.66 kB
+dist/assets/ShareToSpaceOrgSelect-Df39BHqo.css                                   0.05 kB │ gzip:   0.07 kB
+dist/assets/useResourcePins-B_buwhUj.css                                         0.96 kB │ gzip:   0.36 kB
+dist/assets/toolCapabilities-B6J9pkEA.css                                        1.02 kB │ gzip:   0.38 kB
+dist/assets/organization-green-CTptgX_N.css                                      1.37 kB │ gzip:   0.44 kB
+dist/assets/vendor-highlight-BiJVEjr2.css                                        1.42 kB │ gzip:   0.61 kB
+dist/assets/ContentPopup-Do2H1XMV.css                                            1.68 kB │ gzip:   0.59 kB
+dist/assets/embed-k4rJWxDy.css                                                   2.09 kB │ gzip:   0.61 kB
+dist/assets/WorkspaceOnboarding-Dk4GZefm.css                                     2.23 kB │ gzip:   0.74 kB
+dist/assets/agentToolDisplay-Dyqx7nOX.css                                        2.26 kB │ gzip:   0.70 kB
+dist/assets/MyInvitationsDialog-CRWRMHlN.css                                     2.47 kB │ gzip:   0.67 kB
+dist/assets/DeepThink-V40mgDzO.css                                               3.10 kB │ gzip:   0.89 kB
+dist/assets/SpotlightGuide-BjgAI1go.css                                          3.56 kB │ gzip:   0.97 kB
+dist/assets/cardListBadge-CTQFom3l.css                                           4.62 kB │ gzip:   1.07 kB
+dist/assets/RagPipelineProgress-CO033b_x.css                                     5.23 kB │ gzip:   1.32 kB
+dist/assets/DocInfo-CzKGhyTQ.css                                                 6.09 kB │ gzip:   1.27 kB
+dist/assets/CreatChat-CZHr3bqd.css                                               6.83 kB │ gzip:   1.59 kB
+dist/assets/MessageTimestamp-Bl7q2afv.css                                        8.23 kB │ gzip:   1.92 kB
+dist/assets/AcceptanceConsole-DV8htR7v.css                                      17.36 kB │ gzip:   3.45 kB
+dist/assets/PermissionEvidence-DF0zShtX.css                                     17.76 kB │ gzip:   3.77 kB
+dist/assets/SandboxSkillsPanel-BcOW9fKU.css                                     19.66 kB │ gzip:   3.59 kB
+dist/assets/Login-CLllONux.css                                                  26.69 kB │ gzip:   4.99 kB
+dist/assets/KnowledgeBaseList-C_jd6Bnk.css                                      27.03 kB │ gzip:   4.43 kB
+dist/assets/vendor-markdown-CfVKi3_s.css                                        29.27 kB │ gzip:   8.05 kB
+dist/assets/EmbedChatCore-S2avMxB_.css                                          37.00 kB │ gzip:   6.23 kB
+dist/assets/useKnowledgeBaseCreationNavigation-D0Fv3ZkM.css                     45.30 kB │ gzip:   6.78 kB
+dist/assets/index-CHeRsmus.css                                                  53.04 kB │ gzip:   8.00 kB
+dist/assets/OrganizationList-MK5oJNY1.css                                       55.44 kB │ gzip:   7.97 kB
+dist/assets/AgentList-fvkjEhog.css                                              63.67 kB │ gzip:   9.61 kB
+dist/assets/Workspace-DZlhpiRa.css                                              70.72 kB │ gzip:  12.85 kB
+dist/assets/KnowledgeBaseEditorModal-CBhHVdus.css                               75.26 kB │ gzip:  11.28 kB
+dist/assets/index-BciOUwoP.css                                                  79.78 kB │ gzip:  13.04 kB
+dist/assets/AgentStreamDisplay-6fxAN54u.css                                    183.74 kB │ gzip:  18.79 kB
+dist/assets/KnowledgeBase-DXXnBa6_.css                                         229.33 kB │ gzip:  30.35 kB
+dist/assets/Settings-DAu648FV.css                                              314.74 kB │ gzip:  40.72 kB
+dist/assets/tdesignIconOffline-DR5acSXV.css                                    485.55 kB │ gzip:  55.62 kB
+dist/assets/main-Cf1BFT7y.css                                                  510.04 kB │ gzip:  59.57 kB
+dist/assets/mention-DNf0510H.js                                                  0.04 kB │ gzip:   0.06 kB
+dist/assets/weknora-CiPAA0qU.js                                                  0.06 kB │ gzip:   0.08 kB
+dist/assets/more-DjY3pbRe.js                                                     0.26 kB │ gzip:   0.24 kB
+dist/assets/steerId-BDKRHpuh.js                                                  0.27 kB │ gzip:   0.21 kB
+dist/assets/BrowserIcon.vue_vue_type_script_setup_true_lang-oe1167jP.js          0.61 kB │ gzip:   0.40 kB
+dist/assets/auditLog-COL0UElY.js                                                 0.65 kB │ gzip:   0.39 kB
+dist/assets/passwordPolicy-DviL7E9h.js                                           0.81 kB │ gzip:   0.31 kB
+dist/assets/files-DSyvmYgC.js                                                    1.04 kB │ gzip:   0.54 kB
+dist/assets/wikiLineDiff-BCeDKRvD.js                                             1.05 kB │ gzip:   0.49 kB
+dist/assets/browserConnection-BlwU-IoV.js                                        1.07 kB │ gzip:   0.54 kB
+dist/assets/ContextualGuide.vue_vue_type_script_setup_true_lang-Bb9SO56I.js      1.16 kB │ gzip:   0.63 kB
+dist/assets/agent-qeSD1il7.js                                                    1.31 kB │ gzip:   0.51 kB
+dist/assets/Frame3718-DBacJbod.js                                                1.39 kB │ gzip:   0.53 kB
+dist/assets/invitations-CSIRa2HR.js                                              1.42 kB │ gzip:   0.56 kB
+dist/assets/DeepThink-By6aC_f7.js                                                1.75 kB │ gzip:   0.86 kB
+dist/assets/ShareToSpaceOrgSelect-SQhYXM22.js                                    1.76 kB │ gzip:   0.97 kB
+dist/assets/sessionActivity-B7Pu_h3h.js                                          1.94 kB │ gzip:   1.02 kB
+dist/assets/contextualGuides-DawRyscg.js                                         2.29 kB │ gzip:   0.70 kB
+dist/assets/index-a6qxPGKs.js                                                    2.30 kB │ gzip:   0.64 kB
+dist/assets/zoom-CodU4y0y.js                                                     2.41 kB │ gzip:   1.11 kB
+dist/assets/workspace-BATWHFUZ.js                                                2.51 kB │ gzip:   0.83 kB
+dist/assets/ContentPopup-sPy6ULal.js                                             3.00 kB │ gzip:   1.37 kB
+dist/assets/organization-green-BklEzTQD.js                                       3.33 kB │ gzip:   1.47 kB
+dist/assets/WorkspaceOnboarding-C0pKEZBT.js                                      3.73 kB │ gzip:   1.46 kB
+dist/assets/index-C-HyfySC.js                                                    4.02 kB │ gzip:   1.24 kB
+dist/assets/auditActionLabel-DRdGgU55.js                                         4.32 kB │ gzip:   1.89 kB
+dist/assets/DocInfo-YpneIDoM.js                                                  4.65 kB │ gzip:   2.00 kB
+dist/assets/toolCapabilities-CmJGeOEs.js                                         4.75 kB │ gzip:   2.05 kB
+dist/assets/useResourcePins-B61Yw0Gw.js                                          6.06 kB │ gzip:   2.40 kB
+dist/assets/CreatChat-G_6XWlmv.js                                                6.08 kB │ gzip:   2.66 kB
+dist/assets/SpotlightGuide-tN8PkJ-J.js                                           7.20 kB │ gzip:   2.91 kB
+dist/assets/MyInvitationsDialog-BDF4ggmi.js                                      7.98 kB │ gzip:   2.79 kB
+dist/assets/agentToolDisplay-CYr53nRH.js                                         9.41 kB │ gzip:   3.26 kB
+dist/assets/cardListBadge-D-HB9jBC.js                                           10.28 kB │ gzip:   3.39 kB
+dist/assets/index-CrX_resa.js                                                   11.09 kB │ gzip:   3.62 kB
+dist/assets/RagPipelineProgress-Djl6HqmQ.js                                     12.25 kB │ gzip:   3.74 kB
+dist/assets/MessageTimestamp-C_ZYytmd.js                                        17.88 kB │ gzip:   6.52 kB
+dist/assets/PermissionEvidence-C0ZfsoqO.js                                      23.88 kB │ gzip:   8.41 kB
+dist/assets/EmbedChatCore-ChRGmmI3.js                                           31.14 kB │ gzip:  10.98 kB
+dist/assets/SandboxSkillsPanel-Dr7wcJu-.js                                      38.50 kB │ gzip:  11.19 kB
+dist/assets/ziliao-BJaG5o4C.js                                                  39.61 kB │ gzip:   8.76 kB
+dist/assets/useChatStreamHandler-CEWUM3B_.js                                    50.24 kB │ gzip:  17.84 kB
+dist/assets/KnowledgeBaseList-BfQZeM3O.js                                       54.83 kB │ gzip:  13.82 kB
+dist/assets/settings-B8MVgRrc.js                                                66.52 kB │ gzip:  17.41 kB
+dist/assets/docx-preview-Cr7bmEdp.js                                            75.43 kB │ gzip:  20.38 kB
+dist/assets/OrganizationList-BCGmfPvb.js                                        80.52 kB │ gzip:  18.87 kB
+dist/assets/index-B-daOLVz.js                                                   85.85 kB │ gzip:  26.98 kB
+dist/assets/embed-BZu2U9g6.js                                                   88.22 kB │ gzip:  26.80 kB
+dist/assets/useKnowledgeBaseCreationNavigation-BhdywwSG.js                      89.88 kB │ gzip:  27.46 kB
+dist/assets/Login-BFUP1YnV.js                                                  126.11 kB │ gzip:  37.29 kB
+dist/assets/AgentStreamDisplay-iEY6AlCF.js                                     150.19 kB │ gzip:  41.82 kB
+dist/assets/main-DGitx4K6.js                                                   160.03 kB │ gzip:  47.40 kB
+dist/assets/KnowledgeBaseEditorModal-DS_Khvc7.js                               179.46 kB │ gzip:  52.29 kB
+dist/assets/AgentList-CSGja1d3.js                                              186.78 kB │ gzip:  41.28 kB
+dist/assets/vendor-markdown-Bvn6XrQj.js                                        301.32 kB │ gzip:  90.03 kB
+dist/assets/AcceptanceConsole-DmPEP2h6.js                                      411.73 kB │ gzip: 108.87 kB
+dist/assets/KnowledgeBase-C2QTya0V.js                                          420.10 kB │ gzip: 118.01 kB
+dist/assets/xlsx-X-X5Jt5r.js                                                   493.82 kB │ gzip: 161.04 kB
+dist/assets/index-BaS_BKGi.js                                                  573.37 kB │ gzip: 160.79 kB
+dist/assets/Settings-CTE6NxdQ.js                                               679.24 kB │ gzip: 172.89 kB
+dist/assets/Workspace-WxWPEnU7.js                                              911.65 kB │ gzip: 284.19 kB
+dist/assets/vendor-highlight-Cl_0UXzy.js                                     1,095.90 kB │ gzip: 361.73 kB
+dist/assets/index-QQ7PrrkD.js                                                1,430.52 kB │ gzip: 459.66 kB
+dist/assets/vendor-mermaid-BYLvwiGL.js                                       2,901.82 kB │ gzip: 793.11 kB
+dist/assets/tdesignIconOffline-D-yOfd2A.js                                   3,345.07 kB │ gzip: 956.90 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2m 17s
