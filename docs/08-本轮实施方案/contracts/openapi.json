@@ -729,6 +729,96 @@
                         "refresh_required": false
                       }
                     }
+                  },
+                  "synthetic_block_release_open": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-block-release-task-id",
+                          "project_id": "synthetic-project-id",
+                          "change_set_id": "synthetic-change-set-id",
+                          "target": {
+                            "kind": "ProjectAsset",
+                            "id": "synthetic-asset-id",
+                            "version": "2"
+                          },
+                          "target_revision": 1,
+                          "action": "BLOCK_RELEASE",
+                          "severity": "blocking",
+                          "responsibility_domain": "synthetic-responsibility-domain",
+                          "status": "OPEN",
+                          "causes": [
+                            {
+                              "edge_id": "synthetic-edge-id",
+                              "source": {
+                                "kind": "ProjectAsset",
+                                "id": "synthetic-asset-id",
+                                "version": "1"
+                              },
+                              "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。"
+                            }
+                          ],
+                          "version": 1,
+                          "closure_evidence": [],
+                          "created_at": "2026-10-18T00:00:00Z",
+                          "updated_at": "2026-10-18T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_block_release_closed": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-block-release-task-id",
+                          "project_id": "synthetic-project-id",
+                          "change_set_id": "synthetic-change-set-id",
+                          "target": {
+                            "kind": "ProjectAsset",
+                            "id": "synthetic-asset-id",
+                            "version": "2"
+                          },
+                          "target_revision": 1,
+                          "action": "BLOCK_RELEASE",
+                          "severity": "blocking",
+                          "responsibility_domain": "synthetic-responsibility-domain",
+                          "status": "DONE",
+                          "causes": [
+                            {
+                              "edge_id": "synthetic-edge-id",
+                              "source": {
+                                "kind": "ProjectAsset",
+                                "id": "synthetic-asset-id",
+                                "version": "1"
+                              },
+                              "reason": "Owner 明确同意把这份合成资料用于模型生成（许可钉在这一版资料修订上）。"
+                            }
+                          ],
+                          "version": 2,
+                          "closure_evidence": [
+                            {
+                              "kind": "ComputationReceipt",
+                              "id": "synthetic-delivery-check-receipt",
+                              "version": "9b6d707ae6d5f6e73fc0fe4670907911fe6be80ffb12aab949c5332d9f7b1284"
+                            }
+                          ],
+                          "created_at": "2026-10-18T00:00:00Z",
+                          "updated_at": "2026-10-18T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
                   }
                 }
               }
@@ -1118,6 +1208,54 @@
                         "context_revision": 1,
                         "status": "STABILIZED",
                         "blockers": [],
+                        "checked_at": "2026-10-18T00:00:00Z",
+                        "stale_task_ids": []
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_blocked_open_task": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "change_set_id": "synthetic-change-set-id",
+                        "context_revision": 1,
+                        "status": "BLOCKED",
+                        "blockers": [
+                          {
+                            "code": "impact_task_open",
+                            "target_id": "synthetic-block-release-task-id",
+                            "reason": "BLOCK_RELEASE"
+                          }
+                        ],
+                        "checked_at": "2026-10-18T00:00:00Z",
+                        "stale_task_ids": []
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "synthetic_blocked_stale_object": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "change_set_id": "synthetic-change-set-id",
+                        "context_revision": 1,
+                        "status": "BLOCKED",
+                        "blockers": [
+                          {
+                            "code": "impact_object_stale",
+                            "target_id": "synthetic-asset-id",
+                            "reason": "受影响对象的版本已被替换，需重新评估影响"
+                          }
+                        ],
                         "checked_at": "2026-10-18T00:00:00Z",
                         "stale_task_ids": []
                       },
@@ -40853,6 +40991,11 @@
       "CheckResult": {
         "type": "object",
         "properties": {
+          "receipt_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "本次交付检查的计算回执 ID。checkCurrent 的每次成功响应都带它：服务端先把这次检查的计算回执落库，再把回执 ID 写进响应体。它与 getImpactComputationReceipt 读回的是同一个回执。冻结快照里的 check 不带这个字段——那是 Evaluate 的结果，不是回执。"
+          },
           "project_version": {
             "type": "integer",
             "minimum": 0
