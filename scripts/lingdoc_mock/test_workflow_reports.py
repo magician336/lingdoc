@@ -100,9 +100,14 @@ class WorkflowReportTest(unittest.TestCase):
             runner.run()
         report = runner.report("completed")
         self.assertEqual(sorted(report),
-                         ["completed_steps", "manual_assertions", "material_gate_stages",
-                          "provider_semantics_status",
+                         ["completed_steps", "manual_assertions", "manual_decisions", "material_gate_stages",
+                          "provider_semantics_status", "run_id",
                           "runner_status", "steps", "total_steps", "verification_scope", "workflow"])
+        # The batch this record is one run of: a human judgement names the
+        # batch it belongs to, so a report that cannot name its batch cannot
+        # say which judgements it read.
+        self.assertEqual(report["run_id"], runner.run_id)
+        self.assertEqual(report["manual_decisions"], [])
 
     def test_main_creates_report_parent_before_provider_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
