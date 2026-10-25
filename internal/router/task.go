@@ -2,8 +2,10 @@ package router
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
 )
 
@@ -69,25 +72,157 @@ func readRedisOpTimeoutMs() int {
 	return defaultRedisOpTimeoutMs
 }
 
-func getAsynqRedisClientOpt() *asynq.RedisClientOpt {
-	db := 0
-	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
-		if parsed, err := strconv.Atoi(dbStr); err == nil {
-			db = parsed
+// AsynqQueueDBEnv names the environment variable that selects the Redis
+// database index the ASYNC TASK QUEUE lives in.
+//
+// WHY THIS EXISTS (ticket #670): asynq v0.26 has NO namespace concept --
+// its RedisClientOpt carries no Namespace field and the package never
+// namespaces its own keys -- and REDIS_PREFIX does not reach asynq's keys.
+// Two deployments that share one Redis database therefore share ONE queue,
+// and whichever worker polls first executes the task. On 2026-10-25 that is
+// how a document-processing task enqueued by an embedding-budget deployment
+// was executed by a chat-budget deployment, which then refused the embedding
+// model ("model is outside the acceptance budget profile"): the embedding
+// pipeline silently never ran, and the failure showed up in the OTHER
+// deployment's log.
+//
+// The queue gets its OWN database index so a deployment can isolate its queue
+// without moving its cache and stream keys (those read REDIS_DB).
+//
+// Default: REDIS_DB. A deployment that sets nothing keeps exactly today's
+// behaviour, including sharing one queue with its siblings.
+const AsynqQueueDBEnv = "LINGDOC_ASYNQ_REDIS_DB"
+
+// The sources an asynqQueueIdentity can come from. The source is recorded so
+// the startup log can say WHICH setting put this process on this queue.
+const (
+	asynqQueueDBSourceQueueEnv = "queue-db-env"
+	asynqQueueDBSourceRedisDB  = "redis-db-env"
+	asynqQueueDBSourceDefault  = "default"
+)
+
+// asynqQueueIdentity is the queue's identity: which Redis database index the
+// queue lives in, and where that value came from.
+//
+// It exists so the enqueuing client and the worker servers can never
+// disagree about the queue. Both read it through
+// getAsynqRedisClientOpt(), which is the single construction point for every
+// asynq client and server in this process. A mismatch between "who enqueues"
+// and "who dequeues" is exactly the failure mode ticket #670 is about, so the
+// identity is resolved in ONE place and both sides use it.
+type asynqQueueIdentity struct {
+	// DBIndex is the Redis database index the queue lives in.
+	DBIndex int
+	// Source names where DBIndex came from: "queue-db-env" (the queue's own
+	// setting), "redis-db-env" (the shared Redis database) or "default".
+	Source string
+}
+
+// redisConnection is the connection part of the Redis settings: address,
+// credentials and TLS. The DATABASE INDEX is deliberately NOT part of it: the
+// queue resolves its own (readAsynqQueueIdentity) and the application-level
+// client resolves REDIS_DB. Keeping the shared part in one place means a new
+// connection setting cannot be added to one caller and forgotten in the other.
+type redisConnection struct {
+	Addr     string
+	Username string
+	Password string
+	TLS      *tls.Config
+}
+
+func readRedisConnection() redisConnection {
+	return redisConnection{
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Username: os.Getenv("REDIS_USERNAME"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		TLS:      common.RedisTLSConfig(),
+	}
+}
+
+// readAsynqQueueIdentity resolves the queue's Redis database index.
+//
+// Precedence: LINGDOC_ASYNQ_REDIS_DB (the queue's own index) wins over
+// REDIS_DB (the Redis database everything else shares). An unparsable value is
+// NOT silently ignored: it falls back to REDIS_DB and says so, because a typo
+// in the isolation setting would otherwise put the process back on a shared
+// queue without anyone noticing.
+//
+// The parsing is deliberately as strict as it was before this setting existed:
+// the value is used exactly as REDIS_DB always was, so a deployment that sets
+// nothing behaves byte for byte as before.
+func readAsynqQueueIdentity() asynqQueueIdentity {
+	if raw := os.Getenv(AsynqQueueDBEnv); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			return asynqQueueIdentity{DBIndex: parsed, Source: asynqQueueDBSourceQueueEnv}
+		}
+		log.Printf("asynq queue: %s=%q is not a database index; falling back to REDIS_DB",
+			AsynqQueueDBEnv, raw)
+	}
+	if raw := os.Getenv("REDIS_DB"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			return asynqQueueIdentity{DBIndex: parsed, Source: asynqQueueDBSourceRedisDB}
 		}
 	}
+	return asynqQueueIdentity{DBIndex: 0, Source: asynqQueueDBSourceDefault}
+}
+
+// asynqQueueLogFields states which queue a worker pool serves.
+//
+// The queue identity is in the startup log because its ABSENCE is what made
+// the #670 incident invisible: two deployments served the SAME queue and
+// nothing said so, so the failure appeared in the wrong deployment's log and
+// sent the investigation after the model row and the endpoint. An operator
+// comparing two deployments must be able to see at a glance that they are on
+// different queues -- or that they are not.
+func asynqQueueLogFields() string {
+	queue := readAsynqQueueIdentity()
+	return fmt.Sprintf("queue_redis_db=%d queue_db_source=%s", queue.DBIndex, queue.Source)
+}
+
+// QueueRedisClient is the Redis client of the ASYNC TASK QUEUE's database.
+//
+// It is a distinct type on purpose: the queue may live in its OWN database
+// (LINGDOC_ASYNQ_REDIS_DB) while the application-level Redis client stays on
+// REDIS_DB. Everything that inspects the QUEUE -- the task inspector, the
+// runtime task list, the cancel-by-knowledge path -- must use this client:
+// inspecting the wrong database reports "no tasks" for everything and breaks
+// the cancel path SILENTLY.
+type QueueRedisClient struct {
+	*redis.Client
+}
+
+// NewAsynqQueueRedisClient builds the Redis client for the queue's database.
+//
+// It does not ping: a PING succeeds on any database, so it would not prove
+// anything about the database index. The asynq client pings on startup
+// (NewAsyncqClient), and a wrong address therefore still fails fast.
+func NewAsynqQueueRedisClient() QueueRedisClient {
+	queue := readAsynqQueueIdentity()
+	connection := readRedisConnection()
+	return QueueRedisClient{Client: redis.NewClient(&redis.Options{
+		Addr:      connection.Addr,
+		Username:  connection.Username,
+		Password:  connection.Password,
+		DB:        queue.DBIndex,
+		TLSConfig: connection.TLS,
+	})}
+}
+
+func getAsynqRedisClientOpt() *asynq.RedisClientOpt {
+	queue := readAsynqQueueIdentity()
+	connection := readRedisConnection()
 	timeoutMs := readRedisOpTimeoutMs()
 	opt := &asynq.RedisClientOpt{
-		Addr:        os.Getenv("REDIS_ADDR"),
-		Username:    os.Getenv("REDIS_USERNAME"),
-		Password:    os.Getenv("REDIS_PASSWORD"),
+		Addr:        connection.Addr,
+		Username:    connection.Username,
+		Password:    connection.Password,
 		ReadTimeout: time.Duration(timeoutMs) * time.Millisecond,
 		// Writes are typically more sensitive to congestion than reads
 		// (RESP pipelining, BRPOPLPUSH on Asynq dequeue), so we keep
 		// WriteTimeout slightly larger to absorb head-of-line stalls.
 		WriteTimeout: time.Duration(timeoutMs*2) * time.Millisecond,
-		DB:           db,
-		TLSConfig:    common.RedisTLSConfig(),
+		DB:           queue.DBIndex,
+		TLSConfig:    connection.TLS,
 	}
 	return opt
 }
@@ -171,8 +306,8 @@ func resolveWorkerPoolConcurrency(svc interfaces.SystemSettingService) types.Wor
 // NewCoreAsynqServer runs document and manual parsing with guaranteed capacity.
 func NewCoreAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	allocation := resolveWorkerPoolConcurrency(svc)
-	log.Printf("asynq core-pool server starting with concurrency=%d total_upstream=%d redis_op_timeout=%dms",
-		allocation.Core, allocation.UpstreamTotal(), readRedisOpTimeoutMs())
+	log.Printf("asynq core-pool server starting with concurrency=%d total_upstream=%d redis_op_timeout=%dms %s",
+		allocation.Core, allocation.UpstreamTotal(), readRedisOpTimeoutMs(), asynqQueueLogFields())
 	return newAsynqServer(allocation.Core, types.QueueWeightsForPool(types.WorkerPoolCore))
 }
 
@@ -181,8 +316,8 @@ func NewCoreAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 // long-running document parses in QueueDefault.
 func NewPostProcessAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	allocation := resolveWorkerPoolConcurrency(svc)
-	log.Printf("asynq postprocess-pool server starting with concurrency=%d total_upstream=%d",
-		allocation.PostProcess, allocation.UpstreamTotal())
+	log.Printf("asynq postprocess-pool server starting with concurrency=%d total_upstream=%d %s",
+		allocation.PostProcess, allocation.UpstreamTotal(), asynqQueueLogFields())
 	return newAsynqServer(allocation.PostProcess, types.QueueWeightsForPool(types.WorkerPoolPostProcess))
 }
 
@@ -190,8 +325,8 @@ func NewPostProcessAsynqServer(svc interfaces.SystemSettingService) *asynq.Serve
 // question generation without consuming core parsing capacity.
 func NewEnrichmentAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	allocation := resolveWorkerPoolConcurrency(svc)
-	log.Printf("asynq enrichment-pool server starting with concurrency=%d total_upstream=%d",
-		allocation.Enrichment, allocation.UpstreamTotal())
+	log.Printf("asynq enrichment-pool server starting with concurrency=%d total_upstream=%d %s",
+		allocation.Enrichment, allocation.UpstreamTotal(), asynqQueueLogFields())
 	return newAsynqServer(allocation.Enrichment, types.QueueWeightsForPool(types.WorkerPoolEnrichment))
 }
 
@@ -200,8 +335,8 @@ func NewEnrichmentAsynqServer(svc interfaces.SystemSettingService) *asynq.Server
 // tasks are drained safely during rolling upgrades.
 func NewMaintenanceAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	allocation := resolveWorkerPoolConcurrency(svc)
-	log.Printf("asynq maintenance-pool server starting with concurrency=%d total_upstream=%d",
-		allocation.Maintenance, allocation.UpstreamTotal())
+	log.Printf("asynq maintenance-pool server starting with concurrency=%d total_upstream=%d %s",
+		allocation.Maintenance, allocation.UpstreamTotal(), asynqQueueLogFields())
 	return newAsynqServer(allocation.Maintenance, types.QueueWeightsForPool(types.WorkerPoolMaintenance))
 }
 
@@ -210,8 +345,8 @@ func NewMaintenanceAsynqServer(svc interfaces.SystemSettingService) *asynq.Serve
 // queues: every task is still executed by exactly one worker.
 func NewSharedAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	allocation := resolveWorkerPoolConcurrency(svc)
-	log.Printf("asynq shared-pool server starting with concurrency=%d total_upstream=%d",
-		allocation.Shared, allocation.UpstreamTotal())
+	log.Printf("asynq shared-pool server starting with concurrency=%d total_upstream=%d %s",
+		allocation.Shared, allocation.UpstreamTotal(), asynqQueueLogFields())
 	return newAsynqServer(allocation.Shared, types.QueueWeightsForSharedPool())
 }
 
@@ -222,7 +357,8 @@ func NewSharedAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 // pipeline from starving wiki (and vice-versa) during concurrent uploads.
 func NewWikiAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	concurrency := resolveWorkerPoolConcurrency(svc).Wiki
-	log.Printf("asynq wiki-pool server starting with concurrency=%d", concurrency)
+	log.Printf("asynq wiki-pool server starting with concurrency=%d %s",
+		concurrency, asynqQueueLogFields())
 	return newAsynqServer(concurrency, types.QueueWeightsForPool(types.WorkerPoolWiki))
 }
 

@@ -1160,7 +1160,7 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 
 | 项 | 实测事实 |
 | --- | --- |
-| 代码事实 | `internal/router/task.go:72-93` 的 `getAsynqRedisClientOpt()` 只读 `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`，**不设 asynq namespace** ⇒ **`REDIS_PREFIX` 隔离不了任务队列** |
+| 代码事实 | **（#670 修复前的状态）** `internal/router/task.go` 的 `getAsynqRedisClientOpt()` 只读 `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`，**不设 asynq namespace**（asynq v0.26 全包无 namespace 概念）⇒ **`REDIS_PREFIX` 隔离不了任务队列** ⇒ 修复＝票 **#670**（队列的 Redis DB 索引成为受支持的配置面，PR #673） |
 | 环境事实 | 18096（embedding profile）与 18087（chat profile）都连 `127.0.0.1:6381` / **Redis DB 1**，只有 key 前缀不同 ⇒ 同一条队列 |
 | 现象 | 18096 上 `POST /api/v1/knowledge/:id/reparse` 排的任务**两次都被 18087 取走**：失败原文在 **`server-trackd.stdout.log`**（不在 18096 的日志里）；18096 的 `llm_debug_embedding/` **0 文件**（**该计数截至 21:30 那两轮**；隔离队列后的第三轮在该目录留下了 1 个文件）；embedding 账本（`.calls.json`）**当时不存在** ⇒ **真实 provider 请求 0 次** |
 | 错误身份 | `model is outside the acceptance budget profile`＝chat profile 的 `allowedModels` 只有 `qwen3.8-flash` ⇒ embedding 模型在 **transport 之前**被拒（`ledger.go:230` 的 `ProfileAllowsModel`） |

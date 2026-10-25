@@ -1108,6 +1108,24 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             # #546 的守护：该 profile 下的 chat 调用被拒（且不写账本），四个 chat profile 下的
             # chat 调用照旧可用。
             ("internal/lingdoc/workspace/generation_embedding_profile_chat_refusal_test.go", "file"),
+            # 2026-10-25 #670（asynq 队列跨实例隔离）：asynq v0.26 没有 namespace 概念
+            # （RedisClientOpt 里没有该字段），REDIS_PREFIX 也管不到 asynq 的键 ⇒ 两个部署
+            # 只要连同一个 Redis 数据库就是**同一条队列**，任务会被先 poll 到的那个实例执行
+            # （2026-10-25 的 embedding 授权轮实测：embedding 预算的部署排的文档处理任务被
+            # chat 预算的部署取走，在那边按 chat 白名单被拒）。本文件此前**无主**
+            # （不在任何面的路径集里），现由 PF-14 认领：它是**队列身份的唯一真相源**
+            # ——enqueue 的 client 与 6 个 worker pool 都从这里读队列的 DB 索引。
+            ("internal/router/task.go", "file"),
+            # #670 的守护：队列 DB 索引的配置优先级（队列专用设置 > REDIS_DB > 0）、不可解析值
+            # 不被静默忽略、启动日志里的队列身份可见，以及「同一 Redis 上两个队列世界互不消费
+            # 对方任务」的行为验证（miniredis 里真跑 asynq worker ＋ 同库对照）。
+            ("internal/router/task_queue_isolation_test.go", "file"),
+            # #670：task inspector 必须查**队列自己的库** —— 队列被隔离到自己的 DB 索引后，
+            # 查应用级 Redis 的 inspector 会对一切任务报「没有任务」，按 knowledge 取消任务
+            # 的路径随之静默失效。此文件此前无主，现由 PF-14 认领。
+            ("internal/router/task_inspector.go", "file"),
+            # #670：组合根（dig 装配）里把队列的 Redis client 接到 inspector 上。
+            ("internal/container/container.go", "file"),
             # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
             ("internal/models/acceptancebudget/token_budget_state.go", "file"),
             # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。
