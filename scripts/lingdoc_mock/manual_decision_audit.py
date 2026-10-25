@@ -162,6 +162,24 @@ def validate_record(record: Any) -> dict[str, str]:
     return normalized
 
 
+def _envelope_records(document: Any) -> list[Any] | None:
+    """The records inside a transport envelope, if this document is one.
+
+    The server answers an audit export with an envelope - the records live
+    under ``data`` - while this module reads records.  Opening the envelope
+    is a READ-side adaptation: it says where the records are, nothing more.
+    The comparison itself is untouched, so a record that came out of an
+    envelope is compared exactly as it would have been without one, and an
+    envelope can never make a judgement look proved that is not.
+    """
+    if not isinstance(document, dict):
+        return None
+    payload = document.get("data")
+    if isinstance(payload, list):
+        return payload
+    return None
+
+
 def _read_records(text: str, where: str) -> list[Any]:
     """Read a ledger or an audit export: a JSON array, or one object per line."""
     stripped = text.strip()
@@ -185,6 +203,33 @@ def _read_records(text: str, where: str) -> list[Any]:
         except json.JSONDecodeError as error:
             raise ManualDecisionError(f"{where}:{number} is not a JSON object: {error}") from error
     return records
+
+
+def _read_audit_records(text: str, where: str) -> list[Any]:
+    """Read an audit export: a JSON array, one object per line, or an envelope.
+
+    The server answers an audit export with an envelope - the records live
+    under ``data`` - while this module reads records.  Opening the envelope
+    is a READ-side adaptation: it says where the records are, nothing more.
+    The comparison itself is untouched, so a record that came out of an
+    envelope is compared exactly as it would have been without one, and an
+    envelope can never make a judgement look proved that is not.
+
+    Only the audit door opens an envelope.  A ledger is a list of
+    judgements and never an envelope, so a judgement that happens to carry
+    a ``data`` key is still one judgement.
+    """
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        try:
+            document = json.loads(stripped)
+        except json.JSONDecodeError:
+            document = None
+        if isinstance(document, dict):
+            payload = _envelope_records(document)
+            if payload is not None:
+                return payload
+    return _read_records(text, where)
 
 
 def load_ledger(path: Path | str) -> list[Any]:
@@ -236,7 +281,7 @@ def _fetch_audit_records(url: str, opener: Any = None) -> list[Any]:
             body = response.read().decode("utf-8")
     except OSError as error:
         raise ManualDecisionError(f"cannot read the audit source {url}: {error}") from error
-    return _read_records(body, url)
+    return _read_audit_records(body, url)
 
 
 def load_audit_source(source: Path | str | None, opener: Any = None) -> list[Any]:
@@ -255,7 +300,7 @@ def load_audit_source(source: Path | str | None, opener: Any = None) -> list[Any
         body = target.read_text(encoding="utf-8")
     except OSError as error:
         raise ManualDecisionError(f"cannot read the audit source {target}: {error}") from error
-    return _read_records(body, str(target))
+    return _read_audit_records(body, str(target))
 
 
 def audit_index(records: Iterable[Any]) -> dict[str, dict[str, Any]]:
