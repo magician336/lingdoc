@@ -1084,6 +1084,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("scripts/ci/test_lingdoc_controlled_window.py", "file"),
             # #583 的 profile 配置表：把「单值判断」改成按 profile 取配置（v1 的取值逐字段不变，v2 新增 4 次调用与累计 90,000 token 的预留闸门）。
             ("internal/models/acceptancebudget/profile_config.go", "file"),
+            # 2026-10-25 #546（embedding 授权执行）：本面在 profile 配置表里**新增一行**受控
+            # embedding profile（4 次调用 ＋ 8000 token 累计 ＋ 16000 输入上限 ＋ 0 输出上限）——
+            # 既有 profile 的取值逐字未变（守护逐项断言），新增的 profile 与它的常量/计价基准
+            # 在下面两条路径里。
+            # #546 的受控 embedding profile 的常量与计价基准：profile 名、4 次调用、8000 token
+            # 累计上限、16000 输入上限、0 输出上限、金额上限（＝单次最大调用 × embedding 输入价）。
+            ("internal/models/acceptancebudget/qwen_token_budget.go", "file"),
+            # #546 的守护：embedding profile 的四项上限、模型白名单（放行两个 embedding 模型、
+            # **拒绝 chat 模型** ⇒ 该 profile 下进程发不出 chat 调用）、账本自带自己的上限与
+            # 计价基准、账本可被自己的校验器读回、**既有 profile 逐字未变**。
+            ("internal/models/acceptancebudget/qwen_embedding_profile_test.go", "file"),
             # #583 的三个量的统一读取口：预留额度 / provider 实际 usage / 累计剩余额度（usage 不可核实时 RemainingActual 为 nil，不是 0）。
             ("internal/models/acceptancebudget/token_budget_state.go", "file"),
             # #583 的守护：v2 的调用数上限、累计预留闸门、usage 不可核实即停窗、旧 profile 逐字未变、并发只能一个通过。

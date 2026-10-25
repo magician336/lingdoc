@@ -95,6 +95,64 @@ const (
 	// therefore cannot be reached by the calls this profile authorizes; it
 	// is the second line of defence behind the call count.
 	QwenV2CumulativeTokenMax = 90000
+
+	// QwenEmbeddingProfile is the CONTROLLED EMBEDDING profile.
+	//
+	// It is a NEW profile, not a new meaning for an existing name: the chat
+	// profiles' call counts, token ceilings and ledgers were gathered against
+	// their own exact numbers, and giving an existing name a new meaning would
+	// silently change what an old ledger says.
+	//
+	// It exists because the chat profiles approve exactly one model -- the Qwen
+	// chat model -- and therefore refuse every embedding model BEFORE the
+	// request leaves the process. A profile that may not reserve the embedding
+	// model cannot express "four embedding calls, eight thousand tokens".
+	QwenEmbeddingProfile = "lingdoc-qwen-embedding-budget-20261025"
+
+	// QwenEmbeddingMaxCalls is the number of external requests the embedding
+	// profile allows.
+	//
+	// It counts the calls THIS profile makes. The chat calls belong to the
+	// chat profile's ledger, and the two ledgers are not added together.
+	QwenEmbeddingMaxCalls = 4
+
+	// QwenEmbeddingCumulativeTokenMax is the ceiling of the CUMULATIVE token
+	// reservation of one window under the embedding profile.
+	//
+	// It is the second line of defence behind the call count, and it is the
+	// ceiling the authorization names: four calls, eight thousand tokens.
+	QwenEmbeddingCumulativeTokenMax = 8000
+
+	// QwenEmbeddingInputMax is the input ceiling of ONE embedding call. It is
+	// the same bound the chat profiles use, so no call is larger than the
+	// authorization allows.
+	QwenEmbeddingInputMax = 16000
+
+	// QwenEmbeddingOutputMax is the output ceiling of one embedding call. It is
+	// ZERO because an embedding call produces no output tokens: the provider
+	// returns vectors, not text, and a request that carried an output limit
+	// would be a request for something an embedding endpoint does not do.
+	QwenEmbeddingOutputMax = 0
+
+	// QwenEmbeddingTotalMax is the ceiling of input plus output of one
+	// embedding call.
+	QwenEmbeddingTotalMax = QwenEmbeddingInputMax + QwenEmbeddingOutputMax
+
+	// QwenEmbeddingMaxReserveNanoCNY is the money ceiling of the embedding
+	// profile.
+	//
+	// It is the money value of ONE maximum-size call, at the embedding input
+	// price: 16,000 tokens x 500 nano-CNY. The cumulative token ceiling keeps
+	// the window's total inside 8,000 tokens, which is half of it, so the money
+	// gate never binds before the token gate does -- the two ceilings describe
+	// the same window, and neither of them can be reached by spending the
+	// other's budget.
+	QwenEmbeddingMaxReserveNanoCNY = int64(QwenEmbeddingInputMax) * QwenNanoCNYPerToken
+
+	// QwenEmbeddingBackstopCNY is the human backstop of the embedding profile,
+	// in whole CNY. The money ceiling above is 0.008 CNY, so one CNY is a
+	// hundred times the authorized window.
+	QwenEmbeddingBackstopCNY = 1
 )
 
 // The cost basis values a ledger can carry.
@@ -111,6 +169,15 @@ const (
 	// CostBasisDeepSeekPeakUSD marks the DeepSeek money basis: the peak
 	// published rates captured for 2026-09-29, cache treated as a miss.
 	CostBasisDeepSeekPeakUSD = "deepseek_peak_usd_2026_09_29"
+	// CostBasisQwenEmbeddingNanoCNY marks the embedding money basis: the
+	// per-input-token embedding price, in nano-CNY.
+	//
+	// It is a basis of its own because the DeepSeek basis names a different
+	// price list, and a ledger that carries one basis must not be read as if
+	// it carried the other. An embedding call has a real price -- that is why
+	// the embedding models have one at all -- so its amount is computed, and
+	// this is the name that says what the number means.
+	CostBasisQwenEmbeddingNanoCNY = "qwen_embedding_nano_cny_2026_10_25"
 )
 
 // The usage status values a request can carry.

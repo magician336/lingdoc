@@ -124,6 +124,21 @@ var profileConfigs = map[string]profileConfig{
 		// one call is loosened by allowing more calls.
 		cumulativeTokenMax: QwenV2CumulativeTokenMax,
 	},
+	QwenEmbeddingProfile: {
+		family:        profileFamilyQwen,
+		maxCalls:      QwenEmbeddingMaxCalls,
+		nanoCNY:       QwenEmbeddingMaxReserveNanoCNY,
+		backstopCNY:   QwenEmbeddingBackstopCNY,
+		inputMax:      QwenEmbeddingInputMax,
+		outputMax:     QwenEmbeddingOutputMax,
+		totalMax:      QwenEmbeddingTotalMax,
+		costBasis:     CostBasisQwenEmbeddingNanoCNY,
+		approvedModel: QwenEmbedding,
+		allowedModels: []string{QwenEmbedding, QwenEmbeddingFlash},
+		// The cumulative token ceiling is the window the authorization
+		// names: four calls, eight thousand tokens.
+		cumulativeTokenMax: QwenEmbeddingCumulativeTokenMax,
+	},
 }
 
 // defaultProfileConfig answers for a profile name nobody declared.
