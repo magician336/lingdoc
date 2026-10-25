@@ -1166,7 +1166,7 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 | 错误身份 | `model is outside the acceptance budget profile`＝chat profile 的 `allowedModels` 只有 `qwen3.8-flash` ⇒ embedding 模型在 **transport 之前**被拒（`ledger.go:230` 的 `ProfileAllowsModel`） |
 | 阶段记录 | `knowledge_processing_spans`：`embedding` 阶段 `failed`、`error_detail=model is outside the acceptance budget profile`、`duration_ms` ＝ **3042**（21:02 那次）／**3013**（21:30 那次）＝ 5 次尝试之间的 4 次退避（200/400/800/1600 ms）之和 ⇒ 每次都**立即失败** |
 | 被排除的方向 | 隔离库的 embedding 模型行**与 chat 行同端点同密文**（`base_url`＝`https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`，`api_key` 密文**逐字节相同**）；profile 白名单与端点白名单**实测全部通过** ⇒ 先前怀疑的「模型行/端点/provider 路由」三个方向均被实测排除 |
-| 环境侧处置 | 18096 改用 **Redis DB 2**（实测原为 0 键）⇒ 队列隔离生效（DB 2 里只有它自己的 6 个 worker 注册，DB 1 里没有它）。**18087／18095 全程未停未重启** |
+| 环境侧处置 | 18096 改用 **Redis DB 2**（实测原为 0 键）⇒ 队列隔离生效（DB 2 里只有它自己的 6 个 worker 注册，DB 1 里没有它）。**18087／18095 全程未停未重启** —— **进程启动时间可证**：18087（pid 59008）起于 `2026-10-25T09:33:36`（已运行 12.8 h）、18095（pid 80248）起于 `17:08:35`（5.2 h），二者都早于本轮且启动时间未变；18096 则是本轮新起的（pid 29004，起于 `21:53:24`）。证据：`logs\process-lifetime-20261025.txt`（sha256 `F5934FD3…`） |
 
 ⇒ 该缺陷的真实危害是**跨实例的受控预算会互相串**（任务在错误的 profile 下执行 ⇒ 看起来像产品缺陷，其实是队列串台），且失败信息出现在**错误的服务的日志里** ⇒ 排查方向被带偏。已立票 **#670**（namespace 隔离 / payload 带执行者 / 两者都做，验收要求含「A 排的任务必须由 A 执行、两边账本不得互串」）。
 
