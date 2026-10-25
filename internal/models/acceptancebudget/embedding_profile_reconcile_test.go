@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go/build"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -241,19 +241,29 @@ func TestTheBudgetPackageNeverTalksToAProvider(t *testing.T) {
 	// provider request -- which is what makes "the recovery triggers no
 	// provider request" a property rather than a promise.
 	//
-	// The imports are read from every production FILE of the package.
+	// The imports are read from EVERY .go file of the package -- the test
+	// files and the ones the build constraints exclude on this platform
+	// included. go/build's GoFiles would cover only what THIS platform
+	// compiles, so a network import hidden in a _test.go or in an OS-specific
+	// file would slip through, and the coverage would change with the OS
+	// (CI only runs Linux).
+	//
 	// parser.ParseDir is deliberately NOT used: it never fills
 	// ast.Package.Imports (that field is deprecated and always empty), so a
 	// check iterating it would pass by inspecting NOTHING -- and the function
 	// itself is deprecated since Go 1.25 (staticcheck SA1019), which fails
 	// the lint gate on its own.
-	build, err := build.Default.ImportDir(".", 0)
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("read the package sources: %v", err)
+		t.Fatalf("read the package directory: %v", err)
 	}
 	fset := token.NewFileSet()
 	inspected := 0
-	for _, name := range build.GoFiles {
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
 		file, err := parser.ParseFile(fset, name, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
