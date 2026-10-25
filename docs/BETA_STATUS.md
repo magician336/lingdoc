@@ -1137,4 +1137,3 @@ F01-06c 原文：「变更集评估后才允许应用；服务端的合法前态
 - 产物目录：`D:\wt\lingdoc-485-evidence\browser-run-20261025\`（`parity.json`、`http-readback.json`、`browser-readback.json`、`state-before.json`、`state-after.json`、`delivery-panel.png`（真实前端「交付」面板截图，人工可复核）、`run-summary.json`、`evidence-index.json`）
 - 复核脚本：`D:\wt\lingdoc-485-evidence\scripts\exp_633_browser_check.py`（幂等）、`exp_636_browser_shot.mjs`
 - 跟进票 **#480** 的「浏览器端到端 / 三方一致性实测」缺口，**本项已解除**。
-
