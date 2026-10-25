@@ -1,0 +1,56 @@
+Browser tab: 7, Title: "WeKnora", URL: "http://127.0.0.1:39501/platform/lingdoc".
+1 AXWebArea WeKnora, URL: 127.0.0.1:39501/platform/lingdoc
+	2 container app
+		3 container
+			4 container 搜索
+			5 text 新对话
+			6 text 知识库
+			7 text 智能体
+			8 text 灵档项目
+			9 text 暂无对话
+			10 container
+				11 text R R3-合成Owner's Workspace R3-合成操作者 ·
+				12 image
+				13 text 编辑
+				14 image
+		15 container
+			16 heading 灵档文稿, Value: 1
+				17 text 灵档文稿
+			18 text 写作 · 来源 · 核查 · 交付
+			19 checkbox 收起目录, Value: 1
+			20 checkbox 收起辅助, Value: 1
+			21 container 工作状态
+				22 checkbox 研究, Value: 1
+				23 checkbox 专注, Value: 0
+			24 text 已保存
+			25 text 本次待核
+			26 text 0
+			27 text 当前章：研究问题
+			28 button 保存文稿
+			29 button (disabled) 提交为正式版本
+			30 button 确认前还需处理 1 项
+			31 button 选段改写
+			32 button 核查
+			33 button 版本
+			34 button 交付
+			35 button 成员与协作权限 →
+			36 pop up button (collapsed) 开发与验收, Secondary Actions: Expand
+			37 container 通知
+				38 button (expanded) 通知 收起, Secondary Actions: Collapse
+					39 text 通知
+					40 text 收起
+				41 button (collapsed) 恢复已丢弃的课题草稿, Secondary Actions: Expand
+					42 text 恢复已丢弃的课题草稿
+			43 container 上下文包
+				44 container
+					45 text 上下文包
+					46 button 返回文稿 ×
+				47 container 当前课题上下文包
+					48 container
+						49 heading 上下文包, Value: 2
+							50 text 上下文包
+						51 text R3-上下文包验收 · 按当前权限预览，不创建对话、不调用模型。
+						52 button 刷新上下文包
+					53 text 无法读取当前课题，可能是权限或服务状态已变化；旧上下文包已清空。请刷新重试。
+
+The focused UI element is 1 AXWebArea WeKnora, URL: 127.0.0.1:39501/platform/lingdoc
