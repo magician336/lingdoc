@@ -52,6 +52,30 @@ Where the difference does not line up, this path refuses to judge at all: a
 check the contract does not declare, the same check twice, a check of a kind
 nobody knows -- none of those is "the run got less far", it is "the two sides
 do not agree", and it is BLOCKED.
+
+What this path says in its own words
+------------------------------------
+
+An assertion nobody judged is not a failed assertion.  A check the contract
+declares and this run never judged used to be published with
+``status: "failed"`` -- so the evidence said of an assertion that nobody had
+produced a fact about that it did not hold.  It now carries a value of its own,
+``not_run``, and a shape of its own, so that it can be told apart from a
+failed check without knowing which list it came from.  The main path counts
+the very same checks the same way (``beta_evidence.NOT_RUN``), so one run
+still does not get two verdicts.
+
+A verdict that was downgraded has to carry the reason of the verdict it now
+is.  The coverage gap used to downgrade the whole report and the main path's
+own verdict while the main path kept the reason of the verdict it had before
+-- "every assertion held, every prose assertion was judged, the provider's
+semantics were verified" -- under a BLOCKED verdict.  The reason now names the
+gap, by the coverage's own fields: the nodes the run did not answer, the order
+it answered them in, the counts it recorded.
+
+This path makes no emptiness judgment about a contract value of its own: every
+value it reads is carried through unchanged, so there is no second rule here
+that could drift away from the runner's.
 """
 from __future__ import annotations
 
@@ -124,6 +148,12 @@ KNOWN_CHECK_KINDS = frozenset(KNOWN_CHECK_OPERATORS)
 #: a check as a failure too (``beta_evidence.check_outcomes``).
 CHECK_PASSED = "passed"
 CHECK_FAILED = "failed"
+#: The status a check the contract declares and this run never judged carries.
+#: It is a value of its own -- neither ``CHECK_FAILED`` nor ``CHECK_PASSED``:
+#: nobody produced a fact about that assertion, so it did not fail, and it did
+#: not hold either.  The main path counts the very same checks the same way
+#: (``beta_evidence.NOT_RUN``), so one run does not get two verdicts.
+CHECK_NOT_RUN = "not_run"
 
 
 def _declared_check(step_id: str, check: Any) -> dict[str, str] | None:
@@ -304,8 +334,8 @@ def _safe_subject(path: Any) -> str:
     return CAPTURED_SUBJECT
 
 
-def _safe_check_entry(entry: dict[str, str]) -> dict[str, str]:
-    """The shape of one check: which node, which kind, which subject.
+def _safe_check_entry(entry: dict[str, str], status: str) -> dict[str, str]:
+    """The shape of one check: which node, which kind, which subject, what happened.
 
     Only the shape is kept -- never the values a check compared -- so that a
     report cannot smuggle a payload into the evidence.
@@ -318,8 +348,27 @@ def _safe_check_entry(entry: dict[str, str]) -> dict[str, str]:
         "operator": (operator if isinstance(operator, str)
                      and SAFE_OPERATOR.fullmatch(operator) else "unknown"),
         "path": _safe_subject(entry.get("path")),
-        "status": CHECK_FAILED,
+        "status": status,
     }
+
+
+def _safe_failed_check_entry(entry: dict[str, str]) -> dict[str, str]:
+    """One check that was judged and did not hold."""
+    return _safe_check_entry(entry, CHECK_FAILED)
+
+
+def _safe_unevaluated_check_entry(entry: dict[str, str]) -> dict[str, str]:
+    """One check the contract declares and this run never judged.
+
+    A shape of its own, on purpose.  "It did not hold" and "nobody produced a
+    fact about it" are two different facts, and an entry that looked the same
+    in both lists could not be read apart: a reader (and a machine) would have
+    to know which list it was looking at to know what the entry meant.  The
+    status says which one it is, and the extra key says it in the shape too.
+    """
+    safe = _safe_check_entry(entry, CHECK_NOT_RUN)
+    safe["evaluated"] = False
+    return safe
 
 
 def _group_by_step(entries: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -357,7 +406,7 @@ def _check_findings(report: dict[str, Any], contract: dict[str, Any]) -> dict[st
     raw = report.get("checks", [])
     if not isinstance(raw, list):
         return {"declared": declared_keys, "evaluated": set(), "duplicated": set(),
-                "failed": [], "unevaluated": [_safe_check_entry(entry) for entry in declared],
+                "failed": [], "unevaluated": [_safe_unevaluated_check_entry(entry) for entry in declared],
                 "problems": ["报告里的 checks 不是列表，判定没有依据。"]}
     for check in raw:
         if not isinstance(check, dict):
@@ -390,8 +439,8 @@ def _check_findings(report: dict[str, Any], contract: dict[str, Any]) -> dict[st
     failed: list[dict[str, str]] = []
     for key in sorted(evaluated - duplicated):
         if occurrences[key][0] != CHECK_PASSED:
-            failed.append(_safe_check_entry({"step_id": key[0], "operator": key[1], "path": key[2]}))
-    unevaluated = [_safe_check_entry(entry) for entry in declared
+            failed.append(_safe_failed_check_entry({"step_id": key[0], "operator": key[1], "path": key[2]}))
+    unevaluated = [_safe_unevaluated_check_entry(entry) for entry in declared
                    if (entry["step_id"], entry["operator"], entry["path"]) not in evaluated]
     return {"declared": declared_keys, "evaluated": evaluated, "duplicated": duplicated,
             "failed": failed, "unevaluated": unevaluated, "problems": problems}
@@ -769,6 +818,40 @@ def _coverage(report: dict[str, Any], expected_step_ids: list[str] | None = None
     }
 
 
+def _coverage_gap_reason(coverage: dict[str, Any]) -> str:
+    """Why the coverage gap downgrades the verdict, in the coverage's own words.
+
+    A degraded verdict that still carries the reason of the verdict it replaced
+    says "everything held" and means "nothing was covered": the two contradict
+    each other, and a reader has no way to tell which one to believe.  So the
+    reason names the gap by the fields that say it happened -- the nodes the
+    run did not answer, the order it answered them in, the counts it recorded
+    -- instead of a sentence that says only that something is missing.
+    """
+    reasons: list[str] = []
+    if not coverage.get("constructed_complete"):
+        missing = [str(part) for part in (coverage.get("missing_parts") or [])]
+        if missing:
+            reasons.append("本轮没有构造出这些部分：" + "、".join(missing))
+        else:
+            reasons.append("本轮没有构造出契约要求的全部部分")
+    if not coverage.get("step_sequence_complete"):
+        missing_ids = [str(step_id) for step_id in (coverage.get("missing_step_ids") or [])]
+        unexpected_ids = [str(step_id) for step_id in (coverage.get("unexpected_step_ids") or [])]
+        detail: list[str] = []
+        if missing_ids:
+            detail.append("没有回答的节点 " + "、".join(missing_ids))
+        if unexpected_ids:
+            detail.append("契约没有声明的节点 " + "、".join(unexpected_ids))
+        reasons.append("本轮回答的节点序列与契约声明的不一致："
+                       + ("；".join(detail) if detail else "顺序对不上"))
+    if not coverage.get("step_counts_complete"):
+        reasons.append("本轮记录的节点计数与契约声明的节点数对不上")
+    if not reasons:
+        reasons.append("覆盖不完整")
+    return "覆盖不完整，判定降级为 BLOCKED：" + "；".join(reasons)
+
+
 def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
     if observation is None:
         return {
@@ -966,6 +1049,28 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
         },
     }
     fixture_digest = digest(fixture_definition)
+    # How the whole and the main path relate
+    # ---------------------------------------
+    # ``main_path.result`` is the verdict of the **main path alone**; the
+    # report's ``result`` is the verdict of the **whole evidence** -- the main
+    # path plus the one failure side-effect fixture.  They are two different
+    # scopes, so they may differ; the rule that says when they may differ is
+    # this one, and ``scripts/ci/test_lingdoc_nonempty_and_evidence_wording.py``
+    # pins it:
+    #
+    # 1. if the main path is not PASS, the whole is the main path's verdict: a
+    #    refusal on the main path cannot be lifted by the failure fixture;
+    # 2. if the main path is PASS, the whole is the failure fixture's verdict:
+    #    the evidence claims a whole, and a whole holds only if both halves
+    #    hold -- so the difference is published in ``failure_path.result``;
+    # 3. a coverage gap (the run did not answer every node the contract
+    #    declares, did not answer them in order, or did not answer them all) is
+    #    a fact about the main path, so it downgrades **both** -- the whole
+    #    becomes BLOCKED and so does the main path.  FAIL outranks it: an
+    #    explicit failure stays FAIL, and the main path keeps the verdict it
+    #    earned.
+    #
+    # The tiers are the ones the main path uses: FAIL > BLOCKED > NOT RUN > PASS.
     result = main_result if main_result != "PASS" else failure["result"]
     if (result != "FAIL" and
             (not coverage["constructed_complete"] or not coverage["step_sequence_complete"]
@@ -976,6 +1081,10 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
         # that says ``main_path.result = "PASS"`` while the whole report says
         # BLOCKED contradicts itself.
         main_result = "BLOCKED"
+        # ... and so is its reason.  A BLOCKED verdict that still carries the
+        # reason of the verdict it replaced says "everything held" and means
+        # "nothing was covered"; the coverage's own fields name the gap.
+        analysis["reason"] = _coverage_gap_reason(coverage)
     return {
         "report_version": 1,
         "scope": "canonical F01 project-to-download path plus one failure side-effect fixture",
