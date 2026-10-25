@@ -8004,6 +8004,16 @@
                       "request_id": "req-demo"
                     }
                   },
+                  "source_stale": {
+                    "value": {
+                      "error": {
+                        "code": "source_stale",
+                        "message": "来源版本或定位已变化，请重新核对来源后再生成。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
                   "idempotency_conflict": {
                     "value": {
                       "error": {

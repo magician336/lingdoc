@@ -337,3 +337,42 @@ func TestTheSurfaceUsesFormsThatDeclareTheirOwnPresentation(t *testing.T) {
 		t.Fatalf("策略拒绝与依赖不可用仍共用错误码 %q", rejected.Code)
 	}
 }
+
+// TestSourceStaleIsDeclaredOnThisSurface 把「来源漂移」钉进这个面的形态清单。
+//
+// 来源漂移是「捕获时的来源快照与当下的复核不一致」：资料被修订了、引文变了、
+// 锚点动了。它以前**不声明**形态，于是传输层回落到 internal_error（500，
+// retryable=true）——而重试同一个请求救不了漂移：那份快照不会自己变回去。
+// 于是调用方被指向了一条永远不成功的重试路径。
+//
+// 三件事同时成立才算数：
+//  1. 这个错误自己声明形态（传输层只渲染，不决定）；
+//  2. 声明出来的形态是 409 source_stale、**不可重试**——重试救不了漂移；
+//  3. 上面那条「一个错误码只有一个可重试取值」的守护的清单里真的有它。清单是
+//     读声明读出来的，所以第 1 条成立时它必然在里面；显式断言是为了让
+//     「它不在清单里」这件事本身也会转红，而不是靠读代码的人记得。
+func TestSourceStaleIsDeclaredOnThisSurface(t *testing.T) {
+	form, ok := clienterror.FormOf(ErrSourceStale)
+	if !ok {
+		t.Fatal("ErrSourceStale 没有声明对外形态")
+	}
+	if form.Status != 409 {
+		t.Fatalf("ErrSourceStale 的状态码 = %d，want 409", form.Status)
+	}
+	if form.Code != "source_stale" {
+		t.Fatalf("ErrSourceStale 的错误码 = %q，want source_stale", form.Code)
+	}
+	if form.Retryable {
+		t.Fatal("ErrSourceStale 标成了可重试，但重复同一个请求救不了来源漂移")
+	}
+	inInventory := false
+	for _, declared := range generationSurfaceForms(t) {
+		if declared.code == "source_stale" {
+			inInventory = true
+			break
+		}
+	}
+	if !inInventory {
+		t.Fatal("生成面的形态清单里没有 source_stale")
+	}
+}
