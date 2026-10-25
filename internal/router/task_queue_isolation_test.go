@@ -107,6 +107,38 @@ func TestTheTaskInspectorReadsTheQueueDatabase(t *testing.T) {
 	}
 }
 
+func TestTheInspectorSeesTheQueuesOwnTasks(t *testing.T) {
+	// asynq keeps the inspector's own fields unexported, so WHICH database it
+	// reads cannot be observed directly. This guard is therefore FUNCTIONAL: a
+	// task enqueued in the QUEUE's database must be visible to the inspector.
+	// An inspector on the application-wide database would report "no tasks"
+	// for everything -- the silent failure the queue's own client prevents.
+	server := miniredis.RunT(t)
+	t.Setenv("REDIS_ADDR", server.Addr())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("REDIS_DB", "1")
+	t.Setenv(AsynqQueueDBEnv, "3")
+
+	queueClient := NewAsynqQueueRedisClient()
+	inspector := NewAsynqInspector(queueClient)
+	client := asynq.NewClientFromRedisClient(queueClient.Client)
+	t.Cleanup(func() { _ = client.Close() })
+
+	if _, err := client.Enqueue(
+		asynq.NewTask(types.TypeDocumentProcess, []byte(`{"knowledge_id":"probe"}`)),
+		asynq.Queue(types.QueueDefault),
+	); err != nil {
+		t.Fatalf("enqueue into the queue's database: %v", err)
+	}
+	pending, err := inspector.ListPendingTasks(types.QueueDefault)
+	if err != nil {
+		t.Fatalf("list pending tasks: %v", err)
+	}
+	if len(pending) == 0 {
+		t.Fatal("the inspector does not see the queue's own tasks; it is looking at another database")
+	}
+}
+
 // startQueueWorld starts one worker pool through the PRODUCTION construction
 // path (newAsynqServer -> getAsynqRedisClientOpt), so the test exercises the
 // same code the running service uses, and returns the channel that receives
