@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"path/filepath"
@@ -239,17 +240,38 @@ func TestTheBudgetPackageNeverTalksToAProvider(t *testing.T) {
 	// all, so neither the recovery nor any other operation in it can send a
 	// provider request -- which is what makes "the recovery triggers no
 	// provider request" a property rather than a promise.
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", nil, parser.ImportsOnly)
+	//
+	// The imports are read from every production FILE of the package.
+	// parser.ParseDir is deliberately NOT used: it never fills
+	// ast.Package.Imports (that field is deprecated and always empty), so a
+	// check iterating it would pass by inspecting NOTHING -- and the function
+	// itself is deprecated since Go 1.25 (staticcheck SA1019), which fails
+	// the lint gate on its own.
+	build, err := build.Default.ImportDir(".", 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read the package sources: %v", err)
 	}
-	for _, pkg := range packages {
-		for imported := range pkg.Imports {
-			if imported == "net" || imported == "net/http" || strings.HasPrefix(imported, "net/") {
-				t.Fatalf("the budget package imports %q; it must stay a local ledger operation", imported)
+	fset := token.NewFileSet()
+	inspected := 0
+	for _, name := range build.GoFiles {
+		file, err := parser.ParseFile(fset, name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		inspected++
+		for _, imported := range file.Imports {
+			value, err := strconv.Unquote(imported.Path.Value)
+			if err != nil {
+				continue
+			}
+			if value == "net" || value == "net/http" || strings.HasPrefix(value, "net/") {
+				t.Fatalf("the budget package imports %q (%s); it must stay a local ledger operation",
+					value, name)
 			}
 		}
+	}
+	if inspected == 0 {
+		t.Fatal("no source file was inspected; the check would pass by looking at nothing")
 	}
 }
 
