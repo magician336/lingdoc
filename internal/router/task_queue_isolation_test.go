@@ -131,11 +131,8 @@ func TestTheInspectorSeesTheQueuesOwnTasks(t *testing.T) {
 		t.Fatalf("enqueue into the queue's database: %v", err)
 	}
 	pending, err := inspector.ListPendingTasks(types.QueueDefault)
-	if err != nil {
-		t.Fatalf("list pending tasks: %v", err)
-	}
-	if len(pending) == 0 {
-		t.Fatal("the inspector does not see the queue's own tasks; it is looking at another database")
+	if err != nil || len(pending) == 0 {
+		t.Fatalf("the inspector does not see the queue's own tasks (err=%v, pending=%d)", err, len(pending))
 	}
 }
 
