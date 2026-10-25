@@ -47,7 +47,7 @@ def _overall_result(results: list[str]) -> str:
 
 def _empty_f01_report() -> dict[str, Any]:
     return {"workflow": "F01", "runner_status": "not_started", "completed_steps": 0,
-            "total_steps": 28, "steps": [], "verification_scope": "not_recorded"}
+            "total_steps": 31, "steps": [], "verification_scope": "not_recorded"}
 
 
 def _empty_runtime_matrix() -> dict[str, Any]:

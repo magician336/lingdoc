@@ -29,7 +29,7 @@ verdicts -- and the release decision read the optimistic one.
 They also pin two facts that go stale silently:
 
 * the number of nodes the F01 contract declares is **read from the contract**
-  (it was written down as 24, and the contract has 28 nodes now);
+  (it was written down as 24, and the contract has 31 nodes now);
 * the second path's expectations come from the contract **as it is on disk**,
   and a disagreement between the contract and the expectations this module was
   loaded with is named instead of being followed silently.

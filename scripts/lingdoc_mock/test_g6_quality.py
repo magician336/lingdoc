@@ -759,11 +759,13 @@ class G6MainPathTest(unittest.TestCase):
 
     def test_r30_declared_receipt_node_is_required_and_status_checked(self):
         main, failure = main_path_evidence.build_mock_main_path_fixture()
-        self.assertEqual(len(main["steps"]), 28)
+        self.assertEqual(len(main["steps"]), 31)
         self.assertEqual([step["step_id"] for step in main["steps"] if step["step_id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{n:02d}" for n in range(7, 24)])
+                         + [f"F01-{n:02d}" for n in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{n:02d}" for n in range(19, 24)])
         complete = main_path_evidence.build_main_path_report(main_report=main, failure_observation=failure)
         self.assertEqual(complete["result"], "PASS")
         missing = copy.deepcopy(main)
