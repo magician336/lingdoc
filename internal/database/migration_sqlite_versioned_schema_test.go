@@ -101,8 +101,9 @@ var versionedSQLiteColumns = map[string][]string{
 // 000053 rebuilds lingdoc_projects in place to widen its status vocabulary
 // (the archived terminal state). 000055 adds the model-call ledger table
 // (55-Spec / #453), so the table set grows by one. 000054 is the audit
-// decision fields (PF-7), which main already records.
-const expectedSQLiteMigrationVersion = 55
+// decision fields (PF-7), which main already records. 000056 makes the
+// adoption idempotency row's chapter_version_id nullable (#693).
+const expectedSQLiteMigrationVersion = 56
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

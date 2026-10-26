@@ -181,7 +181,7 @@ func TestAcceptanceEndpointAnswersAnOldDigestKeyWithExpiry(t *testing.T) {
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: "http-legacy-row", ProjectID: "project-1", ChapterID: "chapter-1", ActorID: "user-1",
 		Key: "http-legacy-key", RequestHash: "legacy-digest", DigestVersion: 1,
-		ChapterVersionID: "version-1", ResponseJSON: "{}",
+		ChapterVersionID: stringPtr("version-1"), ResponseJSON: "{}",
 	}).Error)
 	confirmation := adoptionConfirmationBody(t, nil)
 	recorder := postAcceptance(t, router, "http-legacy-key", confirmation)
