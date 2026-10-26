@@ -3309,13 +3309,13 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 						return nil, ErrSourceUnavailable
 					}
 					result[i].CitationStatuses = append(result[i].CitationStatuses, status)
-					if status.Status == "unavailable" {
+					if status.Status == CitationStatusUnavailable {
 						// A revoked source invalidates the derived chapter read.  Returning
 						// a redacted 200 here leaves a caller with a seemingly readable
 						// chapter list and violates F07's fail-closed contract.
 						return nil, ErrSourceUnavailable
 					}
-					if status.Status != "available" {
+					if status.Status != CitationStatusAvailable {
 						redact = true
 					}
 				}

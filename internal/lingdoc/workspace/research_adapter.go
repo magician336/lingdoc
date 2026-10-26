@@ -280,7 +280,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 				return out, "real", err
 			}
 			level := "background_lead"
-			if current.StableOriginal && current.Status == "available" {
+			if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
 				level = "candidate_evidence"
 			}
 			out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})

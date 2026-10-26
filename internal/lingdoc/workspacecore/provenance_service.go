@@ -6,6 +6,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
+
+	"github.com/Tencent/WeKnora/internal/evidence"
 )
 
 // prepareProvenance releases the short authorized snapshot before asking the existing
@@ -71,7 +73,7 @@ func (s *Service) prepareProvenance(ctx context.Context, actor Actor, pid string
 				break
 			}
 			source, err := s.agentRuntime.Sources.ReadResearchSource(context.WithValue(ctx, provenanceSourceIOKey{}, true), actor, pid, sourceID)
-			if err != nil || source.SourceID != sourceID || source.Status != "available" || source.ProcessingState != "ready" || source.QuotedTextHash == "" || source.QuotedTextHash != sha256Hex(source.QuotedText) || forModel && !source.ModelUseAllowed {
+			if err != nil || source.SourceID != sourceID || source.Status != string(evidence.SourceAvailable) || source.ProcessingState != "ready" || source.QuotedTextHash == "" || source.QuotedTextHash != sha256Hex(source.QuotedText) || forModel && !source.ModelUseAllowed {
 				allowed = false
 				break
 			}
