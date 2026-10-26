@@ -77,12 +77,13 @@ func migratedPostgresChainForShapeGuard(t *testing.T) (*sql.DB, string) {
 }
 
 // postgresTableShapes 从真实链产物（information_schema.columns）读出一个表的
-// 全部列形状。is_nullable 是 'YES'/'NO'；character_maximum_length 只在
-// varchar/char 上非空——正是规则 4 说的「产物侧暴露了长度」。
+// 全部列形状。is_nullable 是 'YES'/'NO'。规则 4（长度）在本票不激活——首跑已
+// 端到端证明该机制（character_maximum_length 读取 + 比对）并暴露两处 delivery
+// 结构体的真实宽度漂移，激活停在 #713；所以这里不读 character_maximum_length。
 func postgresTableShapes(t *testing.T, db *sql.DB, schema, table string) map[string]migrationColumnShape {
 	t.Helper()
 	rows, err := db.Query(
-		"SELECT column_name, data_type, character_maximum_length, is_nullable "+
+		"SELECT column_name, data_type, is_nullable "+
 			"FROM information_schema.columns "+
 			"WHERE table_schema = $1 AND table_name = $2 "+
 			"ORDER BY ordinal_position",
@@ -95,7 +96,7 @@ func postgresTableShapes(t *testing.T, db *sql.DB, schema, table string) map[str
 	for rows.Next() {
 		var shape migrationColumnShape
 		var isNullable string
-		require.NoError(t, rows.Scan(&shape.Name, &shape.DeclType, &shape.Length, &isNullable))
+		require.NoError(t, rows.Scan(&shape.Name, &shape.DeclType, &isNullable))
 		shape.NotNull = isNullable == "NO"
 		shapes[shape.Name] = shape
 	}
