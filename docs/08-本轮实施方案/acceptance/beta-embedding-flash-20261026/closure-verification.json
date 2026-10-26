@@ -1,0 +1,215 @@
+{
+  "checks": [
+    {
+      "check": "chat ledger byte-identical: qwen-beta-sqlite.json",
+      "ok": true,
+      "detail": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4 / 74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4"
+    },
+    {
+      "check": "chat ledger byte-identical: qwen-beta-sqlite.json.calls.json",
+      "ok": true,
+      "detail": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea / dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea"
+    },
+    {
+      "check": "provider requests this round == 2",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "check": "both new rows are the flash model",
+      "ok": true,
+      "detail": "['qwen3.7-text-embedding-flash', 'qwen3.7-text-embedding-flash']"
+    },
+    {
+      "check": "both new rows are response_received with reported usage",
+      "ok": true,
+      "detail": "[('response_received', 'reported'), ('response_received', 'reported')]"
+    },
+    {
+      "check": "the historical 403 row is preserved verbatim",
+      "ok": true,
+      "detail": "http_error"
+    },
+    {
+      "check": "the window is not blocked",
+      "ok": true,
+      "detail": "False"
+    },
+    {
+      "check": "cumulative reserved tokens <= 8000",
+      "ok": true,
+      "detail": "7250"
+    },
+    {
+      "check": "cumulative reserved money <= 8000000 nano-CNY (Y0.008)",
+      "ok": true,
+      "detail": "2063125"
+    },
+    {
+      "check": "the actual billing of this round <= 8000000 nano-CNY",
+      "ok": true,
+      "detail": "84375"
+    },
+    {
+      "check": "the flash price is applied (648 tokens -> 81000 nano-CNY)",
+      "ok": true,
+      "detail": "[81000, 3375]"
+    },
+    {
+      "check": "the target knowledge base's two chunk rows are unchanged",
+      "ok": true,
+      "detail": "[('1e849f5f-83e7-4138-a39f-d1aa1928054a', 0, 'ready', 0, 489, 'a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed'), ('91a28f35-5428-4022-9b3c-e16e49d6c100', 1, 'ready', 475, 902, 'b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3')]"
+    },
+    {
+      "check": "the target knowledge base's vector rows are unchanged",
+      "ok": true,
+      "detail": "[{'id': 23, 'chunk_id': '1e849f5f-83e7-4138-a39f-d1aa1928054a', 'knowledge_id': 'c1197b70-d525-412c-8ef5-42c38cf7fd35', 'knowledge_base_id': '7c104e1b-eb03-48ff-9d79-8a62b73cf082', 'dimension': 0, 'source_type': 0, 'is_enabled': 1}, {'id': 24, 'chunk_id': '91a28f35-5428-4022-9b3c-e16e49d6c100', 'knowledge_id': 'c1197b70-d525-412c-8ef5-42c38cf7fd35', 'knowledge_base_id': '7c104e1b-eb03-48ff-9d79-8a62b73cf082', 'dimension': 0, 'source_type': 0, 'is_enabled': 1}]"
+    },
+    {
+      "check": "the chapter source_ids are unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "every cited chunk still exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the vector knowledge base has 2 vector rows",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "check": "both vector rows carry dimension 1024",
+      "ok": true,
+      "detail": "[1024, 1024]"
+    },
+    {
+      "check": "the vec0 virtual table for 1024 exists",
+      "ok": true,
+      "detail": "['vector_stores', 'vec_embeddings_1024', 'vec_embeddings_1024_info', 'vec_embeddings_1024_chunks', 'vec_embeddings_1024_rowids', 'vec_embeddings_1024_vector_chunks00']"
+    },
+    {
+      "check": "both indexed chunks are ready",
+      "ok": true,
+      "detail": "[(0, 'ready'), (1, 'ready')]"
+    },
+    {
+      "check": "the vectorized chunks carry the target chunks' content byte-for-byte",
+      "ok": true,
+      "detail": "(['a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed', 'b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3'], ['a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed', 'b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3'])"
+    },
+    {
+      "check": "the vectorized chunks carry the target chunks' coordinates",
+      "ok": true,
+      "detail": "([(0, 0, 489), (1, 475, 902)], [(0, 0, 489), (1, 475, 902)])"
+    },
+    {
+      "check": "the previous attempts' failed chunk rows are PRESERVED (soft-deleted, not erased)",
+      "ok": true,
+      "detail": "6"
+    },
+    {
+      "check": "both knowledges carry the same title (the indexed-text prefix)",
+      "ok": true,
+      "detail": "['synth-chapter-c.md', 'synth-chapter-c.md']"
+    },
+    {
+      "check": "the DB model call ledger still has only the 4 historical chat rows",
+      "ok": true,
+      "detail": "(4, 4)"
+    },
+    {
+      "check": "the embedding model row names the authorized flash model",
+      "ok": true,
+      "detail": "qwen3.7-text-embedding-flash"
+    },
+    {
+      "check": "the chat model row is still qwen3.8-flash",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the search returned 2 hits",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "check": "every hit is an embedding match (match_type=0)",
+      "ok": true,
+      "detail": "[0, 0]"
+    },
+    {
+      "check": "the scores descend (the vector order is the answer order)",
+      "ok": true,
+      "detail": "[0.598921537399292, 0.45536285638809204]"
+    },
+    {
+      "check": "the server logged the keyword channel returning 0 hits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the server logged the vector channel returning 2 hits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the server logged 'vector=2, keyword=0' before the fusion",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the server logged the query dimension 1024 and 2 matched rows",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the server logged the two cosine distances",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the startup log carries 6 queue identity lines",
+      "ok": true,
+      "detail": "6"
+    },
+    {
+      "check": "every worker pool is on queue db 2 from the queue's own setting",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the queue identity excerpt file records the same 6 pools",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "the new process registered 6 worker pools on redis db 2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "redis db 1 (the chat profile queue) gained no registration from this process",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "no pending task is left in db 1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "no pending task is left in db 2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "every artifact in the manifest still matches its recorded sha256",
+      "ok": true,
+      "detail": "[]"
+    }
+  ],
+  "failed": 0
+}

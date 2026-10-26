@@ -1,0 +1,26 @@
+{
+  "ran_at": "2026-10-25T01:33:54.1143281Z",
+  "kb_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+  "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+  "runner_exit": 0,
+  "elapsed_s": 12,
+  "ledger_before": {
+    "exists": true,
+    "requests": 3
+  },
+  "ledger_after": {
+    "exists": true,
+    "requests": 4
+  },
+  "round_ledger_before": {
+    "exists": true,
+    "requests": 3
+  },
+  "round_ledger_after": {
+    "exists": true,
+    "requests": 4
+  },
+  "request_rows_now": 4,
+  "report": "D:\\wt\\lingdoc-485-evidence\\track-d-experiment\\run-final-20261025-093259-c2345229\\f01-report.json",
+  "code_sha": "c23452293396b0f303e85a9c5aea4f8bd52802af"
+}

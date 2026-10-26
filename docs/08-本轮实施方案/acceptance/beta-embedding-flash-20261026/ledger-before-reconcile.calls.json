@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "profile": "lingdoc-qwen-embedding-budget-20261025",
+  "max_calls": 4,
+  "input_max_tokens": 16000,
+  "output_max_tokens": 0,
+  "total_max_tokens": 16000,
+  "cumulative_token_max": 8000,
+  "reserved_tokens": 3085,
+  "max_concurrency": 1,
+  "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+  "usd_to_cny_reserve_rate": 10,
+  "max_reserve_nano_cny": 8000000,
+  "reserved_nano_cny": 1542500,
+  "actual_nano_cny": 1542500,
+  "reserved_nano_usd": 0,
+  "actual_nano_usd": 0,
+  "blocked": true,
+  "blocked_reason": "http_error",
+  "requests": [
+    {
+      "number": 1,
+      "model": "qwen3.7-text-embedding",
+      "status": "http_error",
+      "input_upper_bound_tokens": 3085,
+      "output_limit_tokens": 0,
+      "input_tokens": 3085,
+      "usage_status": "unavailable",
+      "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+      "reserved_nano_cny": 1542500,
+      "actual_nano_cny": 1542500,
+      "created_at": "2026-10-25T13:54:57.6417521Z"
+    }
+  ]
+}

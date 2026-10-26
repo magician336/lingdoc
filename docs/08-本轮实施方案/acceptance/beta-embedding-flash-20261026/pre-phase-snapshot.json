@@ -1,0 +1,848 @@
+{
+  "taken_at": "2026-10-26T07:50:49+0800",
+  "db": "D:\\wt\\lingdoc-484-evidence\\data\\lingdoc-484-final.db",
+  "ledgers": {
+    "qwen-beta-sqlite.json": {
+      "present": true,
+      "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-beta-sqlite.json",
+      "bytes": 2224,
+      "sha256": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4",
+      "mtime": 1792892032.6251671,
+      "profile": "lingdoc-qwen-token-budget-20261024-v2",
+      "cumulative_token_max": 90000,
+      "reserved_tokens": 35780,
+      "actual_tokens": 6150,
+      "blocked": false,
+      "request_count": 4,
+      "requests": [
+        {
+          "number": 1,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "reserved_nano_usd": 0,
+          "estimated_input_token_upper_bound": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 521,
+          "total_tokens": 1558,
+          "usage_status": "reported",
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T09:37:29.7860581Z"
+        },
+        {
+          "number": 2,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "reserved_nano_usd": 0,
+          "estimated_input_token_upper_bound": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 431,
+          "total_tokens": 1468,
+          "usage_status": "reported",
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T12:00:18.7772875Z"
+        },
+        {
+          "number": 3,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "reserved_nano_usd": 0,
+          "estimated_input_token_upper_bound": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 531,
+          "total_tokens": 1568,
+          "usage_status": "reported",
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T13:53:43.6328045Z"
+        },
+        {
+          "number": 4,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "reserved_nano_usd": 0,
+          "estimated_input_token_upper_bound": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 519,
+          "total_tokens": 1556,
+          "usage_status": "reported",
+          "finish_reason": "stop",
+          "created_at": "2026-10-25T01:33:43.860722Z"
+        }
+      ]
+    },
+    "qwen-beta-sqlite.json.calls.json": {
+      "present": true,
+      "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-beta-sqlite.json.calls.json",
+      "bytes": 2305,
+      "sha256": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea",
+      "mtime": 1792892032.625775,
+      "profile": "lingdoc-qwen-token-budget-20261024-v2",
+      "max_calls": 4,
+      "cumulative_token_max": 90000,
+      "reserved_tokens": 35780,
+      "actual_tokens": 6150,
+      "reserved_nano_cny": 0,
+      "actual_nano_cny": 0,
+      "max_reserve_nano_cny": 0,
+      "blocked": false,
+      "request_count": 4,
+      "requests": [
+        {
+          "number": 1,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "input_upper_bound_tokens": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 521,
+          "total_tokens": 1558,
+          "usage_status": "reported",
+          "cost_basis": "not_applicable",
+          "reserved_nano_cny": 0,
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T09:37:29.7865861Z"
+        },
+        {
+          "number": 2,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "input_upper_bound_tokens": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 431,
+          "total_tokens": 1468,
+          "usage_status": "reported",
+          "cost_basis": "not_applicable",
+          "reserved_nano_cny": 0,
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T12:00:18.7783379Z"
+        },
+        {
+          "number": 3,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "input_upper_bound_tokens": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 531,
+          "total_tokens": 1568,
+          "usage_status": "reported",
+          "cost_basis": "not_applicable",
+          "reserved_nano_cny": 0,
+          "finish_reason": "stop",
+          "created_at": "2026-10-24T13:53:43.6349251Z"
+        },
+        {
+          "number": 4,
+          "model": "qwen3.8-flash",
+          "status": "response_received",
+          "input_upper_bound_tokens": 4849,
+          "output_limit_tokens": 4096,
+          "input_tokens": 1037,
+          "output_tokens": 519,
+          "total_tokens": 1556,
+          "usage_status": "reported",
+          "cost_basis": "not_applicable",
+          "reserved_nano_cny": 0,
+          "finish_reason": "stop",
+          "created_at": "2026-10-25T01:33:43.8617794Z"
+        }
+      ]
+    },
+    "qwen-embedding-budget.json": {
+      "present": false,
+      "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-embedding-budget.json"
+    },
+    "qwen-embedding-budget.json.calls.json": {
+      "present": true,
+      "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-embedding-budget.json.calls.json",
+      "bytes": 991,
+      "sha256": "238ca5bf91331e7761ff529ae712c306f3daac5d1782d72d33e5fe51bb6903ac",
+      "mtime": 1792936497.818336,
+      "profile": "lingdoc-qwen-embedding-budget-20261025",
+      "max_calls": 4,
+      "cumulative_token_max": 8000,
+      "reserved_tokens": 3085,
+      "reserved_nano_cny": 1542500,
+      "actual_nano_cny": 1542500,
+      "max_reserve_nano_cny": 8000000,
+      "blocked": true,
+      "blocked_reason": "http_error",
+      "request_count": 1,
+      "requests": [
+        {
+          "number": 1,
+          "model": "qwen3.7-text-embedding",
+          "status": "http_error",
+          "input_upper_bound_tokens": 3085,
+          "output_limit_tokens": 0,
+          "input_tokens": 3085,
+          "usage_status": "unavailable",
+          "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+          "reserved_nano_cny": 1542500,
+          "actual_nano_cny": 1542500,
+          "created_at": "2026-10-25T13:54:57.6417521Z"
+        }
+      ]
+    }
+  },
+  "provider_403_evidence": {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\provider-403-response.txt",
+    "sha256": "2915d119c83147145ef37fa2ec94455bafb9903e3ca087534f84b5aa3014328e"
+  },
+  "models": [
+    {
+      "id": "lingdoc-chat-qwen3.8-flash-iso",
+      "name": "qwen3.8-flash",
+      "display_name": "qwen3.8-flash",
+      "type": "KnowledgeQA",
+      "source": "remote",
+      "status": "active",
+      "tenant_id": 10000,
+      "provider": "aliyun",
+      "base_url": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "api_key_ciphertext_prefix_ok": true,
+      "api_key_sha12": "d1e35d9c3d06",
+      "embedding_parameters": {
+        "dimension": 0,
+        "supports_dimension_override": false,
+        "truncate_prompt_tokens": 0
+      }
+    },
+    {
+      "id": "lingdoc-embed-qwen3.7-text-embedding-iso",
+      "name": "qwen3.7-text-embedding",
+      "display_name": "qwen3.7-text-embedding",
+      "type": "Embedding",
+      "source": "remote",
+      "status": "active",
+      "tenant_id": 10000,
+      "provider": "aliyun",
+      "base_url": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "api_key_ciphertext_prefix_ok": true,
+      "api_key_sha12": "d1e35d9c3d06",
+      "embedding_parameters": {
+        "dimension": 0,
+        "supports_dimension_override": false,
+        "truncate_prompt_tokens": 0
+      }
+    }
+  ],
+  "chat_model_is_qwen3_8_flash": true,
+  "embedding_model_row": {
+    "id": "lingdoc-embed-qwen3.7-text-embedding-iso",
+    "name": "qwen3.7-text-embedding",
+    "display_name": "qwen3.7-text-embedding",
+    "type": "Embedding",
+    "source": "remote",
+    "status": "active",
+    "tenant_id": 10000,
+    "provider": "aliyun",
+    "base_url": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "api_key_ciphertext_prefix_ok": true,
+    "api_key_sha12": "d1e35d9c3d06",
+    "embedding_parameters": {
+      "dimension": 0,
+      "supports_dimension_override": false,
+      "truncate_prompt_tokens": 0
+    }
+  },
+  "knowledge_bases": [
+    {
+      "id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "name": "lingdoc-trackd-keyword-only",
+      "tenant_id": 9,
+      "embedding_model_id": "",
+      "vector_store_id": null,
+      "indexing_strategy": "{\"vector_enabled\":false,\"keyword_enabled\":true,\"wiki_enabled\":false,\"graph_enabled\":false}"
+    },
+    {
+      "id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "name": "lingdoc-trackd-vector-546",
+      "tenant_id": 9,
+      "embedding_model_id": "lingdoc-embed-qwen3.7-text-embedding-iso",
+      "vector_store_id": null,
+      "indexing_strategy": "{\"vector_enabled\":true,\"keyword_enabled\":true,\"wiki_enabled\":false,\"graph_enabled\":false}"
+    }
+  ],
+  "knowledges": [
+    {
+      "id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "title": "synth-chapter-c.md",
+      "file_name": "synth-chapter-c.md",
+      "parse_status": "completed",
+      "error_message": ""
+    },
+    {
+      "id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "title": "synth-chapter-c.md",
+      "file_name": "synth-chapter-c.md",
+      "parse_status": "completed",
+      "error_message": ""
+    }
+  ],
+  "chunks": [
+    {
+      "id": "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "chunk_index": 0,
+      "index_status": "ready",
+      "is_enabled": 1,
+      "start_at": 0,
+      "end_at": 489,
+      "content_len_chars": 489,
+      "content_len_bytes": 1117,
+      "content_sha256": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "created_at": "2026-10-24 17:22:59.1626158+08:00"
+    },
+    {
+      "id": "91a28f35-5428-4022-9b3c-e16e49d6c100",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "chunk_index": 1,
+      "index_status": "ready",
+      "is_enabled": 1,
+      "start_at": 475,
+      "end_at": 902,
+      "content_len_chars": 427,
+      "content_len_bytes": 909,
+      "content_sha256": "b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3",
+      "created_at": "2026-10-24 17:22:59.1626158+08:00"
+    },
+    {
+      "id": "c56adf09-950d-4769-8324-e940a23d01de",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 0,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 0,
+      "end_at": 489,
+      "content_len_chars": 489,
+      "content_len_bytes": 1117,
+      "content_sha256": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "created_at": "2026-10-25 21:02:21.5384325+08:00"
+    },
+    {
+      "id": "83ae7703-1af2-4290-bbba-7e88bee0ac30",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 1,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 475,
+      "end_at": 902,
+      "content_len_chars": 427,
+      "content_len_bytes": 909,
+      "content_sha256": "b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3",
+      "created_at": "2026-10-25 21:02:21.5384325+08:00"
+    },
+    {
+      "id": "601f8a68-a973-4b84-bf08-bb0450957aac",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 0,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 0,
+      "end_at": 489,
+      "content_len_chars": 489,
+      "content_len_bytes": 1117,
+      "content_sha256": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "created_at": "2026-10-25 21:30:09.3051404+08:00"
+    },
+    {
+      "id": "21f5b3da-60e2-4e9f-8018-758dd60612ec",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 1,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 475,
+      "end_at": 902,
+      "content_len_chars": 427,
+      "content_len_bytes": 909,
+      "content_sha256": "b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3",
+      "created_at": "2026-10-25 21:30:09.3051404+08:00"
+    },
+    {
+      "id": "4cd2d6a9-b258-47b3-9506-13482a3372f6",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 0,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 0,
+      "end_at": 489,
+      "content_len_chars": 489,
+      "content_len_bytes": 1117,
+      "content_sha256": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "created_at": "2026-10-25 21:54:57.6349801+08:00"
+    },
+    {
+      "id": "4f0aeed9-e499-4a9f-89e1-fe544ffd4f82",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+      "chunk_index": 1,
+      "index_status": "failed",
+      "is_enabled": 1,
+      "start_at": 475,
+      "end_at": 902,
+      "content_len_chars": 427,
+      "content_len_bytes": 909,
+      "content_sha256": "b19e29602b6429207023dacec4a516f4ad892165b8a588b6cf168ce062e44db3",
+      "created_at": "2026-10-25 21:54:57.6349801+08:00"
+    }
+  ],
+  "lite_embeddings_rows": [
+    {
+      "id": 1,
+      "chunk_id": "a4eb0318-2a13-4f06-b0cb-60b417d874bf",
+      "knowledge_id": "8383667b-212b-48f4-99cb-6931ea3f44bc",
+      "knowledge_base_id": "e63b4070-e19b-45d8-bc1e-467c83811b9b",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 2,
+      "chunk_id": "658f430a-291d-4027-8617-5c5936a527bc",
+      "knowledge_id": "8383667b-212b-48f4-99cb-6931ea3f44bc",
+      "knowledge_base_id": "e63b4070-e19b-45d8-bc1e-467c83811b9b",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 3,
+      "chunk_id": "a2b04956-a83f-4890-bbd1-492de112490a",
+      "knowledge_id": "78afed59-8024-4240-a679-59b39262bd34",
+      "knowledge_base_id": "f03b4d36-bfd6-47b5-ae66-a47329845b26",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 4,
+      "chunk_id": "7763d8d1-5f3b-4e3c-8784-2a7bd6bc57b0",
+      "knowledge_id": "78afed59-8024-4240-a679-59b39262bd34",
+      "knowledge_base_id": "f03b4d36-bfd6-47b5-ae66-a47329845b26",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 5,
+      "chunk_id": "234b82a1-0594-42b8-ac87-fc23e32b05b8",
+      "knowledge_id": "4d4e1da1-4f83-44e4-ab1b-3a70e2a6cbd5",
+      "knowledge_base_id": "e4a6dd32-0f45-47f2-856f-2496970e23aa",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 6,
+      "chunk_id": "2bcfb3eb-d531-48fc-9945-1b1e683bbc1d",
+      "knowledge_id": "4d4e1da1-4f83-44e4-ab1b-3a70e2a6cbd5",
+      "knowledge_base_id": "e4a6dd32-0f45-47f2-856f-2496970e23aa",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 7,
+      "chunk_id": "44223e8d-364c-4a89-89e4-249042ebc2b6",
+      "knowledge_id": "b7ac47fe-7d2d-41fc-ac5a-d428b991c5ed",
+      "knowledge_base_id": "5d9d236b-1a3a-41eb-8fcc-cb0dbbc51f08",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 8,
+      "chunk_id": "e90a347e-d1aa-4c40-a221-d4701228a737",
+      "knowledge_id": "b7ac47fe-7d2d-41fc-ac5a-d428b991c5ed",
+      "knowledge_base_id": "5d9d236b-1a3a-41eb-8fcc-cb0dbbc51f08",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 9,
+      "chunk_id": "e85216f0-8e9b-4c11-8a35-b2c4f4da88f0",
+      "knowledge_id": "e9aa4652-fa16-4cef-a92e-287438873062",
+      "knowledge_base_id": "b92a4ff5-6189-4412-801d-ce8b37c8daff",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 10,
+      "chunk_id": "e1dfe766-66a1-473e-8adb-2745e207cfda",
+      "knowledge_id": "e9aa4652-fa16-4cef-a92e-287438873062",
+      "knowledge_base_id": "b92a4ff5-6189-4412-801d-ce8b37c8daff",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 11,
+      "chunk_id": "e0959e3f-6e72-479a-9fe7-2b860de952a3",
+      "knowledge_id": "25c50209-812b-402b-af37-97cda7438052",
+      "knowledge_base_id": "24a81b0f-165a-491e-bee2-1128aa762179",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 12,
+      "chunk_id": "08c64b44-dc5f-47e9-970f-59ed5c5da305",
+      "knowledge_id": "25c50209-812b-402b-af37-97cda7438052",
+      "knowledge_base_id": "24a81b0f-165a-491e-bee2-1128aa762179",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 13,
+      "chunk_id": "489b7c11-5c43-430a-baf0-22602be46f5b",
+      "knowledge_id": "de550867-efbf-40d6-9c08-2bff221bc06d",
+      "knowledge_base_id": "9f060e2b-6687-4039-9285-addf88e8f324",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 14,
+      "chunk_id": "81cf575c-6796-4e8c-a868-fe71b381600b",
+      "knowledge_id": "de550867-efbf-40d6-9c08-2bff221bc06d",
+      "knowledge_base_id": "9f060e2b-6687-4039-9285-addf88e8f324",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 15,
+      "chunk_id": "cdce5bd4-a840-405d-904d-57d0eea07c4c",
+      "knowledge_id": "191d9ca1-a5f5-43fa-8798-7a7b995febf8",
+      "knowledge_base_id": "d16f7f33-05e7-4ba7-a297-a921765141cb",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 16,
+      "chunk_id": "b0ed8bcd-e23f-4229-91e5-da4e294a618f",
+      "knowledge_id": "191d9ca1-a5f5-43fa-8798-7a7b995febf8",
+      "knowledge_base_id": "d16f7f33-05e7-4ba7-a297-a921765141cb",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 17,
+      "chunk_id": "89b1ab8f-8f54-4531-b692-d547e55b5c1b",
+      "knowledge_id": "4a2371a1-d184-4e25-8f4d-9ea4f6fad739",
+      "knowledge_base_id": "50891b14-76f9-42b9-ac6e-2aab3c0e1699",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 18,
+      "chunk_id": "60252007-513f-41f3-9da1-4be3dcd95c64",
+      "knowledge_id": "4a2371a1-d184-4e25-8f4d-9ea4f6fad739",
+      "knowledge_base_id": "50891b14-76f9-42b9-ac6e-2aab3c0e1699",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 19,
+      "chunk_id": "db4103ca-5244-4429-8106-5c75cc796655",
+      "knowledge_id": "100cabb4-49d1-40ed-a4a6-379a29ce2508",
+      "knowledge_base_id": "96a31f3b-e365-40f8-b034-507b4867d5e0",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 20,
+      "chunk_id": "fa534e86-9a92-4b89-9430-41f9f611e77c",
+      "knowledge_id": "100cabb4-49d1-40ed-a4a6-379a29ce2508",
+      "knowledge_base_id": "96a31f3b-e365-40f8-b034-507b4867d5e0",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 21,
+      "chunk_id": "896c50c7-3415-41c1-9a7a-82e6e389e237",
+      "knowledge_id": "1f411c55-c317-435e-97af-9605f606e5d9",
+      "knowledge_base_id": "0a17a279-9661-4bcd-ad16-1fdd0edfb041",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 22,
+      "chunk_id": "c558e0a0-a605-452c-b52d-b865931fee92",
+      "knowledge_id": "1f411c55-c317-435e-97af-9605f606e5d9",
+      "knowledge_base_id": "0a17a279-9661-4bcd-ad16-1fdd0edfb041",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 23,
+      "chunk_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 24,
+      "chunk_id": "91a28f35-5428-4022-9b3c-e16e49d6c100",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    }
+  ],
+  "lite_embeddings_count": 24,
+  "lite_embeddings_rows_for_iso_kb": [],
+  "lite_embeddings_rows_for_target_kb": [
+    {
+      "id": 23,
+      "chunk_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    },
+    {
+      "id": 24,
+      "chunk_id": "91a28f35-5428-4022-9b3c-e16e49d6c100",
+      "knowledge_id": "c1197b70-d525-412c-8ef5-42c38cf7fd35",
+      "knowledge_base_id": "7c104e1b-eb03-48ff-9d79-8a62b73cf082",
+      "dimension": 0,
+      "source_type": 0,
+      "is_enabled": 1
+    }
+  ],
+  "vector_tables": [
+    "vector_stores"
+  ],
+  "vector_stores_rows": 0,
+  "db_model_call_ledger_rows": [
+    {
+      "id": "29702954-9dac-4111-9eac-5201fe7a6396",
+      "kind": "call",
+      "provider": "aliyun",
+      "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+      "run_mode": "real",
+      "source_kind": "generation_run",
+      "input_tokens": 1037,
+      "output_tokens": 521,
+      "status": "succeeded"
+    },
+    {
+      "id": "a28a7526-840f-4e2f-8fa1-3174253cd820",
+      "kind": "call",
+      "provider": "aliyun",
+      "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+      "run_mode": "real",
+      "source_kind": "generation_run",
+      "input_tokens": 1037,
+      "output_tokens": 431,
+      "status": "succeeded"
+    },
+    {
+      "id": "bf4d93fa-8cd8-45ec-9088-7e7c0cc682b1",
+      "kind": "call",
+      "provider": "aliyun",
+      "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+      "run_mode": "real",
+      "source_kind": "generation_run",
+      "input_tokens": 1037,
+      "output_tokens": 531,
+      "status": "succeeded"
+    },
+    {
+      "id": "f937f25b-04bd-4c34-9013-1de05022af62",
+      "kind": "call",
+      "provider": "aliyun",
+      "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+      "run_mode": "real",
+      "source_kind": "generation_run",
+      "input_tokens": 1037,
+      "output_tokens": 519,
+      "status": "succeeded"
+    }
+  ],
+  "db_model_call_ledger_count": 4,
+  "chapter_source_ids": {
+    "7630a356-a06a-406f-be62-846696e6aba9": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\",\"91a28f35-5428-4022-9b3c-e16e49d6c100\"]",
+    "f3a0cf81-bfd8-4083-be5a-7e0170de03ef": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\"]",
+    "9a29a77e-9d20-40f0-8287-6d350c50821b": "[]",
+    "fb0415e4-3c56-4847-b982-6349c32d0a8e": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\",\"91a28f35-5428-4022-9b3c-e16e49d6c100\"]",
+    "75301d06-c96b-4b0a-90f3-19bd9ee90272": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\"]",
+    "303aa9cb-6299-47cf-92fb-fc0a4639b092": "[]",
+    "07712728-f09b-4b1c-ab67-f828b0b681f0": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\",\"91a28f35-5428-4022-9b3c-e16e49d6c100\"]",
+    "72d16400-9e09-49fd-b2b8-a7abf50fb10e": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\"]",
+    "1a090fd0-5c53-405f-a904-847a3c195a7b": "[]"
+  },
+  "chapter_cited_chunk_ids": [
+    "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+    "91a28f35-5428-4022-9b3c-e16e49d6c100"
+  ],
+  "chapter_cited_chunks_all_exist": true,
+  "redis": {
+    "db=0": {
+      "server_registrations": [],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=1": {
+      "server_registrations": [
+        "asynq:servers:{ZEUS:47592:1c88234f-e04f-4e29-b229-8570c1d0f6e7}",
+        "asynq:servers:{ZEUS:47592:6dbb0b2a-55ba-4df7-b2b0-c45e08655a07}",
+        "asynq:servers:{ZEUS:47592:85eeddbd-d4b6-4bc4-8d57-1669c135f71b}",
+        "asynq:servers:{ZEUS:47592:8da425a2-c32f-4d30-a848-9d0397e85ea8}",
+        "asynq:servers:{ZEUS:47592:992f1200-3cb8-463b-a3c5-fcd1d5d5764e}",
+        "asynq:servers:{ZEUS:47592:fdc497d0-e676-4b44-a3f6-94a70546ada0}",
+        "asynq:servers:{ZEUS:50812:23ff89c2-e58a-4273-9a10-c75066b626c7}",
+        "asynq:servers:{ZEUS:50812:4f64cfe1-4c43-42e1-962b-133e9f320638}",
+        "asynq:servers:{ZEUS:50812:877b70c5-5386-4b58-ba30-19e4c2ded5bd}",
+        "asynq:servers:{ZEUS:50812:9229629b-1cac-435f-b699-66e2fcf2e00a}",
+        "asynq:servers:{ZEUS:50812:e8616b74-5f20-4ea3-a73a-e636e0b29f3b}",
+        "asynq:servers:{ZEUS:50812:fa6862ae-0c2b-4cb2-a9ad-7fea93b97bff}",
+        "asynq:servers:{ZEUS:58932:18a765fc-76be-4caa-a62d-ab8697588596}",
+        "asynq:servers:{ZEUS:58932:24d556e4-e488-48db-b67d-4507b3c74b11}",
+        "asynq:servers:{ZEUS:58932:2922abf1-bb50-4cf3-b45d-bcd327425646}",
+        "asynq:servers:{ZEUS:58932:5b29296d-39ad-448c-93f3-4aa9df34f701}",
+        "asynq:servers:{ZEUS:58932:b75fc818-3a42-49e5-9b68-a35cb4eaa758}",
+        "asynq:servers:{ZEUS:58932:c1d72e34-87cd-4b39-aac1-20ddf19690a0}",
+        "asynq:servers:{ZEUS:59008:20a7524e-ecec-46bd-9d78-4da1bef7b554}",
+        "asynq:servers:{ZEUS:59008:39a03a93-3333-4961-ac33-61974c7dc35e}",
+        "asynq:servers:{ZEUS:59008:695ec186-db3b-4768-a9ff-32e5b6f1ebd0}",
+        "asynq:servers:{ZEUS:59008:7debb632-10a5-421a-8827-a1b61e995a00}",
+        "asynq:servers:{ZEUS:59008:894b177b-5b88-4647-a8bd-6b3ce7b943b7}",
+        "asynq:servers:{ZEUS:59008:cfdde9aa-f67e-4054-b1a6-b570d23552c8}",
+        "asynq:servers:{ZEUS:60952:17ea0eb9-185b-4f06-923a-38638cb39d6c}",
+        "asynq:servers:{ZEUS:60952:300d5871-3430-4750-aa30-739e19d649dc}",
+        "asynq:servers:{ZEUS:60952:4cca6f34-4a5b-4e2a-affd-919c037264d7}",
+        "asynq:servers:{ZEUS:60952:99836f8a-36d4-4fb4-b1aa-8df9887c34a1}",
+        "asynq:servers:{ZEUS:60952:b109f942-58f7-4c17-85db-93caf1fe5e01}",
+        "asynq:servers:{ZEUS:60952:c1fa7fd4-e491-4279-a76c-930a8d2b9512}",
+        "asynq:servers:{ZEUS:61624:0f3ae776-bc0f-455a-a11a-b620cd85a7ca}",
+        "asynq:servers:{ZEUS:61624:5500d8ef-4a7f-4a82-af35-dadd898733db}",
+        "asynq:servers:{ZEUS:61624:73c4044a-b916-46b1-a1a7-6ea07d2a0ac9}",
+        "asynq:servers:{ZEUS:61624:73f4620d-3fba-49e1-9aac-48caacc70a60}",
+        "asynq:servers:{ZEUS:61624:ad5863e6-838f-42ba-8b85-8adc3b1b6bb0}",
+        "asynq:servers:{ZEUS:61624:f2c5fce3-b4fc-4eee-84be-c594de23fa8b}",
+        "asynq:servers:{ZEUS:63720:4170f2ea-3271-43f0-b78a-262d8559a00d}",
+        "asynq:servers:{ZEUS:63720:484f6cc6-1db3-4c26-8d85-712d0239e313}",
+        "asynq:servers:{ZEUS:63720:4adf8b0a-c213-4105-bfc4-4bd2e3532dee}",
+        "asynq:servers:{ZEUS:63720:572a0bc4-d6b0-440d-a610-d66fa5c05f81}",
+        "asynq:servers:{ZEUS:63720:66b5c49e-0414-4b69-96dd-8e26584ae8fa}",
+        "asynq:servers:{ZEUS:63720:acea5ff5-eca6-4185-9cfc-510e15f2f5b3}",
+        "asynq:servers:{ZEUS:67924:015f95c2-09bc-4c9c-8b63-57650929b46a}",
+        "asynq:servers:{ZEUS:67924:1d894afe-d945-4f7f-9411-bc697c19271a}",
+        "asynq:servers:{ZEUS:67924:485416cb-1b27-452c-b062-2690d553faa3}",
+        "asynq:servers:{ZEUS:67924:9319f41f-10cb-408a-9cc5-effe617eb153}",
+        "asynq:servers:{ZEUS:67924:c41c39f3-1092-4727-a202-2b6b5e967e2e}",
+        "asynq:servers:{ZEUS:67924:c8b18d44-0d7c-4120-a445-bc742581d0c9}",
+        "asynq:servers:{ZEUS:71744:09a68bd8-56c3-4383-a889-b69ec55e4096}",
+        "asynq:servers:{ZEUS:71744:4adb56c8-b6db-4fef-a1d4-78c9a4ac1ff7}",
+        "asynq:servers:{ZEUS:71744:65fed655-3a9a-4c3c-9659-6a8e0356e30b}",
+        "asynq:servers:{ZEUS:71744:672f02f3-f26a-4f89-8408-ba2dc9a26d04}",
+        "asynq:servers:{ZEUS:71744:b30a406c-55ba-43c4-a640-a08c53e56571}",
+        "asynq:servers:{ZEUS:71744:c956a800-fd59-4a34-af06-2ea2bf2735db}",
+        "asynq:servers:{ZEUS:80248:1affbdb7-b950-430f-8354-7f19ebec885d}",
+        "asynq:servers:{ZEUS:80248:2f181b0b-17fc-4ed1-aee8-30b258e01092}",
+        "asynq:servers:{ZEUS:80248:3946c966-c9c1-46af-a9a7-71486e703fc4}",
+        "asynq:servers:{ZEUS:80248:97c6fc02-20df-4d0d-a17d-3bc02cd28c7a}",
+        "asynq:servers:{ZEUS:80248:cd11ebe1-e7fc-4370-916c-b2523c4620c8}",
+        "asynq:servers:{ZEUS:80248:f18196df-e750-4b52-a3cc-a00cfd9614e7}",
+        "asynq:servers:{ZEUS:81880:052ee336-6e11-4dc3-8b10-a5a211b4aad2}",
+        "asynq:servers:{ZEUS:81880:2487bcc9-61b9-4d9c-8117-966ad480875a}",
+        "asynq:servers:{ZEUS:81880:6a1ac899-bdba-48eb-a880-5064f952d274}",
+        "asynq:servers:{ZEUS:81880:c061d2b6-4252-49fd-aa19-53c638df7bdb}",
+        "asynq:servers:{ZEUS:81880:d7f62446-81f4-4494-a679-75219eede720}",
+        "asynq:servers:{ZEUS:81880:e3591532-216a-4330-b8f4-591bcd8d68b5}"
+      ],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=2": {
+      "server_registrations": [
+        "asynq:servers:{ZEUS:29004:278a078e-82b6-4d81-8cac-9d6017b189be}",
+        "asynq:servers:{ZEUS:29004:2ef5bf05-c900-4f1e-a385-6f49e75b53f9}",
+        "asynq:servers:{ZEUS:29004:4b7891f8-50fd-4817-939d-106eb2797fdf}",
+        "asynq:servers:{ZEUS:29004:8963b045-326b-4cdd-9984-5fc79b05c370}",
+        "asynq:servers:{ZEUS:29004:cd6ff37e-99df-4a64-b5db-e33d7f257618}",
+        "asynq:servers:{ZEUS:29004:fc7498cf-a541-470c-8efd-857c3790a913}"
+      ],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=3": {
+      "server_registrations": [],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=4": {
+      "server_registrations": [],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=5": {
+      "server_registrations": [
+        "asynq:servers:{ZEUS:23676:575cfe69-0da8-4458-8a42-d58583024303}",
+        "asynq:servers:{ZEUS:23676:629827ac-5ce8-4630-8c43-edea97d1aae4}",
+        "asynq:servers:{ZEUS:23676:77a66cd3-49ca-4bb4-b9dd-6c880aab918c}",
+        "asynq:servers:{ZEUS:23676:92012ebb-346d-4358-8337-00a1ed88e4ff}",
+        "asynq:servers:{ZEUS:23676:dfcc08f5-1f0c-4e94-a6da-45a10f7d3cd9}",
+        "asynq:servers:{ZEUS:23676:e0d1ba8b-e258-4113-8a0e-c5ac8e7a2bd7}",
+        "asynq:servers:{ZEUS:75028:207c31b3-e78b-464e-a71a-675d12720b81}",
+        "asynq:servers:{ZEUS:75028:473634f6-0fb0-408a-8a8c-fbd980e73675}",
+        "asynq:servers:{ZEUS:75028:880b5642-c95b-4dec-ba7d-283b8d8c0dad}",
+        "asynq:servers:{ZEUS:75028:b59ef1a7-b711-475c-a1f3-17c13bbec36e}",
+        "asynq:servers:{ZEUS:75028:bb4c2cb7-d766-4355-b570-c0b6297d2f3b}",
+        "asynq:servers:{ZEUS:75028:d91e6cd8-ae67-4382-a853-d54511abb817}"
+      ],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    },
+    "db=6": {
+      "server_registrations": [
+        "asynq:servers:{ZEUS:19924:323bc3b3-e1e2-4c28-b25d-87d6f61d5c42}",
+        "asynq:servers:{ZEUS:19924:40d677ff-ac15-491e-88a2-acad8247be15}",
+        "asynq:servers:{ZEUS:19924:42a57f4d-e267-455b-9d96-683c7bc06c49}",
+        "asynq:servers:{ZEUS:19924:641e9e4a-46e0-46a0-b68e-9936db6d6c63}",
+        "asynq:servers:{ZEUS:19924:ae535507-5ffb-4a69-81db-a743679fa705}",
+        "asynq:servers:{ZEUS:19924:c682a89d-251d-4b3d-9c7b-2347e7988595}"
+      ],
+      "pending_task_keys": [],
+      "pending_task_key_count": 0,
+      "pending_lists": []
+    }
+  }
+}

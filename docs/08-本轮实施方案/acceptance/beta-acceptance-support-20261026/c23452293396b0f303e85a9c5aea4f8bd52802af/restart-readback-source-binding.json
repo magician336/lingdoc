@@ -1,0 +1,280 @@
+{
+  "schema": "lingdoc.beta.restart-readback-source-binding/v1",
+  "head": "c23452293396b0f303e85a9c5aea4f8bd52802af",
+  "at": "2026-10-25T03:33:16.948Z",
+  "driver": "postgres",
+  "database": "weknora_iso_r7",
+  "protocol": "Beta 首版真实验收协议 §1（隔离 PostgreSQL）＋ §2 第 5 步（重启后读回）",
+  "process": {
+    "port": 18091,
+    "before": {
+      "pid": 47056
+    },
+    "after": {
+      "pid": 77752
+    }
+  },
+  "read_back": [
+    "project",
+    "chapters",
+    "source_bindings",
+    "delivery_file"
+  ],
+  "staged_fixtures": {
+    "knowledge_id": "pgr7-knowledge-3341773442b9",
+    "chunk_id": "pgr7-chunk-3341773442b9",
+    "asset_id": "50e75edd-bfcf-4720-8671-7fb6267a93c0",
+    "kb_id": "2504fec6-c6ad-46fb-aa6d-ebb71dbc8e54",
+    "note": "the knowledge_bases row was created through the real API; the knowledges and chunks rows were STAGED with psql because a real WeKnora parse runs an embedding model, which is not authorised in this round (#480 gap 7)"
+  },
+  "timeline": [
+    {
+      "at": "2026-10-25T03:33:09.787Z",
+      "step": "START_1",
+      "detail": "starting the server for the write phase on port 18091"
+    },
+    {
+      "at": "2026-10-25T03:33:10.827Z",
+      "step": "HEALTHY_1",
+      "detail": "pid=47056"
+    },
+    {
+      "at": "2026-10-25T03:33:10.985Z",
+      "step": "IDENTITY",
+      "detail": "user registered, registration keys=['message', 'success', 'user']"
+    },
+    {
+      "at": "2026-10-25T03:33:11.187Z",
+      "step": "KNOWLEDGE_BASE",
+      "detail": "kb_id=2504fec6-c6ad-46fb-aa6d-ebb71dbc8e54 tenant_id=10007 (created through POST /knowledge-bases)"
+    },
+    {
+      "at": "2026-10-25T03:33:11.516Z",
+      "step": "MATERIAL_FIXTURE",
+      "detail": "knowledge_id=pgr7-knowledge-3341773442b9 chunk_id=pgr7-chunk-3341773442b9 (STAGED FIXTURE rows, not a real WeKnora parse)"
+    },
+    {
+      "at": "2026-10-25T03:33:11.547Z",
+      "step": "PROJECT",
+      "detail": "project_id=3aa190fb-8b64-40b7-b9f5-1776290a6875"
+    },
+    {
+      "at": "2026-10-25T03:33:11.638Z",
+      "step": "SOURCE_BOUND",
+      "detail": "asset_id=50e75edd-bfcf-4720-8671-7fb6267a93c0 knowledge_id=pgr7-knowledge-3341773442b9 processing_state=ready"
+    },
+    {
+      "at": "2026-10-25T03:33:11.736Z",
+      "step": "ACTIVATED",
+      "detail": "project_version=2"
+    },
+    {
+      "at": "2026-10-25T03:33:11.883Z",
+      "step": "POLICY_PROPOSED",
+      "detail": "change_set_id=61f119ed-8a72-43d2-912e-d105a89b0628 status=draft expected_context_revision=1 expected_version=1"
+    },
+    {
+      "at": "2026-10-25T03:33:11.965Z",
+      "step": "POLICY_ASSESSED",
+      "detail": "status=assessed"
+    },
+    {
+      "at": "2026-10-25T03:33:12.066Z",
+      "step": "POLICY_APPLIED",
+      "detail": "status=applied"
+    },
+    {
+      "at": "2026-10-25T03:33:12.132Z",
+      "step": "POLICY_READ_BACK",
+      "detail": "model_use_allowed=True version=2 asset_revision=2"
+    },
+    {
+      "at": "2026-10-25T03:33:12.365Z",
+      "step": "CHAPTERS_WRITTEN",
+      "detail": "chapters=2 source_ids_used=[]"
+    },
+    {
+      "at": "2026-10-25T03:33:12.502Z",
+      "step": "DELIVERY_CHECK_1",
+      "detail": "status=passed receipt_id=76864374-1b52-436b-bc8d-02850f2d0bd3 project_version=8"
+    },
+    {
+      "at": "2026-10-25T03:33:12.598Z",
+      "step": "IMPACT_PREFLIGHT_ACK",
+      "detail": "proof_id=76864374-1b52-436b-bc8d-02850f2d0bd3 closed_task_ids=['2820b76b-74b7-51d3-b403-29d36cf57012']"
+    },
+    {
+      "at": "2026-10-25T03:33:12.708Z",
+      "step": "STABILIZED",
+      "detail": "status=STABILIZED blockers=[]"
+    },
+    {
+      "at": "2026-10-25T03:33:12.842Z",
+      "step": "DELIVERY_CHECK_2",
+      "detail": "status=passed project_version=8"
+    },
+    {
+      "at": "2026-10-25T03:33:13.277Z",
+      "step": "DELIVERED",
+      "detail": "check=passed snapshot_id=snapshot-de35b30c108edec9eba0b6ca7890eb6a export_id=export-08be2d1e5ed2de363f5aecdca0e38112 export_status=verified file_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614"
+    },
+    {
+      "at": "2026-10-25T03:33:13.539Z",
+      "step": "READ_BEFORE",
+      "detail": "chapters=2 sources=1 download_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614"
+    },
+    {
+      "at": "2026-10-25T03:33:13.567Z",
+      "step": "STOPPED_1",
+      "detail": "pid=47056 exit_code=1 (Windows TerminateProcess semantics)"
+    },
+    {
+      "at": "2026-10-25T03:33:15.567Z",
+      "step": "START_2",
+      "detail": "starting a NEW server process against the same PostgreSQL database"
+    },
+    {
+      "at": "2026-10-25T03:33:16.601Z",
+      "step": "HEALTHY_2",
+      "detail": "pid=77752"
+    },
+    {
+      "at": "2026-10-25T03:33:16.922Z",
+      "step": "READ_AFTER",
+      "detail": "chapters=2 sources=1 download_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614"
+    },
+    {
+      "at": "2026-10-25T03:33:16.948Z",
+      "step": "STOPPED_2",
+      "detail": "pid=77752 exit_code=1"
+    }
+  ],
+  "before": {
+    "access_token_accepted": true,
+    "project": {
+      "id": "3aa190fb-8b64-40b7-b9f5-1776290a6875",
+      "name": "PG R7 source binding 3341773442b9",
+      "status": "active",
+      "project_version": 8,
+      "spec_revision": 1,
+      "delivery_status": "NOT_READY"
+    },
+    "chapters": [
+      {
+        "chapter_id": "0bfe1a0a-b698-4ebf-a48f-8c1d53fae130",
+        "section_id": "question",
+        "current_version_id": "2bcec174-6212-434c-ad31-16a46dbc6214",
+        "body_sha256": "050b932e038a2315048ea2c29c369ff81ba0ac1c4d6aeee1392deef7135acf23",
+        "body_length": 60,
+        "source_ids": [],
+        "confirmation_valid": true
+      },
+      {
+        "chapter_id": "a5d161f0-6400-41f8-bb2a-37b847708f9a",
+        "section_id": "method",
+        "current_version_id": "69655fa6-6798-4cc4-946c-d78e188354e6",
+        "body_sha256": "6ab4dd6d6a50ed9c63e2e88882b2c1d086cadf323cdb12209eeb575245d37bf3",
+        "body_length": 58,
+        "source_ids": [],
+        "confirmation_valid": true
+      }
+    ],
+    "sources": [
+      {
+        "asset_id": "50e75edd-bfcf-4720-8671-7fb6267a93c0",
+        "knowledge_id": "pgr7-knowledge-3341773442b9",
+        "title": "pg-r7 staged material",
+        "processing_state": "ready",
+        "asset_revision": 2
+      }
+    ],
+    "delivery": {
+      "snapshot_id": "snapshot-de35b30c108edec9eba0b6ca7890eb6a",
+      "snapshot_digest": "e07b56ade655fd28286f21e38c554d309a2c4978011c89019c579ece9937e5c8",
+      "frozen_project_version": 8,
+      "frozen_spec_revision": 1,
+      "frozen_chapters": 2,
+      "frozen_sources": 0,
+      "frozen_source_ids": [],
+      "check_status": "passed",
+      "export_id": "export-08be2d1e5ed2de363f5aecdca0e38112",
+      "export_status": "verified",
+      "export_file_sha256": "6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614",
+      "download_sha256": "6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614",
+      "download_length": 1994
+    }
+  },
+  "after": {
+    "access_token_accepted": true,
+    "project": {
+      "id": "3aa190fb-8b64-40b7-b9f5-1776290a6875",
+      "name": "PG R7 source binding 3341773442b9",
+      "status": "active",
+      "project_version": 8,
+      "spec_revision": 1,
+      "delivery_status": "NOT_READY"
+    },
+    "chapters": [
+      {
+        "chapter_id": "0bfe1a0a-b698-4ebf-a48f-8c1d53fae130",
+        "section_id": "question",
+        "current_version_id": "2bcec174-6212-434c-ad31-16a46dbc6214",
+        "body_sha256": "050b932e038a2315048ea2c29c369ff81ba0ac1c4d6aeee1392deef7135acf23",
+        "body_length": 60,
+        "source_ids": [],
+        "confirmation_valid": true
+      },
+      {
+        "chapter_id": "a5d161f0-6400-41f8-bb2a-37b847708f9a",
+        "section_id": "method",
+        "current_version_id": "69655fa6-6798-4cc4-946c-d78e188354e6",
+        "body_sha256": "6ab4dd6d6a50ed9c63e2e88882b2c1d086cadf323cdb12209eeb575245d37bf3",
+        "body_length": 58,
+        "source_ids": [],
+        "confirmation_valid": true
+      }
+    ],
+    "sources": [
+      {
+        "asset_id": "50e75edd-bfcf-4720-8671-7fb6267a93c0",
+        "knowledge_id": "pgr7-knowledge-3341773442b9",
+        "title": "pg-r7 staged material",
+        "processing_state": "ready",
+        "asset_revision": 2
+      }
+    ],
+    "delivery": {
+      "snapshot_id": "snapshot-de35b30c108edec9eba0b6ca7890eb6a",
+      "snapshot_digest": "e07b56ade655fd28286f21e38c554d309a2c4978011c89019c579ece9937e5c8",
+      "frozen_project_version": 8,
+      "frozen_spec_revision": 1,
+      "frozen_chapters": 2,
+      "frozen_sources": 0,
+      "frozen_source_ids": [],
+      "check_status": "passed",
+      "export_id": "export-08be2d1e5ed2de363f5aecdca0e38112",
+      "export_status": "verified",
+      "export_file_sha256": "6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614",
+      "download_sha256": "6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614",
+      "download_length": 1994
+    }
+  },
+  "comparison": {
+    "consistent": true,
+    "mismatches": [],
+    "leaf_count": 36
+  },
+  "zero_provider": {
+    "llm_debug_before": {
+      "files": 0,
+      "bytes": 0,
+      "names": []
+    },
+    "llm_debug_after": {
+      "files": 0,
+      "bytes": 0,
+      "names": []
+    }
+  },
+  "verdict": "PASS"
+}

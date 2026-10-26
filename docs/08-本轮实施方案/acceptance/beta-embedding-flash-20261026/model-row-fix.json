@@ -1,0 +1,47 @@
+{
+  "changed": true,
+  "before": {
+    "name": "qwen3.7-text-embedding",
+    "display_name": "qwen3.7-text-embedding",
+    "id": "lingdoc-embed-qwen3.7-text-embedding-iso",
+    "type": "Embedding",
+    "source": "remote",
+    "status": "active",
+    "tenant_id": 10000
+  },
+  "after": {
+    "name": "qwen3.7-text-embedding-flash",
+    "display_name": "qwen3.7-text-embedding-flash",
+    "id": "lingdoc-embed-qwen3.7-text-embedding-iso",
+    "type": "Embedding",
+    "source": "remote",
+    "status": "active",
+    "tenant_id": 10000
+  },
+  "provider": "aliyun",
+  "base_url": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+  "embedding_parameters": {
+    "dimension": 0,
+    "supports_dimension_override": false,
+    "truncate_prompt_tokens": 0
+  },
+  "api_key_ciphertext_prefix_ok": true,
+  "api_key_sha12": "d1e35d9c3d06",
+  "facts": {
+    "row_id_unchanged": true,
+    "name_is_flash": true,
+    "display_name_is_flash": true,
+    "type_still_embedding": true,
+    "source_still_remote": true,
+    "status_still_active": true,
+    "tenant_unchanged": true,
+    "parameters_byte_identical": true,
+    "api_key_still_ciphertext": true,
+    "base_url_unchanged": true,
+    "provider_unchanged": true,
+    "embedding_parameters_unchanged": true,
+    "chat_row_untouched": true,
+    "chat_row_still_qwen3_8_flash": true,
+    "chat_row_type_unchanged": true
+  }
+}
