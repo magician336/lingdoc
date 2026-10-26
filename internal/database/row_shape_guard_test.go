@@ -1,9 +1,13 @@
 package database
 
 // The row-shape guard keeps the registered gorm row structures and the real
-// SQLite migration chain honest about the same tables (Spec #707, ticket
-// #708). Everything in this block is the single source of the comparison
-// semantics: there is deliberately no second place that restates these rules.
+// migration chains honest about the same tables (Spec #707, tickets #708 and
+// #709: the SQLite side; ticket #710: the PostgreSQL twin in
+// row_shape_guard_postgres_test.go, which runs these same rules against the
+// versioned chain). Everything in this block is the single source of the
+// comparison semantics: there is deliberately no second place that restates
+// these rules — the dialects differ only in the artifact-side type tier and
+// rule 3's agreement rule, both tiered below.
 //
 // What is compared, per registered (package, row structure, table) entry:
 //
@@ -23,19 +27,22 @@ package database
 //     notnull=0 unless NOT NULL is spelled out, so a primary key without a
 //     `not null` tag sits in the unenforced bucket and the quirk never fires.
 //  3. Type — compared loosely through the normalization tables below: the
-//     declared gorm DataType and the artifact's SQLite decl type are each
-//     mapped to one canonical family and the families must agree, with one
-//     documented equivalence (typeFamiliesAgree): a declared bool accepts an
-//     INTEGER artifact column, because SQLite has no separate boolean
-//     storage class and stores booleans as integers — directionally, so an
-//     integer declaration cannot hide behind it. A declared or artifact type
-//     that no rule covers is itself a violation telling the contributor to
-//     extend the table here — never silently accepted, never downgraded to
+//     declared gorm DataType and the artifact's decl type are each mapped to
+//     one canonical family and the families must agree. The agreement rule is
+//     dialect-tiered (typeFamiliesAgreeOnDialect): SQLite keeps one documented
+//     equivalence (typeFamiliesAgree) — a declared bool accepts an INTEGER
+//     artifact column, because SQLite has no separate boolean storage class
+//     and stores booleans as integers — directionally, so an integer
+//     declaration cannot hide behind it; PostgreSQL has a real boolean type,
+//     so its twin compares the families directly and that equivalence does
+//     not carry over (#710, per #709's risk note). A declared or artifact
+//     type that no rule covers is itself a violation telling the contributor
+//     to extend the table here — never silently accepted, never downgraded to
 //     report-only.
 //  4. Length — a declared `size` is compared only when the artifact side
 //     exposes a length. SQLite decl types carry no length, so on this dialect
-//     a declared size never mismatches (documented no-op; the PostgreSQL side
-//     of #710 will enforce it against the same rules).
+//     a declared size never mismatches (documented no-op); PostgreSQL exposes
+//     character_maximum_length and enforces it against the same rules (#710).
 //
 // What is NOT compared (v1): default values, foreign keys, indexes, unique
 // constraints, autoincrement, primary-key semantics.
@@ -235,18 +242,32 @@ func (v rowShapeViolation) Error() string {
 }
 
 const (
-	rowShapeColumnMissing = "column-existence"
-	rowShapeNullability   = "nullability"
-	rowShapeTypeMismatch  = "type-mismatch"
-	rowShapeTypeUnknown   = "type-not-in-normalization-table"
+	rowShapeColumnMissing  = "column-existence"
+	rowShapeNullability    = "nullability"
+	rowShapeTypeMismatch   = "type-mismatch"
+	rowShapeTypeUnknown    = "type-not-in-normalization-table"
+	rowShapeLengthMismatch = "length-mismatch"
 )
 
-// migrationColumnShape is one column of the real migration chain's product,
-// read straight out of PRAGMA table_info.
+// The dialects the guard runs against. The checklist and the comparison
+// semantics are shared; the dialect decides the artifact-side type tier and
+// rule 3's agreement rule (see the header block).
+const (
+	dialectSQLite     = "SQLite"
+	dialectPostgreSQL = "PostgreSQL"
+)
+
+// migrationColumnShape is one column of a real migration chain's product,
+// read straight out of the dialect's schema seam: PRAGMA table_info on
+// SQLite, information_schema.columns on PostgreSQL. Length carries the
+// column's maximum length when the dialect exposes one; the SQLite reader
+// leaves it unset (decl types carry no length), which is what keeps rule 4 a
+// documented no-op on that dialect.
 type migrationColumnShape struct {
 	Name     string
 	DeclType string
 	NotNull  bool
+	Length   sql.NullInt64
 }
 
 // migratedSQLiteChainForShapeGuard builds a fresh database through the real
@@ -287,11 +308,27 @@ func parseRowShape(model any) (*schema.Schema, error) {
 	return schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
 }
 
-// runRowShapeGuard compares every registration against the migrated chain's
-// artifact and returns all violations. The identity assertions keep the
-// checklist honest: the registered (package, type, table) triple must be the
-// parsed structure's real identity, not just documentation.
+// rowShapeArtifactReader reads one table's columns out of a real migration
+// chain's product on its dialect (PRAGMA table_info on SQLite,
+// information_schema.columns on PostgreSQL).
+type rowShapeArtifactReader func(t *testing.T, table string) map[string]migrationColumnShape
+
+// runRowShapeGuard compares every registration against the migrated SQLite
+// chain's artifact and returns all violations. The PostgreSQL twin
+// (row_shape_guard_postgres_test.go) calls runRowShapeGuardAgainst with the
+// same checklist and its own reader.
 func runRowShapeGuard(t *testing.T, db *sql.DB, registrations []rowShapeRegistration) []rowShapeViolation {
+	t.Helper()
+	return runRowShapeGuardAgainst(t, dialectSQLite, registrations, func(t *testing.T, table string) map[string]migrationColumnShape {
+		return migrationTableShapes(t, db, table)
+	})
+}
+
+// runRowShapeGuardAgainst is the dialect-neutral engine: one checklist, one
+// comparison semantics, any dialect's real migration artifact. The identity
+// assertions keep the checklist honest: the registered (package, type, table)
+// triple must be the parsed structure's real identity, not just documentation.
+func runRowShapeGuardAgainst(t *testing.T, dialect string, registrations []rowShapeRegistration, readShapes rowShapeArtifactReader) []rowShapeViolation {
 	t.Helper()
 	var violations []rowShapeViolation
 	for _, reg := range registrations {
@@ -304,9 +341,22 @@ func runRowShapeGuard(t *testing.T, db *sql.DB, registrations []rowShapeRegistra
 			"registered type name must agree with the row structure's real type")
 		require.Equal(t, reg.TableName, parsed.Table,
 			"registered table name must agree with the row structure's TableName()")
-		violations = append(violations, compareRowShape(reg, parsed, migrationTableShapes(t, db, reg.TableName))...)
+		violations = append(violations, compareRowShape(reg, parsed, readShapes(t, reg.TableName), dialect)...)
 	}
 	return violations
+}
+
+// guardedRowShapeEntry returns the checklist entry of one row structure by
+// type name — the green twins (SQLite here, PostgreSQL in
+// row_shape_guard_postgres_test.go) use it to pin the #694 sample's identity
+// on both dialects.
+func guardedRowShapeEntry(typeName string) *rowShapeRegistration {
+	for i := range guardedRowShapes {
+		if guardedRowShapes[i].TypeName == typeName {
+			return &guardedRowShapes[i]
+		}
+	}
+	return nil
 }
 
 // declaredTypeFamilies is one half of rule 3's normalization (single source,
@@ -356,8 +406,45 @@ func sqliteDeclTypeFamily(declType string) (string, bool) {
 	return "", false
 }
 
-// typeFamiliesAgree is rule 3's final verdict, kept beside the two
-// normalization tables so the comparison semantics keep exactly one source.
+// postgresColumnTypeFamily is the PostgreSQL tier of rule 3's artifact-side
+// normalization (#710): it maps the data_type strings information_schema.columns
+// reports for the versioned chain's columns onto the same canonical families
+// the declared side uses. information_schema reports exact, unambiguous type
+// names (no storage-class affinity to second-guess), so this tier is a plain
+// table. A type that lands in neither tier is a violation (extend it), never
+// a silent pass.
+func postgresColumnTypeFamily(dataType string) (string, bool) {
+	switch strings.ToLower(dataType) {
+	case "boolean":
+		return "bool", true
+	case "smallint", "integer", "bigint":
+		return "integer", true
+	case "real", "double precision", "numeric":
+		return "float", true
+	case "character varying", "character", "text", "name":
+		return "string", true
+	case "bytea":
+		return "blob", true
+	case "timestamp with time zone", "timestamp without time zone",
+		"time with time zone", "time without time zone", "date":
+		return "time", true
+	}
+	return "", false
+}
+
+// artifactTypeFamily selects the dialect's tier of the artifact-side
+// normalization (rule 3): the mapping rules themselves live only in the two
+// functions above.
+func artifactTypeFamily(dialect, declType string) (string, bool) {
+	if dialect == dialectPostgreSQL {
+		return postgresColumnTypeFamily(declType)
+	}
+	return sqliteDeclTypeFamily(declType)
+}
+
+// typeFamiliesAgree is rule 3's final verdict for the SQLite dialect, kept
+// beside the two normalization tables so the comparison semantics keep
+// exactly one source.
 // SQLite has no separate boolean storage class — booleans are integers (0/1)
 // by documented convention — so a declared bool over an INTEGER artifact
 // column is the same shape, not a drift (#709's full-registration run hit
@@ -373,9 +460,22 @@ func typeFamiliesAgree(declared, artifact string) bool {
 	return declared == "bool" && artifact == "integer"
 }
 
+// typeFamiliesAgreeOnDialect dispatches rule 3's final verdict per dialect.
+// SQLite keeps the directional bool↔INTEGER equivalence documented above (no
+// boolean storage class); PostgreSQL has a real boolean type, so the twin
+// compares the families directly — the equivalence does not carry over, and
+// an integer declaration over a boolean column is a mismatch there (#710;
+// #709's risk note records this dialect split).
+func typeFamiliesAgreeOnDialect(dialect, declared, artifact string) bool {
+	if dialect == dialectPostgreSQL {
+		return declared == artifact
+	}
+	return typeFamiliesAgree(declared, artifact)
+}
+
 // compareRowShape applies the rules at the top of this file to one parsed row
-// structure against one table's artifact columns.
-func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact map[string]migrationColumnShape) []rowShapeViolation {
+// structure against one table's artifact columns, on the given dialect.
+func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact map[string]migrationColumnShape, dialect string) []rowShapeViolation {
 	var violations []rowShapeViolation
 
 	for _, field := range parsed.Fields {
@@ -433,7 +533,7 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 		// An uncovered type on either side is its own violation — the fix is
 		// extending the table here, never silently accepting the column.
 		declaredFamily, declaredKnown := declaredTypeFamilies[string(field.DataType)]
-		artifactFamily, artifactKnown := sqliteDeclTypeFamily(shape.DeclType)
+		artifactFamily, artifactKnown := artifactTypeFamily(dialect, shape.DeclType)
 		if !declaredKnown || !artifactKnown {
 			violations = append(violations, rowShapeViolation{
 				Table:  reg.TableName,
@@ -444,13 +544,13 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 					field.DataType, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
 				),
 				Artifact: fmt.Sprintf(
-					"decl type %q is not covered by the guard's SQLite normalization rules",
-					shape.DeclType,
+					"decl type %q is not covered by the guard's %s normalization rules",
+					shape.DeclType, dialect,
 				),
 			})
 			continue
 		}
-		if !typeFamiliesAgree(declaredFamily, artifactFamily) {
+		if !typeFamiliesAgreeOnDialect(dialect, declaredFamily, artifactFamily) {
 			violations = append(violations, rowShapeViolation{
 				Table:  reg.TableName,
 				Column: field.DBName,
@@ -467,9 +567,25 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rule 4: length. SQLite decl types carry no length, so a declared
-		// `size` never mismatches on this dialect (rule 4 above; the
-		// PostgreSQL side of #710 enforces it with the same rules).
+		// Rule 4: length. A declared `size` is compared when the artifact side
+		// exposes a length; the SQLite reader leaves Length unset, so the
+		// comparison never fires on that dialect (rule 4 above), while the
+		// PostgreSQL reader feeds character_maximum_length into it (#710).
+		if field.Size > 0 && shape.Length.Valid && int64(field.Size) != shape.Length.Int64 {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeLengthMismatch,
+				Declared: fmt.Sprintf(
+					"size %d (field %s %s, gorm tag %q)",
+					field.Size, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf(
+					"length %d (data type %q)",
+					shape.Length.Int64, shape.DeclType,
+				),
+			})
+		}
 	}
 
 	return violations
@@ -685,14 +801,7 @@ func TestRowShapeGuardTreatsADeclaredBoolAsSQLiteIntegerStorage(t *testing.T) {
 func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
 	// The #708 green sample stays pinned by identity: the adoption
 	// idempotency row must remain registered on its real table.
-	greenSample := "adoptionIdempotencyRow"
-	var entry *rowShapeRegistration
-	for i := range guardedRowShapes {
-		if guardedRowShapes[i].TypeName == greenSample {
-			entry = &guardedRowShapes[i]
-			break
-		}
-	}
+	entry := guardedRowShapeEntry("adoptionIdempotencyRow")
 	require.NotNil(t, entry, "the #694 green sample must stay on the checklist")
 	require.Equal(t, "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption", entry.PackagePath)
 	require.Equal(t, "lingdoc_candidate_adoptions", entry.TableName)
