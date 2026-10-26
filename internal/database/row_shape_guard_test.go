@@ -59,6 +59,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -96,6 +97,8 @@ func (v rowShapeViolation) Error() string {
 const (
 	rowShapeColumnMissing = "column-existence"
 	rowShapeNullability   = "nullability"
+	rowShapeTypeMismatch  = "type-mismatch"
+	rowShapeTypeUnknown   = "type-not-in-normalization-table"
 )
 
 // migrationColumnShape is one column of the real migration chain's product,
@@ -160,6 +163,53 @@ func runRowShapeGuard(t *testing.T, db *sql.DB, registrations []rowShapeRegistra
 	return violations
 }
 
+// declaredTypeFamilies is one half of rule 3's normalization (single source,
+// see the block at the top of this file): it maps gorm's parsed DataType
+// strings onto canonical type families. The first group is gorm's own
+// constants; the second group is the `type:` tag spellings the registered row
+// structures use. A type that lands in neither group is a violation (extend
+// this table), never a silent pass.
+var declaredTypeFamilies = map[string]string{
+	"string": "string", "bytes": "blob", "bool": "bool",
+	"int": "integer", "uint": "integer", "float": "float", "time": "time",
+
+	"text": "string", "varchar": "string", "character varying": "string",
+	"integer": "integer", "bigint": "integer", "smallint": "integer",
+	"boolean":  "bool",
+	"datetime": "time", "timestamp": "time", "date": "time",
+	"blob": "blob", "binary": "blob", "varbinary": "blob",
+	"double": "float", "decimal": "float", "numeric": "float", "real": "float",
+}
+
+// sqliteDeclTypeFamily is the other half of rule 3's normalization: it maps
+// the decl types the real SQLite chain writes (PRAGMA table_info) onto the
+// same canonical families. DATETIME and BOOLEAN are pinned ahead of the
+// substring rules because SQLite's affinity rules would otherwise class them
+// as NUMERIC; the substring rules otherwise mirror SQLite's affinity order.
+func sqliteDeclTypeFamily(declType string) (string, bool) {
+	upper := strings.ToUpper(declType)
+	switch upper {
+	case "":
+		return "blob", true // a typeless column has SQLite affinity BLOB
+	case "DATETIME", "TIMESTAMP", "DATE":
+		return "time", true
+	case "BOOLEAN", "BOOL":
+		return "bool", true
+	}
+	switch {
+	case strings.Contains(upper, "INT"):
+		return "integer", true
+	case strings.Contains(upper, "CHAR"), strings.Contains(upper, "CLOB"), strings.Contains(upper, "TEXT"):
+		return "string", true
+	case strings.Contains(upper, "BLOB"):
+		return "blob", true
+	case strings.Contains(upper, "REAL"), strings.Contains(upper, "FLOA"), strings.Contains(upper, "DOUB"),
+		strings.Contains(upper, "NUMERIC"), strings.Contains(upper, "DEC"):
+		return "float", true
+	}
+	return "", false
+}
+
 // compareRowShape applies the rules at the top of this file to one parsed row
 // structure against one table's artifact columns.
 func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact map[string]migrationColumnShape) []rowShapeViolation {
@@ -216,8 +266,47 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rules 3/4 (type/length) land with their red tests.
-		_ = shape
+		// Rule 3: type, compared loosely through the normalization tables.
+		// An uncovered type on either side is its own violation — the fix is
+		// extending the table here, never silently accepting the column.
+		declaredFamily, declaredKnown := declaredTypeFamilies[string(field.DataType)]
+		artifactFamily, artifactKnown := sqliteDeclTypeFamily(shape.DeclType)
+		if !declaredKnown || !artifactKnown {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeTypeUnknown,
+				Declared: fmt.Sprintf(
+					"type %q is not covered by the guard's declared-type normalization table — extend the table (field %s %s, gorm tag %q)",
+					field.DataType, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf(
+					"decl type %q is not covered by the guard's SQLite normalization rules",
+					shape.DeclType,
+				),
+			})
+			continue
+		}
+		if declaredFamily != artifactFamily {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeTypeMismatch,
+				Declared: fmt.Sprintf(
+					"type %q (normalized: %s)",
+					field.DataType, declaredFamily,
+				),
+				Artifact: fmt.Sprintf(
+					"decl type %q (normalized: %s)",
+					shape.DeclType, artifactFamily,
+				),
+			})
+			continue
+		}
+
+		// Rule 4: length. SQLite decl types carry no length, so a declared
+		// `size` never mismatches on this dialect (rule 4 above; the
+		// PostgreSQL side of #710 enforces it with the same rules).
 	}
 
 	return violations
@@ -330,4 +419,63 @@ func TestRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn(t *testing.T)
 	require.Contains(t, message, "project_id", "failure must name the column")
 	require.Contains(t, message, "nullable", "failure must show the declared nullability")
 	require.Contains(t, message, "NOT NULL", "failure must show the artifact's nullability")
+}
+
+// rowShapeGuardTypeMismatchFixture declares a string where the real chain
+// builds an integer column (rule 3: type families must agree).
+type rowShapeGuardTypeMismatchFixture struct {
+	DigestVersion string `gorm:"not null"`
+}
+
+func (rowShapeGuardTypeMismatchFixture) TableName() string { return "lingdoc_candidate_adoptions" }
+
+func TestRowShapeGuardFlagsDeclaredTypeMismatchingTheArtifact(t *testing.T) {
+	db := migratedSQLiteChainForShapeGuard(t)
+
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "rowShapeGuardTypeMismatchFixture",
+		TableName:   "lingdoc_candidate_adoptions",
+		schemaOf:    parseRowShapeFixture(&rowShapeGuardTypeMismatchFixture{}),
+	}}
+	violations := runRowShapeGuard(t, db, registrations)
+
+	violation, found := findRowShapeViolation(violations, "digest_version", rowShapeTypeMismatch)
+	require.Truef(t, found,
+		"the guard must flag a declared type whose family differs from the artifact's; got %v", violations)
+
+	message := violation.Error()
+	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
+	require.Contains(t, message, "digest_version", "failure must name the column")
+	require.Contains(t, message, `type "string"`, "failure must show the declared type")
+	require.Contains(t, message, `"INTEGER"`, "failure must show the artifact's decl type")
+}
+
+// rowShapeGuardUnknownTypeFixture declares a type no normalization rule
+// covers (rule 3's ratchet: extend the table, never silently accept).
+type rowShapeGuardUnknownTypeFixture struct {
+	DigestVersion string `gorm:"column:digest_version;not null;type:jsonb"`
+}
+
+func (rowShapeGuardUnknownTypeFixture) TableName() string { return "lingdoc_candidate_adoptions" }
+
+func TestRowShapeGuardFlagsDeclaredTypeOutsideTheNormalizationTable(t *testing.T) {
+	db := migratedSQLiteChainForShapeGuard(t)
+
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "rowShapeGuardUnknownTypeFixture",
+		TableName:   "lingdoc_candidate_adoptions",
+		schemaOf:    parseRowShapeFixture(&rowShapeGuardUnknownTypeFixture{}),
+	}}
+	violations := runRowShapeGuard(t, db, registrations)
+
+	violation, found := findRowShapeViolation(violations, "digest_version", rowShapeTypeUnknown)
+	require.Truef(t, found,
+		"the guard must flag a declared type no normalization rule covers instead of silently passing it; got %v", violations)
+
+	message := violation.Error()
+	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
+	require.Contains(t, message, "digest_version", "failure must name the column")
+	require.Contains(t, message, "normalization", "failure must point at the normalization table as the fix")
 }
