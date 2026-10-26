@@ -131,6 +131,19 @@ func TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain(t *testing.T) {
 		"every registered row structure and the real versioned chain must agree on every guarded column")
 }
 
+// TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn 是规则 1 的反向
+// 在 PostgreSQL 侧的孪生（#713）：versioned 链建出的每一列都必须被同表至少
+// 一个登记行结构声明——同表多结构体按并集合并，部分投影合法；没有任何结构体
+// 声明的列才是违规。长度规则在本侧激活（character_maximum_length）。
+func TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn(t *testing.T) {
+	db, schema := migratedPostgresChainForShapeGuard(t)
+	violations := runRowShapeColumnCoverageAgainst(t, dialectPostgreSQL, guardedRowShapes, func(t *testing.T, table string) map[string]migrationColumnShape {
+		return postgresTableShapes(t, db, schema, table)
+	})
+	require.Empty(t, violations,
+		"every column the versioned migration chain builds must be declared by at least one registered row structure")
+}
+
 // --- 守护自测红夹具 ----------------------------------------------------------
 //
 // 以下夹具是守护自测，永远不进登记清单：每一个都是故意写错的声明，指向真实
