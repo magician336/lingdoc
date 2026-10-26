@@ -55,15 +55,22 @@ package database
 // passing.
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 )
 
@@ -75,6 +82,91 @@ type rowShapeRegistration struct {
 	TypeName    string
 	TableName   string
 	schemaOf    func() (*schema.Schema, error)
+}
+
+// guardedRowShapes is the explicit registration checklist (Spec #707). Ticket
+// #708 pins it to exactly one real entry — the #694 adoption idempotency row —
+// so the known-good shape is permanently locked. #709's AST scan grows the
+// checklist, and every growth lands as an explicit diff here.
+var guardedRowShapes = []rowShapeRegistration{
+	{
+		PackagePath: "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+		TypeName:    "adoptionIdempotencyRow",
+		TableName:   "lingdoc_candidate_adoptions",
+		schemaOf:    candidateAdoptionIdempotencyRowSchema,
+	},
+}
+
+// candidateAdoptionIdempotencyRowSchema returns gorm's own parse of the real
+// adoption idempotency row. The row structure is unexported in its owning
+// package and this ticket must not touch production code, so the parse is
+// triggered through the store's existing exported AutoMigrate on a throwaway
+// database and read back out of gorm's schema cache (see the block at the top
+// of this file).
+func candidateAdoptionIdempotencyRowSchema() (*schema.Schema, error) {
+	dir, err := os.MkdirTemp("", "lingdoc-row-shape-guard-*")
+	if err != nil {
+		return nil, fmt.Errorf("row-shape guard: could not create the throwaway declaration database: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "declaration.db")), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		return nil, fmt.Errorf("row-shape guard: could not open the throwaway declaration database: %w", err)
+	}
+	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
+		defer func() { _ = sqlDB.Close() }()
+	}
+
+	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
+	if err := store.AutoMigrate(context.Background()); err != nil {
+		return nil, fmt.Errorf("row-shape guard: the candidateadoption store could not parse its row structures: %w", err)
+	}
+
+	return gormParsedSchema(db, "lingdoc_candidate_adoptions", "candidateadoption", "adoptionIdempotencyRow")
+}
+
+// gormParsedSchema digs one parsed row structure out of gorm's schema cache.
+// The cache holds gorm's own knowledge; the read is a reflect probe of the
+// unexported Config.cacheStore field and fails loudly when a gorm upgrade
+// moves it, instead of letting the guard pass silently.
+func gormParsedSchema(db *gorm.DB, table, pkgName, typeName string) (*schema.Schema, error) {
+	configValue := reflect.ValueOf(db.Config).Elem()
+	cacheField := configValue.FieldByName("cacheStore")
+	if !cacheField.IsValid() || cacheField.Kind() != reflect.Pointer || !cacheField.CanAddr() {
+		return nil, fmt.Errorf(
+			"row-shape guard: gorm's schema cache is no longer reachable at Config.cacheStore; " +
+				"rework the declaration-side capture (see the row-shape guard's comment) — failing loudly instead of skipping",
+		)
+	}
+	// The field's storage holds the *sync.Map pointer, so read the pointer
+	// out through a double dereference, not by reinterpreting the field
+	// address itself as a sync.Map.
+	cache := *(**sync.Map)(unsafe.Pointer(cacheField.UnsafeAddr()))
+	if cache == nil {
+		return nil, fmt.Errorf(
+			"row-shape guard: gorm's schema cache is nil; rework the declaration-side capture (see the row-shape guard's comment)",
+		)
+	}
+
+	var found *schema.Schema
+	cache.Range(func(_, value any) bool {
+		parsed, ok := value.(*schema.Schema)
+		if ok && parsed.Table == table &&
+			strings.HasSuffix(parsed.ModelType.PkgPath(), "/lingdoc/"+pkgName) &&
+			parsed.ModelType.Name() == typeName {
+			found = parsed
+			return false
+		}
+		return true
+	})
+	if found == nil {
+		return nil, fmt.Errorf(
+			"row-shape guard: gorm parsed no schema for %s.%s on table %s; the capture mechanism needs rework instead of a silent pass",
+			pkgName, typeName, table,
+		)
+	}
+	return found, nil
 }
 
 // rowShapeViolation is one mismatch the guard found. Error() renders the
@@ -478,4 +570,30 @@ func TestRowShapeGuardFlagsDeclaredTypeOutsideTheNormalizationTable(t *testing.T
 	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
 	require.Contains(t, message, "digest_version", "failure must name the column")
 	require.Contains(t, message, "normalization", "failure must point at the normalization table as the fix")
+}
+
+// TestGuardedRowShapesMatchTheSQLiteMigrationChain is the green sample: the
+// #694 adoption idempotency row, parsed by gorm itself, against the real
+// migration chain's product (000056 made chapter_version_id nullable). The
+// precondition assertions keep this from passing vacuously — they prove the
+// pointer/nullable direction of rule 2 really executed on the real row.
+func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
+	// The checklist is pinned: exactly one real entry this ticket (#708).
+	require.Len(t, guardedRowShapes, 1)
+	require.Equal(t, "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption", guardedRowShapes[0].PackagePath)
+	require.Equal(t, "adoptionIdempotencyRow", guardedRowShapes[0].TypeName)
+	require.Equal(t, "lingdoc_candidate_adoptions", guardedRowShapes[0].TableName)
+
+	parsed, err := guardedRowShapes[0].schemaOf()
+	require.NoError(t, err)
+	field, ok := parsed.FieldsByDBName["chapter_version_id"]
+	require.True(t, ok, "the adoption idempotency row must declare chapter_version_id")
+	require.Equal(t, reflect.Pointer, field.FieldType.Kind(),
+		"the #694 fix made the field a pointer (*string)")
+	require.False(t, field.NotNull, "the green sample's pointer must not carry a not null tag")
+
+	db := migratedSQLiteChainForShapeGuard(t)
+	violations := runRowShapeGuard(t, db, guardedRowShapes)
+	require.Empty(t, violations,
+		"the adoption idempotency row and the real migration chain must agree on every guarded column")
 }
