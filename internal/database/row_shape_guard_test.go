@@ -36,52 +36,93 @@ package database
 // What is NOT compared (v1): default values, foreign keys, indexes, unique
 // constraints, autoincrement, primary-key semantics.
 //
-// Registration and exclusions: the checklist (guardedRowShapes) is explicit.
-// This ticket needs no exclusions; if one ever is needed it must be added
-// next to the checklist with its own reason comment (Spec #707: exclusions
-// are explicit and reasoned, and the target state is zero).
+// Registration and exclusions: the checklist (guardedRowShapes) is explicit —
+// one (package, type, table) entry per row structure, currently the domain's
+// full set. The AST scan in row_shape_registry_ast_test.go enforces the other
+// direction: a TableName row structure missing from this list is red, and a
+// list entry no type answers to is red. This ticket needs no exclusions; if
+// one ever is needed it must be added next to the checklist with its own
+// reason comment (Spec #707: exclusions are explicit and reasoned, and the
+// target state is zero).
 //
 // Failure messages must carry the table name, the column name and both
 // sides' concrete shapes (declared vs artifact), so a mismatch is fixable
 // without opening a database by hand.
 //
-// The real checklist entry's row structure is unexported in its owning
-// package and this ticket must not touch production code, so the declaration
-// side is captured through gorm itself: the owning store's existing exported
-// AutoMigrate runs on a throwaway database, which makes gorm parse the real
-// structs, and the parsed *schema.Schema values are read out of gorm's own
-// schema cache (Config.cacheStore, a reflect read-only probe). If a gorm
-// upgrade moves that field, the guard fails loudly here instead of silently
-// passing.
+// The row structures are unexported in their owning packages, so the
+// declaration side is captured through one exported door per package
+// (RowShapesForSchemaGuard, keyed by type name; the precedent is
+// workspacecore.AuditEventRowColumns). The doors are test-support only —
+// nothing in production calls them — and the guard parses what they return
+// with gorm's own parser, the same knowledge gorm writes rows with.
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
-	"unsafe"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 )
 
 // rowShapeRegistration is one explicit entry of the shape guard's checklist:
 // the owning package, the row structure's type name, the table it maps to,
-// and the gorm-parsed schema of that exact structure.
+// and the structure itself (reached through the owning package's
+// RowShapesForSchemaGuard door; see the block at the top of this file).
 type rowShapeRegistration struct {
 	PackagePath string
 	TypeName    string
 	TableName   string
-	schemaOf    func() (*schema.Schema, error)
+	model       any
+}
+
+// registration builds one checklist entry: the explicit (package, type,
+// table) triple, with the structure resolved from the owning package's door
+// under the very same names — so a typo in any of the three names fails
+// loudly at init, before the guard even runs.
+func registration(pkg, typeName, table string) rowShapeRegistration {
+	return rowShapeRegistration{
+		PackagePath: lingdocDomainModulePath + "/" + pkg,
+		TypeName:    typeName,
+		TableName:   table,
+		model:       rowShapeModel(pkg, typeName),
+	}
+}
+
+// rowShapeDoors maps the checklist's package shorthand to the owning
+// package's RowShapesForSchemaGuard door.
+var rowShapeDoors = map[string]func() map[string]any{
+	"candidateadoption":  candidateadoption.RowShapesForSchemaGuard,
+	"delivery":           delivery.RowShapesForSchemaGuard,
+	"generation":         generation.RowShapesForSchemaGuard,
+	"rulesetstore":       rulesetstore.RowShapesForSchemaGuard,
+	"templategovernance": templategovernance.RowShapesForSchemaGuard,
+	"workspace":          workspace.RowShapesForSchemaGuard,
+	"workspacecore":      workspacecore.RowShapesForSchemaGuard,
+}
+
+// rowShapeModel resolves one row structure through its package's door.
+func rowShapeModel(pkg, typeName string) any {
+	door, ok := rowShapeDoors[pkg]
+	if !ok {
+		panic("row-shape guard: 清单登记的包没有声明门（RowShapesForSchemaGuard）：" + pkg)
+	}
+	model, ok := door()[typeName]
+	if !ok {
+		panic("row-shape guard: 行结构 " + pkg + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
+	}
+	return model
 }
 
 // rowShapeExclusion is one explicitly deferred checklist entry. The target
@@ -102,89 +143,74 @@ type rowShapeExclusion struct {
 // ships with none: every discovered row structure is registered and compared.
 var deferredRowShapeExclusions = []rowShapeExclusion{}
 
-// guardedRowShapes is the explicit registration checklist (Spec #707). Ticket
-// #708 pinned it to exactly one real entry — the #694 adoption idempotency
-// row — and #709's AST scan grows it to the domain's full set; every growth
-// lands as an explicit diff here.
+// guardedRowShapes is the explicit registration checklist (Spec #707).
+// #708 pinned one real entry; #709 registers the domain's full set — every
+// row structure the AST scan finds (currently 47 across 7 packages; the scan
+// is the authority and this list must keep matching it). Every growth or
+// shrinkage lands as an explicit diff here.
 var guardedRowShapes = []rowShapeRegistration{
-	{
-		PackagePath: "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
-		TypeName:    "adoptionIdempotencyRow",
-		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    candidateAdoptionIdempotencyRowSchema,
-	},
-}
+	// candidateadoption —— candidate_adoption_store.go
+	registration("candidateadoption", "adoptionIdempotencyRow", "lingdoc_candidate_adoptions"),
+	registration("candidateadoption", "adoptionWorkingCopyRow", "lingdoc_working_copies"),
+	registration("candidateadoption", "candidateRow", "lingdoc_candidates"),
+	registration("candidateadoption", "chapterRow", "lingdoc_chapters"),
+	registration("candidateadoption", "chapterVersionRow", "lingdoc_chapter_versions"),
+	registration("candidateadoption", "confirmationIdempotencyRow", "lingdoc_chapter_confirmation_requests"),
+	registration("candidateadoption", "confirmationRow", "lingdoc_chapter_confirmations"),
+	registration("candidateadoption", "projectAssetRow", "lingdoc_project_assets"),
+	registration("candidateadoption", "projectAuditRow", "lingdoc_project_audits"),
+	registration("candidateadoption", "projectRow", "lingdoc_projects"),
+	registration("candidateadoption", "projectTemplateCopyRow", "lingdoc_project_template_copies"),
 
-// candidateAdoptionIdempotencyRowSchema returns gorm's own parse of the real
-// adoption idempotency row. The row structure is unexported in its owning
-// package and this ticket must not touch production code, so the parse is
-// triggered through the store's existing exported AutoMigrate on a throwaway
-// database and read back out of gorm's schema cache (see the block at the top
-// of this file).
-func candidateAdoptionIdempotencyRowSchema() (*schema.Schema, error) {
-	dir, err := os.MkdirTemp("", "lingdoc-row-shape-guard-*")
-	if err != nil {
-		return nil, fmt.Errorf("row-shape guard: could not create the throwaway declaration database: %w", err)
-	}
-	defer os.RemoveAll(dir)
+	// delivery —— sqlite_export_store.go / sqlite_snapshot_store.go
+	registration("delivery", "exportArtifactListRow", "lingdoc_export_artifacts"),
+	registration("delivery", "exportArtifactRow", "lingdoc_export_artifacts"),
+	registration("delivery", "releaseSnapshotRow", "lingdoc_release_snapshots"),
 
-	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "declaration.db")), &gorm.Config{Logger: logger.Discard})
-	if err != nil {
-		return nil, fmt.Errorf("row-shape guard: could not open the throwaway declaration database: %w", err)
-	}
-	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
-		defer func() { _ = sqlDB.Close() }()
-	}
+	// generation —— store.go
+	registration("generation", "generationRow", "lingdoc_generation_runs"),
 
-	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	if err := store.AutoMigrate(context.Background()); err != nil {
-		return nil, fmt.Errorf("row-shape guard: the candidateadoption store could not parse its row structures: %w", err)
-	}
+	// rulesetstore —— store.go / metrics.go / use_audit.go
+	registration("rulesetstore", "ruleSetMetricRow", "lingdoc_ruleset_metrics"),
+	registration("rulesetstore", "ruleSetUseAuditRow", "lingdoc_ruleset_use_audits"),
+	registration("rulesetstore", "ruleSetVersionRow", "lingdoc_rule_sets"),
 
-	return gormParsedSchema(db, "lingdoc_candidate_adoptions", "candidateadoption", "adoptionIdempotencyRow")
-}
+	// templategovernance —— schema.go
+	registration("templategovernance", "operationRow", "lingdoc_template_governance_operations"),
+	registration("templategovernance", "profileRow", "lingdoc_template_profiles"),
+	registration("templategovernance", "suggestionRow", "lingdoc_rule_suggestion_runs"),
+	registration("templategovernance", "versionRow", "lingdoc_template_versions"),
 
-// gormParsedSchema digs one parsed row structure out of gorm's schema cache.
-// The cache holds gorm's own knowledge; the read is a reflect probe of the
-// unexported Config.cacheStore field and fails loudly when a gorm upgrade
-// moves it, instead of letting the guard pass silently.
-func gormParsedSchema(db *gorm.DB, table, pkgName, typeName string) (*schema.Schema, error) {
-	configValue := reflect.ValueOf(db.Config).Elem()
-	cacheField := configValue.FieldByName("cacheStore")
-	if !cacheField.IsValid() || cacheField.Kind() != reflect.Pointer || !cacheField.CanAddr() {
-		return nil, fmt.Errorf(
-			"row-shape guard: gorm's schema cache is no longer reachable at Config.cacheStore; " +
-				"rework the declaration-side capture (see the row-shape guard's comment) — failing loudly instead of skipping",
-		)
-	}
-	// The field's storage holds the *sync.Map pointer, so read the pointer
-	// out through a double dereference, not by reinterpreting the field
-	// address itself as a sync.Map.
-	cache := *(**sync.Map)(unsafe.Pointer(cacheField.UnsafeAddr()))
-	if cache == nil {
-		return nil, fmt.Errorf(
-			"row-shape guard: gorm's schema cache is nil; rework the declaration-side capture (see the row-shape guard's comment)",
-		)
-	}
+	// workspace —— selected_rewrite.go / selected_rewrite_review.go
+	registration("workspace", "reviewReportRow", "lingdoc_review_reports"),
+	registration("workspace", "selectedRewriteRow", "lingdoc_selected_rewrites"),
 
-	var found *schema.Schema
-	cache.Range(func(_, value any) bool {
-		parsed, ok := value.(*schema.Schema)
-		if ok && parsed.Table == table &&
-			strings.HasSuffix(parsed.ModelType.PkgPath(), "/lingdoc/"+pkgName) &&
-			parsed.ModelType.Name() == typeName {
-			found = parsed
-			return false
-		}
-		return true
-	})
-	if found == nil {
-		return nil, fmt.Errorf(
-			"row-shape guard: gorm parsed no schema for %s.%s on table %s; the capture mechanism needs rework instead of a silent pass",
-			pkgName, typeName, table,
-		)
-	}
-	return found, nil
+	// workspacecore —— agent_object_storage.go / impact_dependency_candidate_store.go /
+	// impact_store.go / membership_lifecycle.go / model.go / model_call_ledger.go /
+	// roadmap_store.go / runtime_control.go
+	registration("workspacecore", "auditEventRow", "lingdoc_project_audits"),
+	registration("workspacecore", "chapterConfirmationRow", "lingdoc_chapter_confirmations"),
+	registration("workspacecore", "chapterRow", "lingdoc_chapters"),
+	registration("workspacecore", "chapterVersionRow", "lingdoc_chapter_versions"),
+	registration("workspacecore", "changeSetRow", "lingdoc_change_sets"),
+	registration("workspacecore", "dependencyCandidateBatchRow", "lingdoc_g3_dependency_candidate_batches"),
+	registration("workspacecore", "dependencyCandidateRow", "lingdoc_g3_dependency_candidates"),
+	registration("workspacecore", "draftCandidateRow", "lingdoc_draft_candidates"),
+	registration("workspacecore", "memberPermissionRow", "lingdoc_member_permissions"),
+	registration("workspacecore", "memberRow", "lingdoc_members"),
+	registration("workspacecore", "modelCallLedgerRow", "lingdoc_model_call_ledger"),
+	registration("workspacecore", "objectRow", "lingdoc_g2_objects"),
+	registration("workspacecore", "objectVersionRow", "lingdoc_g2_object_versions"),
+	registration("workspacecore", "operationRow", "lingdoc_operations"),
+	registration("workspacecore", "ownerTransferRow", "lingdoc_owner_transfers"),
+	registration("workspacecore", "projectRecordRow", "lingdoc_g5_records"),
+	registration("workspacecore", "projectRow", "lingdoc_projects"),
+	registration("workspacecore", "projectTemplateCopyRow", "lingdoc_project_template_copies"),
+	registration("workspacecore", "roadmapEditSessionRow", "lingdoc_g3_roadmap_edit_sessions"),
+	registration("workspacecore", "routeEdgeRow", "lingdoc_g3_route_edges"),
+	registration("workspacecore", "runtimeRecordRow", "lingdoc_g6_records"),
+	registration("workspacecore", "versionedRecordRow", "lingdoc_g3_records"),
+	registration("workspacecore", "workingCopyRow", "lingdoc_working_copies"),
 }
 
 // rowShapeViolation is one mismatch the guard found. Error() renders the
@@ -250,22 +276,28 @@ func migrationTableShapes(t *testing.T, db *sql.DB, table string) map[string]mig
 	return shapes
 }
 
-// parseRowShapeFixture parses a test-owned fixture structure with gorm's own
-// parser — the same knowledge gorm uses when it writes rows.
-func parseRowShapeFixture(model any) func() (*schema.Schema, error) {
-	return func() (*schema.Schema, error) {
-		return schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
-	}
+// parseRowShape parses one row structure with gorm's own parser — the same
+// knowledge gorm uses when it writes rows. The declaration side never comes
+// from a hand-rolled reading of the tags.
+func parseRowShape(model any) (*schema.Schema, error) {
+	return schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
 }
 
 // runRowShapeGuard compares every registration against the migrated chain's
-// artifact and returns all violations.
+// artifact and returns all violations. The identity assertions keep the
+// checklist honest: the registered (package, type, table) triple must be the
+// parsed structure's real identity, not just documentation.
 func runRowShapeGuard(t *testing.T, db *sql.DB, registrations []rowShapeRegistration) []rowShapeViolation {
 	t.Helper()
 	var violations []rowShapeViolation
 	for _, reg := range registrations {
-		parsed, err := reg.schemaOf()
+		require.NotNil(t, reg.model, "checklist entry "+reg.PackagePath+"."+reg.TypeName+" resolved to no row structure")
+		parsed, err := parseRowShape(reg.model)
 		require.NoError(t, err)
+		require.Equal(t, reg.PackagePath, parsed.ModelType.PkgPath(),
+			"registered package path must agree with the row structure's owning package")
+		require.Equal(t, reg.TypeName, parsed.ModelType.Name(),
+			"registered type name must agree with the row structure's real type")
 		require.Equal(t, reg.TableName, parsed.Table,
 			"registered table name must agree with the row structure's TableName()")
 		violations = append(violations, compareRowShape(reg, parsed, migrationTableShapes(t, db, reg.TableName))...)
@@ -444,7 +476,7 @@ func TestRowShapeGuardFlagsDeclaredColumnMissingFromTheMigrationArtifact(t *test
 		PackagePath: "github.com/Tencent/WeKnora/internal/database",
 		TypeName:    "rowShapeGuardMissingColumnFixture",
 		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    parseRowShapeFixture(&rowShapeGuardMissingColumnFixture{}),
+		model:       &rowShapeGuardMissingColumnFixture{},
 	}}
 	violations := runRowShapeGuard(t, db, registrations)
 
@@ -485,7 +517,7 @@ func TestRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn(t *testing.T
 		PackagePath: "github.com/Tencent/WeKnora/internal/database",
 		TypeName:    "rowShapeGuardNotNullOnNullableFixture",
 		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    parseRowShapeFixture(&rowShapeGuardNotNullOnNullableFixture{}),
+		model:       &rowShapeGuardNotNullOnNullableFixture{},
 	}}
 	violations := runRowShapeGuard(t, db, registrations)
 
@@ -516,7 +548,7 @@ func TestRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn(t *testing.T)
 		PackagePath: "github.com/Tencent/WeKnora/internal/database",
 		TypeName:    "rowShapeGuardPointerOnNotNullFixture",
 		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    parseRowShapeFixture(&rowShapeGuardPointerOnNotNullFixture{}),
+		model:       &rowShapeGuardPointerOnNotNullFixture{},
 	}}
 	violations := runRowShapeGuard(t, db, registrations)
 
@@ -546,7 +578,7 @@ func TestRowShapeGuardFlagsDeclaredTypeMismatchingTheArtifact(t *testing.T) {
 		PackagePath: "github.com/Tencent/WeKnora/internal/database",
 		TypeName:    "rowShapeGuardTypeMismatchFixture",
 		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    parseRowShapeFixture(&rowShapeGuardTypeMismatchFixture{}),
+		model:       &rowShapeGuardTypeMismatchFixture{},
 	}}
 	violations := runRowShapeGuard(t, db, registrations)
 
@@ -576,7 +608,7 @@ func TestRowShapeGuardFlagsDeclaredTypeOutsideTheNormalizationTable(t *testing.T
 		PackagePath: "github.com/Tencent/WeKnora/internal/database",
 		TypeName:    "rowShapeGuardUnknownTypeFixture",
 		TableName:   "lingdoc_candidate_adoptions",
-		schemaOf:    parseRowShapeFixture(&rowShapeGuardUnknownTypeFixture{}),
+		model:       &rowShapeGuardUnknownTypeFixture{},
 	}}
 	violations := runRowShapeGuard(t, db, registrations)
 
@@ -592,17 +624,27 @@ func TestRowShapeGuardFlagsDeclaredTypeOutsideTheNormalizationTable(t *testing.T
 
 // TestGuardedRowShapesMatchTheSQLiteMigrationChain is the green sample: the
 // #694 adoption idempotency row, parsed by gorm itself, against the real
-// migration chain's product (000056 made chapter_version_id nullable). The
+// migration chain's product (000056 made chapter_version_id nullable) — and,
+// since #709, every other registered row structure in the domain. The
 // precondition assertions keep this from passing vacuously — they prove the
-// pointer/nullable direction of rule 2 really executed on the real row.
+// pointer/nullable direction of rule 2 really executed on the real row, and
+// that the #708 green sample survived the checklist's growth intact.
 func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
-	// The checklist is pinned: exactly one real entry this ticket (#708).
-	require.Len(t, guardedRowShapes, 1)
-	require.Equal(t, "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption", guardedRowShapes[0].PackagePath)
-	require.Equal(t, "adoptionIdempotencyRow", guardedRowShapes[0].TypeName)
-	require.Equal(t, "lingdoc_candidate_adoptions", guardedRowShapes[0].TableName)
+	// The #708 green sample stays pinned by identity: the adoption
+	// idempotency row must remain registered on its real table.
+	greenSample := "adoptionIdempotencyRow"
+	var entry *rowShapeRegistration
+	for i := range guardedRowShapes {
+		if guardedRowShapes[i].TypeName == greenSample {
+			entry = &guardedRowShapes[i]
+			break
+		}
+	}
+	require.NotNil(t, entry, "the #694 green sample must stay on the checklist")
+	require.Equal(t, "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption", entry.PackagePath)
+	require.Equal(t, "lingdoc_candidate_adoptions", entry.TableName)
 
-	parsed, err := guardedRowShapes[0].schemaOf()
+	parsed, err := parseRowShape(entry.model)
 	require.NoError(t, err)
 	field, ok := parsed.FieldsByDBName["chapter_version_id"]
 	require.True(t, ok, "the adoption idempotency row must declare chapter_version_id")
@@ -613,5 +655,5 @@ func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
 	db := migratedSQLiteChainForShapeGuard(t)
 	violations := runRowShapeGuard(t, db, guardedRowShapes)
 	require.Empty(t, violations,
-		"the adoption idempotency row and the real migration chain must agree on every guarded column")
+		"every registered row structure and the real migration chain must agree on every guarded column")
 }
