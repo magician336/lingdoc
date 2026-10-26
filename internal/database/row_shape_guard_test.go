@@ -24,10 +24,14 @@ package database
 //     `not null` tag sits in the unenforced bucket and the quirk never fires.
 //  3. Type — compared loosely through the normalization tables below: the
 //     declared gorm DataType and the artifact's SQLite decl type are each
-//     mapped to one canonical family and the families must agree. A declared
-//     or artifact type that no rule covers is itself a violation telling the
-//     contributor to extend the table here — never silently accepted, never
-//     downgraded to report-only.
+//     mapped to one canonical family and the families must agree, with one
+//     documented equivalence (typeFamiliesAgree): a declared bool accepts an
+//     INTEGER artifact column, because SQLite has no separate boolean
+//     storage class and stores booleans as integers — directionally, so an
+//     integer declaration cannot hide behind it. A declared or artifact type
+//     that no rule covers is itself a violation telling the contributor to
+//     extend the table here — never silently accepted, never downgraded to
+//     report-only.
 //  4. Length — a declared `size` is compared only when the artifact side
 //     exposes a length. SQLite decl types carry no length, so on this dialect
 //     a declared size never mismatches (documented no-op; the PostgreSQL side
@@ -352,6 +356,23 @@ func sqliteDeclTypeFamily(declType string) (string, bool) {
 	return "", false
 }
 
+// typeFamiliesAgree is rule 3's final verdict, kept beside the two
+// normalization tables so the comparison semantics keep exactly one source.
+// SQLite has no separate boolean storage class — booleans are integers (0/1)
+// by documented convention — so a declared bool over an INTEGER artifact
+// column is the same shape, not a drift (#709's full-registration run hit
+// exactly this false positive on the confirmation_valid / valid / is_current
+// columns, and the Spec prescribes fixing it by extending the normalization
+// rules, never by downgrading the guard). The acceptance is directional: an
+// integer declaration over a boolean-intended column stays a mismatch, so a
+// drifted type cannot hide behind the equivalence.
+func typeFamiliesAgree(declared, artifact string) bool {
+	if declared == artifact {
+		return true
+	}
+	return declared == "bool" && artifact == "integer"
+}
+
 // compareRowShape applies the rules at the top of this file to one parsed row
 // structure against one table's artifact columns.
 func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact map[string]migrationColumnShape) []rowShapeViolation {
@@ -429,7 +450,7 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			})
 			continue
 		}
-		if declaredFamily != artifactFamily {
+		if !typeFamiliesAgree(declaredFamily, artifactFamily) {
 			violations = append(violations, rowShapeViolation{
 				Table:  reg.TableName,
 				Column: field.DBName,
@@ -620,6 +641,38 @@ func TestRowShapeGuardFlagsDeclaredTypeOutsideTheNormalizationTable(t *testing.T
 	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
 	require.Contains(t, message, "digest_version", "failure must name the column")
 	require.Contains(t, message, "normalization", "failure must point at the normalization table as the fix")
+}
+
+// rowShapeGuardSQLiteBooleanFixture pins rule 3's documented equivalence on
+// the real artifact: a declared bool over an INTEGER column is SQLite's
+// boolean storage (0/1), not a drift — #709's full-registration run hit this
+// false positive on the boolean columns and the Spec prescribes extending
+// the normalization rules for it.
+type rowShapeGuardSQLiteBooleanFixture struct {
+	IsCurrent bool `gorm:"column:is_current;not null"`
+}
+
+func (rowShapeGuardSQLiteBooleanFixture) TableName() string { return "lingdoc_release_snapshots" }
+
+func TestRowShapeGuardTreatsADeclaredBoolAsSQLiteIntegerStorage(t *testing.T) {
+	// The directionality ratchet: only a declared bool accepts an INTEGER
+	// artifact column; no other cross-family pair may hide behind the
+	// equivalence.
+	require.True(t, typeFamiliesAgree("bool", "integer"))
+	require.False(t, typeFamiliesAgree("integer", "bool"))
+	require.False(t, typeFamiliesAgree("string", "integer"))
+	require.False(t, typeFamiliesAgree("bool", "string"))
+
+	db := migratedSQLiteChainForShapeGuard(t)
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "rowShapeGuardSQLiteBooleanFixture",
+		TableName:   "lingdoc_release_snapshots",
+		model:       &rowShapeGuardSQLiteBooleanFixture{},
+	}}
+	violations := runRowShapeGuard(t, db, registrations)
+	require.Empty(t, violations,
+		"a declared bool over SQLite's INTEGER boolean storage must not be a violation; got %v", violations)
 }
 
 // TestGuardedRowShapesMatchTheSQLiteMigrationChain is the green sample: the
