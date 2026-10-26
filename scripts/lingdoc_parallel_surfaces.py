@@ -959,8 +959,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-14 Beta 首版放行执行",
         "issue": 492,
         "issues": (482,),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             # #491 的 spec 落盘：Beta 首版放行验收的仓内副本（56 号之后的第一张）。
             ("docs/06-灵档产品开发规划/57-Spec-Beta首版放行验收.md", "file"),
@@ -1427,7 +1427,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "（原属 PF-7：组合根要把窄端口显式交给 router，否则端点在生产装配下不可调）、"
             "docs/08-本轮实施方案/contracts/openapi.json（原属 PF-4：新增两个端点与五个 schema）、"
             "scripts/ci/test_lingdoc_manual_decision_audit.py 与 scripts/lingdoc_mock/manual_decision_audit.py"
-            "（原属 PF-10：跑批器读端认得服务端信封 + 守护扩充）。依据票：#649（PR #659 ＋ HTTP 侧 PR）、#633。"),
+            "（原属 PF-10：跑批器读端认得服务端信封 + 守护扩充）。依据票：#649（PR #659 ＋ HTTP 侧 PR）、#633。"
+            "**2026-10-27 交面**（票 #492，本 PR 只做交面）：本面的实质工作已于 2026-10-26 随 Beta 首版放行结论 GO 结束"
+            "（BETA_STATUS §22.4／§24.9.3：协议 §6 六项门槛全 PASS；GO 建立在两项已接受偏离、#489 豁免与 AC-BETA-10 延期之上，清单见 §24.9.3 末表）。"
+            "负责人 2026-10-27 裁定收面。本面随之登记为 done、claimed_by 清空"
+            "（完成态不保留认领人；**认领与完成的人是 magician336**）。"
+            "**L1（本文件）与 L2（路径图）随本 PR 同时释放**（BETA_STATUS §3 同步）："
+            "释放后剩余交面队列为 PF-9（#461，登记处翻转）与 PF-11（#512，交面内容保全于分支 rebase/pr149-handover）；"
+            "PF-7（#506）与 PF-13（#248）此前已交面完毕。"
+            "本面路径集在交面时点的登记处实测值为 **148 条**（路径图面表先前的 127 属旧值，随本 PR 一并更正）；"
+            "棘轮规则下本面路径集从未缩减。两侧 summary 里的全部跨面借用/移交事实不随交面清除，"
+            "继续作为归属与改动事实的记录。"),
     },
     {
         "name": "PF-8 G6 告警规则与运行控制回退",
