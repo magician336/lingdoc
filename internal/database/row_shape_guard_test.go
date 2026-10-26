@@ -84,10 +84,28 @@ type rowShapeRegistration struct {
 	schemaOf    func() (*schema.Schema, error)
 }
 
+// rowShapeExclusion is one explicitly deferred checklist entry. The target
+// state is zero exclusions; an entry is only legal with all three hard
+// requirements — a per-item reason, a written unlock condition, and a
+// follow-up issue — and the registry cross-check fails when any is missing
+// (Spec #707: exclusions are explicit and reasoned, never a silent hole).
+type rowShapeExclusion struct {
+	RelPackage      string // package dir relative to internal/lingdoc
+	TypeName        string
+	TableName       string
+	Reason          string
+	UnlockCondition string
+	FollowUpIssue   int
+}
+
+// deferredRowShapeExclusions holds the explicitly deferred entries. #709
+// ships with none: every discovered row structure is registered and compared.
+var deferredRowShapeExclusions = []rowShapeExclusion{}
+
 // guardedRowShapes is the explicit registration checklist (Spec #707). Ticket
-// #708 pins it to exactly one real entry — the #694 adoption idempotency row —
-// so the known-good shape is permanently locked. #709's AST scan grows the
-// checklist, and every growth lands as an explicit diff here.
+// #708 pinned it to exactly one real entry — the #694 adoption idempotency
+// row — and #709's AST scan grows it to the domain's full set; every growth
+// lands as an explicit diff here.
 var guardedRowShapes = []rowShapeRegistration{
 	{
 		PackagePath: "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
