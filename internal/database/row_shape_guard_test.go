@@ -200,8 +200,23 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rule 2, second direction (pointer declares NULL allowed) lands with
-		// its red test. Rules 3/4 (type/length) land with theirs.
+		// Rule 2, second direction: a pointer field without the `not null` tag
+		// declares NULL allowed, so the artifact column must allow NULL.
+		if field.FieldType.Kind() == reflect.Pointer && !field.NotNull && shape.NotNull {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeNullability,
+				Declared: fmt.Sprintf(
+					"nullable (field %s %s, gorm tag %q)",
+					field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf("NOT NULL (decl type %q)", shape.DeclType),
+			})
+			continue
+		}
+
+		// Rules 3/4 (type/length) land with their red tests.
 		_ = shape
 	}
 
@@ -284,4 +299,35 @@ func TestRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn(t *testing.T
 	require.Contains(t, message, "chapter_version_id", "failure must name the column")
 	require.Contains(t, message, "NOT NULL", "failure must show the declared nullability")
 	require.Contains(t, message, "nullable", "failure must show the artifact's nullability")
+}
+
+// rowShapeGuardPointerOnNotNullFixture is the reverse nullability direction:
+// a pointer field without the `not null` tag declares NULL allowed, pointed
+// at a column the real chain builds as NOT NULL (rule 2, second direction).
+type rowShapeGuardPointerOnNotNullFixture struct {
+	ProjectID *string
+}
+
+func (rowShapeGuardPointerOnNotNullFixture) TableName() string { return "lingdoc_candidate_adoptions" }
+
+func TestRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn(t *testing.T) {
+	db := migratedSQLiteChainForShapeGuard(t)
+
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "rowShapeGuardPointerOnNotNullFixture",
+		TableName:   "lingdoc_candidate_adoptions",
+		schemaOf:    parseRowShapeFixture(&rowShapeGuardPointerOnNotNullFixture{}),
+	}}
+	violations := runRowShapeGuard(t, db, registrations)
+
+	violation, found := findRowShapeViolation(violations, "project_id", rowShapeNullability)
+	require.Truef(t, found,
+		"the guard must flag a pointer declaration over a NOT NULL column; got %v", violations)
+
+	message := violation.Error()
+	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
+	require.Contains(t, message, "project_id", "failure must name the column")
+	require.Contains(t, message, "nullable", "failure must show the declared nullability")
+	require.Contains(t, message, "NOT NULL", "failure must show the artifact's nullability")
 }
