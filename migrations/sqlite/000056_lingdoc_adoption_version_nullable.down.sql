@@ -1,9 +1,9 @@
 -- Reverse of 000056: restore chapter_version_id NOT NULL.
 --
--- Only safe when the table holds no NULL chapter_version_id (every recorded
--- adoption points at a real chapter version). Rows with NULL would violate
--- the restored constraint, so they abort the migration explicitly instead of
--- being silently rewritten.
+-- The rebuild itself enforces the precondition: rows whose
+-- chapter_version_id is NULL cannot survive an INSERT into a NOT NULL
+-- column, so the migration fails with a plain constraint violation and
+-- changes nothing. No rows are rewritten or dropped silently.
 
 CREATE TABLE lingdoc_candidate_adoptions_prev (
     id TEXT PRIMARY KEY,
@@ -21,11 +21,6 @@ CREATE TABLE lingdoc_candidate_adoptions_prev (
     FOREIGN KEY (chapter_id) REFERENCES lingdoc_chapters(id),
     FOREIGN KEY (chapter_version_id) REFERENCES lingdoc_chapter_versions(id)
 );
-
-SELECT CASE
-    WHEN EXISTS (SELECT 1 FROM lingdoc_candidate_adoptions WHERE chapter_version_id IS NULL)
-    THEN RAISE(ABORT, 'cannot restore NOT NULL: NULL chapter_version_id rows exist')
-END;
 
 INSERT INTO lingdoc_candidate_adoptions_prev (
     id, project_id, chapter_id, actor_id, idempotency_key,
