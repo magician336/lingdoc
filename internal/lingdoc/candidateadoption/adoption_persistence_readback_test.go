@@ -373,7 +373,7 @@ func TestAdoptionPersistenceIsReadableBackFromTheChapterPath(t *testing.T) {
 	require.Equal(t, int64(1), readbackAdoptionCount(t, f.db))
 	var adoption adoptionIdempotencyRow
 	require.NoError(t, f.db.Where("idempotency_key = ?", readbackIdemKey).First(&adoption).Error)
-	require.Equal(t, *accepted.Data.CurrentVersionID, adoption.ChapterVersionID,
+	require.Equal(t, accepted.Data.CurrentVersionID, adoption.ChapterVersionID,
 		"采纳行必须指向这次采纳产出的章节版本")
 
 	// 物理行：审计行。
