@@ -66,7 +66,7 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 		switch {
 		case result.err == nil && result.status == 200 && !result.replay:
 			winners++
-		case result.err != nil:
+		case result.status == 409 && !result.replay && (result.err == nil || errors.Is(result.err, ErrVersionConflict)):
 			losers++
 		default:
 			t.Fatalf("apply %d returned an unaccounted outcome: status=%d replay=%v err=%v", i, result.status, result.replay, result.err)
