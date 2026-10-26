@@ -10,6 +10,16 @@ describes the body as valid without it is not "a bit loose": it publishes a
 request the server will reject with a validation error.  The three copies can
 drift apart silently, because each of them looks self-consistent on its own.
 
+Where the refusal happens is worth stating precisely, because it is not where
+the tag suggests: the handler decodes the body with its own
+``json.Decoder`` (which also refuses unknown fields), **not** with gin's
+binding, so the ``binding:"required"`` tag on the confirmation field is a
+**declaration** rather than the mechanism.  The refusal itself happens in the
+service layer's own validation of the confirmation payload.  The tag is still
+the right thing for this guard to read: it is the server's own statement of
+which fields a request must carry, and a field it stops declaring is a field
+whose requirement the contract should stop claiming as well.
+
 These tests read the repository as it is and keep no copy of it:
 
 * the **server struct** -- ``acceptCandidateRequest`` in the adoption HTTP
@@ -153,7 +163,14 @@ class ServerContractAgreementTests(unittest.TestCase):
         cls.contract_required = list(cls.schema.get("required", []))
 
     def test_the_server_struct_declares_the_confirmation_as_required(self):
-        """The premise of this guard: the server refuses the body without it."""
+        """The premise of this guard: the server declares the body needs it.
+
+        The declaration is the ``binding:"required"`` tag.  The refusal is
+        enforced by the service layer, because the handler decodes the body
+        with its own decoder rather than with gin's binding; the tag is what
+        the server *says* the request must carry, and this guard keeps the
+        contract saying the same thing.
+        """
         self.assertIn(
             CONFIRMATION_FIELD,
             self.server_fields,
