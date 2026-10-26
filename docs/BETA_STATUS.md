@@ -3,7 +3,7 @@
 > **本文件是 lingdoc Beta 实施的唯一进度源。** 每批任务结束后更新它；不要另建进度表。
 > **基线**：`origin/main`（本文件合并后即最新基线；每次更新在本行下写明本文件对应的合并提交，避免基线行本身过期）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
 > **本轮同步基线（第八轮）**：见 **§22**（第十二批）。本轮把 §6 第 6 项「真实依赖均已验证」由 `NOT RUN` 闭合为 **`PASS`**（真实向量生成 ＋ 真实向量检索：2 次真实 provider 请求、675 计费 token、累计预留 ¥0.002063125；证据见 §22.1／§22.2），并按协议 §6 逐项核对给出 **Beta 首版放行结论 ＝ `GO`**（六项门槛全部 `PASS`，主流程无 `FAIL`／`BLOCKED`／`NOT RUN`／`DEFERRED_MANUAL`）。本轮**没有**发起新的真实模型调用（沿用 2026-10-26 已完成的 embedding 验收证据），**没有**改动任何验收门槛，**没有**把任何未执行项改判为通过；§6 第 6 项的偏离、豁免与残余风险逐条登记在 **§22.5**。⚠️ 本文件**本轮对应的合并提交**＝ **`0451fa2e`**（PR #676 的合并提交；由管理会话落基，SHA 取自实际 `origin/main`，非臆造）。
-> **本轮同步基线（第九轮·收口）**：见 **§23**（第十四批）。本轮**只做文档收口**：把 §22 头部第八轮的合并提交填成实测值、把 **#675 的修复状态由「开放」更新为「已修复」**（PR #680，合并提交 `77871bbc`）、把新开票 **#681**（OpenAPI `AcceptCandidate.required` 未含 `confirmation`，而服务端 `binding:"required"` 缺则 400 —— 契约漂移）登记进 §22.5／§22.6，并附**文档与代码一致性核对**结果。本轮**没有**发起任何真实模型调用、**没有**改动任何验收门槛、**没有**把任何未执行项改判为通过，**也没有**改动任何 Go／前端代码。
+> **本轮同步基线（第九轮·收口）**：见 **§23**（第十四批）。本轮**只做文档收口**：把 §22 头部第八轮的合并提交填成实测值、把 **#675 的修复状态由「开放」更新为「已修复」**（PR #680，合并提交 `77871bbc`）、把新开票 **#681**（OpenAPI `AcceptCandidate.required` 未含 `confirmation`，而服务端 `binding:"required"` 缺则 400 —— 契约漂移）登记进 §22.5／§22.6，并附**文档与代码一致性核对**结果。本轮**没有**发起任何真实模型调用、**没有**改动任何验收门槛、**没有**把任何未执行项改判为通过，**也没有**改动任何 Go／前端代码。⚠️ 本文件**本轮对应的合并提交**＝ **`9ce5f369`**（PR #683 的合并提交；由管理会话落基，SHA 取自实际 `origin/main`，非臆造）。
 > **本轮同步基线（第六轮）**：见 **§19**（第十一批）。本轮把 #619 的裁定（A1 / B / C）落地（服务端根因 ＋ 契约侧稳定化链节点），给跑批器补上人工判定录入通道（#633），并把两条判定路径的三处口径残留收干净（#639 / #640）。**F01 契约节点数 28 → 31、checks 58 → 64**（新增三个稳定化节点）。本轮**没有**发起新的真实模型调用；稳定化链在隔离环境上以**零 provider 消耗**实测跑通（`stabilizeRevision` → `STABILIZED`、`prepareRelease` → 201）。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **上一轮（第三轮）同步基线**：`origin/main` = `c14770f9`（PR #591 合并提交）。本轮新合入：**#587**（#578 两本账的「超限」判据收敛为**一份权威清单**，合并提交 `6ed1f3c4`）、**#588**（#545 许可提案不再把待授权资料计入本次操作的来源复核，合并提交 `4b73e8e7`）、**#589**（#576 前端租户角色中文标签收口为唯一来源，合并提交 `a9374cab`）、**#591**（登记处补登记 #576 的 6 条前端路径，PF-14 路径集 57 → 63）。**第二轮**同步（PR #585，合并提交 `24262070`）的基线是 `6b382132`；**第一轮**同步（PR #561，合并提交 `2a664c56`）的基线是 `a98138af`。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **F01 契约基线（第三轮实测）**：`docs/08-本轮实施方案/contracts/workflow.json` = **28 节点 / 58 checks**（`version 0.5.0`，`mode = specification_not_executed_against_provider`）——在 `c14770f9` 的工作树上直接数出，且 `git diff 4b73e8e7..c14770f9 -- contracts/workflow.json` **为空** ⇒ 与最新一轮真实验收（Track-C）所用的契约**逐字相同**。
@@ -715,10 +715,10 @@ model is outside the acceptance budget profile
 
 | 项 | 票 | PR | 合并提交 | 它修的是什么 | 证据 |
 |---|---|---|---|---|---|
-| 候选采纳契约 | #608 | #612 | `{sha612}` | 契约的 F01-11／F01-12 请求体与服务端 HTTP 契约对不上（缺必填的 `confirmation` ＋ 工作副本声明）⇒ 采纳节点永远 400 | 真 handler ＋ 真 SQLite ＋ 契约那份请求体：旧请求体 400/零版本、契约现在发的那份 201/恰好 1 个版本；缺载荷 400＋零版本、过期修订 409 `version_conflict`、哈希不符 409 `working_copy_dirty`、同键重投 201 `replayed` 且仍 1 个版本 |
-| 模型参数扫描 | #609 | #613 | `{sha613}` | `ModelParameters.Scan` 只认 `[]byte`，拿到驱动交回的 `string` 就**静默返回 nil** ⇒ 非 GORM 写入的模型行在 SQLite 里是哑行（provider/端点/凭据全空） | 共享读取器 `internal/types/json_column.go`：收 `[]byte` 与 `string`，其余类型**报错**（`ErrUnsupportedJSONColumnValue`）；驱动的载体类型**实测**（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL）；base-vs-head 复现：回退后 TEXT 写入的行读回 `provider=""` |
-| `client/**` 门禁覆盖 | #605 | #611 | `{sha611}` | `client/` 是独立 Go 模块，根模块的构建显式排除它 ⇒ 只改 `client/` 的 PR 没有任何 job 编译/测试它 | 新增 `.github/workflows/client.yml`（`go build` ＋ `go vet` ＋ `go test`）；门禁面清单新增 `client` 面（`verifies=True`）；两个对照变更的真实判定输出：只改 `client/` ⇒ client job 跑、app job 不跑、coverage `verified`；只改 `docs/` ⇒ 两者都不跑 |
-| F01-07 检索方式 | #546 | #615 | `{sha615}` | 契约把 F01-07 声明为 `vector_required` ⇒ 受控窗口里它恒 NOT RUN。Track-D 已证明**无 embedding 路线能真的跑通生成链** ⇒ 改为 `keyword_only`（口径②） | 声明前后对照（同一套真实产物，唯一变量是那一个字段）：窗口两次都 **PASS**，F01-07 由 **NOT RUN** 变为**可判定**；放行链层面（`beta_evidence.controlled_window_part`）判为 `held`；独立审查第一轮 **PARTIAL**（6 点）→ 复审 **PASS** |
+| 候选采纳契约 | #608 | #612 | `b7d00dc4` | 契约的 F01-11／F01-12 请求体与服务端 HTTP 契约对不上（缺必填的 `confirmation` ＋ 工作副本声明）⇒ 采纳节点永远 400 | 真 handler ＋ 真 SQLite ＋ 契约那份请求体：旧请求体 400/零版本、契约现在发的那份 201/恰好 1 个版本；缺载荷 400＋零版本、过期修订 409 `version_conflict`、哈希不符 409 `working_copy_dirty`、同键重投 201 `replayed` 且仍 1 个版本 |
+| 模型参数扫描 | #609 | #613 | `ef53ff75` | `ModelParameters.Scan` 只认 `[]byte`，拿到驱动交回的 `string` 就**静默返回 nil** ⇒ 非 GORM 写入的模型行在 SQLite 里是哑行（provider/端点/凭据全空） | 共享读取器 `internal/types/json_column.go`：收 `[]byte` 与 `string`，其余类型**报错**（`ErrUnsupportedJSONColumnValue`）；驱动的载体类型**实测**（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL）；base-vs-head 复现：回退后 TEXT 写入的行读回 `provider=""` |
+| `client/**` 门禁覆盖 | #605 | #611 | `5aac795b` | `client/` 是独立 Go 模块，根模块的构建显式排除它 ⇒ 只改 `client/` 的 PR 没有任何 job 编译/测试它 | 新增 `.github/workflows/client.yml`（`go build` ＋ `go vet` ＋ `go test`）；门禁面清单新增 `client` 面（`verifies=True`）；两个对照变更的真实判定输出：只改 `client/` ⇒ client job 跑、app job 不跑、coverage `verified`；只改 `docs/` ⇒ 两者都不跑 |
+| F01-07 检索方式 | #546 | #615 | `96d9320e` | 契约把 F01-07 声明为 `vector_required` ⇒ 受控窗口里它恒 NOT RUN。Track-D 已证明**无 embedding 路线能真的跑通生成链** ⇒ 改为 `keyword_only`（口径②） | 声明前后对照（同一套真实产物，唯一变量是那一个字段）：窗口两次都 **PASS**，F01-07 由 **NOT RUN** 变为**可判定**；放行链层面（`beta_evidence.controlled_window_part`）判为 `held`；独立审查第一轮 **PARTIAL**（6 点）→ 复审 **PASS** |
 
 ### 18.1 F01 当前逐节点状态
 
@@ -1501,3 +1501,16 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | `RecordModelSwitch` | **非测试调用点 ＝ 0** ✅ 支撑 §22.5 第 4 条（产品侧无「切换模型」动作 ⇒ `kind=switch` 行不存在） |
 | `AcceptCandidate.required` vs 服务端 `binding:"required"` | **不一致** ❌ ⇒ #681（§23.4） |
 | 协议 §6 六项门槛 | 与 §22.4 逐项一致，**本轮未改判任何一项** ✅ |
+
+### 23.6 本轮的票据同步（代码与票据一致）
+
+| 票 | 处置 | 依据 |
+|---|---|---|
+| **#675** | **关闭** | 修复 PR **#680**（合入 `main` 的合并提交 `77871bbc`）；门禁全绿 ＋ 两轮独立复核（含管理会话自跑变异 M2／M4）；关闭评论逐条写明落证 head、合并提交、复核结论与残余风险（§23.1／§23.2／§23.3） |
+| **#681**（新立） | 开放 | OpenAPI 契约漂移：`AcceptCandidate.required` 未含 `confirmation`，而服务端 `binding:"required"` 缺则 400（§23.4）；票面评论附契约与服务端两侧的实测行号；**不阻塞放行** |
+| **#608** | **关闭** | 修复 PR **#612**（`b7d00dc4`）：F01-11／F01-12 请求体补齐服务端必填的 `confirmation` ＋ 工作副本声明；最新一轮真实跑批中 F01-11 通过（§22.3 第 6 行） |
+| **#619** | **关闭** | 服务端根因 PR **#645**（`68aa3fd6`）＋ 契约侧 PR **#646**（`bb0081a5`）：稳定化链节点进入契约（28 → 31 节点）；最新一轮真实跑批中 F01-19 `prepareRelease` 通过，两条放行路径均 PASS（§22.3 第 4 行） |
+| **#633** | **关闭** | 录入通道 PR **#643**（`3d7ee440`）＋ 零额度重判 PR **#654**（`5ed7ae06`）：9 个机器事实键逐字节相等、`run_id` 不变、新增 provider 请求 0 次（§22.3 第 3 行） |
+| **#649** | **关闭** | 服务端权威审计 PR **#659**（`540f77e4`）＋ HTTP 接缝 PR **#660**（`ac6ee9a5`）：四条人工判定取得 `authority = server_attested` 的服务端审计记录（§22.3 第 2 行、§20.7） |
+
+⚠️ **本轮关闭的四张票，各有残留项留在别的票上，不因关闭而消除**：#608 → #679；#619 → #647；#649 → #656、#679。
