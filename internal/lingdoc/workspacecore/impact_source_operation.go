@@ -376,10 +376,13 @@ func resolveApplyChangeSet(in impactSourceProjectionInput) (out impactSourceCont
 	if err != nil {
 		return out, err
 	}
-	// SATISFIED is intentionally assessment-free and terminal. Current
-	// project/Owner authorization already ran before this decoder; reject the
-	// invalid business action instead of reading a nonexistent plan.
-	if change.Status == ChangeSetStatusSatisfied {
+	// The change-set state machine decides whether an apply is allowed at
+	// all, so it runs before the assessment is read. An unassessed change set
+	// has no assessment record, and reading it there answered "not found" for
+	// a change set that does exist. The states an apply has already been
+	// answered in are let through, so that the operation's idempotent replay
+	// can still return its answer.
+	if !ChangeSetApplyAnswered(change.Status) && !ChangeSetStatusCanMove("apply", change.Status) {
 		return out, ErrInvalidState
 	}
 	store, err := impactPort(in.tx)
@@ -388,6 +391,12 @@ func resolveApplyChangeSet(in impactSourceProjectionInput) (out impactSourceCont
 	}
 	assessment, err := store.ImpactAssessment(in.projectID, change.ID)
 	if err != nil {
+		// The change set exists but carries no assessment: it is not
+		// assessed, so it cannot be applied. That is an invalid state, not a
+		// missing resource.
+		if errors.Is(err, ErrNotFound) {
+			return out, ErrChangeSetNotAssessed
+		}
 		return out, err
 	}
 	for _, object := range assessment.Objects {
