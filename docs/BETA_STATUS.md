@@ -715,10 +715,10 @@ model is outside the acceptance budget profile
 
 | 项 | 票 | PR | 合并提交 | 它修的是什么 | 证据 |
 |---|---|---|---|---|---|
-| 候选采纳契约 | #608 | #612 | `{sha612}` | 契约的 F01-11／F01-12 请求体与服务端 HTTP 契约对不上（缺必填的 `confirmation` ＋ 工作副本声明）⇒ 采纳节点永远 400 | 真 handler ＋ 真 SQLite ＋ 契约那份请求体：旧请求体 400/零版本、契约现在发的那份 201/恰好 1 个版本；缺载荷 400＋零版本、过期修订 409 `version_conflict`、哈希不符 409 `working_copy_dirty`、同键重投 201 `replayed` 且仍 1 个版本 |
-| 模型参数扫描 | #609 | #613 | `{sha613}` | `ModelParameters.Scan` 只认 `[]byte`，拿到驱动交回的 `string` 就**静默返回 nil** ⇒ 非 GORM 写入的模型行在 SQLite 里是哑行（provider/端点/凭据全空） | 共享读取器 `internal/types/json_column.go`：收 `[]byte` 与 `string`，其余类型**报错**（`ErrUnsupportedJSONColumnValue`）；驱动的载体类型**实测**（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL）；base-vs-head 复现：回退后 TEXT 写入的行读回 `provider=""` |
-| `client/**` 门禁覆盖 | #605 | #611 | `{sha611}` | `client/` 是独立 Go 模块，根模块的构建显式排除它 ⇒ 只改 `client/` 的 PR 没有任何 job 编译/测试它 | 新增 `.github/workflows/client.yml`（`go build` ＋ `go vet` ＋ `go test`）；门禁面清单新增 `client` 面（`verifies=True`）；两个对照变更的真实判定输出：只改 `client/` ⇒ client job 跑、app job 不跑、coverage `verified`；只改 `docs/` ⇒ 两者都不跑 |
-| F01-07 检索方式 | #546 | #615 | `{sha615}` | 契约把 F01-07 声明为 `vector_required` ⇒ 受控窗口里它恒 NOT RUN。Track-D 已证明**无 embedding 路线能真的跑通生成链** ⇒ 改为 `keyword_only`（口径②） | 声明前后对照（同一套真实产物，唯一变量是那一个字段）：窗口两次都 **PASS**，F01-07 由 **NOT RUN** 变为**可判定**；放行链层面（`beta_evidence.controlled_window_part`）判为 `held`；独立审查第一轮 **PARTIAL**（6 点）→ 复审 **PASS** |
+| 候选采纳契约 | #608 | #612 | `b7d00dc4` | 契约的 F01-11／F01-12 请求体与服务端 HTTP 契约对不上（缺必填的 `confirmation` ＋ 工作副本声明）⇒ 采纳节点永远 400 | 真 handler ＋ 真 SQLite ＋ 契约那份请求体：旧请求体 400/零版本、契约现在发的那份 201/恰好 1 个版本；缺载荷 400＋零版本、过期修订 409 `version_conflict`、哈希不符 409 `working_copy_dirty`、同键重投 201 `replayed` 且仍 1 个版本 |
+| 模型参数扫描 | #609 | #613 | `ef53ff75` | `ModelParameters.Scan` 只认 `[]byte`，拿到驱动交回的 `string` 就**静默返回 nil** ⇒ 非 GORM 写入的模型行在 SQLite 里是哑行（provider/端点/凭据全空） | 共享读取器 `internal/types/json_column.go`：收 `[]byte` 与 `string`，其余类型**报错**（`ErrUnsupportedJSONColumnValue`）；驱动的载体类型**实测**（SQLite 生产驱动 ＋ 纯 Go 驱动 ＋ PostgreSQL）；base-vs-head 复现：回退后 TEXT 写入的行读回 `provider=""` |
+| `client/**` 门禁覆盖 | #605 | #611 | `5aac795b` | `client/` 是独立 Go 模块，根模块的构建显式排除它 ⇒ 只改 `client/` 的 PR 没有任何 job 编译/测试它 | 新增 `.github/workflows/client.yml`（`go build` ＋ `go vet` ＋ `go test`）；门禁面清单新增 `client` 面（`verifies=True`）；两个对照变更的真实判定输出：只改 `client/` ⇒ client job 跑、app job 不跑、coverage `verified`；只改 `docs/` ⇒ 两者都不跑 |
+| F01-07 检索方式 | #546 | #615 | `96d9320e` | 契约把 F01-07 声明为 `vector_required` ⇒ 受控窗口里它恒 NOT RUN。Track-D 已证明**无 embedding 路线能真的跑通生成链** ⇒ 改为 `keyword_only`（口径②） | 声明前后对照（同一套真实产物，唯一变量是那一个字段）：窗口两次都 **PASS**，F01-07 由 **NOT RUN** 变为**可判定**；放行链层面（`beta_evidence.controlled_window_part`）判为 `held`；独立审查第一轮 **PARTIAL**（6 点）→ 复审 **PASS** |
 
 ### 18.1 F01 当前逐节点状态
 
