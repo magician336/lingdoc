@@ -41988,7 +41988,8 @@
           "candidate_id",
           "expected_chapter_version_id",
           "expected_spec_revision",
-          "replace_existing"
+          "replace_existing",
+          "confirmation"
         ],
         "additionalProperties": false
       },
@@ -53964,7 +53965,38 @@
           "confirmed_by",
           "origin"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "description": "部分采纳：必须说清写到哪一段（范围缺一即拒）。",
+            "properties": {
+              "adoption_target": {
+                "enum": [
+                  "working_copy_partial"
+                ]
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          {
+            "description": "整段采纳：不得带范围（带了说明「整段」这句话不可信）。",
+            "properties": {
+              "adoption_target": {
+                "enum": [
+                  "working_copy_whole",
+                  "formal_version_whole"
+                ]
+              }
+            },
+            "not": {
+              "required": [
+                "scope"
+              ]
+            }
+          }
+        ]
       },
       "RewriteCandidate": {
         "type": "object",
