@@ -1575,12 +1575,12 @@
       "Concrete schema plus Go request fields and typed/read-service response root fields; opaque write-result DTO semantic equivalence remains review/runtime work"
     ]
   },
-  "paths": 154,
-  "operations": 181,
-  "core_operations": 178,
-  "schemas": 368,
-  "local_refs": 1755,
-  "shape_checks": 993,
+  "paths": 156,
+  "operations": 183,
+  "core_operations": 180,
+  "schemas": 373,
+  "local_refs": 1770,
+  "shape_checks": 998,
   "scenarios": 37,
   "scenario_example_references": 159,
   "continuous_trace_steps": 31,
