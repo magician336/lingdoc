@@ -1,0 +1,120 @@
+{
+  "schema": "lingdoc.beta.restart-readback/v1",
+  "head": "c23452293396b0f303e85a9c5aea4f8bd52802af",
+  "at": "2026-10-25T03:25:08Z",
+  "driver": "postgres",
+  "dsn": "postgres://postgres:***@127.0.0.1:5432/weknora_iso_r7",
+  "protocol": "Beta 首版真实验收协议 §1（隔离 PostgreSQL）＋ §2 第 5 步（重启后读回）",
+  "process": {
+    "port": 51846,
+    "before": {
+      "pid": 54752
+    },
+    "after": {
+      "pid": 79232
+    }
+  },
+  "read_back": [
+    "project",
+    "chapters",
+    "source_bindings",
+    "delivery_file"
+  ],
+  "before": {
+    "access_token_accepted": true,
+    "project": {
+      "id": "af6c89b1-eb9e-488a-be37-c68805c708df",
+      "name": "Beta 452 parity 6a677c07",
+      "status": "active",
+      "project_version": 7,
+      "spec_revision": 1,
+      "delivery_status": "NOT_READY"
+    },
+    "chapters": [
+      {
+        "chapter_id": "fccfe843-4a36-4835-bec0-8db2b7b0decb",
+        "section_id": "question",
+        "current_version_id": "b9e23d30-f72c-440f-906a-430b13a8cc93",
+        "body_sha256": "a5d6ea79312704463edb8609d0e069add1bac695d7e5060e463b8840e5dd14f0",
+        "body_length": 47,
+        "source_ids": [],
+        "confirmation_valid": true
+      },
+      {
+        "chapter_id": "91eb2a29-0070-4e7b-83bd-835fa5e7af3d",
+        "section_id": "method",
+        "current_version_id": "52826f8d-1cf2-49f1-b8c2-d231d17c9c2c",
+        "body_sha256": "f4d69bf67e796fd3453c01e426f8cf0385916bd77acf3d8fbd3e90ffe684d011",
+        "body_length": 45,
+        "source_ids": [],
+        "confirmation_valid": true
+      }
+    ],
+    "sources": [],
+    "delivery": {
+      "snapshot_id": "snapshot-868f9481f1de9931c71409001d02f32f",
+      "snapshot_digest": "0f4793ad02b7fc6e105ba6a8b09b3e695ac68166d797c52d5fa3b2063c62ba8d",
+      "frozen_project_version": 7,
+      "frozen_spec_revision": 1,
+      "frozen_chapters": 2,
+      "frozen_sources": 0,
+      "check_status": "passed",
+      "export_id": "export-942fc94bb434922d88515cd3ce2b64eb",
+      "export_status": "verified",
+      "export_file_sha256": "8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479",
+      "download_sha256": "8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479",
+      "download_length": 1979
+    }
+  },
+  "after": {
+    "access_token_accepted": true,
+    "project": {
+      "id": "af6c89b1-eb9e-488a-be37-c68805c708df",
+      "name": "Beta 452 parity 6a677c07",
+      "status": "active",
+      "project_version": 7,
+      "spec_revision": 1,
+      "delivery_status": "NOT_READY"
+    },
+    "chapters": [
+      {
+        "chapter_id": "fccfe843-4a36-4835-bec0-8db2b7b0decb",
+        "section_id": "question",
+        "current_version_id": "b9e23d30-f72c-440f-906a-430b13a8cc93",
+        "body_sha256": "a5d6ea79312704463edb8609d0e069add1bac695d7e5060e463b8840e5dd14f0",
+        "body_length": 47,
+        "source_ids": [],
+        "confirmation_valid": true
+      },
+      {
+        "chapter_id": "91eb2a29-0070-4e7b-83bd-835fa5e7af3d",
+        "section_id": "method",
+        "current_version_id": "52826f8d-1cf2-49f1-b8c2-d231d17c9c2c",
+        "body_sha256": "f4d69bf67e796fd3453c01e426f8cf0385916bd77acf3d8fbd3e90ffe684d011",
+        "body_length": 45,
+        "source_ids": [],
+        "confirmation_valid": true
+      }
+    ],
+    "sources": [],
+    "delivery": {
+      "snapshot_id": "snapshot-868f9481f1de9931c71409001d02f32f",
+      "snapshot_digest": "0f4793ad02b7fc6e105ba6a8b09b3e695ac68166d797c52d5fa3b2063c62ba8d",
+      "frozen_project_version": 7,
+      "frozen_spec_revision": 1,
+      "frozen_chapters": 2,
+      "frozen_sources": 0,
+      "check_status": "passed",
+      "export_id": "export-942fc94bb434922d88515cd3ce2b64eb",
+      "export_status": "verified",
+      "export_file_sha256": "8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479",
+      "download_sha256": "8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479",
+      "download_length": 1979
+    }
+  },
+  "comparison": {
+    "consistent": true,
+    "mismatches": []
+  },
+  "verdict": "PASS"
+}

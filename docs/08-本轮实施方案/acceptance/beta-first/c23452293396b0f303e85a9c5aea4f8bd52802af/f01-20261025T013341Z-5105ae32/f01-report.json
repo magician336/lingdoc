@@ -1,0 +1,153 @@
+{
+  "mode": "beta-first-acceptance",
+  "note": "Beta 首版真实验收的证据目录。协议 §5 的三态按字面记：BLOCKED（主流程缺依赖或无法继续）、FAIL（业务行为违反断言）、NOT RUN（没有执行）。总结果由主流程决定，不用平均覆盖。执行范围：F01 契约的 31 个节点、浏览器对偶三方比对、服务端真实重启后的读回、Word 人工检查、模型调用账本里的参数与预算。⚠️ 本文件由管理会话依据本轮真实执行的机器产物整理而成，不是 scripts/acceptance/beta_evidence.py 的直接输出；机器原件逐件在 docs/08-本轮实施方案/acceptance/beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/ 下，每一条 passed 都指向该目录里的具体文件与断言计数。",
+  "head": "c23452293396b0f303e85a9c5aea4f8bd52802af",
+  "head_note": "本轮 F01 跑批与隔离 PostgreSQL 重启读回绑定的代码 head：c23452293396b0f303e85a9c5aea4f8bd52802af。证据目录的第一层目录名就是它。",
+  "base": "d76ff6a71f15606de548c3b15151a5d5a8af6495",
+  "base_note": "本轮收口时的 origin/main（队列隔离 #673 与 embedding 4xx 恢复 #674 已合入）。⚠️ 浏览器检查的前端 head 是 7612f92c73649a1f7eeaf025e728de233195e76e（后端二进制 source_head 仍是 c2345229，18087 进程全程未停未重启）；2026-10-26 的 embedding 向量验收轮绑定 d76ff6a7。三者不是同一个 head，逐件的 head 已在 runtime-manifest.json 与各证据件里登记。",
+  "run_id": "f01-20261025T013341Z-5105ae32",
+  "run_id_note": "F01 跑批的运行标识，与证据目录的第二层目录名一致。",
+  "overall": "passed",
+  "overall_note": "主流程（协议 §6 的六项门槛）全部 passed，主流程不含 FAIL / BLOCKED / NOT RUN / DEFERRED_MANUAL。非门槛的未执行项单列在 known_limits 与 coverage_boundaries，不混入主流程（协议 §6：非主流程反例单独列出结果、原因和后续责任）。",
+  "passed": [
+    {
+      "item": "F01 契约序列（31 个节点）",
+      "status": "passed",
+      "detail": "31/31 节点完成，HTTP 状态与契约逐条一致；runner_status = completed；runner 退出码 0；耗时 12 秒；材料闸门两阶段 ['content','full']。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-report-raw-run.json、f01-per-node.md"
+    },
+    {
+      "item": "机器断言（64 条）",
+      "status": "passed",
+      "detail": "64 条 checks，passed 64、failed 0、unevaluated 0；含 readback_equals（读回核对）、version_bound（版本绑定）、ref_in（引用指向合成材料）、one_to_one（待核项逐条对应）等 kind。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-report-raw-run.json"
+    },
+    {
+      "item": "人工判定（四条散文断言 F01-06b/06c/06d/06e）",
+      "status": "passed",
+      "detail": "4 条由负责人作出、经正式服务端接口落审计记录（authority = server_attested，channel_verifiability = verified）；零额度重判路径接入既有跑批报告，机器事实逐字节不变、run_id 不变、新增 provider 请求 0、新增账本行 0。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/manual-judgement-audit-source.json、manual-judgement-submission-result.json、f01-report-raw-rejudged.json"
+    },
+    {
+      "item": "契约放行判定的两条路径",
+      "status": "passed",
+      "detail": "main_path_evidence = PASS；beta_evidence = PASS；provider_semantics_status = verified；outcome 状态集合只剩 held（不含 failed / blocked / not_run）。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/release-verdict-rejudged.json"
+    },
+    {
+      "item": "材料接入与处理就绪（协议 §1：材料须实际经过 WeKnora 接入、处理和检索）",
+      "status": "passed",
+      "detail": "F01-06 真实发出 POST …/assets，响应 data.processing_state = ready；分块内容与其坐标在原文上逐字自洽；章节级 source_ids 8/8 直接核实（逐条解析到 chunk，引文与材料原文逐字一致，坐标系为字符偏移）。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-report-raw-run.json、f01-per-node.md"
+    },
+    {
+      "item": "候选生成 → 采纳（acceptCandidate 带 confirmation）→ 持久化读回 → 下游使用",
+      "status": "passed",
+      "detail": "F01-09 候选读回、F01-11 采纳（产出新正文版本）、F01-12 模拟响应丢失后重投返回同一版本、F01-13～F01-17 章节编辑与确认、F01-19 冻结；F01-18 与 F01-22 为 readback_equals（从库里读回）。HTTP 状态码与断言计数逐条见 per-node 件。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-per-node.md"
+    },
+    {
+      "item": "真实模型调用与用量核算",
+      "status": "passed",
+      "detail": "chat 侧：DB 账本 lingdoc_model_call_ledger 4 行，全部 kind=call / run_mode=real / source_kind=generation_run / model_id=lingdoc-chat-qwen3.8-flash-iso。embedding 侧（2026-10-26 那一轮）：文件账本 3 行，其中 2 行为本轮真实调用（provider 实报 648 + 27 = 675 token），累计预留 7,250/8,000 token、2,063,125/8,000,000 nano-CNY（¥0.002063125 ≤ ¥0.008），Chat 请求 0 次，未授权探测 0 次。失败请求按预留上界计费且未退款，重试在 transport 之前被挡。",
+      "evidence": "beta-embedding-flash-20261026/（phase-a-result.json、phase-b-result.json、before-after-comparison.json、closure-verification.json）"
+    },
+    {
+      "item": "真实 Embedding 生成与向量检索（协议 §6 第 6 项的后半）",
+      "status": "passed",
+      "detail": "2 次真实 provider 请求；provider 返回维度 1024；2 个 chunk 由 failed 转为 ready，lite_embeddings 新增 2 行 dimension=1024；向量检索命中 2 条且 match_type=0（向量匹配），服务端日志逐行显示关键词通道 0 命中、向量通道 2 命中，排序与分数（cosine 0.5989 / 0.4554）完全来自向量通道。",
+      "evidence": "beta-embedding-flash-20261026/（retrieval-log-evidence.txt、phase-a-result.json、phase-b-result.json、closure-verification.json）"
+    },
+    {
+      "item": "词法检索命中与来源一致性",
+      "status": "passed",
+      "detail": "目标知识库 2 条查询各命中 2 个分块、全部属目标材料；chat 两本账本 sha256 检索前后逐字节相同 ⇒ 0 次模型调用；来源与章节 source_ids 一致。",
+      "evidence": "docs/BETA_STATUS.md §20.13（embedding-run/source_ids-verification.json、retrieval-source-consistency.json）"
+    },
+    {
+      "item": "浏览器检查（协议 §2 第 4 步 / §6 第 3 项）",
+      "status": "passed",
+      "detail": "真实 Vite dev server + 真实 Chrome/Edge（headless=new）+ CDP + 真实登录表单；HTTP 侧 / 浏览器侧 / 刷新后读回三方各 10 项，逐项一致、0 处不符（parity.json：status = PASS、consistent = true、checked = 10、mismatches = []）；浏览器侧零 JS 异常；前后状态文件 sha256 完全相同 ⇒ 零 provider、零库改动。",
+      "evidence": "browser-check.md（本目录）、beta-acceptance-support-20261026/…/browser-parity.json"
+    },
+    {
+      "item": "重启恢复（协议 §2 第 5 步 / §6 第 4 项）",
+      "status": "passed",
+      "detail": "隔离 PostgreSQL 库 weknora_iso_r7（容器 WeKnora-postgres-dev）＋ 真实进程重启（两个不同 pid）：项目 / 章节 / 来源绑定 / 交付文件下载哈希逐字段相等 —— A 轮 31 叶子、B 轮 36 叶子，0 处不等；psql 直读证明行物理在 PG 内；零 provider。",
+      "evidence": "restart-readback.json（本目录）、beta-acceptance-support-20261026/…/restart-readback-source-binding.json、restart-verification-report.txt"
+    },
+    {
+      "item": "Word 检查（协议 §4）",
+      "status": "passed",
+      "detail": "真实 Microsoft Word 16.0（build 16.0.20430）执行协议 §4 的整段动作：打开下载的文件 → 修改第 6 段正文 → SaveAs2 另存 → 关闭整个 Word 实例 → 重新起一个 Word 实例重开 → 逐项检查，12 项全过；原始文件逐字节未变。负责人于 2026-10-25 完成两项人眼确认（版面观感、待核项保留理由表述）。",
+      "evidence": "word-check.md（本目录）、docs/08-本轮实施方案/acceptance/beta-word-check-owner-confirm-20261025/"
+    },
+    {
+      "item": "受控预算窗口的失败结清通道（4xx）",
+      "status": "passed",
+      "detail": "上一轮的 provider 403 通过 #671/#674 落库的正规通道结清：快照 sha256 绑定 + 操作者证据 + 显式确认；失败请求逐字保留、按预留上界计费、未退款，仅追加一条结清记录。闸门在写文件之前拒绝过一次 sha256 大写的尝试 ⇒ 快照绑定是实装的。",
+      "evidence": "beta-embedding-flash-20261026/（reconcile-evidence.json、ledger-before-reconcile.calls.json）"
+    }
+  ],
+  "known_limits": [
+    {
+      "item": "F01-06c 的 422 invalid_state 行为未直接验证",
+      "execution": "not_executed",
+      "reason": "负向 apply 的实测拒绝发生在来源解码阶段，错误码是 404 not_found 而非 422 invalid_state；状态机合法前态检查（ChangeSetStatusCanMove）在 HTTP 路径上未被执行到。该条散文断言按『未评估的变更集不得被应用』的读法记 passed，按『服务端以状态非法拒绝且合法前态恰为 {assessed}』的读法应记 PARTIAL。",
+      "unblock": "票 #656：把『评估记录不存在』从 ErrNotFound 改成可区分的领域错误，并让状态机检查在来源解码之前执行。",
+      "blocks_release": false
+    },
+    {
+      "item": "模型切换的账本行（kind=switch）不存在",
+      "execution": "not_executed",
+      "reason": "RecordModelSwitch 只有接口定义与实现、没有生产调用点：产品里不存在『按项目切换模型』这一动作，因此没有可记录的切换事件。本轮确实发生过一次模型切换（embedding 模型行从 qwen3.7-text-embedding 改为 qwen3.7-text-embedding-flash），其原因、原新模型、参数、受影响步骤与实际调用账本记录在 runtime-manifest.json 的 switches 里。",
+      "unblock": "需要先有『切换模型』这一产品动作，再接上写入点；票 #480 的 AC-BETA-10 因此不满足。",
+      "blocks_release": false
+    },
+    {
+      "item": "浏览器侧『候选取消』交互未执行",
+      "execution": "not_executed",
+      "reason": "F01 契约里没有取消节点；浏览器对偶把『候选采纳/取消的读回』列为模型门控面，因此这两条在 parity.json 里记 not_run。它不降级三方一致性这一结论项。",
+      "unblock": "在契约里增加取消节点并实跑一次。",
+      "blocks_release": false
+    },
+    {
+      "item": "Word 机器渲染产物（PDF / 截图）",
+      "execution": "not_executed",
+      "reason": "执行机 Word COM 的三条导出通道（headless SaveAs2 / 可见 SaveAs2 / Microsoft Print to PDF）全部挂起，LibreOffice 未安装；没有用任何非 Word 渲染冒充。人眼确认的效力来自负责人本人查看与决定。",
+      "unblock": "另装一条渲染通道后补 PDF 或截图产物。",
+      "blocks_release": false
+    },
+    {
+      "item": "第二人独立复现",
+      "execution": "not_executed",
+      "reason": "负责人决定本次 Beta 首版不再执行第二人独立复现，按正式豁免流程记 WAIVED_BY_OWNER；事实状态仍是 NOT RUN（没有伪造任何复现记录或 PASS 结果）。",
+      "unblock": "票 #489：由第二名开发者按其步骤独立复现 F01 契约并把证据绑到当前 head。",
+      "blocks_release": false
+    },
+    {
+      "item": "合成材料哈希未按协议登记（--material）",
+      "execution": "not_executed",
+      "reason": "F01 跑批本身没有用 --material 登记两章合成材料的权威 SHA-256。本轮用到的材料 synth-chapter-c.md 的 sha256（001ba50ca631bf8ce6487038cbd91247d8a775eb8fb3e39f22227af613ae06d2）来自 2026-10-26 的 embedding 验收轮，属于该轮的登记，不等于本跑批已登记。",
+      "unblock": "票 #480：用 --material <名称>=<sha256> 登记本轮合成材料的哈希后重跑。",
+      "blocks_release": false
+    }
+  ],
+  "coverage_boundaries": [
+    {
+      "item": "向量化在隔离向量知识库完成，而不是目标知识库本体",
+      "detail": "重跑目标知识库的被引用知识会软删除其 2 个 chunk 并以新 uuid 重建，使章节 source_ids 悬空并翻转 source-available 规则；隔离库的 2 个 chunk 与目标库 2 个被引用 chunk 的内容 sha256、坐标（0-489 / 475-902）、context_header、title 前缀逐字一致。目标知识库那 2 个被引用 chunk 的向量行仍是关键词行（dimension=0），本轮未改动目标库任何一行。",
+      "accepted_by": "项目负责人（2026-10-26 的裁定）"
+    },
+    {
+      "item": "F01 跑批在 Windows + 隔离 SQLite 上执行",
+      "detail": "协议 §1 写的是 WSL2 Ubuntu + 隔离 PostgreSQL。重启读回那一项确实在隔离 PostgreSQL 上完成（weknora_iso_r7）；F01 主流程本身在隔离 SQLite 上跑。这是一条已登记的执行环境偏离，不改判任何门槛。",
+      "accepted_by": "已登记为残余风险（docs/BETA_STATUS.md §22.5）"
+    },
+    {
+      "item": "阶段 A 的批量向量化没有独立于应用的原始 provider 响应留存",
+      "detail": "648 token 由应用自身解析 provider JSON 后写入账本（embedding/openai.go 要求 prompt_tokens > 0，否则记 usage_unknown），语义可靠但产物出自被审对象；阶段 B 的 query 调用另有 llm_debug 日志与账本时间戳精确互证。若要求 provider 实报必须有独立原始留存，需另立一轮（会产生新的 provider 调用，须新授权）。",
+      "accepted_by": "已登记为残余风险（docs/BETA_STATUS.md §22.8）"
+    }
+  ]
+}
