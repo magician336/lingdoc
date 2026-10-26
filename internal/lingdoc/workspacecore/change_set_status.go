@@ -123,6 +123,21 @@ var ChangeSetStatusMoves = map[string]ChangeSetStatusMove{
 	"editDraft": {From: []string{ChangeSetStatusDraft, ChangeSetStatusAssessed}, To: ChangeSetStatusDraft},
 }
 
+// ChangeSetApplyAnswered reports whether an apply of this change set has
+// already been answered, so that the operation's idempotent replay stays
+// possible.
+//
+// APPLIED is the successful answer (200). STALE is the conflict answer
+// (409): an apply whose basis had already moved marks the proposal stale
+// and answers a conflict, and the replay of that same operation key has to
+// answer the same conflict rather than a fresh refusal.
+//
+// Every other state the state machine forbids has never carried an apply
+// answer, because a refused apply writes no idempotency row.
+func ChangeSetApplyAnswered(status string) bool {
+	return status == ChangeSetStatusApplied || status == ChangeSetStatusStale
+}
+
 // ChangeSetStatusCanMove reports whether the named change is legal from the
 // given status.
 //

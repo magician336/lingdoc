@@ -2122,6 +2122,39 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 	return s.changeProvenanceProjection(ctx, actor, result)
 }
 
+// checkChangeSetApplyState applies the change-set state machine to an apply
+// request before the operation decodes its sources.
+//
+// It reads the change set, so a change set that does not exist is still a not
+// found (404). A change set that exists but is not in a legal predecessor
+// state of an apply is refused as an invalid state (422) — the same verdict
+// the write path gives, only earlier and without touching anything.
+//
+// The write path keeps its own check: this one is a pre-flight, not the
+// authority, and the state may still move between the two.
+func (s *Service) checkChangeSetApplyState(ctx context.Context, projectID, changeSetID string) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		change, err := store.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return err
+		}
+		// A change set whose apply has already been answered keeps its
+		// answer: the operation's idempotent replay must be able to return
+		// it, so the pre-flight does not refuse those states here.
+		if ChangeSetApplyAnswered(change.Status) {
+			return nil
+		}
+		if !ChangeSetStatusCanMove("apply", change.Status) {
+			return ErrInvalidState
+		}
+		return nil
+	})
+}
+
 func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
@@ -2133,6 +2166,16 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		return nil, 0, false, err
 	}
 	if err := s.Authorize(ctx, actor, projectID, "manage"); err != nil {
+		return nil, 0, false, err
+	}
+	// The change-set state machine decides whether an apply is allowed at
+	// all, and it runs before this operation decodes its sources. Decoding
+	// reads the change set's assessment record; an unassessed change set has
+	// none, so the refusal used to arrive as "not found" — a 404 for a change
+	// set that does exist. A change set that is not in a legal predecessor
+	// state is now refused as an invalid state (422), and a change set that
+	// does not exist is still a not found (404).
+	if err := s.checkChangeSetApplyState(ctx, projectID, changeSetID); err != nil {
 		return nil, 0, false, err
 	}
 	changeInput := map[string]string{"change_set_id": changeSetID}

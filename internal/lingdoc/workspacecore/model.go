@@ -454,6 +454,18 @@ var (
 	ErrRequestInProgress           = clienterror.New(clienterror.Form{Status: 409, Code: "request_in_progress", Message: "原请求仍在提交，请稍后用相同操作键重试。", Retryable: true, RetryAfter: 1}, "request_in_progress")
 	ErrSourceUnavailable           = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料不可用或未获授权。", Retryable: false}, "source_access_denied")
 	ErrPermissionSchemaUnavailable = clienterror.New(clienterror.Form{Status: 500, Code: "permission_schema_unavailable", Message: "权限服务未正确配置，请联系管理员。", Retryable: false}, "permission_schema_unavailable")
+
+	// ErrChangeSetNotAssessed is a change set that exists but carries no
+	// assessment: it was never assessed, or its assessment was made against
+	// text that has since been edited.
+	//
+	// Applying such a change set is an illegal business action, not a
+	// missing resource, so it answers 422 invalid_state. It is deliberately
+	// distinguishable from ErrNotFound: a change set that does not exist is
+	// a 404, and a change set that exists but was never assessed is not.
+	//
+	// It wraps ErrInvalidState, so every check on that cause keeps working.
+	ErrChangeSetNotAssessed = clienterror.Wrap(clienterror.Form{Status: 422, Code: "invalid_state", Message: "变更集尚未评估，不能应用；请先完成评估。", Retryable: false}, "change_set_not_assessed", ErrInvalidState)
 )
 
 type projectRow struct {
