@@ -882,7 +882,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-accept-0001"}, "json": {"candidate_id": "{{f15.candidate_id}}", "expected_chapter_version_id": "{{f15.question_version}}", "expected_spec_revision": 1, "replace_existing": false}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-accept-0001"}, "json": {"candidate_id": "{{f15.candidate_id}}", "expected_chapter_version_id": "{{f15.question_version}}", "expected_spec_revision": 1, "replace_existing": false, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f15.adopted_version": "/data/current_version_id"},
           "assertion": "采纳候选后，正文与待核项分别按候选保存。",
           "response_example": "success"
@@ -1450,7 +1450,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-accept-0001"}, "json": {"candidate_id": "{{f20.first_candidate_id}}", "expected_chapter_version_id": "{{f20.human_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-accept-0001"}, "json": {"candidate_id": "{{f20.first_candidate_id}}", "expected_chapter_version_id": "{{f20.human_version}}", "expected_spec_revision": 1, "replace_existing": true, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f20.first_accepted_version": "/data/current_version_id"},
           "assertion": "采纳初始候选，完整保存正文和待核项。",
           "response_example": "success"
@@ -1518,7 +1518,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-reaccept-0001"}, "json": {"candidate_id": "{{f20.candidate_id}}", "expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-reaccept-0001"}, "json": {"candidate_id": "{{f20.candidate_id}}", "expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "replace_existing": true, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f20.new_version": "/data/current_version_id"},
           "assertion": "明确替换后以候选完整替换正文、来源与待核项，产生未确认的新版本。",
           "response_example": "success"
@@ -1604,7 +1604,14 @@
           "candidate_id": "candidate-second",
           "expected_chapter_version_id": "cv-question-2",
           "expected_spec_revision": 1,
-          "replace_existing": true
+          "replace_existing": true,
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "u-owner",
+            "origin": "ai_generated"
+          }
         },
         "result": {
           "id": "ch-question",
