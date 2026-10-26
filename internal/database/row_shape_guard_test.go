@@ -39,16 +39,16 @@ package database
 //     type that no rule covers is itself a violation telling the contributor
 //     to extend the table here — never silently accepted, never downgraded to
 //     report-only.
-//  4. Length — a declared `size` is compared only when the artifact side
-//     exposes a length. SQLite decl types carry no length, so on this dialect
-//     a declared size never mismatches (documented no-op). PostgreSQL's
-//     information seam does expose character_maximum_length, and #710's first
-//     full run proved the comparison end-to-end by flagging two true
-//     declaration-side width drifts on the delivery structs — production
-//     declarations that ticket's zero-runtime-change red line forbids
-//     touching, so the length rule stays unactivated on both dialects until
-//     #713 fixes those declarations and turns it on. Not silently dropped:
-//     the finding and the unlock condition live on #713.
+//  4. Length — a declared `size` is compared whenever the artifact side
+//     exposes a length. SQLite decl types carry no enforced length (SQLite
+//     accepts any string into a varchar column regardless of its declared
+//     width), so on this dialect the comparison stays a documented no-op.
+//     PostgreSQL's information seam exposes character_maximum_length and the
+//     PostgreSQL reader feeds it into the same comparison: #710's first full
+//     run proved it end-to-end by flagging two true declaration-side width
+//     drifts on the delivery structs, and #713 fixed those declarations and
+//     turned the rule on. Silence here means the declared width matches the
+//     migrated column; it is never a skipped comparison.
 //
 // What is NOT compared (v1): default values, foreign keys, indexes, unique
 // constraints, autoincrement, primary-key semantics.
@@ -252,6 +252,7 @@ const (
 	rowShapeNullability   = "nullability"
 	rowShapeTypeMismatch  = "type-mismatch"
 	rowShapeTypeUnknown   = "type-not-in-normalization-table"
+	rowShapeLengthMismatch = "length-mismatch"
 )
 
 // The dialects the guard runs against. The checklist and the comparison
@@ -264,11 +265,15 @@ const (
 
 // migrationColumnShape is one column of a real migration chain's product,
 // read straight out of the dialect's schema seam: PRAGMA table_info on
-// SQLite, information_schema.columns on PostgreSQL.
+// SQLite, information_schema.columns on PostgreSQL. Length carries the
+// column's maximum length when the dialect enforces one; the SQLite reader
+// leaves it unset (rule 4 above), which keeps the length comparison a
+// documented no-op on that dialect.
 type migrationColumnShape struct {
 	Name     string
 	DeclType string
 	NotNull  bool
+	Length   sql.NullInt64
 }
 
 // migratedSQLiteChainForShapeGuard builds a fresh database through the real
@@ -579,10 +584,25 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rule 4 (length) is deliberately not compared here in v1 — see the
-		// header block: the mechanism was proven end-to-end on PostgreSQL and
-		// its activation is parked on #713, which first fixes the two
-		// declaration-side width drifts that run surfaced.
+		// Rule 4: length. A declared `size` is compared when the artifact side
+		// enforces a length: the SQLite reader leaves Length unset, so the
+		// comparison never fires on that dialect (rule 4 above), while the
+		// PostgreSQL reader feeds character_maximum_length into it (#713).
+		if field.Size > 0 && shape.Length.Valid && int64(field.Size) != shape.Length.Int64 {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeLengthMismatch,
+				Declared: fmt.Sprintf(
+					"size %d (field %s %s, gorm tag %q)",
+					field.Size, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf(
+					"length %d (data type %q)",
+					shape.Length.Int64, shape.DeclType,
+				),
+			})
+		}
 	}
 
 	return violations
