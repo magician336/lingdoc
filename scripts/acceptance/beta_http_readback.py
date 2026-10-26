@@ -219,22 +219,37 @@ def health(api_root: str, timeout: float = 5.0) -> bool:
         return False
 
 
-def register_login(api_root: str, email: str, password: str, *, timeout: float) -> str:
-    """Register (once) and log in an isolated account.  Returns the token."""
+def register_login(api_root: str, email: str, password: str, *, timeout: float) -> tuple[str, bool]:
+    """Register (once) and log in an isolated account.  Returns ``(token, reused)``.
+
+    An email that already exists is the whole point of ``--email`` (#667):
+    the server answers 400 ("user with this email already exists") and the
+    account is reused through the login below instead of failing the run.
+    Every other rejected status (invite-only 403, unreachable, 5xx) stays
+    fatal with its own reason -- only the one answer that means "the account
+    is already there" falls through.
+    """
     suffix = uuid.uuid4().hex[:12]
     username = "beta452-" + suffix
-    status, registration = request(server_root(api_root), "POST", "/api/v1/auth/register", payload={
+    status, _registration = request(server_root(api_root), "POST", "/api/v1/auth/register", payload={
         "username": username, "email": email, "password": password,
-    }, expected=(200, 201), timeout=timeout)
-    if status not in (200, 201):
-        raise RunnerError("isolated registration was rejected")
+    }, expected=(200, 201, 400), timeout=timeout)
+    reused = status == 400
     _, login = request(server_root(api_root), "POST", "/api/v1/auth/login", payload={
         "email": email, "password": password,
     }, timeout=timeout)
     token = login.get("token") if isinstance(login, dict) else None
     if not isinstance(token, str) or not token:
         raise RunnerError("isolated login did not return a token")
-    return token
+    identity = login.get("user") if isinstance(login, dict) else None
+    logged_in = identity.get("email") if isinstance(identity, dict) else None
+    if not isinstance(logged_in, str) or not logged_in.strip():
+        raise RunnerError("isolated login omitted the account identity (user.email); "
+                          "cannot confirm the reused account is the one --email named")
+    if logged_in.strip().lower() != email.strip().lower():
+        raise RunnerError(f"isolated login returned a different account ({logged_in}) "
+                          f"than --email ({email}); refusing to compare the wrong project")
+    return token, reused
 
 
 def create_and_activate(api_root: str, token: str, *, timeout: float) -> str:
@@ -496,7 +511,7 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None
         email = f"beta452-{uuid.uuid4().hex[:12]}@example.com"
     if not password:
         password = "Beta452-" + secrets.token_hex(8)
-    token = register_login(api_root, email, password, timeout=args.timeout)
+    token, account_reused = register_login(api_root, email, password, timeout=args.timeout)
     if not project_id:
         project_id = create_and_activate(api_root, token, timeout=args.timeout)
 
@@ -511,6 +526,9 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None
         "status": "PASS" if items else "NOT RUN",
         "not_run": not_run,
         "base_url": api_root,
+        # New or reused account, so a reviewer never mistakes a reused
+        # identity for a freshly registered one (#667).
+        "account": "reused" if account_reused else "registered",
     }
     handoff = {
         "base_url": api_root,
