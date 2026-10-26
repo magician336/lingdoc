@@ -161,6 +161,7 @@ func digestSHA256(data []byte) string {
 
 func requestSHA256(request Request) string {
 	request.Reconciliation = nil
+	request.UnresolvedReconciliation = nil
 	data, err := json.Marshal(request)
 	if err != nil {
 		return ""
@@ -173,8 +174,17 @@ func requestUnresolved(request Request) bool {
 	case "http_error":
 		return !validEmbeddingHTTPErrorReconciliation(request)
 	case "in_flight", "outcome_unknown", "usage_unknown", "limit_violation", "cancel_reconciliation_required":
+		// A row an operator settled is resolved; a row whose settlement is
+		// missing, incomplete or tampered with is NOT: the window stays
+		// frozen rather than opening on a proof nobody can check.
+		if request.UnresolvedReconciliation != nil {
+			return !validUnresolvedCallReconciliation(request)
+		}
 		return true
 	default:
+		if request.UnresolvedReconciliation != nil {
+			return !validUnresolvedCallReconciliation(request)
+		}
 		return request.Reconciliation != nil && !validEmbeddingHTTPErrorReconciliation(request)
 	}
 }
@@ -205,6 +215,9 @@ func decodeLedger(data []byte) (Ledger, error) {
 	}
 	for _, request := range ledger.Requests {
 		if request.Reconciliation != nil && (!ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) || !validEmbeddingHTTPErrorReconciliation(request)) {
+			return Ledger{}, ErrUnavailable
+		}
+		if request.UnresolvedReconciliation != nil && (!ProfileSupportsUnresolvedCallReconciliation(ledger.Profile) || !validUnresolvedCallReconciliation(request)) {
 			return Ledger{}, ErrUnavailable
 		}
 	}

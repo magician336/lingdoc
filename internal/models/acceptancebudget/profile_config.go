@@ -80,6 +80,24 @@ type profileConfig struct {
 	// operation: it never calls a provider, never changes the profile, and
 	// never refunds anything.
 	embeddingHTTPErrorReconcilable bool
+	// unresolvedCallReconcilable says whether an operator may settle a call
+	// whose OUTCOME could not be confirmed on this profile's ledger.
+	//
+	// The outcomes are the ones nobody can confirm: the transport failed,
+	// the provider answered without a usage, the process died between the
+	// reservation and the completion, or a cancelled reservation needs a
+	// human. Every one of them freezes the window, and a frozen window
+	// refuses every later reservation -- so without this capability the
+	// authorized budget is retired by the FIRST transport hiccup and there
+	// is no legitimate way back (ticket #675).
+	//
+	// The settlement keeps every conservative invariant: the failed request
+	// is preserved exactly, the FULL reserved upper bound is charged, the
+	// provider's usage stays "unknown", the failed call keeps its
+	// reservation and its place in the call count, and nothing is refunded.
+	// It is a local ledger operation: it never calls a provider, never
+	// changes the profile, and never loosens a budget limit.
+	unresolvedCallReconcilable bool
 }
 
 // profileConfigs is the configuration of every declared profile.
@@ -99,6 +117,12 @@ var profileConfigs = map[string]profileConfig{
 		costBasis:     CostBasisDeepSeekPeakUSD,
 		approvedModel: DeepSeekModel,
 		allowedModels: []string{DeepSeekModel, QwenEmbedding},
+		// A call of this profile can end in an outcome nobody can confirm
+		// (a transport failure, a missing usage, a crash between the
+		// reservation and the completion). The window must be able to
+		// recover from that, or the first such failure retires the
+		// authorized budget for good.
+		unresolvedCallReconcilable: true,
 	},
 	CostOnlyProfile: {
 		family:        profileFamilyCostOnly,
@@ -115,6 +139,10 @@ var profileConfigs = map[string]profileConfig{
 		// embedding HTTP error on. The capability is now stated in the table
 		// instead of being hard-wired to this profile's name.
 		embeddingHTTPErrorReconcilable: true,
+		// The same gap exists here for the outcomes the HTTP error channel
+		// does not cover, and this profile prices its calls, so the
+		// conservative full-reserve charge is available.
+		unresolvedCallReconcilable: true,
 	},
 	QwenProfile: {
 		family:        profileFamilyQwen,
@@ -127,6 +155,12 @@ var profileConfigs = map[string]profileConfig{
 		costBasis:     CostBasisNotApplicable,
 		approvedModel: QwenChatModel,
 		allowedModels: []string{QwenChatModel},
+		// This profile carries no price, so there is no amount to charge --
+		// but a call of it can still end in an outcome nobody can confirm,
+		// and the window still has to be recoverable. The settlement keeps
+		// the failed call's TOKEN reservation counted, which is the number
+		// this profile is governed by.
+		unresolvedCallReconcilable: true,
 	},
 	QwenProfileV2: {
 		family:        profileFamilyQwen,
@@ -143,6 +177,10 @@ var profileConfigs = map[string]profileConfig{
 		// The single-call ceilings are the first profile's: nothing about
 		// one call is loosened by allowing more calls.
 		cumulativeTokenMax: QwenV2CumulativeTokenMax,
+		// Same capability as the first chat profile, and the same reason:
+		// this profile's window is governed by tokens, and the settlement
+		// keeps the failed call's reservation counted.
+		unresolvedCallReconcilable: true,
 	},
 	QwenEmbeddingProfile: {
 		family:        profileFamilyQwen,
@@ -162,6 +200,10 @@ var profileConfigs = map[string]profileConfig{
 		// authorized budget (four calls, eight thousand tokens) would be
 		// unusable after the FIRST failure, with no way to recover it.
 		embeddingHTTPErrorReconcilable: true,
+		// And a failure that is not a 4xx must not retire it either: the
+		// transport can fail, the usage can go missing, and the process can
+		// die mid-call.
+		unresolvedCallReconcilable: true,
 	},
 }
 
