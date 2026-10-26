@@ -37,19 +37,20 @@
       "status": "pass",
       "evidence": "`python scripts/lingdoc_parallel_surfaces.py`(输出「12 parallel work faces validated」,退出码 0);`scripts/ci/test_lingdoc_parallel_consistency.py`(随 873 项套件绿);head `b9a546d8295d`",
       "note": "地图 #695 Notes 要求 M-0 开工前核路径:四个新 scripts/ 文件均不在任何面的路径集内,loader 校验 12 面通过,无需移交。"
+    },
+    {
+      "id": "AC-458-06 本 PR 的 GitHub Actions 门禁(LingDoc PR gate)",
+      "status": "pass",
+      "matrix_status": "PASS",
+      "evidence": "`Test and vet existing LingDoc provider packages`(最终 attempt 全部绿);Run 40360449901 attempt 2 SUCCESS(2026-10-26T17:08:53Z);其余 job 按路径缩面 SKIPPED(净差仅 scripts/*.py 与证据 JSON,缩面正确);head `b9a546d8295d`",
+      "note": "两次尝试都记:attempt 1 于 internal/lingdoc/workspace 包 600.576s 超时失败(2026-10-26 16:49)——本 PR 零 Go 文件,被测 Go 树与 main 的 7867c99c 逐字一致,同日该门禁另有 15:00(Test CI scope scripts)与 10:09 两起不同步骤的先红后绿,判定为 runner 波动而非本 PR 缺陷;attempt 2 重跑同 SHA 全绿。"
     }
   ],
   "not_run": [
     {
-      "id": "AC-458-06 本 PR 的 GitHub Actions 门禁作业",
+      "id": "AC-458-07 go test ./... 与前端三件套(按路径缩面)",
       "status": "not_run",
-      "reason": "本机无法观测远端 CI run;推送前 run 不存在。",
-      "unblock": "本 PR 推送后,以 LingDoc PR gate 各 job 的 run 记录为准回填;全绿即解除。"
-    },
-    {
-      "id": "AC-458-07 go test ./... 与前端三件套",
-      "status": "not_run",
-      "reason": "按路径缩面:本票净差只有 4 个 scripts/ 新文件,零 Go、零前端文件,被测面不在这两个作业里。",
+      "reason": "本票净差只有 4 个 scripts/ 新文件 + 1 份证据 JSON,零 Go、零前端文件;CI 侧对应 job(Format/vet/test/build、frontend、integration 等)也按路径缩面 SKIPPED,两侧口径一致。",
       "unblock": "任何触及 Go/前端路径的 PR 由 LingDoc PR gate 的对应 job 覆盖;本票无此路径,无需补跑。"
     }
   ],
@@ -62,7 +63,7 @@
   ],
   "ci": {
     "head": "b9a546d8295d763451b8df06308aba8ac7af8fe7",
-    "run_ids": "见 PR 页面(推送后生成)",
-    "note": "推送后由 LingDoc PR gate 自动补齐。"
+    "run_ids": "40360449901(attempt 1 fail:internal/lingdoc/workspace 包 600s 超时,runner 波动;attempt 2 SUCCESS)",
+    "note": "LingDoc PR gate 最终全绿;路径缩面 job 按设计 SKIPPED。"
   }
 }
