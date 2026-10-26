@@ -724,6 +724,43 @@ func TestAgentContextRejectsUnconfirmedEvidenceCards(t *testing.T) {
 	}
 }
 
+func TestEvidenceCardCanBeReturnedForIndividualReview(t *testing.T) {
+	f := newAgentFixture(t, false)
+	anchor := f.anchor(t, "source-1", "g2-review-card-anchor")
+	claim := f.claim(t)
+	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-review-card", "supports")
+	untouched := f.card(t, []SourceAnchor{anchor}, &claim, "g2-review-card-untouched", "background")
+
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-review-card-confirm", ConfirmationInput{
+		VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "逐条核对原文与定位",
+	})
+	confirmed := decodeAgentJSON[EvidenceCard](t, raw, err)
+	raw, _, _, err = f.svc.ReviewEvidenceCard(context.Background(), f.owner, f.project.ID, confirmed.ID, "g2-review-card-return", ReviewEvidenceCardInput{
+		VersionExpectation: f.expectation(confirmed.Version), Status: "NEEDS_REVIEW", Confirmed: true, Reason: "发现定位需要重新核对",
+	})
+	reviewed := decodeAgentJSON[EvidenceCard](t, raw, err)
+	if reviewed.ID != confirmed.ID || reviewed.Version != confirmed.Version+1 || reviewed.Status != "NEEDS_REVIEW" || reviewed.Confirmation != nil || reviewed.InvalidReason != "发现定位需要重新核对" {
+		t.Fatalf("individual review did not revoke only the reviewed card confirmation: %+v", reviewed)
+	}
+
+	cards, err := f.svc.ListEvidenceCards(context.Background(), f.owner, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, current := range cards {
+		switch current.ID {
+		case reviewed.ID:
+			if current.Status != "NEEDS_REVIEW" || current.Confirmation != nil {
+				t.Fatalf("reviewed card still appears confirmed: %+v", current)
+			}
+		case untouched.ID:
+			if current.Version != untouched.Version || current.Status != untouched.Status {
+				t.Fatalf("review changed a different card: %+v", current)
+			}
+		}
+	}
+}
+
 func TestEvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
 	f := newAgentFixture(t, false)
 	a := f.anchor(t, "source-1", "g2-anchor-a")
