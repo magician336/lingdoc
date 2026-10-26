@@ -2,7 +2,8 @@
 
 > **本文件是 lingdoc Beta 实施的唯一进度源。** 每批任务结束后更新它；不要另建进度表。
 > **基线**：`origin/main`（本文件合并后即最新基线；每次更新在本行下写明本文件对应的合并提交，避免基线行本身过期）。**审计报告**：`C:\Users\ASUS\AppData\Local\Temp\lingdoc-audit\00-beta-progress-audit.md`。
-> **本轮同步基线（第八轮）**：见 **§22**（第十二批）。本轮把 §6 第 6 项「真实依赖均已验证」由 `NOT RUN` 闭合为 **`PASS`**（真实向量生成 ＋ 真实向量检索：2 次真实 provider 请求、675 计费 token、累计预留 ¥0.002063125；证据见 §22.1／§22.2），并按协议 §6 逐项核对给出 **Beta 首版放行结论 ＝ `GO`**（六项门槛全部 `PASS`，主流程无 `FAIL`／`BLOCKED`／`NOT RUN`／`DEFERRED_MANUAL`）。本轮**没有**发起新的真实模型调用（沿用 2026-10-26 已完成的 embedding 验收证据），**没有**改动任何验收门槛，**没有**把任何未执行项改判为通过；§6 第 6 项的偏离、豁免与残余风险逐条登记在 **§22.5**。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
+> **本轮同步基线（第八轮）**：见 **§22**（第十二批）。本轮把 §6 第 6 项「真实依赖均已验证」由 `NOT RUN` 闭合为 **`PASS`**（真实向量生成 ＋ 真实向量检索：2 次真实 provider 请求、675 计费 token、累计预留 ¥0.002063125；证据见 §22.1／§22.2），并按协议 §6 逐项核对给出 **Beta 首版放行结论 ＝ `GO`**（六项门槛全部 `PASS`，主流程无 `FAIL`／`BLOCKED`／`NOT RUN`／`DEFERRED_MANUAL`）。本轮**没有**发起新的真实模型调用（沿用 2026-10-26 已完成的 embedding 验收证据），**没有**改动任何验收门槛，**没有**把任何未执行项改判为通过；§6 第 6 项的偏离、豁免与残余风险逐条登记在 **§22.5**。⚠️ 本文件**本轮对应的合并提交**＝ **`0451fa2e`**（PR #676 的合并提交；由管理会话落基，SHA 取自实际 `origin/main`，非臆造）。
+> **本轮同步基线（第九轮·收口）**：见 **§23**（第十四批）。本轮**只做文档收口**：把 §22 头部第八轮的合并提交填成实测值、把 **#675 的修复状态由「开放」更新为「已修复」**（PR #680，合并提交 `77871bbc`）、把新开票 **#681**（OpenAPI `AcceptCandidate.required` 未含 `confirmation`，而服务端 `binding:"required"` 缺则 400 —— 契约漂移）登记进 §22.5／§22.6，并附**文档与代码一致性核对**结果。本轮**没有**发起任何真实模型调用、**没有**改动任何验收门槛、**没有**把任何未执行项改判为通过，**也没有**改动任何 Go／前端代码。
 > **本轮同步基线（第六轮）**：见 **§19**（第十一批）。本轮把 #619 的裁定（A1 / B / C）落地（服务端根因 ＋ 契约侧稳定化链节点），给跑批器补上人工判定录入通道（#633），并把两条判定路径的三处口径残留收干净（#639 / #640）。**F01 契约节点数 28 → 31、checks 58 → 64**（新增三个稳定化节点）。本轮**没有**发起新的真实模型调用；稳定化链在隔离环境上以**零 provider 消耗**实测跑通（`stabilizeRevision` → `STABILIZED`、`prepareRelease` → 201）。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **上一轮（第三轮）同步基线**：`origin/main` = `c14770f9`（PR #591 合并提交）。本轮新合入：**#587**（#578 两本账的「超限」判据收敛为**一份权威清单**，合并提交 `6ed1f3c4`）、**#588**（#545 许可提案不再把待授权资料计入本次操作的来源复核，合并提交 `4b73e8e7`）、**#589**（#576 前端租户角色中文标签收口为唯一来源，合并提交 `a9374cab`）、**#591**（登记处补登记 #576 的 6 条前端路径，PF-14 路径集 57 → 63）。**第二轮**同步（PR #585，合并提交 `24262070`）的基线是 `6b382132`；**第一轮**同步（PR #561，合并提交 `2a664c56`）的基线是 `a98138af`。⚠️ 本文件**本轮对应的合并提交**＝本 PR 的合并提交（由管理会话落基，**此处不臆造 SHA**）。
 > **F01 契约基线（第三轮实测）**：`docs/08-本轮实施方案/contracts/workflow.json` = **28 节点 / 58 checks**（`version 0.5.0`，`mode = specification_not_executed_against_provider`）——在 `c14770f9` 的工作树上直接数出，且 `git diff 4b73e8e7..c14770f9 -- contracts/workflow.json` **为空** ⇒ 与最新一轮真实验收（Track-C）所用的契约**逐字相同**。
@@ -1323,7 +1324,7 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 9 | **浏览器真实链路（三方一致）** | **PASS**（真实 Vite + 真实 Chrome/Edge/CDP + 真实登录表单；10 项逐项一致、0 处不符） | §20.12、`browser-run-20261025/parity.json` | ⚠️ **「候选取消」交互未执行**（F01 契约无该节点）⇒ 登记为覆盖边界 |
 | 10 | **Word 检查** | **PASS**（机械 12 项 ＋ 人眼两项） | §20.9、§21 | ⚠️ **人眼确认对象＝排版修复审阅副本**（sha256 `5f4f598b…`），**不是**原件；机器渲染产物 **NOT RUN** |
 | 11 | **真实模型用量与预算隔离** | **PASS**（chat 4 行、embedding 3 行；双上限内；失败请求按预留上界计费且未退款；重试在 transport 之前被挡） | §22.1、§14.2 | ⚠️ **模型切换的账本行（`kind=switch`）不存在** —— `RecordModelSwitch` **无生产调用点**（产品里没有「按项目切换模型」这一动作）⇒ 见 22.5 残余风险 |
-| 12 | **预算窗口的恢复通道** | **部分**：4xx 有（#671/#674，已实跑一次）；**非 4xx 结局无** | §22.1 | 票 **#675** 开放（**不阻塞**放行，理由见 §22.5） |
+| 12 | **预算窗口的恢复通道** | **PASS**（4xx：#671/#674，已实跑一次；**非 4xx 结局**：#675 已修复并合入 `77871bbc`） | §22.1、§23 | ✅ 本轮已闭合；⚠️ 新通道是**操作者的显式动作**（不是机器判定），且「一次只结清一条」的前置闸门与后置条件同码 ⇒ 外部不可观测（见 §23.3） |
 | 13 | **第二人独立复现** | **`WAIVED_BY_OWNER`**（事实状态仍 **`NOT RUN`**） | §20.10 | 协议 §6 门槛**不含**该项；残余风险＝单点执行者风险 |
 | 14 | **放行结论的假 PASS 面** | **PASS**（#592／#632／#639／#640 已合入并关闭） | 本批票据同步 | — |
 
@@ -1356,7 +1357,7 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 2 | **向量验收在隔离知识库**完成（目标库 chunk 本身仍无向量行） | 偏离（负责人已接受） | 同上；等价性证据已补齐 | 目标库单 chunk 重索引＝每 chunk 1 次 provider 请求（本轮授权已用完，需新授权） |
 | 3 | **F01-06c 的 422 `invalid_state` 行为未验证**（负向实测为 404 `not_found`） | 已知限制（不改判） | 该条散文断言按「未评估的变更集不得被应用」读法记 `passed`；若按「服务端以状态非法拒绝且合法前态恰为 `{assessed}`」读法，应记 **PARTIAL** | 票 **#656**（把「评估记录不存在」改成可区分的领域错误，并让状态机检查在来源解码之前执行） |
 | 4 | **模型切换的账本行（`kind=switch`）不存在** | 已知限制（代码侧条件不具备） | §6 门槛**不含**该项；§5 的「切换时记录原因/原新模型/参数/受影响步骤/实际调用账本」已由**验收证据**（本节 ＋ 阶段 A/B 的账本）承载，但**产品侧没有切换事件可记** | 已开票跟进（产品侧「按项目切换模型」动作不存在 ⇒ 需要先有该动作）；#480 的 `AC-BETA-10` 因此**不满足** |
-| 5 | **非 4xx 冻结结局仍无恢复通道**（`outcome_unknown`／`usage_unknown`／`in_flight`／`cancel_reconciliation_required`／`limit_violation`），chat profile 同类缺口 | 缺陷（不阻塞放行） | 本轮**未触发**；触发则该受控窗口永久报废 | 票 **#675**（修复已开工） |
+| 5 | ~~**非 4xx 冻结结局仍无恢复通道**~~（`outcome_unknown`／`usage_unknown`／`in_flight`／`cancel_reconciliation_required`／`limit_violation`），chat profile 同类缺口 | **已修复**（PR #680，合并提交 `77871bbc`） | 不再是缺陷；窗口不会再因一次传输抖动报废 | 票 **#675** 已可关闭；新通道的残余风险见 §23.3 |
 | 6 | **单点执行者风险**（无第二人独立复现） | 正式豁免（`WAIVED_BY_OWNER`） | 协议 §6 门槛不含该项 | 票 **#489**（事实状态仍 `NOT RUN`） |
 | 7 | **浏览器「候选取消」交互未执行** | 覆盖边界 | 三方一致结论不因此降级（执行器自身设计） | 若要覆盖，需在契约里增加取消节点并实跑 |
 | 8 | **Word 机器渲染产物 NOT RUN**（Word COM 三条导出通道均挂起、LibreOffice 未安装） | 已知限制 | 不影响 §6 第 5 项（机械 ＋ 人眼均已完成） | 若要求 PDF/截图产物，需另装渲染通道 |
@@ -1372,10 +1373,11 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 票 | 处置 | 依据 |
 |---|---|---|
 | **#546** | **关闭**（按负责人既定裁定） | 实际调用次数、费用、账本终态、证据位置、隔离知识库偏离已写入票面评论；chat profile 的互斥面与冻结结局恢复通道**不在本票**，留在 #675 |
-| **#675** | **保持开放** ＋ 补「对完整 Beta 的影响评估」评论 ＋ 修复已开工 | 不进入 §6 门槛（不阻塞放行）；残余风险已登记 |
+| **#675** | **修复已合入**（PR #680，合并提交 `77871bbc`）；票据**已关闭**（关闭依据见 §23.1） | 不进入 §6 门槛（不阻塞放行）；残余风险已登记；关闭依据见 §23 |
 | #592 / #618 / #621 / #632 / #639 / #640 / #651 / #655 | **关闭**（修复已在 `origin/main`，此前票面未同步） | 每票的关闭评论写明 PR、合并提交、独立复核与真实跑批验证 |
 | #480 / #489 / #492 / #490 | 保持开放 ＋ 状态同步 | #480：`AC-BETA-10`（`kind=switch` 行）与「跑批证据目录入仓」两项**未满足**；#489：`WAIVED_BY_OWNER`（事实 `NOT RUN`）；#490：本节即其放行结论表的事实来源 |
 | **#679**（新立） | 开放 | 候选采纳的持久化只到 HTTP 层（缺独立 GET 读回断言）与 F01-11 的 intent 文本强于其断言 —— 由 22.8.1 的独立复核点出；**证据补强票，不阻塞放行** |
+| **#681**（新立） | 开放 | OpenAPI 契约漂移：`AcceptCandidate.required` 未含 `confirmation`，而服务端 `binding:"required"` 缺则 400（见 §23.4）；**契约文档漂移票，不阻塞放行** |
 
 ### 22.7 证据索引
 
@@ -1432,3 +1434,70 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 另：Embedding Flash 一轮的 14 件证据在 `…/32b22cf918858c8a7fd84dee6053886272719f5b/embedding-flash-20261026/`；负责人对 Word 副本的确认记录在 `docs/08-本轮实施方案/acceptance/beta-word-check-owner-confirm-20261025/`。
 
 > ⚠️ **入仓目录的 head 说明**：F01 跑批与 PG 重启读回都绑定 **`c2345229…`**；**浏览器检查**绑定的前端 head 是 **`7612f92c…`**（当时的后端二进制 `source_head` 仍是 `c2345229…`，且 18087 进程全程未停未重启）；**Embedding Flash 一轮**绑定 **`d76ff6a7…`**（工作树 HEAD `32b22cf9…`，两者 tree 逐字相同）。三者**不是同一个 head**，逐件的 head 已在 `runtime-manifest.json` 与各证据件里登记 —— **不得**把它们读成「同一次、同一 head 的执行」。
+## 23. 第十四批（第九轮同步）：#675 修复落基 ＋ OpenAPI 契约漂移登记（2026-10-26）
+
+> **本节是当前权威状态**（截至 2026-10-26，第九轮）。本轮**只做文档与票据同步**：合入 #675 的修复、把已登记的契约漂移开票、把 §22 头部的合并提交填成实测值。
+> **本轮没有发起任何真实模型调用、没有改动任何验收门槛、没有把任何未执行项改判为通过，也没有改动任何 Go／前端代码**（除合入 #675 已有的修复）。协议 §6 的六项门槛判定与 §22.4 的 `GO` 结论**不因本轮发生任何变化**。
+
+### 23.1 #675 已修复并合入
+
+- **PR**：#680（分支 `fix/675-budget-window-recovery`）；最终 head `0ea28bcc`（两次落基合并：`81f7f69b` → `0ea28bcc`），**合入 `main` 的合并提交＝ `77871bbc`**。
+- **缺口本体**：受控预算窗口原本只有一条恢复通道（provider 的 HTTP 错误，#671/#674）。其余**结局不可确认**的调用形状（`outcome_unknown`／`usage_unknown`／`in_flight`／`cancel_reconciliation_required`／`limit_violation`）全部让 `hasUnresolved` 与 `ledger.Blocked` 保持为真，于是 `Reserve` 此后永远返回 `ErrBlocked`：**已授权的窗口（4 次调用／8000 token）被第一次传输抖动就报废**，操作者唯一能"修"它的办法是手改账本文件——那是重写记账，不是对账。
+- **修复口径**：新增 `ReconcileUnresolvedCall` ＋ 新**可选**注解字段 `unresolved_reconciliation`；CLI 新增 `-mode unresolved-call`。八条不变量逐条落地：**绝不退款**（按预留上界全额计费、provider usage 恒 `unknown`）、**绝不篡改历史记账**（只追加注解）、**快照绑定**（精确 sha256，不匹配则拒绝且不写文件）、**显式确认**、**一次只结清一条**、**不放宽任何预算上限**、**按 profile 能力区分**、**`http_error` 既有路径逐字不变**。
+- **不变量自证**：八条不变量在 PR 正文中逐条给出「落实位置＋结论」；由外部独立复核代理逐条复核（见 §23.2）；管理会话另做两处**自跑变异**（见 §23.2 第二轮）。
+- **门禁**：`LingDoc PR gate`、`Format, vet, test, and build`、`golangci-lint (.)` 在最终 head 上**全绿**。
+
+### 23.2 独立复核（两轮）
+
+**第一轮：外部独立复核代理**（独立上下文，自己读代码、自己跑命令、自己做变异，并独立核对了本 PR 的变异证据文件；全程只读工作树，结束时恢复到基线 sha256、`git status` 干净）。
+
+- 八条不变量：七条判「**符合**」，第 7 条（按 profile 能力区分）判「**部分符合**」——理由是 `ledgerUsageUnverifiable` 这道 usage 闸门**只被间接覆盖**（靠后续 Reserve 的结果），没有直接断言。
+- **第 7 条专项核实**（结清后窗口到底还停不停）：`ledger.Blocked=false`、`hasUnresolved=false`、有效注解被 `ledgerUsageUnverifiable` 跳过，但**累计 token 仍保留、调用数仍保留**（v1 chat profile 结清后仍 `ErrCallsSpent`）⇒ 结论：闸门只因**有效且保守**的结清注解而放行，预算上限不受影响。
+- **M3a**：认同「一次只结清一条」的前置闸门是**等价变异**（纵深防御、外部不可观测），并补了一条理由：`validLedger` 要求 unresolved 请求对应 `ledger.Blocked=true`，所以临时清掉 `Blocked` 也会在后置被拒。
+- **发现的两条缺口**：① M2 的 stale-snapshot 用例**隔离不足**（手工改 block reason 同时改了另一项前置条件，删掉 sha256 比对后它仍可能通过）；② 建议给 usage 闸门补**直接断言**。
+- **它自己的环境限制（如实记录）**：它的沙箱禁止访问 `proxy.golang.org`，Go 依赖无法下载，报的是 `[setup failed]` 而不是 `--- FAIL:`，因此**它自己的两处变异没有转红** ⇒ 那两处**不计入**本 PR 的变异证据。
+
+**处置**：① 新增 `TestTheUnresolvedSettlementRefusesALedgerThatOnlyChangedItsBytes`（只改字节、不改语义）；② 新增 `TestTheUsageGateOnlyOpensForAConservativeSettlement`（从两侧直接断言 usage 闸门）。两条都是**新增测试**，生产代码未因此改动。
+
+**第二轮：管理会话在独立工作树自做变异**（`D:\wt\verify-675-mut2`，detached head `96f6968e`；手法＝改源文件 → `go test -count=1 ./internal/models/acceptancebudget/... -timeout 300s` → 用 `git show <head>:<path>` 的**提交字节**逐字节还原 → 比对 sha256）。
+
+| 变异 | 内容 | 转红的测试 | 还原后 sha256 |
+|---|---|---|---|
+| 基线（未变异） | — | — | `go test` ⇒ `ok`（acceptancebudget）／`ok`（cmd） |
+| M2 | 去掉**快照绑定**（不再比对账本 sha256） | `TestTheUnresolvedSettlementRefusesEverythingItMustRefuse`、`TestTheUnresolvedSettlementRefusesALedgerThatOnlyChangedItsBytes` | `69B95C61…`（`reconcile_unresolved.go`，= 基线） |
+| M4 | 把新注解的判定改成「**注解存在就算已结清**」 | 10 条（含 `TestTheUsageGateOnlyOpensForAConservativeSettlement`、`TestATamperedSettlementLeavesTheCallUnresolved`、`TestTheSettledWindowStillHonoursTheCumulativeTokenCeiling`、`TestTheSettledWindowStillHonoursTheCallCount`） | `D87F957D…`（`ledger.go`）、`2A731F00…`（`reconcile.go`），均 = 基线 |
+
+⇒ **两条新补的测试确实承重**（不是空断言）：M2 在「只改字节」的用例上转红、M4 在「usage 闸门」用例上转红；两处被改文件均**逐字节还原**且 sha256 回到基线。
+
+### 23.3 新通道的残余风险（随 `GO` 继续生效）
+
+1. **结清是操作者的判断，不是机器的判断**——「provider 到底执行了没有」留给人。缓解手段：证据必须绑定**精确快照**、必须**显式确认全额计费**、必须**一次一条**、注解必须**逐字自洽**（否则账本直接被拒）。
+2. **M3a 暴露的等价变异**：「一次只结清一条」的前置闸门与后置条件返回**同一个 `ErrBlocked`**、产生**同一个未改动文件** ⇒ 外部不可观测。它没有被削弱，但也没有被独立钉住；若将来有人改动后置条件的错误码，这道闸门的语义会随之漂移。
+3. **chat profile 的 usage 闸门例外**（`ledger.go` 中 `ledgerUsageUnverifiable` 对有效结清注解的跳过）：这是本 PR 的一处**取舍**，与 #671 为 http_error 通道设立的例外逐字同构；若负责人要求该闸门原样保留，则需连同相关测试一起改。
+4. **结清后仍可能欠费**：provider usage 恒为 `unknown`，账本只记**预留上界**，不记实际消耗（按上界计费是保守方向）。
+5. **新通道没有任何应用／HTTP 调用点**（`TestTheUnresolvedSettlementIsNeverCalledByAnApplicationSeam` 用全仓结构扫描钉住）；本 PR 不引入任何网络调用。
+
+### 23.4 #681：OpenAPI 与服务端的契约漂移（已开票）
+
+**实测事实**（本轮直接读契约与服务端代码确认）：
+
+| 面 | 事实 |
+|---|---|
+| 契约 | `docs/08-本轮实施方案/contracts/openapi.json` 的 `AcceptCandidate.required` ＝ `["candidate_id","expected_chapter_version_id","expected_spec_revision","replace_existing"]` —— **不含 `confirmation`**（`confirmation` 出现在 `properties` 里，但不在 `required`） |
+| 服务端 | `internal/lingdoc/candidateadoption/candidate_adoption_http.go:113`：`Confirmation *AdoptionConfirmation \`json:"confirmation" binding:"required"\`` ⇒ **缺 `confirmation` 即 400 `invalid_request`** |
+| 契约请求体示例 | 该 operation 的 `requestBody` **示例里已带** `confirmation`（含 `writing_action`／`adoption_target`／`confirmed_at`／`confirmed_by`／`origin`） |
+
+**影响**：由 OpenAPI 生成的客户端可能不带 `confirmation` ⇒ 被 400 拒；这是**契约文档漂移**，不是实现缺陷。F01 实跑不受影响（F01-11 的契约请求体本身已带 `confirmation`）。
+
+**处置**：已开票 **#681**（修 `required` 集合并补一条守护测试）；**不改判任何门槛**，登记为不阻塞项。
+
+### 23.5 文档与代码一致性核对（本轮实测）
+
+| 核对项 | 结果 |
+|---|---|
+| F01 契约 `workflow.json` | `version 0.5.0`、`steps = 31` ✅ 与 §22 的口径一致 |
+| F01-11 请求体 | **已带** `confirmation` ✅（此前「缺 `confirmation` 返 400」的问题在实现侧已解决） |
+| embedding profile 额度 | `maxCalls = 4`、累计 token 上限 `8000`、金额上限 `QwenEmbeddingInputMax × 500` ✅ 与 §22.1 的 2 次真实调用（675 token／¥0.002063125）口径一致 |
+| `RecordModelSwitch` | **非测试调用点 ＝ 0** ✅ 支撑 §22.5 第 4 条（产品侧无「切换模型」动作 ⇒ `kind=switch` 行不存在） |
+| `AcceptCandidate.required` vs 服务端 `binding:"required"` | **不一致** ❌ ⇒ #681（§23.4） |
+| 协议 §6 六项门槛 | 与 §22.4 逐项一致，**本轮未改判任何一项** ✅ |
