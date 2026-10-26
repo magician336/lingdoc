@@ -70,6 +70,32 @@ const (
 	ParseStatusCancelled = "cancelled"
 )
 
+// Knowledge-level index status constants.
+//
+// IndexStatus on the knowledge row is the same fact as the per-chunk
+// index_status ("is this content reflected in the retrieval index?"), seen
+// one layer up: readers that only see the knowledge row — list views, detail
+// views, ops panels — must not have to join the chunks table to learn that a
+// parsed document never reached the index. The value is stamped by the
+// parse/indexing run alongside the chunk-level verdict it produced, so an
+// index delivery failure always marks BOTH layers; it is deliberately not a
+// parse outcome, so it never turns a successful parse into a failed one.
+const (
+	// KnowledgeIndexStatusPending indicates no indexing attempt has recorded
+	// a verdict for this row yet (fresh row, or a run that never reached the
+	// indexing stage).
+	KnowledgeIndexStatusPending = "pending"
+	// KnowledgeIndexStatusReady indicates the content this row's parse
+	// produced is reflected in the retrieval stores the knowledge base
+	// wanted — the run-level counterpart of chunk index_status "ready".
+	KnowledgeIndexStatusReady = "ready"
+	// KnowledgeIndexStatusFailed indicates the parse itself succeeded but its
+	// content did not reach (every) wanted retrieval pipeline — the run-level
+	// counterpart of chunk index_status "failed". Recoverable by re-parsing
+	// (re-indexing); it is not a parse failure.
+	KnowledgeIndexStatusFailed = "failed"
+)
+
 // Summary status constants for async summary generation
 const (
 	// SummaryStatusNone indicates no summary task is needed
@@ -150,6 +176,16 @@ type Knowledge struct {
 	// (summary + question + graph chunks). Only meaningful while
 	// ParseStatus == "finalizing"; defaults to 0 in any terminal state.
 	PendingSubtasksCount int `json:"pending_subtasks_count" gorm:"type:int;not null;default:0"`
+	// IndexStatus is the knowledge-row rollup of the per-chunk index_status:
+	// whether the content this row's parse produced is reflected in the
+	// retrieval stores — pending | ready | failed (see the
+	// KnowledgeIndexStatus* constants). "failed" is a non-fatal marker: the
+	// parse itself succeeded and the chunks are on disk, only the index is
+	// missing, and a re-parse rebuilds it. The chunk-level index_status stays
+	// the finer-grained truth: later per-chunk edits and re-index retries
+	// update the chunk rows first; the row-level rollup is re-stamped by the
+	// next parse/indexing run.
+	IndexStatus string `json:"index_status" gorm:"type:varchar(16);not null;default:'pending'"`
 	// Summary status for async summary generation
 	SummaryStatus string `json:"summary_status"     gorm:"type:varchar(32);default:none"`
 	// Enable status of the knowledge
