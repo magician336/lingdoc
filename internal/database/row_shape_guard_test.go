@@ -58,6 +58,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -94,6 +95,7 @@ func (v rowShapeViolation) Error() string {
 
 const (
 	rowShapeColumnMissing = "column-existence"
+	rowShapeNullability   = "nullability"
 )
 
 // migrationColumnShape is one column of the real migration chain's product,
@@ -182,7 +184,24 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rules 2 (nullability) and 3/4 (type/length) land with their red tests.
+		// Rule 2, first direction: a value-type field with the `not null` tag
+		// declares NOT NULL, so the artifact column must be NOT NULL.
+		if field.NotNull && field.FieldType.Kind() != reflect.Pointer && !shape.NotNull {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeNullability,
+				Declared: fmt.Sprintf(
+					"NOT NULL (field %s %s, gorm tag %q)",
+					field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf("nullable (decl type %q)", shape.DeclType),
+			})
+			continue
+		}
+
+		// Rule 2, second direction (pointer declares NULL allowed) lands with
+		// its red test. Rules 3/4 (type/length) land with theirs.
 		_ = shape
 	}
 
@@ -234,4 +253,35 @@ func findRowShapeViolation(violations []rowShapeViolation, column, kind string) 
 		}
 	}
 	return rowShapeViolation{}, false
+}
+
+// rowShapeGuardNotNullOnNullableFixture replicates the #693 shape on the real
+// migration artifact: a value-type field with the `not null` tag pointed at
+// the column 000056 made nullable (rule 2, first direction).
+type rowShapeGuardNotNullOnNullableFixture struct {
+	ChapterVersionID string `gorm:"not null;size:36"`
+}
+
+func (rowShapeGuardNotNullOnNullableFixture) TableName() string { return "lingdoc_candidate_adoptions" }
+
+func TestRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn(t *testing.T) {
+	db := migratedSQLiteChainForShapeGuard(t)
+
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "rowShapeGuardNotNullOnNullableFixture",
+		TableName:   "lingdoc_candidate_adoptions",
+		schemaOf:    parseRowShapeFixture(&rowShapeGuardNotNullOnNullableFixture{}),
+	}}
+	violations := runRowShapeGuard(t, db, registrations)
+
+	violation, found := findRowShapeViolation(violations, "chapter_version_id", rowShapeNullability)
+	require.Truef(t, found,
+		"the guard must flag a not-null declaration over a column the chain allows NULL on; got %v", violations)
+
+	message := violation.Error()
+	require.Contains(t, message, "lingdoc_candidate_adoptions", "failure must name the table")
+	require.Contains(t, message, "chapter_version_id", "failure must name the column")
+	require.Contains(t, message, "NOT NULL", "failure must show the declared nullability")
+	require.Contains(t, message, "nullable", "failure must show the artifact's nullability")
 }
