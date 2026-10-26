@@ -1,0 +1,232 @@
+[
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\acceptance-budget-reconcile.exe",
+    "bytes": 4947456,
+    "sha256": "e42c1e40b54080c82771446403c363b9083d76b745f03b2419831add42d2a99f"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\artifact_manifest.py",
+    "bytes": 1421,
+    "sha256": "af474fa2ed5287cf517a41712c13a329d452569ecb66b5ed5b156ed324d15357"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\before-after-comparison.json",
+    "bytes": 17726,
+    "sha256": "773bf156edde57bda9ec777e5ac1716af0ffc8b8dbf05a9409b42a8a2a7cf7f2"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\before_after.py",
+    "bytes": 7959,
+    "sha256": "acbef2a79be1491b65cd5dc484c1eb5c1b15017a5ce0e18052c7a5496e375375"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\build_and_start_embedding.ps1",
+    "bytes": 6984,
+    "sha256": "766160976431d67e81acf643f432eaa1a0ac6d73520b4ebe972370531afb179d"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\closure-verification.json",
+    "bytes": 7057,
+    "sha256": "67ba2ec97b1b28215f1eb8507d6e332ad5279f40be762373c355d12fa57d2f61"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\closure_verification.py",
+    "bytes": 11568,
+    "sha256": "eea88e2f42d5d46fc84a8afb673ce6cc74fc92b9021016ff9f892947855d90c1"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\comment-546-flash-acceptance.md",
+    "bytes": 5314,
+    "sha256": "bc84811e8216d645467b724ab557840198947d66850c37b00d6754f24b27c009"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\comment-675-flash-acceptance.md",
+    "bytes": 3699,
+    "sha256": "40f19327cc3750fe00e49755d049aa6487d7f632f8d955a4f43107c35a4e997c"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\copy_server_logs.ps1",
+    "bytes": 1014,
+    "sha256": "9c3ed46efbd0c47fd94d325a4aedb5eac4f061f0c5d0397ea5a485aa82f6cfe3"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\extract_retrieval_log.ps1",
+    "bytes": 2914,
+    "sha256": "77836888b9db348b900c80df9238ed74b6520abcc70b6d25eb71efc9d48d61bc"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\fix_model_row_to_flash.py",
+    "bytes": 6868,
+    "sha256": "b97ea501f23c2c63e5663df8b6eb51dd50cb1f7fa81d18ae372b049ecca0c2d6"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\ledger-before-reconcile.calls.json",
+    "bytes": 991,
+    "sha256": "238ca5bf91331e7761ff529ae712c306f3daac5d1782d72d33e5fe51bb6903ac"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\list_tables.py",
+    "bytes": 312,
+    "sha256": "c69b776a4f79fff8b662576c393265fe8fff0599101489cc18f82878effbdaa1"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\local-chain-test-transcript.txt",
+    "bytes": 1371,
+    "sha256": "7465f8f2d0a7042c358b4ea3b7eb1d980e473eb05ffa381ed5c8ce009204c2ff"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\make_reconcile_evidence.py",
+    "bytes": 2293,
+    "sha256": "b0fdc8c826ea88490a1c257c31a8238bff68a9c69c7d3babf01041e1f9eed070"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\model-row-fix.json",
+    "bytes": 1441,
+    "sha256": "a99074e9a4c52fa8834b39f2bcd79e0327b220bedf19b7143f81f3ad4d4f2f4b"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\move_script.ps1",
+    "bytes": 403,
+    "sha256": "e31bb3d1e44fb0041732c3cf49541ac962b35dc3cf35b83086577a4a8200ed65"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\phase-a-result.json",
+    "bytes": 11346,
+    "sha256": "90fbf317e52609f6b42c4dd7bd1d931340b342846237706deccb65bed3fb89f3"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\phase-b-result.json",
+    "bytes": 12886,
+    "sha256": "e79a1e54f996de690e566a15aad0fceb306e1c39772154ca2f83af3e642f594c"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\phase_a_vectorize.py",
+    "bytes": 10076,
+    "sha256": "4955e4aa8c90872ef98aea5a7a685818dbb5d0f32e78277d6d07cb5e3a08ba38"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\phase_b_vector_search.py",
+    "bytes": 6847,
+    "sha256": "24403aba3b2f9f848572971edd01846b401f87d26f600c6b9cd1834c10ac8ab1"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\post-phase-snapshot.json",
+    "bytes": 37930,
+    "sha256": "11b05ee727be6aa640b7779f2244b46bcd04dc74b90cc610c51e764f5ba7cc97"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\pre-phase-snapshot.json",
+    "bytes": 32683,
+    "sha256": "420084de2235ecb534f55d63d88a0be392fcc85e26360b3151265ae6d6be368c"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\pre_phase_snapshot.py",
+    "bytes": 13717,
+    "sha256": "d94a89edad0f81fa60aeb28e17e0f7a410a62f1c0d1fbd808ec6a50c3ffc2c34"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\preflight_db.json",
+    "bytes": 34114,
+    "sha256": "a7850f69692d1a33b1cdccdb20349cb34e2fa57a1fb3177ddac063ebe814a68b"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\preflight_db.py",
+    "bytes": 7764,
+    "sha256": "f9eb51037d637fb53f0777a7e2af2a2a70c6f694fcbde5ea88eb965c9c776d04"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\probe_content_equivalence.py",
+    "bytes": 1043,
+    "sha256": "c57a83f8e99833072d50e5beca8fb5c944fe5d2016eabc8e16567734f3f5ca48"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\probe_knowledge_titles.py",
+    "bytes": 2478,
+    "sha256": "c3be527e95116eb2d3beb33c66c74da8d59d77bb86378005ede50d463183baba"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\probe_material_and_chunks.py",
+    "bytes": 3667,
+    "sha256": "4fec7cffb054230b263345e8db0b7bf16ca9de3403a051a2e39fa2b453941e5e"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\probes\\zz_flash_chain_local_test.go",
+    "bytes": 9774,
+    "sha256": "98461e56b684ee897eca4d5ff0aff3d1cc55ff630392f2eca7cd611233747f66"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\read_startup_queue_identity.ps1",
+    "bytes": 3514,
+    "sha256": "1f599cbf3b15769799523251b4aace2e0c092ecfcdde83278ee0e336a2d25e72"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\reconcile-evidence.json",
+    "bytes": 677,
+    "sha256": "e7e86d7075dcbbed827d83858b3790ef96ab7edf2ba62c6d8689abfb1ffb5776"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\reconcile_window.ps1",
+    "bytes": 3524,
+    "sha256": "5d175bae24d1c80574493b5c4e63c7da87ccc9fff1fc442c87a29c9d55c70ebc"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\REPORT-embedding-flash-acceptance-20261026.md",
+    "bytes": 23014,
+    "sha256": "865bfdb9f4a641ac77c606f6939b8b2e54be02423e7e0e7cf57c98cf3eb05423"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\retrieval-log-evidence.txt",
+    "bytes": 9007,
+    "sha256": "422c7305be2e61393a10bf3619d26dfcb74e7921d3f5e0ca2284273f1fdec927"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\run_local_chain_test.ps1",
+    "bytes": 2084,
+    "sha256": "1e0b8bf82765e4acada12c457a52654330f11bf837b9941cfd68b49d7e7fab1f"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\server-embedding-20261026-075556.log",
+    "bytes": 37864,
+    "sha256": "5a2b77a312b739a2dfcbb4f69f6ce33fc3d439d1d7b9dd97076578c1e4544812"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\server-embedding-20261026-075556.stderr.log",
+    "bytes": 2064,
+    "sha256": "0411ac6a77fc5a33987416073d0dd93cf752a33986a39d1e448aaf900dee35e6"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\server-embedding-20261026-075556.stdout.log",
+    "bytes": 38652,
+    "sha256": "8bddb6a5424b07c8ee70c7f15883e57408c3ec884fbac06ab33551fe165f3880"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\startup-log-queue-identity.txt",
+    "bytes": 3358,
+    "sha256": "3efeaf451ad3f0fc15b42ca2a2b1fd7133cd75837dd9496fcc1259a138fcc045"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\flash-run\\summarize_preflight.py",
+    "bytes": 1345,
+    "sha256": "01427d64f27e70bc37b9baf2b54d6c414dff3dfba6d7ee6d6d638f30051748fb"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-embedding-budget.json.calls.json",
+    "bytes": 3076,
+    "sha256": "a9cf6cda345ab20bb8cdcac6e74288037530db9ff8f70da690049ee9696242ef"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-beta-sqlite.json",
+    "bytes": 2224,
+    "sha256": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-beta-sqlite.json.calls.json",
+    "bytes": 2305,
+    "sha256": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea"
+  },
+  {
+    "path": "D:\\wt\\lingdoc-485-evidence\\embedding-run\\provider-403-response.txt",
+    "bytes": 1098,
+    "sha256": "2915d119c83147145ef37fa2ec94455bafb9903e3ca087534f84b5aa3014328e"
+  }
+]

@@ -1,0 +1,124 @@
+{
+  "db": {
+    "release_snapshots": [
+      {
+        "id": "snapshot-5e38cbb715cba5ad2842b986071bcec6",
+        "project_id": "e8522a4e-0f49-440b-b611-ac3800a25946",
+        "is_current": 1,
+        "snapshot_digest": "50dea59ce508192d60a53eaf8b61e0cc8a1153daa67a0484acc3eb84f2de8a66",
+        "created_at": "2026-10-25 00:14:06.2459507+00:00",
+        "action_key": "verify-619-release-v4"
+      },
+      {
+        "id": "snapshot-09c6230b71d5024ed19e155e840f8635",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "is_current": 1,
+        "snapshot_digest": "1a61a9e986014978b503264197cbd57d030c51488eaf621fe0678bcd3ce68aa0",
+        "created_at": "2026-10-25 01:33:53.8373769+00:00",
+        "action_key": "f01-release-0001"
+      }
+    ],
+    "export_artifacts": [
+      {
+        "id": "export-196b61e0de1242e6247ddb6bf2e91747",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "snapshot_id": "snapshot-09c6230b71d5024ed19e155e840f8635",
+        "status": "verified",
+        "file_sha256": "df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a",
+        "created_at": "2026-10-25 01:33:53.9908175+00:00"
+      }
+    ],
+    "model_call_ledger": [
+      {
+        "id": "29702954-9dac-4111-9eac-5201fe7a6396",
+        "kind": "call",
+        "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+        "status": "succeeded",
+        "input_tokens": 1037,
+        "output_tokens": 521,
+        "created_at": "2026-10-24 09:37:37.4394185+00:00"
+      },
+      {
+        "id": "a28a7526-840f-4e2f-8fa1-3174253cd820",
+        "kind": "call",
+        "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+        "status": "succeeded",
+        "input_tokens": 1037,
+        "output_tokens": 431,
+        "created_at": "2026-10-24 12:00:27.1753915+00:00"
+      },
+      {
+        "id": "bf4d93fa-8cd8-45ec-9088-7e7c0cc682b1",
+        "kind": "call",
+        "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+        "status": "succeeded",
+        "input_tokens": 1037,
+        "output_tokens": 531,
+        "created_at": "2026-10-24 13:53:53.0904942+00:00"
+      },
+      {
+        "id": "f937f25b-04bd-4c34-9013-1de05022af62",
+        "kind": "call",
+        "model_id": "lingdoc-chat-qwen3.8-flash-iso",
+        "status": "succeeded",
+        "input_tokens": 1037,
+        "output_tokens": 519,
+        "created_at": "2026-10-25 01:33:52.6236275+00:00"
+      }
+    ],
+    "manual_judgements": [
+      {
+        "id": "5868df77cbed293db5c9a8b62fd74e66824dab8d5dccd6e94d57d78ab5e05a83",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "kind": "manual_judgement",
+        "version": 1
+      },
+      {
+        "id": "8e81e7ea5fb224241eca5f7b7fb39d9f6ddad21774f0d35a125983ea57c8316b",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "kind": "manual_judgement",
+        "version": 1
+      },
+      {
+        "id": "9fdc5439ada149113b209e240362e2cc82c03be4dd751e482127f9c6c0e66b1b",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "kind": "manual_judgement",
+        "version": 1
+      },
+      {
+        "id": "fc6ed370c823e401d4fb60a7e4ef2e1b16bf1a51b40f43c4240a921e4caa4472",
+        "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "kind": "manual_judgement",
+        "version": 1
+      }
+    ],
+    "final_project": [
+      {
+        "id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+        "status": "active",
+        "project_version": 9,
+        "spec_revision": 1,
+        "delivery_status": "NOT_READY"
+      }
+    ]
+  },
+  "ledger": {
+    "qwen-beta-sqlite.json": {
+      "sha256": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4",
+      "size": 2224,
+      "mtime": 1792892032.6251671
+    },
+    "qwen-beta-sqlite.json.calls.json": {
+      "sha256": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea",
+      "size": 2305,
+      "mtime": 1792892032.625775
+    },
+    "llm_debug_files": [
+      "20261024_173737.438.log",
+      "20261024_200027.173.log",
+      "20261024_215353.088.log",
+      "20261025_093352.622.log"
+    ],
+    "llm_debug_count": 4
+  }
+}

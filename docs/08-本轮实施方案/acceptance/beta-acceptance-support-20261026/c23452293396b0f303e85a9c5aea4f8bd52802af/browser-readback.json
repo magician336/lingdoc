@@ -1,0 +1,45 @@
+{
+  "source": "browser",
+  "at": "2026-10-25T10:34:17Z",
+  "items": {
+    "browser_snapshot_digest_matches_http": "1a61a9e98601",
+    "snapshot_id_matches": "snapshot",
+    "project_version_matches": 9,
+    "spec_revision_matches": 1,
+    "chapters_in_snapshot_matches": 2,
+    "sources_in_snapshot_matches": 1,
+    "snapshot_check_status": "passed",
+    "current_check_status": "passed",
+    "browser_export_id_matches_http": "export-1",
+    "browser_export_sha_matches_http": "df5549b04426"
+  },
+  "after_reload": {
+    "at": "2026-10-25T10:34:17Z",
+    "items": {
+      "browser_snapshot_digest_matches_http": "1a61a9e98601",
+      "snapshot_id_matches": "snapshot",
+      "project_version_matches": 9,
+      "spec_revision_matches": 1,
+      "chapters_in_snapshot_matches": 2,
+      "sources_in_snapshot_matches": 1,
+      "snapshot_check_status": "passed",
+      "current_check_status": "passed",
+      "browser_export_id_matches_http": "export-1",
+      "browser_export_sha_matches_http": "df5549b04426"
+    }
+  },
+  "status": "PASS",
+  "not_run": [
+    {
+      "item": "browser_candidate_adoption_state_matches",
+      "reason": "候选采纳的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。",
+      "unblock": "起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。"
+    },
+    {
+      "item": "browser_candidate_cancelled_state_matches",
+      "reason": "候选取消的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。",
+      "unblock": "起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。"
+    }
+  ],
+  "url": "http://127.0.0.1:5173"
+}

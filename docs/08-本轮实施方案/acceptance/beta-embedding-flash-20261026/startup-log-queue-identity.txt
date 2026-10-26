@@ -1,0 +1,32 @@
+=== the startup log of the embedding instance (queue identity) ===
+log: D:\wt\lingdoc-484-evidence\logs\server-embedding-20261026-075556.log
+queue identity lines: 6
+  2026/10/26 07:56:26 asynq core-pool server starting with concurrency=8 total_upstream=32 redis_op_timeout=500ms queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq postprocess-pool server starting with concurrency=2 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq enrichment-pool server starting with concurrency=12 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq maintenance-pool server starting with concurrency=4 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq shared-pool server starting with concurrency=6 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq wiki-pool server starting with concurrency=8 queue_redis_db=2 queue_db_source=queue-db-env
+queue_db_source values: queue-db-env
+
+=== every line that mentions the queue or the worker pools ===
+  INFO [2026-10-26 07:56:26.570] [] service.go:910[NewService] | [IM] Multi-instance mode enabled (instance=4ab41a5c, workers=5, queue=50, global_max=unlimited)
+  INFO [2026-10-26 07:56:26.570] [] service.go:910[NewService] | [IM] Multi-instance mode enabled (instance=4ab41a5c, workers=5, queue=50, global_max=unlimited)
+  2026/10/26 07:56:26 asynq core-pool server starting with concurrency=8 total_upstream=32 redis_op_timeout=500ms queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq postprocess-pool server starting with concurrency=2 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq enrichment-pool server starting with concurrency=12 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq maintenance-pool server starting with concurrency=4 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq shared-pool server starting with concurrency=6 total_upstream=32 queue_redis_db=2 queue_db_source=queue-db-env
+  2026/10/26 07:56:26 asynq wiki-pool server starting with concurrency=8 queue_redis_db=2 queue_db_source=queue-db-env
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.587213 INFO: Send signal TERM or INT to terminate the process
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Send signal TERM or INT to terminate the process
+  asynq: pid=68840 2026/10/25 23:56:26.587213 INFO: Send signal TERM or INT to terminate the process
+  asynq: pid=68840 2026/10/25 23:56:26.586685 INFO: Starting processing
+  asynq: pid=68840 2026/10/25 23:56:26.587882 INFO: Send signal TERM or INT to terminate the process
+  asynq: pid=68840 2026/10/25 23:56:26.588483 INFO: Send signal TERM or INT to terminate the process
+  asynq: pid=68840 2026/10/25 23:56:26.588998 INFO: Send signal TERM or INT to terminate the process

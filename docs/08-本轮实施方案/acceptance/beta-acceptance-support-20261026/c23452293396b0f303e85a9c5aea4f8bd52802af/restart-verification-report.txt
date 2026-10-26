@@ -1,0 +1,173 @@
+
+==============================================================================
+1. the HTTP face's own report (http-readback.json)
+==============================================================================
+top-level keys: at, base_url, items, not_run, source, status
+status: PASS
+items: 10
+  browser_export_id_matches_http = 'export-9'
+  browser_export_sha_matches_http = '8cf9cd6971a2'
+  browser_snapshot_digest_matches_http = '0f4793ad02b7'
+  chapters_in_snapshot_matches = 2
+  current_check_status = 'passed'
+  project_version_matches = 7
+  snapshot_check_status = 'passed'
+  snapshot_id_matches = 'snapshot'
+  sources_in_snapshot_matches = 0
+  spec_revision_matches = 1
+not_run: 2
+  NOT RUN  browser_candidate_adoption_state_matches
+           reason : 候选采纳的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。
+           unblock: 起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。
+  NOT RUN  browser_candidate_cancelled_state_matches
+           reason : 候选取消的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。
+           unblock: 起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。
+
+==============================================================================
+2. the restart read-back comparison, leaf by leaf
+==============================================================================
+leaf count compared: 31
+mismatched leaves  : 0
+  equal     access_token_accepted = True
+  equal     chapters[0].body_length = 47
+  equal     chapters[0].body_sha256 = 'a5d6ea79312704463edb8609d0e069add1bac695d7e5060e463b8840e5dd14f0'
+  equal     chapters[0].chapter_id = 'fccfe843-4a36-4835-bec0-8db2b7b0decb'
+  equal     chapters[0].confirmation_valid = True
+  equal     chapters[0].current_version_id = 'b9e23d30-f72c-440f-906a-430b13a8cc93'
+  equal     chapters[0].section_id = 'question'
+  equal     chapters[1].body_length = 45
+  equal     chapters[1].body_sha256 = 'f4d69bf67e796fd3453c01e426f8cf0385916bd77acf3d8fbd3e90ffe684d011'
+  equal     chapters[1].chapter_id = '91eb2a29-0070-4e7b-83bd-835fa5e7af3d'
+  equal     chapters[1].confirmation_valid = True
+  equal     chapters[1].current_version_id = '52826f8d-1cf2-49f1-b8c2-d231d17c9c2c'
+  equal     chapters[1].section_id = 'method'
+  equal     delivery.check_status = 'passed'
+  equal     delivery.download_length = 1979
+  equal     delivery.download_sha256 = '8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479'
+  equal     delivery.export_file_sha256 = '8cf9cd6971a24c3f80f4dfb8e3ffb00843244c839efc2b6f1a7bc89dca3bc479'
+  equal     delivery.export_id = 'export-942fc94bb434922d88515cd3ce2b64eb'
+  equal     delivery.export_status = 'verified'
+  equal     delivery.frozen_chapters = 2
+  equal     delivery.frozen_project_version = 7
+  equal     delivery.frozen_sources = 0
+  equal     delivery.frozen_spec_revision = 1
+  equal     delivery.snapshot_digest = '0f4793ad02b7fc6e105ba6a8b09b3e695ac68166d797c52d5fa3b2063c62ba8d'
+  equal     delivery.snapshot_id = 'snapshot-868f9481f1de9931c71409001d02f32f'
+  equal     project.delivery_status = 'NOT_READY'
+  equal     project.id = 'af6c89b1-eb9e-488a-be37-c68805c708df'
+  equal     project.name = 'Beta 452 parity 6a677c07'
+  equal     project.project_version = 7
+  equal     project.spec_revision = 1
+  equal     project.status = 'active'
+verdict in file: PASS  consistent=True
+
+==============================================================================
+3. zero provider: the provider debug directories
+==============================================================================
+THIS ROUND (detector)
+  dir    : D:\wt\lingdoc-484-evidence\pg-r7\logs\llm_debug_pg_r7
+  files  : 0   total_bytes: 0
+PRE-EXISTING 484 (must be untouched)
+  dir    : D:\wt\lingdoc-484-evidence\logs\llm_debug_trackd
+  files  : 4   total_bytes: 24782
+    20261024_173737.438.log	6208	1792834657.4394186
+    20261024_200027.173.log	5998	1792843227.1743476
+    20261024_215353.088.log	6401	1792850033.088926
+    20261025_093352.622.log	6175	1792892032.6230905
+
+==============================================================================
+4. zero provider: the ledger files (must be byte-identical)
+==============================================================================
+qwen-beta-sqlite.json: bytes=2224 sha256=74E86ABCAD63E3D16F0B6EF34BE108E04C3987DECB0A71A7457F6EA8488106D4
+    requests rows=4 actual=None reserved=None blocked=False
+qwen-beta-sqlite.json.calls.json: bytes=2305 sha256=DD39A0CB4BFA2C3154C9BE947C0FC3312B56CC070ECF206C22BEEEBBAF1B69EA
+    requests rows=4 actual=None reserved=None blocked=False
+
+==============================================================================
+5. zero provider: the server logs of this round
+==============================================================================
+server-before-restart.log: bytes=132579 lines=713 provider_marker_hits=2
+    line 114: INFO [2026-10-25 11:25:05.392] [beta-452-http] user.go:272[Login]   | Generating tokens
+    line 624: INFO [2026-10-25 11:25:06.838] [f5538712-6cac-4452-b3f9-339c13139bf2] user.go:272[Login]   | Generating tokens
+server-after-restart.log: bytes=32738 lines=179 provider_marker_hits=0
+
+==============================================================================
+6. the pre-existing 484 environment must be untouched
+==============================================================================
+484 pid file: D:\wt\lingdoc-484-evidence\server-trackd.pid pid=59008
+data/lingdoc-484-final.db: exists=True bytes=3837952 sha256=64EEB4DBCF84BA872B203A1C31C6F1298F991BD1C6EC58794F5475BFC420C749
+
+==============================================================================
+7. the supplementary source-binding scenario
+==============================================================================
+verdict: PASS  consistent: True  leaves: 36  mismatches: 0
+process: pid 47056 -> 77752 on port 18091
+timeline:
+  2026-10-25T03:33:09.787Z  START_1: starting the server for the write phase on port 18091
+  2026-10-25T03:33:10.827Z  HEALTHY_1: pid=47056
+  2026-10-25T03:33:10.985Z  IDENTITY: user registered, registration keys=['message', 'success', 'user']
+  2026-10-25T03:33:11.187Z  KNOWLEDGE_BASE: kb_id=2504fec6-c6ad-46fb-aa6d-ebb71dbc8e54 tenant_id=10007 (created through POST /knowledge-bases)
+  2026-10-25T03:33:11.516Z  MATERIAL_FIXTURE: knowledge_id=pgr7-knowledge-3341773442b9 chunk_id=pgr7-chunk-3341773442b9 (STAGED FIXTURE rows, not a real WeKnora parse)
+  2026-10-25T03:33:11.547Z  PROJECT: project_id=3aa190fb-8b64-40b7-b9f5-1776290a6875
+  2026-10-25T03:33:11.638Z  SOURCE_BOUND: asset_id=50e75edd-bfcf-4720-8671-7fb6267a93c0 knowledge_id=pgr7-knowledge-3341773442b9 processing_state=ready
+  2026-10-25T03:33:11.736Z  ACTIVATED: project_version=2
+  2026-10-25T03:33:11.883Z  POLICY_PROPOSED: change_set_id=61f119ed-8a72-43d2-912e-d105a89b0628 status=draft expected_context_revision=1 expected_version=1
+  2026-10-25T03:33:11.965Z  POLICY_ASSESSED: status=assessed
+  2026-10-25T03:33:12.066Z  POLICY_APPLIED: status=applied
+  2026-10-25T03:33:12.132Z  POLICY_READ_BACK: model_use_allowed=True version=2 asset_revision=2
+  2026-10-25T03:33:12.365Z  CHAPTERS_WRITTEN: chapters=2 source_ids_used=[]
+  2026-10-25T03:33:12.502Z  DELIVERY_CHECK_1: status=passed receipt_id=76864374-1b52-436b-bc8d-02850f2d0bd3 project_version=8
+  2026-10-25T03:33:12.598Z  IMPACT_PREFLIGHT_ACK: proof_id=76864374-1b52-436b-bc8d-02850f2d0bd3 closed_task_ids=['2820b76b-74b7-51d3-b403-29d36cf57012']
+  2026-10-25T03:33:12.708Z  STABILIZED: status=STABILIZED blockers=[]
+  2026-10-25T03:33:12.842Z  DELIVERY_CHECK_2: status=passed project_version=8
+  2026-10-25T03:33:13.277Z  DELIVERED: check=passed snapshot_id=snapshot-de35b30c108edec9eba0b6ca7890eb6a export_id=export-08be2d1e5ed2de363f5aecdca0e38112 export_status=verified file_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614
+  2026-10-25T03:33:13.539Z  READ_BEFORE: chapters=2 sources=1 download_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614
+  2026-10-25T03:33:13.567Z  STOPPED_1: pid=47056 exit_code=1 (Windows TerminateProcess semantics)
+  2026-10-25T03:33:15.567Z  START_2: starting a NEW server process against the same PostgreSQL database
+  2026-10-25T03:33:16.601Z  HEALTHY_2: pid=77752
+  2026-10-25T03:33:16.922Z  READ_AFTER: chapters=2 sources=1 download_sha256=6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614
+  2026-10-25T03:33:16.948Z  STOPPED_2: pid=77752 exit_code=1
+independent leaf comparison: 36 leaves, 0 mismatched
+  equal     access_token_accepted = True
+  equal     chapters[0].body_length = 60
+  equal     chapters[0].body_sha256 = '050b932e038a2315048ea2c29c369ff81ba0ac1c4d6aeee1392deef7135acf23'
+  equal     chapters[0].chapter_id = '0bfe1a0a-b698-4ebf-a48f-8c1d53fae130'
+  equal     chapters[0].confirmation_valid = True
+  equal     chapters[0].current_version_id = '2bcec174-6212-434c-ad31-16a46dbc6214'
+  equal     chapters[0].section_id = 'question'
+  equal     chapters[1].body_length = 58
+  equal     chapters[1].body_sha256 = '6ab4dd6d6a50ed9c63e2e88882b2c1d086cadf323cdb12209eeb575245d37bf3'
+  equal     chapters[1].chapter_id = 'a5d161f0-6400-41f8-bb2a-37b847708f9a'
+  equal     chapters[1].confirmation_valid = True
+  equal     chapters[1].current_version_id = '69655fa6-6798-4cc4-946c-d78e188354e6'
+  equal     chapters[1].section_id = 'method'
+  equal     delivery.check_status = 'passed'
+  equal     delivery.download_length = 1994
+  equal     delivery.download_sha256 = '6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614'
+  equal     delivery.export_file_sha256 = '6fad24bc6c0f5cb0afa6174bc6cbced9a583d604e591da419db7438670218614'
+  equal     delivery.export_id = 'export-08be2d1e5ed2de363f5aecdca0e38112'
+  equal     delivery.export_status = 'verified'
+  equal     delivery.frozen_chapters = 2
+  equal     delivery.frozen_project_version = 8
+  equal     delivery.frozen_sources = 0
+  equal     delivery.frozen_spec_revision = 1
+  equal     delivery.snapshot_digest = 'e07b56ade655fd28286f21e38c554d309a2c4978011c89019c579ece9937e5c8'
+  equal     delivery.snapshot_id = 'snapshot-de35b30c108edec9eba0b6ca7890eb6a'
+  equal     project.delivery_status = 'NOT_READY'
+  equal     project.id = '3aa190fb-8b64-40b7-b9f5-1776290a6875'
+  equal     project.name = 'PG R7 source binding 3341773442b9'
+  equal     project.project_version = 8
+  equal     project.spec_revision = 1
+  equal     project.status = 'active'
+  equal     sources[0].asset_id = '50e75edd-bfcf-4720-8671-7fb6267a93c0'
+  equal     sources[0].asset_revision = 2
+  equal     sources[0].knowledge_id = 'pgr7-knowledge-3341773442b9'
+  equal     sources[0].processing_state = 'ready'
+  equal     sources[0].title = 'pg-r7 staged material'
+zero_provider: {"llm_debug_before": {"files": 0, "bytes": 0, "names": []}, "llm_debug_after": {"files": 0, "bytes": 0, "names": []}}
+
+==============================================================================
+8. the pre-existing 484 service is still running and untouched
+==============================================================================
+484 pid file: D:\wt\lingdoc-484-evidence\server-trackd.pid pid=59008
+OK

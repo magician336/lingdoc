@@ -1,0 +1,10 @@
+{
+  "ledger_sha256": "238ca5bf91331e7761ff529ae712c306f3daac5d1782d72d33e5fe51bb6903ac",
+  "request_number": 1,
+  "original_status": "http_error",
+  "original_blocked_reason": "http_error",
+  "http_status": 403,
+  "response_evidence_sha256": "2915d119c83147145ef37fa2ec94455bafb9903e3ca087534f84b5aa3014328e",
+  "operator": "lingdoc acceptance agent, acting under the repository owner's authorization of 2026-10-26",
+  "reason": "the provider answered HTTP 403 insufficient_quota on 2026-10-25 (free tier exhausted); the request produced no usage, so the window is settled at the full reserved upper bound and the authorized window is reopened for the Flash model"
+}

@@ -1,0 +1,124 @@
+{
+  "head": "c23452293396b0f303e85a9c5aea4f8bd52802af",
+  "head_note": "本轮 F01 跑批与隔离 PostgreSQL 重启读回绑定的代码 head。浏览器检查的前端 head 是 7612f92c73649a1f7eeaf025e728de233195e76e（后端二进制 source_head 同为本 head，18087 进程全程未停未重启）；2026-10-26 的 embedding 向量验收轮绑定 d76ff6a71f15606de548c3b15151a5d5a8af6495。三者不是同一个 head。",
+  "base": "d76ff6a71f15606de548c3b15151a5d5a8af6495",
+  "base_note": "本轮收口时的 origin/main（#673 队列隔离、#674 embedding 4xx 恢复已合入）。",
+  "run_id": "f01-20261025T013341Z-5105ae32",
+  "run_id_note": "F01 跑批的运行标识（2026-10-25T01:33:41Z 起，耗时 12 秒，runner 退出码 0）。",
+  "generated_at": "2026-10-26T11:40:00Z",
+  "executor": "自动化执行会话（AI agent）＋ 负责人对四项人工前置的人工判定与豁免决定",
+  "contract": {
+    "path": "docs/08-本轮实施方案/contracts/workflow.json",
+    "version": "0.5.0",
+    "mode": "specification_not_executed_against_provider",
+    "nodes": 31,
+    "checks": 64
+  },
+  "environment": {
+    "platform": "Windows 10.0.26200（宿主机）",
+    "note": "协议 §1 写的是 WSL2 Ubuntu；本轮 F01 主流程在 Windows + 隔离 SQLite 上执行，重启读回在隔离 PostgreSQL 上执行（见 coverage_boundaries 的执行环境偏离）。",
+    "services": {
+      "chat_profile_server": "127.0.0.1:18087（pid 59008，source_head c2345229，全程未停未重启）",
+      "manual_judgement_server": "127.0.0.1:18095（pid 80248，source_head ac6ee9a5）",
+      "embedding_profile_server": "127.0.0.1:18096（pid 68840，source_head 32b22cf9，队列 Redis DB 2）",
+      "redis": "127.0.0.1:6381（chat 队列 DB 1；embedding 队列 DB 2）",
+      "weknora_containers": "WeKnora-postgres-dev（PostgreSQL 17.9）/ redis / docreader"
+    }
+  },
+  "database": {
+    "driver": "sqlite",
+    "dsn": "D:\\wt\\lingdoc-484-evidence\\data\\lingdoc-484-final.db（隔离库，仓外）",
+    "restart_readback_driver": "postgres",
+    "restart_readback_dsn": "隔离库 weknora_iso_r7（容器 WeKnora-postgres-dev）",
+    "migrations": {
+      "version": "（本轮没有单独记录迁移版本号；迁移由服务启动时的 AUTO_MIGRATE 链执行）",
+      "readable": false
+    }
+  },
+  "materials": [
+    {
+      "name": "synth-chapter-c.md",
+      "sha256": "001ba50ca631bf8ce6487038cbd91247d8a775eb8fb3e39f22227af613ae06d2",
+      "note": "该哈希由 2026-10-26 的 embedding 验收轮登记（见 beta-embedding-flash-20261026/）；本 F01 跑批本身未用 --material 登记，属已登记的未完成项（f01-report.json 的 known_limits）。"
+    }
+  ],
+  "materials_status": "本跑批未用 --material 登记材料哈希（协议 §2 第 1 步）；材料哈希来自 2026-10-26 的 embedding 轮，已在 known_limits 里如实登记。",
+  "template": {
+    "declared": "template-demo",
+    "confirmed": true,
+    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+    "note": "F01-01 的断言读回真实规则集摘要（64 位十六进制），F01-02 断言项目绑定的模板就是本轮读到的那个模板。"
+  },
+  "model": {
+    "chat": {
+      "model_row": "lingdoc-chat-qwen3.8-flash-iso（model_id 同名）",
+      "name": "qwen3.8-flash",
+      "provider": "aliyun（OpenAI 兼容端点）",
+      "endpoint": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "budget_profile": "lingdoc-qwen-token-budget-20261024-v2（maxCalls 4，累计预留上限 90000 token，单次 input ≤16000 / output ≤4096）",
+      "ledger": "lingdoc_model_call_ledger 共 4 行（全部 kind=call / run_mode=real / source_kind=generation_run）；chat 两本 JSON 账本 sha256 74e86abc… / dd39a0cb… 在 2026-10-26 那一轮前后逐字节未变"
+    },
+    "embedding": {
+      "model_row": "lingdoc-embed-qwen3.7-text-embedding-iso（隔离库内）",
+      "name": "qwen3.7-text-embedding-flash",
+      "provider": "aliyun（OpenAI 兼容端点）",
+      "endpoint": "https://llm-k57eqvdqacn4nov3.cn-beijing.maas.aliyuncs.com/compatible-mode/v1（实际请求路径 /compatible-mode/v1/embeddings）",
+      "budget_profile": "lingdoc-qwen-embedding-budget-20261025（maxCalls 4，累计 token 上限 8000，费用上限 8000000 nano-CNY，单次 input ≤16000，output = 0）",
+      "usage_this_round": "2 次真实 provider 请求；provider 实报 648 + 27 = 675 token；累计预留 7250 token / 2063125 nano-CNY（¥0.002063125 ≤ ¥0.008）",
+      "ledger": "D:\\wt\\lingdoc-484-evidence\\ledger\\qwen-embedding-budget.json.calls.json（3 行，终态 sha256 a9cf6cda…）",
+      "price_basis": "flash 单价 125 nano-CNY/token（CostBasisQwenEmbeddingNanoCNY）",
+      "note": "embedding 路径不写 DB 账本；它的账本是那份独立的文件账本。"
+    },
+    "parameters": {
+      "embedding_dimension": "1024（provider 原生值；模型行 dimension=0 ⇒ 请求体不带 dimensions 参数）",
+      "embedding_batch_size": "BATCH_EMBED_SIZE 默认 5（2 个 chunk 落在同一子批 ⇒ 一次请求承载 2 个 chunk）",
+      "embedding_retry_attempts": "5（预算闸门在重试之前本地阻断 ⇒ 失败不会重复出网）"
+    }
+  },
+  "switches": [
+    {
+      "reason": "provider 返回 403 insufficient_quota（账号「仅免费层」额度耗尽），且该 profile 一次 4xx 即冻结窗口；负责人另行授权改用 flash 模型并给出 2 次请求的上限。",
+      "from_model": "qwen3.7-text-embedding",
+      "to_model": "qwen3.7-text-embedding-flash",
+      "changed": "只改隔离库 embedding 模型行的 name / display_name；parameters（端点、provider、凭据密文、embedding_parameters）逐字未变，行 id 未变。",
+      "affected_steps": "协议 §6 第 6 项的向量生成与向量检索验证（2026-10-26 那一轮）；F01 契约节点 F01-07 的向量通道能力。",
+      "call_ledger": "3 行账本：第 1 行 qwen3.7-text-embedding 的 http_error（403，按预留上界计费、未退款、已正规结清）；第 2、3 行 flash 的两次 response_received（648 / 27 token）。",
+      "ledger_switch_row": "无：RecordModelSwitch 没有生产调用点（见 f01-report.json 的 known_limits 与票 #480 的 AC-BETA-10）。"
+    }
+  ],
+  "commands": [
+    "python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:18087/api/v1/lingdoc --report f01-report.json   # F01 跑批器（31 个节点，退出码 0，12 秒）",
+    "python scripts/lingdoc_mock/run_f01.py --rejudge-only ...   # 零额度重判：只重算人工判定层，机器事实逐字节保留、run_id 不变、新增 provider 请求 0",
+    "POST /api/v1/lingdoc/projects/{projectId}/manual-judgements   # 四条人工判定经正式服务端接口落审计记录（4×201）",
+    "python scripts/acceptance/beta_http_readback.py --base-url http://127.0.0.1:18087/api/v1/lingdoc --out http-readback.json",
+    "node scripts/acceptance/beta_browser_cdp.mjs --url http://127.0.0.1:5173 --out browser-readback.json",
+    "python scripts/acceptance/beta_evidence_parity.py --http http-readback.json --browser browser-readback.json --out parity.json",
+    "python scripts/acceptance/lingdoc_full_server_restart.py --db-driver postgres --db-dsn <隔离库 DSN> --output-dir <work-dir>",
+    "python cmd/acceptance-budget-reconcile/main.go -ledger <账本> -profile lingdoc-qwen-embedding-budget-20261025 -expected-ledger-sha256 <小写 sha256> -request 1 -reason ... -evidence <证据文件> -apply -confirm-full-reserve-charge"
+  ],
+  "restart": {
+    "driver": "postgres",
+    "database": "weknora_iso_r7",
+    "script": "scripts/acceptance/lingdoc_full_server_restart.py --db-driver postgres",
+    "exit_code": 0,
+    "verdict": "PASS",
+    "round_a_leaves": 31,
+    "round_b_leaves": 36,
+    "mismatches": 0,
+    "provider_requests": 0,
+    "detail": "A 轮 ＝ 仓库工具原样产出（四项读回：项目 / 章节 / 来源绑定 / 交付文件下载哈希）；B 轮额外绑定真实资料（来源绑定非空），36 叶子逐项相等。psql 直读证明行物理在 PG 内。"
+  },
+  "word_check": {
+    "docx_sha256": "df5549b044261b6c30463e63cd4e639f0e7f59d116e27e6e429e571a3865639a",
+    "modified_sha256": "3e336eeb73254690b2c7d4301a022f703fe5fdeb4a7f165a79d9a87e0070982c",
+    "windows_version": "10.0.26200",
+    "word_product_version": "Microsoft Word 16.0（build 16.0.20430）",
+    "human_confirmation": "负责人 2026-10-25 确认通过（版面观感、待核项保留理由表述）；确认对象是排版修复审阅副本（sha256 5f4f598b…），不是原件本身；机器渲染产物（PDF/截图）未生成。"
+  },
+  "artifacts": {
+    "machine_artifacts": "docs/08-本轮实施方案/acceptance/beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/",
+    "embedding_round": "docs/08-本轮实施方案/acceptance/beta-embedding-flash-20261026/",
+    "owner_word_confirmation": "docs/08-本轮实施方案/acceptance/beta-word-check-owner-confirm-20261025/",
+    "progress_source": "docs/BETA_STATUS.md（§22 为当前权威状态）"
+  }
+}
