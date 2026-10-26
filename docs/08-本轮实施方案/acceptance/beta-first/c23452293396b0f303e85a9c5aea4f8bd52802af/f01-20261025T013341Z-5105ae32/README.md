@@ -58,7 +58,7 @@ python cmd/acceptance-budget-reconcile/main.go -ledger <账本> -profile lingdoc
 | 人工判定（四条散文断言） | passed | `f01-report.json` 的 `passed[2]`；`manual-judgement-audit-source.json` |
 | 契约放行判定的两条路径 | passed | `f01-report.json` 的 `passed[3]`；`release-verdict-rejudged.json` |
 | 材料接入与处理就绪（协议 §1） | passed | `f01-report.json` 的 `passed[4]` |
-| 候选生成 → 采纳 → 读回 → 下游使用 | passed | `f01-report.json` 的 `passed[5]`；`f01-per-node.md` |
+| 候选生成 → 采纳 → 下游使用（**HTTP 层**） | passed | `f01-report.json` 的 `passed[5]`；`f01-per-node.md` |
 | 真实模型调用与用量核算 | passed | `f01-report.json` 的 `passed[6]` |
 | 真实 Embedding 生成与向量检索 | passed | `f01-report.json` 的 `passed[7]`；`beta-embedding-flash-20261026/` |
 | 词法检索命中与来源一致性 | passed | `f01-report.json` 的 `passed[8]`；`docs/BETA_STATUS.md` §20.13 |
@@ -73,6 +73,8 @@ python cmd/acceptance-budget-reconcile/main.go -ledger <账本> -profile lingdoc
 
 | 未运行项 / 限制 | 原因 | 解除条件 |
 | --- | --- | --- |
+| **候选采纳的持久化只到 HTTP 层** | 采纳结果从未经独立 GET 读回、从未比对数据库物理行、从未在跨重启场景核对该项目；跨重启证据跑的是另一个项目（Beta 452 parity）；契约自身把本轮范围标为 `verification_scope = http_smoke_only` | 在契约里补一条采纳后的独立 GET 读回断言，并在隔离 PostgreSQL 上对同一个 F01 项目做跨重启比对 |
+| **F01-11 的 intent 文本说『项目版本增加到 5（由 F01-18 的读回核对）』，而 F01-18 只断言 spec_revision 与 status** | intent 的陈述强于它覆盖的断言（与 #621 同类）；判定以断言为准 | 按 #621 的形态修契约：补 project_version 断言，或把 intent 改写成它真正覆盖的内容 |
 | F01-06c 的 422 `invalid_state` 行为 | 负向 apply 实测拒绝在来源解码阶段，错误码是 404 `not_found`；状态机检查未被执行到 | 票 #656 |
 | 模型切换的账本行（`kind=switch`） | `RecordModelSwitch` 没有生产调用点（产品里没有「按项目切换模型」的动作） | 需要先有该产品动作；票 #480 的 `AC-BETA-10` 因此不满足 |
 | 浏览器「候选取消」交互 | F01 契约里没有取消节点 | 在契约里增加取消节点并实跑 |

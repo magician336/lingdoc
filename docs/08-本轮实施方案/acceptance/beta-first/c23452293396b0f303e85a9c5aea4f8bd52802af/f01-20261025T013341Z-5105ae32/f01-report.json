@@ -41,10 +41,10 @@
       "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-report-raw-run.json、f01-per-node.md"
     },
     {
-      "item": "候选生成 → 采纳（acceptCandidate 带 confirmation）→ 持久化读回 → 下游使用",
+      "item": "候选生成 → 采纳（acceptCandidate 带 confirmation）→ 下游使用（HTTP 层）",
       "status": "passed",
-      "detail": "F01-09 候选读回、F01-11 采纳（产出新正文版本）、F01-12 模拟响应丢失后重投返回同一版本、F01-13～F01-17 章节编辑与确认、F01-19 冻结；F01-18 与 F01-22 为 readback_equals（从库里读回）。HTTP 状态码与断言计数逐条见 per-node 件。",
-      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-per-node.md"
+      "detail": "F01-09 候选读回、F01-11 采纳（产出新正文版本）、F01-12 模拟响应丢失后重投返回同一版本、F01-13～F01-17 章节编辑与确认、F01-19 冻结。采纳结果被下游使用的证据：F01-13 的请求体绑定采纳响应给出的章节版本 id（expected_chapter_version_id = {{accepted_question_version}}）；F01-16 的 review_decisions 与 F01-13 响应的 review_items 逐条一一对应（one_to_one）；F01-19 的冻结输入 chapter_version_id 与确认的 chapter_version_id 互相绑定（version_bound）、冻结正文与 F01-13 编辑正文逐字相同、review_items 与确认处置对应（ref_in）、材料哈希与绑定资料时读到的相等（equals_step）。⚠️ 证据层级：**这些断言读的都是 HTTP 响应体**（采纳结果从未经独立 GET 读回、从未比对数据库物理行、从未在跨重启场景里核对该项目）；契约自身把本轮范围标为 verification_scope = http_smoke_only。",
+      "evidence": "beta-acceptance-support-20261026/c23452293396b0f303e85a9c5aea4f8bd52802af/f01-report-raw-run.json、f01-per-node.md"
     },
     {
       "item": "真实模型调用与用量核算",
@@ -90,6 +90,20 @@
     }
   ],
   "known_limits": [
+    {
+      "item": "候选采纳的持久化只到 HTTP 层：没有独立 GET 读回、没有比对数据库物理行、没有在跨重启场景核对该项目",
+      "execution": "not_executed",
+      "reason": "独立复核（只读子代理，逐条核对 f01-report.json / f01-per-node.md）实测：采纳之后唯一带 readback 语义的 GET 是 F01-18 getProject，它的两条断言只碰 /data/spec_revision 与 /data/status；采纳后的章节正文 / 正文版本 / 待核项只出现在 acceptCandidate 自己的响应体里（runner 的 ref_in / equals 取该步响应 payload）。F01-12『不新增章节版本』也只由『第二次响应里的版本 id 未变』间接推出，没有比对库里的版本行数。跨重启证据（restart-readback.json）属于另一个项目（Beta 452 parity），不是 F01 跑批项目 0a6c35d0…，且不覆盖 review_items。契约自身把本轮范围标为 verification_scope = http_smoke_only。",
+      "unblock": "在契约里给采纳后补一条独立 GET 的读回断言（章节正文 / 正文版本 / 待核项），并在隔离 PostgreSQL 上对同一个 F01 项目做跨重启比对。",
+      "blocks_release": false
+    },
+    {
+      "item": "F01-11 的 intent 文本说『项目版本增加到 5（由 F01-18 的读回核对）』，但 F01-18 只断言 spec_revision 与 status，全契约没有任何断言核对 project_version 的递增",
+      "execution": "not_executed",
+      "reason": "intent 的陈述强于它实际覆盖的断言（与 #621 同类问题：断言文本说清了自己到底核了什么）。判定以**断言**为准（F01-11 的两条断言：/data/review_items 非空、/data/current_version_id 与响应一致），intent 文本不构成核对。",
+      "unblock": "按 #621 的形态修契约：要么补一条 project_version 的断言，要么把 intent 改写成它真正覆盖的内容。",
+      "blocks_release": false
+    },
     {
       "item": "F01-06c 的 422 invalid_state 行为未直接验证",
       "execution": "not_executed",
@@ -148,6 +162,11 @@
       "item": "阶段 A 的批量向量化没有独立于应用的原始 provider 响应留存",
       "detail": "648 token 由应用自身解析 provider JSON 后写入账本（embedding/openai.go 要求 prompt_tokens > 0，否则记 usage_unknown），语义可靠但产物出自被审对象；阶段 B 的 query 调用另有 llm_debug 日志与账本时间戳精确互证。若要求 provider 实报必须有独立原始留存，需另立一轮（会产生新的 provider 调用，须新授权）。",
       "accepted_by": "已登记为残余风险（docs/BETA_STATUS.md §22.8）"
+    },
+    {
+      "item": "跨重启读回的样本不是 F01 跑批项目",
+      "detail": "restart-readback.json（A 轮 31 叶子）与 restart-readback-source-binding.json（B 轮 36 叶子）跑的是另一个项目（Beta 452 parity），证明的是『真实进程重启后项目/章节/来源绑定/下载哈希逐字段相等』这一**机制**成立，不是『F01 跑批项目的采纳结果跨重启仍可读回』。",
+      "accepted_by": "已登记为残余风险（见 known_limits 的第一条）"
     }
   ]
 }

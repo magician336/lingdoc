@@ -1317,7 +1317,7 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 3 | **人工重判未篡改机器事实** | **PASS**（9 个机器事实键逐字节相等，`run_id` 不变，新增 provider 请求 0、账本新增 0） | §20.6、`f01-report.json` vs `f01-report-rejudged.json` | — |
 | 4 | **契约两条放行路径** | **PASS**（`main_path_evidence` = PASS、`beta_evidence` = PASS、`provider_semantics_status` = verified；outcome 只剩 `held`） | `release-verdict-rejudged.json` | — |
 | 5 | **材料 → WeKnora 解析 → chunk → 来源绑定** | **PASS** | §13、§19.7、§20.13 | ⚠️ 跑批在 Windows + 隔离 **SQLite** 上执行（协议 §1 写的是 WSL2 + 隔离 PG）⇒ **执行环境偏离**，见 22.5 |
-| 6 | **候选生成 → 采纳（`acceptCandidate` 带 `confirmation`）→ 持久化读回 → 下游使用** | **PASS** | F01-09/11/12/13～17/19 的 64 条断言（含 `readback_equals` 读回）；#608 的契约修复 PR #612 已合入 | ⚠️ 读回为 **HTTP 读回**（`GET` 后逐字段比对）；**字节级**持久化证明来自隔离 PG 的重启读回（下一行） |
+| 6 | **候选生成 → 采纳（`acceptCandidate` 带 `confirmation`）→ 下游使用** | **PASS**（**HTTP 层**） | F01-09/11/12/13～17/19 的 64 条断言；#608 的契约修复 PR #612 已合入 | ⚠️ **独立复核实测**：采纳结果**从未经独立 GET 读回、从未比对数据库物理行、从未在跨重启场景核对该项目** —— 采纳后的正文/版本/待核项只出现在 `acceptCandidate` 自己的响应体里（契约把本轮范围标为 `verification_scope = http_smoke_only`）；跨重启读回跑的**是另一个项目**（Beta 452 parity）。⇒ 「采纳后被下游使用」成立（版本绑定、处置一一对应、冻结正文逐字相同都是断言），但**「持久化读回」这个说法只在 HTTP 层成立** |
 | 7 | **真实 Embedding 生成 ＋ 向量检索** | **PASS**（本批） | §22.1 | ⚠️ 隔离知识库偏离（见 22.2 第 1 条） |
 | 8 | **PostgreSQL 持久化 ＋ 真实重启读回** | **PASS**（A 轮 31 叶子、B 轮 36 叶子，**0 处不等**；psql 直读；零 provider） | `D:\wt\lingdoc-484-evidence\pg-r7\` | ⚠️ **章节级 `source_ids` 不在重启读回的字段范围内**（该字段由 §20.13(a) 的 8/8 直接核实覆盖） |
 | 9 | **浏览器真实链路（三方一致）** | **PASS**（真实 Vite + 真实 Chrome/Edge/CDP + 真实登录表单；10 项逐项一致、0 处不符） | §20.12、`browser-run-20261025/parity.json` | ⚠️ **「候选取消」交互未执行**（F01 契约无该节点）⇒ 登记为覆盖边界 |
@@ -1363,6 +1363,9 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 9 | **验收执行器 `beta_http_readback.py` 的 `--email` 复用路径不可用**（对已存在邮箱答 400 并致命退出） | 工具缺陷 | 本轮改走 `/api/v1/auth/login` 取令牌（其余比对逻辑仍是执行器未改动代码） | 票 **#667** |
 | 10 | **#619 的服务端残留**（声明口径、API 密钥主体授权边界、存量变更集） | 已登记 | 三条承重测试已由 #653 补上；其余为「已登记的承重耦合」 | 票 **#647** |
 | 11 | **`#623` ResearchAdapter 上传资料原文未接存储端口**（真实 source-anchor 返 422） | 缺陷（非 F01 主链） | 不在 F01 契约链上；不影响本次放行结论 | 票 **#623** |
+| 12 | **候选采纳的持久化只到 HTTP 层** | 已知限制（**独立复核实测**） | 采纳结果**从未经独立 GET 读回、从未比对数据库物理行、从未在跨重启场景核对该项目**；跨重启读回跑的是另一个项目（Beta 452 parity），证明的是**机制**成立，不是本项目的采纳结果跨重启可读。协议 §3 要求「数据库副作用通过读回核对」——本轮由契约自身的 F01-18（`readback_equals` 读回项目 `spec_revision`/`status`）承担，但**没有**一条断言读回采纳后的章节正文/版本/待核项 | 已开票 **#679**：给采纳后补一条独立 GET 的读回断言，并在隔离 PostgreSQL 上对同一个 F01 项目做跨重启比对 |
+| 13 | **F01-11 的 intent 文本强于它覆盖的断言**（文本说「项目版本增加到 5（由 F01-18 的读回核对）」，而 F01-18 只断言 `spec_revision` 与 `status`，全契约无断言核对 `project_version` 的递增） | 契约文本问题（判定**以断言为准**：F01-11 的两条断言确为 passed） | 按 **#621** 的形态修契约：补 `project_version` 断言，或把 intent 改写成它真正覆盖的内容 | 已开票 **#679**（与上一条同一张票：按 #621 的形态修契约） |
+| 14 | **仓内证据副本相对仓外完整现场少两件**（`zz_flash_chain_local_test.go` 与 `acceptance-budget-reconcile.exe`） | 取舍（已登记） | 前者**必须**留在仓外：`docs/08-本轮实施方案/…` 路径含中文，仓内任何 `.go` 文件都会被 `go list ./...` 扫成包并报 `malformed import path … invalid char '本'` ⇒ **CI 的 Go 构建会直接失败**（实测：`Format, vet, test, and build` 与 `golangci-lint` 两个 job 红）；后者是 4.9 MB 的构建产物，不宜入库。**两件的原件仍在仓外完整现场**（`D:\wt\lingdoc-485-evidence\embedding-run\flash-run\`），未删任何东西 | 无（除非将来把仓外证据目录迁到不含中文的路径下，再一并入库） |
 
 ### 22.6 本批的票据同步（代码与票据一致）
 
@@ -1372,6 +1375,7 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | **#675** | **保持开放** ＋ 补「对完整 Beta 的影响评估」评论 ＋ 修复已开工 | 不进入 §6 门槛（不阻塞放行）；残余风险已登记 |
 | #592 / #618 / #621 / #632 / #639 / #640 / #651 / #655 | **关闭**（修复已在 `origin/main`，此前票面未同步） | 每票的关闭评论写明 PR、合并提交、独立复核与真实跑批验证 |
 | #480 / #489 / #492 / #490 | 保持开放 ＋ 状态同步 | #480：`AC-BETA-10`（`kind=switch` 行）与「跑批证据目录入仓」两项**未满足**；#489：`WAIVED_BY_OWNER`（事实 `NOT RUN`）；#490：本节即其放行结论表的事实来源 |
+| **#679**（新立） | 开放 | 候选采纳的持久化只到 HTTP 层（缺独立 GET 读回断言）与 F01-11 的 intent 文本强于其断言 —— 由 22.8.1 的独立复核点出；**证据补强票，不阻塞放行** |
 
 ### 22.7 证据索引
 
@@ -1394,6 +1398,19 @@ OpenAIEmbedder EmbedBatch API error: Http Status 403 Forbidden, Response Body:
 | 3 | **阶段 A（2 chunk 批量向量化）没有原始 provider 响应留存**（`llm_debug_embedding/` 只有 query 那一次） | 可复核性软肋 | 阶段 A 的 `648 token` 由应用自身解析 provider JSON 后写入（`openai.go` 要求 `prompt_tokens>0`，否则记 `usage_unknown`），语义可靠，但**产物出自被审对象**；阶段 B 另有 debug 日志与账本时间戳精确互证。若要求「provider 实报」必须有独立于应用的原始留存，需另立一轮（**会产生新的 provider 调用，须新授权**） |
 
 **复核另点名的两条「断言名强于检查内容」（结论仍为真，记录备查）**：① 「队列身份摘录记录**同样的** 6 个池」这条断言只数了含 `queue_redis_db=` 的行数＝6，**未比对池名** —— 复核另行逐池比对（core/postprocess/enrichment/maintenance/shared/wiki，**相同**）；② 「本轮实际计费」这条断言只加总**新增两行**（84,375 nano-CNY），不含上一轮已按上界计费的 1,542,500（账本 `actual_nano_cny` 实为 1,626,875）—— 两数都远低于上限，不影响判定，但**口径**与断言名略有落差。
+
+#### 22.8.1 第二条主线的独立复核：**原表述被判定超出证据，已收窄**（2026-10-26）
+
+复核对象：§22.3 第 6 行「候选生成 → 采纳 → **持久化读回** → 下游使用」这条 `PASS`。复核方式：只读子代理，逐条核对 `f01-report.json` / `f01-per-node.md` 的 `path`、`operator`、`intent`，以及 runner 里 `ref_in` / `readback_equals` 的求值来源。
+
+**复核结论（对原表述）＝ FAIL**，理由：
+
+1. 采纳之后**唯一**带 `readback` 语义的 GET 是 **F01-18 `getProject`**，而它的两条断言只碰 `/data/spec_revision` 与 `/data/status`；
+2. 采纳后的章节正文 / 正文版本 / 待核项**只出现在 `acceptCandidate` 自己的响应体**里（runner 的 `ref_in` / `equals` 取的是该步响应的 payload），**没有任何一条断言独立 GET 读回它们**；
+3. F01-12「不新增章节版本」只由「第二次响应里的版本 id 未变」**间接推出**，没有比对库里的版本行数；
+4. 跨重启证据（`restart-readback.json`）跑的是**另一个项目**（Beta 452 parity），不是 F01 跑批项目 `0a6c35d0…`，且不覆盖 `review_items`；契约自身把本轮范围标为 `verification_scope = http_smoke_only`。
+
+**处置（已落地）**：把 §22.3 第 6 行与仓内证据件的表述**收窄**为「采纳结果被下游使用成立（版本绑定 / 处置一一对应 / 冻结正文逐字相同都是断言），但持久化只在 HTTP 层成立」；新增 §22.5 第 12、13 条（前者为独立 GET 读回与同项目跨重启比对，后者为 F01-11 的 intent 文本强于其断言）；并已就此开票跟进。**放行结论未被这条复核推翻**（协议 §6 第 2 项的判定输入是**契约的断言**，64/64 全部 passed，且 F01-18 是真实的读回断言），但**该行的文字在本轮之前是过度声明**，现已改正。
 
 ### 22.9 最终验收证据目录（入仓）
 
