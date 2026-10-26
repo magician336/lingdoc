@@ -2,12 +2,19 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/academic/catalog"
+	"github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -88,6 +95,50 @@ func (f *adapterFetcherStub) Fetch(context.Context, string) (string, error) {
 	f.calls++
 	return f.text, nil
 }
+
+// syntheticResearchBudgetLedger is test-only; it is not wired into the
+// production composition root and cannot substitute for the missing durable
+// project quota policy or reset-period accounting.
+type syntheticResearchBudgetLedger struct {
+	reserveCalls      int
+	settleCalls       int
+	modelReserveCalls int
+	modelSettleCalls  int
+}
+
+func (l *syntheticResearchBudgetLedger) Reserve(_ context.Context, _ core.Actor, _ string, _ string, _ core.ResearchTask) error {
+	l.reserveCalls++
+	return nil
+}
+
+func (l *syntheticResearchBudgetLedger) Settle(_ context.Context, _ core.Actor, _ string, _ string, _ core.ResearchUsageLedger) error {
+	l.settleCalls++
+	return nil
+}
+
+func (l *syntheticResearchBudgetLedger) ReserveModelCall(_ context.Context, _ core.Actor, _ string, _ string) error {
+	l.modelReserveCalls++
+	return nil
+}
+
+func (l *syntheticResearchBudgetLedger) SettleModelCall(_ context.Context, _ core.Actor, _ string, _ string, _ core.ResearchModelCallUsage) error {
+	l.modelSettleCalls++
+	return nil
+}
+
+func syntheticGlobalAcademicCatalog() catalog.Snapshot {
+	return catalog.Snapshot{Version: core.AcademicGlobalCatalogVersion, Rules: []catalog.Rule{{
+		ID: "test-global-journal", Version: "test-v1", SourceType: "journal", VenueName: "Synthetic Global Journal",
+		Maintainer: "test-fixture", EffectiveAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}}}
+}
+
+type adapterRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f adapterRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
 func adapterTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "adapter.db")}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -96,7 +147,7 @@ func adapterTestDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	for _, ddl := range []string{"CREATE TABLE tenants (id INTEGER PRIMARY KEY,web_search_config BLOB,deleted_at DATETIME)", "CREATE TABLE web_search_providers (id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,deleted_at DATETIME)"} {
+	for _, ddl := range []string{"CREATE TABLE tenants (id INTEGER PRIMARY KEY,web_search_config BLOB,deleted_at DATETIME)", "CREATE TABLE web_search_providers (id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,deleted_at DATETIME)", "CREATE TABLE lingdoc_g2_objects (project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))"} {
 		if err = db.Exec(ddl).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -109,6 +160,127 @@ func adapterTestDB(t *testing.T) *gorm.DB {
 	}
 	return db
 }
+
+func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
+	db := adapterTestDB(t)
+	now := time.Now().UTC()
+	projectCatalog := core.AcademicSourceCatalog{
+		ProjectID: "project", Version: 1, GlobalVersion: core.AcademicGlobalCatalogVersion,
+		Rules: []core.AcademicSourceRule{{
+			ID: "journal-example", Version: 1, SourceType: "journal", VenueName: "Journal of Examples",
+			VenueIDs: []string{"1234-5678"}, AllowedLicenseURLs: []string{"https://creativecommons.org/licenses/by/4.0/"},
+			Maintainer: "owner", EffectiveAt: now.Add(-time.Hour),
+		}},
+	}
+	projectCatalog.SourceCatalogVersion = core.AcademicSourceCatalogVersion(projectCatalog.Rules)
+	payload, err := json.Marshal(projectCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec("INSERT INTO lingdoc_g2_objects (project_id,kind,id,version,payload_json) VALUES (?,?,?,?,?)", "project", core.AcademicSourceCatalogKind, "project", 1, string(payload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	body := `{"message":{"items":[
+		{"DOI":"10.1000/example","title":["Approved study"],"author":[{"given":"Ada","family":"Author"}],"published":{"date-parts":[[2024]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","URL":"https://publisher.example/fulltext","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]},
+		{"DOI":"10.1000/example","title":["Approved study duplicate"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]},
+		{"DOI":"10.1000/outside","title":["Outside journal"],"container-title":["Other Journal"],"ISSN":["8765-4321"],"type":"journal-article"},
+		{"DOI":"10.1000/retracted","title":["Retracted paper"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}],"update-to":[{"type":"retraction","DOI":"10.1000/retraction-notice"}]},
+		{"title":["Missing DOI"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article"}
+	]}}`
+	transport := adapterRoundTripper(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host != "api.crossref.org" || request.URL.Path != "/works" || request.URL.Query().Get("rows") != "20" {
+			t.Fatalf("unexpected Crossref request: %s", request.URL)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})
+	projects := &adapterProjectsStub{}
+	fetch := &adapterFetcherStub{text: "must not be called"}
+	adapter := NewResearchAdapter(db, projects, &adapterSourcesStub{}, nil, nil, nil)
+	adapter.academic = crossref.Client{HTTPClient: &http.Client{Transport: transport}}
+	adapter.fetcher = fetch
+	if err := adapter.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), &syntheticResearchBudgetLedger{}); err != nil {
+		t.Fatalf("configure synthetic-only global policy for adapter test: %v", err)
+	}
+	actor := core.Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleOwner}
+	task := core.ResearchTask{ProviderID: core.AcademicCrossrefProviderID}
+	results, _, err := adapter.SearchResearch(context.Background(), actor, "project", task, "examples")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 5 {
+		t.Fatalf("got %d results, want 5: %+v", len(results), results)
+	}
+	if got := results[0]; got.PolicyStatus != "approved" || got.Level != "background_lead" || got.AcquisitionStatus != "metadata_only" || got.RetractionStatus != "unknown" || got.DOI != "10.1000/example" || got.Author != "Ada Author" || got.PublishedAt != "2024" || got.URL != "" || got.LicenseStatus != "allowed" {
+		t.Fatalf("approved metadata was not represented safely: %+v", got)
+	}
+	if got := results[1]; got.DuplicateStatus != "duplicate" || got.DuplicateOf != results[0].ID || got.Level != "discovery_entry" {
+		t.Fatalf("duplicate not marked and linked: %+v", got)
+	}
+	if got := results[2]; got.PolicyStatus != "out_of_policy" || got.Level != "discovery_entry" {
+		t.Fatalf("out-of-policy result was not downgraded: %+v", got)
+	}
+	if got := results[3]; got.RetractionStatus != "retracted" || got.Status != "retracted" || got.Level != "discovery_entry" {
+		t.Fatalf("retracted result was not blocked: %+v", got)
+	}
+	if got := results[4]; got.Status != "missing_identifier" || got.DOI != "" {
+		t.Fatalf("missing DOI was not marked: %+v", got)
+	}
+	if identity, err := adapter.ResearchRoundProvider(context.Background(), actor, "project", task); err != nil || identity != core.AcademicCrossrefProviderID {
+		t.Fatalf("Crossref identity: %q %v", identity, err)
+	}
+	if _, err := adapter.InspectResearchOriginal(context.Background(), actor, "project", task, results[0]); !errors.Is(err, core.ErrEvidenceIncomplete) || fetch.calls != 0 {
+		t.Fatalf("Crossref attempted original-page fetching: fetches=%d err=%v", fetch.calls, err)
+	}
+	version, err := adapter.ResearchCatalogVersion(context.Background(), actor, "project", task)
+	if err != nil || version == "" {
+		t.Fatalf("Crossref catalog version unavailable: %q %v", version, err)
+	}
+	if results[0].PolicySnapshotVersion == "" {
+		t.Fatal("Crossref result omitted the policy snapshot used to assess it")
+	}
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0]); err != nil {
+		t.Fatalf("current policy snapshot rejected its result: %v", err)
+	}
+	adapter.globalAcademicCatalog.Rules[0].VenueName += " revised"
+	updatedVersion, err := adapter.ResearchCatalogVersion(context.Background(), actor, "project", task)
+	if err != nil || updatedVersion == version {
+		t.Fatalf("global policy update did not invalidate research basis: before=%q after=%q err=%v", version, updatedVersion, err)
+	}
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0]); !errors.Is(err, core.ErrVersionConflict) {
+		t.Fatalf("result assessed under the old global policy remained valid: %v", err)
+	}
+}
+
+func TestCrossrefSearchFailsClosedWithoutGlobalCatalogOrProjectBudget(t *testing.T) {
+	db := adapterTestDB(t)
+	projects := &adapterProjectsStub{}
+	var upstreamCalls int
+	transport := adapterRoundTripper(func(request *http.Request) (*http.Response, error) {
+		upstreamCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"message":{"items":[]}}`)), Request: request}, nil
+	})
+	adapter := NewResearchAdapter(db, projects, &adapterSourcesStub{}, nil, nil, nil)
+	adapter.academic = crossref.Client{HTTPClient: &http.Client{Transport: transport}}
+	actor := core.Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleOwner}
+	task := core.ResearchTask{ProviderID: core.AcademicCrossrefProviderID}
+	if _, _, err := adapter.SearchResearch(context.Background(), actor, "project", task, "query"); !errors.Is(err, core.ErrAcademicGlobalCatalogUnavailable) {
+		t.Fatalf("missing global allowlist must fail closed, got %v", err)
+	}
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", core.ResearchResult{Provider: "crossref", PolicyStatus: "approved"}); !errors.Is(err, core.ErrAcademicGlobalCatalogUnavailable) {
+		t.Fatalf("stored Crossref result could be promoted without global allowlist: %v", err)
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("Crossref called %d times without global allowlist", upstreamCalls)
+	}
+	adapter.globalAcademicCatalog = syntheticGlobalAcademicCatalog()
+	if _, _, err := adapter.SearchResearch(context.Background(), actor, "project", task, "query"); !errors.Is(err, core.ErrResearchBudgetUnavailable) {
+		t.Fatalf("missing cumulative budget ledger must fail closed, got %v", err)
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("Crossref called %d times without project budget ledger", upstreamCalls)
+	}
+}
+
 func TestResearchAdapterUsesExistingRetrievalScopeAndRejectsDeniedAsset(t *testing.T) {
 	projects := &adapterProjectsStub{}
 	sources := &adapterSourcesStub{assets: []evidence.Asset{{ID: "allowed-asset", AssetRevision: 3, ProcessingState: evidence.AssetStateReady}}}

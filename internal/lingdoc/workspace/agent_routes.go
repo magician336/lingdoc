@@ -92,6 +92,9 @@ func RegisterAgentRoutes(group *gin.RouterGroup, ports AgentRoutePorts) {
 	group.GET("/projects/:projectId/research-tasks", agentRead(func(c *gin.Context, actor Actor) (any, error) {
 		return ports.Research.ListResearchTasks(c.Request.Context(), actor, c.Param("projectId"))
 	}))
+	group.GET("/projects/:projectId/academic-source-catalog", agentRead(func(c *gin.Context, actor Actor) (any, error) {
+		return ports.Research.GetAcademicSourceCatalog(c.Request.Context(), actor, c.Param("projectId"))
+	}))
 	group.GET("/projects/:projectId/research-runs", agentRead(func(c *gin.Context, actor Actor) (any, error) {
 		return ports.Research.ListResearchRuns(c.Request.Context(), actor, c.Param("projectId"))
 	}))
@@ -124,6 +127,9 @@ func RegisterAgentRoutes(group *gin.RouterGroup, ports AgentRoutePorts) {
 	}))
 	group.POST("/projects/:projectId/research-tasks", agentWrite(func(c *gin.Context, actor Actor, key string, input core.SaveResearchTaskInput) (json.RawMessage, int, bool, error) {
 		return ports.Research.SaveResearchTask(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	}))
+	group.PUT("/projects/:projectId/academic-source-catalog", agentWrite(func(c *gin.Context, actor Actor, key string, input core.UpdateAcademicSourceCatalogInput) (json.RawMessage, int, bool, error) {
+		return ports.Research.UpdateAcademicSourceCatalog(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
 	group.PUT("/projects/:projectId/research-tasks/:taskID", agentWrite(func(c *gin.Context, actor Actor, key string, input core.SaveResearchTaskInput) (json.RawMessage, int, bool, error) {
 		if input.TaskID != "" && input.TaskID != c.Param("taskID") {

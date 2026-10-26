@@ -19223,6 +19223,154 @@
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
     },
+    "/projects/{projectId}/academic-source-catalog": {
+      "get": {
+        "operationId": "getAcademicSourceCatalog",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "GetAcademicSourceCatalog",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current project academic-source catalog and deterministic version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceCatalogResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-service": "GetAcademicSourceCatalog",
+        "x-lingdoc-go-response": "AcademicSourceCatalog",
+        "description": "Reads project extension rules under current read authorization. The built-in Crossref provider is a metadata source, not an implicit venue-quality allowlist."
+      },
+      "put": {
+        "operationId": "updateAcademicSourceCatalog",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "UpdateAcademicSourceCatalog",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAcademicSourceCatalogInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_context_revision": 1,
+                "expected_version": 0,
+                "rules": [
+                  {
+                    "id": "synthetic-journal-rule",
+                    "source_type": "journal",
+                    "venue_name": "Synthetic Journal",
+                    "venue_ids": ["1234-5678"],
+                    "allowed_license_urls": []
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Append-only project catalog revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceCatalogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed catalog rule or unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Expected project or catalog version is stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-service": "UpdateAcademicSourceCatalog",
+        "x-lingdoc-go-response": "AcademicSourceCatalog",
+        "description": "Requires current project manage capability and exact expected project/catalog versions. Rules are project extensions; they do not grant full-text access or assert venue quality."
+      }
+    },
     "/projects/{projectId}/research-tasks": {
       "get": {
         "operationId": "listResearchTasks",
@@ -19681,9 +19829,18 @@
                               "source_type": "synthetic-source-type",
                               "quality_note": "synthetic-quality-note",
                               "uncertainty": "synthetic-uncertainty",
-                              "status": "pending"
+                              "status": "metadata_only"
                             }
                           ],
+                          "usage": {
+                            "policy_version": "research-run-bounds-v1",
+                            "search_limit": 8,
+                            "searches_used": 1,
+                            "result_limit": 160,
+                            "results_used": 1,
+                            "model_call_limit": 0,
+                            "model_calls_used": 0
+                          },
                           "status": "pending",
                           "run_mode": "real_api_fake_model",
                           "correlation_id": "synthetic-correlation-id",
@@ -19880,9 +20037,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "pending",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -23902,9 +24068,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "completed",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -23973,9 +24148,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "running",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -25697,7 +25881,7 @@
                         "source_type": "synthetic-source-type",
                         "quality_note": "synthetic-quality-note",
                         "uncertainty": "synthetic-uncertainty",
-                        "status": "pending"
+                        "status": "metadata_only"
                       },
                       "request_id": "synthetic-contract-example",
                       "meta": {
@@ -45033,6 +45217,14 @@
           "scope": {
             "type": "string"
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "exclusions": {
             "type": "array",
             "items": {
@@ -46022,6 +46214,14 @@
           },
           "scope": {
             "type": "string"
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
           },
           "exclusions": {
             "type": "array",
@@ -47829,6 +48029,14 @@
             },
             "nullable": true
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "asset_ids": {
             "type": "array",
             "items": {
@@ -47934,6 +48142,14 @@
           "query": {
             "type": "string"
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "provider": {
             "type": "string"
           },
@@ -47949,7 +48165,8 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["pending", "completed", "no_results", "failed"]
           },
           "failure_code": {
             "type": "string"
@@ -47969,6 +48186,79 @@
         ],
         "x-go-type": "core.ResearchRound",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "AcademicSourceRule": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "source_type": { "type": "string", "enum": ["journal", "conference", "proceedings"] },
+          "venue_name": { "type": "string" },
+          "venue_ids": { "type": "array", "items": { "type": "string" } },
+          "allowed_license_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" } },
+          "maintainer": { "type": "string" },
+          "effective_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["id", "version", "source_type", "venue_name", "venue_ids", "allowed_license_urls", "maintainer", "effective_at"],
+        "x-go-type": "core.AcademicSourceRule",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceRuleInput": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "source_type": { "type": "string", "enum": ["journal", "conference", "proceedings"] },
+          "venue_name": { "type": "string", "minLength": 1 },
+          "venue_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "allowed_license_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" } },
+          "maintainer": { "type": "string" },
+          "effective_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["source_type", "venue_name", "venue_ids"],
+        "x-go-type": "core.AcademicSourceRule",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceCatalog": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "global_version": { "type": "string" },
+          "source_catalog_version": { "type": "string" },
+          "rules": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSourceRule" } },
+          "updated_by": { "type": "string" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["project_id", "version", "global_version", "source_catalog_version", "rules"],
+        "x-go-type": "core.AcademicSourceCatalog",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "UpdateAcademicSourceCatalogInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": { "type": "integer", "format": "int64", "minimum": 1 },
+          "expected_context_revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "expected_version": { "type": "integer", "format": "int64", "minimum": 0 },
+          "rules": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSourceRuleInput" }, "maxItems": 100 }
+        },
+        "additionalProperties": false,
+        "required": ["expected_project_version", "expected_context_revision", "expected_version", "rules"],
+        "x-go-type": "core.UpdateAcademicSourceCatalogInput",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceCatalogResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AcademicSourceCatalog" },
+          "request_id": { "type": "string" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        },
+        "additionalProperties": false,
+        "required": ["data", "request_id", "meta"]
       },
       "ResearchResult": {
         "type": "object",
@@ -48014,6 +48304,19 @@
           "published_at": {
             "type": "string"
           },
+          "doi": { "type": "string" },
+          "journal": { "type": "string" },
+          "issns": { "type": "array", "items": { "type": "string" } },
+          "license_urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "license_status": { "type": "string", "enum": ["not_checked", "not_required", "allowed", "missing", "not_allowed"] },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" },
+          "policy_status": { "type": "string", "enum": ["approved", "out_of_policy", "retracted"] },
+          "policy_rule_id": { "type": "string" },
+          "retraction_status": { "type": "string", "enum": ["unknown", "retracted"] },
+          "duplicate_status": { "type": "string", "enum": ["unique", "duplicate"] },
+          "duplicate_of": { "type": "string" },
+          "acquisition_status": { "type": "string", "enum": ["metadata_only"] },
           "retrieved_at": {
             "type": "string",
             "format": "date-time"
@@ -48034,7 +48337,8 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["metadata_only", "out_of_policy", "retracted", "duplicate", "missing_identifier", "missing_title", "unread", "available", "stale", "unavailable", "inspected_original", "restricted"]
           }
         },
         "additionalProperties": false,
@@ -48050,6 +48354,22 @@
           "status"
         ],
         "x-go-type": "core.ResearchResult",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "ResearchUsageLedger": {
+        "type": "object",
+        "properties": {
+          "policy_version": { "type": "string" },
+          "search_limit": { "type": "integer", "format": "int32" },
+          "searches_used": { "type": "integer", "format": "int32" },
+          "result_limit": { "type": "integer", "format": "int32" },
+          "results_used": { "type": "integer", "format": "int32" },
+          "model_call_limit": { "type": "integer", "format": "int32" },
+          "model_calls_used": { "type": "integer", "format": "int32" }
+        },
+        "additionalProperties": false,
+        "required": ["policy_version", "search_limit", "searches_used", "result_limit", "results_used", "model_call_limit", "model_calls_used"],
+        "x-go-type": "core.ResearchUsageLedger",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ResearchRun": {
@@ -48089,6 +48409,9 @@
             },
             "nullable": true
           },
+          "usage": {
+            "$ref": "#/components/schemas/ResearchUsageLedger"
+          },
           "status": {
             "type": "string"
           },
@@ -48124,6 +48447,7 @@
           "basis",
           "rounds",
           "results",
+          "usage",
           "status",
           "run_mode",
           "correlation_id",
@@ -48214,6 +48538,22 @@
           "title": {
             "type": "string"
           },
+          "author": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string"
+          },
+          "doi": { "type": "string" },
+          "journal": { "type": "string" },
+          "issns": { "type": "array", "items": { "type": "string" } },
+          "license_urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" },
+          "policy_status": { "type": "string", "enum": ["approved", "out_of_policy", "retracted"] },
+          "retraction_status": { "type": "string", "enum": ["unknown", "retracted"] },
+          "duplicate_status": { "type": "string", "enum": ["unique", "duplicate"] },
+          "acquisition_status": { "type": "string", "enum": ["metadata_only"] },
           "level": {
             "type": "string"
           },
@@ -51859,6 +52199,14 @@
           },
           "scope": {
             "type": "string"
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
           },
           "exclusions": {
             "type": "array",

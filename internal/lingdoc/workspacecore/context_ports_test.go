@@ -105,12 +105,14 @@ var narrowPortMethods = map[string][]string{
 	"ResearchTaskApplication": {
 		"ApproveResearchTask",
 		"ControlResearchTask",
+		"GetAcademicSourceCatalog",
 		"GetResearchRun",
 		"InspectResearchResult",
 		"ListResearchRuns",
 		"ListResearchTasks",
 		"RunResearchTask",
 		"SaveResearchTask",
+		"UpdateAcademicSourceCatalog",
 	},
 	"ImportCandidateApplication": {
 		"ConfirmImportCandidate",
