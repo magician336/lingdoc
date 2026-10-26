@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The controlled budget window must be able to RECOVER from an outcome nobody
@@ -96,6 +95,10 @@ func unresolvedWindowEvidence(t *testing.T, b *Budget, status string) ReconcileU
 // an annotation: the row's own fields are the ones the failure produced.
 func assertSettlementKeptTheRowIntact(t *testing.T, before, after Ledger, number int) *UnresolvedCallReconciliation {
 	t.Helper()
+	if len(after.Requests) != len(before.Requests) {
+		t.Fatalf("the settlement changed the number of recorded calls: before %d after %d",
+			len(before.Requests), len(after.Requests))
+	}
 	original := before.Requests[number-1]
 	settled := after.Requests[number-1]
 	proof := settled.UnresolvedReconciliation
@@ -484,7 +487,10 @@ func unresolvedTwoUnresolvedRowsFixture(t *testing.T) (*Budget, ReconcileUnresol
 		InputUpperBound: 128, OutputLimit: 0, UsageStatus: UsageStatusUnavailable,
 		CostBasis:       ProfileCostBasis(QwenEmbeddingProfile),
 		ReservedNanoCNY: int64(128) * QwenNanoCNYPerToken,
-		CreatedAt:       ledger.Requests[0].CreatedAt.Add(time.Second),
+		// The row's creation time is the moment the first call was
+		// reserved: a timestamp from the future would make any settlement
+		// of this row invalid for a reason of its own.
+		CreatedAt: ledger.Requests[0].CreatedAt,
 	})
 	ledger.ReservedNanoCNY += int64(128) * QwenNanoCNYPerToken
 	ledger.ReservedTokens += 128
@@ -648,6 +654,65 @@ func TestTheHTTPErrorChannelKeepsItsOwnAnnotation(t *testing.T) {
 		t.Fatal("the new channel settled an http_error row")
 	}
 	assertLedgerUnchanged(t, b, before)
+}
+
+// TestATamperedSettlementLeavesTheCallUnresolved pins that the settlement
+// annotation is only a proof while it still matches the row it sits on.
+//
+// The annotation is the only thing that says "this call was settled", so a
+// tampered or incomplete one must NOT open the window: the call stays
+// unresolved, the window stays frozen, and the ledger file is refused
+// outright rather than reopened on a proof nobody can check.
+//
+// The check is structural: it does not look at one field, it re-derives the
+// whole settlement. A discount, a claimed provider usage, another kind or
+// another row's digest all leave the call unresolved.
+func TestATamperedSettlementLeavesTheCallUnresolved(t *testing.T) {
+	b, input := unresolvedWindowFixture(t, QwenEmbeddingProfile, QwenEmbedding, unresolvedStatusOutcomeUnknown, 1)
+	if err := b.ReconcileUnresolvedCall(context.Background(), input); err != nil {
+		t.Fatalf("the settlement was refused: %v", err)
+	}
+	settled, err := readLedger(b.ledgerPath, QwenEmbeddingProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	number := input.RequestNumber
+	tamperings := map[string]func(*UnresolvedCallReconciliation){
+		"a discounted charge":      func(r *UnresolvedCallReconciliation) { r.ChargedNanoCNY-- },
+		"a claimed provider usage": func(r *UnresolvedCallReconciliation) { r.ProviderTokenUsage = "1024" },
+		"another kind":             func(r *UnresolvedCallReconciliation) { r.Kind = "another_kind_v9" },
+		"another row's digest":     func(r *UnresolvedCallReconciliation) { r.OriginalRequestSHA256 = digestSHA256([]byte("another row")) },
+		"an empty evidence digest": func(r *UnresolvedCallReconciliation) { r.Evidence.EvidenceSHA256 = "" },
+	}
+	for name, tamper := range tamperings {
+		t.Run(name, func(t *testing.T) {
+			row := settled.Requests[number-1]
+			if row.UnresolvedReconciliation == nil {
+				t.Fatal("the settled row carries no settlement")
+			}
+			proof := *row.UnresolvedReconciliation
+			tamper(&proof)
+			row.UnresolvedReconciliation = &proof
+			if !requestUnresolved(row) {
+				t.Fatal("a tampered settlement was accepted as a settlement")
+			}
+			tampered := settled
+			tampered.Requests = append([]Request(nil), settled.Requests...)
+			tampered.Requests[number-1] = row
+			if !hasUnresolved(tampered) {
+				t.Fatal("a tampered settlement opened the window")
+			}
+			// And the file itself is refused: a window is never reopened on
+			// a proof nobody can check.
+			path := filepath.Join(t.TempDir(), "tampered.calls.json")
+			if err := writeLedger(path, tampered); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readLedger(path, QwenEmbeddingProfile); err == nil {
+				t.Fatal("a tampered settlement was read back as a settled window")
+			}
+		})
+	}
 }
 
 // TestTheUnresolvedSettlementCapabilityIsStatedInTheProfileTable pins that
