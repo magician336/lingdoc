@@ -656,6 +656,72 @@ func TestTheHTTPErrorChannelKeepsItsOwnAnnotation(t *testing.T) {
 	assertLedgerUnchanged(t, b, before)
 }
 
+// TestTheUnresolvedSettlementRefusesALedgerThatOnlyChangedItsBytes pins
+// the snapshot binding on its own.
+//
+// The ledger is rewritten in another shape: the same content, the same
+// status, the same block reason -- only the BYTES differ. Nothing but the
+// digest comparison can refuse this one, so a settlement that gets through
+// here is a settlement against a file the operator never reviewed.
+func TestTheUnresolvedSettlementRefusesALedgerThatOnlyChangedItsBytes(t *testing.T) {
+	b, input := unresolvedWindowFixture(t, QwenEmbeddingProfile, QwenEmbedding, unresolvedStatusOutcomeUnknown, 1)
+	ledger, err := readLedger(b.ledgerPath, QwenEmbeddingProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same ledger, written compactly instead of indented: the parsed
+	// content is identical, the bytes are not.
+	reshaped, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b.ledgerPath, reshaped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The operator's digest is the one of the ORIGINAL bytes.
+	before := mustLedgerBytes(t, b)
+	if err := b.ReconcileUnresolvedCall(context.Background(), input); err == nil {
+		t.Fatal("a settlement against a ledger whose bytes changed was accepted")
+	}
+	assertLedgerUnchanged(t, b, before)
+}
+
+// TestTheUsageGateOnlyOpensForAConservativeSettlement pins the
+// usage-unverifiable gate from both sides.
+//
+// An unsettled call whose usage nobody reported still stops the window: the
+// ceiling has to be measured against a number nobody can produce. A
+// CONSERVATIVE settlement changes that -- it charges the full reserved upper
+// bound and keeps the reservation counted, so the remaining budget is
+// provable and the gate opens. The token and call ceilings keep working
+// either way.
+func TestTheUsageGateOnlyOpensForAConservativeSettlement(t *testing.T) {
+	b, input := unresolvedWindowFixture(t, QwenProfileV2, QwenChatModel, unresolvedStatusOutcomeUnknown, 1)
+	frozen, err := readLedger(b.ledgerPath, QwenProfileV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ledgerUsageUnverifiable(frozen) {
+		t.Fatal("an unsettled call with an unknown usage did not stop the window")
+	}
+	if err := b.ReconcileUnresolvedCall(context.Background(), input); err != nil {
+		t.Fatalf("the settlement was refused: %v", err)
+	}
+	settled, err := readLedger(b.ledgerPath, QwenProfileV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ledgerUsageUnverifiable(settled) {
+		t.Fatal("the settled window is still usage-unverifiable")
+	}
+	// The reservation of the settled call is still counted, so the window
+	// still stops when the cumulative ceiling is reached.
+	if settled.ReservedTokens != frozen.ReservedTokens {
+		t.Fatalf("the settlement refunded tokens: before %d after %d",
+			frozen.ReservedTokens, settled.ReservedTokens)
+	}
+}
+
 // TestATamperedSettlementLeavesTheCallUnresolved pins that the settlement
 // annotation is only a proof while it still matches the row it sits on.
 //
