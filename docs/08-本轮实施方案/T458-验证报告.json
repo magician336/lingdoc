@@ -1,0 +1,69 @@
+{
+  "mode": "real",
+  "note": "#458(M-0:验收判定器、守护测试与横向汇总)的验收证据;按《验收判定口径》v1.1 记录。本票收窄后的交付是三件工具:scripts/lingdoc_acceptance_judge.py(逐行判定 + 三态退出码)、scripts/ci/test_lingdoc_acceptance_judge.py 与 test_lingdoc_acceptance_summary.py(守护,故意注入违规钉住失败方向)、scripts/lingdoc_acceptance_summary.py(横向汇总,从 JSON 生成不手写)。19 张开放 Spec 的判定矩阵施工不在本票(移至地图 #695 的簇票 C1–C8)。",
+  "head": "b9a546d8295d763451b8df06308aba8ac7af8fe7",
+  "base": "7867c99c38d8e18c1ffbe736ecc52cd1e4334bc7",
+  "head_note": "落证 head:b9a546d8295d763451b8df06308aba8ac7af8fe7(分支 feat/458-acceptance-judge 的代码候选,父提交 = main 的 7867c99c,即 PR #694 合并点)。本提交只带四个 scripts/ 新文件;本 JSON 与 PR 描述在其后的证据提交里落,被测脚本树与该候选逐字一致(T129 同款体例)。",
+  "base_note": "判定所依据的共同祖先:7867c99c(本轮开工时 origin/main 尖端;git rev-list --count HEAD..origin/main = 0,基线未漂移)。",
+  "caliber": "v1.1",
+  "caliber_commit": "见 docs/08-本轮实施方案/验收判定口径.md 所在 head",
+  "passed": [
+    {
+      "id": "AC-458-01 判定器守护:三态退出码与全部注入违规方向",
+      "status": "pass",
+      "evidence": "`test_lingdoc_acceptance_judge.py`(42 项,ThreeStateExitTests/PassRowTests/NotRunRowTests/DeferredRowTests/ReportShapeTests/MatrixShapeTests/HeadResolutionTests/ExecuteTests/RealPairTests 九个方向);`python -m unittest discover -s scripts/ci -p 'test_lingdoc_acceptance_judge.py' -v`(Ran 42 tests,OK);head `b9a546d8295d`",
+      "note": "每个失败方向都是故意注入后确认变红:PASS 三件套缺一(4 种)、证据 head ≠ 判定 head、NOT RUN 无登记(静默 SKIP)、not_run[] 缺 reason/unblock、DEFERRED_MANUAL 缺两必带件(矩阵侧与 JSON 侧行级空票不回落)、passed[] 静默 SKIP、IMPL 携带状态、未知状态词、坐标/交付分类不识别、总数不符、头部缺口径 commit、反引号内竖线不切断行、--as-of 重绑 head、--execute 真跑红/绿与默认不跑、三种未比对(无 head/缺文件/坏 JSON)都打印「未比对」退出码 2。"
+    },
+    {
+      "id": "AC-458-02 横向汇总守护:数字是 JSON 的投影、负面剩余如实显示",
+      "status": "pass",
+      "evidence": "`test_lingdoc_acceptance_summary.py`(10 项,ProjectionTests/NotComparedTests/RealReportTests);`python -m unittest discover -s scripts/ci -p 'test_lingdoc_acceptance_summary.py' -v`(Ran 10 tests,OK);head `b9a546d8295d`",
+      "note": "钉住:计数与 JSON 逐项一致、承接行覆盖零点、declared 与 covered 不一致时剩余为负也如实显示、PG 条件计数、坏输入是「未比对」(exit 2)而不是静默少算、对 main 上真实报告按活值核对(不变量,不钉快照)。"
+    },
+    {
+      "id": "AC-458-03 判定器读真实工件:Spec-129 × T129 真实对与 T139 单报告",
+      "status": "pass",
+      "evidence": "`RealPairTests.test_the_table_holds_exactly_the_declared_points` 等(真实对夹具);`python scripts/lingdoc_acceptance_judge.py --report docs/08-本轮实施方案/T139-验证报告.json`(输出「结论:通过」,退出码 0);head `b9a546d8295d`",
+      "note": "T139(31 项验收点、2 条 DEFERRED_MANUAL 承接项)单报告判定通过:全部条目三件套齐备、承接项两必带件齐全。真实对 Spec-129 × T129 可判不崩,19 行 = 声明总数,发现项全部落在「缺具名用例」一类(见 known_limits);守护以「类」钉住而非数量,证据修好后测试更绿、出现新类才变红。"
+    },
+    {
+      "id": "AC-458-04 全量 scripts/ci 守护套件",
+      "status": "pass",
+      "evidence": "`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'`(Ran 873 tests,OK,173.7s);head `b9a546d8295d`",
+      "note": "含既有登记处/路径图/命名/契约/Beta 证据守护与本票新增 52 项,全部在候选 head 上实跑;无新增 SKIP。"
+    },
+    {
+      "id": "AC-458-05 登记处路径所有权:M-0 新路径无冲突",
+      "status": "pass",
+      "evidence": "`python scripts/lingdoc_parallel_surfaces.py`(输出「12 parallel work faces validated」,退出码 0);`scripts/ci/test_lingdoc_parallel_consistency.py`(随 873 项套件绿);head `b9a546d8295d`",
+      "note": "地图 #695 Notes 要求 M-0 开工前核路径:四个新 scripts/ 文件均不在任何面的路径集内,loader 校验 12 面通过,无需移交。"
+    },
+    {
+      "id": "AC-458-06 本 PR 的 GitHub Actions 门禁(LingDoc PR gate)",
+      "status": "pass",
+      "matrix_status": "PASS",
+      "evidence": "`Test and vet existing LingDoc provider packages`(最终 attempt 全部绿);Run 40360449901 attempt 2 SUCCESS(2026-10-26T17:08:53Z);其余 job 按路径缩面 SKIPPED(净差仅 scripts/*.py 与证据 JSON,缩面正确);head `b9a546d8295d`",
+      "note": "两次尝试都记:attempt 1 于 internal/lingdoc/workspace 包 600.576s 超时失败(2026-10-26 16:49)——本 PR 零 Go 文件,被测 Go 树与 main 的 7867c99c 逐字一致,同日该门禁另有 15:00(Test CI scope scripts)与 10:09 两起不同步骤的先红后绿,判定为 runner 波动而非本 PR 缺陷;attempt 2 重跑同 SHA 全绿。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-458-07 go test ./... 与前端三件套(按路径缩面)",
+      "status": "not_run",
+      "reason": "本票净差只有 4 个 scripts/ 新文件 + 1 份证据 JSON,零 Go、零前端文件;CI 侧对应 job(Format/vet/test/build、frontend、integration 等)也按路径缩面 SKIPPED,两侧口径一致。",
+      "unblock": "任何触及 Go/前端路径的 PR 由 LingDoc PR gate 的对应 job 覆盖;本票无此路径,无需补跑。"
+    }
+  ],
+  "known_limits": [
+    "判定器在 main 的真实对上发现 5 项既有欠账(非本票缺陷,工具按口径 §4.2 抓到的第一批判定):Spec-129 矩阵第 6/11 行(US-06/US-11)与 T129 报告 passed[1]/[2]/[3] 的前端证据只给测试文件路径、未引测试标题(口径 §4.2:前端侧的具名用例是测试标题;T139 同位置条目已引「标题」,是正确形态)。复现:python scripts/lingdoc_acceptance_judge.py --matrix docs/08-本轮实施方案/Spec-129-成员角色Scope生命周期验收矩阵.md --report docs/08-本轮实施方案/T129-验证报告.json(退出码 1,5 项全部含「具名用例」)。归属:#129 属地图 #695 簇票 C3(#698),验收时补标题即可清零。",
+    "横向汇总显示 T139 声明总数 31 与已覆盖坐标 34 差 -3:报告后来把 PG 验收点(AC-04-01/02/04)加进了 passed[],头部声明未同步。汇总按口径如实显示不一致,不裁决谁对;C1(#139 所在簇)验收时顺带对齐。",
+    "判定器 v1 的 head 模型:默认按报告自声明 head 判自洽,--as-of 显式重绑(如 --as-of HEAD 做新鲜度复判);「命令真跑」谓词由 --execute 承载,默认不跑(守护必须便宜)。语义覆盖无人背书是口径 §4.1/§7 已接受的代价,判定器不改它。",
+    "--execute 经 shell 执行矩阵里的命令(shell=True),命令来源是仓内经 PR 评审的矩阵文件;守护夹具只用 exit 0/exit 3 这类无害命令。",
+    "本票不改验收口径、不判 19 张开放 Spec 的任何一行;判定矩阵的施工在地图 #695 的簇票 C1–C8(#696–#703),M-0 只提供工具。"
+  ],
+  "ci": {
+    "head": "b9a546d8295d763451b8df06308aba8ac7af8fe7",
+    "run_ids": "40360449901(attempt 1 fail:internal/lingdoc/workspace 包 600s 超时,runner 波动;attempt 2 SUCCESS)",
+    "note": "LingDoc PR gate 最终全绿;路径缩面 job 按设计 SKIPPED。"
+  }
+}
