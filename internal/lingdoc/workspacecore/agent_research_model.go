@@ -10,10 +10,13 @@ import (
 )
 
 var (
-	ErrDependencyUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "资料或模型能力暂不可用。", Retryable: true}, "lingdoc: research or agent dependency unavailable")
-	ErrConsentRequired       = clienterror.New(clienterror.Form{Status: 422, Code: "confirmation_required", Message: "请明确核对范围并确认该操作。", Retryable: false}, "lingdoc: explicit action confirmation required")
-	ErrEvidenceIncomplete    = clienterror.New(clienterror.Form{Status: 422, Code: "evidence_incomplete", Message: "证据卡、原文定位或当前版本尚不完整。", Retryable: false}, "lingdoc: evidence is incomplete or not current")
-	ErrOutcomeUnknown        = clienterror.New(clienterror.Form{Status: 409, Code: "outcome_unknown", Message: "原操作结果尚待核对，请勿重复执行。", Retryable: false}, "lingdoc: external action outcome unknown; reconcile before retry")
+	ErrDependencyUnavailable            = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "资料或模型能力暂不可用。", Retryable: true}, "lingdoc: research or agent dependency unavailable")
+	ErrConsentRequired                  = clienterror.New(clienterror.Form{Status: 422, Code: "confirmation_required", Message: "请明确核对范围并确认该操作。", Retryable: false}, "lingdoc: explicit action confirmation required")
+	ErrEvidenceIncomplete               = clienterror.New(clienterror.Form{Status: 422, Code: "evidence_incomplete", Message: "证据卡、原文定位或当前版本尚不完整。", Retryable: false}, "lingdoc: evidence is incomplete or not current")
+	ErrOutcomeUnknown                   = clienterror.New(clienterror.Form{Status: 409, Code: "outcome_unknown", Message: "原操作结果尚待核对，请勿重复执行。", Retryable: false}, "lingdoc: external action outcome unknown; reconcile before retry")
+	ErrAcademicGlobalCatalogUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "academic_global_catalog_unavailable", Message: "学术来源全局白名单尚未配置；当前检索与元数据候选均已阻断。", Retryable: false}, "lingdoc: approved global academic catalog is unavailable")
+	ErrResearchBudgetUnavailable        = clienterror.New(clienterror.Form{Status: 503, Code: "research_budget_unavailable", Message: "项目累计检索配额与持久化账本尚未配置；当前研究检索已阻断。", Retryable: false}, "lingdoc: project research budget ledger is unavailable")
+	ErrResearchBudgetSettlementUnknown  = clienterror.New(clienterror.Form{Status: 503, Code: "research_budget_settlement_unknown", Message: "研究配额账本结算结果未能确认；请先核对账本后再重试。", Retryable: false}, "lingdoc: research budget settlement outcome is unknown")
 )
 
 const (
@@ -115,6 +118,10 @@ const (
 	// researchTaskMaximumQueries is the largest number of queries a task may
 	// carry.
 	researchTaskMaximumQueries = 8
+	// researchResultsPerRound is the maximum number of result records retained
+	// from one provider request, bounding one run to at most 160 results.
+	researchResultsPerRound        = 20
+	researchRunBudgetPolicyVersion = "research-run-bounds-v1"
 	// researchTaskMaximumQueryLength is the longest a single query may be.
 	researchTaskMaximumQueryLength = 1000
 	// researchTaskMaximumTextLength is the longest a task's long text field may
@@ -132,6 +139,8 @@ type ResearchTask struct {
 	Scope          string       `json:"scope"`
 	Exclusions     []string     `json:"exclusions"`
 	Queries        []string     `json:"queries"`
+	DateFrom       string       `json:"date_from,omitempty"`
+	DateTo         string       `json:"date_to,omitempty"`
 	AssetIDs       []string     `json:"asset_ids"`
 	ProviderID     string       `json:"provider_id,omitempty"`
 	ExpectedOutput string       `json:"expected_output"`
@@ -153,6 +162,8 @@ type SaveResearchTaskInput struct {
 	Scope          string   `json:"scope"`
 	Exclusions     []string `json:"exclusions"`
 	Queries        []string `json:"queries"`
+	DateFrom       string   `json:"date_from,omitempty"`
+	DateTo         string   `json:"date_to,omitempty"`
 	AssetIDs       []string `json:"asset_ids"`
 	ProviderID     string   `json:"provider_id,omitempty"`
 	ExpectedOutput string   `json:"expected_output"`
@@ -172,28 +183,43 @@ type ControlResearchTaskInput struct {
 	Reason string `json:"reason"`
 }
 type ResearchResult struct {
-	ID             string    `json:"id"`
-	Level          string    `json:"level"`
-	SourceID       string    `json:"source_id,omitempty"`
-	AssetID        string    `json:"asset_id,omitempty"`
-	AssetRevision  int       `json:"asset_revision,omitempty"`
-	Locator        string    `json:"locator,omitempty"`
-	QuotedTextHash string    `json:"quoted_text_hash,omitempty"`
-	Title          string    `json:"title"`
-	URL            string    `json:"url,omitempty"`
-	Author         string    `json:"author,omitempty"`
-	PublishedAt    string    `json:"published_at,omitempty"`
-	RetrievedAt    time.Time `json:"retrieved_at"`
-	Provider       string    `json:"provider"`
-	SourceType     string    `json:"source_type"`
-	QualityNote    string    `json:"quality_note"`
-	Uncertainty    string    `json:"uncertainty"`
-	Summary        string    `json:"summary,omitempty"`
-	Status         string    `json:"status"`
+	ID                    string    `json:"id"`
+	Level                 string    `json:"level"`
+	SourceID              string    `json:"source_id,omitempty"`
+	AssetID               string    `json:"asset_id,omitempty"`
+	AssetRevision         int       `json:"asset_revision,omitempty"`
+	Locator               string    `json:"locator,omitempty"`
+	QuotedTextHash        string    `json:"quoted_text_hash,omitempty"`
+	Title                 string    `json:"title"`
+	URL                   string    `json:"url,omitempty"`
+	Author                string    `json:"author,omitempty"`
+	PublishedAt           string    `json:"published_at,omitempty"`
+	DOI                   string    `json:"doi,omitempty"`
+	Journal               string    `json:"journal,omitempty"`
+	ISSNs                 []string  `json:"issns,omitempty"`
+	LicenseURLs           []string  `json:"license_urls,omitempty"`
+	LicenseStatus         string    `json:"license_status,omitempty"`
+	CatalogVersion        string    `json:"catalog_version,omitempty"`
+	PolicySnapshotVersion string    `json:"policy_snapshot_version,omitempty"`
+	PolicyStatus          string    `json:"policy_status,omitempty"`
+	PolicyRuleID          string    `json:"policy_rule_id,omitempty"`
+	RetractionStatus      string    `json:"retraction_status,omitempty"`
+	DuplicateStatus       string    `json:"duplicate_status,omitempty"`
+	DuplicateOf           string    `json:"duplicate_of,omitempty"`
+	AcquisitionStatus     string    `json:"acquisition_status,omitempty"`
+	RetrievedAt           time.Time `json:"retrieved_at"`
+	Provider              string    `json:"provider"`
+	SourceType            string    `json:"source_type"`
+	QualityNote           string    `json:"quality_note"`
+	Uncertainty           string    `json:"uncertainty"`
+	Summary               string    `json:"summary,omitempty"`
+	Status                string    `json:"status"`
 }
 type ResearchRound struct {
 	Number      int       `json:"number"`
 	Query       string    `json:"query"`
+	DateFrom    string    `json:"date_from,omitempty"`
+	DateTo      string    `json:"date_to,omitempty"`
 	Provider    string    `json:"provider"`
 	RetrievedAt time.Time `json:"retrieved_at"`
 	ResultIDs   []string  `json:"result_ids"`
@@ -201,22 +227,64 @@ type ResearchRound struct {
 	FailureCode string    `json:"failure_code,omitempty"`
 	Feedback    string    `json:"feedback,omitempty"`
 }
+
+// ResearchUsageLedger snapshots conservative per-run ceilings and usage.
+// Academic search uses no model calls; assistant turns remain in their own
+// existing model-call ledger.
+type ResearchUsageLedger struct {
+	PolicyVersion  string `json:"policy_version"`
+	SearchLimit    int    `json:"search_limit"`
+	SearchesUsed   int    `json:"searches_used"`
+	ResultLimit    int    `json:"result_limit"`
+	ResultsUsed    int    `json:"results_used"`
+	ModelCallLimit int    `json:"model_call_limit"`
+	ModelCallsUsed int    `json:"model_calls_used"`
+}
+
+func newResearchUsageLedger() ResearchUsageLedger {
+	return ResearchUsageLedger{
+		PolicyVersion:  researchRunBudgetPolicyVersion,
+		SearchLimit:    researchTaskMaximumQueries,
+		ResultLimit:    researchTaskMaximumQueries * researchResultsPerRound,
+		ModelCallLimit: 0,
+	}
+}
+
+// normalizeResearchUsage supplies the bounded ledger to older persisted runs.
+// A legacy run's searches and retained result references are charged before it
+// can be resumed, so adding the ledger cannot reset its remaining allowance.
+func normalizeResearchUsage(run *ResearchRun) {
+	if run.Usage.PolicyVersion == researchRunBudgetPolicyVersion {
+		return
+	}
+	usage := newResearchUsageLedger()
+	usage.SearchesUsed = len(run.Rounds)
+	for _, round := range run.Rounds {
+		usage.ResultsUsed += len(round.ResultIDs)
+	}
+	if usage.ResultsUsed == 0 && len(run.Results) > 0 {
+		usage.ResultsUsed = len(run.Results)
+	}
+	run.Usage = usage
+}
+
 type ResearchRun struct {
-	ID            string           `json:"id"`
-	ProjectID     string           `json:"project_id"`
-	Version       int64            `json:"version"`
-	TaskID        string           `json:"task_id"`
-	TaskVersion   int64            `json:"task_version"`
-	Basis         VersionBasis     `json:"basis"`
-	Rounds        []ResearchRound  `json:"rounds"`
-	Results       []ResearchResult `json:"results"`
-	Status        string           `json:"status"`
-	FailureCode   string           `json:"failure_code,omitempty"`
-	RunMode       string           `json:"run_mode"`
-	CorrelationID string           `json:"correlation_id"`
-	CreatedBy     string           `json:"created_by"`
-	StartedAt     time.Time        `json:"started_at"`
-	FinishedAt    *time.Time       `json:"finished_at,omitempty"`
+	ID            string              `json:"id"`
+	ProjectID     string              `json:"project_id"`
+	Version       int64               `json:"version"`
+	TaskID        string              `json:"task_id"`
+	TaskVersion   int64               `json:"task_version"`
+	Basis         VersionBasis        `json:"basis"`
+	Rounds        []ResearchRound     `json:"rounds"`
+	Results       []ResearchResult    `json:"results"`
+	Usage         ResearchUsageLedger `json:"usage"`
+	Status        string              `json:"status"`
+	FailureCode   string              `json:"failure_code,omitempty"`
+	RunMode       string              `json:"run_mode"`
+	CorrelationID string              `json:"correlation_id"`
+	CreatedBy     string              `json:"created_by"`
+	StartedAt     time.Time           `json:"started_at"`
+	FinishedAt    *time.Time          `json:"finished_at,omitempty"`
 }
 type ImportCandidate struct {
 	KnowledgeBaseID       string       `json:"knowledge_base_id,omitempty"`
@@ -230,6 +298,18 @@ type ImportCandidate struct {
 	URL                   string       `json:"url,omitempty"`
 	FinalURL              string       `json:"final_url,omitempty"`
 	Title                 string       `json:"title"`
+	Author                string       `json:"author,omitempty"`
+	PublishedAt           string       `json:"published_at,omitempty"`
+	DOI                   string       `json:"doi,omitempty"`
+	Journal               string       `json:"journal,omitempty"`
+	ISSNs                 []string     `json:"issns,omitempty"`
+	LicenseURLs           []string     `json:"license_urls,omitempty"`
+	CatalogVersion        string       `json:"catalog_version,omitempty"`
+	PolicySnapshotVersion string       `json:"policy_snapshot_version,omitempty"`
+	PolicyStatus          string       `json:"policy_status,omitempty"`
+	RetractionStatus      string       `json:"retraction_status,omitempty"`
+	DuplicateStatus       string       `json:"duplicate_status,omitempty"`
+	AcquisitionStatus     string       `json:"acquisition_status,omitempty"`
 	Level                 string       `json:"level"`
 	SelectionType         string       `json:"selection_type"`
 	ConversationSessionID string       `json:"conversation_session_id,omitempty"`
@@ -515,6 +595,39 @@ type CreateActionProposalInput struct {
 type ResearchSearcher interface {
 	SearchResearch(context.Context, Actor, string, ResearchTask, string) ([]ResearchResult, string, error)
 }
+
+// ResearchExecutionGate reserves and settles the project's cumulative budget
+// around a research run, and rechecks global policy before a stored academic
+// result can be promoted to a metadata candidate. Implementations must make
+// reserve/settle idempotent by runID because paused runs can resume.
+type ResearchExecutionGate interface {
+	ReserveResearchRun(context.Context, Actor, string, string, ResearchTask) error
+	SettleResearchRun(context.Context, Actor, string, string, ResearchUsageLedger) error
+	ReserveResearchModelCall(context.Context, Actor, string, string) error
+	SettleResearchModelCall(context.Context, Actor, string, string, ResearchModelCallUsage) error
+	ValidateAcademicResearchResult(context.Context, Actor, string, ResearchResult) error
+}
+
+// ResearchModelCallUsage settles one model call made by the controlled
+// research assistant. A reservation is charged even when the provider call
+// fails, because it was still an attempted billable call.
+type ResearchModelCallUsage struct {
+	ModelCallsUsed int    `json:"model_calls_used"`
+	InputTokens    int    `json:"input_tokens"`
+	OutputTokens   int    `json:"output_tokens"`
+	Outcome        string `json:"outcome"`
+}
+
+// ProjectResearchBudgetLedger is the durable, project-scoped quota ledger for
+// academic research. Reserve must be idempotent by runID; Settle records actual
+// searches/results/model calls under the policy's configured reset period.
+type ProjectResearchBudgetLedger interface {
+	Reserve(context.Context, Actor, string, string, ResearchTask) error
+	Settle(context.Context, Actor, string, string, ResearchUsageLedger) error
+	ReserveModelCall(context.Context, Actor, string, string) error
+	SettleModelCall(context.Context, Actor, string, string, ResearchModelCallUsage) error
+}
+
 type SourceReader interface {
 	ReadResearchSource(context.Context, Actor, string, string) (ResearchSource, error)
 	CheckAssetScope(context.Context, Actor, string, []string) ([]ProjectAssetVersion, error)

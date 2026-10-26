@@ -235,6 +235,12 @@ func (s *Service) runAgentOperation(ctx context.Context, actor Actor, projectID,
 }
 func agentFailureCode(err error) string {
 	switch {
+	case errors.Is(err, ErrAcademicGlobalCatalogUnavailable):
+		return "academic_global_catalog_unavailable"
+	case errors.Is(err, ErrResearchBudgetUnavailable):
+		return "research_budget_unavailable"
+	case errors.Is(err, ErrResearchBudgetSettlementUnknown):
+		return "research_budget_settlement_unknown"
 	case errors.Is(err, ErrOutcomeUnknown):
 		return "outcome_unknown"
 	case errors.Is(err, context.Canceled):
@@ -254,7 +260,7 @@ func validAgentMode(mode string) bool {
 }
 
 func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, key string, input SaveResearchTaskInput) (json.RawMessage, int, bool, error) {
-	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > researchTaskMaximumTextLength || len(input.Queries) < researchTaskMinimumQueries || len(input.Queries) > researchTaskMaximumQueries || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 {
+	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > researchTaskMaximumTextLength || len(input.Queries) < researchTaskMinimumQueries || len(input.Queries) > researchTaskMaximumQueries || input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 || !validResearchDateRange(input.DateFrom, input.DateTo) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	for _, query := range input.Queries {
@@ -316,6 +322,8 @@ func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, 
 		task.Scope = input.Scope
 		task.Exclusions = slices.Clone(input.Exclusions)
 		task.Queries = slices.Clone(input.Queries)
+		task.DateFrom = strings.TrimSpace(input.DateFrom)
+		task.DateTo = strings.TrimSpace(input.DateTo)
 		task.AssetIDs = sortedUniqueIDs(input.AssetIDs)
 		task.ProviderID = input.ProviderID
 		task.ExpectedOutput = input.ExpectedOutput
@@ -330,6 +338,23 @@ func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, 
 		return task, 200, storeStoredObject(tx, old, projectID, ResearchTaskKind, task.ID, task.Version, task)
 	})
 }
+
+func validResearchDateRange(from, to string) bool {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from != "" {
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			return false
+		}
+	}
+	if to != "" {
+		if _, err := time.Parse("2006-01-02", to); err != nil {
+			return false
+		}
+	}
+	return from == "" || to == "" || from <= to
+}
+
 func (s *Service) ListResearchTasks(ctx context.Context, actor Actor, projectID string) ([]ResearchTask, error) {
 	out := []ResearchTask{}
 	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {
@@ -437,7 +462,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 		if task.Status != "approved" || task.ApprovedBy == "" || task.Paused {
 			return nil, 0, ErrConsentRequired
 		}
-		run := ResearchRun{ID: uuid.NewString(), ProjectID: projectID, Version: 1, TaskID: task.ID, TaskVersion: task.Version, Basis: task.Basis, Rounds: []ResearchRound{}, Results: []ResearchResult{}, Status: "running", RunMode: "real", CorrelationID: uuid.NewString(), CreatedBy: actor.UserID, StartedAt: time.Now().UTC()}
+		run := ResearchRun{ID: uuid.NewString(), ProjectID: projectID, Version: 1, TaskID: task.ID, TaskVersion: task.Version, Basis: task.Basis, Rounds: []ResearchRound{}, Results: []ResearchResult{}, Usage: newResearchUsageLedger(), Status: "running", RunMode: "real", CorrelationID: uuid.NewString(), CreatedBy: actor.UserID, StartedAt: time.Now().UTC()}
 		var runOld StoredObject
 		if input.ResumeRunID != "" {
 			run, runOld, err = loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, input.ResumeRunID)
@@ -447,6 +472,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			if run.TaskID != taskID || run.Status != "paused" || !versionBasisCurrent(p, run.Basis) {
 				return nil, 0, ErrInvalidState
 			}
+			normalizeResearchUsage(&run)
 			run.Version++
 			run.Status = "running"
 			run.FinishedAt = nil
@@ -488,7 +514,29 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 		return body, status, false, err
 	}
 	run := started
-	for number := len(run.Rounds); number < len(task.Queries); number++ {
+	var executionGate ResearchExecutionGate
+	budgetReserved := false
+	if gate, ok := s.agentRuntime.Research.(ResearchExecutionGate); ok {
+		executionGate = gate
+		if err = executionGate.ReserveResearchRun(ctx, actor, projectID, run.ID, task); err != nil {
+			run.Status = "failed"
+			run.FailureCode = agentFailureCode(err)
+		} else {
+			budgetReserved = true
+		}
+	} else if task.ProviderID == AcademicCrossrefProviderID {
+		// A Crossref task is an external academic search. It cannot run without
+		// the project-level cumulative quota ledger, even if its per-run bounds
+		// are present in the task snapshot.
+		run.Status = "failed"
+		run.FailureCode = agentFailureCode(ErrResearchBudgetUnavailable)
+	}
+	for number := len(run.Rounds); run.Status != "failed" && number < len(task.Queries); number++ {
+		if run.Usage.SearchesUsed >= run.Usage.SearchLimit || run.Usage.ResultsUsed >= run.Usage.ResultLimit {
+			run.Status = "failed"
+			run.FailureCode = "research_budget_exhausted"
+			break
+		}
 		if catalog, ok := s.agentRuntime.Research.(ResearchCatalog); ok {
 			version, err := catalog.ResearchCatalogVersion(ctx, actor, projectID, task)
 			if err != nil || version != run.Basis.SourceCatalogVersion {
@@ -541,6 +589,22 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			}
 		}
 		results, mode, searchErr := s.agentRuntime.Research.SearchResearch(ctx, actor, projectID, task, task.Queries[number])
+		if len(results) > researchResultsPerRound {
+			results = results[:researchResultsPerRound]
+		}
+		remainingResults := run.Usage.ResultLimit - run.Usage.ResultsUsed
+		if len(results) > remainingResults {
+			results = results[:remainingResults]
+		}
+		run.Usage.SearchesUsed++
+		run.Usage.ResultsUsed += len(results)
+		filteredResults := results[:0]
+		for _, result := range results {
+			if !researchResultExcluded(result, task.Exclusions) {
+				filteredResults = append(filteredResults, result)
+			}
+		}
+		results = filteredResults
 		if _, provided := s.agentRuntime.Research.(ResearchRoundIdentity); !provided {
 			actualProviders := []string{}
 			for _, result := range results {
@@ -560,7 +624,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 				break
 			}
 		}
-		round := ResearchRound{Number: number + 1, Query: task.Queries[number], Provider: providerIdentity, RetrievedAt: time.Now().UTC(), ResultIDs: []string{}, Status: "completed"}
+		round := ResearchRound{Number: number + 1, Query: task.Queries[number], DateFrom: task.DateFrom, DateTo: task.DateTo, Provider: providerIdentity, RetrievedAt: time.Now().UTC(), ResultIDs: []string{}, Status: "completed"}
 		if searchErr != nil {
 			round.Status = "failed"
 			round.FailureCode = agentFailureCode(searchErr)
@@ -569,12 +633,17 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 				run.Status = "failed"
 			}
 			run.FailureCode = round.FailureCode
+		} else if len(results) == 0 {
+			// Keep an empty successful search distinguishable from provider failure.
+			// The result slice has already applied saved exclusions, so this also
+			// reports when every returned record was excluded by the user's plan.
+			round.Status = "no_results"
 		}
 		if !validAgentMode(mode) {
 			mode = "real"
 		}
 		run.RunMode = mode
-		for _, result := range results {
+		for resultIndex, result := range results {
 			if result.ID == "" {
 				result.ID = sha256Hex(result.SourceID + "|" + result.URL + "|" + result.QuotedTextHash)
 			}
@@ -589,8 +658,17 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			if result.RetrievedAt.IsZero() {
 				result.RetrievedAt = round.RetrievedAt
 			}
+			existingIndex := slices.IndexFunc(run.Results, func(existing ResearchResult) bool { return existing.ID == result.ID })
+			if existingIndex >= 0 && result.Provider == "crossref" {
+				originalID := result.ID
+				result.ID = sha256Hex("crossref-duplicate|" + originalID + "|" + strconv.Itoa(number+1) + "|" + strconv.Itoa(resultIndex))
+				result.DuplicateStatus = "duplicate"
+				result.DuplicateOf = originalID
+				result.Level = "discovery_entry"
+				result.Status = "duplicate"
+			}
 			round.ResultIDs = append(round.ResultIDs, result.ID)
-			if !slices.ContainsFunc(run.Results, func(existing ResearchResult) bool { return existing.ID == result.ID }) {
+			if existingIndex < 0 || result.Provider == "crossref" {
 				run.Results = append(run.Results, result)
 			}
 		}
@@ -599,6 +677,11 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			run.Status = "completed"
 		}
 		if persistErr := s.persistResearchProgress(context.WithoutCancel(ctx), actor, projectID, &run); persistErr != nil {
+			if budgetReserved {
+				if settleErr := executionGate.SettleResearchRun(context.WithoutCancel(ctx), actor, projectID, run.ID, run.Usage); settleErr != nil {
+					return nil, 0, false, ErrResearchBudgetSettlementUnknown
+				}
+			}
 			return nil, 0, false, persistErr
 		}
 		if searchErr != nil {
@@ -607,6 +690,12 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 	}
 	if run.Status == "running" {
 		run.Status = "completed"
+	}
+	if budgetReserved {
+		if err = executionGate.SettleResearchRun(context.WithoutCancel(ctx), actor, projectID, run.ID, run.Usage); err != nil {
+			run.Status = "failed"
+			run.FailureCode = agentFailureCode(ErrResearchBudgetSettlementUnknown)
+		}
 	}
 	if err = s.persistResearchProgress(context.WithoutCancel(ctx), actor, projectID, &run); err != nil {
 		return nil, 0, false, err
@@ -677,6 +766,7 @@ func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, ru
 	if err != nil {
 		return out, err
 	}
+	normalizeResearchUsage(&out)
 	for i, result := range out.Results {
 		if result.SourceID != "" {
 			if s.agentRuntime.Sources == nil {
@@ -694,6 +784,21 @@ func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, ru
 	}
 	return out, nil
 }
+
+func researchResultExcluded(result ResearchResult, exclusions []string) bool {
+	if len(exclusions) == 0 {
+		return false
+	}
+	metadata := strings.ToLower(strings.Join([]string{result.Title, result.Author, result.Journal, result.DOI}, "\n"))
+	for _, exclusion := range exclusions {
+		term := strings.ToLower(strings.TrimSpace(exclusion))
+		if term != "" && strings.Contains(metadata, term) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) ListResearchRuns(ctx context.Context, actor Actor, projectID string) ([]ResearchRun, error) {
 	ids := []string{}
 	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, _ Project) error {
@@ -766,6 +871,7 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 				return nil, 0, ErrVersionConflict
 			}
 			found := false
+			var academicResult *ResearchResult
 			for _, result := range run.Results {
 				if result.ID == input.ResultID {
 					found = true
@@ -784,11 +890,52 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 					if candidate.URL == "" {
 						candidate.URL = result.URL
 					}
+					if result.Provider == "crossref" {
+						academicResult = &result
+					}
 					break
 				}
 			}
 			if !found {
 				return nil, 0, ErrNotFound
+			}
+			if academicResult != nil {
+				gate, ok := s.agentRuntime.Research.(ResearchExecutionGate)
+				if !ok {
+					return nil, 0, ErrAcademicGlobalCatalogUnavailable
+				}
+				if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, *academicResult); err != nil {
+					return nil, 0, err
+				}
+				if strings.TrimSpace(academicResult.DOI) == "" || strings.TrimSpace(academicResult.Title) == "" || strings.TrimSpace(academicResult.PolicySnapshotVersion) == "" || academicResult.PolicyStatus != "approved" || academicResult.RetractionStatus == "retracted" || academicResult.DuplicateStatus == "duplicate" || academicResult.AcquisitionStatus != "metadata_only" || input.SaveMode != "metadata_only" {
+					return nil, 0, ErrEvidenceIncomplete
+				}
+				currentCatalogVersion, versionErr := currentAcademicSourceCatalogVersion(tx, projectID)
+				if versionErr != nil {
+					return nil, 0, versionErr
+				}
+				if academicResult.CatalogVersion != currentCatalogVersion {
+					return nil, 0, ErrVersionConflict
+				}
+				candidate.SelectionType = "academic_metadata"
+				candidate.URL = ""
+				candidate.DOI = academicResult.DOI
+				candidate.Author = academicResult.Author
+				candidate.PublishedAt = academicResult.PublishedAt
+				candidate.Journal = academicResult.Journal
+				candidate.ISSNs = slices.Clone(academicResult.ISSNs)
+				candidate.LicenseURLs = slices.Clone(academicResult.LicenseURLs)
+				candidate.CatalogVersion = academicResult.CatalogVersion
+				candidate.PolicySnapshotVersion = academicResult.PolicySnapshotVersion
+				candidate.PolicyStatus = academicResult.PolicyStatus
+				candidate.RetractionStatus = academicResult.RetractionStatus
+				candidate.DuplicateStatus = academicResult.DuplicateStatus
+				candidate.AcquisitionStatus = academicResult.AcquisitionStatus
+				if len(candidate.LicenseURLs) == 0 {
+					candidate.License = "Crossref 未提供论文许可信息；仅保存元数据"
+				} else {
+					candidate.License = strings.Join(candidate.LicenseURLs, ", ")
+				}
 			}
 		}
 		if input.ConversationSessionID != "" {
@@ -814,7 +961,7 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 			candidate.Level = "AI_GENERATED_CANDIDATE"
 			candidate.SaveMode = "metadata_only"
 		}
-		if candidate.SourceID == "" && candidate.URL == "" && candidate.SelectionType != "conversation" {
+		if candidate.SourceID == "" && candidate.URL == "" && candidate.SelectionType != "conversation" && candidate.SelectionType != "academic_metadata" {
 			return nil, 0, ErrInvalidRequest
 		}
 		if candidate.SourceID == "" && candidate.SaveMode != "metadata_only" && candidate.SelectionType != "original_url" {
@@ -914,6 +1061,25 @@ func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, proje
 		}
 		if value.Status != "awaiting_consent" && value.Status != "failed" {
 			return nil, 0, ErrInvalidState
+		}
+		if value.SelectionType == "academic_metadata" {
+			gate, ok := s.agentRuntime.Research.(ResearchExecutionGate)
+			if !ok {
+				return nil, 0, ErrAcademicGlobalCatalogUnavailable
+			}
+			if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: value.PolicySnapshotVersion}); err != nil {
+				return nil, 0, err
+			}
+			currentCatalogVersion, versionErr := currentAcademicSourceCatalogVersion(tx, projectID)
+			if versionErr != nil {
+				return nil, 0, versionErr
+			}
+			if value.CatalogVersion != currentCatalogVersion {
+				return nil, 0, ErrVersionConflict
+			}
+			if value.PolicyStatus != "approved" || value.RetractionStatus == "retracted" || value.DuplicateStatus == "duplicate" || value.AcquisitionStatus != "metadata_only" {
+				return nil, 0, ErrEvidenceIncomplete
+			}
 		}
 		// Metadata and AI dialogue remain lower-level records; they are never READY evidence.
 		value.Version++
@@ -1724,7 +1890,7 @@ func (s *Service) BuildAgentContext(ctx context.Context, actor Actor, projectID 
 			if card.Version != ref.Version || !versionBasisCurrent(p, card.Basis) {
 				return ErrVersionConflict
 			}
-			if card.Status == "STALE" || card.Status == "SUPERSEDED" {
+			if card.Status != "CONFIRMED" || card.Confirmation == nil {
 				return ErrEvidenceIncomplete
 			}
 			out.CardRefs = append(out.CardRefs, VersionRef{Kind: "EvidenceCard", ID: card.ID, Version: card.Version})
@@ -1927,7 +2093,29 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 	// declares its agent, and the answer shape follows from it. The client
 	// states no purpose, so the request shape - and with it the idempotency
 	// digest - does not move.
-	reply, modelErr := s.agentRuntime.Model.Reply(ctx, actor, ModelRequest{Agent: started.Agent, Purpose: AgentPurposeForAgent(started.Agent), Context: pack, History: safeHistory, UserInput: input.UserInput})
+	var reply ModelReply
+	var modelErr error
+	request := ModelRequest{Agent: started.Agent, Purpose: AgentPurposeForAgent(started.Agent), Context: pack, History: safeHistory, UserInput: input.UserInput}
+	if started.Agent == AgentResearch {
+		gate, ok := s.agentRuntime.Research.(ResearchExecutionGate)
+		if !ok {
+			// A research-agent turn can make a billable model call. Do not use
+			// the general model-call history ledger as a substitute for the
+			// missing project quota policy and durable budget ledger.
+			modelErr = ErrResearchBudgetUnavailable
+		} else if modelErr = gate.ReserveResearchModelCall(ctx, actor, projectID, started.ID); modelErr == nil {
+			reply, modelErr = s.agentRuntime.Model.Reply(ctx, actor, request)
+			usage := ResearchModelCallUsage{ModelCallsUsed: 1, InputTokens: reply.InputTokens, OutputTokens: reply.OutputTokens, Outcome: "succeeded"}
+			if modelErr != nil {
+				usage.Outcome = "failed"
+			}
+			if settleErr := gate.SettleResearchModelCall(context.WithoutCancel(ctx), actor, projectID, started.ID, usage); settleErr != nil {
+				modelErr = ErrResearchBudgetSettlementUnknown
+			}
+		}
+	} else {
+		reply, modelErr = s.agentRuntime.Model.Reply(ctx, actor, request)
+	}
 	// The research agent's proposal is checked against the one contract that
 	// owns its shape before it can become a suggestion. A proposal that does
 	// not decode is refused here, so the interface only ever sees a proposal
@@ -1967,6 +2155,13 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		turn.OutputTokens = reply.OutputTokens
 		turn.Status = "completed"
 		switch {
+		case errors.Is(modelErr, ErrResearchBudgetSettlementUnknown):
+			// An unknown charge state is the more important failure: do not hide
+			// it behind a simultaneous stale-context change.
+			turn.Status = "failed"
+			turn.FailureCode = agentFailureCode(modelErr)
+			turn.Reply = ""
+			turn.Suggestions = nil
 		case currentErr != nil || p.ProjectVersion != pack.ProjectVersion || p.CurrentContextRevision != pack.ContextRevision:
 			turn.Status = "stale"
 			turn.FailureCode = "stale_context"

@@ -147,9 +147,13 @@ func TestResearchProposalTravelsOnTheRealTurnRoute(t *testing.T) {
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
 	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	research := NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil)
+	if err := research.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), &syntheticResearchBudgetLedger{}); err != nil {
+		t.Fatalf("configure synthetic research turn budget gate: %v", err)
+	}
 	f.projects.ConfigureAgentRuntime(core.AgentRuntime{
-		Sources: NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil),
-		Model:   host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
+		Sources: research, Research: research,
+		Model: host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
 	})
 
 	gin.SetMode(gin.TestMode)

@@ -58,10 +58,75 @@ func (r *testSourceReader) CheckAssetScopeForChapter(ctx context.Context, actor 
 }
 
 type testSearcher struct {
-	calls    int
-	failAt   int
-	callback func(int)
-	results  []ResearchResult
+	calls              int
+	failAt             int
+	callback           func(int)
+	results            []ResearchResult
+	modelReserveCalls  int
+	modelSettleCalls   int
+	modelSettlementErr error
+	runReserveCalls    int
+	runSettleCalls     int
+	runSettlementErr   error
+}
+
+type unbudgetedTestSearcher struct{ calls int }
+
+func (s *unbudgetedTestSearcher) SearchResearch(context.Context, Actor, string, ResearchTask, string) ([]ResearchResult, string, error) {
+	s.calls++
+	return nil, "synthetic-unbudgeted", nil
+}
+
+// The synthetic agent fixture supplies a no-op gate so tests can exercise the
+// successful research-agent path without claiming production quota coverage.
+func (s *testSearcher) ReserveResearchRun(context.Context, Actor, string, string, ResearchTask) error {
+	s.runReserveCalls++
+	return nil
+}
+func (s *testSearcher) SettleResearchRun(context.Context, Actor, string, string, ResearchUsageLedger) error {
+	s.runSettleCalls++
+	return s.runSettlementErr
+}
+func (s *testSearcher) ReserveResearchModelCall(context.Context, Actor, string, string) error {
+	s.modelReserveCalls++
+	return nil
+}
+func (s *testSearcher) SettleResearchModelCall(context.Context, Actor, string, string, ResearchModelCallUsage) error {
+	s.modelSettleCalls++
+	return s.modelSettlementErr
+}
+func (*testSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult) error {
+	if result.Provider == "crossref" {
+		return nil
+	}
+	return ErrInvalidRequest
+}
+
+type testAcademicResearchSearcher struct {
+	testSearcher
+	catalogVersion string
+}
+
+func (s *testAcademicResearchSearcher) ResearchCatalogVersion(_ context.Context, _ Actor, _ string, task ResearchTask) (string, error) {
+	return academicResearchCatalogVersion(s.catalogVersion, task.Basis.AssetVersions), nil
+}
+
+// These no-op methods intentionally model only the synthetic acceptance
+// fixture. Production runs require the durable project budget ledger and
+// approved global catalog, neither of which is configured by the test.
+func (*testAcademicResearchSearcher) ReserveResearchRun(context.Context, Actor, string, string, ResearchTask) error {
+	return nil
+}
+
+func (*testAcademicResearchSearcher) SettleResearchRun(context.Context, Actor, string, string, ResearchUsageLedger) error {
+	return nil
+}
+
+func (*testAcademicResearchSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult) error {
+	if result.Provider == "crossref" {
+		return nil
+	}
+	return ErrInvalidRequest
 }
 
 func (f *testSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ ResearchTask, _ string) ([]ResearchResult, string, error) {
@@ -252,6 +317,9 @@ func TestResearchTwoRoundsDeduplicatesReplaysAndRestarts(t *testing.T) {
 	if run.Status != "completed" || len(run.Rounds) != 2 || len(run.Results) != 1 || f.search.calls != 2 || run.RunMode != "real_api_fake_model" {
 		t.Fatalf("run not complete/deduplicated: %+v calls=%d", run, f.search.calls)
 	}
+	if run.Usage.PolicyVersion != researchRunBudgetPolicyVersion || run.Usage.SearchesUsed != 2 || run.Usage.SearchLimit != researchTaskMaximumQueries || run.Usage.ResultsUsed != 2 || run.Usage.ResultLimit != researchTaskMaximumQueries*researchResultsPerRound || run.Usage.ModelCallsUsed != 0 || run.Usage.ModelCallLimit != 0 {
+		t.Fatalf("run usage ledger does not account for bounded metadata searches: %+v", run.Usage)
+	}
 	if _, _, replay, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-run-01", input); err != nil || !replay || f.search.calls != 2 {
 		t.Fatalf("replay incurred calls: %v %v %d", replay, err, f.search.calls)
 	}
@@ -266,6 +334,260 @@ func TestResearchTwoRoundsDeduplicatesReplaysAndRestarts(t *testing.T) {
 		t.Fatalf("restart lost run: %+v %v", recovered, err)
 	}
 }
+
+func TestResearchRunCapsEachRoundAndAppliesSavedExclusions(t *testing.T) {
+	f := newAgentFixture(t, true)
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "g2-bounded-task", SaveResearchTaskInput{
+		VersionExpectation: f.expectation(0), Goal: "受控筛选合成研究结果", Scope: "仅核对查询排除项", Exclusions: []string{"excluded topic"},
+		Queries: []string{"合成定义", "合成限制"}, AssetIDs: []string{"asset-1"},
+	})
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-bounded-approve", ConfirmationInput{
+		VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "批准合成查询范围",
+	})
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	results := make([]ResearchResult, 0, researchResultsPerRound+1)
+	for i := 0; i < researchResultsPerRound+1; i++ {
+		title := fmt.Sprintf("Synthetic study %02d", i)
+		if i == 0 {
+			title = "Excluded topic synthetic study"
+		}
+		results = append(results, ResearchResult{ID: fmt.Sprintf("result-%02d", i), Title: title, Provider: "synthetic"})
+	}
+	f.search.results = results
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-run-bounded", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "completed" || run.Usage.SearchesUsed != 2 || run.Usage.ResultsUsed != researchResultsPerRound*2 {
+		t.Fatalf("provider result usage was not capped and recorded: %+v", run.Usage)
+	}
+	if len(run.Results) != researchResultsPerRound-1 {
+		t.Fatalf("excluded or over-limit results entered the candidate set: got %d results", len(run.Results))
+	}
+	for _, result := range run.Results {
+		if strings.Contains(strings.ToLower(result.Title), "excluded topic") || strings.Contains(result.ID, "20") {
+			t.Fatalf("excluded or over-limit result was retained: %+v", result)
+		}
+	}
+}
+
+func TestResearchRunRecordsSuccessfulEmptyResultsExplicitly(t *testing.T) {
+	f := newAgentFixture(t, true)
+	f.search.results = nil
+	task := f.task(t)
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-empty-run", RunResearchTaskInput{
+		VersionExpectation: f.expectation(task.Version),
+	})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "completed" || len(run.Results) != 0 || len(run.Rounds) != len(task.Queries) {
+		t.Fatalf("empty provider results changed run completion or fabricated results: %+v", run)
+	}
+	for _, round := range run.Rounds {
+		if round.Status != "no_results" || len(round.ResultIDs) != 0 || round.FailureCode != "" {
+			t.Fatalf("successful empty round was not explicit: %+v", round)
+		}
+	}
+}
+
+func TestLegacyResearchRunUsageIsRebuiltBeforeResume(t *testing.T) {
+	run := ResearchRun{Rounds: []ResearchRound{{ResultIDs: []string{"a", "b"}}, {ResultIDs: []string{"c"}}}, Results: []ResearchResult{{ID: "a"}, {ID: "b"}, {ID: "c"}}}
+	normalizeResearchUsage(&run)
+	if run.Usage.PolicyVersion != researchRunBudgetPolicyVersion || run.Usage.SearchesUsed != 2 || run.Usage.ResultsUsed != 3 || run.Usage.SearchLimit != researchTaskMaximumQueries || run.Usage.ResultLimit != researchTaskMaximumQueries*researchResultsPerRound || run.Usage.ModelCallLimit != 0 {
+		t.Fatalf("legacy usage budget was reset or lost: %+v", run.Usage)
+	}
+}
+
+func TestCrossrefRunFailsClosedWithoutProjectBudgetGate(t *testing.T) {
+	f := newAgentFixture(t, true)
+	searcher := &unbudgetedTestSearcher{}
+	f.svc.agentRuntime.Research = searcher
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "crossref-without-budget", SaveResearchTaskInput{
+		VersionExpectation: f.expectation(0), Goal: "测试缺少累计配额时阻断", QuestionType: "source_discovery", Scope: "合成范围",
+		Queries: []string{"synthetic query one", "synthetic query two"}, ProviderID: AcademicCrossrefProviderID,
+	})
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "approve-crossref-without-budget", ConfirmationInput{
+		VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "仅验证缺失配额的阻断行为",
+	})
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "run-crossref-without-budget", RunResearchTaskInput{
+		VersionExpectation: f.expectation(task.Version),
+	})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "failed" || run.FailureCode != "research_budget_unavailable" || len(run.Rounds) != 0 || searcher.calls != 0 {
+		t.Fatalf("Crossref ran without a project budget gate: status=%s failure=%s rounds=%d search_calls=%d", run.Status, run.FailureCode, len(run.Rounds), searcher.calls)
+	}
+}
+
+func TestResearchRunSettlementFailureSurvivesProgressPersistenceFailure(t *testing.T) {
+	f := newAgentFixture(t, true)
+	f.search.runSettlementErr = ErrResearchBudgetSettlementUnknown
+	f.search.callback = func(call int) {
+		if call != 1 {
+			return
+		}
+		if err := f.svc.testDB().Exec(`CREATE TRIGGER fail_research_run_history BEFORE INSERT ON lingdoc_g2_object_versions WHEN NEW.kind = 'research_run' AND NEW.version > 1 BEGIN SELECT RAISE(FAIL, 'synthetic research progress persistence failure'); END`).Error; err != nil {
+			t.Fatalf("create persistence-failure trigger: %v", err)
+		}
+	}
+	task := f.task(t)
+	_, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "research-settlement-after-persist-failure", RunResearchTaskInput{
+		VersionExpectation: f.expectation(task.Version),
+	})
+	if !errors.Is(err, ErrResearchBudgetSettlementUnknown) {
+		t.Fatalf("unknown quota settlement was hidden by persistence failure: %v", err)
+	}
+	if f.search.runReserveCalls != 1 || f.search.runSettleCalls != 1 || f.search.calls != 1 {
+		t.Fatalf("failed persistence did not settle exactly once after a reserved run: reserve=%d settle=%d search=%d", f.search.runReserveCalls, f.search.runSettleCalls, f.search.calls)
+	}
+}
+
+func TestCrossrefRunKeepsDuplicatesAndOnlyCreatesMetadataCandidates(t *testing.T) {
+	f := newAgentFixture(t, true)
+	initialCatalog, err := f.svc.GetAcademicSourceCatalog(context.Background(), f.owner, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogRaw, _, _, err := f.svc.UpdateAcademicSourceCatalog(context.Background(), f.owner, f.project.ID, "seed-crossref-catalog", UpdateAcademicSourceCatalogInput{
+		VersionExpectation: f.expectation(initialCatalog.Version),
+		Rules:              []AcademicSourceRule{{ID: "journal-rule", SourceType: "journal", VenueName: "Synthetic Journal", VenueIDs: []string{"1234-5678"}, AllowedLicenseURLs: []string{"https://creativecommons.org/licenses/by/4.0/"}}},
+	})
+	catalog := decodeAgentJSON[AcademicSourceCatalog](t, catalogRaw, err)
+	research := &testAcademicResearchSearcher{testSearcher: testSearcher{results: []ResearchResult{{
+		ID: "doi-result", Level: "background_lead", Title: "Approved synthetic paper", DOI: "10.1000/synthetic",
+		Journal: "Synthetic Journal", ISSNs: []string{"1234-5678"}, LicenseURLs: []string{"https://creativecommons.org/licenses/by/4.0/"},
+		LicenseStatus: "allowed", CatalogVersion: catalog.SourceCatalogVersion, PolicySnapshotVersion: "synthetic-policy-fingerprint", PolicyStatus: "approved", PolicyRuleID: "journal-rule",
+		RetractionStatus: "unknown", DuplicateStatus: "unique", AcquisitionStatus: "metadata_only", Provider: "crossref",
+		SourceType: "journal", QualityNote: "Metadata only", Uncertainty: "No full text or abstract retrieved", Status: "metadata_only",
+	}}}, catalogVersion: catalog.SourceCatalogVersion}
+	f.svc.ConfigureAgentRuntime(AgentRuntime{Sources: f.source, Research: research, Model: f.model, Imports: &testImporter{}, Actions: &testActionExecutor{}})
+	raw, _, _, err := f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "crossref-task", SaveResearchTaskInput{
+		VersionExpectation: f.expectation(0), Goal: "核对学术来源候选", QuestionType: "source_discovery", Scope: "只保存受控书目元数据",
+		Queries: []string{"synthetic query one", "synthetic query two"}, ProviderID: "academic:crossref", ExpectedOutput: "元数据候选",
+	})
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "crossref-approve", ConfirmationInput{
+		VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "确认限定的检索范围",
+	})
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "crossref-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "completed" || len(run.Results) != 2 || run.Results[1].DuplicateStatus != "duplicate" || run.Results[1].DuplicateOf != run.Results[0].ID || run.Results[1].ID == run.Results[0].ID {
+		t.Fatalf("repeated Crossref result was lost instead of retained as duplicate: %+v", run)
+	}
+	input := CreateImportCandidateInput{
+		VersionExpectation: f.expectation(0), RunID: run.ID, ResultID: run.Results[0].ID, Title: run.Results[0].Title,
+		Purpose: "仅留作可追溯书目线索", SaveMode: "metadata_only", Scope: "project", License: "metadata only",
+	}
+	raw, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "crossref-metadata-candidate", input)
+	candidate := decodeAgentJSON[ImportCandidate](t, raw, err)
+	if candidate.SelectionType != "academic_metadata" || candidate.SaveMode != "metadata_only" || candidate.URL != "" || candidate.DOI != "10.1000/synthetic" || candidate.SourceID != "" {
+		t.Fatalf("Crossref result became a full-text/source candidate: %+v", candidate)
+	}
+	input.ResultID = run.Results[1].ID
+	if _, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "crossref-duplicate-candidate", input); !errors.Is(err, ErrEvidenceIncomplete) {
+		t.Fatalf("duplicate Crossref result was importable: %v", err)
+	}
+	input.ResultID = run.Results[0].ID
+	input.SaveMode = "full_text"
+	if _, _, _, err = f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "crossref-fulltext-candidate", input); !errors.Is(err, ErrEvidenceIncomplete) {
+		t.Fatalf("metadata-only source was importable as full text: %v", err)
+	}
+}
+
+func TestAcademicMetadataCandidateCreationRejectsChangedCatalog(t *testing.T) {
+	f, run, catalog := setupAcademicResearchRun(t)
+	updateAcademicCatalogForTest(t, f, catalog, "changed-before-create")
+	input := academicCandidateInput(f, run)
+	if _, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "stale-academic-candidate", input); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("candidate created from a result approved under an old catalog: %v", err)
+	}
+}
+
+func TestAcademicMetadataCandidateConfirmationRejectsChangedCatalog(t *testing.T) {
+	f, run, catalog := setupAcademicResearchRun(t)
+	input := academicCandidateInput(f, run)
+	raw, _, _, err := f.svc.CreateImportCandidate(context.Background(), f.owner, f.project.ID, "academic-candidate-current-catalog", input)
+	candidate := decodeAgentJSON[ImportCandidate](t, raw, err)
+	updateAcademicCatalogForTest(t, f, catalog, "changed-before-confirm")
+	_, _, _, err = f.svc.ConfirmImportCandidate(context.Background(), f.owner, f.project.ID, candidate.ID, "confirm-stale-academic-candidate", ConfirmationInput{
+		VersionExpectation: f.expectation(candidate.Version), Confirmed: true, Reason: "测试过期目录阻断",
+	})
+	if !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("candidate confirmed after its catalog version changed: %v", err)
+	}
+	candidates, err := f.svc.ListImportCandidates(context.Background(), f.owner, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range candidates {
+		if value.ID == candidate.ID && value.Status != "awaiting_consent" {
+			t.Fatalf("stale confirmation changed candidate status: %+v", value)
+		}
+	}
+}
+
+func setupAcademicResearchRun(t *testing.T) (agentFixture, ResearchRun, AcademicSourceCatalog) {
+	t.Helper()
+	f := newAgentFixture(t, true)
+	initial, err := f.svc.GetAcademicSourceCatalog(context.Background(), f.owner, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _, _, err := f.svc.UpdateAcademicSourceCatalog(context.Background(), f.owner, f.project.ID, "seed-academic-catalog", UpdateAcademicSourceCatalogInput{
+		VersionExpectation: f.expectation(initial.Version),
+		Rules:              []AcademicSourceRule{{ID: "journal-rule", SourceType: "journal", VenueName: "Synthetic Journal", VenueIDs: []string{"1234-5678"}}},
+	})
+	catalog := decodeAgentJSON[AcademicSourceCatalog](t, raw, err)
+	result := ResearchResult{
+		ID: "academic-result", Level: "background_lead", Title: "Synthetic metadata result", DOI: "10.1000/synthetic",
+		Journal: "Synthetic Journal", ISSNs: []string{"1234-5678"}, CatalogVersion: catalog.SourceCatalogVersion, PolicySnapshotVersion: "synthetic-policy-fingerprint",
+		PolicyStatus: "approved", RetractionStatus: "unknown", DuplicateStatus: "unique", AcquisitionStatus: "metadata_only",
+		Provider: "crossref", SourceType: "journal", Status: "metadata_only",
+	}
+	search := &testAcademicResearchSearcher{
+		testSearcher:   testSearcher{results: []ResearchResult{result}},
+		catalogVersion: catalog.SourceCatalogVersion,
+	}
+	f.svc.ConfigureAgentRuntime(AgentRuntime{
+		Sources: f.source, Research: search, Model: f.model,
+		Imports: &testImporter{}, Actions: &testActionExecutor{},
+	})
+	raw, _, _, err = f.svc.SaveResearchTask(context.Background(), f.owner, f.project.ID, "academic-task", SaveResearchTaskInput{
+		VersionExpectation: f.expectation(0), Goal: "验证学术元数据策略", QuestionType: "source_discovery", Scope: "合成范围",
+		Queries: []string{"synthetic query one", "synthetic query two"}, ProviderID: AcademicCrossrefProviderID,
+	})
+	task := decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.ApproveResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "approve-academic-task", ConfirmationInput{
+		VersionExpectation: f.expectation(task.Version), Confirmed: true, Reason: "同意合成检索",
+	})
+	task = decodeAgentJSON[ResearchTask](t, raw, err)
+	raw, _, _, err = f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "run-academic-task", RunResearchTaskInput{
+		VersionExpectation: f.expectation(task.Version),
+	})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "completed" || len(run.Results) == 0 || run.Basis.SourceCatalogVersion == "" {
+		t.Fatalf("could not build catalog-versioned synthetic research run: %+v", run)
+	}
+	return f, run, catalog
+}
+
+func updateAcademicCatalogForTest(t *testing.T, f agentFixture, current AcademicSourceCatalog, key string) AcademicSourceCatalog {
+	t.Helper()
+	rules := slices.Clone(current.Rules)
+	rules[0].VenueName += " revised"
+	raw, _, _, err := f.svc.UpdateAcademicSourceCatalog(context.Background(), f.owner, f.project.ID, key, UpdateAcademicSourceCatalogInput{
+		VersionExpectation: f.expectation(current.Version), Rules: rules,
+	})
+	return decodeAgentJSON[AcademicSourceCatalog](t, raw, err)
+}
+
+func academicCandidateInput(f agentFixture, run ResearchRun) CreateImportCandidateInput {
+	return CreateImportCandidateInput{
+		VersionExpectation: f.expectation(0), RunID: run.ID, ResultID: run.Results[0].ID, Title: run.Results[0].Title,
+		Purpose: "仅保存可追溯书目元数据", SaveMode: "metadata_only", Scope: "project", License: "metadata only",
+	}
+}
+
 func TestResearchPartialFailureRetainsResultsAndNoRetry(t *testing.T) {
 	f := newAgentFixture(t, true)
 	task := f.task(t)
@@ -373,6 +695,35 @@ func TestCandidateNeedsClaimAndConfirmedVersionForGeneration(t *testing.T) {
 		t.Fatalf("candidate draft lost label: %+v %v", draft, err)
 	}
 }
+
+func TestAgentContextRejectsUnconfirmedEvidenceCards(t *testing.T) {
+	f := newAgentFixture(t, false)
+	anchor := f.anchor(t, "source-1", "g2-agent-context-unconfirmed-anchor")
+	claim := f.claim(t)
+	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-agent-context-unconfirmed-card", "supports")
+	input := AgentContextInput{
+		VersionExpectation:        f.expectation(0),
+		CardRefs:                  []VersionRef{{ID: card.ID, Version: card.Version}},
+		SensitiveContextConfirmed: true,
+	}
+	if _, err := f.svc.BuildAgentContext(context.Background(), f.owner, f.project.ID, input); !errors.Is(err, ErrEvidenceIncomplete) {
+		t.Fatalf("unconfirmed evidence entered agent context: %v", err)
+	}
+
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-agent-context-confirm-card", ConfirmationInput{
+		VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "人工核对原文、定位与适用范围",
+	})
+	confirmed := decodeAgentJSON[EvidenceCard](t, raw, err)
+	input.CardRefs = []VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}
+	pack, err := f.svc.BuildAgentContext(context.Background(), f.owner, f.project.ID, input)
+	if err != nil {
+		t.Fatalf("confirmed evidence context: %v", err)
+	}
+	if len(pack.CardRefs) != 1 || pack.CardRefs[0].Version != confirmed.Version || len(pack.SourceRefs) != 1 {
+		t.Fatalf("context did not preserve confirmed card and its located source: %+v", pack)
+	}
+}
+
 func TestEvidenceSupportOppositionLocalInvalidationAndHistory(t *testing.T) {
 	f := newAgentFixture(t, false)
 	a := f.anchor(t, "source-1", "g2-anchor-a")
@@ -519,6 +870,49 @@ func TestAgentSessionsRebuildHistoryAndEraseRevokedContent(t *testing.T) {
 		t.Fatalf("revoked model access: %v calls=%d", err, f.model.calls)
 	}
 }
+func TestAgentResearchTurnFailsClosedWithoutProjectBudgetGate(t *testing.T) {
+	f := newAgentFixture(t, false)
+	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, AgentResearch, "research-budget-missing-session", f.expectation(0))
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	f.svc.agentRuntime.Research = &unbudgetedTestSearcher{}
+
+	input := AgentTurnInput{AgentContextInput: AgentContextInput{VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true}, UserInput: "帮我拟一个文献检索计划"}
+	raw, status, replay, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "research-budget-missing-turn", input)
+	if err != nil || status != 200 || replay {
+		t.Fatalf("turn response: status=%d replay=%v err=%v", status, replay, err)
+	}
+	turn := decodeAgentJSON[AgentTurn](t, raw, nil)
+	if turn.Status != "failed" || turn.FailureCode != "research_budget_unavailable" || f.model.calls != 0 {
+		t.Fatalf("research turn bypassed missing budget gate: turn=%+v model_calls=%d", turn, f.model.calls)
+	}
+}
+
+func TestAgentResearchSettlementUnknownTakesPriorityOverStaleContext(t *testing.T) {
+	f := newAgentFixture(t, false)
+	f.search.modelSettlementErr = ErrResearchBudgetSettlementUnknown
+	f.model.callback = func() {
+		if err := f.svc.testDB().Exec("UPDATE lingdoc_projects SET project_version = project_version + 1,current_context_revision = current_context_revision + 1 WHERE id = ?", f.project.ID).Error; err != nil {
+			t.Fatalf("mutate context during model call: %v", err)
+		}
+	}
+	raw, _, _, err := f.svc.CreateAgentSession(context.Background(), f.owner, f.project.ID, AgentResearch, "research-budget-settlement-session", f.expectation(0))
+	session := decodeAgentJSON[AgentSession](t, raw, err)
+	input := AgentTurnInput{AgentContextInput: AgentContextInput{
+		VersionExpectation: f.expectation(0), SourceIDs: []string{"source-1"}, SensitiveContextConfirmed: true,
+	}, UserInput: "帮我拟一个文献检索计划"}
+	raw, status, replay, err := f.svc.SendAgentTurn(context.Background(), f.owner, f.project.ID, session.ID, "research-budget-settlement-turn", input)
+	if err != nil || status != 200 || replay {
+		t.Fatalf("turn response: status=%d replay=%v err=%v", status, replay, err)
+	}
+	turn := decodeAgentJSON[AgentTurn](t, raw, nil)
+	if turn.Status != "failed" || turn.FailureCode != "research_budget_settlement_unknown" || turn.Reply != "" || turn.Suggestions != nil {
+		t.Fatalf("stale context obscured unknown budget settlement: %+v", turn)
+	}
+	if f.model.calls != 1 || f.search.modelReserveCalls != 1 || f.search.modelSettleCalls != 1 {
+		t.Fatalf("research model call was not reserved and settled exactly once: model=%d reserve=%d settle=%d", f.model.calls, f.search.modelReserveCalls, f.search.modelSettleCalls)
+	}
+}
+
 func TestAgentModelTimeoutPreservesInputAndNeverAutoRetries(t *testing.T) {
 	f := newAgentFixture(t, false)
 	f.model.err = context.DeadlineExceeded
