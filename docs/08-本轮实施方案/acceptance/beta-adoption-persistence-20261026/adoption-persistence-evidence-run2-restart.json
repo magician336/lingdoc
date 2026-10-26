@@ -1,0 +1,441 @@
+{
+  "ticket": "#679",
+  "phase": "2 - cross-restart readback (the process was stopped and started again)",
+  "environment": {
+    "database": "<abs-path-redacted>",
+    "server": "backend built from origin/main 4f3f4333, port 18110 (restarted)",
+    "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+    "chapter_id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c"
+  },
+  "after_restart": {
+    "project": {
+      "id": "df3480ef-3077-47d0-ba14-284e848da70c",
+      "name": "合成资料演示项目",
+      "status": "active",
+      "project_version": 5,
+      "spec_revision": 1,
+      "current_context_revision": 2,
+      "delivery_status": "NOT_READY",
+      "baseline_confirmation_id": "734726e1-b0ef-4d41-8b16-34c0ea44a423",
+      "spec": {
+        "research_goal": "验证资料到章节的工作流程",
+        "research_subject": "公开的合成调查样本"
+      },
+      "spec_fields": {
+        "research_goal": {
+          "value": "验证资料到章节的工作流程",
+          "origin": "human",
+          "status": "draft",
+          "modified_by": "b45be490-8721-49c9-9837-b32877c94864",
+          "modified_at": "2026-10-24T09:37:28.7720322Z",
+          "modified_project_version": 2
+        },
+        "research_subject": {
+          "value": "公开的合成调查样本",
+          "origin": "human",
+          "status": "draft",
+          "modified_by": "b45be490-8721-49c9-9837-b32877c94864",
+          "modified_at": "2026-10-24T09:37:28.7720322Z",
+          "modified_project_version": 2
+        }
+      },
+      "template_id": "template-demo",
+      "template_version": "1",
+      "template_copy_version": 1,
+      "template_copy": {
+        "id": "2913c897-2ad9-460c-ad72-25c4016b2aa8",
+        "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+        "source_template_id": "template-demo",
+        "source_template_version": "1",
+        "version": 1,
+        "status": "bound",
+        "content_hash": "c155efc6d75a1bd618b1d97b93838416d3f0f517c9bf2c13da3ab0c1516862ba",
+        "ruleset_hash": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5",
+        "definition": {
+          "id": "template-demo",
+          "name": "演示模板：研究问题与研究方案",
+          "version": "1",
+          "is_demo": true,
+          "source": "lingdoc_builtin",
+          "scope": "internal-demo",
+          "sections": [
+            {
+              "section_id": "question",
+              "title": "研究问题",
+              "order": 1,
+              "required": true
+            },
+            {
+              "section_id": "method",
+              "title": "研究方案",
+              "order": 2,
+              "required": true
+            }
+          ],
+          "fields": [
+            {
+              "field_id": "research_subject",
+              "label": "研究对象",
+              "type": "string",
+              "order": 1,
+              "required": true
+            },
+            {
+              "field_id": "research_goal",
+              "label": "研究目标",
+              "type": "string",
+              "order": 2,
+              "required": true
+            }
+          ],
+          "required_fields": [
+            "research_subject",
+            "research_goal"
+          ],
+          "ruleset_hash": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5",
+          "content_hash": "c155efc6d75a1bd618b1d97b93838416d3f0f517c9bf2c13da3ab0c1516862ba",
+          "rules": [
+            {
+              "rule_id": "required-fields",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "required_fields",
+              "parameters": {}
+            },
+            {
+              "rule_id": "chapter-nonempty",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "nonempty_chapter",
+              "parameters": {}
+            },
+            {
+              "rule_id": "chapter-confirmed",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "confirmed_chapter",
+              "parameters": {}
+            },
+            {
+              "rule_id": "review-items-decided",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "review_items_decided",
+              "parameters": {}
+            },
+            {
+              "rule_id": "source-available",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "source_available",
+              "parameters": {}
+            }
+          ]
+        },
+        "created_by": "b45be490-8721-49c9-9837-b32877c94864",
+        "created_at": "2026-10-24T09:37:28.7652396Z"
+      },
+      "members": [
+        {
+          "user_id": "b45be490-8721-49c9-9837-b32877c94864",
+          "role": "owner",
+          "governance_role": "owner",
+          "status": "active"
+        }
+      ]
+    },
+    "chapter": {
+      "id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+      "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+      "section_id": "question",
+      "title": "研究问题",
+      "current_version_id": "98bd1cb2-7ff4-4ba7-a45e-9a19e716e689",
+      "body_markdown": {
+        "sha256": "69a750daeb97bd416546a61ca20cbf34434bae2f787f425404ef7db83538e532",
+        "utf8_length": 990
+      },
+      "source_ids": [
+        "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+        "91a28f35-5428-4022-9b3c-e16e49d6c100"
+      ],
+      "citation_usages": [
+        {
+          "source_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a"
+        },
+        {
+          "source_id": "91a28f35-5428-4022-9b3c-e16e49d6c100"
+        }
+      ],
+      "citation_statuses": [
+        {
+          "source_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+          "status": "available",
+          "detail": "来源当前可用"
+        },
+        {
+          "source_id": "91a28f35-5428-4022-9b3c-e16e49d6c100",
+          "status": "available",
+          "detail": "来源当前可用"
+        }
+      ],
+      "review_items": [
+        {
+          "id": "e2515275-8ae7-471b-a9ed-4e873e7064f2",
+          "statement": {
+            "sha256": "4607e671dee54cfa16aaa0f69d5ffba27bb2c44d6e16a30c71a3ba76d666c4b0",
+            "utf8_length": 165
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        },
+        {
+          "id": "2ed5b7b8-5277-4511-b9ce-4b45edf38892",
+          "statement": {
+            "sha256": "4162904a200a409c69b60aa5c7f7e2ad49757380599088b580eca97476def049",
+            "utf8_length": 111
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        },
+        {
+          "id": "d3c43440-9ef6-4e1e-869f-098ab9b53418",
+          "statement": {
+            "sha256": "91014151251e50a71610a4cc05f2b532f5a32729be73deea98dcfcb658af41c0",
+            "utf8_length": 126
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        }
+      ],
+      "confirmation_valid": false
+    },
+    "versions": [
+      {
+        "citation_usages": [
+          {
+            "source_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a"
+          },
+          {
+            "source_id": "91a28f35-5428-4022-9b3c-e16e49d6c100"
+          }
+        ],
+        "id": "98bd1cb2-7ff4-4ba7-a45e-9a19e716e689",
+        "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+        "chapter_id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+        "parent_version_id": null,
+        "body_markdown": {
+          "sha256": "69a750daeb97bd416546a61ca20cbf34434bae2f787f425404ef7db83538e532",
+          "utf8_length": 990
+        },
+        "source_ids": [
+          "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+          "91a28f35-5428-4022-9b3c-e16e49d6c100"
+        ],
+        "review_items": [
+          {
+            "id": "e2515275-8ae7-471b-a9ed-4e873e7064f2",
+            "statement": {
+              "sha256": "4607e671dee54cfa16aaa0f69d5ffba27bb2c44d6e16a30c71a3ba76d666c4b0",
+              "utf8_length": 165
+            },
+            "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+          },
+          {
+            "id": "2ed5b7b8-5277-4511-b9ce-4b45edf38892",
+            "statement": {
+              "sha256": "4162904a200a409c69b60aa5c7f7e2ad49757380599088b580eca97476def049",
+              "utf8_length": 111
+            },
+            "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+          },
+          {
+            "id": "d3c43440-9ef6-4e1e-869f-098ab9b53418",
+            "statement": {
+              "sha256": "91014151251e50a71610a4cc05f2b532f5a32729be73deea98dcfcb658af41c0",
+              "utf8_length": 126
+            },
+            "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+          }
+        ],
+        "spec_revision": 1,
+        "confirmation_valid": false,
+        "created_at": "2026-10-26T06:51:11.0669368Z"
+      }
+    ],
+    "working_copy": {
+      "citation_usages": [
+        {
+          "source_id": "1e849f5f-83e7-4138-a39f-d1aa1928054a"
+        },
+        {
+          "source_id": "91a28f35-5428-4022-9b3c-e16e49d6c100"
+        }
+      ],
+      "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+      "chapter_id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+      "base_chapter_version_id": "98bd1cb2-7ff4-4ba7-a45e-9a19e716e689",
+      "spec_revision": 1,
+      "working_copy_revision": 2,
+      "body_markdown": {
+        "sha256": "69a750daeb97bd416546a61ca20cbf34434bae2f787f425404ef7db83538e532",
+        "utf8_length": 990
+      },
+      "source_ids": [
+        "1e849f5f-83e7-4138-a39f-d1aa1928054a",
+        "91a28f35-5428-4022-9b3c-e16e49d6c100"
+      ],
+      "review_items": [
+        {
+          "id": "e2515275-8ae7-471b-a9ed-4e873e7064f2",
+          "statement": {
+            "sha256": "4607e671dee54cfa16aaa0f69d5ffba27bb2c44d6e16a30c71a3ba76d666c4b0",
+            "utf8_length": 165
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        },
+        {
+          "id": "2ed5b7b8-5277-4511-b9ce-4b45edf38892",
+          "statement": {
+            "sha256": "4162904a200a409c69b60aa5c7f7e2ad49757380599088b580eca97476def049",
+            "utf8_length": 111
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        },
+        {
+          "id": "d3c43440-9ef6-4e1e-869f-098ab9b53418",
+          "statement": {
+            "sha256": "91014151251e50a71610a4cc05f2b532f5a32729be73deea98dcfcb658af41c0",
+            "utf8_length": 126
+          },
+          "origin_candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb"
+        }
+      ],
+      "updated_at": "2026-10-26T06:51:11.0686078Z"
+    }
+  },
+  "sql_after_restart": {
+    "chapter_versions": [
+      {
+        "id": "98bd1cb2-7ff4-4ba7-a45e-9a19e716e689",
+        "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+        "chapter_id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+        "parent_version_id": null,
+        "candidate_id": "47209817-e1d7-4c44-a1f3-b230c5c400bb",
+        "spec_revision": 1,
+        "confirmation_valid": 0,
+        "created_by": "b45be490-8721-49c9-9837-b32877c94864",
+        "created_at": "2026-10-26 06:51:11.0669368+00:00",
+        "body_markdown": {
+          "sha256": "69a750daeb97bd416546a61ca20cbf34434bae2f787f425404ef7db83538e532",
+          "utf8_length": 990
+        },
+        "source_ids_json": "[\"1e849f5f-83e7-4138-a39f-d1aa1928054a\",\"91a28f35-5428-4022-9b3c-e16e49d6c100\"]",
+        "review_items_json": "[{\"id\":\"e2515275-8ae7-471b-a9ed-4e873e7064f2\",\"statement\":\"确认‘孔隙率每上升 5 个百分点，平均强度下降约 12.4 MPa’这一具体量化关系是否作为核心假设提出，还是仅作为背景描述。\",\"origin_candidate_id\":\"47209817-e1d7-4c44-a1f3-b230c5c400bb\"},{\"id\":\"2ed5b7b8-5277-4511-b9ce-4b45edf38892\",\"statement\":\"核实是否需要将‘不做显著性检验’这一方法限制明确写入研究问题的约束条件中。\",\"origin_candidate_id\":\"47209817-e1d7-4c44-a1f3-b230c5c400bb\"},{\"id\":\"d3c43440-9ef6-4e1e-869f-098ab9b53418\",\"statement\":\"检查关于‘不能外推到真实材料’的限制是否需要在研究问题中更强烈地表述为适用范围界定。\",\"origin_candidate_id\":\"47209817-e1d7-4c44-a1f3-b230c5c400bb\"}]"
+      }
+    ],
+    "candidate_adoptions": [
+      {
+        "id": "ac7c3786-c720-48cc-adeb-108fce9920f0",
+        "project_id": "df3480ef-3077-47d0-ba14-284e848da70c",
+        "chapter_id": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+        "actor_id": "b45be490-8721-49c9-9837-b32877c94864",
+        "idempotency_key": "f01-679-run2-accept-0001",
+        "chapter_version_id": "98bd1cb2-7ff4-4ba7-a45e-9a19e716e689",
+        "created_at": "2026-10-26 06:51:11.0691199+00:00"
+      }
+    ],
+    "adoption_audits": [
+      {
+        "id": "91195567-79bf-450a-8787-e7f04362f7c8",
+        "action": "project.candidate.adopt",
+        "target": "2ca8407a-ac5e-46f7-9584-55e343f6e49c",
+        "details_json": "{\"adoption_target\":\"formal_version_whole\",\"candidate_id\":\"47209817-e1d7-4c44-a1f3-b230c5c400bb\",\"chapter_id\":\"2ca8407a-ac5e-46f7-9584-55e343f6e49c\",\"chapter_version_id\":\"98bd1cb2-7ff4-4ba7-a45e-9a19e716e689\",\"confirmed_at\":\"2026-10-26T06:45:00Z\",\"confirmed_by\":\"b45be490-8721-49c9-9837-b32877c94864\",\"origin\":\"ai_generated\",\"spec_revision\":1,\"writing_action\":\"generate\"}"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "the project is still readable after the restart",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the chapter is still readable after the restart",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the body after the restart equals the body after the adoption",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the current version after the restart equals the adopted version",
+      "ok": true,
+      "detail": "read=98bd1cb2-7ff4-4ba7-a45e-9a19e716e689"
+    },
+    {
+      "name": "the review items after the restart equal the adopted review items",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the source ids after the restart equal the adopted source ids",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the project_version after the restart equals the value after the adoption",
+      "ok": true,
+      "detail": "read=5 expected=5"
+    },
+    {
+      "name": "the version list after the restart still holds the adopted version",
+      "ok": true,
+      "detail": "versions=1"
+    },
+    {
+      "name": "the working copy after the restart equals the working copy after the adoption",
+      "ok": true,
+      "detail": "read={\"citation_usages\": [{\"source_id\": \"1e849f5f-83e7-4138-a39f-d1aa1928054a\"}, {\"source_id\": \"91a28f35-5428-4022-9b3c-e16e49d6c100\"}], \"project_id\": \"df3480ef-3077-47d0-ba14-284e848da70c\", \"chapter_id\": "
+    },
+    {
+      "name": "exactly one version row exists for this chapter",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "the version row still points at the adopted candidate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the version row body is unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the version row source ids are unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "exactly one adoption row exists",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "the adoption row still points at the adopted version",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "exactly one adoption audit row exists",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "the adopted candidate row is still there and still fresh",
+      "ok": true,
+      "detail": "validity=fresh"
+    }
+  ],
+  "verdict": "PASS"
+}
