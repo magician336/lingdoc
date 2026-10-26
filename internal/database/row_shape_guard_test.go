@@ -211,8 +211,12 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("candidateadoption", "projectAssetRow", "lingdoc_project_assets"),
 	// internal/evidence —— 宿主侧持有的 LingDoc 行结构（#713）：资料域的
 	// 完整行结构落在域外包里（该表的设计对应关系见 ProjectAsset 头注），
-	// 域内只登记了窄投影；反向覆盖检查需要完整行的列并集。
+	// 域内只登记了窄投影；反向覆盖检查需要完整行的列并集。宿主扫描
+	// （TestHostRowShapeRegistrationsAreReal）以与域内相同的标准巡逻该包：
+	// evidence 持有的全部 LingDoc 行结构都登记，不留静默盲区。
 	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "ProjectAsset", "lingdoc_project_assets"),
+	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "ProjectAssetRevision", "lingdoc_asset_revisions"),
+	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "operationRow", "lingdoc_operations"),
 	registration("candidateadoption", "projectAuditRow", "lingdoc_project_audits"),
 	registration("candidateadoption", "projectRow", "lingdoc_projects"),
 	registration("candidateadoption", "projectTemplateCopyRow", "lingdoc_project_template_copies"),

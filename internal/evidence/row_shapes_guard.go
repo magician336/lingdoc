@@ -8,6 +8,8 @@ package evidence
 // Asset（契约对外形状）与本行刻意分离，守护要看的正是会随迁移漂移的那份。
 func RowShapesForSchemaGuard() map[string]any {
 	return map[string]any{
-		"ProjectAsset": ProjectAsset{},
+		"ProjectAsset":         ProjectAsset{},
+		"ProjectAssetRevision": ProjectAssetRevision{},
+		"operationRow":         operationRow{},
 	}
 }
