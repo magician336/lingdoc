@@ -115,15 +115,17 @@ type projectAssetRow struct {
 }
 
 type adoptionIdempotencyRow struct {
-	ID               string `gorm:"primaryKey;size:36"`
-	ProjectID        string `gorm:"index;not null;size:36"`
-	ChapterID        string `gorm:"index;not null;size:36"`
-	ActorID          string `gorm:"index;not null;size:128"`
-	Key              string `gorm:"column:idempotency_key;not null;size:128"`
-	RequestHash      string `gorm:"not null;size:64"`
-	DigestVersion    int    `gorm:"not null;default:1"`
-	ChapterVersionID string `gorm:"not null;size:36"`
-	ResponseJSON     string `gorm:"type:text;not null"`
+	ID            string `gorm:"primaryKey;size:36"`
+	ProjectID     string `gorm:"index;not null;size:36"`
+	ChapterID     string `gorm:"index;not null;size:36"`
+	ActorID       string `gorm:"index;not null;size:128"`
+	Key           string `gorm:"column:idempotency_key;not null;size:128"`
+	RequestHash   string `gorm:"not null;size:64"`
+	DigestVersion int    `gorm:"not null;default:1"`
+	// ChapterVersionID 是这次采纳指向的章节版本；只写工作副本且章节尚无版本
+	// 时为 NULL（见 000056 —— NOT NULL 加空串会撞外键约束，整个采纳事务回滚）。
+	ChapterVersionID *string `gorm:"size:36"`
+	ResponseJSON     string  `gorm:"type:text;not null"`
 	CreatedAt        time.Time
 }
 
@@ -641,15 +643,11 @@ func recordAdoptionIdempotency(tx *gorm.DB, in AcceptCandidateInput, hash string
 	if err != nil {
 		return err
 	}
-	versionID := ""
-	if chapterVersionID != nil {
-		versionID = *chapterVersionID
-	}
 	return tx.Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 		ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
 		DigestVersion:    adoptionDigestVersion,
-		ChapterVersionID: versionID, ResponseJSON: string(responseJSON),
+		ChapterVersionID: chapterVersionID, ResponseJSON: string(responseJSON),
 	}).Error
 }
 
