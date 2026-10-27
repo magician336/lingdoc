@@ -649,3 +649,30 @@ class RealReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestAcceptanceRecordsStaySeparateFromBetaProtocol(unittest.TestCase):
+    """判定产物与 Beta 首版验收记录是两份文件（#143 TD-08 的守护半边）。
+
+    口径 §4.2 的具名用例谓词（``GO_TEST_NAME``）只认 ``Test`` 开头的名字——
+    边界声明类验收点没有产品行为可断言，原本凑不出那种用例。这个类名以
+    ``Test`` 开头，让判定器可以把本守护当作 TD-08 的具名用例；断言本体：
+    Beta 进度源与验收协议各自独立存在，且没有任何判定矩阵把 #120 的 Beta
+    首版结论写进 PASS 行的证据列。
+    """
+
+    def test_beta_protocol_and_progress_source_exist_as_their_own_files(self):
+        self.assertTrue(
+            (REPO_ROOT / "docs" / "08-本轮实施方案" / "Beta首版真实验收协议.md").is_file())
+        self.assertTrue((REPO_ROOT / "docs" / "BETA_STATUS.md").is_file())
+
+    def test_no_pass_row_cites_issue_120_as_evidence(self):
+        matrices = sorted((REPO_ROOT / "docs" / "08-本轮实施方案").glob("Spec-*矩阵*.md"))
+        self.assertTrue(matrices, "判定矩阵目录不应为空")
+        for matrix in matrices:
+            for line in matrix.read_text(encoding="utf-8").splitlines():
+                cells = [cell.strip() for cell in line.split("|")]
+                if len(cells) < 7 or cells[3] != "PASS":
+                    continue
+                self.assertNotIn(
+                    "#120", cells[5],
+                    f"{matrix.name}: PASS 行的证据列引用了 #120 的 Beta 首版结论")

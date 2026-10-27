@@ -141,6 +141,19 @@ func TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields(t *testin
 	}
 }
 
+// 租户成员身份非 active（status != 'active'）时创建被拒，统一不可见结果（#143 TD-03.1）。
+func TestCreateProjectRejectsInactiveTenantMember(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-inactive-tenant.db"))
+	actor := Actor{TenantID: 93, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	if err := svc.repository.(*GORMRepository).db.Exec("UPDATE tenant_members SET status='suspended_by_tenant' WHERE tenant_id=? AND user_id=?", actor.TenantID, actor.UserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-11", CreateProjectInput{Name: "G1 inactive tenant", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("inactive tenant create error = %v, want %v", err, ErrNotFound)
+	}
+}
+
 func TestDraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-provenance.db"))
 	actor := Actor{TenantID: 82, UserID: "owner"}
