@@ -156,6 +156,21 @@ CONCEPTS: tuple[Concept, ...] = (
         keys=("provider_shards",),
     ),
     Concept(
+        term="反向委托",
+        doc=GLOSSARY,
+        snippet="app 工作流在 PR 事件上把 gate 分片正在验证的 provider 包从自己的测试集剔除",
+        # The reverse delegation (#737, ADR 0014's delegation in the
+        # opposite direction of #723): the app workflow's pull_request test
+        # set leaves the delegated packages to the gate's shards.  The
+        # published ``provider_delegate`` key carries the delegated list --
+        # non-empty exactly when the shards run -- and the coverage table
+        # credits the delegated paths to the shard jobs, not to the app job
+        # that skipped the duplicate.  The workflow keeps the full list on
+        # a push and falls back to it on any failure of this data.
+        fields=("Decision.provider_shards",),
+        keys=("provider_delegate",),
+    ),
+    Concept(
         term="未判定回退全量",
         doc=ADR_0006,
         snippet="未判定回退全量",
