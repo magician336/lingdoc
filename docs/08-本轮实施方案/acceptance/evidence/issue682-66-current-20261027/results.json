@@ -1,0 +1,1113 @@
+{
+  "result": "PASS",
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "base_sha": "65ef7a030855185196743ca40e5d5bb3996698a1",
+  "recorded_at": "2026-10-27T14:06:32.127267+00:00",
+  "target_count": 66,
+  "final_target_counts": {
+    "PASS": 66
+  },
+  "groups": {
+    "docreader": 2,
+    "postgres": 39,
+    "permission": 1,
+    "browser-native": 22,
+    "browser-extension": 1,
+    "crossref": 1
+  },
+  "note": "Counts identify the original 66 selected top-level/subtest entries, not code coverage. Initial environment failures/skips are preserved in attempts; final status requires an actual PASS event.",
+  "targets": [
+    {
+      "package": "github.com/Tencent/WeKnora/docreader/client",
+      "test": "TestReadURL",
+      "group": "docreader",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "docreader",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:37:05.905237+00:00",
+          "raw_log": "docreader.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/docreader/client",
+      "test": "TestReadFile",
+      "group": "docreader",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "docreader",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:37:05.905237+00:00",
+          "raw_log": "docreader.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestMemoryConsistencyPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestVectorSearchRanksInPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service",
+      "test": "TestSkillPythonVerifierReportsAnUnreadableScript",
+      "group": "permission",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "permission",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 65534,
+          "recorded_at": "2026-10-27T13:39:37.300692+00:00",
+          "raw_log": "permission.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestReconnectAfterServerRestartKeepsAuthorizationAndPausesTasks",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestRequestsRouteToBrowserOwnerAcrossReplicas",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestRealExtension",
+      "group": "browser-extension",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-extension",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:40:09.670673+00:00",
+          "raw_log": "browser-extension.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestNativeDaemonRelay",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestConcurrentCommandsShareAutomaticSessionCreation",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopCancelsActiveCommandAndRejectsFurtherCalls",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestScreenshotUsesNativeTaskAndPreservesCrop",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestProgressReportsNavigationFailureAndFreezesElapsedTime",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSharedDaemonRoutesAndIsolatesUsers",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestConcurrentPairingSharesOneDaemon",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSharedDaemonCrashKeepsAuthorizationAndPausesTasks",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSlowDaemonStartupDoesNotBlockStatusOrCancelledWaiter",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestLivePreviewBypassesUnfinishedAutomation",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestWindowInterruptResumesSameTask/running=false",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestWindowInterruptResumesSameTask/running=true",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestHumanHelpOutcomeControlsPause",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestIdleRetainsTaskAndCachedPreviewUntilNextCall",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestNavigationDefaultsToDocumentReadyAndPreservesExplicitWait",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestFinishTurnClosesResearchButRetainsHandoffsAndPausedTasks",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopCancelsSessionCreation",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestFailedStopRetainsPausedTaskForRetry",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopTimeoutLeavesTaskPausedAndRejectsResumeWhileStopping",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopRecoversAfterDaemonAlreadyRemovedSession",
+      "group": "browser-native",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "browser-native",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:36:57.703686+00:00",
+          "raw_log": "browser-native.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresAgentDownRestoresModelsTenantID",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/container",
+      "test": "TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/container",
+      "test": "TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresFullDownChainReachesNilVersionWithoutResidualTables",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGenerationDigestVersionMigrationGoesUpAndDown",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyRewriteValidityUpgradeAndRollback",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardComparesDeclaredBoolAgainstBooleanColumnsDirectly",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref",
+      "test": "TestLiveCrossrefSearchSmoke",
+      "group": "crossref",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "crossref",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:37:18.248064+00:00",
+          "raw_log": "crossref.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestConcurrentAdoptionOfTheSameCandidateCreatesOneVersion",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestConcurrentAdoptionLeavesTheWorkingCopyUnwritten",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestAdoptionWithRevokedAuthorizationInsideTheTransactionWritesNothing",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestAdoptionWithRevokedAuthorizationAfterCommitSaysCommitted",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestTheSameIdempotencyKeyAcrossActorsIsTwoOperations",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+      "test": "TestPostgresDownloadRejectsPersistedCorruption",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "SKIP",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl",
+          "diagnostic": "postgres_failure_test.go:20: requires explicitly isolated PostgreSQL failure-test database"
+        },
+        {
+          "phase": "postgres-fault",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:59:24.599555+00:00",
+          "raw_log": "postgres-fault.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+      "test": "TestPostgresGenerationFailureBoundaries",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "SKIP",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl",
+          "diagnostic": "postgres_failure_test.go:41: requires explicitly isolated PostgreSQL failure-test database"
+        },
+        {
+          "phase": "postgres-fault",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:59:24.599555+00:00",
+          "raw_log": "postgres-fault.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+      "test": "TestPostgresWorkerCrashLeasePersistence",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "SKIP",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl",
+          "diagnostic": "postgres_failure_test.go:153: requires explicitly isolated PostgreSQL failure-test database"
+        },
+        {
+          "phase": "postgres-fault",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:59:24.599555+00:00",
+          "raw_log": "postgres-fault.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore",
+      "test": "TestPostgresRuleSetMigrationAndLifecycle",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance",
+      "test": "TestPostgresCatalogSchemaLifecycleAndAuditRollback",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresAuditCategoryColumnRejectsOverLongAction",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresAuditBoundMigrationAddsTheExplicitConstraint",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresDependencyCandidateBatchAndDecision",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresMigrationAndRepositoryContract",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestRoadmapMigrationGoesUpAndDownOnPostgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestCatalogHTTPProductionDatabaseParity/postgres",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestPostgresRendererFailureUsesRealDOCXValidator",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "SKIP",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl",
+          "diagnostic": "postgres_export_failure_test.go:69: requires explicitly isolated PostgreSQL failure-test database"
+        },
+        {
+          "phase": "postgres-fault",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:59:24.599555+00:00",
+          "raw_log": "postgres-fault.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/types",
+      "test": "TestPostgresJSONColumnCarrierTypes",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestPostgresTemplateCatalogVisibilityUsesProductionMembership",
+      "group": "postgres",
+      "status": "PASS",
+      "attempts": [
+        {
+          "phase": "postgres",
+          "status": "PASS",
+          "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+          "uid": 0,
+          "recorded_at": "2026-10-27T13:54:32.762854+00:00",
+          "raw_log": "postgres.jsonl"
+        }
+      ]
+    }
+  ]
+}

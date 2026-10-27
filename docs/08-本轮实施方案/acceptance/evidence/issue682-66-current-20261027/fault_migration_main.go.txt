@@ -1,0 +1,18 @@
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/Tencent/WeKnora/internal/database"
+)
+
+func main() {
+	dsn := os.Getenv("LINGDOC_FAILURE_MIGRATION_URL")
+	if dsn == "" {
+		log.Fatal("isolated failure migration URL is required")
+	}
+	if err := database.RunMigrations(dsn); err != nil {
+		log.Fatal(err)
+	}
+}

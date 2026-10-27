@@ -1,0 +1,52 @@
+{
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "source_worktree_clean": true,
+  "captured_at": "2026-10-27T13:52:39.699546+00:00",
+  "images": {
+    "lingdoc-issue682-local-20261027": {
+      "image_id": "sha256:04b078f8811986a50866e095c0e5487300d955bcb903ccf8f47b950d02ff4e12",
+      "repository_digests": [
+        "lingdoc-go-acceptance@sha256:04b078f8811986a50866e095c0e5487300d955bcb903ccf8f47b950d02ff4e12"
+      ]
+    },
+    "lingdoc-issue682-postgres-20261027": {
+      "image_id": "sha256:af585013f97f622715de01e48d00558f7edf17055d7b40deafc9f98ca8d99a56",
+      "repository_digests": [
+        "paradedb/paradedb@sha256:af585013f97f622715de01e48d00558f7edf17055d7b40deafc9f98ca8d99a56"
+      ]
+    },
+    "lingdoc-issue682-docreader-20261027": {
+      "image_id": "sha256:9a3158006d2abce10ee8b727d9bdb1933397aca6d76dee3a3deb90cf0f5a5938",
+      "repository_digests": [
+        "wechatopenai/weknora-docreader@sha256:9a3158006d2abce10ee8b727d9bdb1933397aca6d76dee3a3deb90cf0f5a5938"
+      ]
+    }
+  },
+  "versions": {
+    "go": "go version go1.26.8 linux/amd64",
+    "gcc": "gcc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "python": "Python 3.11.2",
+    "node": "v18.20.4",
+    "chromium": "Chromium 140.0.7339.16",
+    "postgres": "PostgreSQL 17.9 (Debian 17.9-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+  },
+  "browser_dependencies": {
+    "native_binary_sha256": "22389a8788ab1ee10186517707e804af5a9b907e0bbe181ca7596199513194c1",
+    "extension_version": "0.2.1",
+    "playwright_core_version": "1.55.0"
+  },
+  "native_archive_sha256": "dcf09e3084ffaab833bb45b778bde817808f342ecf4774bec79f5cd2604376b0",
+  "notes": [
+    "Isolated disposable staging dependencies; no production data.",
+    "No model/API credentials required for the selected 66 targets.",
+    "Existing isolated example.com DNS pin retained; product SSRF and governance policy unchanged."
+  ],
+  "fault_database": {
+    "name": "lingdoc_fault_pr755_66_20261027",
+    "initial_schema_version": 0,
+    "migrated_schema_version": 137,
+    "dirty": false,
+    "migration_owner": "internal/database.RunMigrations",
+    "purpose": "explicitly isolated fault injection only"
+  }
+}
