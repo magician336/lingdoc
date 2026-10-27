@@ -58,6 +58,32 @@ The tracker is optional
 Reading the tracker needs ``gh`` and the network.  When either is missing the
 module reports "not compared" -- never "no problem found".  A detector that
 cannot run must not look like a detector that passed.
+
+The ticket shape (write tickets this way)
+-----------------------------------------
+The parser is deliberately tolerant, because a check that only reads one
+exact shape goes quiet the moment a human writes the natural one -- and a
+quiet check reads as a pass.  It accepts:
+
+* a heading whose word is ``文件所有权`` / ``File ownership`` / ``路径集`` /
+  ``Path set``, optionally followed by a note in parentheses
+  (``## 文件所有权（路径集 9 条）``);
+* list items (``-`` / ``*`` / ``+``) under that heading, with any prose before
+  the paths and **several backtick paths per line**;
+* paths with non-ASCII segments (``docs/08-本轮实施方案/…md``);
+* a ``done`` face's ticket is not compared at all.
+
+It still requires the paths to be inside **list items**: prose is where the
+section talks about other files, and reading it would invent declarations.
+
+Three outcomes are kept apart, because they have three different fixes:
+
+* exit ``2`` -- the ticket could not be read (``gh`` / network); fix access;
+* exit ``3`` -- the ticket has an ownership section but no readable path in
+  it; fix the ticket;
+* exit ``1`` -- the ticket and the registry disagree; fix the claim.
+
+Exit ``0`` means every live face was read **and** agreed.
 """
 from __future__ import annotations
 
@@ -76,27 +102,35 @@ import lingdoc_parallel_surfaces as manifest  # noqa: E402
 
 REPO = "magician336/lingdoc"
 
-#: The heading under which a face ticket declares its own paths.
+#: The heading under which a face ticket declares its own paths.  A trailing
+#: note in parentheses is allowed -- ``## 文件所有权（路径集 9 条）`` is how a
+#: human naturally writes it, and refusing that shape used to drop the whole
+#: section without saying so.
 _OWNERSHIP_HEADING = re.compile(
-    r"^#{1,6}\s*(?:文件所有权|File ownership|路径集|Path set)\s*$",
-    re.MULTILINE,
+    r"^[ \t]*#{1,6}[ \t]*(?:文件所有权|File ownership|路径集|Path set)"
+    r"[ \t]*(?:[（(][^）)\n]*[）)])?[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
 )
 
-#: A bullet list item that declares a path.  Only list items count: prose in
-#: the same section talks about *other* files (``Request.Body``), about the
-#: registry itself (``scripts/lingdoc_parallel_surfaces.py``), and about
-#: identifiers that merely look like paths (``agent_research_model.go``).  A
-#: declaration is a list item, so the parser only reads list items.
-_DECLARATION_ITEM = re.compile(
-    r"^\s*[-*+]\s+`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`",
-    re.MULTILINE,
-)
+#: A bullet list item.  Only list items count: prose in the same section talks
+#: about *other* files (``Request.Body``), about the registry itself
+#: (``scripts/lingdoc_parallel_surfaces.py``), and about identifiers that
+#: merely look like paths (``agent_research_model.go``).  A declaration is a
+#: list item, so the parser only reads list items.
+_LIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]+\S", re.MULTILINE)
 
-#: The same, but the path may be a shorthand (``{up,down}`` or a glob).
-_DECLARATION_ITEM_ANY = re.compile(
-    r"^\s*[-*+]\s+`([A-Za-z0-9_./{}*,-]+)`",
-    re.MULTILINE,
-)
+#: A backtick-quoted token anywhere in a list item.  The path does not have to
+#: follow the bullet: ``- 从 PF-3 移交（3）：`a.go`、`b.go` `` declares two
+#: paths, and both count.
+_BACKTICK_TOKEN = re.compile(r"`([^`\n]+)`")
+
+#: File extensions recognised when a token carries no directory separator.
+#: A dotted identifier such as ``Request.Body`` is not a path; ``a.go`` is.
+_PATH_EXTENSIONS = frozenset({
+    "go", "py", "ts", "tsx", "js", "jsx", "vue", "json", "sql", "md", "yaml",
+    "yml", "sh", "ps1", "toml", "ini", "cfg", "html", "css", "txt", "proto",
+    "lock", "mod", "sum",
+})
 
 #: The next heading after the ownership section ends it.
 _NEXT_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
@@ -118,35 +152,91 @@ class TicketDrift:
 
 @dataclass(frozen=True)
 class TicketComparison:
-    """The result of comparing the tickets with the registry."""
+    """The result of comparing the tickets with the registry.
+
+    ``unparsed`` names the faces whose ticket has an ownership section but
+    no readable path in it.  That is a **shape** problem with a known fix
+    (write the paths as list items), and it is deliberately not folded into
+    ``skipped``: a skipped face is one the check could not look at, while an
+    unparsed face is one it looked at and found nothing to compare.
+    """
 
     drifts: tuple[TicketDrift, ...] = ()
     compared: int = 0
+    unparsed: tuple[int, ...] = ()
     skipped: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
-        return not self.drifts
+        return not self.drifts and not self.unparsed
 
-def extract_declared_paths(body: str) -> tuple[str, ...] | None:
-    """Extract the paths a face ticket declares under its ownership heading.
 
-    ``None`` when the ticket has no ownership section at all -- that is a
-    different situation from "declares no paths", and the caller tells them
-    apart.
+def _ownership_section(body: str) -> str | None:
+    """The text between the ownership heading and the next heading.
+
+    ``None`` when the ticket has no ownership section at all.
     """
     heading = _OWNERSHIP_HEADING.search(body)
     if heading is None:
         return None
     rest = body[heading.end():]
     next_heading = _NEXT_HEADING.search(rest)
-    section = rest[:next_heading.start()] if next_heading else rest
+    return rest[:next_heading.start()] if next_heading else rest
+
+
+def _is_path_token(token: str) -> bool:
+    """Whether a backtick-quoted token in a declaration list is a path.
+
+    A token needs either a directory separator or a recognised file
+    extension.  That is what keeps a dotted identifier (``Request.Body``)
+    out while letting a path with non-ASCII segments
+    (``docs/08-本轮实施方案/…md``) in: the old ASCII-only pattern made those
+    declarations invisible to the comparison.
+    """
+    token = token.strip()
+    if not token or any(ch.isspace() for ch in token):
+        return False
+    if "://" in token or token.startswith("-"):
+        return False
+    if token.startswith("/") or token.endswith("/"):
+        return False
+    if "/" in token:
+        parts = token.split("/")
+        return all(parts) and not any(part in (".", "..") for part in parts)
+    name = token.rsplit("/", 1)[-1]
+    if "." not in name:
+        return False
+    return name.rsplit(".", 1)[-1].lower() in _PATH_EXTENSIONS
+
+
+def _declaration_tokens(body: str) -> list[str]:
+    """Every backtick-quoted token declared by an ownership list item."""
+    section = _ownership_section(body)
+    if section is None:
+        return []
     found: list[str] = []
-    for match in _DECLARATION_ITEM.finditer(section):
-        path = match.group(1)
-        if path not in found:
-            found.append(path)
-    return tuple(found)
+    for line in section.splitlines():
+        if not _LIST_ITEM.match(line):
+            continue
+        for match in _BACKTICK_TOKEN.finditer(line):
+            token = match.group(1).strip()
+            if token and token not in found:
+                found.append(token)
+    return found
+
+
+def extract_declared_paths(body: str) -> tuple[str, ...] | None:
+    """Extract the paths a face ticket declares under its ownership heading.
+
+    ``None`` when the ticket has no ownership section at all, and ``()`` when
+    it has one but nothing in it reads as a path.  Those are different
+    failures with different fixes, and the caller tells them apart.
+    """
+    section = _ownership_section(body)
+    if section is None:
+        return None
+    return tuple(token for token in _declaration_tokens(body)
+                 if _is_path_token(token))
 
 
 def find_shorthand_paths(body: str) -> tuple[str, ...]:
@@ -161,19 +251,10 @@ def find_shorthand_paths(body: str) -> tuple[str, ...]:
     is a declaration the check cannot see -- and a declaration nobody checks
     is exactly the kind that rots.
     """
-    heading = _OWNERSHIP_HEADING.search(body)
-    if heading is None:
-        return ()
-    rest = body[heading.end():]
-    next_heading = _NEXT_HEADING.search(rest)
-    section = rest[:next_heading.start()] if next_heading else rest
-    found: list[str] = []
-    for match in _DECLARATION_ITEM_ANY.finditer(section):
-        path = match.group(1)
-        if any(token in path for token in ("{", "}", "*")):
-            if path not in found:
-                found.append(path)
-    return tuple(found)
+    return tuple(
+        token for token in _declaration_tokens(body)
+        if any(marker in token for marker in ("{", "}", "*"))
+    )
 
 
 def _gh(*args: str) -> tuple[int, str]:
@@ -253,6 +334,7 @@ def compare_ticket_to_registry(
     root = root or manifest.REPO_ROOT
     drifts: list[TicketDrift] = []
     skipped: list[str] = []
+    unparsed: list[int] = []
     compared = 0
 
     live = [face for face in faces if face.status != "done"]
@@ -271,6 +353,9 @@ def compare_ticket_to_registry(
         declared = extract_declared_paths(body)
         if declared is None:
             skipped.append(f"#{face.issue} (no ownership section)")
+            continue
+        if not declared:
+            unparsed.append(face.issue)
             continue
         compared += 1
 
@@ -325,20 +410,27 @@ def compare_ticket_to_registry(
             ))
 
     return TicketComparison(drifts=tuple(drifts), compared=compared,
+                             unparsed=tuple(unparsed),
                              skipped=tuple(skipped))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Compare the face tickets with the registry.
 
-    Exit code 0 when there is no drift, 1 when there is drift, and 2 when the
-    comparison could not be made for any face.
+    Exit code 0 when there is no drift, 1 when there is drift, 2 when the
+    comparison could not be made for any face, and 3 when a live face's
+    ticket has an ownership section with no readable path in it.
+
+    Two and three are kept apart on purpose: ``2`` means *the tracker could
+    not be read*, so the fix is connectivity or permissions; ``3`` means *the
+    ticket was read and its shape defeated the parser*, so the fix is the
+    ticket.  One message for both is how this check went quiet the first time.
     """
     argv = list(argv if argv is not None else sys.argv[1:])
     faces = manifest.load_and_validate()
     result = compare_ticket_to_registry(faces)
 
-    if result.compared == 0:
+    if result.compared == 0 and not result.unparsed:
         print("NOT COMPARED: no face ticket could be read; the comparison "
               "did not happen", file=sys.stderr)
         for reason in result.skipped:
@@ -349,7 +441,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("DRIFT: the face tickets and the registry disagree:", file=sys.stderr)
         for drift in result.drifts:
             print(f"  - {drift}", file=sys.stderr)
+
+    if result.unparsed:
+        print("UNPARSED: a live face has an ownership section but no "
+              "readable path in it; write each path as its own list item:",
+              file=sys.stderr)
+        for issue in result.unparsed:
+            print(f"  - #{issue} (the ownership section holds no readable path)",
+                  file=sys.stderr)
+
+    if result.drifts:
         return 1
+    if result.unparsed:
+        return 3
 
     print(f"OK: {result.compared} face ticket(s) agree with the registry")
     for reason in result.skipped:

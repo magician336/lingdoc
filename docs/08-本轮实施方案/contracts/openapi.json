@@ -6882,7 +6882,8 @@
                       },
                       "request_id": "req-demo"
                     }
-                  },"asset_not_found": {
+                  },
+                  "asset_not_found": {
                     "summary": "全部资料不存在或不属于当前项目（反枚举收敛）",
                     "value": {
                       "error": {
@@ -6890,7 +6891,12 @@
                         "message": "资料不存在或不属于当前项目。",
                         "retryable": false,
                         "details": {
-                          "denied": [{"asset_id": "a-unbound", "reason": "not_found"}]
+                          "denied": [
+                            {
+                              "asset_id": "a-unbound",
+                              "reason": "not_found"
+                            }
+                          ]
                         }
                       },
                       "request_id": "req-demo"
@@ -7027,7 +7033,8 @@
                       },
                       "request_id": "req-demo"
                     }
-                  },"asset_access_denied": {
+                  },
+                  "asset_access_denied": {
                     "summary": "资料拒绝原因混合或只有部分资料不存在；整次拒绝",
                     "value": {
                       "error": {
@@ -7036,8 +7043,14 @@
                         "retryable": false,
                         "details": {
                           "denied": [
-                            {"asset_id": "a-unbound", "reason": "not_found"},
-                            {"asset_id": "a-processing", "reason": "not_ready"}
+                            {
+                              "asset_id": "a-unbound",
+                              "reason": "not_found"
+                            },
+                            {
+                              "asset_id": "a-processing",
+                              "reason": "not_ready"
+                            }
                           ]
                         }
                       },
@@ -17212,7 +17225,6 @@
         "x-delivery-phase": "core"
       }
     },
-
     "/template-catalog/replay-fixtures": {
       "get": {
         "operationId": "listReplayFixtures",
@@ -22124,7 +22136,12 @@
                               }
                             ],
                             "selection_reasons": [
-                              "synthetic-selection-reasons"
+                              {
+                                "kind": "card",
+                                "id": "synthetic-card-id",
+                                "code": "user_selected_card",
+                                "text": "synthetic-selection-reasons"
+                              }
                             ],
                             "authorization_state": "synthetic-authorization-state",
                             "output_constraints": [
@@ -22174,7 +22191,12 @@
                             "source_refs": [],
                             "card_refs": [],
                             "selection_reasons": [
-                              "synthetic-selection-reasons"
+                              {
+                                "kind": "card",
+                                "id": "synthetic-card-id",
+                                "code": "user_selected_card",
+                                "text": "synthetic-selection-reasons"
+                              }
                             ],
                             "authorization_state": "synthetic-authorization-state",
                             "output_constraints": [
@@ -22381,7 +22403,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22478,7 +22505,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22539,7 +22571,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22601,7 +22638,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22663,7 +22705,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22724,7 +22771,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22795,7 +22847,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -26247,7 +26304,12 @@
                           }
                         ],
                         "selection_reasons": [
-                          "synthetic-selection-reasons"
+                          {
+                            "kind": "card",
+                            "id": "synthetic-card-id",
+                            "code": "user_selected_card",
+                            "text": "synthetic-selection-reasons"
+                          }
                         ],
                         "authorization_state": "synthetic-authorization-state",
                         "output_constraints": [
@@ -28180,6 +28242,41 @@
                           "value": "synthetic-value"
                         },
                         "version": 1,
+                        "status": "ACTIVE"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "同一 signal + scope 的规则已存在：保存就地更新该规则（版本递增）或原样返回，不新增第二条；规则的 ACTIVE/DISABLED 状态不由保存改变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeAlertRuleResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "signal": "synthetic-signal",
+                        "severity": "synthetic-severity",
+                        "action": "synthetic-action",
+                        "responsible_id": "synthetic-responsible-id",
+                        "scope": {
+                          "kind": "tenant",
+                          "value": "synthetic-value"
+                        },
+                        "version": 2,
                         "status": "ACTIVE"
                       },
                       "request_id": "synthetic-contract-example",
@@ -38860,8 +38957,7 @@
           }
         }
       }
-    }
-,
+    },
     "/projects/{projectId}/manual-judgements": {
       "post": {
         "operationId": "recordManualJudgement",
@@ -38910,40 +39006,40 @@
           }
         },
         "responses": {
-            "200": {
-              "description": "同一次判定的重放（同一个幂等键、同一份请求）",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/ManualJudgementRecordResponse"
-                  },
-                  "examples": {
-                    "synthetic_replay": {
-                      "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
-                      "value": {
-                        "data": {
-                          "run_id": "f01-20261025T013341Z-5105ae32",
-                          "assertion_id": "F01-06c",
-                          "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
-                          "verdict": "passed",
-                          "actor": "u-owner",
-                          "authorization": "project_owner",
-                          "channel": "unverified_channel",
-                          "occurred_at": "2026-10-25T01:33:41.5105+00:00",
-                          "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
-                          "audit_id": "audit-649-0001"
-                        },
-                        "request_id": "req-manual-judgement-1",
-                        "meta": {
-                          "replayed": true,
-                          "refresh_required": true
-                        }
+          "200": {
+            "description": "同一次判定的重放（同一个幂等键、同一份请求）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualJudgementRecordResponse"
+                },
+                "examples": {
+                  "synthetic_replay": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "run_id": "f01-20261025T013341Z-5105ae32",
+                        "assertion_id": "F01-06c",
+                        "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+                        "verdict": "passed",
+                        "actor": "u-owner",
+                        "authorization": "project_owner",
+                        "channel": "unverified_channel",
+                        "occurred_at": "2026-10-25T01:33:41.5105+00:00",
+                        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/f01-report.json",
+                        "audit_id": "audit-649-0001"
+                      },
+                      "request_id": "req-manual-judgement-1",
+                      "meta": {
+                        "replayed": true,
+                        "refresh_required": true
                       }
                     }
                   }
                 }
               }
-            },
+            }
+          },
           "201": {
             "description": "已记录的人工判定（权威判定记录）",
             "content": {
@@ -44849,7 +44945,8 @@
               "RuleBinding",
               "RouteNode",
               "ResearchRun",
-              "ComputationReceipt", "DeliveryPreflight"
+              "ComputationReceipt",
+              "DeliveryPreflight"
             ]
           },
           "id": {
@@ -48171,6 +48268,9 @@
           "failure_code": {
             "type": "string"
           },
+          "failure_detail": {
+            "type": "string"
+          },
           "feedback": {
             "type": "string"
           }
@@ -48416,6 +48516,9 @@
             "type": "string"
           },
           "failure_code": {
+            "type": "string"
+          },
+          "failure_detail": {
             "type": "string"
           },
           "run_mode": {
@@ -49024,6 +49127,44 @@
         "x-go-type": "core.AgentSourceRef",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
+      "SelectionReason": {
+        "type": "object",
+        "description": "为什么某个条目在这一轮上下文里。kind 与 id 指向条目，code 是稳定原因码；text 只供展示，改措辞不改变前三者。",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "card",
+              "source",
+              "task"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "user_selected_task",
+              "user_selected_card",
+              "user_selected_source",
+              "card_dependency"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "code",
+          "text"
+        ],
+        "x-go-type": "core.SelectionReason",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
       "AgentContextPackage": {
         "type": "object",
         "properties": {
@@ -49084,7 +49225,7 @@
           "selection_reasons": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/SelectionReason"
             },
             "nullable": true
           },
@@ -55006,8 +55147,7 @@
         "additionalProperties": false,
         "x-go-type": "core.RuntimeRollbackInput",
         "x-go-source": "internal/lingdoc/workspacecore/runtime_control.go"
-      }
-,
+      },
       "ManualJudgementInput": {
         "type": "object",
         "additionalProperties": false,

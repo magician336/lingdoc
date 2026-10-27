@@ -151,15 +151,7 @@ func TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore(t *testing.T) {
 
 func TestConfirmationWritesProjectReviewAuditWhenWorkspaceAuditTablePresent(t *testing.T) {
 	store := newCandidateAdoptionStore(t)
-	require.NoError(t, store.DB().Exec(`CREATE TABLE lingdoc_project_audits (
-		id TEXT PRIMARY KEY,
-		project_id TEXT NOT NULL,
-		actor_id TEXT NOT NULL,
-		action TEXT NOT NULL,
-		target TEXT NOT NULL,
-		details_json TEXT NOT NULL DEFAULT '{}',
-		created_at DATETIME
-	)`).Error)
+	ensureProjectAuditFixtureTable(t, store.DB())
 	require.NoError(t, store.UpsertProject(context.Background(), "project-1", 3))
 	version := "chapter-version-1"
 	require.NoError(t, store.UpsertChapter(context.Background(), Chapter{

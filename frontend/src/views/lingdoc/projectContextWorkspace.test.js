@@ -65,7 +65,7 @@ function harness(mount = true) {
     async previewAgentContext(id, input) {
       calls.preview.push({ id, input }); if (fixture.failure) throw fixture.failure; if (fixture.waitPreview) return fixture.waitPreview.promise
       return { data: { project_id: id, project_version: input.expected_project_version, spec_revision: 2, context_revision: input.expected_context_revision,
-        template_id: 'demo', template_version: '1', card_refs: input.card_refs, source_refs: [], selection_reasons: ['服务端原文理由'], authorization_state: 'allowed', output_constraints: ['候选而非科学证明'], correlation_id: 'server-' + id } }
+        template_id: 'demo', template_version: '1', task_id: 'task-demo', task_version: 1, card_refs: input.card_refs, source_refs: [], selection_reasons: [{ kind: 'task', id: 'task-demo', code: 'user_selected_task', text: '服务端原文理由' }], authorization_state: 'allowed', output_constraints: ['候选而非科学证明'], correlation_id: 'server-' + id } }
     },
   }
   const facadePath = path.resolve(here, '../../api/lingdoc/agentContext.ts')
@@ -182,7 +182,7 @@ test('late preview and candidate response cannot refill after identity switch', 
   h.fixture.waitCards = null; h.fixture.waitPreview = null; h.fixture.cards = []
   h.props.identity = 'tenant:other-user'; h.props.project = project('b'); await flush()
   oldCards.resolve({ data: [card('old-secret-card')] })
-  oldPreview.resolve({ data: { project_id: 'a', source_refs: [], card_refs: [], selection_reasons: ['old-secret'], output_constraints: [], correlation_id: 'old-secret' } })
+  oldPreview.resolve({ data: { project_id: 'a', source_refs: [], card_refs: [], selection_reasons: [{ kind: 'task', id: 'old-secret-task', code: 'user_selected_task', text: 'old-secret' }], task_id: 'old-secret-task', task_version: 1, output_constraints: [], correlation_id: 'old-secret' } })
   await flush()
   assert.match(h.text(), /server-b/)
   assert.match(h.text(), /尚无可加入的证据卡/)

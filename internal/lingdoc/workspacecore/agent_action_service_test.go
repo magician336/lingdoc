@@ -59,6 +59,7 @@ func (r *testSourceReader) CheckAssetScopeForChapter(ctx context.Context, actor 
 
 type testSearcher struct {
 	calls              int
+	failure            error
 	failAt             int
 	callback           func(int)
 	results            []ResearchResult
@@ -127,6 +128,7 @@ func (*testAcademicResearchSearcher) ValidateAcademicResearchResult(_ context.Co
 		return nil
 	}
 	return ErrInvalidRequest
+
 }
 
 func (f *testSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ ResearchTask, _ string) ([]ResearchResult, string, error) {
@@ -135,7 +137,11 @@ func (f *testSearcher) SearchResearch(_ context.Context, _ Actor, _ string, _ Re
 		f.callback(f.calls)
 	}
 	if f.calls == f.failAt {
-		return slices.Clone(f.results), "real_api_fake_model", errors.New("synthetic provider unavailable")
+		failure := f.failure
+		if failure == nil {
+			failure = errors.New("synthetic provider unavailable")
+		}
+		return slices.Clone(f.results), "real_api_fake_model", failure
 	}
 	return slices.Clone(f.results), "real_api_fake_model", nil
 }
@@ -596,6 +602,54 @@ func TestResearchPartialFailureRetainsResultsAndNoRetry(t *testing.T) {
 	run := decodeAgentJSON[ResearchRun](t, raw, err)
 	if run.Status != "failed" || len(run.Results) != 1 || len(run.Rounds) != 2 || run.Rounds[1].FailureCode != "provider_failure" || f.search.calls != 2 {
 		t.Fatalf("partial failure fabricated completion: %+v", run)
+	}
+}
+
+// TestResearchProviderFailureKeepsTheReason pins the second half of #335: a
+// failed round must say *why* it failed.  The failure code alone
+// ("provider_failure") cannot tell "the channel is not configured" from "the
+// URL was refused" from "the provider itself failed", and the server log used
+// to carry nothing at all.
+func TestResearchProviderFailureKeepsTheReason(t *testing.T) {
+	f := newAgentFixture(t, true)
+	task := f.task(t)
+	f.search.failAt = 1
+	f.search.failure = errors.New("synthetic provider unavailable: credential expired")
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-reason-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status != "failed" || run.FailureCode != "provider_failure" {
+		t.Fatalf("run did not fail as a provider failure: %+v", run)
+	}
+	if !strings.Contains(run.FailureDetail, "credential expired") {
+		t.Fatalf("run receipt lost the provider reason: %q", run.FailureDetail)
+	}
+	if len(run.Rounds) != 1 || !strings.Contains(run.Rounds[0].FailureDetail, "credential expired") {
+		t.Fatalf("round receipt lost the provider reason: %+v", run.Rounds)
+	}
+}
+
+// TestResearchMaterialFailureStillKeepsExternalHits pins the first half of
+// #335: a failing material retrieval must not short-circuit the external
+// provider.  The round is not failed when the external path produced hits,
+// but the degraded material path must still be visible in the receipt.
+func TestResearchMaterialFailureStillKeepsExternalHits(t *testing.T) {
+	f := newAgentFixture(t, true)
+	task := f.task(t)
+	f.search.failure = &ResearchSearchError{
+		Material: "no retrievable indexing pipelines across 1 KBs",
+		Partial:  true,
+	}
+	f.search.failAt = 1
+	raw, _, _, err := f.svc.RunResearchTask(context.Background(), f.owner, f.project.ID, task.ID, "g2-degraded-run", RunResearchTaskInput{VersionExpectation: f.expectation(task.Version)})
+	run := decodeAgentJSON[ResearchRun](t, raw, err)
+	if run.Status == "failed" || run.FailureCode != "" {
+		t.Fatalf("a round with external hits was failed by the material path: %+v", run)
+	}
+	if len(run.Rounds) != 2 {
+		t.Fatalf("rounds: %+v", run.Rounds)
+	}
+	if !strings.Contains(run.Rounds[0].FailureDetail, "indexing pipelines") {
+		t.Fatalf("the degraded material path is invisible: %+v", run.Rounds[0])
 	}
 }
 func TestResearchOldBasisIsHistoricalAndNeverOverwrites(t *testing.T) {

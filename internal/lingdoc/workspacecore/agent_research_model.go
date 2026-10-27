@@ -216,16 +216,17 @@ type ResearchResult struct {
 	Status                string    `json:"status"`
 }
 type ResearchRound struct {
-	Number      int       `json:"number"`
-	Query       string    `json:"query"`
-	DateFrom    string    `json:"date_from,omitempty"`
-	DateTo      string    `json:"date_to,omitempty"`
-	Provider    string    `json:"provider"`
-	RetrievedAt time.Time `json:"retrieved_at"`
-	ResultIDs   []string  `json:"result_ids"`
-	Status      string    `json:"status"`
-	FailureCode string    `json:"failure_code,omitempty"`
-	Feedback    string    `json:"feedback,omitempty"`
+	Number        int       `json:"number"`
+	Query         string    `json:"query"`
+	DateFrom      string    `json:"date_from,omitempty"`
+	DateTo        string    `json:"date_to,omitempty"`
+	Provider      string    `json:"provider"`
+	RetrievedAt   time.Time `json:"retrieved_at"`
+	ResultIDs     []string  `json:"result_ids"`
+	Status        string    `json:"status"`
+	FailureCode   string    `json:"failure_code,omitempty"`
+	FailureDetail string    `json:"failure_detail,omitempty"`
+	Feedback      string    `json:"feedback,omitempty"`
 }
 
 // ResearchUsageLedger snapshots conservative per-run ceilings and usage.
@@ -280,6 +281,7 @@ type ResearchRun struct {
 	Usage         ResearchUsageLedger `json:"usage"`
 	Status        string              `json:"status"`
 	FailureCode   string              `json:"failure_code,omitempty"`
+	FailureDetail string              `json:"failure_detail,omitempty"`
 	RunMode       string              `json:"run_mode"`
 	CorrelationID string              `json:"correlation_id"`
 	CreatedBy     string              `json:"created_by"`
@@ -486,26 +488,99 @@ type AgentSourceRef struct {
 	QuotedText      string `json:"quoted_text,omitempty"`
 	ModelUseAllowed bool   `json:"model_use_allowed"`
 }
-type AgentContextPackage struct {
-	ProjectID          string           `json:"project_id"`
-	ProjectVersion     int64            `json:"project_version"`
-	SpecRevision       int64            `json:"spec_revision"`
-	ContextRevision    int64            `json:"context_revision"`
-	ChapterID          string           `json:"chapter_id,omitempty"`
-	ChapterVersionID   string           `json:"chapter_version_id,omitempty"`
-	TaskID             string           `json:"task_id,omitempty"`
-	TaskVersion        int64            `json:"task_version,omitempty"`
-	TemplateID         string           `json:"template_id"`
-	TemplateVersion    string           `json:"template_version"`
-	RuleSetID          string           `json:"ruleset_id,omitempty"`
-	RuleSetVersion     string           `json:"ruleset_version,omitempty"`
-	SourceRefs         []AgentSourceRef `json:"source_refs"`
-	CardRefs           []VersionRef     `json:"card_refs"`
-	SelectionReasons   []string         `json:"selection_reasons"`
-	AuthorizationState string           `json:"authorization_state"`
-	OutputConstraints  []string         `json:"output_constraints"`
-	CorrelationID      string           `json:"correlation_id"`
+
+// SelectionReason is why one entry of the context package is present. The text
+// is for the reader; the other three fields are the machine-readable key. Kind
+// names what the ID belongs to, and Code names the rule that pulled the entry
+// in. Rewording Text must never change Kind, ID or Code: the front end attaches
+// each reason to its entry by those three fields, never by the prose.
+type SelectionReason struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Code string `json:"code"`
+	Text string `json:"text"`
 }
+
+// The closed vocabularies of SelectionReason. A new kind or code is a contract
+// change: the OpenAPI schema and the front-end union move with it.
+const (
+	SelectionReasonKindCard   = "card"
+	SelectionReasonKindSource = "source"
+	SelectionReasonKindTask   = "task"
+
+	SelectionReasonUserSelectedTask   = "user_selected_task"
+	SelectionReasonUserSelectedCard   = "user_selected_card"
+	SelectionReasonUserSelectedSource = "user_selected_source"
+	SelectionReasonCardDependency     = "card_dependency"
+
+	// Read-only vocabulary for turns written before #432: the payload held
+	// free text, so there is no id to name an entry with.
+	SelectionReasonKindLegacy         = "legacy"
+	SelectionReasonLegacyUnstructured = "legacy_unstructured"
+)
+
+type AgentContextPackage struct {
+	ProjectID          string            `json:"project_id"`
+	ProjectVersion     int64             `json:"project_version"`
+	SpecRevision       int64             `json:"spec_revision"`
+	ContextRevision    int64             `json:"context_revision"`
+	ChapterID          string            `json:"chapter_id,omitempty"`
+	ChapterVersionID   string            `json:"chapter_version_id,omitempty"`
+	TaskID             string            `json:"task_id,omitempty"`
+	TaskVersion        int64             `json:"task_version,omitempty"`
+	TemplateID         string            `json:"template_id"`
+	TemplateVersion    string            `json:"template_version"`
+	RuleSetID          string            `json:"ruleset_id,omitempty"`
+	RuleSetVersion     string            `json:"ruleset_version,omitempty"`
+	SourceRefs         []AgentSourceRef  `json:"source_refs"`
+	CardRefs           []VersionRef      `json:"card_refs"`
+	SelectionReasons   []SelectionReason `json:"selection_reasons"`
+	AuthorizationState string            `json:"authorization_state"`
+	OutputConstraints  []string          `json:"output_constraints"`
+	CorrelationID      string            `json:"correlation_id"`
+}
+
+// UnmarshalJSON reads both shapes of selection_reasons: the structured entries
+// current builds write, and the free text turns were stored with before #432.
+//
+// A legacy string becomes SelectionReason{Kind:"legacy", ID:"", Code:
+// "legacy_unstructured", Text:s}. It keeps the sentence for a reader but does
+// not invent an id: the old payload never recorded which entry the sentence was
+// about. Legacy entries are read-only -- Marshal still writes the structured
+// shape -- and the front end attaches reasons by kind+id, so a legacy entry is
+// not displayed rather than mapped onto a guessed card, source or task.
+//
+// Every other field decodes exactly as before; only this one field needs the
+// two-shape reader, because it is the one whose type changed.
+func (p *AgentContextPackage) UnmarshalJSON(data []byte) error {
+	type packageAlias AgentContextPackage
+	decoded := struct {
+		*packageAlias
+		SelectionReasons []json.RawMessage `json:"selection_reasons"`
+	}{packageAlias: (*packageAlias)(p)}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if decoded.SelectionReasons == nil {
+		return nil
+	}
+	reasons := make([]SelectionReason, 0, len(decoded.SelectionReasons))
+	for _, entry := range decoded.SelectionReasons {
+		var reason SelectionReason
+		if err := json.Unmarshal(entry, &reason); err == nil {
+			reasons = append(reasons, reason)
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(entry, &text); err != nil {
+			return err
+		}
+		reasons = append(reasons, SelectionReason{Kind: SelectionReasonKindLegacy, Code: SelectionReasonLegacyUnstructured, Text: text})
+	}
+	p.SelectionReasons = reasons
+	return nil
+}
+
 type AgentMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`

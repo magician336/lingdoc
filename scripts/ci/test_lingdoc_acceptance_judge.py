@@ -468,6 +468,74 @@ class ExecuteTests(PairCase):
         self.assertEqual(code, judge.EXIT_PASS, output)
 
 
+class CoordinateExtractionTests(unittest.TestCase):
+    """Coordinates embedded in Chinese prose must extract whole (§6.3 cross).
+
+    A report id like ``TD-03.6的撤权半边`` names TD-03.6.  Python's ``\\b``
+    treats CJK as word characters, so a ``\\b``-terminated pattern fails the
+    boundary after ``6`` and backtracks to the **shorter** ``TD-03`` -- a
+    different acceptance point, which then cross-checks against the wrong
+    matrix row.  Found by the first real C1 report (#142), pinned here.
+    """
+
+    def test_a_coordinate_followed_by_cjk_prose_extracts_whole(self):
+        self.assertEqual(
+            judge.COORDINATE_IN_TEXT.findall("TD-03.6的撤权半边"), ["TD-03.6"])
+        self.assertEqual(
+            judge.COORDINATE_IN_TEXT.findall("US-12的重新校验半边"), ["US-12"])
+
+    def test_a_longer_digit_run_is_not_split(self):
+        self.assertEqual(
+            judge.COORDINATE_IN_TEXT.findall("TD-03.6、US-01"), ["TD-03.6", "US-01"])
+        self.assertEqual(judge.COORDINATE_IN_TEXT.findall("TD-030"), ["TD-030"])
+
+    def test_a_coordinate_inside_a_word_is_not_extracted(self):
+        self.assertEqual(judge.COORDINATE_IN_TEXT.findall("XTD-01"), [])
+        self.assertEqual(judge.COORDINATE_IN_TEXT.findall("USD-02"), [])
+
+
+class AuxiliaryCoordinateTests(unittest.TestCase):
+    """A matrix's second (登记号-headed) judgement table counts as matrix rows.
+
+    Spec-139 carries the AC-04 series in a separate "environment-restricted
+    and human-prerequisite" table whose header says 登记号, not 定位坐标.
+    The main-table parser stops at the first table, so report entries
+    covering those rows were answered with "矩阵没有该行" -- found by the
+    AC-04-03 browser-chain round.  The auxiliary reader collects their
+    coordinates for the coverage cross-check only; the main table's
+    counting (§8 total) and per-row judgement must stay untouched.
+    """
+
+    DOCUMENT = """# 矩阵
+
+| 定位坐标 | 判定状态 | 实测事实 | 交付分类 | 证据 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| TD-01 | PASS | 已交付 | `T.x`；`go test ./...`；head `abcdef0` | — | — |
+
+## 环境受限与人工前置项（AC-04 系列；不计入 31 个原子验收点）
+
+| 登记号 | 事项 | 判定状态 | 实测事实 | 解除条件 / 跟进 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| AC-04-01 | PG 演练 | PASS | 已交付 | `go test ./internal/database/...` | — |
+| AC-04-03 | 真人浏览器链 | PASS | 2026-10-27 通过 | 证据目录见 RUN-SUMMARY | — |
+| IMPL-99 | 非验收点行 | PASS | 已交付 | — | 不应计入 |
+"""
+
+    def test_auxiliary_table_coordinates_are_collected(self):
+        self.assertEqual(
+            judge.auxiliary_coordinates(self.DOCUMENT),
+            {"AC-04-01", "AC-04-03"})
+
+    def test_a_document_without_auxiliary_table_yields_nothing(self):
+        self.assertEqual(judge.auxiliary_coordinates(
+            "| 定位坐标 | 判定状态 |\n| --- | --- |\n| TD-01 | PASS |\n"), set())
+
+    def test_main_table_total_is_not_disturbed_by_the_auxiliary_table(self):
+        findings, summary = judge.judge(self.DOCUMENT, None, "abcdef0123456")
+        self.assertEqual(summary["rows"], 1)
+        self.assertTrue(all("矩阵没有该行" not in f for f in findings))
+
+
 class RealPairTests(unittest.TestCase):
     """The pair on main is the fixture: the judge must read it, and what it
     finds there is pinned as a **class**, never as a count.
