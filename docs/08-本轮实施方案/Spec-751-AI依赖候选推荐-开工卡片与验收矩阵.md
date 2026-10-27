@@ -88,6 +88,10 @@
 
 ## 验证命令清单(已执行,head 996fd524)
 
+### CI 守护收口(head e1f6875c,推送后第一轮 CI 揭示)
+
+第一轮 PR gate 揭示四个守护缺口,全部本地复现并修复:①错误响应(403/422/502/503)缺 concrete schema——补 `ErrorResponse` 引用(check_lingdoc_routes.py 要求 ROUTE_FILES 内路由的每个 4xx/5xx 有 schema);②操作缺 `x-delivery-phase` 扩展——补 `core`(validate_artifacts.py);③`validation-result.json` 漂移——用守护指定命令再生成(`python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py --source-root .`);④契约 fixture 手写生产表 `lingdoc_g2_objects` 未声明对齐迁移——按 `impact_dependency_candidate_http_test.go` 既有模式补声明(test_lingdoc_fixture_schema_source);⑤golangci-lint 报未用常量 `operationRecommendDependencyCandidates`——删除。修复后本地全绿:`check_lingdoc_routes.py` PASS、`python -m unittest discover -s scripts/ci -p "test_lingdoc_*.py"` 967 tests OK、Go 定向 ok。
+
 ```bash
 # Go 定向(WSL2 Ubuntu-24.04,全部 ok)
 go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyRecommendation|TestDependencyCandidate|TestEveryNarrowPort' -count=1
