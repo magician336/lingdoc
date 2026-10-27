@@ -30,7 +30,12 @@ func TestDependencyRecommendationModelLivesAgainstARealProvider(t *testing.T) {
 	row := &types.Model{
 		ID: "live-recommendation-1", Name: modelName,
 		Type: types.ModelTypeKnowledgeQA, Source: types.ModelSourceRemote, Status: types.ModelStatusActive, IsDefault: true,
-		Parameters: types.ModelParameters{Provider: "generic", BaseURL: baseURL, APIKey: apiKey},
+		// Provider "aliyun" is what the demo environment configures: it routes the
+		// model row to qwenThinkingProvider, which forces enable_thinking=false on
+		// non-stream calls. A bare "generic" row leaves qwen3.8 thinking mode ON
+		// (measured: 4010 thinking-heavy completion tokens / 63.5s vs 96 tokens /
+		// 2.2s with it off) — the row here has to match the deployment.
+		Parameters: types.ModelParameters{Provider: "aliyun", BaseURL: baseURL, APIKey: apiKey},
 	}
 	realChat, err := chat.NewChat(chat.ConfigFromModel(row, "", ""), nil)
 	if err != nil {
