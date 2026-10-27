@@ -174,6 +174,11 @@ _避免_：已完成；可继续推进；悄悄消失。
 **租户角色**：用户在**租户**内的身份，取值只有四个——`owner` / `admin` / `contributor` / `viewer`，词表由服务端 `internal/types/tenant_member.go` 独家定义。完整定义见[灵档术语表](docs/06-灵档产品开发规划/16-术语表.md)；这里只补一条界面口径：**这四个值在界面上只有一种中文说法**——`owner`＝所有者、`admin`＝管理员、`contributor`＝编辑、`viewer`＝访客，唯一来源是 `frontend/src/i18n/tenantRoleLabel.ts`，其它模块只引用它，不自带一份。
 _避免_：与「治理角色」「职能角色」「课题角色」「知识库共享角色」混称——那是**别的维度**，各有各的说法，不并入租户角色词表；把 `contributor` 说成「协作者」、把 `viewer` 说成「查看者」——同一批值的第二种中文说法，已废止；把项目里的 Owner 当成租户里的 `owner`。
 
+## 审计列角色（actor_role）
+
+**审计列角色**：`audit_logs` 与 `lingdoc_ruleset_use_audits` 两表 `actor_role` 列装的东西——**审计列 `actor_role` ＝ 操作者在该租户当时的角色**（#535 管理会话 2026-10-24 裁定）。**取值集合** ＝ 租户角色词表四值（`owner` / `admin` / `contributor` / `viewer`）∪ 平台面固定值（`system_admin` / `platform_api_key`）∪ **空串 ＝ 未知（2026-10-07 前的历史遗留，将由 90 天保留期自动清除）**。完整定义见[灵档术语表](docs/06-灵档产品开发规划/16-术语表.md)；词表唯一来源是 `internal/types/tenant_member.go` 的 `TenantRole`，读侧标签唯一来源是 `frontend/src/i18n/auditActorRoleLabel.ts`（空串与词表外值统一回落「未知」标签）。
+_避免_：与项目角色（`lingdoc_members.role`，含 `collaborator`）、治理角色（`governance_role`）、职能角色（`function_roles_json`）混同——那三套词从未进入本列；把空串读成「无角色」或权限为零——它是未知，不是判定。
+
 ## Owner 与冻结
 
 **owner_unavailable**：项目 Owner 的租户身份失效（停用、降权或被移出租户成员）这一状态，用领域已有的这个词称呼。它是**读时派生**的只读标记——由 Owner 当前的租户成员状态与项目成员状态算出，不落库、不新增项目状态值、不进项目结构体。因为是派生的，租户身份恢复即自动解冻，没有「解冻忘了做」的中间态。
