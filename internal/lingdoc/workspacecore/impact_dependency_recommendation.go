@@ -44,8 +44,11 @@ const (
 
 	// dependencyRecommendationCallTimeout bounds one recommendation call. The
 	// route is synchronous: a recommendation that hangs must surface as a
-	// timeout instead of holding the panel forever.
-	dependencyRecommendationCallTimeout = 60 * time.Second
+	// timeout instead of holding the panel forever. A real qwen3.8-flash call
+	// measured 63s on the live round-trip (4010 completion tokens including
+	// reasoning), so the ceiling has to sit above a real answer, not just
+	// above a stub.
+	dependencyRecommendationCallTimeout = 120 * time.Second
 )
 
 var (
