@@ -131,9 +131,11 @@ BEGIN SELECT RAISE(ABORT, 'synthetic runtime write failure'); END`
 //
 // This is not the SQLite shape. SQLite's RAISE(ABORT) undoes only the failing
 // statement and leaves the transaction usable; PostgreSQL aborts the whole
-// transaction, so the read's own transaction dies with the audit write. The
-// alert is published on a separate transaction afterwards, which is exactly
-// the property this test pins.
+// transaction. If the read-class audit shared the read's transaction, the read
+// would fail with "commit unexpectedly resulted in rollback" (#387). The test
+// that installs this trigger therefore pins two things at once: the alert is
+// published on its own transaction, and the read's transaction carries no
+// audit write (ADR 0015).
 func installPostgresAuditWriteFailureTrigger(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	statements := []string{
@@ -237,8 +239,9 @@ func TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres(t *testing.T) {
 	}
 	installPostgresAuditWriteFailureTrigger(t, db)
 
-	readErr := svc.Authorize(ctx, actor, p.ID, "read")
-	t.Logf("the read on PostgreSQL after the audit write failed: %v", readErr)
+	if readErr := svc.Authorize(ctx, actor, p.ID, "read"); readErr != nil {
+		t.Fatalf("the audit failure stopped the read on PostgreSQL: %v", readErr)
+	}
 
 	events, err := svc.ListRuntimeEvents(ctx, actor, p.ID, "")
 	if err != nil {
@@ -279,5 +282,12 @@ func TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres(t *testing.T) {
 	}
 	if alerts[0].Severity != "P2" || alerts[0].Action != "notify" {
 		t.Fatalf("the alert does not carry the rule's disposition: %+v", alerts[0])
+	}
+
+	// The second read-class entry point must survive the same failure. It is
+	// checked after the alert assertions because every read writes its own
+	// audit row, and this test pins the alert contract on one read.
+	if _, err := svc.GetProject(ctx, actor, p.ID); err != nil {
+		t.Fatalf("the audit failure stopped GetProject on PostgreSQL: %v", err)
 	}
 }
