@@ -440,6 +440,12 @@ func TestQwenProfileLedgerRowCarriesNoMoneyAndDeepSeekKeepsItsOwn(t *testing.T) 
 		t.Fatalf("a profile without a price basis must reserve and consume no money: %d/%d",
 			row.ReservedNanoUSD, row.ActualNanoUSD)
 	}
+	// The DB row says what its zeros mean (#527): not_applicable, so the row
+	// read alone identifies as "not computed" instead of "free".
+	if row.CostBasis != acceptancebudget.CostBasisNotApplicable {
+		t.Fatalf("row cost basis = %q, want %q (the profile computed no money)",
+			row.CostBasis, acceptancebudget.CostBasisNotApplicable)
+	}
 	if row.Provider != acceptancebudget.QwenProvider {
 		t.Fatalf("row provider = %q, want %q (taken from the model row that answered)", row.Provider, acceptancebudget.QwenProvider)
 	}
@@ -478,6 +484,12 @@ func TestQwenProfileLedgerRowCarriesNoMoneyAndDeepSeekKeepsItsOwn(t *testing.T) 
 	}
 	if deepSeekRow.ActualNanoUSD != actualDeepSeekCost(100, 50) {
 		t.Fatalf("DeepSeek actual amount = %d, want %d", deepSeekRow.ActualNanoUSD, actualDeepSeekCost(100, 50))
+	}
+	// The priced profile names the basis its amounts were computed under, so
+	// the two profiles' rows cannot be read with one another's meaning (#527).
+	if deepSeekRow.CostBasis != acceptancebudget.CostBasisDeepSeekPeakUSD {
+		t.Fatalf("DeepSeek row cost basis = %q, want %q",
+			deepSeekRow.CostBasis, acceptancebudget.CostBasisDeepSeekPeakUSD)
 	}
 }
 

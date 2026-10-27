@@ -960,6 +960,71 @@ class CaptureChainGuardTests(unittest.TestCase):
         self.assertIn("201", failed.evidence)
 
 
+class LedgerBudgetCostBasisTests(unittest.TestCase):
+    """The manifest's budget block must name its cost basis (#527 / F-2).
+
+    ``ledger_summary`` used to sum the DB money columns over every row and
+    write the totals into the runtime manifest with no qualifier.  Under the
+    controlled Qwen profile every row carries ``cost_basis =
+    "not_applicable"`` and 0 in both money columns -- the amount was never
+    computed -- so the block rendered ``reserved_nano_usd: 0 /
+    actual_nano_usd: 0``, which a reader takes for "the calls were free".
+    The block now sums only the rows a priced basis covers, names that basis,
+    and counts the rows it did not sum, so "not computed" can never render as
+    a price of zero.
+    """
+
+    @staticmethod
+    def row(cost_basis, reserved, actual, kind="call", **extra):
+        base = {"kind": kind, "reserved_nano_usd": reserved, "actual_nano_usd": actual,
+                "cost_basis": cost_basis, "input_tokens": 10, "output_tokens": 5,
+                "model_id": "m", "provider": "p", "run_mode": "real",
+                "parameters_json": "", "created_at": "2026-10-26T00:00:00Z"}
+        base.update(extra)
+        return base
+
+    def test_the_ledger_select_reads_the_cost_basis_column(self):
+        self.assertIn("cost_basis", beta_evidence.LEDGER_COLUMNS)
+
+    def test_rows_no_profile_priced_do_not_render_as_free(self):
+        rows = [self.row("not_applicable", 0, 0), self.row("not_applicable", 0, 0)]
+        budget = beta_evidence.ledger_summary(rows, "")["budget"]
+        self.assertEqual(budget["cost_basis"], "not_applicable")
+        self.assertEqual(budget["uncomputed_rows"], 2)
+        self.assertEqual(budget["unknown_basis_rows"], 0)
+        self.assertEqual(budget["reserved_nano_usd"], 0)
+        self.assertEqual(budget["actual_nano_usd"], 0)
+        # 未核算 ≠ 免费：the block says how many rows computed no amount.
+        self.assertNotIn("free", str(budget).lower())
+
+    def test_only_rows_a_priced_basis_covers_are_summed(self):
+        rows = [self.row("deepseek_peak_usd_2026_09_29", 4000, 3600),
+                self.row("not_applicable", 0, 0),
+                # a pre-#527 row: the column did not exist, so there is no basis
+                self.row(None, 7000, 0)]
+        budget = beta_evidence.ledger_summary(rows, "")["budget"]
+        self.assertEqual(budget["cost_basis"], "deepseek_peak_usd_2026_09_29")
+        self.assertEqual(budget["priced_rows"], 1)
+        self.assertEqual(budget["reserved_nano_usd"], 4000)
+        self.assertEqual(budget["actual_nano_usd"], 3600)
+        self.assertEqual(budget["uncomputed_rows"], 1)
+        self.assertEqual(budget["unknown_basis_rows"], 1)
+        # token counters are facts about the call, not about money
+        self.assertEqual(budget["input_tokens"], 30)
+
+    def test_two_priced_bases_are_reported_as_mixed_not_merged(self):
+        rows = [self.row("deepseek_peak_usd_2026_09_29", 4000, 3600),
+                self.row("qwen_embedding_nano_cny_2026_10_25", 500, 500)]
+        budget = beta_evidence.ledger_summary(rows, "")["budget"]
+        self.assertEqual(budget["cost_basis"], "mixed_priced")
+        self.assertEqual(budget["priced_rows"], 2)
+
+    def test_a_ledger_that_cannot_be_read_has_no_budget_block(self):
+        summary = beta_evidence.ledger_summary([], "读账本失败：unit test")
+        self.assertFalse(summary["readable"])
+        self.assertEqual(summary["budget"], {})
+
+
 class UnblockTargetTests(unittest.TestCase):
     """A NOT RUN item has to say who will unblock it.
 

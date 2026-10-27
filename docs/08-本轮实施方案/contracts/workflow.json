@@ -1,6 +1,6 @@
 {
   "id": "F01",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "mode": "specification_not_executed_against_provider",
   "related_scenarios": [
     {
@@ -1002,12 +1002,12 @@
         {
           "path": "{{review_id}}",
           "ref_in": "/data/review_items",
-          "intent": "新版本继承review_items；项目版本增加到5。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）"
+          "intent": "候选的待核事项出现在新版本里：新版本继承 review_items（本断言只核对引用出现在 /data/review_items，不核对新版本与候选的 review_items 逐字一致）。project_version 的递增不在本契约任何断言内——目前只有行为级证据：#679 实测一次采纳 4→5，PR #690 回归测试钉住恰好 +1（0.5.1 起 intent 只声称断言覆盖的内容；变更记录见 docs/08-本轮实施方案/Spec-Beta-F01-11-intent口径变更-689.md）。"
         },
         {
           "path": "/data/current_version_id",
           "non_empty": true,
-          "intent": "新版本继承review_items；项目版本增加到5。（采纳产生了新的正文版本）"
+          "intent": "采纳产生了新的正文版本：当前版本指向新版本（current_version_id 非空）。"
         }
       ],
       "assertions": []

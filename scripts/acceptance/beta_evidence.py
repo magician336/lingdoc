@@ -785,9 +785,14 @@ def word_check(word_check_path: Path | None, docx_path: Path | None,
 # ---------------------------------------------------------------------------
 LEDGER_COLUMNS = ("id", "tenant_id", "project_id", "kind", "provider", "model_id", "run_mode",
                   "parameters_json", "input_tokens", "output_tokens", "reserved_nano_usd",
-                  "actual_nano_usd", "duration_ms", "status", "error_code", "source_kind",
-                  "source_id", "switched_from_model_id", "switch_reason", "affected_steps_json",
-                  "created_at")
+                  "actual_nano_usd", "cost_basis", "duration_ms", "status", "error_code",
+                  "source_kind", "source_id", "switched_from_model_id", "switch_reason",
+                  "affected_steps_json", "created_at")
+
+# The cost basis values the DB ledger's money columns can carry. The
+# vocabulary is owned by the Go acceptancebudget package; these names only
+# recognise the two readings that decide how the budget block is rendered.
+COST_BASIS_NOT_APPLICABLE = "not_applicable"
 
 
 def read_ledger(dsn: str, sqlite_path: str) -> tuple[list[dict[str, Any]], str]:
@@ -1567,7 +1572,17 @@ def migration_version(dsn: str, sqlite_path: str) -> dict[str, Any]:
 
 
 def ledger_summary(rows: list[dict[str, Any]], reason: str) -> dict[str, Any]:
-    """The model parameters, the budget and the model switches, read from the ledger."""
+    """The model parameters, the budget and the model switches, read from the ledger.
+
+    The budget block sums only the rows whose cost basis says their money
+    columns were priced (F-2 review finding). A row under the "not_applicable" basis
+    (the controlled Qwen profile) computed no amount: its 0 means "not
+    computed", not "free", so it must not render as a free call -- the block
+    says how many such rows exist instead. A row with no basis at all was
+    written before the column existed; its basis is unknown, so it is not
+    summed either and is reported separately. Token counters are facts about
+    the call, not about money, so every row counts.
+    """
     if reason:
         return {"source": "lingdoc_model_call_ledger", "readable": False, "detail": reason,
                 "parameters": [], "budget": {}, "switches": []}
@@ -1582,20 +1597,47 @@ def ledger_summary(rows: list[dict[str, Any]], reason: str) -> dict[str, Any]:
             parsed = {"unparsable": True}
         parameters.append({"model_id": row.get("model_id"), "provider": row.get("provider"),
                            "run_mode": row.get("run_mode"), "parameters": parsed})
-    reserved = sum(int(row.get("reserved_nano_usd") or 0) for row in rows)
-    actual = sum(int(row.get("actual_nano_usd") or 0) for row in rows)
+    priced: list[dict[str, Any]] = []
+    uncomputed = 0
+    unknown_basis = 0
+    for row in rows:
+        basis = (row.get("cost_basis") or "").strip()
+        if basis == COST_BASIS_NOT_APPLICABLE:
+            uncomputed += 1
+        elif basis:
+            priced.append(row)
+        else:
+            unknown_basis += 1
+    bases = sorted({(row.get("cost_basis") or "").strip() for row in priced})
+    if bases:
+        # The sums cover exactly the priced rows; the label names the basis
+        # those sums were computed under ("mixed_priced" when more than one).
+        basis_label = bases[0] if len(bases) == 1 else "mixed_priced"
+    elif uncomputed and not unknown_basis:
+        # Every row says its money was never computed: the block's zeros say
+        # the same thing, the way the JSON acceptance ledger already does.
+        basis_label = COST_BASIS_NOT_APPLICABLE
+    else:
+        basis_label = "none_priced"
+    budget: dict[str, Any] = {
+        "reserved_nano_usd": sum(int(row.get("reserved_nano_usd") or 0) for row in priced),
+        "actual_nano_usd": sum(int(row.get("actual_nano_usd") or 0) for row in priced),
+        "cost_basis": basis_label,
+        "priced_rows": len(priced),
+        # 未核算 ≠ 免费：not_applicable 行的金额列没有核算过，不是 0 费用；
+        # 无口径行是语义列存在之前写入的旧行，口径未知。两类的金额都不计入合计。
+        "uncomputed_rows": uncomputed,
+        "unknown_basis_rows": unknown_basis,
+        "input_tokens": sum(int(row.get("input_tokens") or 0) for row in rows),
+        "output_tokens": sum(int(row.get("output_tokens") or 0) for row in rows),
+    }
     return {
         "source": "lingdoc_model_call_ledger",
         "readable": True,
         "calls": len(calls),
         "switches": len(switches),
         "parameters": parameters,
-        "budget": {
-            "reserved_nano_usd": reserved,
-            "actual_nano_usd": actual,
-            "input_tokens": sum(int(row.get("input_tokens") or 0) for row in rows),
-            "output_tokens": sum(int(row.get("output_tokens") or 0) for row in rows),
-        },
+        "budget": budget,
         "switch_records": [{"from_model_id": row.get("switched_from_model_id"),
                             "to_model_id": row.get("model_id"),
                             "reason": row.get("switch_reason"),

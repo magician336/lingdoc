@@ -426,7 +426,10 @@ func (m generationHostModel) recordGenerationModelCall(ctx context.Context, inpu
 		// writing another profile's per-call amount here would put a
 		// DeepSeek-priced number on a Qwen row, and a wrong amount is worse
 		// than an amount that is explicitly not computed. The JSON ledger
-		// carries the meaning ("cost_basis": "not_applicable").
+		// carries the meaning ("cost_basis": "not_applicable"), and the DB
+		// row carries the same meaning in its own column (#527), so the row
+		// read alone cannot be mistaken for "the call was free".
+		facts.costBasis = acceptancebudget.ProfileCostBasis(activeAcceptanceProfile())
 		facts.reservedNanoUSD = acceptanceReservedPerCall(activeAcceptanceProfile())
 		if response != nil && response.Usage.PromptTokens >= 0 && response.Usage.CompletionTokens >= 0 {
 			facts.actualNanoUSD = actualDeepSeekCost(response.Usage.PromptTokens, response.Usage.CompletionTokens)

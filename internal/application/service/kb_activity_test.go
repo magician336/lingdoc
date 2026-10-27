@@ -168,3 +168,45 @@ func TestKBActivityTriggerReflectsInitiatorIdentity(t *testing.T) {
 		t.Fatalf("synthetic user trigger = %q, want system", got)
 	}
 }
+
+// TestRecordKBActivityActorRoleSemantics pins #559's conclusion for the
+// kb_activity actor-role branch.
+//
+// With a human actor the role never comes out empty: auditActorRole reads
+// TenantRoleFromContext, whose viewer fallback keeps an unpopulated context at
+// least "viewer". The empty string only appears together with an empty
+// ActorUserID — service-internal flows with no human actor (system tasks,
+// register-time EnsureOwner). That pair is a documented, determined meaning
+// (see the comment at the branch in kb_activity.go): the closed actor_role
+// vocabulary (#535 ruling) has no word for "no human actor" yet, and adding
+// one is a glossary decision. Until it is made, this test keeps the two
+// observable halves honest: a human actor always carries a vocabulary role,
+// and a system actor always carries the empty actor together with an empty
+// user id, never a fabricated tenant role.
+func TestRecordKBActivityActorRoleSemantics(t *testing.T) {
+	// A human actor without a populated role context still gets the viewer
+	// fallback, never the empty string.
+	humanCtx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
+	audit := &captureKBActivityAudit{}
+	recordKBActivity(humanCtx, audit, 7, "kb-1", types.AuditActionKnowledgeCreated,
+		"knowledge", "knowledge-1", types.AuditOutcomeSuccess, nil)
+	if audit.entry == nil {
+		t.Fatal("expected an activity entry")
+	}
+	if audit.entry.ActorUserID != "user-1" || audit.entry.ActorRole == "" {
+		t.Fatalf("human actor = %q/%q, want a non-empty role", audit.entry.ActorUserID, audit.entry.ActorRole)
+	}
+
+	// No human actor → the documented empty pair: both the user id and the
+	// role are empty, never a fabricated tenant role.
+	systemAudit := &captureKBActivityAudit{}
+	recordKBActivity(context.Background(), systemAudit, 7, "kb-1", types.AuditActionKnowledgeCreated,
+		"knowledge", "knowledge-1", types.AuditOutcomeSuccess, nil)
+	if systemAudit.entry == nil {
+		t.Fatal("expected a system activity entry")
+	}
+	if systemAudit.entry.ActorUserID != "" || systemAudit.entry.ActorRole != "" {
+		t.Fatalf("system actor = %q/%q, want the documented empty pair",
+			systemAudit.entry.ActorUserID, systemAudit.entry.ActorRole)
+	}
+}
