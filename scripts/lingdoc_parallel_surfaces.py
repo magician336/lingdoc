@@ -1789,8 +1789,9 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "done",
         "claimed_by": "",
         "paths": (
-            ("docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md", "file"),
-            ("docs/08-本轮实施方案/T139-验证报告.json", "file"),
+            # 2026-10-27：两份验收证据文档（Spec-139 矩阵 + T139 报告）依验收簇
+            # C1（票 #696，面 PF-696）的持续判定职责移交 PF-696（TRANSFERS 有记录），
+            # done 面不再持有活证据文件。其余产品/测试路径不动。
             ("frontend/src/components/TemplateGovernancePanel.test.ts", "file"),
             ("frontend/src/components/TemplateGovernancePanel.vue", "file"),
             ("frontend/src/views/lingdoc/firstPassEntryState.test.ts", "file"),
@@ -1817,6 +1818,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "resolves": (),
         "summary": (
             "G4 模板目录与版本治理（Spec #139）的施工面，票面即 PR #248 本身。"
+            "**2026-10-27 路径移交**：两份验收证据文档（Spec-139 矩阵与 T139 报告）永久移交给验收簇 PF-696（票 #696，TRANSFERS 有记录）；本面不再持有活证据文件。"
             "**2026-10-23 交面**（本 PR 只做交面）：PR-1（代码、测试、契约产物与验收证据 = PR #248）已于 2026-10-23 合入 main（合并提交 19d9df9c），本面随之登记为 done，"
             "claimed_by 清空（完成态不保留认领人，认领的人记在 summary 里）；本面在登记处登记 24 条路径。"
             "**面号 PF-13**：最初按自取序号登记为 PF-10，与 #465「PF-10 Beta 首版验收证据生产」（PR #474）撞名——登记处 loader 拒绝同名面（duplicate face name），"
@@ -1967,6 +1969,48 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "证据：Spec-129-成员角色Scope生命周期验收矩阵.md 与 T129-验证报告.json（随 PR #149 合入 main）。"
         ),
     },
+    {
+        "name": "PF-696 G1–G7 验收簇 C1(G4)",
+        "issue": 696,
+        "issues": (139, 141, 142),
+        "status": "claimed",
+        "claimed_by": "magician336",
+        "paths": (
+            # 从 PF-13 永久移交（2，TRANSFERS 有记录）：#139 的活验收证据——
+            # 验收 campaign 持续判定与回填（AC-04-05 已由 C1 依解除条件翻 PASS）。
+            ("docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md", "file"),
+            ("docs/08-本轮实施方案/T139-验证报告.json", "file"),
+            # 本面新增（4）：#141/#142 的首轮判定矩阵与验证报告（2026-10-27）。
+            ("docs/08-本轮实施方案/Spec-141-模型辅助规则建议验收矩阵.md", "file"),
+            ("docs/08-本轮实施方案/T141-验证报告.json", "file"),
+            ("docs/08-本轮实施方案/Spec-142-模板升级与G3稳定化交接验收矩阵.md", "file"),
+            ("docs/08-本轮实施方案/T142-验证报告.json", "file"),
+            # 本面新增（1）：#142 缺口轮（C2）的升级链验收测试。
+            ("internal/lingdoc/workspacecore/change_set_upgrade_acceptance_test.go", "file"),
+            # 本面新增（1）：#142 TD-05 缺口轮（C4）的升级链 PG 验收测试（DSN 门控）。
+            ("internal/lingdoc/workspacecore/change_set_upgrade_postgres_test.go", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "验收簇 C1（G4 簇）——wayfinder 地图 #695 的执行面：对 #139 / #141 / #142 "
+            "三张开放 G 线 Spec 做口径 v1.1 判定（矩阵 + T*-验证报告.json + 判定器三态结论），"
+            "全 PASS 关 Spec 票，缺口登记进聚面流程。面号按 #436 的「票号即号」规则取自票 #696；"
+            "PF-11 交面 summary 里「12 → 13」的预告即本面，合并后两侧共存为 14 面。"
+            "工具是 M-0 落基的 scripts/lingdoc_acceptance_judge.py（PR #711，合并提交 c8785d1f）。"
+            "**2026-10-27 首轮判定（C1）**：#139 重申 v1 结论并把 AC-04-05（CI 缩面观测）依解除条件"
+            "双侧观测翻 PASS（阳性 Run 40380987157 + 阴性 Run 40366193209）；AC-04-03 仍由 #523 承接。"
+            "#141 首轮 22 PASS / 1 NOT RUN（前端建议面板未建）；#142 首轮 22 PASS / 4 FAIL / 4 NOT RUN。"
+            "**2026-10-27 缺口补齐轮（C2）**：#142 的 4 项证据缺口由新增测试 "
+            "change_set_upgrade_acceptance_test.go 关闭（ImpactTask 创建断言、幂等 apply、审计失败回滚、"
+            "审计链关联），TD-03.2 复核更正为既有证据（TestActiveRuleSetMigration 内的处置断言）；"
+            "#142 现 27 PASS / 2 FAIL（TD-02.8 被缺陷 #727 阻断——修复后 StabilizeRevision 撞确认表"
+            "唯一键；TD-05 PG 侧无专项证据）/ 1 NOT RUN（TD-06 升级前端）。"
+            "**判定只读代码不施工**：缺陷修复与前端建面走后续施工面。"
+            "**跨面借用记账**：共享路径图 owner 仍是 PF-7，本面只改内容不夺所有权。"
+            "依据票：#696（面）、#695（地图）、#458（判定器 M-0）。"
+            "**2026-10-27 由 magician336 认领**，同日交首轮判定与缺口轮。"
+        ),
+    },
 )
 
 # The hand-over ledger: paths that permanently moved from one face to another.
@@ -2086,6 +2130,22 @@ TRANSFERS: tuple[tuple[str, str, str, str, str, str], ...] = (
         "#466 / #512 / PR #149",
         "2026-10-23",
         "PR #149 把角色 Scope 判定接进权限策略",
+    ),    # ---- PF-13 -> PF-696 (2, 验收簇 C1 的活证据文件，票 #696) ----
+    (
+        "docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md",
+        "PF-13 G4 模板目录与版本治理",
+        "PF-696 G1–G7 验收簇 C1(G4)",
+        "#696 / 地图 #695",
+        "2026-10-27",
+        "验收 campaign 要持续判定与回填这份活证据（AC-04-05 已由 C1 翻 PASS）；done 面不再持有",
+    ),
+    (
+        "docs/08-本轮实施方案/T139-验证报告.json",
+        "PF-13 G4 模板目录与版本治理",
+        "PF-696 G1–G7 验收簇 C1(G4)",
+        "#696 / 地图 #695",
+        "2026-10-27",
+        "验收 campaign 要持续判定与回填这份活证据（AC-04-05 已由 C1 翻 PASS）；done 面不再持有",
     ),
 )
 
