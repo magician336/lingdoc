@@ -1,5 +1,7 @@
 package workspace
 
+// gateDelegationProbe: #737 一次性验证样本（验证后分支删除）。
+
 import (
 	"context"
 	"errors"
