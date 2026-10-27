@@ -220,15 +220,7 @@ func TestAcceptCandidateRefusesAnInventedSourceMarker(t *testing.T) {
 
 func TestAcceptCandidateAcceptsAWholeConfirmationAndRecordsItInTheAudit(t *testing.T) {
 	store, input := adoptionFixture(t, writingaction.ActionGenerate, writingaction.OriginGenerated)
-	require.NoError(t, store.DB().Exec(`CREATE TABLE lingdoc_project_audits (
-		id TEXT PRIMARY KEY,
-		project_id TEXT NOT NULL,
-		actor_id TEXT NOT NULL,
-		action TEXT NOT NULL,
-		target TEXT NOT NULL,
-		details_json TEXT NOT NULL DEFAULT '{}',
-		created_at DATETIME
-	)`).Error)
+	ensureProjectAuditFixtureTable(t, store.DB())
 	service := NewCandidateAdoptionService(store,
 		sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil }), allowAuthorizer{})
 	result, err := service.AcceptCandidate(context.Background(), input)

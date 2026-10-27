@@ -1,10 +1,10 @@
 package workspace
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/database/fixturemigrations"
 	"gorm.io/gorm"
 )
 
@@ -14,69 +14,35 @@ import (
 // The fixtures used to hand-write the column list. Every column added to that
 // table afterwards broke them, and it broke them quietly: the audit write
 // failed with "no such column", and the HTTP layer turned that into an opaque
-// 500 instead of a schema error (#327). The helper below creates the base
-// table and then applies the production migration that brings it to the
-// current shape, so the fixture and production agree by construction.
+// 500 instead of a schema error (#327, #416). The helper below therefore
+// declares the table it needs and applies **every** production SQLite
+// migration that shapes or writes that table, discovered by table name — there
+// is no column list and no migration number here to fall behind.
+//
+// The same declaration is exercised by
+// internal/database/audit_event_columns_test.go, which builds the table this
+// way and compares it with the row model, so the fixture path cannot drift from
+// the model without a red test.
 
 func ensureAuditEventTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
-		id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-		action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`).Error; err != nil {
-		t.Fatalf("prepare the audit table: %v", err)
-	}
-	if auditEventTableHasColumn(t, db, "target_version") {
-		// 000052 is applied, but the decision columns of 000054 (#415) may
-		// still be missing: a fixture that prepared the table before this
-		// migration existed stops here. Applying 000054 twice is harmless
-		// only if the column is absent, so the check is per column.
-		if !auditEventTableHasColumn(t, db, "tenant_id") {
-			decisionFields, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
-				"000054_lingdoc_audit_decision_fields.up.sql"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := db.Exec(string(decisionFields)).Error; err != nil {
-				t.Fatalf("apply the audit decision fields migration: %v", err)
-			}
-		}
+	if db.Migrator().HasTable("lingdoc_project_audits") {
+		// A fixture that prepared the table already owns a production shape.
 		return
 	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
-		"000052_lingdoc_audit_version_fields.up.sql"))
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open the fixture database handle: %v", err)
+	}
+	root, err := fixturemigrations.RepoRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(string(migration)).Error; err != nil {
-		t.Fatalf("apply the audit version fields migration: %v", err)
-	}
-	decisionFields, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
-		"000054_lingdoc_audit_decision_fields.up.sql"))
+	selection, err := fixturemigrations.ApplySQLite(sqlDB,
+		filepath.Join(root, "migrations", "sqlite"), []string{"lingdoc_project_audits"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("give the fixture the production audit table shape: %v", err)
 	}
-	if err := db.Exec(string(decisionFields)).Error; err != nil {
-		t.Fatalf("apply the audit decision fields migration: %v", err)
-	}
-}
-
-// auditEventTableHasColumn reports whether the audit table already carries the
-// column, so a fixture that prepares the same table twice does not apply the
-// migration twice.
-func auditEventTableHasColumn(t *testing.T, db *gorm.DB, column string) bool {
-	t.Helper()
-	var columns []struct {
-		Name string
-	}
-	if err := db.Raw("PRAGMA table_info(lingdoc_project_audits)").Scan(&columns).Error; err != nil {
-		t.Fatalf("read the audit table columns: %v", err)
-	}
-	for _, candidate := range columns {
-		if candidate.Name == column {
-			return true
-		}
-	}
-	return false
+	t.Logf("audit table fixture applies %d production migrations through %s",
+		len(selection.Names), selection.Names[len(selection.Names)-1])
 }
