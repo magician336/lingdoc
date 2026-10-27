@@ -847,13 +847,15 @@ class DelegationVerificationTests(unittest.TestCase):
 
         The stale `cancelled` check run must read as *pending*, not as a
         failure, while the live run is still going; the live run's own
-        conclusion then settles the delegation.
+        conclusion then settles the delegation.  (The gate's publish step
+        starts minutes after the event, so the live run's check run already
+        exists by then; a state where a stale cancelled run is the only one
+        on the head is a delegation that really did not run, and fails.)
         """
         cancelled = check_run(conclusion="cancelled", run_id=1)
         live_pending = check_run(status="in_progress", conclusion=None,
                                  run_id=2)
         responses = [
-            (200, payload(cancelled)),
             (200, payload(cancelled, live_pending)),
             (200, payload(cancelled, live_pending)),
             (200, payload(cancelled, check_run(run_id=2))),
@@ -864,7 +866,7 @@ class DelegationVerificationTests(unittest.TestCase):
                  "GATE_DELEGATION_POLL_INTERVAL": "0.05"}, stub=stub)
 
         self.assertIsNone(raised, errors)
-        self.assertGreaterEqual(len(stub.requests), 4)
+        self.assertGreaterEqual(len(stub.requests), 3)
 
     # -- the wiring -----------------------------------------------------------
     def test_the_workflow_permissions_stay_minimal(self):
