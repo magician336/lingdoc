@@ -156,22 +156,11 @@ jobs:
           PY
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
-      - uses: actions/setup-node@v6
-        if: steps.scope.outputs.run_frontend == 'true'
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Test, type-check and build frontend
-        if: steps.scope.outputs.run_frontend == 'true'
-        id: frontend
-        working-directory: frontend
-        run: |
-          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
-          npm test 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-tests.log"
-          npm run type-check 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-types.log"
-          npm run build 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-build.log"
+      # The frontend is not run here (#723, ADR 0014): the three commands
+      # live once, in the frontend workflow's verify job, and this gate
+      # delegates the verification to it.  The delegated job is named in the
+      # coverage table and in the frontend verdict the scope step publishes,
+      # so the conclusion still says who verifies the frontend on this head.
 
       - name: Publish check boundary and results
         if: always()
@@ -180,7 +169,10 @@ jobs:
           SCOPE: ${{ steps.scope.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
-          FRONTEND: ${{ steps.frontend.outcome }}
+          # The frontend row is the decision's delegation verdict ("delegated
+          # to frontend.yml#verify (...)" or an explicit "not run"), not the
+          # outcome of a step this workflow no longer has.
+          FRONTEND: ${{ steps.scope.outputs.frontend }}
           SURFACE: ${{ steps.scope.outputs.surface }}
           REASON: ${{ steps.scope.outputs.reason }}
           BASE: ${{ steps.scope.outputs.base }}
@@ -212,7 +204,14 @@ jobs:
               uncovered = bool(published.get('uncovered'))
           result['coverage'] = coverage
           result['uncovered'] = uncovered
-          result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
+          # The boundary keeps delegation and skipping apart (ADR 0014): a
+          # delegated check has real evidence on the named job of the
+          # frontend workflow on this head; a skipped check is NOT RUN.
+          result['boundary'] = ('Automated checks only; not consumer approval, '
+                                'a live-model run, or product acceptance. '
+                                'A delegated check is verified by the named job '
+                                'of the frontend workflow on this head; a '
+                                'skipped check is NOT RUN.')
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
           folder.mkdir(exist_ok=True)
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -223,7 +222,8 @@ jobs:
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
-              handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
+              handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n')
+              handle.write('Delegated is not skipped: a delegated check is verified by the named job of the frontend workflow on this head; its evidence is real there.\n\n')
               if coverage:
                   handle.write('### Surface coverage\n\n')
                   handle.write('| Surface | Paths | Verified by | Status |\n|---|---|---|---|\n')

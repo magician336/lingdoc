@@ -32,8 +32,10 @@ that watch that surface.  The relation is many-to-many and is read like this:
 
 * one surface may be consumed by several jobs (the frontend surface is watched
   by both the test job and the image job of the frontend workflow);
-* one job may consume several surfaces (the PR gate job watches the provider
-  packages, the frontend, the contracts and the governance surface).
+* one job may consume several surfaces (the frontend workflow's verify job
+  watches the workflow-level frontend surface and the delegated frontend
+  surface; the PR gate job watches the provider packages, the contracts and
+  the governance surface).
 
 How to add a surface
 --------------------
@@ -63,8 +65,9 @@ Terms
     Whether the consuming job is skipped outright when the change is
     formatting-only.  A lint job is the judge of formatting, so it is never
     skipped; test jobs are skipped.  This is a job-level fact: the PR gate job
-    itself is never skipped, while its provider and frontend *steps* honour
-    the formatting-only shortcut.
+    itself is never skipped, while its provider *step* and every test job it
+    selects -- including the delegated frontend job -- honour the
+    formatting-only shortcut.
 
 ``verifies``
     Whether the consuming job **verifies** the surface: compiles it, tests it
@@ -88,7 +91,10 @@ Terms
     The step of the pull request gate that consumes the surface, when the
     surface has one: its display name, the boolean output that selects it,
     whether the formatting-only shortcut skips it, and what it judges.  A
-    surface without a step is a whole-job surface.
+    surface without a step is a whole-job surface.  Since #723 the frontend
+    surface has no step: the gate delegates the frontend verification to the
+    frontend workflow's verify job instead of running a step of its own, so
+    only the provider and contracts surfaces carry one.
 
 Ownership knowledge (provider roots, contracts directory, governance file
 set, frontend root) is registered here exactly once.  The gate decision
@@ -394,24 +400,27 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         },
     },
     {
+        # The pull request gate does not run the frontend checks itself any
+        # more (#723): the three commands live once, in the frontend
+        # workflow's verify job, and the gate **delegates** the verification
+        # to it (ADR 0014).  The consumer entry below is that delegated job:
+        # the coverage table names it, and the published frontend verdict is
+        # a delegation statement naming it.  Delegation is not a skip -- the
+        # evidence is real on the named job -- so the consumer is a verifying
+        # test job that honours the formatting-only shortcut, like every
+        # other test job.
         "name": "pr-gate-frontend",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_PREFIX,
         "role": ROLE_FRONTEND,
         "paths": (FRONTEND_ROOT,),
         "consumers": (
-            {"workflow": ".github/workflows/lingdoc-review.yml",
-             "job": "gate",
-             "job_name": "LingDoc PR gate"},
+            {"workflow": ".github/workflows/frontend.yml",
+             "job": "verify",
+             "job_name": "Test, type-check, and build"},
         ),
-        "skipped_on_format_only": False,
+        "skipped_on_format_only": True,
         "verifies": True,
-        "step": {
-            "name": "Frontend: test, type-check and build",
-            "output": "run_frontend",
-            "skipped_on_format_only": True,
-            "subject": "the frontend",
-        },
     },
     {
         "name": "contracts",

@@ -185,6 +185,11 @@ class JobDecision:
     ``run`` says whether the checks this job owns are selected for this
     event.  For a workflow-level gate that is the job's trigger; for the pull
     request gate it is the condition of the step that owns the surface.
+
+    ``role`` is the manifest role of the surface this verdict comes from (the
+    same value the manifest's ``role`` field carries).  The published
+    frontend verdict reads it to find the delegated frontend job (ADR 0014)
+    without re-deriving ownership the manifest already declares.
     """
 
     workflow: str
@@ -196,6 +201,7 @@ class JobDecision:
     path_kind: str
     paths: tuple[str, ...]
     skipped_on_format_only: bool
+    role: str = manifest.ROLE_PATHS
 
     @property
     def readable_key(self) -> str:
@@ -702,6 +708,7 @@ def _jobs(fields: Mapping[str, Any],
                 path_kind=surface.path_kind,
                 paths=surface.paths,
                 skipped_on_format_only=surface.skipped_on_format_only,
+                role=surface.role,
             ))
     return tuple(jobs)
 
@@ -773,8 +780,13 @@ def _coverage_rows(decision: Decision,
         rows.append(_Coverage(
             surface=tested,
             paths=paths,
-            verified_by=tuple(_owner_names(surface) for surface in running),
-            watched_by=tuple(_owner_names(surface) for surface in watching),
+            # A job may watch the same tested surface through two manifest
+            # surfaces (the delegated frontend job does, #723); it is still
+            # one verifier, so it is named once.
+            verified_by=tuple(dict.fromkeys(_owner_names(surface)
+                                            for surface in running)),
+            watched_by=tuple(dict.fromkeys(_owner_names(surface)
+                                           for surface in watching)),
             status=status,
         ))
     return tuple(rows)
@@ -1418,6 +1430,39 @@ def _text(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _frontend_verdict(decision: Decision,
+                      verdicts: Mapping[str, bool]) -> str:
+    """The published frontend verdict: a delegation, or an honest not-run.
+
+    The gate does not run the frontend checks itself any more (#723, ADR
+    0014): the verification is delegated to the frontend workflow job the
+    manifest names for the frontend role.  When that job is selected on this
+    head, the verdict names it -- the evidence is real on that job, which is
+    what separates a delegation from a skip.  "Skipped means NOT RUN, not
+    passed" stays true in the other direction too: a head where the
+    delegated job does not run says "not run" and never "delegated".
+
+    A run whose range could not be resolved -- a manual dispatch, an
+    undetermined push -- starts no frontend workflow on this head, so it
+    does not claim the delegation even when the verification is selected.
+    When the manifest cannot be read at all the verdict falls back to the
+    plain flag rather than naming a job the decision does not know.
+    """
+    delegated = [job for job in decision.jobs
+                 if job.role == manifest.ROLE_FRONTEND]
+    if not delegated:
+        return _text(decision.frontend)
+    job = delegated[0]
+    target = f"{Path(job.workflow).name}#{job.job} ({job.job_name})"
+    runs = verdicts.get(job.key, False)
+    if runs and not (decision.forced and not decision.diff_range):
+        return f"delegated to {target}"
+    if runs:
+        return (f"not run: frontend verification is selected on this head, "
+                f"but this event does not start {target}")
+    return "not run: frontend verification is not selected on this head"
+
+
 def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
                   ) -> dict[str, str]:
     """The one place where a decision becomes strings.
@@ -1425,6 +1470,12 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
     ``patterns`` is the path table of the gate that asks for the decision; it
     selects the ``run`` verdict of that gate.  Without it the ``run`` verdict
     says whether any of the manifest's jobs is selected.
+
+    The ``frontend`` key is the published frontend **verdict**, not a bare
+    flag: a delegation statement naming the delegated job, or an honest
+    "not run" (:func:`_frontend_verdict`).  The workflow prints it verbatim
+    into the gate result, so the field keeps its name and position while its
+    value says who verifies the frontend (#723).
     """
     if patterns is None:
         run = any(job.run for job in decision.jobs)
@@ -1432,6 +1483,11 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         run = _pattern_verdict(decision.forced, decision.run_code,
                                decision.contribution, patterns,
                                base_moved=decision.base_moved)
+    # A job that watches several surfaces runs when any of them is selected.
+    # The published key says so once, not once per surface.
+    verdicts: dict[str, bool] = {}
+    for job in decision.jobs:
+        verdicts[job.key] = verdicts.get(job.key, False) or job.run
     outputs = {
         "run": _text(run),
         "run_code": _text(decision.run_code),
@@ -1441,12 +1497,14 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "base": decision.base,
         "contracts": _text(decision.contracts),
         "backend": _text(decision.backend),
-        "frontend": _text(decision.frontend),
-        # The two steps of the pull request gate that run the test matrix.
-        # They read one boolean each: the formatting-only shortcut is
-        # already folded in, so no condition has to combine two outputs.
+        # The published frontend verdict: a delegation naming the delegated
+        # job, or an honest "not run" (#723).  There is no run_frontend key
+        # any more: the gate runs no frontend step, and the verification it
+        # delegates is carried by this verdict.
+        "frontend": _frontend_verdict(decision, verdicts),
+        # The provider step reads one boolean: the formatting-only shortcut
+        # is already folded in, so no condition has to combine two outputs.
         "run_providers": _text(decision.provider_tests and not decision.format_only),
-        "run_frontend": _text(decision.frontend and not decision.format_only),
         "provider_tests": _text(decision.provider_tests),
         "provider_packages": " ".join(decision.provider_packages),
         "base_moved": _text(decision.base_moved),
@@ -1465,11 +1523,6 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
             for row in decision.coverage),
         "uncovered": _text(decision.uncovered),
     }
-    # A job that watches several surfaces runs when any of them is selected.
-    # The published key says so once, not once per surface.
-    verdicts: dict[str, bool] = {}
-    for job in decision.jobs:
-        verdicts[job.key] = verdicts.get(job.key, False) or job.run
     for key, run in verdicts.items():
         outputs[key] = _text(run)
     return outputs
@@ -1589,14 +1642,18 @@ def _is_step_level(workflow: str) -> bool:
     pull request gate's job always runs and its steps are skipped one by
     one.  Such a gate publishes its steps; every other gate publishes the
     jobs it skips.
+
+    The mark of a step-level gate is a declared ``step``: the manifest
+    records a step exactly where the pull request gate's own step owns the
+    surface.  A job watching several surfaces is *not*, by itself, that
+    mark -- since #723 the frontend workflow's verify job watches the
+    workflow-level frontend surface and the delegated frontend surface, and
+    its gate still selects whole jobs.
     """
-    counts: dict[str, int] = {}
-    for surface in _readable_surfaces():
-        for consumer in surface.consumers:
-            if consumer.workflow != workflow:
-                continue
-            counts[consumer.job] = counts.get(consumer.job, 0) + 1
-    return any(count > 1 for count in counts.values())
+    return any(surface.step is not None
+               for surface in _readable_surfaces()
+               if any(consumer.workflow == workflow
+                      for consumer in surface.consumers))
 
 
 def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:

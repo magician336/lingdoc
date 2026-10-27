@@ -919,6 +919,12 @@ class PreRefactorGoldenTests(DecisionFixture):
     the repository-level gates test new, so the gate that watches the
     contribution has to run again instead of leaving the contribution's
     surface without any compile or test evidence on the new head.
+
+    The published ``frontend`` key changed with ticket #723 (ADR 0014): the
+    gate no longer runs the frontend itself, so the key stopped being the
+    bare flag and became the frontend verdict -- a delegation when the
+    delegated job runs on this head, an honest "not run" when it does not.
+    Every scenario here touches no frontend, so each row reads "not run".
     """
 
     GOLDEN = {
@@ -928,7 +934,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "base_moved": "false", "surface_changed": "true",
             "reason": "contribution surface changed",
             "run_code": "true", "run_targeted": "true",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "docs_push": {
@@ -937,7 +945,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "base_moved": "false", "surface_changed": "false",
             "reason": "tested surface unchanged and base unchanged",
             "run_code": "false", "run_targeted": "false",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "baseline_merge": {
@@ -947,7 +957,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "reason": "the base moved under the branch; the merge result is "
                       "new, so the contribution is re-tested against it",
             "run_code": "false", "run_targeted": "true",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
     }
