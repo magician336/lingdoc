@@ -43,6 +43,9 @@ const (
 	ModelCallLedgerSourceAgentTurn = "agent_turn"
 	// ModelCallLedgerSourceRuleSuggestionRun is one rule suggestion run.
 	ModelCallLedgerSourceRuleSuggestionRun = "rule_suggestion_run"
+	// ModelCallLedgerSourceDependencyRecommendationRun is one dependency-edge
+	// recommendation run (#751).
+	ModelCallLedgerSourceDependencyRecommendationRun = "dependency_recommendation_run"
 )
 
 // The status of a ledger row: did the provider answer, or not.
