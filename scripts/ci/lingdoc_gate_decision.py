@@ -133,12 +133,12 @@ FRONTEND_ROOT = manifest.FRONTEND_ROOT
 #
 # 分片依据 Phase 0（#721）之后的实测校准（#724 验收报告 §2）：域内主包的
 # workspace 包族是单一 Go 包（无子包可再分），非 race 实测 315.6s、占全仓
-# provider 测试的 63%——单独成片，是分片后最大分片的地板；其余 17 个包族
+# provider 测试的 63%——单独成片，是分片后最大分片的地板；其余包族
 # 共享一片；另外三个根合计非 race 17.2s，共享一小片。
 LINGDOC_FAMILY_SHARDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("lingdoc-workspace", ("workspace",)),
     ("lingdoc-core", (
-        "access", "candidateadoption", "delivery", "demoroute", "docx",
+        "academic", "access", "candidateadoption", "delivery", "demoroute", "docx",
         "generation", "materiallingest", "membership", "operationcore",
         "reviewanchor", "rulesetstore", "sourcemarker", "sourcepolicy",
         "template", "templategovernance", "workspacecore", "writingaction",
