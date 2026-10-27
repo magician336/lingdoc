@@ -1,4 +1,4 @@
-"""Guard tests for the workspace test-name partition (ADR 0015, #736).
+"""Guard tests for the workspace test-name partition (ADR 0016, #736).
 
 The gate splits the workspace family's tests across shard jobs by test
 name: the decision module enumerates the package's top-level test names
@@ -11,7 +11,7 @@ pinned here against the **real repository**:
   the family must stay free of the constructs that would break that
   equation (build tags, ``TestMain``, testify suites, fuzz/example
   targets) -- any of them appearing turns these guards red and forces a
-  re-engagement with ADR 0015, instead of silently moving tests out of
+  re-engagement with ADR 0016, instead of silently moving tests out of
   every shard's filter;
 * the published filters are a partition: every enumerated name matches
   exactly one filter, every filter matches at least one name, and the
@@ -89,7 +89,7 @@ class WorkspacePartitionTests(unittest.TestCase):
                 self.assertIsNone(pattern.search(source),
                                   f"{path.name} carries a {label}; a source "
                                   f"enumeration would drift from what go "
-                                  f"test runs -- re-engage ADR 0015")
+                                  f"test runs -- re-engage ADR 0016")
         for path in sorted(FAMILY_DIR.glob("*.go")):
             if path.name.endswith("_test.go"):
                 continue
@@ -99,6 +99,19 @@ class WorkspacePartitionTests(unittest.TestCase):
             self.assertIsNone(TEST_FUNC.search(source),
                               f"{path.name} declares a test function in a "
                               f"non-test file")
+
+    def test_the_family_directory_has_no_subpackages(self):
+        """A Go file in a subdirectory would join `.../workspace/...` runs
+        while matching none of the top-level `-run` filters -- it would sit
+        in zero shards, silently, and every promise above would still look
+        green.  The family stays flat (ADR 0016); a subpackage is a new
+        partition decision, not a quiet addition."""
+        escaped = sorted(path.relative_to(FAMILY_DIR).as_posix()
+                         for path in FAMILY_DIR.rglob("*.go")
+                         if path.parent != FAMILY_DIR)
+        self.assertEqual(escaped, [],
+                         "subdirectory Go files would escape every shard: "
+                         f"{escaped} -- re-adjudicate ADR 0016 first")
 
     def test_the_module_sees_the_same_names_as_the_source(self):
         """Two independent parsers must agree on the name set."""

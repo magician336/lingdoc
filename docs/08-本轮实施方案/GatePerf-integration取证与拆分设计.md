@@ -3,7 +3,7 @@
 - 关联：治理票 #719／Spec #720／本票 #735（取证+设计；实施按选定方案另行推进）；前置 `GatePerf-Phase0-分步耗时基线报告-20261027.md`（§6 记 integration job 743–1384s）、`GatePerf-provider分片-验收报告.md`（§2.2/§4 workspace 单包下界）。
 - 基线：`main` @ `cb57f5c9`（与 Phase 0 基线同代的当前 head）。工作流：`.github/workflows/lingdoc-interface-integration.yml`（152 行，3 job：scope / integration / frontend）。
 - 采集日期：2026-10-27。方式：只读 REST 采集（`gh api`，全部带 20–30s 退避重试，未触发任何工作流）+ CI artifact 解析 + WSL 本地一次性 PG 分桶实测（`pg735` 容器，用后即停，未改仓库）。
-- **本票零代码改动**；选定方案的决策记录草案见 §6.3（**ADR 编号预留 0016，本票不建 ADR 文件**——#736 正在用 0015，避免撞号；晚于 #736 落档时用 0016）。
+- **本票零代码改动**；选定方案的决策记录草案见 §6.3（**ADR 编号 0017（本票不落 ADR 文件）**——编号勘误：#736 的工作区分片决策已定为 ADR 0016（本 PR 同分支落档），原「预留 0016」系基于过时的 adr 目录清单；#735 正式落档时用 0017）。
 
 ## 0. 目的
 
@@ -208,9 +208,9 @@ integration job → matrix：`workspace`（workspace 包）/ `workspacecore`（w
 
 受影响 Go 类 PR 的 integration wall：**1393–1427s → ≈860–900s（约 14.3–15 分钟；−37%）**。地板声明：workspace 单包 690.6s（CI 实测）+ 片级固定 ≈150–170s（setup+PG+fixture+编译）→ **包粒度拆分的物理下界 ≈850s**；要进 10 分钟以内必须做 workspace 包内拆分或拆包（独立决策，另票）。
 
-### 6.3 决策记录草案（ADR 0016，本票不落文件）
+### 6.3 决策记录草案（ADR 0017，本票不落文件）
 
-> - **编号**：0016（预留；#736 占 0015，本 ADR 晚于 #736 落档；**本票不建 ADR 文件**）。
+> - **编号**：0017（#736 的工作区分片决策为 ADR 0016；**本票不建 ADR 文件**）。
 > - **标题**：integration closeout 按包族拆片（3 片矩阵 + 尾部配重）。
 > - **Context**：integration job 1393–1427s 中 closeout 占 83.5%（1162–1169s）；closeout 内 go-test 窗口 800.7s 的关键路径是 workspace 单包墙 690.6s（CI artifact 40475262990 实证，2937 测试）；PG 依赖测试与 SQLite 测试同包混布，按段分离不可行、按包分离可行。
 > - **Decision**：integration job 改 3 片 matrix（workspace / workspacecore / platform），每片独立 postgres service 与 closeout report；vet/build/restart/g6/rollback/count=20/RuleSet 配重到 platform 片；`workspacecore` 片免 failure fixture。聚合语义：全片 PASS 才算本 gate PASS；scope 判定 skipped 时全片 skip、结论 artifact 保持「NOT RUN 带原因」。
@@ -239,7 +239,7 @@ integration job → matrix：`workspace`（workspace 包）/ `workspacecore`（w
 | M3 | PG 依赖矩阵（包 × PG 用例 × 无 DSN 行为 × CI 覆盖位） | §4（源码 grep + workflow + app.yml 对照；含 types 缺口发现） | **PASS** |
 | M4 | 本地 `go test -json` 分桶实测（一次性 PG，用后即停） | §3.4（B1–B5 + fixture 3 项；`pg735` 已 stop；go_vet 计时缺陷如实 NOT RUN） | **PASS**（vet 计时段 NOT RUN） |
 | M5 | ≥2 个结构不同候选 + wall/runner 分钟/失败归因三维对比 + 选定理由 | §5（A/B/C 三案）+ §6.1 | **PASS** |
-| M6 | 决策记录草案（编号 0016 预留，**本票不建 ADR 文件**） | §6.3（已注明与 #736 的 0015 错位规则） | **PASS** |
+| M6 | 决策记录草案（编号 0017，**本票不建 ADR 文件**） | §6.3（编号勘误：工作区分片为 ADR 0016，0015 系 main 既有 read-audit ADR） | **PASS** |
 | M7 | 实施蓝图：分票拆分 + 阻塞边 | §7（S1–S4 + 阻塞边 + 另票建议） | **PASS** |
 | M8 | 零代码改动；仅本报告落 `docs/08-本轮实施方案/`；提交前 merge origin/main；不 push、不开 PR、不动其他工作树 | git 记录（单提交 `docs(ci): #735 …`）；远端无推送 | **PASS**（提交后） |
 

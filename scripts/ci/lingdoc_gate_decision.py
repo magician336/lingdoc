@@ -149,7 +149,7 @@ WORKSPACE_SHARD_NAMES = ("lingdoc-workspace-a", "lingdoc-workspace-b",
 WORKSPACE_SHARD_COUNT = len(WORKSPACE_SHARD_NAMES)
 
 # The static plan: a shard name and the package families it owns.  The
-# workspace family is registered once per name slice (ADR 0015); the
+# workspace family is registered once per name slice (ADR 0016); the
 # effective plan below may collapse those slices back into one unsharded
 # shard when the test-name enumeration is unavailable.
 _FAMILY_SHARDS_PLAN: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1010,8 +1010,7 @@ def _surface_runs(decision: Decision, surface: manifest.Surface,
 def _subsumed_by_delegate(surface: manifest.Surface,
                           row_paths: Sequence[str],
                           running: Sequence[manifest.Surface],
-                          surfaces: Sequence[manifest.Surface],
-                          outputs: Mapping[str, str]) -> bool:
+                          surfaces: Sequence[manifest.Surface]) -> bool:
     """Whether the surface this one delegates to subsumes its claim here.
 
     The reverse delegation (#737): a surface record may name the surface
@@ -1097,7 +1096,7 @@ def _coverage_rows(decision: Decision,
         # the delegate does not run.
         running = [surface for surface in running_all
                    if not _subsumed_by_delegate(surface, paths, running_all,
-                                                surfaces, outputs)]
+                                                surfaces)]
         if running:
             status = "verified"
         elif verifying:

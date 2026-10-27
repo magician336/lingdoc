@@ -2,7 +2,7 @@
 
 - 关联：Spec #720（PR gate 耗时优化）／治理票 #719／本票 #736；前置：#721（Phase 0 实测）、#724（provider 分片 + ADR 0014，其验收报告 §2.2/§6 登记的包内拆分顾虑）。
 - 分支：`ticket-736/workspace-adr`（工作树 `D:\wt\gp2-736`，起点 `cb57f5c9`；实现提交 `24e928d9`、决策提交 `f8fdc238`、merge origin/main 后 `41ebbd06`）。
-- 语义依据：[ADR 0015](../adr/0015-workspace包内按测试名分片.md)（workspace 维持单一 Go 包，gate 按**测试名分区**把它的测试分给多个分片 job；拆子包与维持现状两候选的量化否决理由同文）。
+- 语义依据：[ADR 0016](../adr/0016-workspace包内按测试名分片.md)（workspace 维持单一 Go 包，gate 按**测试名分区**把它的测试分给多个分片 job；拆子包与维持现状两候选的量化否决理由同文）。
 - 本报告证据口径：合并后 head `41ebbd06`（含 origin/main 15 个提交；workspace 族测试从 495 增至 499，分区**自动**吸收，零登记）。
 
 ## 0. 施工并行面核对
