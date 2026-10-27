@@ -35,9 +35,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import lingdoc_gate_decision as decision
+import lingdoc_gate_attest_reuse as attest
 import lingdoc_gate_surfaces as manifest
 
 CI_DIR = Path(__file__).resolve().parent
@@ -1044,6 +1046,348 @@ class OfflineEntryPointTests(DecisionFixture):
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module.split(".")[0])
         self.assertEqual(imported & {"socket", "http", "urllib", "requests"}, set())
+
+
+class GateAnchorTests(DecisionFixture):
+    """The run anchor: the reuse verdict's machine record, beside the scope.
+
+    Every complete gate run leaves a four-tuple -- ``head_sha``,
+    ``main_sha``, ``run_id``, ``conclusion`` -- in the run's artifact
+    (spec #627's anchor record).  It is written beside the scope artifact,
+    so the upload the workflow already performs carries it; the write is an
+    ancillary product that must never change the gate's own verdict.
+    """
+
+    def _code_change_repo(self, tmp: str) -> tuple[Path, str, str]:
+        """A repo with a one-commit topic: (root, base, head)."""
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        self._repo(root)
+        base = git(root, "rev-parse", "HEAD")
+        self._topic(root)
+        before = git(root, "rev-parse", "HEAD")
+        write(root, "internal/lingdoc/workspace/service.go",
+              "package workspace\n\n// change\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "code")
+        return root, base, git(root, "rev-parse", "HEAD")
+
+    def _publish(self, root: Path, base: str, head: str, artifact: Path,
+                 env: dict[str, str] | None = None) -> None:
+        event = self._event(git(root, "rev-parse", f"{head}~1"), head, base)
+        with mock.patch.dict(os.environ, env or {}):
+            decision.publish(event, root,
+                             artifact_dir=artifact)
+
+    def _without_ci_env(self, *names: str):
+        """Hide runner-provided environment values the anchor would read."""
+        hidden = names or ("GITHUB_SHA", "GITHUB_RUN_ID")
+        kept = {key: value for key, value in os.environ.items()
+                if key not in hidden}
+        return mock.patch.dict(os.environ, kept, clear=True)
+
+    def _anchor_of(self, artifact: Path) -> dict:
+        return json.loads(
+            (artifact / "gate-anchor.json").read_text(encoding="utf-8"))
+
+    def test_the_anchor_file_name_is_a_public_constant(self):
+        # The witness reads the anchor's file name across the module
+        # boundary; a private name reached from outside is not an interface,
+        # so the constant is public and the private spelling is gone (#627).
+        self.assertEqual(decision.GATE_ANCHOR_FILE, "gate-anchor.json")
+        self.assertFalse(hasattr(decision, "_ANCHOR_FILE"),
+                         "the anchor file name has one public spelling")
+
+    def test_the_anchor_records_the_pull_request_head_not_the_merge_commit(self):
+        # On the runner GITHUB_SHA is the merge commit of head and main --
+        # exactly the value the anchor must NOT record (spec #627: the head
+        # anchor is the pull request's own head SHA).
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact,
+                          env={"GITHUB_SHA": "f" * 40})
+
+            anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["head_sha"], head)
+
+    def test_the_anchor_records_this_run_id(self):
+        # The reuse decision module reads run_id as an int: the anchor
+        # records the number, not the runner's string spelling.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact,
+                          env={"GITHUB_RUN_ID": "12345"})
+
+            self.assertEqual(self._anchor_of(artifact)["run_id"], 12345)
+
+    def test_a_missing_run_id_is_recorded_as_empty_not_guessed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            with self._without_ci_env():
+                self._publish(root, base, head, artifact)
+
+            self.assertEqual(self._anchor_of(artifact)["run_id"], "")
+
+    def _merged_repo(self, tmp: str) -> tuple[Path, str, str, str, str]:
+        """A repo whose runner merge ref integrates (main tip, head).
+
+        Returns (root, base, main_tip, head, merge_sha): ``main`` moves
+        after the topic branches off, so the merge ref ``GITHUB_SHA`` is a
+        real merge commit whose first parent is the main tip the run's
+        merge ref actually integrated.
+        """
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        self._repo(root)
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "-b", "topic")
+        write(root, "internal/lingdoc/workspace/service.go",
+              "package workspace\n\n// change\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "contribution")
+        head = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "main")
+        write(root, "README.md", "base\n\nmain moved\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "main move")
+        main_tip = git(root, "rev-parse", "HEAD")
+        git(root, "merge", "--no-ff", "topic", "-m", "merge")
+        return root, base, main_tip, head, git(root, "rev-parse", "HEAD")
+
+    def test_the_main_anchor_is_the_main_tip_the_merge_ref_integrated(self):
+        # The event's base.sha goes stale as main moves; the merge ref's
+        # first parent is the exact main tip this run tested against.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, main_tip, head, merge_sha = self._merged_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact,
+                          env={"GITHUB_SHA": merge_sha, "GITHUB_RUN_ID": "7"})
+
+            self.assertEqual(self._anchor_of(artifact)["main_sha"], main_tip)
+
+    def test_the_main_anchor_of_a_fast_forward_checkout_is_the_head_itself(
+            self):
+        # A head GitHub merges without a merge commit (the branch is already
+        # ahead of main) checks out the pull request head itself.  The head
+        # is the exact content this run compiled and tested, so the anchor
+        # records the head -- not the checkout's origin/main, whose ref is
+        # the fetch-time value and may name a newer main tip this run never
+        # tested (#627: the anchor anchors the tested commit).
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, main_tip, head, _ = self._merged_repo(tmp)
+            git(root, "update-ref", "refs/remotes/origin/main", main_tip)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact,
+                          env={"GITHUB_SHA": head, "GITHUB_RUN_ID": "7"})
+
+            anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["main_sha"], head)
+            self.assertEqual(anchor["main_sha_source"], "checkout_head")
+
+    def test_the_checkout_origin_main_is_the_last_resort_of_the_main_anchor(
+            self):
+        # Only when the run cannot name the commit it checked out does the
+        # anchor fall back to the checkout's origin/main -- and the source
+        # marks the degradation: that ref is the fetch-time value and may
+        # not be the main tip this run tested (#627).
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, main_tip, head, _ = self._merged_repo(tmp)
+            git(root, "update-ref", "refs/remotes/origin/main", main_tip)
+            artifact = Path(tmp) / "artifact"
+            with self._without_ci_env():
+                self._publish(root, base, head, artifact)
+
+            anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["main_sha"], main_tip)
+            self.assertEqual(anchor["main_sha_source"], "origin_main_unverified")
+
+    def test_a_main_tip_nobody_can_read_leaves_the_record_incomplete_and_the_gate_green(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            with self._without_ci_env():
+                self._publish(root, base, head, artifact)
+
+            anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["main_sha"], "")
+            self.assertEqual(anchor["main_sha_source"], "")
+
+    def test_the_anchor_conclusion_says_success_when_the_scope_step_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact)
+
+            self.assertEqual(self._anchor_of(artifact)["conclusion"], "success")
+
+    def test_the_anchor_carries_the_moment_the_main_tip_was_read(self):
+        # The main tip must be the one of the run's moment, and the artifact
+        # must let a reviewer verify when it was read.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact)
+
+            read_at = datetime.fromisoformat(
+                self._anchor_of(artifact)["main_sha_read_at"])
+            self.assertEqual(read_at.utcoffset(), timedelta(0))
+            self.assertLessEqual(
+                read_at, datetime.now(timezone.utc) + timedelta(minutes=1))
+
+    def test_a_failed_anchor_write_does_not_change_the_gate_verdict(self):
+        # The anchor is an ancillary product: its failure path must leave
+        # the gate's own decision exactly what it was.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            artifact.mkdir()
+            (artifact / "gate-anchor.json").mkdir()
+
+            event = self._event(git(root, "rev-parse", f"{head}~1"), head, base)
+            with mock.patch.dict(os.environ, {"GITHUB_RUN_ID": "5"}):
+                published = decision.publish(event, root, artifact_dir=artifact)
+
+            self.assertEqual(published["decision"]["surface"],
+                             "internal/lingdoc/workspace")
+            self.assertEqual(published["decision"]["uncovered"], "false")
+
+    def test_a_manual_run_anchors_the_commit_it_checked_out(self):
+        # workflow_dispatch carries no pull_request event: the checked-out
+        # commit is the dispatch ref's tip, which is what GITHUB_SHA holds.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            with mock.patch.dict(os.environ,
+                                 {"GITHUB_SHA": head, "GITHUB_RUN_ID": "9"}):
+                decision.publish({}, root, all_checks=True,
+                                 artifact_dir=artifact, whitespace=False)
+
+            anchor = self._anchor_of(artifact)
+            self.assertEqual(anchor["head_sha"], head)
+            # No pull request, no pull request number: the record stays
+            # incomplete, and the reuse verdict falls back on its own.
+            self.assertEqual(anchor["pr"], "")
+
+    def test_the_anchor_records_the_pull_request_it_belongs_to(self):
+        # Condition 1 of the reuse verdict (same pull request) needs the
+        # candidate's own number; the run record cannot carry it for fork
+        # pull requests, so the anchor does.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            event = self._event(git(root, "rev-parse", f"{head}~1"), head, base)
+            event["pull_request"]["number"] = 42
+            with mock.patch.dict(os.environ, {"GITHUB_RUN_ID": "5"}):
+                decision.publish(event, root, artifact_dir=artifact)
+
+            self.assertEqual(self._anchor_of(artifact)["pr"], 42)
+
+    def test_the_anchor_records_the_workflow_that_produced_it(self):
+        # Condition 5 of the reuse verdict (produced by this gate's
+        # workflow) reads the source workflow from the record.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            artifact = Path(tmp) / "artifact"
+            self._publish(root, base, head, artifact,
+                          env={"GITHUB_WORKFLOW": "LingDoc Review",
+                               "GITHUB_RUN_ID": "5"})
+
+            self.assertEqual(self._anchor_of(artifact)["workflow"],
+                             "LingDoc Review")
+
+    def test_the_anchor_record_satisfies_the_attest_verdicts_shapes(self):
+        # The reuse decision module (spec #627's follow-up) reads the
+        # anchor with strict field shapes.  An anchor this module writes
+        # must be judgeable as the candidate record once the run's own
+        # status and conclusion -- which only exist when the run is over,
+        # from the run record -- are composed onto it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            git(root, "update-ref", "refs/remotes/origin/main", base)
+            artifact = Path(tmp) / "artifact"
+            event = self._event(git(root, "rev-parse", f"{head}~1"), head, base)
+            event["pull_request"]["number"] = 42
+            with mock.patch.dict(os.environ,
+                                 {"GITHUB_RUN_ID": "77",
+                                  "GITHUB_WORKFLOW": "LingDoc Review",
+                                  "GITHUB_SHA": "a" * 40}):
+                decision.publish(event, root, artifact_dir=artifact)
+
+            anchor = self._anchor_of(artifact)
+            candidate = {**anchor, "status": "completed",
+                         "conclusion": "success"}
+            current = {"pr": 42, "head_sha": head,
+                       "main_sha": anchor["main_sha"]}
+            verdict = attest.decide_reuse(current, candidate)
+            self.assertTrue(verdict["reuse"], verdict["reason"])
+            self.assertEqual(verdict["reused_run_id"], 77)
+
+    def _repo_with_a_database_package(self, root: Path) -> None:
+        git(root, "init", "-b", "main")
+        git(root, "config", "user.email", "synthetic@example.com")
+        git(root, "config", "user.name", "Synthetic CI test")
+        write(root, "README.md", "base\n")
+        write(root, "internal/lingdoc/workspace/service.go", "package workspace\n")
+        write(root, "internal/database/store.go", "package database\n")
+        write(root, "cli/tool.go", "package cli\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "base")
+
+    def _manifest_without_a_verifier(self) -> tuple:
+        """A manifest in which no running job verifies internal/database."""
+        patched = []
+        for surface in manifest.load_surfaces():
+            if surface.name in ("app", "lingdoc-interface-integration"):
+                patched.append(dataclasses.replace(surface, paths=("frontend/**",)))
+            elif surface.name == "pr-gate-provider":
+                patched.append(dataclasses.replace(
+                    surface, paths=surface.paths + ("internal/database/",)))
+            else:
+                patched.append(surface)
+        return tuple(patched)
+
+    def test_the_anchor_conclusion_says_failure_when_a_surface_has_no_evidence(self):
+        # A red run leaves a red record: the anchor exists, and the verdict
+        # it carries is the gate's own failure.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            artifact = Path(tmp) / "artifact"
+            self._repo_with_a_database_package(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "internal/database/store.go",
+                  "package database\n\nfunc Store() string { return \"stored\" }\n")
+            git(root, "add", "-A")
+            git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+
+            with mock.patch.object(decision, "_manifest_surfaces",
+                                   return_value=self._manifest_without_a_verifier()):
+                with self.assertRaises(SystemExit):
+                    decision.publish(event, root, artifact_dir=artifact,
+                                     require_coverage=True, whitespace=False)
+
+            self.assertEqual(self._anchor_of(artifact)["conclusion"], "failure")
+
+    def test_the_anchor_conclusion_says_failure_when_the_boundary_check_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base, head = self._code_change_repo(tmp)
+            write(root, "internal/lingdoc/workspace/service.go",
+                  "package workspace\n\n// change   \n")
+            git(root, "add", ".")
+            git(root, "commit", "-m", "whitespace damage")
+            head = git(root, "rev-parse", "HEAD")
+            artifact = Path(tmp) / "artifact"
+
+            with self.assertRaises(subprocess.CalledProcessError):
+                self._publish(root, base, head, artifact)
+
+            self.assertEqual(self._anchor_of(artifact)["conclusion"], "failure")
 
 
 class PullRequestGateWiringTests(DecisionFixture):

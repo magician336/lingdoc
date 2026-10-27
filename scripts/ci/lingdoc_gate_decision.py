@@ -44,7 +44,16 @@ registered makes the guard test fail.
 
 ``publish(event, root)``
     What the gate's scope step runs: decide, publish the decision, publish
-    the conclusion, and check the pull request's whitespace boundary.
+    the conclusion, and check the pull request's whitespace boundary.  When
+    an artifact directory is given, it also records the **run anchor**
+    (``GATE_ANCHOR_FILE``, ``gate-anchor.json``): the facts a later run needs in order to verify
+    that this run's evidence still stands -- the pull request's own head
+    SHA (never ``GITHUB_SHA``, which is the merge commit), the main tip the
+    run's merge ref integrated, this run's id and pull request number, the
+    workflow that produced the run, and the scope step's own verdict.  The
+    anchor is an ancillary product: its write never changes the gate's
+    verdict, and an incomplete record makes a later reuse fallback, never
+    a false pass.
 
 ``gate_conclusion(decision, workflow)`` and ``conclusion_markdown(...)``
     Where a decision becomes something a **reader** sees: the job summary on
@@ -92,6 +101,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Sequence
 
 import lingdoc_gate_surfaces as manifest
@@ -1814,16 +1824,24 @@ def report(decision: Decision, whitespace_range: str | None = None) -> dict[str,
     }
 
 
+def _whitespace_check(root: Path, diff_range: str | None) -> int:
+    """The boundary check's return code: nonzero when the diff has damage."""
+    if not diff_range:
+        return 0
+    return subprocess.run(["git", "diff", "--check", diff_range, "--"],
+                          cwd=root, check=False, stdout=sys.stderr).returncode
+
+
 def check_whitespace(root: Path, diff_range: str | None) -> None:
     """The pull request gate's boundary check: the diff has no whitespace damage.
 
     The check covers the **complete** pull request range, not the last push:
     a whitespace defect introduced by an earlier commit is still a defect.
     """
-    if not diff_range:
-        return
-    subprocess.run(["git", "diff", "--check", diff_range, "--"],
-                   cwd=root, check=True, stdout=sys.stderr)
+    returncode = _whitespace_check(root, diff_range)
+    if returncode:
+        raise subprocess.CalledProcessError(
+            returncode, ["git", "diff", "--check", diff_range, "--"])
 
 
 def publish(event: Mapping[str, Any], root: Path, *,
@@ -1864,13 +1882,160 @@ def publish(event: Mapping[str, Any], root: Path, *,
         with open(output_path, "a", encoding="utf-8") as handle:
             for key, value in write_outputs(decision).items():
                 handle.write(f"{key}={value}\n")
+    # The anchor's conclusion is the scope step's own verdict, so the record
+    # is written before the step fails on it -- a red run leaves a red
+    # record, and the write never changes which of these failures happens.
+    coverage_failed = require_coverage and bool(decision.uncovered)
+    whitespace_rc = 0
+    if whitespace and not coverage_failed:
+        whitespace_rc = _whitespace_check(
+            root, whitespace_range or decision.diff_range)
+    _write_gate_anchor(artifact_dir, event, root, os.environ,
+                       "failure" if coverage_failed or whitespace_rc
+                       else "success")
     if gate:
         publish_conclusion(decision, gate, artifact_dir=artifact_dir, root=root)
-    if require_coverage and decision.uncovered:
+    if coverage_failed:
         _fail_uncovered(decision)
-    if whitespace:
-        check_whitespace(root, whitespace_range or decision.diff_range)
+    if whitespace_rc:
+        raise subprocess.CalledProcessError(
+            whitespace_rc,
+            ["git", "diff", "--check", whitespace_range or decision.diff_range,
+             "--"])
     return published
+
+
+# --------------------------------------------------------------------------
+# the run anchor: the reuse verdict's machine record (spec #627)
+# --------------------------------------------------------------------------
+#: The anchor's file name, inside the artifact directory.  The witness reads
+#: the name across the module boundary, so it is public: a cross-module read
+#: of a private name is not an interface.
+GATE_ANCHOR_FILE = "gate-anchor.json"
+
+
+def _anchor_head_sha(event: Mapping[str, Any], env: Mapping[str, str]) -> str:
+    """The revision the run's evidence is pinned to: the PR's own head.
+
+    On the runner ``GITHUB_SHA`` is the merge commit of head and main, not
+    the revision a later run can compare against; the anchor records the
+    pull request's head SHA.
+    """
+    pull_request = event.get("pull_request")
+    if isinstance(pull_request, Mapping):
+        head = pull_request.get("head", {}).get("sha", "")
+        if isinstance(head, str) and SHA.fullmatch(head):
+            return head
+    sha = env.get("GITHUB_SHA", "")
+    return sha if isinstance(sha, str) and SHA.fullmatch(sha) else ""
+
+
+def _anchor_pr(event: Mapping[str, Any]) -> int | str:
+    """The pull request the run belongs to, or ``""`` when there is none.
+
+    The reuse verdict's first condition compares pull request numbers, and
+    the run record cannot carry the number for a fork pull request -- the
+    anchor is the reliable source.
+    """
+    pull_request = event.get("pull_request")
+    if isinstance(pull_request, Mapping):
+        number = pull_request.get("number")
+        if isinstance(number, int) and not isinstance(number, bool):
+            return number
+    return ""
+
+
+def _anchor_run_id(env: Mapping[str, str]) -> int | str:
+    """This run's id as the number the run record spells, or ``""``."""
+    run_id = env.get("GITHUB_RUN_ID", "")
+    if isinstance(run_id, str) and run_id.isdecimal():
+        return int(run_id)
+    return ""
+
+
+def _now_iso() -> str:
+    """The reading's moment, UTC: what makes the anchor's values auditable."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _main_sha(root: Path, env: Mapping[str, str]) -> tuple[str, str]:
+    """The main tip this run's evidence was integrated against, and its source.
+
+    The gate runs on the merge ref -- head merged into the main tip of the
+    run's moment -- so the merge commit ``GITHUB_SHA`` carries the exact
+    integrated main tip as its first parent.  That parent is the anchor's
+    ``main_sha``: reading main again later (or the event's stale ``base``)
+    would record a main tip the run never tested.  When the checkout did
+    not create a merge commit (the pull request is already ahead of main,
+    a fast-forward), the commit the run actually checked out and tested is
+    the head itself, so the head is recorded: two runs of the same head
+    that both tested the head itself are the same evidence, and a run whose
+    merge ref integrates a moved main produces a merge commit -- and
+    therefore a different record.  Only when the run cannot name the commit
+    it checked out does the record fall back to the checkout's
+    ``origin/main``, and the source marks that degradation: the ref is the
+    fetch-time value and may name a main tip this run never tested, so it
+    is the last resort, never the first answer.  When neither is readable,
+    the record stays incomplete and the reuse verdict falls back on its own.
+    """
+    sha = env.get("GITHUB_SHA", "")
+    if isinstance(sha, str) and SHA.fullmatch(sha):
+        try:
+            parents = _run_git(root, "rev-list", "--parents", "-n", "1",
+                               sha).split()
+        except (OSError, subprocess.CalledProcessError):
+            parents = []
+        if len(parents) == 3 and SHA.fullmatch(parents[1]):
+            return parents[1], "merge_ref_parent"
+        # Not a merge commit (or unreadable): the checked-out commit is the
+        # exact content this run tested.  Anchoring it cannot fake a match
+        # across a moved main, because a merge ref over a moved main is a
+        # merge commit and takes the first-parent answer above.
+        return sha, "checkout_head"
+    try:
+        main = _run_git(root, "rev-parse", "refs/remotes/origin/main")
+    except (OSError, subprocess.CalledProcessError):
+        main = ""
+    if SHA.fullmatch(main):
+        return main, "origin_main_unverified"
+    return "", ""
+
+
+def _write_gate_anchor(artifact_dir: Path | None, event: Mapping[str, Any],
+                       root: Path, env: Mapping[str, str],
+                       conclusion: str) -> None:
+    """Record the run anchor beside the scope artifact.
+
+    The anchor is an ancillary product of the scope step: a failure to write
+    it must never change the gate's own verdict, so every failure here is
+    reported and swallowed.  Its ``conclusion`` is the scope step's own
+    verdict -- the run's complete verdict (which also depends on the jobs
+    after this step) is what the run record carries, and the reuse verdict
+    composes its ``status``/``conclusion`` from that record; this
+    ``conclusion`` is the artifact-side cross-check.  A field the anchor
+    cannot fill truthfully stays empty, and an empty field makes the reuse
+    verdict fall back on its own -- never a false pass.
+    """
+    if artifact_dir is None:
+        return
+    try:
+        folder = Path(artifact_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        main_sha, main_source = _main_sha(root, env)
+        (folder / GATE_ANCHOR_FILE).write_text(
+            json.dumps({"head_sha": _anchor_head_sha(event, env),
+                        "main_sha": main_sha,
+                        "main_sha_source": main_source,
+                        "main_sha_read_at": _now_iso(),
+                        "run_id": _anchor_run_id(env),
+                        "pr": _anchor_pr(event),
+                        "workflow": env.get("GITHUB_WORKFLOW", ""),
+                        "conclusion": conclusion},
+                       ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+    except OSError as error:
+        print(f"warning: the gate anchor could not be written ({error}); "
+              "the gate's own verdict is unaffected.", file=sys.stderr)
 
 
 def _fail_uncovered(decision: Decision) -> None:
