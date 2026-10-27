@@ -124,6 +124,158 @@ GOVERNANCE_DIRS = tuple(manifest.GOVERNANCE_DIRS)
 FRONTEND_ROOT = manifest.FRONTEND_ROOT
 
 # --------------------------------------------------------------------------
+# the provider shards (ADR 0014, section one)
+# --------------------------------------------------------------------------
+# **编排知识**：provider 验证在「确定要跑」之后怎么编组。归属知识（什么路径
+# 属于 provider 面）只登记在门禁面清单（``lingdoc_gate_surfaces``）——所以
+# 下面的计划只写包族名与根名结尾，从不重写完整根路径；主根由包族在真实树里
+# 的位置解析出来。工作流的 matrix 消费分片输出，不学任何路径（红线四）。
+#
+# 分片依据 Phase 0（#721）之后的实测校准（#724 验收报告 §2）：域内主包的
+# workspace 包族是单一 Go 包（无子包可再分），非 race 实测 315.6s、占全仓
+# provider 测试的 63%——单独成片，是分片后最大分片的地板；其余 17 个包族
+# 共享一片；另外三个根合计非 race 17.2s，共享一小片。
+LINGDOC_FAMILY_SHARDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("lingdoc-workspace", ("workspace",)),
+    ("lingdoc-core", (
+        "access", "candidateadoption", "delivery", "demoroute", "docx",
+        "generation", "materiallingest", "membership", "operationcore",
+        "reviewanchor", "rulesetstore", "sourcemarker", "sourcepolicy",
+        "template", "templategovernance", "workspacecore", "writingaction",
+    )),
+)
+
+# A family the plan does not know yet stays covered: it lands in this
+# registered shard, and the guard test that compares the plan with the real
+# repository turns red until the new family is registered here.
+LINGDOC_FALLBACK_SHARD = "lingdoc-core"
+
+# The three other provider roots are small (non-race 17.2s together), so
+# they share one shard instead of paying a job each.  They are named by
+# their path end only; a root whose end is not listed here -- a fifth root
+# added to the manifest -- gets a shard of its own, named after the root.
+# Adding a root is then a manifest change and, at most, one line here; the
+# workflow never changes.
+REST_SHARD = "provider-rest"
+REST_SHARD_ROOT_ENDS = ("evidence", "acceptancebudget",
+                        "acceptance-budget-reconcile")
+
+
+def _resolve_main_root() -> str:
+    """The provider root that carries the plan's package families.
+
+    The plan registers family names only; which full path is the root they
+    live under is ownership knowledge, and the manifest is its only
+    registration.  The root is therefore resolved from the manifest's roots
+    against the real tree: the one root under which every planned family
+    exists as a first-level directory.  An empty result degrades the plan
+    safely -- whole-root patterns then run as one unsharded shard instead
+    of being lost.
+    """
+    families = [family for _name, family_list in LINGDOC_FAMILY_SHARDS
+                for family in family_list]
+    for root in PROVIDER_ROOTS:
+        base = Path(manifest.REPO_ROOT, root)
+        if base.is_dir() and all((base / family).is_dir()
+                                 for family in families):
+            return root
+    return ""
+
+
+LINGDOC_MAIN_ROOT = _resolve_main_root()
+
+
+@dataclasses.dataclass(frozen=True)
+class _ProviderShard:
+    """One shard of the provider verification: a name and its package list."""
+
+    name: str
+    packages: tuple[str, ...]
+
+
+def _shard_plan() -> dict[str, str]:
+    """The package family of the main root -> the shard that owns it."""
+    return {family: name for name, families in LINGDOC_FAMILY_SHARDS
+            for family in families}
+
+
+def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, ...]:
+    """Group the provider package patterns into shards.
+
+    The input is the same list the ``provider_packages`` output carries --
+    ``./<directory>/...`` patterns derived from the manifest's provider
+    roots.  Every pattern lands in exactly one shard (the shards are a
+    partition of the input), and only non-empty shards exist: an entry the
+    contribution does not touch generates no shard, so a small contribution
+    starts a small matrix.  The order is canonical -- plan order, then the
+    rest shard, then any root the plan does not name, alphabetically -- so
+    the same input always produces the same matrix.
+    """
+    grouped: dict[str, list[str]] = {}
+    for pattern in provider_packages:
+        path = pattern[2:] if pattern.startswith("./") else pattern
+        if path.endswith("/..."):
+            path = path[:-4]
+        root = next((candidate for candidate in PROVIDER_ROOTS
+                     if path == candidate or path.startswith(candidate + "/")),
+                    None)
+        if root is None:
+            # Unreachable while provider_packages derives from the manifest's
+            # roots; an orphan pattern stays covered instead of being dropped.
+            shard = REST_SHARD
+        elif root.rsplit("/", 1)[-1] in REST_SHARD_ROOT_ENDS:
+            shard = REST_SHARD
+        elif path == root:
+            if root == LINGDOC_MAIN_ROOT:
+                # The whole main root is tested (full scope, governance): the
+                # root pattern is expanded into the family patterns of the
+                # plan, one per shard.  This is lossless only while the root
+                # has no package of its own; the guard test pins that fact.
+                for name, families in LINGDOC_FAMILY_SHARDS:
+                    for family in families:
+                        grouped.setdefault(name, []).append(
+                            f"./{root}/{family}/...")
+                continue
+            # A root the plan does not name -- a fifth root added to the
+            # manifest -- gets a shard of its own, named after the root.
+            shard = root.replace("/", "-")
+        else:
+            if root == LINGDOC_MAIN_ROOT:
+                family = path[len(root) + 1:].split("/", 1)[0]
+                shard = _shard_plan().get(family, LINGDOC_FALLBACK_SHARD)
+            else:
+                shard = root.replace("/", "-")
+        bucket = grouped.setdefault(shard, [])
+        if pattern not in bucket:
+            bucket.append(pattern)
+
+    plan_names = [name for name, _families in LINGDOC_FAMILY_SHARDS]
+
+    def rank(name: str) -> tuple[int, int, str]:
+        if name in plan_names:
+            return (0, plan_names.index(name), name)
+        if name == REST_SHARD:
+            return (1, 0, name)
+        return (2, 0, name)
+
+    return tuple(_ProviderShard(name=name,
+                                packages=tuple(sorted(grouped[name])))
+                 for name in sorted(grouped, key=rank))
+
+
+# The display name of one shard job in the gate workflow, with the shard
+# name substituted.  The workflow spells the same template with the matrix
+# reference (``Provider shard ${{ matrix.shard.name }}``); the wiring guard
+# test keeps the two spellings together, so the check a reader sees on the
+# pull request is the name the coverage table records.
+SHARD_JOB_NAME = "Provider shard {name}"
+
+
+def _shard_job_name(shard: _ProviderShard) -> str:
+    """The matrix-expanded name of one shard job, as a reader sees it."""
+    return SHARD_JOB_NAME.format(name=shard.name)
+
+# --------------------------------------------------------------------------
 # the published conclusion
 # --------------------------------------------------------------------------
 # The boundary statement every gate publishes.  A green gate is a statement
@@ -266,6 +418,11 @@ class Decision:
     run_code: bool
     run_targeted: bool
     provider_packages: tuple[str, ...]
+    # The provider verification sharded (#724, ADR 0014): how the packages
+    # above are grouped for the workflow's matrix.  Empty exactly when the
+    # provider step does not run: the matrix is skipped as a whole by the
+    # same condition semantics as before.
+    provider_shards: tuple[_ProviderShard, ...]
     contracts: bool
     backend: bool
     frontend: bool
@@ -728,9 +885,21 @@ def _surface_runs(decision: Decision, surface: manifest.Surface,
     return any(job.run for job in decision.jobs if job.surface == surface.name)
 
 
-def _owner_names(surface: manifest.Surface) -> str:
-    """The name of the job (or step) that owns a surface, as a reader sees it."""
+def _owner_names(surface: manifest.Surface,
+                 decision: Decision | None = None) -> str:
+    """The name of the job (or step) that owns a surface, as a reader sees it.
+
+    The provider surface is verified by the shard matrix (#724, ADR 0014):
+    while the decision carries shards, the owner names are the matrix-
+    expanded shard job names -- the checks a reader actually sees on the
+    pull request -- instead of the gate-internal step that no longer runs
+    the tests.
+    """
     if surface.step is not None:
+        if (decision is not None and surface.role == manifest.ROLE_PROVIDER
+                and decision.provider_shards):
+            return "; ".join(_shard_job_name(shard)
+                             for shard in decision.provider_shards)
         return surface.step.name
     return "; ".join(consumer.job_name for consumer in surface.consumers)
 
@@ -783,9 +952,9 @@ def _coverage_rows(decision: Decision,
             # A job may watch the same tested surface through two manifest
             # surfaces (the delegated frontend job does, #723); it is still
             # one verifier, so it is named once.
-            verified_by=tuple(dict.fromkeys(_owner_names(surface)
+            verified_by=tuple(dict.fromkeys(_owner_names(surface, decision)
                                             for surface in running)),
-            watched_by=tuple(dict.fromkeys(_owner_names(surface)
+            watched_by=tuple(dict.fromkeys(_owner_names(surface, decision)
                                            for surface in watching)),
             status=status,
         ))
@@ -1331,11 +1500,18 @@ def _build(fields: Mapping[str, Any],
     fields = dict(fields)
     fields["provider_tests"] = (bool(fields["provider_packages"])
                                 and fields["run_targeted"])
+    # The shards exist exactly when the provider step runs: the workflow's
+    # matrix is skipped as a whole by the ``run_providers`` condition, so a
+    # skipped provider verification publishes an empty shard list (#724).
+    fields["provider_shards"] = (
+        _provider_shards(fields["provider_packages"])
+        if fields["provider_tests"] and not fields["format_only"] else ())
     decision = Decision(
         jobs=_jobs(fields, surfaces),
         run_code=fields["run_code"],
         run_targeted=fields["run_targeted"],
         provider_packages=tuple(fields["provider_packages"]),
+        provider_shards=tuple(fields["provider_shards"]),
         contracts=fields["contracts"],
         backend=fields["backend"],
         frontend=fields["frontend"],
@@ -1507,6 +1683,15 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "run_providers": _text(decision.provider_tests and not decision.format_only),
         "provider_tests": _text(decision.provider_tests),
         "provider_packages": " ".join(decision.provider_packages),
+        # The shard matrix (#724, ADR 0014): JSON the workflow feeds to
+        # fromJSON.  The workflow learns no package names from it -- the
+        # list is spelled here and only here.  Empty (``[]``) exactly when
+        # the provider step does not run, so the matrix is skipped as a
+        # whole by the same condition semantics as before.
+        "provider_shards": json.dumps(
+            [{"name": shard.name, "packages": " ".join(shard.packages)}
+             for shard in decision.provider_shards],
+            ensure_ascii=True, separators=(",", ":")),
         "base_moved": _text(decision.base_moved),
         "surface_changed": _text(decision.surface_changed),
         "forced": _text(decision.forced),
@@ -1685,7 +1870,14 @@ def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
                 run = outputs.get(output, "false") == "true"
                 kind = "step"
                 detail = ""
-                if output == "run_providers" and decision.provider_packages:
+                if output == "run_providers" and decision.provider_shards:
+                    # The reader sees the shard jobs: the checks that will
+                    # actually carry the verification on this head (#724).
+                    detail = ("the provider shards are: " + "; ".join(
+                        f"{_shard_job_name(shard)} "
+                        f"({', '.join(shard.packages)})"
+                        for shard in decision.provider_shards))
+                elif output == "run_providers" and decision.provider_packages:
                     detail = ("the provider packages are: "
                               + ", ".join(decision.provider_packages))
             else:
@@ -1842,6 +2034,10 @@ def report(decision: Decision, whitespace_range: str | None = None) -> dict[str,
         "whitespace_diff_range": whitespace_range,
         "changed_paths": list(decision.changed_paths),
         "provider_packages": packages,
+        # The shard matrix the workflow's providers job is generated from:
+        # one entry per shard, name plus package list (#724).
+        "provider_shards": [dataclasses.asdict(shard)
+                            for shard in decision.provider_shards],
         "format_only": decision.format_only,
         "format_reasons": list(decision.format_reasons),
         "coverage": [dataclasses.asdict(row) for row in decision.coverage],

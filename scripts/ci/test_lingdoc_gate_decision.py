@@ -1435,10 +1435,13 @@ class ProviderShardTests(DecisionFixture):
             self.assertEqual(outputs["run_providers"], "true")
             self.assertEqual([s.name for s in result.provider_shards],
                              ["lingdoc-workspace"])
+            # The matrix entry carries the packages as one space-joined
+            # string: the shard job expands it straight onto the command
+            # line, with no list parsing in the workflow.
             self.assertEqual(
                 json.loads(outputs["provider_shards"]),
                 [{"name": "lingdoc-workspace",
-                  "packages": ["./internal/lingdoc/workspace/..."]}])
+                  "packages": "./internal/lingdoc/workspace/..."}])
 
     def test_the_coverage_names_the_shard_jobs(self):
         """The coverage table attributes the verification to the shards."""
@@ -1521,10 +1524,16 @@ class ProviderShardTests(DecisionFixture):
         # patterns; a package sitting directly in the root would be lost.
         self.assertEqual([path.name for path
                           in (repo / "internal/lingdoc").glob("*.go")], [])
-        # The plan and the manifest describe the same roots, once.
+        # The plan references the roots without re-registering them: the
+        # main root is resolved from the manifest against the real tree, and
+        # the rest shard's members are named by their path end only.  The
+        # two together must still describe every provider root, once.
+        self.assertIn(decision.LINGDOC_MAIN_ROOT, decision.PROVIDER_ROOTS)
+        rest_roots = tuple(root for root in decision.PROVIDER_ROOTS
+                           if root != decision.LINGDOC_MAIN_ROOT)
         self.assertEqual(
-            (decision.LINGDOC_MAIN_ROOT,) + decision.REST_SHARD_ROOTS,
-            decision.PROVIDER_ROOTS)
+            tuple(root.rsplit("/", 1)[-1] for root in rest_roots),
+            decision.REST_SHARD_ROOT_ENDS)
         plan_names = [name for name, _families
                       in decision.LINGDOC_FAMILY_SHARDS]
         self.assertIn(decision.LINGDOC_FALLBACK_SHARD, plan_names)

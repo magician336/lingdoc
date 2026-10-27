@@ -144,6 +144,16 @@ CONCEPTS: tuple[Concept, ...] = (
         keys=("frontend",),
     ),
     Concept(
+        term="分片",
+        doc=GLOSSARY,
+        snippet="分片策略只写在判定模块一处",
+        # The sharding is carried by the shard list the decision publishes:
+        # the workflow's matrix is generated from this output (#724, ADR
+        # 0014), and the coverage table names the shard jobs.
+        fields=("Decision.provider_shards",),
+        keys=("provider_shards",),
+    ),
+    Concept(
         term="未判定回退全量",
         doc=ADR_0006,
         snippet="未判定回退全量",
