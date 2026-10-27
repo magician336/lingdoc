@@ -1,6 +1,5 @@
-// Package fixturemigrations derives the production migration subset a
-// PostgreSQL test fixture needs from an explicit declaration of the tables the
-// fixture uses.
+// Package fixturemigrations derives the production migration subset a test
+// fixture needs from an explicit declaration of the tables the fixture uses.
 //
 // It exists because two fixtures used to carry hand-copied lists of migration
 // version numbers (issue #386). Version numbers are a shared sequence: the next
@@ -11,13 +10,23 @@
 // discovered, and one that touches a fixture-built stub table is reported
 // instead of quietly drifting.
 //
-// The two fixtures keep their platform stubs (tenants, users, audit_logs, ...)
-// because the LingDoc chain only references those tables; it never creates them.
-// Selecting only the *_lingdoc_*.up.sql files that touch the declared tables is
-// what keeps the fixtures from colliding with those stubs.
+// The two PostgreSQL fixtures keep their platform stubs (tenants, users,
+// audit_logs, ...) because the LingDoc chain only references those tables; it
+// never creates them. Selecting only the *_lingdoc_*.up.sql files that touch
+// the declared tables is what keeps the fixtures from colliding with those
+// stubs.
+//
+// Issue #416 extended the same declaration to SQLite fixtures. Select answers
+// "which migration files", and for SQLite StatementsForFixture/ApplySQLite
+// answer "which statements": one SQLite migration file can shape several tables,
+// and a fixture that needs one of them must not have to build the others. A
+// SQLite table rebuild (create temporary table, copy, drop, rename) is followed
+// as one unit, so a fixture never ends up with the declared table dropped and
+// never renamed back.
 package fixturemigrations
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -116,6 +125,178 @@ func (s Selection) SQL(dir string) ([]Statement, error) {
 type Statement struct {
 	Name string
 	SQL  string
+}
+
+// Rebuild table names: an SQLite ALTER rebuilds a table through a temporary
+// table (<table>_next, <table>_previous, ...) and then renames it. Those
+// statements never name the declared table itself, but they are part of its
+// shape, so a fixture that applies by table name must apply them too (#416).
+var rebuildTableSuffixes = []string{"_next", "_previous", "_old", "_new"}
+
+// triggerPattern matches a CREATE TRIGGER statement. A trigger body contains
+// semicolons, so a file that defines one cannot be split statement by
+// statement; such a file is applied whole (and refused when it also touches a
+// table the fixture did not declare).
+var triggerPattern = regexp.MustCompile(`(?is)\bcreate\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\b`)
+
+// StatementsForFixture returns the individual SQL statements, in order, that a
+// fixture executes to give itself the production shape of tables.
+//
+// It is the SQLite counterpart of Select + SQL: the selection is still by table
+// name (so a migration that adds a column to a declared table is picked up with
+// no list to edit), but each file is cut into statements and only the
+// statements that belong to the declared tables — or to the temporary tables a
+// SQLite table rebuild goes through — are returned. That is what lets a fixture
+// for one table share a migration file with statements about other tables.
+//
+// A statement of a selected file that touches none of those tables is skipped;
+// a selected file that yields no statement at all is an error, because it means
+// the file was selected for a table its SQL never names in a shape we can apply.
+func (s Selection) StatementsForFixture(dir string, tables []string) ([]Statement, error) {
+	declared := setOf(tables)
+	helpers := rebuildTables(declared)
+	var out []Statement
+	for _, name := range s.Names {
+		body, err := readSQL(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		cleaned := stripComments(body)
+		if triggerPattern.MatchString(cleaned) {
+			// One statement, not a split: the trigger body's semicolons are
+			// not statement boundaries. Applying the file whole is only safe
+			// when everything it touches was declared.
+			for _, table := range touchedTables(cleaned) {
+				if !declared[table] && !helpers[table] {
+					return nil, fmt.Errorf(
+						"migration %s defines a trigger and also touches undeclared table %s; split it before a fixture can apply it by table name (issue #416)",
+						name, table)
+				}
+			}
+			out = append(out, Statement{Name: name, SQL: body})
+			continue
+		}
+		applied := 0
+		for _, statement := range splitStatements(body) {
+			if !touchesAny(declared, touchedTables(statement)) && !touchesAny(helpers, touchedTables(statement)) {
+				continue
+			}
+			out = append(out, Statement{Name: name, SQL: strings.TrimSpace(statement)})
+			applied++
+		}
+		if applied == 0 {
+			return nil, fmt.Errorf(
+				"migration %s was selected for the declared tables %v but none of its statements shape or write them (issue #416)",
+				name, tables)
+		}
+	}
+	return out, nil
+}
+
+// ApplySQLite executes StatementsForFixture against db. It is the one way a
+// SQLite fixture should obtain a production table's shape: the fixture declares
+// the table, and the migrations that shape it are discovered and applied.
+func ApplySQLite(db *sql.DB, dir string, tables []string) (Selection, error) {
+	selection, err := Select(dir, tables)
+	if err != nil {
+		return Selection{}, err
+	}
+	statements, err := selection.StatementsForFixture(dir, tables)
+	if err != nil {
+		return Selection{}, err
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement.SQL); err != nil {
+			return Selection{}, fmt.Errorf("apply fixture migration %s: %w", statement.Name, err)
+		}
+	}
+	return selection, nil
+}
+
+// RepoRoot returns the module root: the nearest ancestor of the working
+// directory that holds a go.mod. Fixtures use it instead of counting ".."
+// segments, so a fixture keeps working when it moves between packages.
+func RepoRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no go.mod above %s", dir)
+		}
+		dir = parent
+	}
+}
+
+// rebuildTables returns the temporary table names an SQLite rebuild of one of
+// declared goes through.
+func rebuildTables(declared map[string]bool) map[string]bool {
+	helpers := make(map[string]bool, len(declared)*len(rebuildTableSuffixes))
+	for table := range declared {
+		for _, suffix := range rebuildTableSuffixes {
+			helpers[table+suffix] = true
+		}
+	}
+	return helpers
+}
+
+// splitStatements cuts a migration file into statements on semicolons, ignoring
+// semicolons inside single-quoted literals and comments. It is deliberately a
+// scanner rather than strings.Split: migration comments contain semicolons.
+func splitStatements(body string) []string {
+	var statements []string
+	var current strings.Builder
+	inLiteral, inLineComment, inBlockComment := false, false, false
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case inLineComment:
+			current.WriteByte(c)
+			if c == '\n' {
+				inLineComment = false
+			}
+		case inBlockComment:
+			current.WriteByte(c)
+			if c == '*' && i+1 < len(body) && body[i+1] == '/' {
+				current.WriteByte('/')
+				i++
+				inBlockComment = false
+			}
+		case inLiteral:
+			current.WriteByte(c)
+			if c == '\'' {
+				if i+1 < len(body) && body[i+1] == '\'' {
+					current.WriteByte('\'')
+					i++
+					continue
+				}
+				inLiteral = false
+			}
+		case c == '\'':
+			inLiteral = true
+			current.WriteByte(c)
+		case c == '-' && i+1 < len(body) && body[i+1] == '-':
+			inLineComment = true
+			current.WriteByte(c)
+		case c == '/' && i+1 < len(body) && body[i+1] == '*':
+			inBlockComment = true
+			current.WriteByte(c)
+		case c == ';':
+			statements = append(statements, current.String())
+			current.Reset()
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if strings.TrimSpace(current.String()) != "" {
+		statements = append(statements, current.String())
+	}
+	return statements
 }
 
 // Verify is the guard. It fails when:
