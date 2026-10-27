@@ -158,11 +158,15 @@ def run_gate_publish(env: dict, *, markers: Sequence[str] = (),
 
 DELEGATED_JOB = "Test, type-check, and build"
 
-# The shard matrix a fixture scope report carries (#724's aggregation tests).
+# The shard matrix a fixture scope report carries (#724's aggregation
+# tests).  One fixture shard carries a -run filter (ADR 0015): the publish
+# step treats it like any other shard, the filter is inert data here.
 SHARD_FIXTURE = [
-    {"name": "lingdoc-workspace",
-     "packages": ["./internal/lingdoc/workspace/..."]},
-    {"name": "provider-rest", "packages": ["./internal/evidence/..."]},
+    {"name": "lingdoc-workspace-a",
+     "packages": ["./internal/lingdoc/workspace/..."],
+     "go_test_filter": "^(TestDelivery|TestExport)$"},
+    {"name": "provider-rest", "packages": ["./internal/evidence/..."],
+     "go_test_filter": ""},
 ]
 
 
@@ -548,6 +552,9 @@ class ProviderMatrixWiringTests(unittest.TestCase):
         self.assertIn("go test -race -count=1", body,
                       "a shard runs the same command as the old step: race "
                       "detection stays on and cached results stay out")
+        self.assertIn("-timeout 15m", body,
+                      "the package-level timeout headroom the M12 review "
+                      "added stays on every shard")
         # The not-empty assertion per shard: a shard whose suite passes zero
         # tests must fail, with the shard name in the failure.
         source = self._heredoc(next(
@@ -556,6 +563,32 @@ class ProviderMatrixWiringTests(unittest.TestCase):
             if "python - <<'PY'" in str(step.get("run") or "")))
         self.assertIn("no tests passed", source)
         self.assertIn("SHARD_NAME", source)
+
+    def test_a_shards_test_filter_is_matrix_data_not_workflow_knowledge(self):
+        """The -run filter flows from the shard list (ADR 0015, #736).
+
+        The filter is the decision module's test-name partition of the
+        family it splits.  It must be read from the matrix like the
+        package list -- spelled there and only there -- and reach the
+        command only through the environment: the workflow file carries
+        no test name, and a shard without a filter runs unfiltered.
+        """
+        providers = self._providers()
+        env = providers.get("env") or {}
+        self.assertEqual(env.get("SHARD_TEST_FILTER"),
+                         "${{ matrix.shard.go_test_filter }}",
+                         "the filter must come from the decision module's "
+                         "shard data, not from a list written down here")
+        # The run block is asserted on the raw file: a YAML dump refolds
+        # lines and would hide the exact shell spelling.
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertIn('FILTER_ARGS+=( -run "$SHARD_TEST_FILTER" )', text)
+        self.assertIn('"${FILTER_ARGS[@]}"', text)
+        self.assertNotIn("-run $SHARD_TEST_FILTER", text,
+                         "an unquoted filter would word-split the pattern")
+        self.assertIsNone(re.search(r"\bTest[A-Z]\w*\b", text),
+                          "the workflow learned a test name; filters are "
+                          "data the matrix carries, never literals here")
 
     def test_a_shard_with_no_passing_test_fails_and_names_the_shard(self):
         source = self._heredoc(next(
@@ -642,15 +675,15 @@ class ProviderMatrixWiringTests(unittest.TestCase):
 
     def test_every_shard_verified_publishes_the_boundary(self):
         raised, summary, errors, folder = self._run_publish(
-            {}, markers=["lingdoc-workspace", "provider-rest"])
+            {}, markers=["lingdoc-workspace-a", "provider-rest"])
 
         self.assertIsNone(raised, errors)
         result = json.loads((folder / "result.json").read_text(
             encoding="utf-8"))
         self.assertEqual(result["providers"], "success")
         self.assertEqual([row["name"] for row in result["provider_shards"]],
-                         ["lingdoc-workspace", "provider-rest"])
-        self.assertIn("Provider shard lingdoc-workspace", summary)
+                         ["lingdoc-workspace-a", "provider-rest"])
+        self.assertIn("Provider shard lingdoc-workspace-a", summary)
         self.assertIn("Skipped means NOT RUN", summary)
 
     def test_a_skipped_matrix_keeps_the_gate_green_without_shard_evidence(self):

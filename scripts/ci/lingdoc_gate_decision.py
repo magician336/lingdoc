@@ -133,10 +133,27 @@ FRONTEND_ROOT = manifest.FRONTEND_ROOT
 #
 # 分片依据 Phase 0（#721）之后的实测校准（#724 验收报告 §2）：域内主包的
 # workspace 包族是单一 Go 包（无子包可再分），非 race 实测 315.6s、占全仓
-# provider 测试的 63%——单独成片，是分片后最大分片的地板；其余 17 个包族
-# 共享一片；另外三个根合计非 race 17.2s，共享一小片。
-LINGDOC_FAMILY_SHARDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("lingdoc-workspace", ("workspace",)),
+# provider 测试的 63%——包粒度不可再分，是分片后最大分片的地板；其余 17 个
+# 包族共享一片；另外三个根合计非 race 17.2s，共享一小片。
+#
+# 包内再分（ADR 0015）：workspace 维持单一 Go 包，gate 按**测试名分区**把它
+# 的测试分给多个分片 job。判定模块在决策时枚举包的全部顶层测试名
+# （``^func Test\w+\(``），按确定性哈希桶分成恰好覆盖、两两不交、各片非空
+# 的 N 片，为每片生成一个锚定的 ``-run`` 模式。枚举即分区：新增测试自动落
+# 入恰一片，gate 结构上不可能静默漏跑；枚举不可用时整体退化为单片不过滤
+# （回到 #724 形态，只慢不漏）。模式只作为分片数据流经工作流，工作流文件
+# 不带任何测试名（红线四）。
+WORKSPACE_FAMILY = "workspace"
+WORKSPACE_SHARD_NAMES = ("lingdoc-workspace-a", "lingdoc-workspace-b",
+                         "lingdoc-workspace-c")
+WORKSPACE_SHARD_COUNT = len(WORKSPACE_SHARD_NAMES)
+
+# The static plan: a shard name and the package families it owns.  The
+# workspace family is registered once per name slice (ADR 0015); the
+# effective plan below may collapse those slices back into one unsharded
+# shard when the test-name enumeration is unavailable.
+_FAMILY_SHARDS_PLAN: tuple[tuple[str, tuple[str, ...]], ...] = (
+    *((name, (WORKSPACE_FAMILY,)) for name in WORKSPACE_SHARD_NAMES),
     ("lingdoc-core", (
         "access", "candidateadoption", "delivery", "demoroute", "docx",
         "generation", "materiallingest", "membership", "operationcore",
@@ -172,7 +189,7 @@ def _resolve_main_root() -> str:
     safely -- whole-root patterns then run as one unsharded shard instead
     of being lost.
     """
-    families = [family for _name, family_list in LINGDOC_FAMILY_SHARDS
+    families = [family for _name, family_list in _FAMILY_SHARDS_PLAN
                 for family in family_list]
     for root in PROVIDER_ROOTS:
         base = Path(manifest.REPO_ROOT, root)
@@ -185,18 +202,117 @@ def _resolve_main_root() -> str:
 LINGDOC_MAIN_ROOT = _resolve_main_root()
 
 
+def _workspace_test_names(family: str) -> tuple[str, ...]:
+    """The top-level test names of one family directory, sorted.
+
+    ``go test`` runs exactly the ``func Test...`` declarations of the
+    package's test files (the family has no ``TestMain``, no testify
+    suites, no build tags -- pinned by the partition guard), so a
+    source-level enumeration is the authoritative name set.  An empty
+    result means the tree is not in the expected shape; the callers
+    degrade to one unsharded shard instead of guessing.
+    """
+    if not LINGDOC_MAIN_ROOT:
+        return ()
+    family_dir = Path(manifest.REPO_ROOT, LINGDOC_MAIN_ROOT, family)
+    if not family_dir.is_dir():
+        return ()
+    names: set[str] = set()
+    for path in sorted(family_dir.glob("*_test.go")):
+        source = path.read_text(encoding="utf-8", errors="replace")
+        names.update(re.findall(r"^func\s+(Test\w+)\s*\(", source, re.M))
+    return tuple(sorted(names))
+
+
+def _test_shard_bucket(test_name: str) -> int:
+    """The deterministic slice a test name belongs to (ADR 0015).
+
+    md5 keeps the assignment stable across runs and platforms, and stable
+    under insertion: adding a test never reshuffles the existing ones.
+    """
+    digest = hashlib.md5(test_name.encode("utf-8")).hexdigest()
+    return int(digest, 16) % WORKSPACE_SHARD_COUNT
+
+
+def _run_filter(names: Sequence[str]) -> str:
+    """One anchored ``-run`` pattern matching exactly these test names."""
+    ordered = sorted(names)
+    if not ordered:
+        return ""
+    return "^(" + "|".join(ordered) + ")$"
+
+
+def _workspace_shard_filters() -> dict[str, str]:
+    """The per-shard ``-run`` filter of the split family (ADR 0015).
+
+    The enumeration is the partition: every enumerated name lands in
+    exactly one slice, so a name can never run twice and never go
+    unrun -- the property the partition guard re-proves against the real
+    tree.  An empty mapping degrades the whole family to one unsharded
+    shard (also when a slice would come out empty, which would make two
+    shards run overlapping names).
+    """
+    names = _workspace_test_names(WORKSPACE_FAMILY)
+    if not names:
+        return {}
+    slices: list[list[str]] = [[] for _ in range(WORKSPACE_SHARD_COUNT)]
+    for name in names:
+        slices[_test_shard_bucket(name)].append(name)
+    if any(not slice_ for slice_ in slices):
+        return {}
+    return {shard: _run_filter(slice_)
+            for shard, slice_ in zip(WORKSPACE_SHARD_NAMES, slices)}
+
+
+_SHARD_TEST_FILTERS = _workspace_shard_filters()
+
+
+def _effective_family_shards() -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """The plan as it is published: collapsed when the split is unavailable.
+
+    ``LINGDOC_FAMILY_SHARDS`` stays the public name the registered
+    interface carries; when the test-name enumeration found nothing, the
+    workspace slices fold back into one unfiltered shard -- the exact
+    #724 shape, only slower, never less covered.
+    """
+    if not _SHARD_TEST_FILTERS:
+        return tuple(
+            [("lingdoc-workspace", (WORKSPACE_FAMILY,))]
+            + [(name, families) for name, families in _FAMILY_SHARDS_PLAN
+               if name not in WORKSPACE_SHARD_NAMES])
+    return _FAMILY_SHARDS_PLAN
+
+
+LINGDOC_FAMILY_SHARDS = _effective_family_shards()
+
+
 @dataclasses.dataclass(frozen=True)
 class _ProviderShard:
-    """One shard of the provider verification: a name and its package list."""
+    """One shard of the provider verification: a name and its package list.
+
+    ``test_filter`` carries the optional ``-run`` pattern of a package's
+    test-name slice (ADR 0015); empty means the whole package runs
+    unfiltered.  A shard with a filter owns exactly the family that is
+    split -- the filter applies to the shard's whole command.
+    """
 
     name: str
     packages: tuple[str, ...]
+    test_filter: str = ""
 
 
-def _shard_plan() -> dict[str, str]:
-    """The package family of the main root -> the shard that owns it."""
-    return {family: name for name, families in LINGDOC_FAMILY_SHARDS
-            for family in families}
+def _shard_plan() -> dict[str, tuple[str, ...]]:
+    """The package family of the main root -> the shards that own it.
+
+    A family the plan splits by test name (ADR 0015) maps to every shard
+    that carries one slice of it; a contribution that names such a family
+    directly must run in all of them, each under its own filter.
+    """
+    plan: dict[str, list[str]] = {}
+    for name, families in LINGDOC_FAMILY_SHARDS:
+        for family in families:
+            plan.setdefault(family, []).append(name)
+    return {family: tuple(shards) for family, shards in plan.items()}
 
 
 def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, ...]:
@@ -204,12 +320,15 @@ def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, 
 
     The input is the same list the ``provider_packages`` output carries --
     ``./<directory>/...`` patterns derived from the manifest's provider
-    roots.  Every pattern lands in exactly one shard (the shards are a
-    partition of the input), and only non-empty shards exist: an entry the
-    contribution does not touch generates no shard, so a small contribution
-    starts a small matrix.  The order is canonical -- plan order, then the
-    rest shard, then any root the plan does not name, alphabetically -- so
-    the same input always produces the same matrix.
+    roots.  Every pattern lands in exactly one shard -- except a pattern
+    that names (or sits under) a family the plan splits by test name
+    (ADR 0015): that one lands in every shard carrying a slice, each
+    running its own ``-run`` filter, so the *tests* of the family are
+    still partitioned exactly once.  Only non-empty shards exist: an
+    entry the contribution does not touch generates no shard, so a small
+    contribution starts a small matrix.  The order is canonical -- plan
+    order, then the rest shard, then any root the plan does not name,
+    alphabetically -- so the same input always produces the same matrix.
     """
     grouped: dict[str, list[str]] = {}
     for pattern in provider_packages:
@@ -222,9 +341,9 @@ def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, 
         if root is None:
             # Unreachable while provider_packages derives from the manifest's
             # roots; an orphan pattern stays covered instead of being dropped.
-            shard = REST_SHARD
+            shards = (REST_SHARD,)
         elif root.rsplit("/", 1)[-1] in REST_SHARD_ROOT_ENDS:
-            shard = REST_SHARD
+            shards = (REST_SHARD,)
         elif path == root:
             if root == LINGDOC_MAIN_ROOT:
                 # The whole main root is tested (full scope, governance): the
@@ -238,16 +357,18 @@ def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, 
                 continue
             # A root the plan does not name -- a fifth root added to the
             # manifest -- gets a shard of its own, named after the root.
-            shard = root.replace("/", "-")
+            shards = (root.replace("/", "-"),)
         else:
             if root == LINGDOC_MAIN_ROOT:
                 family = path[len(root) + 1:].split("/", 1)[0]
-                shard = _shard_plan().get(family, LINGDOC_FALLBACK_SHARD)
+                shards = _shard_plan().get(family,
+                                           (LINGDOC_FALLBACK_SHARD,))
             else:
-                shard = root.replace("/", "-")
-        bucket = grouped.setdefault(shard, [])
-        if pattern not in bucket:
-            bucket.append(pattern)
+                shards = (root.replace("/", "-"),)
+        for shard in shards:
+            bucket = grouped.setdefault(shard, [])
+            if pattern not in bucket:
+                bucket.append(pattern)
 
     plan_names = [name for name, _families in LINGDOC_FAMILY_SHARDS]
 
@@ -259,7 +380,8 @@ def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, 
         return (2, 0, name)
 
     return tuple(_ProviderShard(name=name,
-                                packages=tuple(sorted(grouped[name])))
+                                packages=tuple(sorted(grouped[name])),
+                                test_filter=_SHARD_TEST_FILTERS.get(name, ""))
                  for name in sorted(grouped, key=rank))
 
 
@@ -1719,9 +1841,13 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         # fromJSON.  The workflow learns no package names from it -- the
         # list is spelled here and only here.  Empty (``[]``) exactly when
         # the provider step does not run, so the matrix is skipped as a
-        # whole by the same condition semantics as before.
+        # whole by the same condition semantics as before.  A shard may
+        # carry a ``-run`` filter (ADR 0015): the test-name partition of a
+        # package the plan splits, still data and only data to the
+        # workflow -- the workflow files carry no test names.
         "provider_shards": json.dumps(
-            [{"name": shard.name, "packages": " ".join(shard.packages)}
+            [{"name": shard.name, "packages": " ".join(shard.packages),
+              "go_test_filter": shard.test_filter}
              for shard in decision.provider_shards],
             ensure_ascii=True, separators=(",", ":")),
         "base_moved": _text(decision.base_moved),
