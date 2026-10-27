@@ -4,7 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { fileURLToPath } from 'node:url'
-import type { AgentContextPackage, AgentSourceRef, EvidenceCard } from './agentApi'
+import type { AgentContextPackage, AgentSourceRef, EvidenceCard, SelectionReason } from './agentApi'
 import type { ContextCardSummary, ContextFacts, ContextIntent, ContextPackageClient } from './agentContext'
 
 /**
@@ -158,6 +158,11 @@ function contextPackage(overrides: Partial<AgentContextPackage> = {}): AgentCont
     correlation_id: 'corr-1',
     ...overrides,
   }
+}
+
+/** 一条合成的选择理由：kind + id 是条目键，text 只作展示。 */
+function reason(kind: SelectionReason['kind'], id: string, code: string, text: string): SelectionReason {
+  return { kind, id, code, text }
 }
 
 test('勾卡与去卡返回新意图，原意图不被就地修改', () => {
@@ -362,7 +367,10 @@ test('事实分成卡片、来源、理由、版本基线、权限、关联标�
   const pkg = contextPackage({
     card_refs: [{ id: 'card-1', version: 3 }],
     source_refs: [sourceRef('source-b'), sourceRef('source-a')],
-    selection_reasons: ['用户勾选了证据卡 card-1', 'card-2: 由助手推测'],
+    selection_reasons: [
+      reason('card', 'card-1', 'user_selected_card', '用户勾选了证据卡 card-1'),
+      reason('card', 'card-2', 'user_selected_card', 'card-2: 由助手推测'),
+    ],
     authorization_state: 'granted',
     output_constraints: ['不得编造出处'],
   })
@@ -422,30 +430,80 @@ test('版本基线给出项目版本、规范修订、上下文修订、章节�
 
 test('来源保持服务端给的顺序，理由保持服务端给的条数与顺序', () => {
   const { context } = loadAgentContext()
+  const reasons = [
+    reason('card', 'card-3', 'user_selected_card', '第三条理由'),
+    reason('card', 'card-1', 'user_selected_card', '第一条理由'),
+    reason('source', 'source-2', 'card_dependency', '第二条理由'),
+  ]
   const pkg = contextPackage({
     source_refs: [sourceRef('source-b'), sourceRef('source-a'), sourceRef('source-c')],
-    selection_reasons: ['第三条理由', '第一条理由', '第二条理由'],
+    selection_reasons: reasons,
   })
   const facts = context.groupContextFacts(pkg, [])
 
   assert.deepEqual(facts.groups.sources.map(item => item.source_id), ['source-b', 'source-a', 'source-c'])
-  assert.deepEqual(facts.groups.reasons, ['第三条理由', '第一条理由', '第二条理由'])
+  assert.deepEqual(facts.groups.reasons, reasons)
   assert.equal(facts.groups.reasons.length, 3)
 })
 
-test('理由是不透明字符串：看着像条目的理由也原样透传，不解析成对应关系', () => {
+test('理由按 kind + id 挂接条目：文字里出现的条目名不参与映射', () => {
   const { context } = loadAgentContext()
-  // 理由里带着冒号：任何按分隔符拆条目的做法都会在这里露馅。
-  const reasons = ['card-1: 用户勾选', 'card-2：助手推测', '与卡片无关的一句话']
+  // 两条理由的 text 里都写着 card-1，但键分别指向 card-2 与 card-1。任何按
+  // 文本匹配的映射都会把第一条挂到 card-1 上。
+  const reasons = [
+    reason('card', 'card-2', 'card_dependency', 'card-1 的用户勾选带来了这张卡'),
+    reason('card', 'card-1', 'user_selected_card', '用户勾选'),
+    reason('source', 'source-1', 'card_dependency', '与卡片无关的一句话'),
+  ]
   const pkg = contextPackage({
-    card_refs: [{ id: 'card-1', version: 3 }],
+    card_refs: [{ id: 'card-1', version: 3 }, { id: 'card-2', version: 1 }],
     selection_reasons: reasons,
   })
-  const facts = context.groupContextFacts(pkg, [evidenceCard('card-1', 3, 'CONFIRMED')])
+  const facts = context.groupContextFacts(pkg, [
+    evidenceCard('card-1', 3, 'CONFIRMED'),
+    evidenceCard('card-2', 1, 'CONFIRMED'),
+  ])
 
-  assert.deepEqual(facts.groups.reasons, reasons)
-  assert.equal(facts.groups.cards.length, 1, '理由的文本不得决定带哪些卡')
-  assert.deepEqual(facts.groups.cards.map(row => row.ref.id), ['card-1'])
+  assert.deepEqual(facts.groups.reasons, reasons, '理由原样透传，文本不改写')
+  assert.deepEqual(
+    context.reasonsForEntry(facts.groups.reasons, 'card', 'card-1').map(item => item.code),
+    ['user_selected_card'],
+    'card-1 只挂到键指向它的那条，不挂到文本里提到它的那条',
+  )
+  assert.deepEqual(
+    context.reasonsForEntry(facts.groups.reasons, 'card', 'card-2').map(item => item.code),
+    ['card_dependency'],
+  )
+  assert.deepEqual(
+    context.reasonsForEntry(facts.groups.reasons, 'source', 'source-1').map(item => item.text),
+    ['与卡片无关的一句话'],
+  )
+  assert.deepEqual(context.reasonsForEntry(facts.groups.reasons, 'task', 'card-1'), [])
+})
+
+test('改措辞不改映射：同一 kind/id/code 换 text，前端挂接结果不变', () => {
+  const { context } = loadAgentContext()
+  const before = contextPackage({
+    card_refs: [{ id: 'card-1', version: 3 }],
+    selection_reasons: [reason('card', 'card-1', 'user_selected_card', '用户选择证据卡；层级=CONFIRMED')],
+  })
+  const after = contextPackage({
+    card_refs: [{ id: 'card-1', version: 3 }],
+    selection_reasons: [reason('card', 'card-1', 'user_selected_card', '这张卡是用户在这一轮勾选的（措辞已改）')],
+  })
+
+  const beforeFacts = context.groupContextFacts(before, [])
+  const afterFacts = context.groupContextFacts(after, [])
+  const keyOf = (item: SelectionReason) => [item.kind, item.id, item.code]
+
+  assert.deepEqual(
+    context.reasonsForEntry(afterFacts.groups.reasons, 'card', 'card-1').map(keyOf),
+    context.reasonsForEntry(beforeFacts.groups.reasons, 'card', 'card-1').map(keyOf),
+    '措辞变了，条目键不变',
+  )
+  assert.notEqual(afterFacts.groups.reasons[0].text, beforeFacts.groups.reasons[0].text)
+  assert.deepEqual(afterFacts.groups.reasons[0].kind, 'card')
+  assert.deepEqual(afterFacts.groups.reasons[0].id, 'card-1')
 })
 
 test('预览编排调用既有的预览与证据卡接口，自己不写客户端', async () => {
@@ -453,7 +511,7 @@ test('预览编排调用既有的预览与证据卡接口，自己不写客户�
     preview: contextPackage({
       card_refs: [{ id: 'card-1', version: 3 }],
       source_refs: [sourceRef('source-a')],
-      selection_reasons: ['用户勾选了证据卡 card-1'],
+      selection_reasons: [reason('card', 'card-1', 'user_selected_card', '用户勾选了证据卡 card-1')],
     }),
     cards: [evidenceCard('card-1', 3, 'CONFIRMED')],
   })
@@ -475,7 +533,7 @@ test('预览编排调用既有的预览与证据卡接口，自己不写客户�
 
   assert.deepEqual(facts.groups.cards.map(row => row.ref.id), ['card-1'])
   assert.equal(facts.groups.cards[0].status, 'CONFIRMED')
-  assert.deepEqual(facts.groups.reasons, ['用户勾选了证据卡 card-1'])
+  assert.deepEqual(facts.groups.reasons, [reason('card', 'card-1', 'user_selected_card', '用户勾选了证据卡 card-1')])
 })
 
 test('事实区只由这一次预览的结果刷新：上一次的不留、不合并', async () => {
@@ -483,7 +541,7 @@ test('事实区只由这一次预览的结果刷新：上一次的不留、不�
   let current = contextPackage({
     card_refs: [{ id: 'card-1', version: 3 }],
     source_refs: [sourceRef('source-a')],
-    selection_reasons: ['第一条理由'],
+    selection_reasons: [reason('card', 'card-1', 'user_selected_card', '第一条理由')],
   })
   const client: ContextPackageClient = {
     previewAgentContext: async () => ({ data: current }),
@@ -494,13 +552,13 @@ test('事实区只由这一次预览的结果刷新：上一次的不留、不�
   current = contextPackage({
     card_refs: [{ id: 'card-2', version: 1 }],
     source_refs: [sourceRef('source-b')],
-    selection_reasons: ['第二条理由'],
+    selection_reasons: [reason('card', 'card-2', 'user_selected_card', '第二条理由')],
   })
   const after = await context.previewContextPackage('project-1', context.createIntent(BASIN), client)
 
   assert.deepEqual(before.groups.sources.map(item => item.source_id), ['source-a'])
   assert.deepEqual(after.groups.sources.map(item => item.source_id), ['source-b'])
-  assert.deepEqual(after.groups.reasons, ['第二条理由'])
+  assert.deepEqual(after.groups.reasons, [reason('card', 'card-2', 'user_selected_card', '第二条理由')])
   assert.deepEqual(after.groups.cards.map(row => row.ref.id), ['card-2'])
 })
 
@@ -526,7 +584,7 @@ test('清单读不到时预览照常成功：范围在，卡片状态未知', as
       data: contextPackage({
         card_refs: [{ id: 'card-1', version: 3 }],
         source_refs: [sourceRef('source-a')],
-        selection_reasons: ['用户勾选了证据卡 card-1'],
+        selection_reasons: [reason('card', 'card-1', 'user_selected_card', '用户勾选了证据卡 card-1')],
         authorization_state: 'granted',
         output_constraints: ['不得编造出处'],
       }),
@@ -544,7 +602,7 @@ test('清单读不到时预览照常成功：范围在，卡片状态未知', as
   assert.equal(facts.groups.cards[0].status, undefined)
 
   assert.deepEqual(facts.groups.sources.map(item => item.source_id), ['source-a'])
-  assert.deepEqual(facts.groups.reasons, ['用户勾选了证据卡 card-1'])
+  assert.deepEqual(facts.groups.reasons, [reason('card', 'card-1', 'user_selected_card', '用户勾选了证据卡 card-1')])
   assert.equal(facts.groups.version_baseline.project_version, 7)
   assert.equal(facts.groups.authorization.authorization_state, 'granted')
   assert.deepEqual(facts.groups.authorization.output_constraints, ['不得编造出处'])

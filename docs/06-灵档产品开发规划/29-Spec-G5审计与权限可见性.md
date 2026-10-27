@@ -29,7 +29,7 @@
 - Never store research正文, SourceAnchor raw text, file content, API keys or access tokens in project audit records.
 - Owner/Admin can query complete project audit and project-level summaries. Other active members can query only their own operations and denials. Suspended/removed/suspended_by_tenant members receive only minimal access-status.
 - Audit query itself is subject to current tenant, ProjectMember and project scope checks.
-- Ordinary read/access audit uses fail-open: continue the read and emit an operational alert when the audit sink fails. This never changes an authorization deny into allow.
+- Ordinary read/access audit uses fail-open: continue the read and emit an operational alert when the audit sink fails. This never changes an authorization deny into allow. The read-class audit row is written on its own transaction **after** the read's transaction ends, so a failing audit write cannot abort the read on PostgreSQL ([ADR 0015](../adr/0015-read-audit-outside-the-read-transaction.md)); the two are deliberately not atomic.
 - Critical business actions use fail-closed: member grants, scope changes, Owner transfer, formal confirmation, ChangeSet application and formal export commit business state and audit atomically.
 - Permission decisions and domain state are separate. Audit cannot be edited by the frontend or used to mutate Project, ProjectMember, ChangeSet or ExportArtifact.
 - Reuse the existing workspace audit sink, transaction audit seam and WeKnora `audit_logs` production adapter; do not create a second platform audit system.
@@ -38,6 +38,7 @@
 
 - Test role-filtered audit queries, current membership, revoked membership, cross-project IDs and sensitive-field redaction.
 - Test fail-open ordinary reads with audit sink failure and verify alert emission.
+- Test fail-open on PostgreSQL with a failing audit trigger: the read still succeeds and the alert is still emitted (ADR 0015 pins that the read's transaction is not poisoned by the audit write).
 - Test fail-closed critical actions with audit sink failure and verify no business write, no partial version, no duplicate side effect and safe retry.
 - Test audit persistence for allow, deny, role change, scope change, Owner transfer, source revocation, confirmation, export and download.
 - Reuse existing authorization audit, audit persistence regression, delivery audit and source audit tests; add critical-action transaction-failure fixtures.

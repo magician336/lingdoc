@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -204,6 +205,153 @@ func TestG6DisabledAlertRuleStopsReactingToRuntimeEvents(t *testing.T) {
 	}
 	if len(alerts) != 2 {
 		t.Fatalf("the re-enabled rule did not react again: %+v", alerts)
+	}
+}
+
+// saveAlertRule saves one rule and reports what the save answered.
+func saveAlertRule(t *testing.T, svc *Service, actor Actor, projectID, key string, input RuntimeAlertRule) (RuntimeAlertRule, int) {
+	t.Helper()
+	raw, status, replayed, err := svc.SaveRuntimeAlertRule(context.Background(), actor, projectID, key, input)
+	if err != nil {
+		t.Fatalf("save alert rule %q: %v", key, err)
+	}
+	if replayed {
+		t.Fatalf("save %q was answered from a replay; the idempotency key was new", key)
+	}
+	var rule RuntimeAlertRule
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		t.Fatalf("decode alert rule: %v", err)
+	}
+	return rule, status
+}
+
+// 同一个幂等键 + 同一个请求由 operation ledger 重放：这条既有机制不变，
+// 但它是**重试**语义，不是「再保存一次」语义。前者复用 key 与请求，后者
+// 换一个 key 提交同一张表单——那才是 #470 的重复来源。
+func TestG6AlertRuleResaveWithTheSameKeyReplays(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
+	input := RuntimeAlertRule{Signal: "failed", Severity: "P1", Action: "notify", ResponsibleID: actor.UserID}
+	first, status := saveAlertRule(t, svc, actor, p.ID, "alert-rule-replay-key", input)
+	if status != 201 {
+		t.Fatalf("the first save answered %d, want 201", status)
+	}
+	raw, replayStatus, replayed, err := svc.SaveRuntimeAlertRule(context.Background(), actor, p.ID, "alert-rule-replay-key", input)
+	if err != nil {
+		t.Fatalf("replay the save: %v", err)
+	}
+	if !replayed || replayStatus != 201 {
+		t.Fatalf("the same key was not replayed: replayed=%v status=%d", replayed, replayStatus)
+	}
+	var again RuntimeAlertRule
+	if err := json.Unmarshal(raw, &again); err != nil {
+		t.Fatalf("decode the replayed rule: %v", err)
+	}
+	if again.ID != first.ID {
+		t.Fatalf("the replay answered a different rule: %s vs %s", again.ID, first.ID)
+	}
+	rules, err := svc.ListRuntimeAlertRules(context.Background(), actor, p.ID)
+	if err != nil || len(rules) != 1 {
+		t.Fatalf("the same-key replay left %d rules: %+v %v", len(rules), rules, err)
+	}
+}
+
+// #470：同一个 signal + scope 的规则是**一条**规则。
+//
+// 保存动作此前每次换一个新的幂等键就纯插入一条新规则：用户在面板上把
+// 同一张表单保存两次（第二次是新的幂等键，不是重试）就会武装两条一模
+// 一样的规则，同一类故障因此产生两条告警、两份处置申请。
+func TestG6RepeatedAlertRuleSaveDoesNotCreateASecondRule(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
+	ctx := context.Background()
+	first := createAlertRule(t, svc, actor, p.ID, "alert-rule-repeat-1", "failed")
+
+	// 第二次保存：不同的幂等键，同一个 signal + scope。
+	second, status := saveAlertRule(t, svc, actor, p.ID, "alert-rule-repeat-2", RuntimeAlertRule{
+		Signal: "failed", Severity: "P1", Action: "notify", ResponsibleID: actor.UserID,
+	})
+	rules, err := svc.ListRuntimeAlertRules(ctx, actor, p.ID)
+	if err != nil {
+		t.Fatalf("list alert rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("repeated save left %d rules, want 1: %+v", len(rules), rules)
+	}
+	if status != 200 {
+		t.Fatalf("re-save answered %d, want 200 (the rule already existed)", status)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("repeated save minted a second rule id: %s vs %s", second.ID, first.ID)
+	}
+	if second.Version != 1 || second.Status != "ACTIVE" || second.Severity != "P1" {
+		t.Fatalf("repeated save changed the stored rule: %+v", second)
+	}
+}
+
+// 同一个 signal + scope、但内容不同的保存是**更新**，不是第二条规则。
+//
+// 规则的身份是 signal + scope；严重级别、处置动作和责任人是它的字段。
+// 保存一张改过字段的表单必须落到同一条规则上，并留下版本与审计。
+func TestG6AlertRuleSaveUpdatesTheRuleWithTheSameIdentity(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
+	first := createAlertRule(t, svc, actor, p.ID, "alert-rule-upsert-1", "failed")
+
+	updated, status := saveAlertRule(t, svc, actor, p.ID, "alert-rule-upsert-2", RuntimeAlertRule{
+		Signal: "failed", Severity: "P0", Action: "pause", ResponsibleID: actor.UserID,
+	})
+	if status != 200 {
+		t.Fatalf("update by save answered %d, want 200", status)
+	}
+	if updated.ID != first.ID || updated.Version != 2 {
+		t.Fatalf("the save did not update the existing rule: first=%+v updated=%+v", first, updated)
+	}
+	if updated.Severity != "P0" || updated.Action != "pause" || updated.Status != "ACTIVE" {
+		t.Fatalf("the save did not apply the new fields: %+v", updated)
+	}
+	rules, err := svc.ListRuntimeAlertRules(context.Background(), actor, p.ID)
+	if err != nil || len(rules) != 1 || rules[0].ID != first.ID || rules[0].Version != 2 {
+		t.Fatalf("the update left a second rule behind: %+v %v", rules, err)
+	}
+}
+
+// 保存不会悄悄重新武装一条被停用的规则：重新启用是独立的人工决定。
+func TestG6AlertRuleSaveLeavesADisabledRuleDisabled(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
+	ctx := context.Background()
+	rule := createAlertRule(t, svc, actor, p.ID, "alert-rule-resave-disabled", "failed")
+	if _, _, _, err := svc.ActOnRuntimeAlertRule(ctx, actor, p.ID, rule.ID, "alert-rule-resave-disable", RuntimeAlertRuleActionInput{
+		ExpectedVersion: 1, Operation: "disable", Reason: "先停用",
+	}); err != nil {
+		t.Fatalf("disable the rule: %v", err)
+	}
+	saved, status := saveAlertRule(t, svc, actor, p.ID, "alert-rule-resave-after-disable", RuntimeAlertRule{
+		Signal: "failed", Severity: "P0", Action: "pause", ResponsibleID: actor.UserID,
+	})
+	if status != 200 {
+		t.Fatalf("re-save answered %d, want 200", status)
+	}
+	if saved.ID != rule.ID || saved.Status != "DISABLED" || saved.Version != 3 || saved.Severity != "P0" {
+		t.Fatalf("the re-save re-armed the rule or lost the update: %+v", saved)
+	}
+}
+
+// signal 或 scope 不同的规则是**两条**规则：身份只看这两项，不多不少。
+func TestG6AlertRulesWithDifferentSignalOrScopeStaySeparate(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
+	ctx := context.Background()
+	createAlertRule(t, svc, actor, p.ID, "alert-rule-distinct-1", "failed")
+	createAlertRule(t, svc, actor, p.ID, "alert-rule-distinct-2", "audit/failed")
+	if _, status := saveAlertRule(t, svc, actor, p.ID, "alert-rule-distinct-3", RuntimeAlertRule{
+		Signal: "failed", Severity: "P1", Action: "notify", ResponsibleID: actor.UserID,
+		Scope: RuntimeScope{Kind: "tenant", Value: fmt.Sprintf("%d", actor.TenantID)},
+	}); status != 201 {
+		t.Fatalf("a rule under another scope answered %d, want 201", status)
+	}
+	rules, err := svc.ListRuntimeAlertRules(ctx, actor, p.ID)
+	if err != nil {
+		t.Fatalf("list alert rules: %v", err)
+	}
+	if len(rules) != 3 {
+		t.Fatalf("distinct signal/scope rules collapsed: %+v", rules)
 	}
 }
 
