@@ -23,7 +23,11 @@ from pathlib import Path
 import re
 import tempfile
 import textwrap
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Sequence
+from urllib.parse import parse_qsl, urlparse
 from unittest import mock
 
 import yaml
@@ -68,6 +72,179 @@ def load(name: str) -> dict:
 
 def jobs_of(name: str) -> dict:
     return load(name).get("jobs") or {}
+
+
+def gate_publish_heredoc() -> str:
+    """The python source of the gate's publish step, extracted verbatim.
+
+    The aggregation logic is the python heredoc inside the publish step; the
+    tests execute the real source against a fake runner instead of trusting
+    its wording (#724, #734).
+    """
+    for step in (jobs_of("lingdoc-review.yml").get("gate") or {}).get(
+            "steps") or []:
+        match = re.search(r"python - <<'PY'\n(.*?)\nPY\n",
+                          str(step.get("run") or ""), re.DOTALL)
+        if match:
+            return textwrap.dedent(match.group(1))
+    raise AssertionError("the gate publish step carries no python heredoc")
+
+
+def run_gate_publish(env: dict, *, markers: Sequence[str] = (),
+                     shards: list[dict] | None = None,
+                     api: "CheckRunsStub | None" = None):
+    """Run the publish step's heredoc in a fake runner workspace.
+
+    Returns ``(exit, summary, stderr, folder)``: the SystemExit the heredoc
+    raised (``None`` when it finished), the step summary it wrote, its
+    stderr, and the artifact folder.  ``api`` points ``GITHUB_API_URL`` at a
+    local check-runs stub (#734); without it the URL names a closed port, so
+    an accidental query fails fast instead of reaching the real API.
+
+    Every ``GITHUB_*`` variable the heredoc reads is set here: the CI step
+    running this suite sits inside a real event, and an inherited variable
+    must never speak for the fixture (#720's lesson, kept for #734).
+    """
+    source = gate_publish_heredoc()
+    tmp = Path(tempfile.mkdtemp())
+    folder = tmp / "lingdoc-checks"
+    folder.mkdir(parents=True)
+    scope = {"coverage": [], "uncovered": False,
+             "provider_shards": (SHARD_FIXTURE if shards is None else shards)}
+    (folder / "scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    for name in markers:
+        (folder / f"provider-shard-{name}.passed").touch()
+    environment = {
+        "RUNNER_TEMP": str(tmp),
+        "GITHUB_STEP_SUMMARY": str(tmp / "summary.md"),
+        "GITHUB_SHA": "a" * 40,
+        "PREPARE_RESULT": "success",
+        "CISCRIPTS": "success",
+        "SCOPE": "success",
+        "CONTRACTS": "success",
+        "PROVIDERS": "success",
+        "FRONTEND": "delegated to frontend.yml#verify "
+                    "(Test, type-check, and build)",
+        # The delegation verification (#734) reads these; a fixture without
+        # a delegation claim must cost zero queries, and one with a claim
+        # must never reach the real API.
+        "FRONTEND_DELEGATE": "",
+        "HEAD_SHA": "a" * 40,
+        "GITHUB_REPOSITORY": "owl/example",
+        "GITHUB_API_URL": "http://127.0.0.1:1",
+        "SURFACE": "internal/lingdoc/workspace",
+        "REASON": "contribution surface changed",
+        "BASE": "b" * 40,
+    }
+    if api is not None:
+        environment["GITHUB_API_URL"] = api.url
+    environment.update(env)
+    stderr = io.StringIO()
+    raised = None
+    with mock.patch.dict(os.environ, environment), \
+            contextlib.redirect_stderr(stderr):
+        try:
+            exec(compile(source, "publish-step", "exec"), {})
+        except SystemExit as exit:
+            raised = exit
+    summary_path = Path(environment["GITHUB_STEP_SUMMARY"])
+    summary = summary_path.read_text(encoding="utf-8") \
+        if summary_path.exists() else ""
+    return raised, summary, stderr.getvalue(), folder
+
+
+DELEGATED_JOB = "Test, type-check, and build"
+
+# The shard matrix a fixture scope report carries (#724's aggregation tests).
+SHARD_FIXTURE = [
+    {"name": "lingdoc-workspace",
+     "packages": ["./internal/lingdoc/workspace/..."]},
+    {"name": "provider-rest", "packages": ["./internal/evidence/..."]},
+]
+
+
+def check_run(*, name: str = DELEGATED_JOB, status: str = "completed",
+              conclusion: str | None = "success", run_id: int = 1) -> dict:
+    """One check-run record shaped like the API returns it."""
+    return {"id": run_id, "name": name, "status": status,
+            "conclusion": conclusion, "head_sha": "a" * 40}
+
+
+def payload(*runs: dict) -> dict:
+    """The check-runs response body for one page."""
+    return {"total_count": len(runs), "check_runs": list(runs)}
+
+
+def paged_behavior(pages: dict[int, tuple[dict, ...]]):
+    """Answers ``page`` from a table; a page the table omits is empty."""
+    def behavior(_path: str, query: dict) -> tuple[int, dict]:
+        return 200, payload(*pages.get(int(query.get("page", "1")), ()))
+    return behavior
+
+
+def sequence_behavior(responses: list[tuple[int, dict]]):
+    """Consumes ``(status, payload)`` pairs in order; the last repeats."""
+    lock = threading.Lock()
+    state = {"next": 0}
+
+    def behavior(_path: str, _query: dict) -> tuple[int, dict]:
+        with lock:
+            index = state["next"]
+            state["next"] = index + 1
+        return responses[min(index, len(responses) - 1)]
+    return behavior
+
+
+class CheckRunsStub:
+    """A local stand-in for the GitHub check-runs API (#734).
+
+    The aggregation talks to ``{GITHUB_API_URL}/repos/{repo}/commits/{sha}/
+    check-runs`` through urllib; the stub answers that route with the
+    behaviour a test hands it and records every request, so a test can pin
+    the URL construction, the pagination and the polling -- all on
+    127.0.0.1, no network.
+    """
+
+    def __init__(self, behavior):
+        self.requests: list[tuple[str, dict]] = []
+        stub = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urlparse(self.path)
+                query = dict(parse_qsl(parsed.query))
+                stub.requests.append((parsed.path, query))
+                status, body = stub._behavior(parsed.path, query)
+                content = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+
+            def log_message(self, *_args):
+                pass
+
+        self._behavior = behavior
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever,
+                                        daemon=True)
+        self._thread.start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}"
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    def __enter__(self) -> "CheckRunsStub":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
 
 
 def consumers_of(workflow: str):
@@ -308,11 +485,7 @@ class ProviderMatrixWiringTests(unittest.TestCase):
 
     REVIEW = "lingdoc-review.yml"
 
-    SHARDS = [
-        {"name": "lingdoc-workspace",
-         "packages": ["./internal/lingdoc/workspace/..."]},
-        {"name": "provider-rest", "packages": ["./internal/evidence/..."]},
-    ]
+    SHARDS = SHARD_FIXTURE
 
     # -- reading the workflow ------------------------------------------------
     def _gate(self) -> dict:
@@ -341,43 +514,7 @@ class ProviderMatrixWiringTests(unittest.TestCase):
         heredoc raised (``None`` when it finished), the step summary it
         wrote, its stderr, and the artifact folder.
         """
-        source = self._heredoc(str(self._publish_step().get("run")))
-        tmp = Path(tempfile.mkdtemp())
-        folder = tmp / "lingdoc-checks"
-        folder.mkdir(parents=True)
-        scope = {"coverage": [], "uncovered": False,
-                 "provider_shards": (self.SHARDS if shards is None else shards)}
-        (folder / "scope.json").write_text(json.dumps(scope), encoding="utf-8")
-        for name in markers:
-            (folder / f"provider-shard-{name}.passed").touch()
-        environment = {
-            "RUNNER_TEMP": str(tmp),
-            "GITHUB_STEP_SUMMARY": str(tmp / "summary.md"),
-            "GITHUB_SHA": "a" * 40,
-            "PREPARE_RESULT": "success",
-            "CISCRIPTS": "success",
-            "SCOPE": "success",
-            "CONTRACTS": "success",
-            "PROVIDERS": "success",
-            "FRONTEND": "delegated to frontend.yml#verify "
-                        "(Test, type-check, and build)",
-            "SURFACE": "internal/lingdoc/workspace",
-            "REASON": "contribution surface changed",
-            "BASE": "b" * 40,
-        }
-        environment.update(env)
-        stderr = io.StringIO()
-        raised = None
-        with mock.patch.dict(os.environ, environment), \
-                contextlib.redirect_stderr(stderr):
-            try:
-                exec(compile(source, "publish-step", "exec"), {})
-            except SystemExit as exit:
-                raised = exit
-        summary_path = Path(environment["GITHUB_STEP_SUMMARY"])
-        summary = summary_path.read_text(encoding="utf-8") \
-            if summary_path.exists() else ""
-        return raised, summary, stderr.getvalue(), folder
+        return run_gate_publish(env, markers=markers, shards=shards)
 
     # -- the wiring ----------------------------------------------------------
     def test_the_provider_matrix_consumes_the_decision_output(self):
@@ -534,6 +671,272 @@ class ProviderMatrixWiringTests(unittest.TestCase):
                              "a red decision job must turn the gate red")
         self.assertNotEqual(raised.code, 0)
         self.assertIn("decision step", errors)
+
+
+class DelegationVerificationTests(unittest.TestCase):
+    """The gate verifies the delegated job's real result on this head (#734).
+
+    ADR 0014, section three's failure clause: a head where the frontend
+    workflow did not really run -- trigger, queue and failure all count as
+    not run -- must be red.  Since #723 the published frontend verdict is a
+    delegation statement, so the aggregation now asks the check runs of the
+    pull request's head SHA whether the delegated job really finished, and
+    exactly one conclusion keeps the delegation green: ``success``.  A
+    failed or absent delegated job, a window that closes on a pending run,
+    and a failed query all turn the gate red **and name the job and the
+    state that caused it**; the states are executed against a local
+    check-runs stub, the same way the shard aggregation executes the real
+    heredoc (#724).
+    """
+
+    REVIEW = "lingdoc-review.yml"
+    JOB = DELEGATED_JOB
+
+    def _gate(self) -> dict:
+        return jobs_of(self.REVIEW)["gate"]
+
+    def _run_gate(self, env: dict, stub: CheckRunsStub | None = None,
+                  shards: list[dict] | None = None):
+        return run_gate_publish(env, shards=shards, api=stub)
+
+    # -- the five states, executed against the stub ---------------------------
+    def test_a_successful_delegated_job_keeps_the_gate_green(self):
+        """The one green state: the delegated job really succeeded here."""
+        with CheckRunsStub(paged_behavior({1: (check_run(),)})) as stub:
+            raised, summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        # The query is addressed to the pull request's head SHA, with the
+        # page size the lookup paginates by.
+        self.assertEqual(stub.requests, [
+            (f"/repos/owl/example/commits/{'a' * 40}/check-runs",
+             {"per_page": "100", "page": "1"}),
+        ])
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"],
+                         {"delegated_job": self.JOB,
+                          "outcome": "verified",
+                          "detail": "conclusion=success"})
+        self.assertIn("frontend delegation", summary)
+        self.assertIn(self.JOB, summary)
+
+    def test_a_failed_delegated_job_fails_the_gate_and_names_it(self):
+        """A red delegated job is a red gate, naming job and conclusion."""
+        runs = (check_run(conclusion="cancelled", run_id=1),
+                check_run(conclusion="failure", run_id=2))
+        with CheckRunsStub(paged_behavior({1: runs})) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNotNone(raised,
+                             "a failed delegated job must fail the gate")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        # The newest completed run speaks: a stale `cancelled` from a run
+        # the re-push replaced must not be the reported state.
+        self.assertIn("conclusion=failure", errors)
+        self.assertNotIn("conclusion=cancelled", errors)
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"], "failed")
+
+    def test_an_absent_delegated_job_exhausts_the_window_and_fails(self):
+        """No check run on the head: the gate polls, then fails naming it."""
+        with CheckRunsStub(paged_behavior({})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05",
+                 "GATE_DELEGATION_POLL_TIMEOUT": "0.4"}, stub=stub)
+
+        self.assertIsNotNone(raised, "an absent delegated job must fail")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        self.assertIn("no check run", errors)
+        self.assertIn("polling window exhausted", errors)
+        self.assertGreaterEqual(len(stub.requests), 3,
+                                "the lookup must poll, not ask once")
+
+    def test_an_in_progress_job_polled_past_the_window_fails(self):
+        """Queueing counts as not run once the polling window closes."""
+        pending = check_run(status="in_progress", conclusion=None)
+        with CheckRunsStub(paged_behavior({1: (pending,)})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05",
+                 "GATE_DELEGATION_POLL_TIMEOUT": "0.4"}, stub=stub)
+
+        self.assertIsNotNone(raised, "a window that closed on a pending "
+                                      "run must fail the gate")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        self.assertIn("status=in_progress", errors)
+        self.assertIn("polling window exhausted", errors)
+
+    def test_an_in_progress_job_that_finishes_in_time_is_accepted(self):
+        """The polling waits for a live run and accepts its success."""
+        responses = [(200, payload(check_run(status="in_progress",
+                                             conclusion=None))),
+                     (200, payload(check_run())),
+                     (200, payload(check_run()))]
+        with CheckRunsStub(sequence_behavior(responses)) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05"}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertGreaterEqual(len(stub.requests), 2,
+                                "the gate must have polled, not asked once")
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"], "verified")
+
+    def test_an_api_failure_fails_closed_and_names_the_reason(self):
+        """A failed query is a red gate with the reason; never a silent pass."""
+        with CheckRunsStub(
+                lambda _path, _query: (500, {"message": "boom"})) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNotNone(raised, "a query failure must fail closed")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn("500", errors)
+        self.assertIn("query failed", errors)
+        self.assertEqual(len(stub.requests), 1,
+                         "a query failure must not be retried into silence")
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"],
+                         "query-failed")
+
+    # -- attribution precision ------------------------------------------------
+    def test_no_delegation_claim_means_zero_queries(self):
+        """Only a delegated face is verified; every other face costs nothing.
+
+        A manual dispatch, an unselected frontend and a head that cannot
+        start the frontend workflow all publish an empty delegate key; the
+        gate must then query nothing at all.
+        """
+        with CheckRunsStub(paged_behavior({})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": "",
+                 "FRONTEND": "not run: frontend verification is not "
+                             "selected on this head"},
+                stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertEqual(stub.requests, [])
+
+    # -- the lookup itself ----------------------------------------------------
+    def test_the_lookup_pages_through_all_check_runs(self):
+        """A delegated job beyond the first page is still found."""
+        filler = tuple(check_run(name=f"Other job {index}", run_id=index)
+                       for index in range(100))
+        with CheckRunsStub(paged_behavior({1: filler, 2: (check_run(),)})) \
+                as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertEqual([query.get("page") for _path, query in stub.requests],
+                         ["1", "2"])
+
+    def test_a_cancelled_older_run_does_not_fail_a_live_rerun(self):
+        """frontend.yml cancels in progress on a re-push.
+
+        The stale `cancelled` check run must read as *pending*, not as a
+        failure, while the live run is still going; the live run's own
+        conclusion then settles the delegation.
+        """
+        cancelled = check_run(conclusion="cancelled", run_id=1)
+        live_pending = check_run(status="in_progress", conclusion=None,
+                                 run_id=2)
+        responses = [
+            (200, payload(cancelled)),
+            (200, payload(cancelled, live_pending)),
+            (200, payload(cancelled, live_pending)),
+            (200, payload(cancelled, check_run(run_id=2))),
+        ]
+        with CheckRunsStub(sequence_behavior(responses)) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05"}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertGreaterEqual(len(stub.requests), 4)
+
+    # -- the wiring -----------------------------------------------------------
+    def test_the_workflow_permissions_stay_minimal(self):
+        """The verification reads check runs; that read is the only addition."""
+        self.assertEqual(load(self.REVIEW).get("permissions"),
+                         {"contents": "read", "checks": "read"})
+
+    def test_the_prepare_job_declares_the_delegate_and_the_gate_reads_it(self):
+        """The cross-job reference is an explicitly declared output (ADR 0005)."""
+        declared = (jobs_of(self.REVIEW).get("prepare") or {}).get("outputs") \
+            or {}
+        self.assertEqual(declared.get("frontend_delegate"),
+                         "${{ steps.scope.outputs.frontend_delegate }}")
+        gate_env = self._gate().get("env") or {}
+        self.assertEqual(gate_env.get("FRONTEND_DELEGATE"),
+                         "${{ needs.prepare.outputs.frontend_delegate }}")
+        # The check runs attach to the pull request's head commit, not to
+        # the merge commit GITHUB_SHA names (read off PR #731's check runs).
+        self.assertEqual(gate_env.get("HEAD_SHA"),
+                         "${{ github.event.pull_request.head.sha }}")
+
+    def test_the_publish_step_authenticates_with_the_workflow_token(self):
+        for step in self._gate().get("steps") or []:
+            if "python - <<'PY'" in str(step.get("run") or ""):
+                self.assertEqual(
+                    (step.get("env") or {}).get("GITHUB_TOKEN"),
+                    "${{ github.token }}",
+                    "the query carries exactly this workflow's permissions")
+                return
+        self.fail("the gate publish step carries no python heredoc")
+
+    def test_the_polling_knobs_are_env_tunable_with_defaults(self):
+        """The window and its interval are env knobs with registered defaults."""
+        source = gate_publish_heredoc()
+        interval = re.search(r"GATE_DELEGATION_POLL_INTERVAL',\s*'([0-9.]+)'",
+                             source)
+        window = re.search(r"GATE_DELEGATION_POLL_TIMEOUT',\s*'([0-9.]+)'",
+                           source)
+        self.assertIsNotNone(interval, "the poll interval must be an env knob")
+        self.assertIsNotNone(window, "the poll window must be an env knob")
+        self.assertEqual(float(interval.group(1)), 30.0,
+                         "the registered default interval is 30 seconds")
+        self.assertEqual(float(window.group(1)), 600.0,
+                         "the registered default window is 10 minutes, the "
+                         "measured frontend job (154s) plus margin")
+
+    def test_the_gate_job_outlives_the_polling_window(self):
+        """A job timeout below the window would kill the named reason."""
+        self.assertGreaterEqual(
+            int(self._gate().get("timeout-minutes") or 0), 15,
+            "the 10-minute polling window needs job headroom; a tighter "
+            "timeout would kill the publish step and lose the failure")
+
+    def test_the_delegated_check_name_is_unique_across_the_workflows(self):
+        """The check-run filter matches the display name; an ambiguous name
+        would let the gate read another job's evidence."""
+        delegated = {consumer.job_name
+                     for surface in manifest.load_surfaces()
+                     if surface.role == manifest.ROLE_FRONTEND
+                     for consumer in surface.consumers}
+        self.assertTrue(delegated)
+        published: dict[str, list[str]] = {}
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            for job in (jobs_of(path.name)).values():
+                name = str(job.get("name") or "unnamed")
+                published.setdefault(name, []).append(path.name)
+        for name in sorted(delegated):
+            with self.subTest(job_name=name):
+                self.assertEqual(published.get(name, []), ["frontend.yml"],
+                                 f"the delegated check name {name!r} must "
+                                 "identify exactly one job in the frontend "
+                                 "workflow")
 
 
 if __name__ == "__main__":
