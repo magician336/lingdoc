@@ -61,6 +61,13 @@ func newWrapperG4AuditFixture(t *testing.T) (deliveryGuardFixture, *wrapperG4Use
 	require.NoError(t, err)
 	var project core.Project
 	require.NoError(t, json.Unmarshal(raw, &project))
+	// Binding is a migration and requires the current required fields to exist.
+	raw, _, _, err = f.projects.SaveSpec(f.ctx, f.actor, project.ID, "wrapper-g4-bind-spec", core.SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "合成软件验收对象", "research_goal": "合成软件验收目标"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &project))
 	draft := lingdoctemplate.RuleSet{
 		ID: "wrapper-g4-audit", Version: "v1", State: lingdoctemplate.RuleSetDraft,
 		Bindings: []lingdoctemplate.RuleBinding{{

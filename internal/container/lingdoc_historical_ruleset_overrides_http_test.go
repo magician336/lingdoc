@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -203,7 +202,7 @@ func TestLegacyRuleOverrideHTTPPersistsAndRollsBackSQLite(t *testing.T) {
 		}
 	}
 	if found != 3 {
-		t.Fatal(fmt.Sprintf("expected 3 durable override audits, got %d", found))
+		t.Fatalf("expected 3 durable override audits, got %d", found)
 	}
 
 	// Seed a second historical sidecar, then exercise the active semantic

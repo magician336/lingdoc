@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -340,10 +342,37 @@ func TestFieldArchiveProvenanceVisibilityIsRechecked(t *testing.T) {
 func TestFieldArchiveHidesRevokedSourceAndBlocksRemoval(t *testing.T) {
 	f := newAgentFixture(t, true)
 	guardSource(t, f.svc, f.owner, f.project, "source-1", "knowledge-1")
-	if err := f.svc.testDB().Exec("CREATE TABLE IF NOT EXISTS knowledge_bases(id TEXT PRIMARY KEY,tenant_id BIGINT NOT NULL,deleted_at DATETIME)").Error; err != nil {
+	// The other fixture tables already exist, so apply the knowledge-base
+	// statement from the production baseline and its later production change.
+	base, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000000_init.up.sql"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.testDB().Exec("INSERT INTO knowledge_bases(id,tenant_id) VALUES(?,?)", "guard-kb", f.owner.TenantID).Error; err != nil {
+	found := false
+	for _, statement := range strings.Split(stripSQLLineComments(string(base)), ";") {
+		statement = strings.TrimSpace(statement)
+		if !strings.HasPrefix(statement, "CREATE TABLE IF NOT EXISTS "+"knowledge_bases (") {
+			continue
+		}
+		if found {
+			t.Fatal("duplicate knowledge base definition in production migration")
+		}
+		if err := f.svc.testDB().Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("knowledge base definition missing from production migration")
+	}
+	additional, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000003_knowledge_base_auto_tag_config.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.testDB().Exec(string(additional)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.testDB().Exec("INSERT INTO knowledge_bases(id,tenant_id,name,embedding_model_id,summary_model_id) VALUES(?,?,?,?,?)", "guard-kb", f.owner.TenantID, "synthetic archive source", "embedding-fixture", "summary-fixture").Error; err != nil {
 		t.Fatal(err)
 	}
 	var knowledge types.Knowledge

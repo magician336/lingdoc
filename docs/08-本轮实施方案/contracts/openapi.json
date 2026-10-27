@@ -17507,7 +17507,7 @@
         ],
         "requestBody": {
           "required": true,
-          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LegacyRuleOverridesInput"}}}
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LegacyRuleOverridesInput"}, "example": {"expected_project_version": 2, "expected_template_copy_version": 1, "reason": "项目需要提示", "overrides": [{"rule_id": "limit", "severity": "info"}]}}}
         },
         "responses": {
           "200": {"description": "已追加项目有效规则副本", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectResponse"}}}},
@@ -17542,7 +17542,7 @@
           {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
           {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8, "maxLength": 128}}
         ],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateFieldArchiveInput"}}}},
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateFieldArchiveInput"}, "example": {"field_id": "legacy_note", "expected_spec_revision": 1, "template_copy": {"expected_project_version": 2, "expected_template_copy_version": 1, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "required": true}], "sections": [], "terms": [], "required_fields": ["research_subject"], "rules": []}}}}},
         "responses": {
           "201": {"description": "归档已保存", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FieldArchiveReceiptResponse"}}}},
           "400": {"description": "目标模板或字段无效"},
@@ -17583,7 +17583,7 @@
           {"name": "archiveId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
           {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8, "maxLength": 128}}
         ],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RemoveArchivedFieldInput"}}}},
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RemoveArchivedFieldInput"}, "example": {"confirmed": true, "expected_archive_version": 1, "expected_spec_revision": 1, "template_copy": {"expected_project_version": 2, "expected_template_copy_version": 1, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "required": true}], "sections": [], "terms": [], "required_fields": ["research_subject"], "rules": []}}}}},
         "responses": {
           "200": {"description": "已移除，历史归档保留", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FieldArchiveReceiptResponse"}}}},
           "400": {"description": "未确认或目标模板无效"},
@@ -43645,7 +43645,7 @@
         "required": ["expected_project_version", "expected_template_copy_version", "reason", "overrides"],
         "additionalProperties": false,
         "x-go-type": "core.LegacyRuleOverridesInput",
-        "x-go-source": "internal/lingdoc/workspacecore/legacy_rule_overrides.go"
+        "x-go-source": "internal/lingdoc/workspacecore/historical_ruleset_overrides.go"
       },
       "RuleDefinition": {
         "type": "object",

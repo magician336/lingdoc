@@ -79,6 +79,7 @@
 
 ### 当前候选的运行证据与接续入口
 
+- 交接用 Draft PR #752 的首轮 CI 暴露了契约示例、旧规则文件命名、合成数据库表夹具、规则绑定测试夹具及新路由清单问题。已补齐三个请求示例、重生成契约验证报告、按仓库命名约定改名、使用生产迁移建测试表，并同步测试夹具和五条路由的权限断言；首轮失败记录保留在 GitHub Actions。契约相关 71 项、命名 80 项、夹具守卫 3 项及受影响的规则覆盖和来源撤权 Go 定向测试通过。PostgreSQL 旧夹具已先填必填值再绑定，但本机无 DSN，须由后续 CI 验证；新的 PR head 的完整 CI 与验收仍待结果。
 - `go test -p 2 -count=1 -timeout 15m ./internal/lingdoc/workspacecore`：PASS，72.997 秒；相关 handler/SQLite、容器、治理目标校验和 operationcore 定向组合 PASS。第一次全包有三个失败并保留在 `D:/Mon3tr/projects/lingdoc-dachuang/reports/issue686-main-core-20261027/workspacecore-after-archive-full.log`：两个旧绑定夹具未填必填值，已补齐后保留原断言；另一个并发测试未识别服务既有的 `409`/stale 返回契约，已补检查 stale 和仅赢家产生任务，定向重复 20 次 PASS。Go telemetry 在受限目录的 token 警告不影响这些命令退出码。
 - 真实 Chromium + TCP/HTTP 第二轮为 **PARTIAL**，结果 `bootstrap/issue686-acceptance/runs/run-8ebf403e8930/result.json`：浏览器完成项目选择、默认演示模板发布、旧规则覆盖、草稿字段归档与确认移除、模板副本保存、检查、Preflight、导出与 DOCX 下载；文件哈希与服务端及 HTTP 读回一致。项目立项和章节确认通过 HTTP 夹具准备，归档来源和旧规则 sidecar 由隔离 SQL 合成，没有真实模型调用；审计记录未逐条人工核验。自定义目录模板创建版本返回 `403 source_access_denied`，未进入真实发布或切换，不能记为通过。
 - 浏览器首轮项目选择超时，`bootstrap/issue686-acceptance/runs/run-7dad14367d30/result.json` 与截图保留；第二轮五个阶段的欢迎页首击均成功，但首轮没有点击事件记录，原因仍未确定，不得抹去首错。二轮源代码指纹前后同为 `0cf9122f7595a72ea5f88bd696a8869110b0e5895cde0b463a02887ec2e3a63a`，构建服务二进制摘要 `cebaed01476c3e69911f9669cf70b3fee2aef233c7cfe2cef75ebcbd0c8c6cd4`。测试后端和 Vite 已停止。

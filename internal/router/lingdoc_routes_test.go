@@ -67,13 +67,30 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	// route family (which carries them) is registered by the full workflow
 	// handler, and this composition does not wire it. The production
 	// composition's own count is asserted in internal/container/lingdoc_test.go.
-	if got := len(engine.Routes()); got != 79 {
-		t.Fatalf("registered %d LingDoc routes, want 79", got)
+	if got := len(engine.Routes()); got != 84 {
+		t.Fatalf("registered %d LingDoc routes, want 84", got)
 	}
+	registered := make(map[string]bool, len(engine.Routes()))
 	for _, route := range engine.Routes() {
+		registered[route.Method+" "+route.Path] = true
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
 		if !ok || !policy.RequireFullAccess {
 			t.Errorf("missing full-access policy: %s %s", route.Method, route.Path)
+		}
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPut, "/api/v1/lingdoc/projects/:projectId/template-copy/legacy-rule-overrides"},
+		{http.MethodPost, "/api/v1/lingdoc/projects/:projectId/template-copy/field-archives"},
+		{http.MethodGet, "/api/v1/lingdoc/projects/:projectId/template-copy/field-archives"},
+		{http.MethodGet, "/api/v1/lingdoc/projects/:projectId/template-copy/field-archives/:archiveId"},
+		{http.MethodPost, "/api/v1/lingdoc/projects/:projectId/template-copy/field-archives/:archiveId/remove"},
+	} {
+		if !registered[route.method+" "+route.path] {
+			t.Errorf("missing declared route: %s %s", route.method, route.path)
+		}
+		policy, ok := guards.apiKeyAuthorizer.Lookup(route.method, route.path)
+		if !ok || !policy.RequireFullAccess {
+			t.Errorf("API-key policy for %s %s = %#v, registered=%v; want full access", route.method, route.path, policy, ok)
 		}
 	}
 }
