@@ -22,6 +22,14 @@ import (
 // missing entirely — the loser must not leave an ImpactTask behind.
 func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 	svc, actor, p := extendedImpactStore(t)
+	// Match the production SQLite pool: concurrent service calls share one
+	// connection, so the losing request reaches the version check instead of
+	// failing an unsupported concurrent read-to-write transaction upgrade.
+	sqlDB, err := svc.testDB().DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	chapter := extendedChapter(t, svc, actor, p)
 	ctx := context.Background()
 
@@ -66,7 +74,9 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 		switch {
 		case result.err == nil && result.status == 200 && !result.replay:
 			winners++
-		case result.status == 409 && !result.replay && (result.err == nil || errors.Is(result.err, ErrVersionConflict)):
+		case result.status == 409 && !result.replay && result.err == nil:
+			losers++
+		case !result.replay && (result.status == 0 || result.status == 409) && errors.Is(result.err, ErrVersionConflict):
 			losers++
 		default:
 			t.Fatalf("apply %d returned an unaccounted outcome: status=%d replay=%v err=%v", i, result.status, result.replay, result.err)
