@@ -1664,12 +1664,6 @@ def _frontend_delegation(decision: Decision,
     return "not run: frontend verification is not selected on this head", ""
 
 
-def _frontend_verdict(decision: Decision,
-                      verdicts: Mapping[str, bool]) -> str:
-    """The published frontend verdict: a delegation, or an honest not-run."""
-    return _frontend_delegation(decision, verdicts)[0]
-
-
 def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
                   ) -> dict[str, str]:
     """The one place where a decision becomes strings.
@@ -1680,7 +1674,7 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
 
     The ``frontend`` key is the published frontend **verdict**, not a bare
     flag: a delegation statement naming the delegated job, or an honest
-    "not run" (:func:`_frontend_verdict`).  The workflow prints it verbatim
+    "not run" (:func:`_frontend_delegation`).  The workflow prints it verbatim
     into the gate result, so the field keeps its name and position while its
     value says who verifies the frontend (#723).
     """

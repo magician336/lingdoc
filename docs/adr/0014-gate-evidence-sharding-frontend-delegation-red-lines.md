@@ -43,7 +43,7 @@ gate 不再复跑前端三命令。前端面的验证证据**完全委托**前�
 - **同 head 证据原则对委托同样适用**：被指认的证据必须来自**同一个 head** 上真实运行的前端工作流 job。前端工作流在这个 head 上没有真实运行时（触发、排队、失败都算没有），require-coverage 必须红——不得把别的 head 的绿灯记到这个 head 名下。
 - **「门禁始终出现」不受影响**：gate job 永远创建，委托发生在步骤与结论语义层，不在触发器层（#309）。
 - **接线纪律照旧**：跨 job 引用的输出必须在 job 的 `outputs:` 里显式声明（0005 第六节的教训：漏声明静默失效）；接线守护测试**扩展**既有断言，不开新缝。
-- **核验机制（#734 兑现本节失败子句）**：委托成立时，gate 聚合（publish 步）在结论发布前查询**同一 head SHA** 的 check-runs（`GET {GITHUB_API_URL}/repos/{GITHUB_REPOSITORY}/commits/{head}/check-runs`，`per_page=100` 翻页翻全），按被委托 job 的显示名过滤；该显示名由判定模块作为输出（`frontend_delegate`）发布——恰在委托成立时非空，未被委托或未选中的面**零查询**。五态语义：`conclusion=success` 记委托绿（既有语义不变）；completed 非 success 立即红，点名 job 与最新 conclusion；`in_progress` 与「不存在」按 env 可调的间隔与窗口轮询（默认 30s 间隔、10 分钟窗口，对齐前端 job 实测 154s 加余量），窗口耗尽红；**查询失败本身 fail-closed**——gate 红 + 原因点名，不得静默放行。工作流为此新增的权限只有 `checks: read`（最小化）。轮询等待（gate 等待被委托 job 收尾）是已接受的正确性代价，不是新的跳过路径；「委托 ≠ 跳过」措辞不变。
+- **核验机制（#734 兑现本节失败子句）**：委托成立时，gate 聚合（publish 步）在结论发布前查询**同一 head SHA** 的 check-runs（`GET {GITHUB_API_URL}/repos/{GITHUB_REPOSITORY}/commits/{head}/check-runs`，`per_page=100` 翻页翻全），按被委托 job 的显示名过滤；该显示名由判定模块作为输出（`frontend_delegate`）发布——恰在委托成立时非空，未被委托或未选中的面**零查询**。五态语义：`conclusion=success` 记委托绿（既有语义不变）；completed 非 success（在无 success 结论时）立即红，点名 job 与最新 conclusion；`in_progress` 与「不存在」按 env 可调的间隔与窗口轮询（默认 30s 间隔、10 分钟窗口，对齐前端 job 实测 154s 加余量），窗口耗尽红；**查询失败本身 fail-closed**——gate 红 + 原因点名，不得静默放行。工作流为此新增的权限只有 `checks: read`（最小化）。轮询等待（gate 等待被委托 job 收尾）是已接受的正确性代价，不是新的跳过路径；「委托 ≠ 跳过」措辞不变。
 
 ### 四、四条红线
 

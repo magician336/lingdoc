@@ -132,6 +132,9 @@ def run_gate_publish(env: dict, *, markers: Sequence[str] = (),
         "HEAD_SHA": "a" * 40,
         "GITHUB_REPOSITORY": "owl/example",
         "GITHUB_API_URL": "http://127.0.0.1:1",
+        # The heredoc reads the token for its queries; an inherited real one
+        # must never flow into an exec'd fixture (#724 review F5).
+        "GITHUB_TOKEN": "",
         "SURFACE": "internal/lingdoc/workspace",
         "REASON": "contribution surface changed",
         "BASE": "b" * 40,
