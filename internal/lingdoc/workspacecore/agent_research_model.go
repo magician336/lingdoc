@@ -432,6 +432,11 @@ const (
 	SelectionReasonUserSelectedCard   = "user_selected_card"
 	SelectionReasonUserSelectedSource = "user_selected_source"
 	SelectionReasonCardDependency     = "card_dependency"
+
+	// Read-only vocabulary for turns written before #432: the payload held
+	// free text, so there is no id to name an entry with.
+	SelectionReasonKindLegacy         = "legacy"
+	SelectionReasonLegacyUnstructured = "legacy_unstructured"
 )
 
 type AgentContextPackage struct {
@@ -454,6 +459,48 @@ type AgentContextPackage struct {
 	OutputConstraints  []string          `json:"output_constraints"`
 	CorrelationID      string            `json:"correlation_id"`
 }
+
+// UnmarshalJSON reads both shapes of selection_reasons: the structured entries
+// current builds write, and the free text turns were stored with before #432.
+//
+// A legacy string becomes SelectionReason{Kind:"legacy", ID:"", Code:
+// "legacy_unstructured", Text:s}. It keeps the sentence for a reader but does
+// not invent an id: the old payload never recorded which entry the sentence was
+// about. Legacy entries are read-only -- Marshal still writes the structured
+// shape -- and the front end attaches reasons by kind+id, so a legacy entry is
+// not displayed rather than mapped onto a guessed card, source or task.
+//
+// Every other field decodes exactly as before; only this one field needs the
+// two-shape reader, because it is the one whose type changed.
+func (p *AgentContextPackage) UnmarshalJSON(data []byte) error {
+	type packageAlias AgentContextPackage
+	decoded := struct {
+		*packageAlias
+		SelectionReasons []json.RawMessage `json:"selection_reasons"`
+	}{packageAlias: (*packageAlias)(p)}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if decoded.SelectionReasons == nil {
+		return nil
+	}
+	reasons := make([]SelectionReason, 0, len(decoded.SelectionReasons))
+	for _, entry := range decoded.SelectionReasons {
+		var reason SelectionReason
+		if err := json.Unmarshal(entry, &reason); err == nil {
+			reasons = append(reasons, reason)
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(entry, &text); err != nil {
+			return err
+		}
+		reasons = append(reasons, SelectionReason{Kind: SelectionReasonKindLegacy, Code: SelectionReasonLegacyUnstructured, Text: text})
+	}
+	p.SelectionReasons = reasons
+	return nil
+}
+
 type AgentMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
