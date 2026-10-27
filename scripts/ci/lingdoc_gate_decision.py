@@ -124,6 +124,158 @@ GOVERNANCE_DIRS = tuple(manifest.GOVERNANCE_DIRS)
 FRONTEND_ROOT = manifest.FRONTEND_ROOT
 
 # --------------------------------------------------------------------------
+# the provider shards (ADR 0014, section one)
+# --------------------------------------------------------------------------
+# **编排知识**：provider 验证在「确定要跑」之后怎么编组。归属知识（什么路径
+# 属于 provider 面）只登记在门禁面清单（``lingdoc_gate_surfaces``）——所以
+# 下面的计划只写包族名与根名结尾，从不重写完整根路径；主根由包族在真实树里
+# 的位置解析出来。工作流的 matrix 消费分片输出，不学任何路径（红线四）。
+#
+# 分片依据 Phase 0（#721）之后的实测校准（#724 验收报告 §2）：域内主包的
+# workspace 包族是单一 Go 包（无子包可再分），非 race 实测 315.6s、占全仓
+# provider 测试的 63%——单独成片，是分片后最大分片的地板；其余 17 个包族
+# 共享一片；另外三个根合计非 race 17.2s，共享一小片。
+LINGDOC_FAMILY_SHARDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("lingdoc-workspace", ("workspace",)),
+    ("lingdoc-core", (
+        "access", "candidateadoption", "delivery", "demoroute", "docx",
+        "generation", "materiallingest", "membership", "operationcore",
+        "reviewanchor", "rulesetstore", "sourcemarker", "sourcepolicy",
+        "template", "templategovernance", "workspacecore", "writingaction",
+    )),
+)
+
+# A family the plan does not know yet stays covered: it lands in this
+# registered shard, and the guard test that compares the plan with the real
+# repository turns red until the new family is registered here.
+LINGDOC_FALLBACK_SHARD = "lingdoc-core"
+
+# The three other provider roots are small (non-race 17.2s together), so
+# they share one shard instead of paying a job each.  They are named by
+# their path end only; a root whose end is not listed here -- a fifth root
+# added to the manifest -- gets a shard of its own, named after the root.
+# Adding a root is then a manifest change and, at most, one line here; the
+# workflow never changes.
+REST_SHARD = "provider-rest"
+REST_SHARD_ROOT_ENDS = ("evidence", "acceptancebudget",
+                        "acceptance-budget-reconcile")
+
+
+def _resolve_main_root() -> str:
+    """The provider root that carries the plan's package families.
+
+    The plan registers family names only; which full path is the root they
+    live under is ownership knowledge, and the manifest is its only
+    registration.  The root is therefore resolved from the manifest's roots
+    against the real tree: the one root under which every planned family
+    exists as a first-level directory.  An empty result degrades the plan
+    safely -- whole-root patterns then run as one unsharded shard instead
+    of being lost.
+    """
+    families = [family for _name, family_list in LINGDOC_FAMILY_SHARDS
+                for family in family_list]
+    for root in PROVIDER_ROOTS:
+        base = Path(manifest.REPO_ROOT, root)
+        if base.is_dir() and all((base / family).is_dir()
+                                 for family in families):
+            return root
+    return ""
+
+
+LINGDOC_MAIN_ROOT = _resolve_main_root()
+
+
+@dataclasses.dataclass(frozen=True)
+class _ProviderShard:
+    """One shard of the provider verification: a name and its package list."""
+
+    name: str
+    packages: tuple[str, ...]
+
+
+def _shard_plan() -> dict[str, str]:
+    """The package family of the main root -> the shard that owns it."""
+    return {family: name for name, families in LINGDOC_FAMILY_SHARDS
+            for family in families}
+
+
+def _provider_shards(provider_packages: Sequence[str]) -> tuple[_ProviderShard, ...]:
+    """Group the provider package patterns into shards.
+
+    The input is the same list the ``provider_packages`` output carries --
+    ``./<directory>/...`` patterns derived from the manifest's provider
+    roots.  Every pattern lands in exactly one shard (the shards are a
+    partition of the input), and only non-empty shards exist: an entry the
+    contribution does not touch generates no shard, so a small contribution
+    starts a small matrix.  The order is canonical -- plan order, then the
+    rest shard, then any root the plan does not name, alphabetically -- so
+    the same input always produces the same matrix.
+    """
+    grouped: dict[str, list[str]] = {}
+    for pattern in provider_packages:
+        path = pattern[2:] if pattern.startswith("./") else pattern
+        if path.endswith("/..."):
+            path = path[:-4]
+        root = next((candidate for candidate in PROVIDER_ROOTS
+                     if path == candidate or path.startswith(candidate + "/")),
+                    None)
+        if root is None:
+            # Unreachable while provider_packages derives from the manifest's
+            # roots; an orphan pattern stays covered instead of being dropped.
+            shard = REST_SHARD
+        elif root.rsplit("/", 1)[-1] in REST_SHARD_ROOT_ENDS:
+            shard = REST_SHARD
+        elif path == root:
+            if root == LINGDOC_MAIN_ROOT:
+                # The whole main root is tested (full scope, governance): the
+                # root pattern is expanded into the family patterns of the
+                # plan, one per shard.  This is lossless only while the root
+                # has no package of its own; the guard test pins that fact.
+                for name, families in LINGDOC_FAMILY_SHARDS:
+                    for family in families:
+                        grouped.setdefault(name, []).append(
+                            f"./{root}/{family}/...")
+                continue
+            # A root the plan does not name -- a fifth root added to the
+            # manifest -- gets a shard of its own, named after the root.
+            shard = root.replace("/", "-")
+        else:
+            if root == LINGDOC_MAIN_ROOT:
+                family = path[len(root) + 1:].split("/", 1)[0]
+                shard = _shard_plan().get(family, LINGDOC_FALLBACK_SHARD)
+            else:
+                shard = root.replace("/", "-")
+        bucket = grouped.setdefault(shard, [])
+        if pattern not in bucket:
+            bucket.append(pattern)
+
+    plan_names = [name for name, _families in LINGDOC_FAMILY_SHARDS]
+
+    def rank(name: str) -> tuple[int, int, str]:
+        if name in plan_names:
+            return (0, plan_names.index(name), name)
+        if name == REST_SHARD:
+            return (1, 0, name)
+        return (2, 0, name)
+
+    return tuple(_ProviderShard(name=name,
+                                packages=tuple(sorted(grouped[name])))
+                 for name in sorted(grouped, key=rank))
+
+
+# The display name of one shard job in the gate workflow, with the shard
+# name substituted.  The workflow spells the same template with the matrix
+# reference (``Provider shard ${{ matrix.shard.name }}``); the wiring guard
+# test keeps the two spellings together, so the check a reader sees on the
+# pull request is the name the coverage table records.
+SHARD_JOB_NAME = "Provider shard {name}"
+
+
+def _shard_job_name(shard: _ProviderShard) -> str:
+    """The matrix-expanded name of one shard job, as a reader sees it."""
+    return SHARD_JOB_NAME.format(name=shard.name)
+
+# --------------------------------------------------------------------------
 # the published conclusion
 # --------------------------------------------------------------------------
 # The boundary statement every gate publishes.  A green gate is a statement
@@ -185,6 +337,11 @@ class JobDecision:
     ``run`` says whether the checks this job owns are selected for this
     event.  For a workflow-level gate that is the job's trigger; for the pull
     request gate it is the condition of the step that owns the surface.
+
+    ``role`` is the manifest role of the surface this verdict comes from (the
+    same value the manifest's ``role`` field carries).  The published
+    frontend verdict reads it to find the delegated frontend job (ADR 0014)
+    without re-deriving ownership the manifest already declares.
     """
 
     workflow: str
@@ -196,6 +353,7 @@ class JobDecision:
     path_kind: str
     paths: tuple[str, ...]
     skipped_on_format_only: bool
+    role: str = manifest.ROLE_PATHS
 
     @property
     def readable_key(self) -> str:
@@ -260,6 +418,11 @@ class Decision:
     run_code: bool
     run_targeted: bool
     provider_packages: tuple[str, ...]
+    # The provider verification sharded (#724, ADR 0014): how the packages
+    # above are grouped for the workflow's matrix.  Empty exactly when the
+    # provider step does not run: the matrix is skipped as a whole by the
+    # same condition semantics as before.
+    provider_shards: tuple[_ProviderShard, ...]
     contracts: bool
     backend: bool
     frontend: bool
@@ -702,6 +865,7 @@ def _jobs(fields: Mapping[str, Any],
                 path_kind=surface.path_kind,
                 paths=surface.paths,
                 skipped_on_format_only=surface.skipped_on_format_only,
+                role=surface.role,
             ))
     return tuple(jobs)
 
@@ -721,9 +885,21 @@ def _surface_runs(decision: Decision, surface: manifest.Surface,
     return any(job.run for job in decision.jobs if job.surface == surface.name)
 
 
-def _owner_names(surface: manifest.Surface) -> str:
-    """The name of the job (or step) that owns a surface, as a reader sees it."""
+def _owner_names(surface: manifest.Surface,
+                 decision: Decision | None = None) -> str:
+    """The name of the job (or step) that owns a surface, as a reader sees it.
+
+    The provider surface is verified by the shard matrix (#724, ADR 0014):
+    while the decision carries shards, the owner names are the matrix-
+    expanded shard job names -- the checks a reader actually sees on the
+    pull request -- instead of the gate-internal step that no longer runs
+    the tests.
+    """
     if surface.step is not None:
+        if (decision is not None and surface.role == manifest.ROLE_PROVIDER
+                and decision.provider_shards):
+            return "; ".join(_shard_job_name(shard)
+                             for shard in decision.provider_shards)
         return surface.step.name
     return "; ".join(consumer.job_name for consumer in surface.consumers)
 
@@ -773,8 +949,13 @@ def _coverage_rows(decision: Decision,
         rows.append(_Coverage(
             surface=tested,
             paths=paths,
-            verified_by=tuple(_owner_names(surface) for surface in running),
-            watched_by=tuple(_owner_names(surface) for surface in watching),
+            # A job may watch the same tested surface through two manifest
+            # surfaces (the delegated frontend job does, #723); it is still
+            # one verifier, so it is named once.
+            verified_by=tuple(dict.fromkeys(_owner_names(surface, decision)
+                                            for surface in running)),
+            watched_by=tuple(dict.fromkeys(_owner_names(surface, decision)
+                                           for surface in watching)),
             status=status,
         ))
     return tuple(rows)
@@ -1336,11 +1517,18 @@ def _build(fields: Mapping[str, Any],
     fields = dict(fields)
     fields["provider_tests"] = (bool(fields["provider_packages"])
                                 and fields["run_targeted"])
+    # The shards exist exactly when the provider step runs: the workflow's
+    # matrix is skipped as a whole by the ``run_providers`` condition, so a
+    # skipped provider verification publishes an empty shard list (#724).
+    fields["provider_shards"] = (
+        _provider_shards(fields["provider_packages"])
+        if fields["provider_tests"] and not fields["format_only"] else ())
     decision = Decision(
         jobs=_jobs(fields, surfaces),
         run_code=fields["run_code"],
         run_targeted=fields["run_targeted"],
         provider_packages=tuple(fields["provider_packages"]),
+        provider_shards=tuple(fields["provider_shards"]),
         contracts=fields["contracts"],
         backend=fields["backend"],
         frontend=fields["frontend"],
@@ -1435,6 +1623,39 @@ def _text(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _frontend_verdict(decision: Decision,
+                      verdicts: Mapping[str, bool]) -> str:
+    """The published frontend verdict: a delegation, or an honest not-run.
+
+    The gate does not run the frontend checks itself any more (#723, ADR
+    0014): the verification is delegated to the frontend workflow job the
+    manifest names for the frontend role.  When that job is selected on this
+    head, the verdict names it -- the evidence is real on that job, which is
+    what separates a delegation from a skip.  "Skipped means NOT RUN, not
+    passed" stays true in the other direction too: a head where the
+    delegated job does not run says "not run" and never "delegated".
+
+    A run whose range could not be resolved -- a manual dispatch, an
+    undetermined push -- starts no frontend workflow on this head, so it
+    does not claim the delegation even when the verification is selected.
+    When the manifest cannot be read at all the verdict falls back to the
+    plain flag rather than naming a job the decision does not know.
+    """
+    delegated = [job for job in decision.jobs
+                 if job.role == manifest.ROLE_FRONTEND]
+    if not delegated:
+        return _text(decision.frontend)
+    job = delegated[0]
+    target = f"{Path(job.workflow).name}#{job.job} ({job.job_name})"
+    runs = verdicts.get(job.key, False)
+    if runs and not (decision.forced and not decision.diff_range):
+        return f"delegated to {target}"
+    if runs:
+        return (f"not run: frontend verification is selected on this head, "
+                f"but this event does not start {target}")
+    return "not run: frontend verification is not selected on this head"
+
+
 def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
                   ) -> dict[str, str]:
     """The one place where a decision becomes strings.
@@ -1442,6 +1663,12 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
     ``patterns`` is the path table of the gate that asks for the decision; it
     selects the ``run`` verdict of that gate.  Without it the ``run`` verdict
     says whether any of the manifest's jobs is selected.
+
+    The ``frontend`` key is the published frontend **verdict**, not a bare
+    flag: a delegation statement naming the delegated job, or an honest
+    "not run" (:func:`_frontend_verdict`).  The workflow prints it verbatim
+    into the gate result, so the field keeps its name and position while its
+    value says who verifies the frontend (#723).
     """
     if patterns is None:
         run = any(job.run for job in decision.jobs)
@@ -1449,6 +1676,11 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         run = _pattern_verdict(decision.forced, decision.run_code,
                                decision.contribution, patterns,
                                base_moved=decision.base_moved)
+    # A job that watches several surfaces runs when any of them is selected.
+    # The published key says so once, not once per surface.
+    verdicts: dict[str, bool] = {}
+    for job in decision.jobs:
+        verdicts[job.key] = verdicts.get(job.key, False) or job.run
     outputs = {
         "run": _text(run),
         "run_code": _text(decision.run_code),
@@ -1458,14 +1690,25 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "base": decision.base,
         "contracts": _text(decision.contracts),
         "backend": _text(decision.backend),
-        "frontend": _text(decision.frontend),
-        # The two steps of the pull request gate that run the test matrix.
-        # They read one boolean each: the formatting-only shortcut is
-        # already folded in, so no condition has to combine two outputs.
+        # The published frontend verdict: a delegation naming the delegated
+        # job, or an honest "not run" (#723).  There is no run_frontend key
+        # any more: the gate runs no frontend step, and the verification it
+        # delegates is carried by this verdict.
+        "frontend": _frontend_verdict(decision, verdicts),
+        # The provider step reads one boolean: the formatting-only shortcut
+        # is already folded in, so no condition has to combine two outputs.
         "run_providers": _text(decision.provider_tests and not decision.format_only),
-        "run_frontend": _text(decision.frontend and not decision.format_only),
         "provider_tests": _text(decision.provider_tests),
         "provider_packages": " ".join(decision.provider_packages),
+        # The shard matrix (#724, ADR 0014): JSON the workflow feeds to
+        # fromJSON.  The workflow learns no package names from it -- the
+        # list is spelled here and only here.  Empty (``[]``) exactly when
+        # the provider step does not run, so the matrix is skipped as a
+        # whole by the same condition semantics as before.
+        "provider_shards": json.dumps(
+            [{"name": shard.name, "packages": " ".join(shard.packages)}
+             for shard in decision.provider_shards],
+            ensure_ascii=True, separators=(",", ":")),
         "base_moved": _text(decision.base_moved),
         "surface_changed": _text(decision.surface_changed),
         "forced": _text(decision.forced),
@@ -1482,11 +1725,6 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
             for row in decision.coverage),
         "uncovered": _text(decision.uncovered),
     }
-    # A job that watches several surfaces runs when any of them is selected.
-    # The published key says so once, not once per surface.
-    verdicts: dict[str, bool] = {}
-    for job in decision.jobs:
-        verdicts[job.key] = verdicts.get(job.key, False) or job.run
     for key, run in verdicts.items():
         outputs[key] = _text(run)
     return outputs
@@ -1606,14 +1844,18 @@ def _is_step_level(workflow: str) -> bool:
     pull request gate's job always runs and its steps are skipped one by
     one.  Such a gate publishes its steps; every other gate publishes the
     jobs it skips.
+
+    The mark of a step-level gate is a declared ``step``: the manifest
+    records a step exactly where the pull request gate's own step owns the
+    surface.  A job watching several surfaces is *not*, by itself, that
+    mark -- since #723 the frontend workflow's verify job watches the
+    workflow-level frontend surface and the delegated frontend surface, and
+    its gate still selects whole jobs.
     """
-    counts: dict[str, int] = {}
-    for surface in _readable_surfaces():
-        for consumer in surface.consumers:
-            if consumer.workflow != workflow:
-                continue
-            counts[consumer.job] = counts.get(consumer.job, 0) + 1
-    return any(count > 1 for count in counts.values())
+    return any(surface.step is not None
+               for surface in _readable_surfaces()
+               if any(consumer.workflow == workflow
+                      for consumer in surface.consumers))
 
 
 def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
@@ -1645,7 +1887,14 @@ def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
                 run = outputs.get(output, "false") == "true"
                 kind = "step"
                 detail = ""
-                if output == "run_providers" and decision.provider_packages:
+                if output == "run_providers" and decision.provider_shards:
+                    # The reader sees the shard jobs: the checks that will
+                    # actually carry the verification on this head (#724).
+                    detail = ("the provider shards are: " + "; ".join(
+                        f"{_shard_job_name(shard)} "
+                        f"({', '.join(shard.packages)})"
+                        for shard in decision.provider_shards))
+                elif output == "run_providers" and decision.provider_packages:
                     detail = ("the provider packages are: "
                               + ", ".join(decision.provider_packages))
             else:
@@ -1802,6 +2051,10 @@ def report(decision: Decision, whitespace_range: str | None = None) -> dict[str,
         "whitespace_diff_range": whitespace_range,
         "changed_paths": list(decision.changed_paths),
         "provider_packages": packages,
+        # The shard matrix the workflow's providers job is generated from:
+        # one entry per shard, name plus package list (#724).
+        "provider_shards": [dataclasses.asdict(shard)
+                            for shard in decision.provider_shards],
         "format_only": decision.format_only,
         "format_reasons": list(decision.format_reasons),
         "coverage": [dataclasses.asdict(row) for row in decision.coverage],

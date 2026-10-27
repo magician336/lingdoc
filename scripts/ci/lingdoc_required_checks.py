@@ -38,3 +38,16 @@ from __future__ import annotations
 REQUIRED_CHECK_NAMES: tuple[str, ...] = (
     "LingDoc PR gate",
 )
+
+# The gate workflow's internal jobs (#724): they publish checks on the pull
+# request, but they carry **no merge requirement of their own** -- the ruleset
+# above asks for the aggregated gate check alone, and a red step or a red
+# shard turns that check red.  The names here are registered so no check can
+# appear in the gate workflow without being deliberate.  A matrix job's
+# display name is the raw template with the matrix reference unexpanded,
+# spelled exactly as the workflow spells it; the wiring guard test keeps this
+# list and the workflow files together.
+GATE_INTERNAL_JOB_NAMES: tuple[str, ...] = (
+    "Decide scope and validate contracts",
+    "Provider shard ${{ matrix.shard.name }}",
+)

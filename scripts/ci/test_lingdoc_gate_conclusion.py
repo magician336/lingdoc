@@ -29,6 +29,9 @@ import yaml
 
 import lingdoc_gate_decision as decision
 import lingdoc_gate_surfaces as manifest
+# 同一泄漏类的收口（#724 评审 F2）：判定 CLI 读 GITHUB_*，CI 步的真实事件
+# 环境不得覆盖夹具。helper 的唯一出处与理由在 test_lingdoc_gate_decision。
+from test_lingdoc_gate_decision import hermetic_env
 
 CI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CI_DIR.parents[1]
@@ -306,7 +309,7 @@ class CommandLineTests(ConclusionFixture):
                  "--event", str(event_path), "--root", str(root),
                  "--gate", ".github/workflows/frontend.yml",
                  "--artifact-dir", str(folder)],
-                env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)},
+                env=hermetic_env(GITHUB_STEP_SUMMARY=str(summary)),
                 capture_output=True, text=True)
 
             self.assertEqual(completed.returncode, 0, completed.stderr)

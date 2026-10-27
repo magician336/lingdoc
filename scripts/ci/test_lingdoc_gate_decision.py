@@ -48,6 +48,23 @@ def git(root: Path, *args: str) -> str:
         ["git", *args], cwd=root, stderr=subprocess.DEVNULL).decode().strip()
 
 
+def hermetic_env(**overrides: str) -> dict:
+    """A subprocess environment in which only the fixture speaks.
+
+    The gate CLI reads GITHUB_* to learn which event it serves. The CI step
+    running this suite sits inside a real event, so an inherited environment
+    overrides every fixture's own event file and flips the verdict under
+    test — four tests failed exactly this way on the runner and passed
+    nowhere else (#720 shard ticket's first real run). Fixtures speak only
+    through their explicit event files and explicit overrides: every
+    inherited GITHUB_* variable is stripped here.
+    """
+    env = {name: value for name, value in os.environ.items()
+           if not name.startswith("GITHUB_")}
+    env.update(overrides)
+    return env
+
+
 def write(root: Path, relative: str, content: str) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -408,7 +425,7 @@ class BaseMoveCoverageTests(DecisionFixture):
                  "--event", str(event_path), "--root", str(root),
                  "--require-coverage", "--no-whitespace"],
                 capture_output=True, text=True, encoding="utf-8",
-                errors="replace")
+                errors="replace", env=hermetic_env())
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("no job that compiles or tests", result.stderr)
@@ -432,6 +449,156 @@ class BaseMoveCoverageTests(DecisionFixture):
             self.assertIn("Format, vet, test, and build", markdown)
 
 
+class FrontendDelegationTests(DecisionFixture):
+    """The gate does not run the frontend checks; it delegates them (#723).
+
+    ADR 0014, section three: the frontend verification lives once, in the
+    frontend workflow's ``verify`` job.  The gate's own frontend rerun is
+    gone, so the decision's frontend facts have to say **who** verifies:
+
+    * the coverage table names the delegated job of the frontend workflow,
+      not a gate-internal step that no longer exists;
+    * the published ``frontend`` verdict is a delegation statement naming
+      the delegated job -- delegation, not a skip.  "Skipped means NOT RUN,
+      not passed" stays true, so a head where the delegated job does not
+      run says "not run", never "delegated";
+    * require-coverage does not weaken (#602): when nothing runs for the
+      frontend on this head, the gate is red.
+    """
+
+    def _frontend_contribution(self, root: Path) -> decision.Decision:
+        return self._contribution(root, {
+            "frontend/src/views/lingdoc/Workspace.vue":
+                "<template>delegated</template>\n",
+        })
+
+    def test_a_frontend_change_selects_the_delegated_frontend_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+
+            # The delegated job runs: the frontend workflow's verify job is
+            # the one that tests, type-checks and builds the frontend.
+            self.assertTrue(_job_runs(
+                result, ".github/workflows/frontend.yml", "verify"))
+            self.assertFalse(result.uncovered)
+
+    def test_the_coverage_names_the_delegated_job_not_a_gate_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+
+            row = next(row for row in result.coverage
+                       if row.surface.startswith("frontend/"))
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Test, type-check, and build", row.verified_by)
+            # The gate's own frontend step is gone: naming it would point at
+            # a check nobody runs.
+            self.assertNotIn("Frontend: test, type-check and build",
+                             row.verified_by)
+            self.assertNotIn("Frontend: test, type-check and build",
+                             row.watched_by)
+
+    def test_the_published_frontend_verdict_is_a_delegation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+            outputs = decision.write_outputs(result)
+
+            self.assertIn("delegated", outputs["frontend"])
+            self.assertIn("frontend.yml#verify", outputs["frontend"])
+            self.assertIn("Test, type-check, and build", outputs["frontend"])
+
+    def test_a_change_that_touches_no_frontend_says_not_run(self):
+        """Delegation is not a skip, and a skip is not a delegation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertFalse(result.frontend)
+            self.assertTrue(outputs["frontend"].startswith("not run"),
+                            outputs["frontend"])
+            self.assertNotIn("delegated", outputs["frontend"])
+
+    def test_a_manual_run_does_not_claim_a_delegation(self):
+        """A dispatch starts no frontend workflow on this head."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide(
+                {"action": "manual", "reason": "full scope requested"}, root)
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.frontend)
+            self.assertTrue(outputs["frontend"].startswith("not run"),
+                            outputs["frontend"])
+            self.assertNotIn("delegated", outputs["frontend"])
+
+    def _manifest_without_a_frontend_runner(self) -> tuple:
+        """A manifest in which nothing runs for the frontend on this head.
+
+        The two frontend surfaces stop watching ``frontend/`` and the only
+        surface that still claims it is the provider step -- which does not
+        run for a frontend-only change.  This is the shape "the delegated
+        run was removed" takes at the judgement seam.
+        """
+        patched = []
+        for surface in manifest.load_surfaces():
+            if surface.name in ("frontend", "pr-gate-frontend"):
+                patched.append(dataclasses.replace(surface,
+                                                   paths=("elsewhere/**",)))
+            elif surface.name == "pr-gate-provider":
+                patched.append(dataclasses.replace(
+                    surface, paths=surface.paths + ("frontend/",)))
+            else:
+                patched.append(surface)
+        return tuple(patched)
+
+    def test_removing_the_delegated_run_leaves_the_frontend_uncovered(self):
+        """require-coverage does not weaken behind the delegation (#602)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "frontend/src/views/lingdoc/Workspace.vue",
+                  "<template>delegated</template>\n")
+            git(root, "add", "-A"); git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=self._manifest_without_a_frontend_runner()):
+                result = decision.decide(event, root)
+
+            row = next(row for row in result.coverage
+                       if row.surface.startswith("frontend/"))
+            self.assertEqual(row.status, "not verified")
+            self.assertEqual(row.verified_by, ())
+            self.assertTrue(result.uncovered)
+            self.assertIn("no job that compiles or tests", result.reason)
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=self._manifest_without_a_frontend_runner()):
+                with self.assertRaises(SystemExit) as caught:
+                    decision.publish(event, root, require_coverage=True,
+                                     whitespace=False)
+            self.assertNotEqual(caught.exception.code, 0)
 class ForcePushTests(DecisionFixture):
     """A force push makes ``before`` unfetchable; the scope still narrows (#539).
 
@@ -883,6 +1050,12 @@ class PreRefactorGoldenTests(DecisionFixture):
     the repository-level gates test new, so the gate that watches the
     contribution has to run again instead of leaving the contribution's
     surface without any compile or test evidence on the new head.
+
+    The published ``frontend`` key changed with ticket #723 (ADR 0014): the
+    gate no longer runs the frontend itself, so the key stopped being the
+    bare flag and became the frontend verdict -- a delegation when the
+    delegated job runs on this head, an honest "not run" when it does not.
+    Every scenario here touches no frontend, so each row reads "not run".
     """
 
     GOLDEN = {
@@ -892,7 +1065,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "base_moved": "false", "surface_changed": "true",
             "reason": "contribution surface changed",
             "run_code": "true", "run_targeted": "true",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "docs_push": {
@@ -901,7 +1076,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "base_moved": "false", "surface_changed": "false",
             "reason": "tested surface unchanged and base unchanged",
             "run_code": "false", "run_targeted": "false",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "baseline_merge": {
@@ -911,7 +1088,9 @@ class PreRefactorGoldenTests(DecisionFixture):
             "reason": "the base moved under the branch; the merge result is "
                       "new, so the contribution is re-tested against it",
             "run_code": "false", "run_targeted": "true",
-            "backend": "true", "frontend": "false",
+            "backend": "true",
+            "frontend": "not run: frontend verification is not selected "
+                        "on this head",
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
     }
@@ -956,13 +1135,24 @@ class PreRefactorGoldenTests(DecisionFixture):
                         self.assertEqual(outputs[field], expected, field)
 
     # What the pull request gate read before the refactor, and still reads.
+    # The ``frontend`` value changed with #723 (ADR 0014): the gate no longer
+    # runs the frontend itself, so the flag became a verdict -- a delegation
+    # when the delegated job runs on this head, an honest "not run" when it
+    # does not.  These three scenarios touch no frontend, so the value is the
+    # not-run wording on every row.
     GATE_GOLDEN = {
         "code_change": {"contracts": "true", "backend": "true",
-                        "frontend": "false", "provider_tests": "true"},
+                        "frontend": "not run: frontend verification is not "
+                                    "selected on this head",
+                        "provider_tests": "true"},
         "docs_push": {"contracts": "true", "backend": "true",
-                      "frontend": "false", "provider_tests": "false"},
+                      "frontend": "not run: frontend verification is not "
+                                  "selected on this head",
+                      "provider_tests": "false"},
         "baseline_merge": {"contracts": "true", "backend": "true",
-                           "frontend": "false", "provider_tests": "true"},
+                           "frontend": "not run: frontend verification is not "
+                                       "selected on this head",
+                           "provider_tests": "true"},
     }
 
     def test_the_gate_flags_are_the_ones_the_old_implementation_gave(self):
@@ -1026,7 +1216,7 @@ class OfflineEntryPointTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--event", str(event_path), "--root", str(root)],
-                capture_output=True, text=True)
+                capture_output=True, text=True, env=hermetic_env())
 
             self.assertEqual(result.returncode, 0, result.stderr)
             report = json.loads(result.stdout)
@@ -1088,7 +1278,7 @@ class PullRequestGateWiringTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--event", str(event_path), "--root", str(root)],
-                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                env=hermetic_env(GITHUB_OUTPUT=str(output)),
                 capture_output=True, text=True)
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1249,13 +1439,235 @@ class ProviderSelectionTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--all", "--root", str(root)],
-                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                env=hermetic_env(GITHUB_OUTPUT=str(output)),
                 capture_output=True, text=True)
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["provider_packages"],
                              [f"./{name}/..." for name in roots])
             self.assertIn("provider_tests=true", output.read_text(encoding="utf-8"))
+
+
+class ProviderShardTests(DecisionFixture):
+    """The provider verification is sharded by the decision module (#724).
+
+    ADR 0014, section one: the shards are **data** the decision module
+    publishes -- a shard name plus a package list, derived from the same
+    ``PROVIDER_ROOTS`` the gate surface manifest registers.  The workflow's
+    matrix consumes the list and runs the same test command per shard; the
+    workflow itself learns no package names.  The tests here pin the output
+    contract of that sharding and the attribution it produces.
+    """
+
+    FULL_SCOPE = ("./internal/lingdoc/...", "./internal/evidence/...",
+                  "./internal/models/acceptancebudget/...",
+                  "./cmd/acceptance-budget-reconcile/...")
+
+    def _shards(self, packages):
+        return decision._provider_shards(packages)
+
+    def test_the_full_scope_shards_into_the_registered_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "internal/lingdoc/workspace/service.go"
+            path.parent.mkdir(parents=True)
+            path.write_text("package workspace\n", encoding="utf-8")
+            # The plan is calibrated on the real repository's package
+            # families (#724 report, section 2): the workspace family is one
+            # indivisible Go package and carries a shard of its own; the
+            # remaining families share a shard; the three other roots share
+            # one small shard.
+            shards = self._shards(self.FULL_SCOPE)
+
+            self.assertEqual([s.name for s in shards],
+                             ["lingdoc-workspace", "lingdoc-core",
+                              "provider-rest"])
+            for shard in shards:
+                self.assertTrue(shard.packages,
+                                "an empty shard must not exist: the sharding "
+                                "only creates entries for non-empty groups")
+            # The whole main root was expanded losslessly over the plan.
+            self.assertEqual(list(shards[0].packages),
+                             ["./internal/lingdoc/workspace/..."])
+            self.assertEqual(sorted(shards[1].packages), sorted(
+                f"./internal/lingdoc/{name}/..." for name in
+                ("access", "candidateadoption", "delivery", "demoroute",
+                 "docx", "generation", "materiallingest", "membership",
+                 "operationcore", "reviewanchor", "rulesetstore",
+                 "sourcemarker", "sourcepolicy", "template",
+                 "templategovernance", "workspacecore", "writingaction")))
+            self.assertEqual(sorted(shards[2].packages),
+                             ["./cmd/acceptance-budget-reconcile/...",
+                              "./internal/evidence/...",
+                              "./internal/models/acceptancebudget/..."])
+
+    def test_every_package_lands_in_exactly_one_shard(self):
+        packages = ["./internal/lingdoc/workspace/...",
+                    "./internal/lingdoc/delivery/...",
+                    "./internal/evidence/store/...",
+                    "./cmd/acceptance-budget-reconcile/..."]
+
+        shards = self._shards(packages)
+
+        assigned = [package for shard in shards for package in shard.packages]
+        self.assertEqual(sorted(assigned), sorted(packages),
+                         "the shards must cover every package of the input")
+        self.assertEqual(len(assigned), len(set(assigned)),
+                         "the shards must not overlap")
+
+    def test_the_sharding_is_deterministic_regardless_of_input_order(self):
+        forward = self._shards(self.FULL_SCOPE)
+        backward = self._shards(tuple(reversed(self.FULL_SCOPE)))
+        self.assertEqual(forward, backward)
+
+    def test_an_empty_package_list_yields_no_shards(self):
+        self.assertEqual(self._shards(()), ())
+
+    def test_a_decision_without_provider_tests_publishes_no_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {"docs/note.md": "evidence\n"})
+            outputs = decision.write_outputs(result)
+
+            # The matrix is skipped as a whole by the same condition
+            # semantics as before: no shard list, no matrix entries.
+            self.assertEqual(outputs["run_providers"], "false")
+            self.assertEqual(result.provider_shards, ())
+            self.assertEqual(outputs["provider_shards"], "[]")
+
+    def test_a_formatting_only_change_publishes_no_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\n// A note.\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.format_only)
+            self.assertEqual(outputs["run_providers"], "false")
+            self.assertEqual(result.provider_shards, ())
+
+    def test_a_provider_change_publishes_the_shard_matrix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertEqual(outputs["run_providers"], "true")
+            self.assertEqual([s.name for s in result.provider_shards],
+                             ["lingdoc-workspace"])
+            # The matrix entry carries the packages as one space-joined
+            # string: the shard job expands it straight onto the command
+            # line, with no list parsing in the workflow.
+            self.assertEqual(
+                json.loads(outputs["provider_shards"]),
+                [{"name": "lingdoc-workspace",
+                  "packages": "./internal/lingdoc/workspace/..."}])
+
+    def test_the_coverage_names_the_shard_jobs(self):
+        """The coverage table attributes the verification to the shards."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Provider shard lingdoc-workspace", row.verified_by)
+            # The gate's own step no longer runs the provider tests: naming
+            # it would point at a check nobody runs.
+            self.assertNotIn("Provider packages: test and vet",
+                             row.verified_by)
+
+    def test_the_conclusion_names_the_shards_and_their_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            conclusion = decision.gate_conclusion(
+                result, ".github/workflows/lingdoc-review.yml", root=root)
+
+            provider = next(check for check in conclusion["checks"]
+                            if check["check"] == "pr-gate-provider")
+            self.assertIn("Provider shard lingdoc-workspace",
+                          provider["reason"])
+            self.assertIn("./internal/lingdoc/workspace/...",
+                          provider["reason"])
+
+    def test_a_fifth_root_yields_a_shard_without_a_workflow_change(self):
+        """Adding a root to the manifest is the whole change (#724)."""
+        with mock.patch.object(
+                decision, "PROVIDER_ROOTS",
+                decision.PROVIDER_ROOTS + ("internal/newthing",)):
+            shards = self._shards(["./internal/newthing/store/..."])
+
+        self.assertEqual([s.name for s in shards], ["internal-newthing"])
+        self.assertEqual(shards[0].packages,
+                         ("./internal/newthing/store/...",))
+        # Red line four (ADR 0014): the workflow is a dumb executor.  It
+        # carries no package name and no root name -- the shard list comes
+        # from the decision module alone.
+        workflow = (CI_DIR.parents[1] / ".github" / "workflows"
+                    / "lingdoc-review.yml").read_text(encoding="utf-8")
+        for known in decision.PROVIDER_ROOTS:
+            self.assertNotIn(known, workflow)
+
+    def test_an_unregistered_family_stays_covered(self):
+        """A family missing from the plan must not fall out of the gate."""
+        shards = self._shards(["./internal/lingdoc/somefuturefamily/..."])
+
+        self.assertEqual([s.name for s in shards],
+                         [decision.LINGDOC_FALLBACK_SHARD])
+        self.assertEqual(shards[0].packages,
+                         ("./internal/lingdoc/somefuturefamily/...",))
+
+    def test_the_plan_covers_the_real_main_root_losslessly(self):
+        """The whole-root expansion is only lossless while it is complete."""
+        repo = CI_DIR.parents[1]
+        families = sorted(path.name for path
+                          in (repo / "internal/lingdoc").iterdir()
+                          if path.is_dir())
+        planned = [family for _name, families in decision.LINGDOC_FAMILY_SHARDS
+                   for family in families]
+        self.assertEqual(sorted(planned), families,
+                         "a package family of the main root is missing from "
+                         "the shard plan; register it in the decision module")
+        # The expansion replaces the whole-root pattern with the family
+        # patterns; a package sitting directly in the root would be lost.
+        self.assertEqual([path.name for path
+                          in (repo / "internal/lingdoc").glob("*.go")], [])
+        # The plan references the roots without re-registering them: the
+        # main root is resolved from the manifest against the real tree, and
+        # the rest shard's members are named by their path end only.  The
+        # two together must still describe every provider root, once.
+        self.assertIn(decision.LINGDOC_MAIN_ROOT, decision.PROVIDER_ROOTS)
+        rest_roots = tuple(root for root in decision.PROVIDER_ROOTS
+                           if root != decision.LINGDOC_MAIN_ROOT)
+        self.assertEqual(
+            tuple(root.rsplit("/", 1)[-1] for root in rest_roots),
+            decision.REST_SHARD_ROOT_ENDS)
+        plan_names = [name for name, _families
+                      in decision.LINGDOC_FAMILY_SHARDS]
+        self.assertIn(decision.LINGDOC_FALLBACK_SHARD, plan_names)
 
 
 class PatternTableTests(DecisionFixture):
@@ -1536,7 +1948,7 @@ class WhitespaceBoundaryTests(DecisionFixture):
         return subprocess.run(
             [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
              "--event", str(event_path), "--root", str(root)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=hermetic_env())
 
     def test_an_upstream_merge_is_not_a_pull_request_defect(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1718,7 +2130,11 @@ class PushEventTests(DecisionFixture):
             self.assertEqual(outputs["run_targeted"], "true")
             self.assertEqual(outputs["contracts"], "true")
             self.assertEqual(outputs["backend"], "true")
-            self.assertEqual(outputs["frontend"], "true")
+            # #723: the whole-scope frontend verification is delegated to the
+            # frontend workflow's verify job, and the verdict names it.
+            self.assertEqual(outputs["frontend"],
+                             "delegated to frontend.yml#verify "
+                             "(Test, type-check, and build)")
             self.assertIn("frontend", outputs["surface"])
             self.assertIn("./internal/lingdoc/...", outputs["provider_packages"])
 

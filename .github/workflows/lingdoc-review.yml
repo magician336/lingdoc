@@ -28,10 +28,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  gate:
-    name: LingDoc PR gate
+  # The decision job: the guard suite, the scope step and the contract
+  # validation.  The job outputs are an explicit allow-list (ADR 0005): the
+  # shard matrix and the gate job read only what is declared here, and a
+  # name that is not declared reads as an empty string.
+  prepare:
+    name: Decide scope and validate contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
@@ -39,6 +43,19 @@ jobs:
       LOG_FORMAT: ""
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONOPTIMIZE: "0"
+    outputs:
+      ciscripts: ${{ steps.ciscripts.outcome }}
+      scope: ${{ steps.scope.outcome }}
+      contracts: ${{ steps.contracts.outcome }}
+      run_providers: ${{ steps.scope.outputs.run_providers }}
+      # The shard matrix (#724, ADR 0014): JSON the providers job feeds to
+      # fromJSON.  The workflow learns no package names from it -- the list
+      # is spelled by the decision module, and only there.
+      provider_shards: ${{ steps.scope.outputs.provider_shards }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      surface: ${{ steps.scope.outputs.surface }}
+      reason: ${{ steps.scope.outputs.reason }}
+      base: ${{ steps.scope.outputs.base }}
     steps:
       # Use pull_request (NOT pull_request_target), no secrets or write token.
       # Default checkout tests the merge result; scope uses base...head below.
@@ -129,80 +146,172 @@ jobs:
           # Counts are intentionally NOT fixed: adding F22 or a new API is valid.
           PY
 
-      - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.run_providers == 'true'
-        id: providers
-        env:
-          CGO_ENABLED: "1"
+      # The conclusion and the scope report travel to the gate job through
+      # this artifact: the coverage table of the final result is read from
+      # the report the decision step wrote, never re-derived.
+      - name: Publish the scope report and the gate conclusion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingdoc-checks-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-checks/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The provider verification, sharded (#724, ADR 0014): one shard is one
+  # entry of the decision module's shard list, and every shard runs the same
+  # test command over its own package list.  The matrix is generated from the
+  # output the prepare job declares above -- this workflow carries no package
+  # names, and adding a package root never touches it.
+  providers:
+    name: Provider shard ${{ matrix.shard.name }}
+    needs: prepare
+    # One boolean selects the verification: the decision module already
+    # folded the formatting-only shortcut into it.  The second term only
+    # keeps the matrix from being empty (an empty matrix is a job error, not
+    # a skip): the shard list is empty exactly when the boolean is false.
+    if: needs.prepare.outputs.run_providers == 'true' && needs.prepare.outputs.provider_shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.prepare.outputs.provider_shards) }}
+    env:
+      CGO_ENABLED: "1"
+      SHARD_PACKAGES: ${{ matrix.shard.packages }}
+      SHARD_NAME: ${{ matrix.shard.name }}
+    steps:
+      # Default checkout tests the merge result; depth one is enough, the
+      # shard diffed nothing -- the decision was made in the prepare job.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Test and vet the provider packages of this shard
         run: |
-          mapfile -t targets < <(python - <<'PY'
-          import json, os
-          from pathlib import Path
-          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks/scope.json').read_text())
-          print('\n'.join(report['provider_packages']))
-          PY
-          )
-          test "${#targets[@]}" -gt 0
-          go test -race -count=1 -json "${targets[@]}" | tee "$RUNNER_TEMP/lingdoc-checks/go-test.jsonl"
+          mkdir -p "$RUNNER_TEMP/lingdoc-checks"
+          # -timeout 15m: the workspace shard's single package binary ran
+          # 590-600s on the runner (job wall 642-660s, dispatch 40451195877)
+          # against go test's default 10m package timeout — zero margin, one
+          # slow runner day from an intermittent required-check red. The
+          # job-level timeout still bounds a hung run.
+          go test -race -count=1 -timeout 15m -json $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
           python - <<'PY'
           import json, os
           from pathlib import Path
-          path = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks/go-test.jsonl'
-          count = sum(1 for line in path.read_text().splitlines()
+          name = os.environ['SHARD_NAME']
+          log = (Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
+                 / f'go-test-{name}.jsonl')
+          count = sum(1 for line in log.read_text().splitlines()
                       if line and (row := json.loads(line)).get('Test') and row.get('Action') == 'pass')
           if count == 0:
-              raise SystemExit('Provider code exists, but no tests passed; do not report an empty suite as coverage.')
-          print(f'Passed test/subtest events: {count} (not a coverage percentage)')
+              raise SystemExit(f'Provider shard {name}: provider code exists, but no tests passed; do not report an empty suite as coverage.')
+          print(f'Provider shard {name}: passed test/subtest events: {count} (not a coverage percentage)')
           PY
-          go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
+          go vet $SHARD_PACKAGES 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet-$SHARD_NAME.log"
 
-      - uses: actions/setup-node@v6
-        if: steps.scope.outputs.run_frontend == 'true'
+      # The marker is the shard's evidence: it exists only after this
+      # shard's tests, its not-empty assertion and its vet all passed, and
+      # the gate job reads it to name the shards that failed.
+      - name: Mark this shard verified
+        if: success()
+        run: touch "$RUNNER_TEMP/lingdoc-checks/provider-shard-$SHARD_NAME.passed"
+
+      - name: Upload the shard logs
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          name: lingdoc-provider-shard-${{ matrix.shard.name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/lingdoc-checks/
+          if-no-files-found: warn
+          retention-days: 14
 
-      - name: Test, type-check and build frontend
-        if: steps.scope.outputs.run_frontend == 'true'
-        id: frontend
-        working-directory: frontend
-        run: |
-          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
-          npm test 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-tests.log"
-          npm run type-check 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-types.log"
-          npm run build 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-build.log"
+  # The gate itself: the job the branch ruleset demands, by the display name
+  # it has always shown.  It aggregates the decision job and every shard --
+  # a red step or a red shard turns this check red -- and publishes the
+  # result artifact and the summary, whether it passes or not.
+  gate:
+    name: LingDoc PR gate
+    needs: [prepare, providers]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      PREPARE_RESULT: ${{ needs.prepare.result }}
+      PROVIDERS: ${{ needs.providers.result }}
+      CISCRIPTS: ${{ needs.prepare.outputs.ciscripts }}
+      SCOPE: ${{ needs.prepare.outputs.scope }}
+      CONTRACTS: ${{ needs.prepare.outputs.contracts }}
+      # The frontend row is the decision's delegation verdict ("delegated
+      # to frontend.yml#verify (...)" or an explicit "not run"), not the
+      # outcome of a step this workflow no longer has.
+      FRONTEND: ${{ needs.prepare.outputs.frontend }}
+      SURFACE: ${{ needs.prepare.outputs.surface }}
+      REASON: ${{ needs.prepare.outputs.reason }}
+      BASE: ${{ needs.prepare.outputs.base }}
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # A decision job that died before writing its report must not hide
+      # behind a download error: the publish step below reports what it
+      # sees, and the aggregation turns a red decision job into a red gate.
+      - name: Download the scope report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: lingdoc-checks-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-checks/
+
+      - name: Download the provider shard logs
+        if: needs.providers.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: lingdoc-provider-shard-*-${{ github.run_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/lingdoc-checks/
 
       - name: Publish check boundary and results
         if: always()
-        env:
-          CISCRIPTS: ${{ steps.ciscripts.outcome }}
-          SCOPE: ${{ steps.scope.outcome }}
-          CONTRACTS: ${{ steps.contracts.outcome }}
-          PROVIDERS: ${{ steps.providers.outcome }}
-          FRONTEND: ${{ steps.frontend.outcome }}
-          SURFACE: ${{ steps.scope.outputs.surface }}
-          REASON: ${{ steps.scope.outputs.reason }}
-          BASE: ${{ steps.scope.outputs.base }}
         run: |
           python - <<'PY'
-          import json, os
+          import json, os, sys
           from pathlib import Path
-          result = {key.lower(): os.environ[key] for key in
+          folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
+          result = {key.lower(): os.environ.get(key, '') for key in
                     ('CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
-          result['tested_sha'] = os.environ['GITHUB_SHA']
+          result['tested_sha'] = os.environ.get('GITHUB_SHA', '')
           # The surface says what was tested, the reason says why that surface
           # was chosen, and the base says which baseline it was judged against.
           result['surface'] = os.environ.get('SURFACE', '')
           result['reason'] = os.environ.get('REASON', '')
           result['base'] = os.environ.get('BASE', '')
           # The coverage says who verified each touched surface.  It is read
-          # from the report the scope step wrote, not from a new output: a
-          # surface nobody compiled or tested must be visible in the
-          # conclusion, not hidden behind a green check (#602).
-          report = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks' / 'scope.json'
+          # from the report the decision step wrote: a surface nobody
+          # compiled or tested must be visible in the conclusion, not hidden
+          # behind a green check (#602).
+          report = folder / 'scope.json'
           coverage = []
           uncovered = False
+          shards = []
           if report.is_file():
               try:
                   published = json.loads(report.read_text(encoding='utf-8'))
@@ -210,12 +319,51 @@ jobs:
                   published = {}
               coverage = published.get('coverage') or []
               uncovered = bool(published.get('uncovered'))
+              shards = published.get('provider_shards') or []
+          # A shard is verified when its marker exists: the marker step only
+          # runs after that shard's tests, its not-empty assertion and its
+          # vet all passed (#724).
+          outcomes = [{'name': shard.get('name', ''),
+                       'verified': (folder / ('provider-shard-'
+                                              + shard.get('name', '')
+                                              + '.passed')).is_file()}
+                      for shard in shards]
+          result['provider_shards'] = outcomes
           result['coverage'] = coverage
           result['uncovered'] = uncovered
-          result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
-          folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
-          folder.mkdir(exist_ok=True)
+          # The boundary keeps delegation and skipping apart (ADR 0014): a
+          # delegated check has real evidence on the named job of the
+          # frontend workflow on this head; a skipped check is NOT RUN.
+          result['boundary'] = ('Automated checks only; not consumer approval, '
+                                'a live-model run, or product acceptance. '
+                                'A delegated check is verified by the named job '
+                                'of the frontend workflow on this head; a '
+                                'skipped check is NOT RUN.')
+          folder.mkdir(parents=True, exist_ok=True)
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+          # The gate verdict: the decision job's steps and every shard have
+          # to pass, or this check -- the one the ruleset demands -- is red,
+          # and the failure names what failed.
+          failures = []
+          for key, label in (('CISCRIPTS', 'the guard suite'),
+                             ('SCOPE', 'the decision step'),
+                             ('CONTRACTS', 'the contract validation')):
+              value = os.environ.get(key, '')
+              if value == 'success' or (key == 'CONTRACTS' and value in ('', 'skipped')):
+                  continue
+              failures.append(f'{label} did not pass on this head '
+                              f'({key.lower()}={value or "skipped"})')
+          providers = os.environ.get('PROVIDERS', '')
+          failed_shards = [row['name'] for row in outcomes if not row['verified']]
+          if providers not in ('success', 'skipped'):
+              if failed_shards:
+                  failures.append('provider shard(s) failed on this head: '
+                                  + ', '.join(f'Provider shard {name}'
+                                              for name in failed_shards))
+              else:
+                  failures.append(f'the provider shard matrix ended with {providers}')
+          if not failures and os.environ.get('PREPARE_RESULT') != 'success':
+              failures.append('the decision job did not finish successfully')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
               for key in ('ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
@@ -223,7 +371,16 @@ jobs:
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
-              handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
+              handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n')
+              handle.write('Delegated is not skipped: a delegated check is verified by the named job of the frontend workflow on this head; its evidence is real there.\n\n')
+              if outcomes:
+                  handle.write('### Provider shards\n\n')
+                  handle.write('| Shard | Outcome |\n|---|---|\n')
+                  for row in outcomes:
+                      handle.write(f'| Provider shard {row["name"]} | '
+                                   + ('verified' if row['verified']
+                                      else 'failed or did not finish') + ' |\n')
+                  handle.write('\n')
               if coverage:
                   handle.write('### Surface coverage\n\n')
                   handle.write('| Surface | Paths | Verified by | Status |\n|---|---|---|---|\n')
@@ -234,6 +391,10 @@ jobs:
               if uncovered:
                   handle.write('A surface above has no compile or test evidence on this head.\n\n')
               handle.write(result['boundary'] + '\n')
+          if failures:
+              for failure in failures:
+                  print(f'error: {failure}', file=sys.stderr)
+              raise SystemExit(1)
           PY
 
       - uses: actions/upload-artifact@v4

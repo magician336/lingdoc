@@ -131,7 +131,27 @@ CONCEPTS: tuple[Concept, ...] = (
         doc=ADR_0006,
         snippet="前端侧无法缩",
         fields=("Decision.frontend",),
-        keys=("frontend", "run_frontend"),
+        keys=("frontend",),
+    ),
+    Concept(
+        term="委托",
+        doc=GLOSSARY,
+        snippet="委托的证据在另一个 job 上真实存在",
+        # The delegation is carried by the frontend verdict: the published
+        # ``frontend`` key names the delegated job instead of reporting this
+        # gate's own outcome (#723, ADR 0014).
+        fields=("Decision.frontend",),
+        keys=("frontend",),
+    ),
+    Concept(
+        term="分片",
+        doc=GLOSSARY,
+        snippet="分片策略只写在判定模块一处",
+        # The sharding is carried by the shard list the decision publishes:
+        # the workflow's matrix is generated from this output (#724, ADR
+        # 0014), and the coverage table names the shard jobs.
+        fields=("Decision.provider_shards",),
+        keys=("provider_shards",),
     ),
     Concept(
         term="未判定回退全量",
@@ -163,7 +183,7 @@ CONCEPTS: tuple[Concept, ...] = (
                 "JobDecision.run", "JobDecision.gate_level",
                 "JobDecision.path_kind", "JobDecision.paths",
                 "JobDecision.skipped_on_format_only", "JobDecision.key",
-                "JobDecision.readable_key"),
+                "JobDecision.readable_key", "JobDecision.role"),
         keys=("run",),
         covers_job_keys=True,
     ),
@@ -193,7 +213,7 @@ CONCEPTS: tuple[Concept, ...] = (
         doc=ADR_0005,
         snippet="纯格式提交跳过测试类 job",
         fields=("Decision.format_only", "Decision.format_reasons"),
-        keys=("format_only", "format_reasons", "run_providers", "run_frontend"),
+        keys=("format_only", "format_reasons", "run_providers"),
     ),
     Concept(
         term="白名单",
