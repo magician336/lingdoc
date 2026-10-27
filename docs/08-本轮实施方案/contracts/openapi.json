@@ -28009,6 +28009,41 @@
               }
             }
           },
+          "200": {
+            "description": "同一 signal + scope 的规则已存在：保存就地更新该规则（版本递增）或原样返回，不新增第二条；规则的 ACTIVE/DISABLED 状态不由保存改变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeAlertRuleResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "signal": "synthetic-signal",
+                        "severity": "synthetic-severity",
+                        "action": "synthetic-action",
+                        "responsible_id": "synthetic-responsible-id",
+                        "scope": {
+                          "kind": "tenant",
+                          "value": "synthetic-value"
+                        },
+                        "version": 2,
+                        "status": "ACTIVE"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "400": {
             "description": "Malformed/unknown request fields",
             "content": {
