@@ -69,8 +69,8 @@ func specProposal(project Project, chapter Chapter) ModelProposedDependency {
 		SourceKind: "ProjectSpec", SourceID: project.ID,
 		TargetKind: "ChapterVersion", TargetID: chapter.ID,
 		Relation: "uses", Action: "REGENERATE",
-		Evidence:  "第 1 章正文引用了研究条件字段",
-		Reason:    "研究条件变化需要重生成章节",
+		Evidence:   "第 1 章正文引用了研究条件字段",
+		Reason:     "研究条件变化需要重生成章节",
 		Confidence: 0.7,
 	}
 }
@@ -80,8 +80,8 @@ func chapterProposal(from, to Chapter) ModelProposedDependency {
 		SourceKind: "ChapterVersion", SourceID: from.ID,
 		TargetKind: "ChapterVersion", TargetID: to.ID,
 		Relation: "constrains", Action: "REVIEW_REQUIRED",
-		Evidence:  "第 1 章结论被第 2 章引用",
-		Reason:    "上游章节变更需要人工复核下游",
+		Evidence:   "第 1 章结论被第 2 章引用",
+		Reason:     "上游章节变更需要人工复核下游",
 		Confidence: 0.5,
 	}
 }

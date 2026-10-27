@@ -58,36 +58,48 @@
 
 ## 验收矩阵
 
-当前 head:`feat/751-ai-dependency-candidates` @(矩阵先于代码提交,实现后回填)
-证据环境:WSL2 Ubuntu-24.04(go 与 CI 同版本)/ Windows(前端 tsx 测试);真实模型链路 = 本地服务 + qwen3.8-flash。
+当前 head:`feat/751-ai-dependency-candidates` @ `996fd524`(基线 origin/main @ `cb57f5c9`;提交序列:2bd85cde 矩阵 → 694ddf87 core → 2fc42991 适配器 → 11a06a9e HTTP/契约/装配 → e648eb8b 窄口表 → c34974b3 前端 → 996fd524 live+超时修正)
+证据环境:WSL2 Ubuntu-24.04(Go,与 CI 同源)/ Windows(node 22:tsx 测试+vue-tsc+build)/ 真实链路 live 测试(MaaS qwen3.8-flash)。
 
 | # | 验收项 | 用户可见入口 | 领域不变量/事务边界 | 成功 | 失败/权限/恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 开工前门:本卡片+矩阵先行 | 本文档 | 范围/不变量先锁 | 落盘并先于代码提交 | — | N/A | 提交序列(矩阵 commit 在首个代码 commit 前) | PASS |
-| 2 | 零边项目触发推荐→候选进队,每条带可追溯依据 | ImpactOpsPanel「AI 推荐依赖边」→ POST `/dependency-recommendations` | 复核后进队;evidence 非空;版本服务端补齐 | 201 `{batch, dropped, model_run}`;队列 GET 可见 proposed 候选(source→target/relation/action/evidence/confidence/model_run_id) | 模型拒绝输出→见行 5/6 | 批次+候选落既有表;重启读回=GET 队列 | core+HTTP 测试(stub 模型);真实链路:本地服务+qwen3.8-flash 实测 | TODO |
-| 3 | 确认候选→成边→改研究条件沿边传播(口径按既有实现:confirm=confirmed 边→definite;modify 同) | 既有候选面板 confirm | 不改两级语义(范围外);`decideDependencyCandidateEdge` 既有路径 | 边出现(confirmed,Origin=ai);改 spec 字段→评估经该边出 definite 影响(既有 BFS :541-544 的 confirmed 分支) | reject→无边(既有) | 边落 `lingdoc_g3_records` | 既有决策测试不回归 + 推荐链路端到端断言传播 | TODO |
-| 4 | 拒绝记忆:同版本重复触发不复提 | 二次触发推荐 | `suppressDependencyCandidate` 既有;同元组进 suppressed | 第二批不含被拒元组,suppressed 列表可见 | 版本推进后允许复提(既有语义) | 既有候选表 | core 测试:拒绝→再触发→断言 suppressed | TODO |
-| 5 | 模型不可用/超时:显式失败,零写入,人工路径不受影响 | 触发按钮错误提示 | 一行 failed ledger;无业务写入 | 503/504 类错误含 failure code;ledger failed 行;同面板人工登记仍成功 | 恢复=换键重试 | ledger `context.WithoutCancel` 写 | core 测试(stub err/超时)+ ledger stub 断言恰一行 | TODO |
-| 6 | 输出不可信:编造 id/非法 action/坏 JSON→丢弃或整批拒 | dropped 列表/错误 | id∈信号清单;action∈8 值;strict decode(DisallowUnknownFields+trailing EOF);全弃→不提交 | 部分→合法进队+dropped 带原因;全弃→422 零写入 | 坏 JSON→502 `dependency_recommendation_invalid_output` | 零业务写入 | core 测试:编造 id、非法 action、坏 JSON 三夹具 | TODO |
-| 7 | 记账:一次触发恰一行,字段齐;幂等重放不加行 | ledger 查询 | source_kind=`dependency_recommendation_run`;成败都记;run_mode 从模型行推断 | succeeded 行含 model_id/provider/tokens/cost_basis | failed 行含 error_code | 重启读回=既有账本查询 | 适配器测试(recordingModelCallLedger 样板) | TODO |
-| 8 | 幂等:同键重放原批次,不重复调模型 | 重复点击(同键) | 预检查批次命中→重放;模型调用计数=1 | `{batch, replayed:true}` | 同键不同内容→既有 conflict | 既有 UNIQUE(project,actor,key) | core+HTTP 测试(stub 调用计数) | TODO |
-| 9 | 权限:触发 human-only | — | 与 decision 端点同款 `impactRouteWrite(h,true)` | 人工触发 201 | 机器主体 403 `human_decision_required` | N/A | HTTP 测试(机器 principal 夹具) | TODO |
-| 10 | 已有边不重复推荐 | dropped `edge_already_present` | 复核含既有边同元组比对(非 rejected 边) | RouteNode 已落边元组被丢弃并说明 | rejected 边元组可再提 | 只读比对 | core 测试:预置 confirmed 边→触发→断言 dropped | TODO |
-| 11 | HTTP 契约与路由注册守护 | 契约测试 | 真 gin seam;响应信封沿用 | 契约文件同步;路由注册不与 `:candidateId` 冲突 | 缺路由→守护红 | N/A | 既有契约测试套件扩展 | TODO |
-| 12 | 前端:按钮/失败显式/成功刷新候选面板;readonly 隐藏 | ImpactOpsPanel | 复用全局 reason 必填;幂等键 mutate 样板 | 触发→loading→新批次在 DependencyCandidatePanel 可见 | 失败信息展示;readonly 无按钮 | N/A | runtime fixture 挂载测试(r26ComponentRuntimeFixture) | TODO |
-| 13 | 前端 api client 契约 | dependencyCandidates.ts 新函数 | Idempotency-Key+body 幂等;body 不替服务端说话 | 请求形状断言 | — | N/A | vm 沙箱测试(dependencyCandidates.test.js 模式) | TODO |
-| 14 | 既有面无回归 | — | 不改既有提交/决策/抑制行为 | workspacecore/workspace 定向包 + 契约套件全绿 | 回归即 FAIL | N/A | WSL `go test` 定向命令 | TODO |
-| 15 | 真实模型链路(实测) | 本地服务+演示环境模型行 | 真实 provider+记账 | 触发→真实候选入队;ledger 有真实行 | 网络/配额失败如实记录 | 真实库 | 本地起服+curl 实测,证据贴验证报告 | TODO |
-| 16 | 文档同步:矩阵回写+PR body+票面口径澄清 | 本文件/PR/#751 | 证据=当前 head | 全行闭环 | — | N/A | 本文件+PR body+issue 评论 | TODO |
+| 1 | 开工前门:本卡片+矩阵先行 | 本文档 | 范围/不变量先锁 | 落盘并先于代码提交 | — | N/A | 2bd85cde 先于全部代码提交 | PASS |
+| 2 | 零边项目触发推荐→候选进队,每条带可追溯依据 | ImpactOpsPanel「AI 推荐依赖边」→ POST `/dependency-recommendations` | 复核后进队;evidence 非空;版本服务端补齐 | 201 `{batch, dropped, model_run}`;队列 GET 可见 proposed 候选 | 模型拒绝输出→见行 5/6 | 批次+候选落既有表;重启读回=GET 队列 | `TestDependencyRecommendationQueuesReviewedProposals`(版本服务端补齐/model_run_id/信号包断言)+ `TestDependencyRecommendationRouteQueuesAndReplays` + live 两轮(63.5s/4 提案、14.2s/1 提案,全部引用真实对象) | PASS |
+| 3 | 确认候选→成边→改研究条件沿边传播(口径按既有实现:confirm=confirmed 边→definite) | 既有候选面板 confirm | 不改两级语义(范围外);`decideDependencyCandidateEdge` 既有路径 | 边出现(confirmed,Origin=ai);confirmed 边→definite 且继续 BFS(impact_service.go 既有) | reject→无边(既有) | 边落 `lingdoc_g3_records` | 既有 `TestDependencyCandidateBatchCarriesEvidenceAndOnlyDecidedOnesEnterTheGraph`/`TestDependencyCandidateRejectProducesNoEdge` 回归绿 + 传播/边/评估测试族 `-run 'TestDependencyCandidate|TestImpact|TestDependencyEdge'` ok;票面口径已澄清(#751 评论 6441002055) | PASS |
+| 4 | 拒绝记忆:同版本重复触发不复提 | 二次触发推荐 | `suppressDependencyCandidate` 既有 | 第二批该元组进 suppressed(rejected_in_same_version) | 版本推进后允许复提(既有语义) | 既有候选表 | `TestDependencyRecommendationRespectsTheRejectionMemory` | PASS |
+| 5 | 模型不可用/超时:显式失败,零写入,人工路径不受影响 | 触发按钮错误提示 | 一行 failed ledger;无业务写入 | 503 `dependency_recommendation_unavailable`;ledger failed 行;同面板人工登记仍成功 | 恢复=换键重试 | ledger `context.WithoutCancel` 写 | `TestDependencyRecommendationModelFailureWritesNoCandidates`(含人工登记可用断言)+ `TestDependencyRecommendationRouteSurfacesModelFailureWithoutWrites` + `TestDependencyRecommendationModelSurfacesProviderFailureWithAFailedRow`;live 实测暴露真实耗时 63.5s>原 60s 上限→上限提至 120s(996fd524) | PASS |
+| 6 | 输出不可信:编造 id/非法 action/坏 JSON→丢弃或整批拒 | dropped 列表/错误 | id∈信号清单;action∈8 值;strict decode;全弃→不提交 | 部分→合法进队+dropped 带原因;全弃→422 零写入 | 坏 JSON/未知字段/双值/截断→502 | 零业务写入 | `TestDependencyRecommendationDropsUntrustworthyProposals`(fabricated/invalid_field/invalid_action/duplicate)+ `...RefusesAnEntirelyInvalidBatch` + `TestDependencyRecommendationModelRefusesUnshapelyAnswers`(4 形态) | PASS |
+| 7 | 记账:一次触发恰一行,字段齐 | ledger 查询 | source_kind=`dependency_recommendation_run`;成败都记;run_mode 从模型行推断 | succeeded 行含 model_id/provider/tokens | failed 行含 error_code | 重启读回=既有账本查询 | `TestDependencyRecommendationModelLeavesOneSucceededRowPerCall` + live(545/4010 与 545/1004 tokens 记账) | PASS |
+| 8 | 幂等:同键重放原批次,不重复调模型 | 重复点击(同键) | 预检命中→重放;模型调用计数=1 | `{batch, replayed:true}` | 同键不同内容→既有 conflict | 既有 UNIQUE(project,actor,key) | `TestDependencyRecommendationReplayNeverCallsTheModelTwice`(core)+ `...RouteQueuesAndReplays`(HTTP,stub.calls==1) | PASS |
+| 9 | 权限:触发 human-only | — | 与 decision 端点同款 `impactRouteWrite(h,true)` + core `RequireHumanDecision` | 人工触发 201 | 机器主体 403 `human_decision_required` | N/A | `TestDependencyRecommendationRouteRefusesAMachinePrincipal` | PASS |
+| 10 | 已有边不重复推荐 | dropped `edge_already_present` | 复核含既有边同元组比对(非 rejected 边;rejected 可再提) | 已有边元组被丢弃并说明 | rejected 边元组可再提 | 只读比对 | `TestDependencyRecommendationSkipsExistingEdges` | PASS |
+| 11 | HTTP 契约与路由注册守护 | 契约测试 | 真 gin seam;路径避开 `:candidateId` 参数段 | 契约文件同步;双向覆盖 | 缺路由→守护红 | N/A | 契约三测 `TestEveryImpactRouteIsPublished`/`TestEveryPublishedImpactOperationIsRouted`/`TestRuntimeResponsesSatisfyPublishedSchemas`(含新端点请求+响应 schema 实测)ok;openapi.json +6 schema +1 路径(三处历史手工紧凑格式归一为标准缩进,语义零变化) | PASS |
+| 12 | 前端:按钮/失败显式/成功刷新候选面板;readonly 隐藏 | ImpactOpsPanel(登记表单区+影响预览零边文案处) | 复用全局 reason 必填;幂等键 mutate 样板 | 触发→busy→新批次在 DependencyCandidatePanel 可见(refresh expose) | 失败信息展示;readonly 无按钮 | N/A | `ImpactOpsPanel.test.js`(setup 级:推荐仅发 reason、dropped 反馈文案)+ 模板编译守护 + `npm run type-check`/`npm run build` 通过;**真人浏览器链 DEFERRED_MANUAL**:解除条件=演示排练逐屏核对(#750 排练清单含 UI 核对项);跟进票 #750 | PASS(浏览器链 DEFERRED_MANUAL→#750) |
+| 13 | 前端 api client 契约 | dependencyCandidates.ts 新函数 | Idempotency-Key+body 幂等;body 不替服务端说话 | 请求形状断言 | — | N/A | `dependencyCandidates.test.js` 新用例(URL/键/body 无 candidates|dropped) | PASS |
+| 14 | 既有面无回归 | — | 不改既有提交/决策/抑制行为 | 定向包全绿 | 回归即 FAIL | N/A | WSL:`go test ./internal/lingdoc/workspacecore/ ./internal/lingdoc/workspace/ ./internal/container/ -count=1` 全 ok(workspacecore 初次因窄口登记表红一次,e648eb8b 修复后绿);窄口守护 `TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim` 绿;前端 30/30;`gofmt -l internal/` 干净 | PASS |
+| 15 | 真实模型链路(实测) | env-guard live 测试(惯例同 `LINGDOC_TEST_POSTGRES_DSN`) | 真实 provider+记账 | 两轮 qwen3.8-flash 实测通过 strict 解码;proposals 全部引用信号清单真实对象;ledger 记真实 tokens | — | live stub 注册表(真实 Chat+真实端点;模型表选择逻辑由 stub 测试覆盖) | `TestDependencyRecommendationModelLivesAgainstARealProvider`(默认 skip;两轮:63.5s/545+4010 tok/4 提案、14.2s/545+1004 tok/1 提案) | PASS |
+| 16 | 文档同步:矩阵回写+PR body+票面口径澄清 | 本文件/PR/#751 | 证据=当前 head | 全行闭环 | — | N/A | 本文件(996fd524 后回写)+ PR body + issue 评论 6441002055 | PASS |
 
-## 验证命令清单(实现后回填结果)
+## 合并前健康度复评(PR 时点,2026-10-27)
+
+- `H_L`(LingDoc 内部,本 PR 增量取样)≈ **93/100,置信 A**:推荐服务复用既有候选管线(新增 producer 不加第二队列)、版本编码单源(`readImpactObjectState`)、模型适配器照 AgentModel 先例、零迁移回退=撤提交。结构性不足(非阻断):① `DependencySignalObject.Detail` 是自由文本摘要(模板字段/引用拼接),信号的知识表达浅,模型质量依赖 prompt 工程——重构方向:结构化信号字段;② 调用上限 120s 是常量非配置;③ live 测试不覆盖 builtin_models.yaml 真实注册路径(该选择逻辑由 stub 单测覆盖)。
+- `F_R`(边界)≈ **93/100,置信 B**:全部走宿主 ModelService/chat/ledger 既有 seam、契约进 openapi 与守护测试、零新 env 零迁移;B 级因远端 CI 未跑(本地定向全绿,PR gate 将复核)。
+- Spec 阶段未单独评分(矩阵内联风险记录代替),Δ 标 N/A。
+
+## 验证命令清单(已执行,head 996fd524)
 
 ```bash
-# Go 定向(WSL2)
-wsl.exe -e bash -lc "cd /mnt/d/code_warehouse/Projects/lingdoc/.worktrees/issue-751-ai-depcand && go test ./internal/lingdoc/workspacecore/ -run 'DependencyRecommend' -count=1 -v"
-wsl.exe -e bash -lc "cd /mnt/d/code_warehouse/Projects/lingdoc/.worktrees/issue-751-ai-depcand && go test ./internal/lingdoc/workspace/ -run 'DependencyRecommend|DependencyCandidate' -count=1 -v"
-wsl.exe -e bash -lc "cd /mnt/d/code_warehouse/Projects/lingdoc/.worktrees/issue-751-ai-depcand && go test ./internal/lingdoc/workspacecore/ ./internal/lingdoc/workspace/ -count=1"
-# 前端
-cd frontend && npm test   # node:test/tsx;定向:src/api/lingdoc + views/lingdoc 新测试
-cd frontend && npm run type-check && npm run build
+# Go 定向(WSL2 Ubuntu-24.04,全部 ok)
+go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyRecommendation|TestDependencyCandidate|TestEveryNarrowPort' -count=1
+go test ./internal/lingdoc/workspace/ -run 'TestDependencyRecommendation|TestDependencyCandidate|TestEveryImpactRoute|TestEveryPublishedImpactOperation|TestRuntimeResponses' -count=1
+go test ./internal/lingdoc/workspacecore/ ./internal/lingdoc/workspace/ ./internal/container/ -count=1
+# 真实链路(env-guard,默认 skip;密钥经环境注入不落日志)
+LINGDOC_LIVE_RECOMMENDATION_BASE_URL=<MaaS compatible-mode> LINGDOC_LIVE_RECOMMENDATION_API_KEY=<key> \
+LINGDOC_LIVE_RECOMMENDATION_MODEL=qwen3.8-flash \
+go test ./internal/lingdoc/workspace/ -run TestDependencyRecommendationModelLivesAgainstARealProvider -count=1 -v
+# 前端(Windows node 22,全部通过)
+npx tsx --test src/api/lingdoc/dependencyCandidates.test.js src/views/lingdoc/ImpactOpsPanel.test.js   # 30/30
+npm run type-check && npm run build
+# 格式
+gofmt -l internal/   # 干净
 ```
