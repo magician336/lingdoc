@@ -30,11 +30,17 @@ func TestTheCandidateRowCarriesTheModelThatProducedIt(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	// 账本表用生产迁移建出来：候选行的 model_id 就是从这张表读的。
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
-		"000055_lingdoc_model_call_ledger.up.sql"))
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(string(migration)).Error)
+	// 账本表用生产迁移链建出来（000055 建表、000058 加 cost_basis 列）：
+	// 候选行的 model_id 就是从这张表读的，账本写入带上 cost_basis（#527），
+	// 只应用 000055 会让写入在缺列的表上失败。
+	for _, name := range []string{
+		"000055_lingdoc_model_call_ledger.up.sql",
+		"000058_lingdoc_model_call_ledger_cost_basis.up.sql",
+	} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(string(migration)).Error)
+	}
 
 	repo := NewSQLiteRepository(db)
 	candidateStore := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
