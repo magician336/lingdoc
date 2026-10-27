@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -37,6 +38,106 @@ func TestActiveProjectRejectsOrdinarySpecSave(t *testing.T) {
 	}
 	if current.Spec["research_subject"] != "subject" || current.SpecRevision != 1 || current.ProjectVersion != active.ProjectVersion || current.CurrentContextRevision != 1 {
 		t.Fatalf("active save changed baseline = %+v", current)
+	}
+}
+
+// AI 来源的值不能自带 confirmed：生成候选和人工审查保持分离（#143 US-16）。
+func TestAIGeneratedFieldCannotSelfConfirm(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-ai-confirm.db"))
+	actor := Actor{TenantID: 88, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-08", CreateProjectInput{Name: "G1 ai confirm", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := asProject(t, created).ID
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-08", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "样本"},
+		FieldMetadata:        map[string]SpecFieldInput{"research_subject": {Origin: "ai_generated", Status: "confirmed"}},
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ai self-confirm error = %v, want %v", err, ErrInvalidRequest)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-08b", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "样本"},
+		FieldMetadata:        map[string]SpecFieldInput{"research_subject": {Origin: "ai_assisted_human", Status: "confirmed"}},
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ai-assisted self-confirm error = %v, want %v", err, ErrInvalidRequest)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-08c", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "样本"},
+		FieldMetadata:        map[string]SpecFieldInput{"research_subject": {Origin: "ai_generated", Status: "pending_confirmation"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 0 → 1 不使草稿候选 stale：候选保留，based_on_revision 仍为 0（#143 US-29）。
+func TestActivationKeepsDraftCandidatesAtRevisionZero(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-candidate-activate.db"))
+	actor := Actor{TenantID: 90, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-09", CreateProjectInput{Name: "G1 candidate activate", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := asProject(t, created).ID
+	if _, _, _, err := svc.CreateDraftCandidate(context.Background(), actor, projectID, "g1-candidate-09", DraftCandidateInput{Kind: "retrieval", Title: "建项前线索", Content: "候选正文", Level: "background"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-09", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标"}}); err != nil {
+		t.Fatal(err)
+	}
+	activated, _, _, err := svc.ActivateProject(context.Background(), actor, projectID, "g1-activate-09", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := asProject(t, activated)
+	if active.CurrentContextRevision != 1 {
+		t.Fatalf("activation revision = %+v", active)
+	}
+	candidates, err := svc.ListDraftCandidates(context.Background(), actor, projectID)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("candidates after activation = %+v, err=%v", candidates, err)
+	}
+	if candidates[0].BasedOnContextRevision != 0 {
+		t.Fatalf("candidate revision after 0→1 = %+v", candidates[0])
+	}
+}
+
+// 差异读取把修改字段清单（含修改者）与「仍由 AI 填写且未经人工确认」的子集
+// 分成两份列表（#143 US-20/US-21）。
+func TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-diff-ai.db"))
+	actor := Actor{TenantID: 92, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-10", CreateProjectInput{Name: "G1 diff ai", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := asProject(t, created).ID
+	seedActualTurn(t, svc, actor, projectID, "session-20", "turn-20", "AI 目标")
+	provenance := &ProvenanceRecord{SourceType: "conversation", SourceID: "session-20", SourceVersion: "turn-20", Locator: "turns/20#text", Purpose: "project_spec", CreatedBy: actor.UserID, Accessible: true}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-10", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "人工主题", "research_goal": "AI 目标"},
+		FieldMetadata:        map[string]SpecFieldInput{"research_goal": {Origin: "ai_generated", Status: "pending_confirmation", Provenance: provenance}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := svc.ActivationDiff(context.Background(), actor, projectID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(diff.ChangedFields, func(c SpecFieldChange) bool {
+		return c.Key == "research_subject" && c.ModifiedBy == actor.UserID
+	}) {
+		t.Fatalf("modified field missing from diff = %+v", diff.ChangedFields)
+	}
+	if len(diff.PendingAIFields) != 1 || diff.PendingAIFields[0].Key != "research_goal" || diff.PendingAIFields[0].Status != "pending_confirmation" {
+		t.Fatalf("pending ai fields = %+v", diff.PendingAIFields)
 	}
 }
 
