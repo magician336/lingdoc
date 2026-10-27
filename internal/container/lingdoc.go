@@ -250,6 +250,20 @@ func NewLingDocTemplateCatalog() lingdoctemplate.Reader {
 
 type workspaceAuditSink struct{ service interfaces.AuditLogService }
 
+// ErrAuditActorRoleEmpty is the refusal the audit sink returns for an event
+// whose actor role is the zero value (#559).
+//
+// audit_logs.actor_role 的空串含义是「未知」，落库口径（#535 管理会话裁定）
+// 已把它登记为 2026-10-07 之前的历史遗留，由 90 天保留期自行清除；写侧不再
+// 产生新的空串。AuditEvent.Role 的零值恰恰是空串，而上游的填充靠约定——
+// HTTP 面的 TenantRoleFromContext / CallerFromContext 各自回退 viewer——
+// 不是类型保证，一个漏填的构造点就能再写出一批空串。所以 sink 是最后一道
+// 闸：事件不带角色 ⇒ 拒绝写审计、返回可判定错误、一行不落。调用方的语义
+// 沿用既有分工：写路径 fail-closed（状态变更不得不可追溯），读路径
+// fail-open（丢弃错误、照常发布审计失败告警），拒绝只是少一行无法归因的
+// 审计，不改变任何权限结果。
+var ErrAuditActorRoleEmpty = errors.New("lingdoc audit event actor role is empty")
+
 // Record writes one authorization audit record to the platform audit log.
 //
 // The port contract is `Record(context.Context, AuditEvent) error`, and this
@@ -270,6 +284,12 @@ type workspaceAuditSink struct{ service interfaces.AuditLogService }
 func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.AuditEvent) error {
 	if s.service == nil {
 		return nil
+	}
+	if event.Role == "" {
+		err := fmt.Errorf("%w: refusing to write an unattributable audit row (tenant %d, project %s, capability %s)",
+			ErrAuditActorRoleEmpty, event.TenantID, event.ProjectID, event.Capability)
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization"})
+		return err
 	}
 	eventDetails := map[string]any{"capability": event.Capability, "decision": event.Decision, "reason": event.Reason}
 	for key, value := range event.Details {

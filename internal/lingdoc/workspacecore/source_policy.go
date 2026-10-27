@@ -52,3 +52,21 @@ type CitationStatus struct {
 	Status   string `json:"status"`
 	Detail   string `json:"detail,omitempty"`
 }
+
+// 引用状态展示词表的唯一拥有者在此（#597）。
+//
+// 这是一个**独立于** evidence.SourceStatus 的词表：面向用户的引用三态
+// （available / needs_review / unavailable），由 Review 的逐项 verdict 投影而来
+// （Usable→available，stale→needs_review，其余→unavailable），且 needs_review
+// 不在 evidence 词表里。它的取值不得散落字面量：产出侧（source_policy 投影）与
+// 消费侧（service_facade 的遮蔽判定）都引用这里的常量。也正因为它有自己的
+// owner，来源状态词表的守护（source_status_vocabulary_guard_test.go）不会把它
+// 误判成 evidence.SourceAvailable 的抄写。
+const (
+	// CitationStatusAvailable 表示该引用此刻可以指回可用来源。
+	CitationStatusAvailable = "available"
+	// CitationStatusNeedsReview 表示来源坐标或版本已变化，需要人工核对。
+	CitationStatusNeedsReview = "needs_review"
+	// CitationStatusUnavailable 表示该引用此刻取不回可用来源。
+	CitationStatusUnavailable = "unavailable"
+)

@@ -775,7 +775,7 @@ func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, ru
 				continue
 			}
 			source, readErr := s.readResearchSource(ctx, actor, projectID, out.Basis.ChapterID, result.SourceID)
-			if readErr != nil || source.Status != "available" || source.QuotedTextHash != result.QuotedTextHash {
+			if readErr != nil || source.Status != string(evidence.SourceAvailable) || source.QuotedTextHash != result.QuotedTextHash {
 				out.Results[i].Summary = ""
 				out.Results[i].Title = ""
 				out.Results[i].Status = "restricted"
@@ -846,7 +846,7 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 		if err != nil {
 			return nil, 0, false, err
 		}
-		if source.Status != "available" {
+		if source.Status != string(evidence.SourceAvailable) {
 			return nil, 0, false, ErrEvidenceIncomplete
 		}
 	}
@@ -1006,7 +1006,7 @@ func (s *Service) ListImportCandidates(ctx context.Context, actor Actor, project
 				continue
 			}
 			source, sourceErr := s.agentRuntime.Sources.ReadResearchSource(ctx, actor, projectID, value.SourceID)
-			if sourceErr != nil || source.Status != "available" {
+			if sourceErr != nil || source.Status != string(evidence.SourceAvailable) {
 				out[i].Title = ""
 				out[i].Purpose = ""
 				out[i].Locator = ""
@@ -1044,7 +1044,7 @@ func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, proje
 		if err != nil {
 			return nil, 0, false, err
 		}
-		if source.Status != "available" || source.QuotedTextHash != candidate.QuotedTextHash {
+		if source.Status != string(evidence.SourceAvailable) || source.QuotedTextHash != candidate.QuotedTextHash {
 			return nil, 0, false, ErrEvidenceIncomplete
 		}
 	}
@@ -1240,7 +1240,7 @@ func (s *Service) SaveSourceAnchor(ctx context.Context, actor Actor, projectID, 
 	if err != nil {
 		return nil, 0, false, err
 	}
-	if source.Status != "available" || source.ProcessingState != "ready" || !source.StableOriginal {
+	if source.Status != string(evidence.SourceAvailable) || source.ProcessingState != "ready" || !source.StableOriginal {
 		return nil, 0, false, ErrEvidenceIncomplete
 	}
 	text := []rune(source.QuotedText)
@@ -1342,7 +1342,7 @@ func (s *Service) validateAnchor(ctx context.Context, actor Actor, projectID str
 		return err
 	}
 	text := []rune(source.QuotedText)
-	if anchor.Status != "CURRENT" || source.Status != "available" || source.AssetID != anchor.AssetID || source.AssetRevision != anchor.AssetRevision || source.ProcessingState != "ready" || !source.StableOriginal || anchor.SelectionStart < 0 || anchor.SelectionEnd > len(text) || anchor.SelectionEnd <= anchor.SelectionStart {
+	if anchor.Status != "CURRENT" || source.Status != string(evidence.SourceAvailable) || source.AssetID != anchor.AssetID || source.AssetRevision != anchor.AssetRevision || source.ProcessingState != "ready" || !source.StableOriginal || anchor.SelectionStart < 0 || anchor.SelectionEnd > len(text) || anchor.SelectionEnd <= anchor.SelectionStart {
 		return ErrEvidenceIncomplete
 	}
 	if sha256Hex(string(text[anchor.SelectionStart:anchor.SelectionEnd])) != anchor.QuotedTextHash {
@@ -1910,7 +1910,7 @@ func (s *Service) BuildAgentContext(ctx context.Context, actor Actor, projectID 
 		if err != nil {
 			return out, err
 		}
-		if source.Status != "available" || source.ProcessingState != "ready" {
+		if source.Status != string(evidence.SourceAvailable) || source.ProcessingState != "ready" {
 			return out, ErrEvidenceIncomplete
 		}
 		out.SourceRefs = append(out.SourceRefs, AgentSourceRef{SourceID: id, AssetID: source.AssetID, AssetRevision: source.AssetRevision, QuotedTextHash: source.QuotedTextHash, Locator: source.Locator, QuotedText: source.QuotedText, ModelUseAllowed: source.ModelUseAllowed})
@@ -1982,7 +1982,7 @@ func (s *Service) GetAgentTurns(ctx context.Context, actor Actor, projectID, ses
 				break
 			}
 			source, readErr := s.readResearchSource(ctx, actor, projectID, turn.Context.ChapterID, ref.SourceID)
-			if readErr != nil || source.Status != "available" || source.QuotedTextHash != ref.QuotedTextHash || source.AssetRevision != ref.AssetRevision {
+			if readErr != nil || source.Status != string(evidence.SourceAvailable) || source.QuotedTextHash != ref.QuotedTextHash || source.AssetRevision != ref.AssetRevision {
 				out[i].Reply = ""
 				out[i].Suggestions = nil
 				out[i].UserInput = ""
@@ -2521,7 +2521,7 @@ func (s *Service) InspectResearchResult(ctx context.Context, actor Actor, projec
 		result.Summary = source.QuotedText
 		result.Locator = source.Locator
 		result.QuotedTextHash = source.QuotedTextHash
-		if source.Status != "available" {
+		if source.Status != string(evidence.SourceAvailable) {
 			return result, ErrEvidenceIncomplete
 		}
 		return result, nil

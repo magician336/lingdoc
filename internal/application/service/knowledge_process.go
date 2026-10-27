@@ -481,6 +481,11 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	if len(indexingTypes) != len(wantedTypes) || (len(wantedTypes) > 0 && indexingEngine == nil) {
 		chunkIndexStatus = "failed"
 	}
+	// The row-level rollup of the same verdict, re-graded below when the
+	// actual index write fails. This is the knowledge-row half of #599: a
+	// reader that only sees the knowledge row must not have to join the
+	// chunks table to learn that this run's content never reached the index.
+	rowIndexStatus := chunkIndexStatus
 
 	// 删除知识图谱数据（如果存在）
 	namespace := types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID}
@@ -786,6 +791,10 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 				"knowledge_base_id": kb.ID,
 			})
 			s.markChunksIndexFailed(ctx, knowledge, insertChunks)
+			// The row-level rollup follows the chunks it aggregates: the
+			// write failed, so the row says "failed" too — the same fact as
+			// the per-chunk index_status, one layer up (#599).
+			rowIndexStatus = types.KnowledgeIndexStatusFailed
 
 			// delete the half-written index so a later re-index starts clean
 			if err := retrieveEngine.DeleteByKnowledgeIDList(
@@ -884,6 +893,11 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	pendingPDFMultimodal := !isImage && !isVideo && options.EnableMultimodel && len(options.StoredImages) > 0
 
 	now := time.Now()
+	// Stamp the row-level index verdict before the row is finalized: it rides
+	// the same update that carries the parse outcome, and — unlike
+	// parse_status — it is not a parse result, so a "failed" here must not
+	// (and does not) keep the parse from reaching its terminal success state.
+	knowledge.IndexStatus = rowIndexStatus
 	finalizeIndexedKnowledgeState(
 		knowledge,
 		totalStorageSize,
