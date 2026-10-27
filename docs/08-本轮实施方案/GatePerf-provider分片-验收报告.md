@@ -16,7 +16,7 @@
 | # | 矩阵行 | 证据（命令 / seam） | 状态 |
 |---|---|---|---|
 | M1 | 分片是纯数据输出：给定包清单 → 分片契约（覆盖全部包、无空片、无重叠、确定性顺序）；与 provider_packages 同源（从 PROVIDER_ROOTS 派生） | `scripts/ci/test_lingdoc_gate_decision.py::ProviderShardTests`（纯函数 seam） | PASS（本地） |
-| M2 | 域内主包按包族细分；真实仓库的每个包族都已登记、无根级散包（whole-root 展开无损） | `ProviderShardTests::test_every_family_of_the_real_main_root_is_registered`（文件系统事实 × 计划表） | PASS（本地） |
+| M2 | 域内主包按包族细分；真实仓库的每个包族都已登记、无根级散包（whole-root 展开无损） | `ProviderShardTests::test_the_plan_covers_the_real_main_root_losslessly`（文件系统事实 × 计划表；#724 评审 F3 修正指针） | PASS（本地） |
 | M3 | 空 组 不 生 成：未触发 provider 验证（run_providers=false，含纯格式提交）→ 分片输出为空列表，工作流 matrix 整组跳过沿用既有条件语义 | `ProviderShardTests` 空清单用例 + `test_lingdoc_workflow_wiring.py` matrix 条件断言（`run_providers == 'true'` + `!= '[]'` 双保险，go-lint 先例） | PASS（本地） |
 | M4 | 红：某分片含必失败测试 → gate 红（必需检查）且失败信息含该分片名 | 故障注入：对 gate job publish 步内嵌聚合逻辑做真执行（PROVIDERS=failure + 抽走该片 .passed 标记）→ SystemExit≠0 且输出含分片名；分片 leg 的 not-empty 断言同样真执行（零通过 → 退出码≠0 且信息含分片名） | PASS（本地） |
 | M5 | 红：抽掉 provider 面运行证据 → gate 红（require-coverage 不弱化，#602 语义不变） | 既有 `BaseMoveCoverageTests::test_the_gate_fails_the_scope_step_when_a_surface_has_no_evidence`（补丁清单 + `publish(require_coverage=True)` 抛 SystemExit）；分片后 provider 面 verified_by 记分片 job 名 | PASS（本地） |
@@ -26,7 +26,7 @@
 | M9 | 概念登记：「分片」进 `lingdoc_gate_concepts.py` 与 `GLOSSARY.md` 门禁判定节（定义 + _避免_ 行，与「委托」条目风格一致）；「委托」不动 | `test_lingdoc_gate_contracts.py::DocumentationContractTests`（双向契约：文档措辞 ↔ 判定字段/输出键） | PASS（本地） |
 | M10 | coverage 归属：provider 面 verified_by 记分片 job 名（matrix 展开名），summary/结论表可读 | `FrontendDelegationTests` 同构的 ProviderShardTests 用例（coverage 断言）+ publish 步内嵌分片表 | PASS（本地） |
 | M11 | 全套守护测试全绿（#723 后基线 906 项） | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | PASS（本地，930 项，见 §4） |
-| M12 | 真实 PR 验证：分片后 gate wall 对比 + runner 分钟双口径（与 Phase 0 报告同口径） | 由编排者在 push 后采集 | NOT RUN（pending-orchestrator） |
+| M12 | 真实验证：dispatch 全量 run 分步耗时 + 分片并发形态（与 Phase 0 报告同口径） | 见 §6 两次 dispatch 记录 | PASS（CI 真实 run） |
 
 ## 2. 分片参数校准（Phase 0 遗留风险③的补测）
 
@@ -95,6 +95,12 @@
 - 校准实测（WSL2 go1.26.0）：非 race 逐族 18+3 项（§2.1）；`-race -count=1` 三分片整体（§2.2，workspace 触发 10m 默认超时 panic 如实记录）。
 - `git merge spec-720/gate-perf` → `Already up to date`（起点 `2e0baa1e` 已含）。
 
+## 4b. 两次真实 dispatch 记录（评审 F4 补档，2026-10-27）
+
+- **红 run 40450015218**（head 80d13d96，dispatch `--all`）：「Test CI scope scripts」4 项失败（OfflineEntryPointTests、PullRequestGateWiringTests、WhitespaceBoundaryTests×2）——CI 步的真实 `GITHUB_*` 环境经 `env={**os.environ}` 泄漏进守护子进程，判定 CLI 把真实 dispatch 事件当成夹具输入。矩阵 job 因此整体 skipped（scope 未产出）。这是本地 930 全绿、CI 必挂的环境差异缺陷，非分片逻辑缺陷。
+- **修复**：`hermetic_env()`（2a954689）——五个 CLI 子进程调用点剥离继承的 `GITHUB_*`，夹具只经显式事件文件与显式覆盖说话；同类残留 `test_lingdoc_gate_conclusion.py:309` 由评审 F2 一并收口。带 CI 环境叠加的全套守护实测 930 项 OK（WSL）。
+- **绿 run 40451195877**（head 2a954689）：prepare 147s → 三片并发（同秒启动）lingdoc-workspace **660s** / lingdoc-core 403s / provider-rest 191s → 聚合 gate 6s，全绿。对照 Phase 0 串行步（均值 657s/最大 934s）：worst-case 省 ~4.6 分钟，均值场景约平——workspace 单包是地板（风险②显形）；runner 分钟口径见上（3 片固定开销 + prepare/gate 两段）。M12 就此解除。
+
 ## 5. pending-orchestrator（NOT RUN，解除条件）
 
 1. M12：push 后由编排者采集分片后 gate run 的分步耗时与 job 并发形态（与 Phase 0 §1.2 同口径命令），记录 wall 与 runner 分钟双口径。解除条件：PR 打开且至少一次全量贡献面的 gate run 完成。
@@ -103,6 +109,7 @@
 
 - **最大分片受单一 Go 包约束**（§2.2）：workspace 族 63% 的时长不可在包粒度内再分；若后续要进一步压 wall，需要的是包内拆分（`-run` 或拆包），属于改变测试命令语义/拆分的独立决策，不在本票。
 - **workspace 包逼近 `go test` 默认 10 分钟包级超时（既有风险，本票使之显形）**：WSL2 实测该包 `-race` >10m 触发 `panic: test timed out after 10m0s`（463 项已通过）；旧串行步对 workspace 同样是「一个包一个 10m 窗口」，暴露面不变。CI 证据：Phase 0 的 17 次 race 全量 run 全绿（556–934s 总长），说明 CI runner 上该包 <10m，但余量不明。若真实 PR 验证（M12）出现分片超时红，处置方向是把 `-timeout` 显式放大（独立小改，不触碰 race/count 语义）或拆分 workspace 包，另行立票。
+**【M12 裁决与处置（评审 F1，2026-10-27）】**真实 dispatch 数据把余量钉死为零级：run 40451195877（head 2a954689）workspace 片 job 墙 **660s**（评审复核绿 run 该步 642s），扣除 checkout/setup 后 go test 本体 ≈590–600s，已顶在默认 10m 包级超时上；报告 §2.2 自估的 CI 区间（350–590s）被顶穿，Phase 0 的 17 run 方差（556–934s）意味着 runner 慢一天即必需检查间歇假红。按评审建议**在本 PR 内显式 `-timeout 15m`**（一个 token、对各分片统一、无包名/路径知识——红线四干净；不触碰 `-race -count=1`——红线二干净；job 级超时仍兜底），不等「真出现超时红」。包内拆分（`-run`/拆包）仍属测试命令语义变更，维持另行立票的裁定。
 - **runner 计费分钟可能放大**（ADR 0014 已登记）：3 个小分片各自承担 job 固定开销，另加 prepare/gate 两段固定 wall；真实数据见 M12。
 - **分片表成为第二份归属知识的风险被守护测试钉住**：包名只进判定模块（根路径连模块都不重写——计划只写包族名与根名结尾，主根从清单与真实树解析，`test_no_other_ci_script_registers_the_same_knowledge` 钉住）；工作流文本零包名由 `test_the_workflow_carries_no_package_names` 钉住；真实仓库包族全覆盖由 M2 用例钉住——新增包族未登记时该用例红，逼着开发者在模块内登记，而不是让分片悄悄漏包。
 - **gate 从单 job 变三 job**：必需检查（`LingDoc PR gate`）现在聚合 prepare 与 providers；prepare 的守护套件步、scope 步、契约步语义逐条未动（无条件步、`--require-coverage`、whitespace 边界照旧）。`lingdoc_required_checks.GATE_INTERNAL_JOB_NAMES` 登记了两个内部 job 名（含 matrix 模板名），防止 gate 工作流里的检查无登记地增减。

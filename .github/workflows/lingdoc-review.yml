@@ -203,7 +203,12 @@ jobs:
       - name: Test and vet the provider packages of this shard
         run: |
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
-          go test -race -count=1 -json $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
+          # -timeout 15m: the workspace shard's single package binary ran
+          # 590-600s on the runner (job wall 642-660s, dispatch 40451195877)
+          # against go test's default 10m package timeout — zero margin, one
+          # slow runner day from an intermittent required-check red. The
+          # job-level timeout still bounds a hung run.
+          go test -race -count=1 -timeout 15m -json $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
           python - <<'PY'
           import json, os
           from pathlib import Path
