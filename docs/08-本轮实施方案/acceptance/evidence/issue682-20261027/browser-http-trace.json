@@ -1,0 +1,193 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "source": "sanitized Docker application access log",
+  "omitted": "headers, tokens, request/response bodies and client addresses",
+  "requests": [
+    {
+      "time_utc": "2026-10-27 09:33:09.891",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects",
+      "status": 201
+    },
+    {
+      "time_utc": "2026-10-27 09:34:07.829",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:34:07.853",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:35:57.421",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:35:57.470",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:35:57.557",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:37:17.938",
+      "method": "PUT",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks/f7eaf7fa-98e4-40cd-b8a6-9915698696fb",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:37:18.185",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:37:18.219",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:38:26.942",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks/f7eaf7fa-98e4-40cd-b8a6-9915698696fb/approve",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:38:27.241",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:38:27.246",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:39:31.679",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks/f7eaf7fa-98e4-40cd-b8a6-9915698696fb/run",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:39:32.221",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:39:32.233",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:39:32.487",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:43:51.786",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:43:51.815",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:44:14.868",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs/1f3eaac5-f815-4b78-b65d-7981e388b4a2",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:55:46.716",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:55:46.732",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:56:13.459",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:56:13.475",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:59:00.802",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:59:00.865",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 09:59:24.966",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs/1f3eaac5-f815-4b78-b65d-7981e388b4a2",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 11:18:44.664",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 11:18:44.701",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 11:30:06.736",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-tasks",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 11:30:06.778",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs",
+      "status": 200
+    },
+    {
+      "time_utc": "2026-10-27 11:30:07.002",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/804054b4-c226-4af3-ba7d-325771c66f5f/research-runs/1f3eaac5-f815-4b78-b65d-7981e388b4a2",
+      "status": 200
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "frontend": {
+    "tests": "PASS (exit 0)",
+    "build_with_types": "PASS (exit 0)",
+    "build_warning": "existing bundles larger than 500 kB; frontend files unchanged since the tested merged candidate e6fa929d"
+  },
+  "contract": {
+    "result": "PASS",
+    "scope": "static_design_artifacts_and_reference_trace_only",
+    "route_parity_result": "PASS",
+    "registered_operations": 99,
+    "frontend_calls": 72
+  },
+  "native_windows": {
+    "catalog_and_ownership_packages": "PASS",
+    "concurrent_apply_50_repetitions": "PASS (7.084s)"
+  },
+  "linux_race": {
+    "command": "go test -race -count=10 -timeout=15m ./internal/lingdoc/workspacecore -run '^TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks$'",
+    "result": "PASS (21.836s)"
+  },
+  "server_build": {
+    "command": "go build -p 1 -tags sqlite_fts5 -o /artifacts/issue682-server ./cmd/server",
+    "result": "PASS (exit 0)"
+  }
+}

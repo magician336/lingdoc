@@ -1,0 +1,41 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "browser": "ChatGPT in-app browser, actual local frontend and backend",
+  "url": "http://127.0.0.1:38182/platform/lingdoc",
+  "account": "synthetic local account in isolated SQLite; no team database or external account",
+  "steps": [
+    "Registered a temporary local account through the real API and logged in through the browser.",
+    "Created a demo-template project through the browser.",
+    "Verified that saving without a project asset or search provider is rejected by the form.",
+    "Selected Crossref; saved two queries, date range, scope and exclusions.",
+    "Edited both queries and the start date; verified the saved values in the task readback.",
+    "Filled an explicit synthetic confirmation reason and checked the range/version acknowledgment; this is not final human acceptance.",
+    "Approved the plan and ran it; observed academic_global_catalog_unavailable with zero searches, results and model calls.",
+    "Reopened the panel and read the same correlation ID.",
+    "Restarted the backend, refreshed the browser and reopened the same task/run; HTTP readback was identical."
+  ],
+  "visible_result": {
+    "heading": "本次结果 · 失败",
+    "failure_code": "academic_global_catalog_unavailable",
+    "correlation_id": "39607223-28b8-40bf-9f17-6038a54578b2",
+    "searches": "0/8",
+    "results": "0/160",
+    "model_calls": "0/0"
+  },
+  "frontend_console": {
+    "levels": [
+      "error",
+      "warn"
+    ],
+    "entries": [],
+    "observation": "after backend restart and browser readback"
+  },
+  "screenshot": {
+    "status": "PASS",
+    "file": "issue682-fail-closed-browser.png",
+    "method": "Actual built frontend served locally to isolated Chromium, real local API, same temporary account and persisted synthetic project",
+    "history": "Initial in-app/desktop screenshot tools failed; Vite proxy screenshot attempts were replaced with the already tested static frontend. No product code or project state was changed for the capture."
+  },
+  "warning": "The existing demo-template catalog unreadable notice was present; this report does not claim that unrelated baseline notice was fixed.",
+  "scope": "Local browser workflow and fail-closed recovery only; no real academic search, approved global catalog, production quota ledger, paper full text or final researcher approval."
+}

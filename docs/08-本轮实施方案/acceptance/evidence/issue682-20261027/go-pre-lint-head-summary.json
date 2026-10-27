@@ -1,0 +1,20 @@
+{
+  "source": ".tmp\\go-test-latest-linux.jsonl",
+  "last_event": "2026-10-27T10:56:58.673632696Z",
+  "packages": {
+    "pass": 114,
+    "skip": 15
+  },
+  "tests_including_subtests": {
+    "pass": 12065,
+    "skip": 71
+  },
+  "running_packages": [],
+  "failures": [],
+  "non_json_lines": [],
+  "code_sha": "8c69d073a4e778feaedf32054c957c929cb9982d",
+  "command": "go test -json -count=1 -p 2 -timeout=30m ./...",
+  "exit_code": 0,
+  "toolchain": "go1.26.8 linux/amd64; GCC 12; Python 3.11 + venv/ensurepip; uv 0.13.6",
+  "skip_note": "DocReader service was present in this later full run; its two tests passed here instead of skipping. Other skipped cases are tracked in the initial-list follow-up ledger."
+}
