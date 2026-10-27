@@ -39,7 +39,9 @@ func TestSearchEncodesRequestAndMapsMetadata(t *testing.T) {
 		if got, want := r.Header.Get("Accept"), "application/json"; got != want {
 			t.Errorf("Accept = %q, want %q", got, want)
 		}
-		fmt.Fprint(w, `{"status":"ok","message":{"items":[{"DOI":"10.5555/example.1","title":["A metadata-only title"],"author":[{"given":"Ada","family":"Lovelace","ORCID":"https://orcid.org/0000-0000-0000-0001","affiliation":[{"name":"Example University"}]},{"name":"Consortium"}],"published-online":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678","8765-4321"],"type":"journal-article","URL":"https://doi.org/10.5555/example.1","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/","start":{"date-parts":[[2024,3]]},"content-version":"vor","delay-in-days":0}],"update-to":[{"DOI":"10.5555/example.retraction","type":"retraction","updated":"2025-01-02T03:04:05Z","label":"Retraction","source":"Crossref"}]}]}}`)
+		if _, err := fmt.Fprint(w, `{"status":"ok","message":{"items":[{"DOI":"10.5555/example.1","title":["A metadata-only title"],"author":[{"given":"Ada","family":"Lovelace","ORCID":"https://orcid.org/0000-0000-0000-0001","affiliation":[{"name":"Example University"}]},{"name":"Consortium"}],"published-online":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678","8765-4321"],"type":"journal-article","URL":"https://doi.org/10.5555/example.1","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/","start":{"date-parts":[[2024,3]]},"content-version":"vor","delay-in-days":0}],"update-to":[{"DOI":"10.5555/example.retraction","type":"retraction","updated":"2025-01-02T03:04:05Z","label":"Retraction","source":"Crossref"}]}]}}`); err != nil {
+			t.Errorf("write fixture response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -79,7 +81,9 @@ func TestSearchPreservesMissingFieldsAndDatePrecision(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"message":{"items":[{"DOI":"10.5555/year-only","issued":{"date-parts":[[2020]]}},{"DOI":"10.5555/unknown-date"}]}}`)
+		if _, err := fmt.Fprint(w, `{"message":{"items":[{"DOI":"10.5555/year-only","issued":{"date-parts":[[2020]]}},{"DOI":"10.5555/unknown-date"}]}}`); err != nil {
+			t.Errorf("write fixture response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -105,7 +109,9 @@ func TestSearchCapsReturnedItemsToRequestedLimit(t *testing.T) {
 		if got := r.URL.Query().Get("rows"); got != "1" {
 			t.Errorf("rows = %q, want 1", got)
 		}
-		fmt.Fprint(w, `{"message":{"items":[{"DOI":"10.1/first"},{"DOI":"10.1/second"}]}}`)
+		if _, err := fmt.Fprint(w, `{"message":{"items":[{"DOI":"10.1/first"},{"DOI":"10.1/second"}]}}`); err != nil {
+			t.Errorf("write fixture response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -156,7 +162,9 @@ func TestSearchWithDateRangeAppliesProviderFilters(t *testing.T) {
 		if got, want := r.URL.Query().Get("filter"), "from-pub-date:2020-01-01,until-pub-date:2024-12-31"; got != want {
 			t.Errorf("filter = %q, want %q", got, want)
 		}
-		fmt.Fprint(w, `{"message":{"items":[]}}`)
+		if _, err := fmt.Fprint(w, `{"message":{"items":[]}}`); err != nil {
+			t.Errorf("write fixture response: %v", err)
+		}
 	}))
 	defer server.Close()
 

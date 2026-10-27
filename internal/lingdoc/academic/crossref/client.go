@@ -194,7 +194,7 @@ func (c Client) SearchWithDateRange(ctx context.Context, query string, maxResult
 	if err != nil {
 		return nil, fmt.Errorf("crossref: request failed: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 		return nil, fmt.Errorf("crossref: request returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
@@ -314,10 +314,7 @@ func normalizeWork(item apiWork) Work {
 		})
 	}
 	for _, raw := range item.UpdateTo {
-		work.UpdateTo = append(work.UpdateTo, UpdateTo{
-			DOI: raw.DOI, Type: raw.Type, Updated: raw.Updated,
-			Label: raw.Label, Source: raw.Source, Record: raw.Record,
-		})
+		work.UpdateTo = append(work.UpdateTo, UpdateTo(raw))
 	}
 	return work
 }
