@@ -1537,7 +1537,7 @@ class ProviderShardTests(DecisionFixture):
                              ["./internal/lingdoc/workspace/..."])
             self.assertEqual(sorted(shards[1].packages), sorted(
                 f"./internal/lingdoc/{name}/..." for name in
-                ("access", "candidateadoption", "delivery", "demoroute",
+                ("academic", "access", "candidateadoption", "delivery", "demoroute",
                  "docx", "generation", "materiallingest", "membership",
                  "operationcore", "reviewanchor", "rulesetstore",
                  "sourcemarker", "sourcepolicy", "template",
