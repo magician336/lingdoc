@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -188,6 +190,11 @@ func TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError(t *testing.T) 
 // in-process, so the test does not claim a live provider or browser acceptance.
 func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 	engine, db, adapter := newResearchProviderFixture(t, true)
+	// Keep the source transport and approved policy synthetic, but exercise the
+	// real quota implementation in the same production Workspace transaction.
+	now := time.Now().UTC()
+	policy := &httpResearchQuotaPolicy{core.ResearchQuotaPolicy{Version: "synthetic-http-v1", ApprovedBy: "synthetic-fixture-only", WindowID: "synthetic-http-window", StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour), Limit: core.ResearchQuotaAmount{Searches: 2, Results: 40}}}
+	ledger := core.NewResearchQuotaLedger(adapter.projects.(*core.Service), policy)
 	projectExpectation := func() string {
 		t.Helper()
 		var current struct {
@@ -212,7 +219,7 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"status":"ok","message":{"items":[{"DOI":"10.5555/integration.1","title":["A controlled metadata record"],"author":[{"given":"Ada","family":"Lovelace"}],"published-print":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Integration Tests"],"ISSN":["0378-5955"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}] }]}}`)), Request: r}, nil
 	})
 	adapter.academic = crossref.Client{HTTPClient: &http.Client{Transport: transport}, Timeout: 2 * time.Second}
-	if err := adapter.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), &syntheticResearchBudgetLedger{}); err != nil {
+	if err := adapter.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), ledger); err != nil {
 		t.Fatalf("configure synthetic-only global policy and budget for HTTP integration: %v", err)
 	}
 
@@ -269,6 +276,10 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 		`{`+projectExpectation()+`,"expected_context_revision":0,"expected_version":2}`), http.StatusOK, &run)
 	if run.Status != "completed" || len(run.Rounds) != 2 || len(run.Results) != 2 || run.Usage.SearchesUsed != 2 || run.Usage.ResultsUsed != 2 {
 		t.Fatalf("bounded Crossref run was not recorded as expected: status=%q failure=%q rounds=%+v results=%d usage=%+v", run.Status, run.FailureCode, run.Rounds, len(run.Results), run.Usage)
+	}
+	snapshot, quotaErr := ledger.Snapshot(context.Background(), core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleAdmin}, "project-1")
+	if quotaErr != nil || snapshot.Charged != (core.ResearchQuotaAmount{Searches: 2, Results: 2}) || snapshot.Measured != snapshot.Charged {
+		t.Fatalf("HTTP research and durable project quota disagree: snapshot=%+v err=%v", snapshot, quotaErr)
 	}
 	if run.Results[0].PolicyStatus != "approved" || run.Results[0].Status != "metadata_only" || run.Results[1].DuplicateStatus != "duplicate" || run.Results[1].Status != "duplicate" {
 		t.Fatalf("allowlist decision or duplicate status was lost: %+v", run.Results)

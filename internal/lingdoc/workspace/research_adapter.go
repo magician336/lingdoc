@@ -61,15 +61,25 @@ type ResearchAdapter struct {
 	academicBudgetLedger  core.ProjectResearchBudgetLedger
 }
 
-func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *ResearchAdapter {
-	return &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
+type ResearchAdapterOption func(*ResearchAdapter)
+
+func WithResearchBudgetLedger(ledger core.ProjectResearchBudgetLedger) ResearchAdapterOption {
+	return func(adapter *ResearchAdapter) { adapter.academicBudgetLedger = ledger }
+}
+
+func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService, options ...ResearchAdapterOption) *ResearchAdapter {
+	adapter := &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
+	for _, option := range options {
+		option(adapter)
+	}
+	return adapter
 }
 
 // ConfigureAcademicResearchPolicy installs the approved global academic
 // source snapshot and the durable per-project quota ledger. Both are required
 // before Crossref metadata can be queried or retained. The repository has no
-// approved production allowlist or configured quota ledger yet, so the
-// production constructor intentionally leaves these unset and fails closed.
+// approved production allowlist or quota policy yet. The composition installs
+// a durable ledger, but its absent policy and the absent catalog fail closed.
 func (r *ResearchAdapter) ConfigureAcademicResearchPolicy(global catalog.Snapshot, budget core.ProjectResearchBudgetLedger) error {
 	if strings.TrimSpace(global.Version) != core.AcademicGlobalCatalogVersion || len(global.Rules) == 0 || budget == nil {
 		return core.ErrInvalidRequest

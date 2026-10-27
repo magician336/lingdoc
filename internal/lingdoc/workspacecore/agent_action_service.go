@@ -244,6 +244,8 @@ func agentFailureCode(err error) string {
 		return "academic_global_catalog_unavailable"
 	case errors.Is(err, ErrResearchBudgetUnavailable):
 		return "research_budget_unavailable"
+	case errors.Is(err, ErrResearchQuotaExhausted):
+		return "research_budget_exhausted"
 	case errors.Is(err, ErrResearchBudgetSettlementUnknown):
 		return "research_budget_settlement_unknown"
 	case errors.Is(err, ErrOutcomeUnknown):
