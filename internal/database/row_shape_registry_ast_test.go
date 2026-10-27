@@ -252,6 +252,15 @@ func rowShapeRegistryProblems(
 		}
 		seen[key] = true
 
+		// Out-of-domain entries (hostRowShapeDoors) sit outside this scan's
+		// patrol area by design — the domain scan neither finds nor demands
+		// them. They are reconciled against their own package by
+		// TestHostRowShapeRegistrationsAreReal below, under the same
+		// loud-failure standard.
+		if _, isHost := hostRowShapeDoors[reg.PackagePath]; isHost {
+			continue
+		}
+
 		found := false
 		for _, discovery := range discoveries {
 			if lingdocDomainModulePath+"/"+discovery.RelPackage == reg.PackagePath &&
@@ -317,6 +326,61 @@ func TestLingDocTableNameRowStructsAreAllRegistered(t *testing.T) {
 
 	for _, problem := range rowShapeRegistryProblems(discoveries, guardedRowShapes, deferredRowShapeExclusions) {
 		t.Error(problem)
+	}
+}
+
+// TestHostRowShapeRegistrationsAreReal reconciles the out-of-domain
+// registrations (#713): a host entry's package sits outside the domain scan's
+// patrol area, so scanning that package directly with the same parser is what
+// keeps the entry honest — the type must really exist there, answer to the
+// registered table, and the package must expose no OTHER TableName row
+// structure that silently stays off the checklist's radar.
+func TestHostRowShapeRegistrationsAreReal(t *testing.T) {
+	hostDirs := map[string]bool{}
+	for _, reg := range guardedRowShapes {
+		if _, isHost := hostRowShapeDoors[reg.PackagePath]; !isHost {
+			continue
+		}
+		// The domain scan bases at ".." (= internal/), so a host package's
+		// dir is its path below internal/, not below the module root.
+		relDir := strings.TrimPrefix(reg.PackagePath, "github.com/Tencent/WeKnora/internal/")
+		if hostDirs[relDir] {
+			continue
+		}
+		hostDirs[relDir] = true
+
+		discoveries, problems := scanTableNameRowShapes(t, filepath.Join("..", relDir))
+		for _, problem := range problems {
+			t.Errorf("宿主行结构扫描问题（%s）：%s", relDir, problem)
+		}
+		if len(discoveries) == 0 {
+			t.Fatalf("宿主包 %s 没有扫描到任何 TableName 行结构——扫描范围可能已经失效", relDir)
+		}
+
+		seen := map[string]bool{}
+		for _, reg := range guardedRowShapes {
+			if reg.PackagePath != "github.com/Tencent/WeKnora/internal/"+relDir {
+				continue
+			}
+			found := false
+			for _, discovery := range discoveries {
+				if discovery.TypeName == reg.TypeName && discovery.TableName == reg.TableName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("登记项 %s.%s（表 %s）在其宿主包扫描中不存在（悬空登记）",
+					reg.PackagePath, reg.TypeName, reg.TableName)
+			}
+			seen[reg.TypeName] = true
+		}
+		for _, discovery := range discoveries {
+			if !seen[discovery.TypeName] {
+				t.Errorf("宿主包 %s 的行结构 %s（表 %s）未登记——宿主条目与域内条目适用同一守护标准",
+					relDir, discovery.TypeName, discovery.TableName)
+			}
+		}
 	}
 }
 
