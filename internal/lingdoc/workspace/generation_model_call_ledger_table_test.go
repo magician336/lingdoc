@@ -27,14 +27,22 @@ func ledgerTableTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open the test database: %v", err)
 	}
-	migration := filepath.Join("..", "..", "..", "migrations", "sqlite",
-		"000055_lingdoc_model_call_ledger.up.sql")
-	body, err := os.ReadFile(migration)
-	if err != nil {
-		t.Fatalf("read the ledger migration: %v", err)
+	// The ledger table is defined by its migration chain, not by one file:
+	// 000055 creates the table and 000058 adds the cost_basis column (#527).
+	// Applying only the first would leave the row writer failing on a column
+	// the chain adds, which is not a state any deployment can be in.
+	migrations := []string{
+		"000055_lingdoc_model_call_ledger.up.sql",
+		"000058_lingdoc_model_call_ledger_cost_basis.up.sql",
 	}
-	if err := db.Exec(string(body)).Error; err != nil {
-		t.Fatalf("apply the ledger migration: %v", err)
+	for _, name := range migrations {
+		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		if err != nil {
+			t.Fatalf("read the ledger migration %s: %v", name, err)
+		}
+		if err := db.Exec(string(body)).Error; err != nil {
+			t.Fatalf("apply the ledger migration %s: %v", name, err)
+		}
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -104,6 +112,12 @@ func TestGenerationPathLeavesExactlyOneRowInTheLedgerTable(t *testing.T) {
 	}
 	if row["reserved_nano_usd"] == nil || row["actual_nano_usd"] == nil {
 		t.Errorf("the row does not carry the budget columns: %+v", row)
+	}
+	// No acceptance budget was attached, so no price basis priced this call:
+	// the cost basis column stays NULL (#527) rather than naming a basis the
+	// row was never computed under.
+	if basis, present := row["cost_basis"]; present && basis != nil {
+		t.Errorf("cost basis = %v, want NULL (no acceptance budget attached)", basis)
 	}
 	if status, _ := row["status"].(string); status != core.ModelCallLedgerStatusSucceeded {
 		t.Errorf("status = %v, want %q", row["status"], core.ModelCallLedgerStatusSucceeded)

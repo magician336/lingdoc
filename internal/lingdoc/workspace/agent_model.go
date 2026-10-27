@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -301,8 +302,12 @@ func (m *HostAgentModel) recordModelCall(ctx context.Context, actor core.Actor, 
 	if m.budget != nil {
 		// The budget columns carry the acceptance ledger's semantics: what was
 		// reserved for this call and what it actually consumed. The ledger
-		// records the budget; it does not enforce it.
-		facts.reservedNanoUSD = generationAcceptancePerCall
+		// records the budget; it does not enforce it. The cost basis (#527)
+		// names what those columns mean, so a profile without a price basis
+		// reads as "not computed" instead of "free"; its reservation follows
+		// the same profile rule the generation path records.
+		facts.costBasis = acceptancebudget.ProfileCostBasis(activeAcceptanceProfile())
+		facts.reservedNanoUSD = acceptanceReservedPerCall(activeAcceptanceProfile())
 		if outcome.response != nil && outcome.response.Usage.PromptTokens >= 0 && outcome.response.Usage.CompletionTokens >= 0 {
 			facts.actualNanoUSD = actualDeepSeekCost(outcome.response.Usage.PromptTokens, outcome.response.Usage.CompletionTokens)
 		}
@@ -333,6 +338,11 @@ type modelCallFacts struct {
 	outputTokens    int
 	reservedNanoUSD int64
 	actualNanoUSD   int64
+	// costBasis names what the two money fields mean (#527). It is empty
+	// when the caller had no acceptance budget attached: those money fields
+	// were never priced under a known basis, and the row says so by carrying
+	// no basis rather than by carrying another profile's.
+	costBasis string
 }
 
 // recordModelCallRow leaves one ledger row for one model call.
@@ -361,6 +371,7 @@ func recordModelCallRow(ctx context.Context, ledger core.ModelCallLedger, facts 
 		OutputTokens:    facts.outputTokens,
 		ReservedNanoUSD: facts.reservedNanoUSD,
 		ActualNanoUSD:   facts.actualNanoUSD,
+		CostBasis:       facts.costBasis,
 		DurationMS:      facts.durationMS,
 		Status:          facts.status,
 		ErrorCode:       facts.errorCode,

@@ -83,8 +83,26 @@ type ModelCallLedgerEntry struct {
 	// ReservedNanoUSD is the budget reserved for this call, and
 	// ActualNanoUSD the budget it actually consumed. The ledger records the
 	// budget; it does not enforce it.
+	//
+	// Read discipline (#527): what these two numbers MEAN is named by
+	// CostBasis. Without it a 0 is ambiguous -- "the call was free" and
+	// "no amount was computed" are different facts, and a row of a profile
+	// without a price basis carries the second one. Quoting the money
+	// columns of a row without its cost basis is not a cost conclusion.
 	ReservedNanoUSD int64
 	ActualNanoUSD   int64
+	// CostBasis names what the money columns of this row mean. It carries a
+	// value of the cost-basis vocabulary acceptancebudget owns
+	// ("not_applicable" for a profile that computes no money, that
+	// package's priced bases otherwise); the ledger does not keep a second
+	// list of those values, for the same reason it does not keep a second
+	// run-mode list.
+	//
+	// It is empty for a row written before the column existed, or by a
+	// caller that had no acceptance budget attached: those rows' money
+	// columns were never priced under a known basis. Empty reads as
+	// "basis unknown", never as "computed" -- and never as "free".
+	CostBasis string
 	// DurationMS is how long the call took.
 	DurationMS int64
 	// Status is ModelCallLedgerStatusSucceeded or ModelCallLedgerStatusFailed.
@@ -126,18 +144,23 @@ type ModelCallLedger interface {
 // switched no model" and "the switch reason is the empty string" are not the
 // same fact, and the second one is not a fact at all.
 type modelCallLedgerRow struct {
-	ID                  string    `gorm:"column:id;primaryKey"`
-	TenantID            uint64    `gorm:"column:tenant_id"`
-	ProjectID           *string   `gorm:"column:project_id"`
-	Kind                string    `gorm:"column:kind"`
-	Provider            *string   `gorm:"column:provider"`
-	ModelID             *string   `gorm:"column:model_id"`
-	RunMode             *string   `gorm:"column:run_mode"`
-	ParametersJSON      *string   `gorm:"column:parameters_json"`
-	InputTokens         int64     `gorm:"column:input_tokens"`
-	OutputTokens        int64     `gorm:"column:output_tokens"`
-	ReservedNanoUSD     int64     `gorm:"column:reserved_nano_usd"`
-	ActualNanoUSD       int64     `gorm:"column:actual_nano_usd"`
+	ID              string  `gorm:"column:id;primaryKey"`
+	TenantID        uint64  `gorm:"column:tenant_id"`
+	ProjectID       *string `gorm:"column:project_id"`
+	Kind            string  `gorm:"column:kind"`
+	Provider        *string `gorm:"column:provider"`
+	ModelID         *string `gorm:"column:model_id"`
+	RunMode         *string `gorm:"column:run_mode"`
+	ParametersJSON  *string `gorm:"column:parameters_json"`
+	InputTokens     int64   `gorm:"column:input_tokens"`
+	OutputTokens    int64   `gorm:"column:output_tokens"`
+	ReservedNanoUSD int64   `gorm:"column:reserved_nano_usd"`
+	ActualNanoUSD   int64   `gorm:"column:actual_nano_usd"`
+	// CostBasis is nullable for the same reason the other text columns are:
+	// a row written before the column existed (or without a price basis
+	// attached) has no basis to name, and an empty string would read as if
+	// the row carried one.
+	CostBasis           *string   `gorm:"column:cost_basis"`
 	DurationMS          int64     `gorm:"column:duration_ms"`
 	Status              string    `gorm:"column:status"`
 	ErrorCode           *string   `gorm:"column:error_code"`
@@ -210,6 +233,7 @@ func (s modelCallLedgerStore) record(ctx context.Context, entry ModelCallLedgerE
 		OutputTokens:    int64(entry.OutputTokens),
 		ReservedNanoUSD: entry.ReservedNanoUSD,
 		ActualNanoUSD:   entry.ActualNanoUSD,
+		CostBasis:       modelCallLedgerText(entry.CostBasis),
 		DurationMS:      entry.DurationMS,
 		Status:          entry.Status,
 		ErrorCode:       modelCallLedgerText(entry.ErrorCode),
@@ -298,6 +322,7 @@ func modelCallLedgerEntriesFromRows(rows []modelCallLedgerRow) []ModelCallLedger
 			OutputTokens:        int(row.OutputTokens),
 			ReservedNanoUSD:     row.ReservedNanoUSD,
 			ActualNanoUSD:       row.ActualNanoUSD,
+			CostBasis:           modelCallLedgerValue(row.CostBasis),
 			DurationMS:          row.DurationMS,
 			Status:              row.Status,
 			ErrorCode:           modelCallLedgerValue(row.ErrorCode),
