@@ -313,6 +313,19 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 			workingCopy.WorkingCopyRevision != input.ExpectedWorkingCopyRevision {
 			return operationResult[CommittedChapterVersion]{}, ErrVersionConflict
 		}
+		// The wording gate (#753): a registered condition value that vanished
+		// from the text is a suspicion, never a verdict — the commit proceeds
+		// only behind an explicit dismissal naming the same list, and every
+		// dismissal is audited.
+		if err := reviewConditionChanges(p.Spec, chapter.BodyMarkdown, workingCopy.BodyMarkdown, input.ConditionChange); err != nil {
+			return operationResult[CommittedChapterVersion]{}, err
+		}
+		if input.ConditionChange != nil {
+			suspected := suspectedConditionChanges(p.Spec, chapter.BodyMarkdown, workingCopy.BodyMarkdown)
+			if err := auditConditionDismissal(tx, actor, projectID, chapterID, suspected, input.ConditionChange, p.SpecRevision, workingCopy.WorkingCopyRevision); err != nil {
+				return operationResult[CommittedChapterVersion]{}, err
+			}
+		}
 		id := uuid.NewString()
 		nextChapter := chapter
 		nextChapter.CurrentVersionID = &id

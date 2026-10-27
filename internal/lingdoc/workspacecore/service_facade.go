@@ -1518,6 +1518,18 @@ type CommitWorkingCopyInput struct {
 	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
 	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
 	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+	// ConditionChange carries the operator's explicit dismissal of a suspected
+	// condition change (#753). It is only accepted when it names exactly the
+	// suspicions the server recomputes at commit time; a wording commit that
+	// drops a registered condition value without it is refused.
+	ConditionChange *ConditionChangeDismissal `json:"condition_change_dismissal,omitempty"`
+}
+
+// ConditionChangeDismissal is the audited "still wording" decision: the field
+// ids whose suspected changes the operator saw and overruled, and why.
+type ConditionChangeDismissal struct {
+	DismissedFields []string `json:"dismissed_fields"`
+	Reason          string   `json:"reason"`
 }
 
 type RestoreWorkingCopyInput struct {
