@@ -1317,6 +1317,219 @@ class ProviderSelectionTests(DecisionFixture):
             self.assertIn("provider_tests=true", output.read_text(encoding="utf-8"))
 
 
+class ProviderShardTests(DecisionFixture):
+    """The provider verification is sharded by the decision module (#724).
+
+    ADR 0014, section one: the shards are **data** the decision module
+    publishes -- a shard name plus a package list, derived from the same
+    ``PROVIDER_ROOTS`` the gate surface manifest registers.  The workflow's
+    matrix consumes the list and runs the same test command per shard; the
+    workflow itself learns no package names.  The tests here pin the output
+    contract of that sharding and the attribution it produces.
+    """
+
+    FULL_SCOPE = ("./internal/lingdoc/...", "./internal/evidence/...",
+                  "./internal/models/acceptancebudget/...",
+                  "./cmd/acceptance-budget-reconcile/...")
+
+    def _shards(self, packages):
+        return decision._provider_shards(packages)
+
+    def test_the_full_scope_shards_into_the_registered_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "internal/lingdoc/workspace/service.go"
+            path.parent.mkdir(parents=True)
+            path.write_text("package workspace\n", encoding="utf-8")
+            # The plan is calibrated on the real repository's package
+            # families (#724 report, section 2): the workspace family is one
+            # indivisible Go package and carries a shard of its own; the
+            # remaining families share a shard; the three other roots share
+            # one small shard.
+            shards = self._shards(self.FULL_SCOPE)
+
+            self.assertEqual([s.name for s in shards],
+                             ["lingdoc-workspace", "lingdoc-core",
+                              "provider-rest"])
+            for shard in shards:
+                self.assertTrue(shard.packages,
+                                "an empty shard must not exist: the sharding "
+                                "only creates entries for non-empty groups")
+            # The whole main root was expanded losslessly over the plan.
+            self.assertEqual(list(shards[0].packages),
+                             ["./internal/lingdoc/workspace/..."])
+            self.assertEqual(sorted(shards[1].packages), sorted(
+                f"./internal/lingdoc/{name}/..." for name in
+                ("access", "candidateadoption", "delivery", "demoroute",
+                 "docx", "generation", "materiallingest", "membership",
+                 "operationcore", "reviewanchor", "rulesetstore",
+                 "sourcemarker", "sourcepolicy", "template",
+                 "templategovernance", "workspacecore", "writingaction")))
+            self.assertEqual(sorted(shards[2].packages),
+                             ["./cmd/acceptance-budget-reconcile/...",
+                              "./internal/evidence/...",
+                              "./internal/models/acceptancebudget/..."])
+
+    def test_every_package_lands_in_exactly_one_shard(self):
+        packages = ["./internal/lingdoc/workspace/...",
+                    "./internal/lingdoc/delivery/...",
+                    "./internal/evidence/store/...",
+                    "./cmd/acceptance-budget-reconcile/..."]
+
+        shards = self._shards(packages)
+
+        assigned = [package for shard in shards for package in shard.packages]
+        self.assertEqual(sorted(assigned), sorted(packages),
+                         "the shards must cover every package of the input")
+        self.assertEqual(len(assigned), len(set(assigned)),
+                         "the shards must not overlap")
+
+    def test_the_sharding_is_deterministic_regardless_of_input_order(self):
+        forward = self._shards(self.FULL_SCOPE)
+        backward = self._shards(tuple(reversed(self.FULL_SCOPE)))
+        self.assertEqual(forward, backward)
+
+    def test_an_empty_package_list_yields_no_shards(self):
+        self.assertEqual(self._shards(()), ())
+
+    def test_a_decision_without_provider_tests_publishes_no_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {"docs/note.md": "evidence\n"})
+            outputs = decision.write_outputs(result)
+
+            # The matrix is skipped as a whole by the same condition
+            # semantics as before: no shard list, no matrix entries.
+            self.assertEqual(outputs["run_providers"], "false")
+            self.assertEqual(result.provider_shards, ())
+            self.assertEqual(outputs["provider_shards"], "[]")
+
+    def test_a_formatting_only_change_publishes_no_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\n// A note.\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.format_only)
+            self.assertEqual(outputs["run_providers"], "false")
+            self.assertEqual(result.provider_shards, ())
+
+    def test_a_provider_change_publishes_the_shard_matrix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertEqual(outputs["run_providers"], "true")
+            self.assertEqual([s.name for s in result.provider_shards],
+                             ["lingdoc-workspace"])
+            self.assertEqual(
+                json.loads(outputs["provider_shards"]),
+                [{"name": "lingdoc-workspace",
+                  "packages": ["./internal/lingdoc/workspace/..."]}])
+
+    def test_the_coverage_names_the_shard_jobs(self):
+        """The coverage table attributes the verification to the shards."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Provider shard lingdoc-workspace", row.verified_by)
+            # The gate's own step no longer runs the provider tests: naming
+            # it would point at a check nobody runs.
+            self.assertNotIn("Provider packages: test and vet",
+                             row.verified_by)
+
+    def test_the_conclusion_names_the_shards_and_their_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            conclusion = decision.gate_conclusion(
+                result, ".github/workflows/lingdoc-review.yml", root=root)
+
+            provider = next(check for check in conclusion["checks"]
+                            if check["check"] == "pr-gate-provider")
+            self.assertIn("Provider shard lingdoc-workspace",
+                          provider["reason"])
+            self.assertIn("./internal/lingdoc/workspace/...",
+                          provider["reason"])
+
+    def test_a_fifth_root_yields_a_shard_without_a_workflow_change(self):
+        """Adding a root to the manifest is the whole change (#724)."""
+        with mock.patch.object(
+                decision, "PROVIDER_ROOTS",
+                decision.PROVIDER_ROOTS + ("internal/newthing",)):
+            shards = self._shards(["./internal/newthing/store/..."])
+
+        self.assertEqual([s.name for s in shards], ["internal-newthing"])
+        self.assertEqual(shards[0].packages,
+                         ("./internal/newthing/store/...",))
+        # Red line four (ADR 0014): the workflow is a dumb executor.  It
+        # carries no package name and no root name -- the shard list comes
+        # from the decision module alone.
+        workflow = (CI_DIR.parents[1] / ".github" / "workflows"
+                    / "lingdoc-review.yml").read_text(encoding="utf-8")
+        for known in decision.PROVIDER_ROOTS:
+            self.assertNotIn(known, workflow)
+
+    def test_an_unregistered_family_stays_covered(self):
+        """A family missing from the plan must not fall out of the gate."""
+        shards = self._shards(["./internal/lingdoc/somefuturefamily/..."])
+
+        self.assertEqual([s.name for s in shards],
+                         [decision.LINGDOC_FALLBACK_SHARD])
+        self.assertEqual(shards[0].packages,
+                         ("./internal/lingdoc/somefuturefamily/...",))
+
+    def test_the_plan_covers_the_real_main_root_losslessly(self):
+        """The whole-root expansion is only lossless while it is complete."""
+        repo = CI_DIR.parents[1]
+        families = sorted(path.name for path
+                          in (repo / "internal/lingdoc").iterdir()
+                          if path.is_dir())
+        planned = [family for _name, families in decision.LINGDOC_FAMILY_SHARDS
+                   for family in families]
+        self.assertEqual(sorted(planned), families,
+                         "a package family of the main root is missing from "
+                         "the shard plan; register it in the decision module")
+        # The expansion replaces the whole-root pattern with the family
+        # patterns; a package sitting directly in the root would be lost.
+        self.assertEqual([path.name for path
+                          in (repo / "internal/lingdoc").glob("*.go")], [])
+        # The plan and the manifest describe the same roots, once.
+        self.assertEqual(
+            (decision.LINGDOC_MAIN_ROOT,) + decision.REST_SHARD_ROOTS,
+            decision.PROVIDER_ROOTS)
+        plan_names = [name for name, _families
+                      in decision.LINGDOC_FAMILY_SHARDS]
+        self.assertIn(decision.LINGDOC_FALLBACK_SHARD, plan_names)
+
+
 class PatternTableTests(DecisionFixture):
     """The path table of a gate selects the event (the ``run`` verdict)."""
 
