@@ -1,180 +1,203 @@
 {
   "mode": "acceptance_judgement_c2",
-  "note": "#143 G1 草稿项目创建、协作与立项确认的口径 v1.1 完整判定（C2 校准批，簇票 #697）。60 PASS + 4 FAIL（TD-03.1、TD-03.11、TD-07、TD-08，均为验证面缺口，见 known_limits）/ 64 点。",
-  "head": "0f6f95c6bdf9bc73adfb179a01dcea31fd6a6257",
+  "note": "#143 G1 草稿项目创建、协作与立项确认的口径 v1.1 完整判定（C2 校准批，簇票 #697）。缺口轮翻绿后 64 PASS / 64 点（首轮 60 PASS + 4 FAIL，四处缺口均以补证据/补守护方式关闭，见矩阵对应行与缺口轮说明）。",
+  "head": "d2e75af60ad949780e624aef13afa00f82ef391c",
   "base": "main@0f6f95c6",
-  "head_note": "判定 head = main 0f6f95c6（PR #749 合并后）。全部 Go 命令在该 head 的 WSL 环境实跑；前端命令在 Windows frontend/ 下实跑。",
-  "base_note": "首轮判定，无基线差异；三份 2026-10-03 旧证据（head 4e3d4de）仅作场景出处，未沿用其结论（口径 §4.3）。",
+  "head_note": "判定 head = 分支 c2-g1-acceptance-judgement 第二个提交 d2e75af6（PR #754）：首轮判定在 main 0f6f95c6 取得（60+4），缺口轮补 6 条用例后在 d2e75af6 全量重跑翻绿；两个提交之间产品代码零变化（增量只有测试与判定产物）。全部 Go 命令在 WSL 环境实跑；前端命令在 Windows frontend/ 下实跑。",
+  "base_note": "首轮基线为 main 0f6f95c6（判定时的 main head）；三份 2026-10-03 旧证据（head 4e3d4de）仅作场景出处，未沿用其结论（口径 §4.3）。",
   "caliber": "验收判定口径 v1.1；v1 commit 1f195def6fb984d43876567bfe365222c34b46b5；v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb；验收点总数=64（原子验收点口径：US 36 + TD 按 §1.2 展开 28）。",
   "acceptance_point_count": 64,
+  "gap_round": {
+    "summary": "首轮（main 0f6f95c6）登记四处 FAIL：TD-03.1 缺「非 active 租户创建被拒」具名用例；TD-03.11 的「恢复越权」半边缺具名用例；TD-07 缺立项对话框差异两类列表、过期确认恢复、丢弃/恢复面板三个前端子面的组件级测试；TD-08 元约束条目无可 grep 具名代码用例。",
+    "resolution": "缺口轮逐一关闭：TD-03.1 补 TestCreateProjectRejectsInactiveTenantMember；TD-03.11 补 TestRestoreProjectRefusesNonOwner；TD-07 补 workspaceActivationReview.test.ts（从 Workspace.vue 源切片的真实模板 SSR 渲染，Workspace.vue 零改动，挂载仍走保留路径 #695）；TD-08 补 TestAcceptanceRecordsStaySeparateFromBetaProtocol（Test 开头使判定器 GO_TEST_NAME 可认，含故意注入红验证）。全部命令在 d2e75af6 重跑，64/64 PASS。"
+  },
   "passed": [
     {
       "id": "US-01、US-09、TD-02.1",
       "status": "pass",
-      "evidence": "`TestProjectChapterDurabilityAndReplay`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestProjectChapterDurabilityAndReplay`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-02、TD-03.3、TD-04",
       "status": "pass",
-      "evidence": "`TestProjectChapterDurabilityAndReplay、TestConcurrentProjectCreationCreatesOneTemplateCopyForAnIdempotencyKey、TestTwoWritersSameSpecRevision`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$|^TestConcurrentProjectCreation|^TestTwoWritersSameSpecRevision$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestProjectChapterDurabilityAndReplay、TestConcurrentProjectCreationCreatesOneTemplateCopyForAnIdempotencyKey、TestTwoWritersSameSpecRevision`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$|^TestConcurrentProjectCreation|^TestTwoWritersSameSpecRevision$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-03、TD-02.2",
       "status": "pass",
-      "evidence": "`TestProjectTemplateCopyIsPrivateVersionedAndDurable`；`go test -count=1 -run '^TestProjectTemplateCopyIsPrivateVersionedAndDurable$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestProjectTemplateCopyIsPrivateVersionedAndDurable`；`go test -count=1 -run '^TestProjectTemplateCopyIsPrivateVersionedAndDurable$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-04、TD-02.7",
       "status": "pass",
-      "evidence": "`TestOwnerTransferAcceptsExactlyOnce、TestTransferOwnerIsAtomicAndClearsFunctionAxis`；`go test -count=1 -run '^TestOwnerTransferAcceptsExactlyOnce$|^TestTransferOwnerIsAtomic' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestOwnerTransferAcceptsExactlyOnce、TestTransferOwnerIsAtomicAndClearsFunctionAxis`；`go test -count=1 -run '^TestOwnerTransferAcceptsExactlyOnce$|^TestTransferOwnerIsAtomic' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-05",
       "status": "pass",
-      "evidence": "`TestOwnerTransferAcceptsExactlyOnce`；`go test -count=1 -run '^TestOwnerTransferAcceptsExactlyOnce$' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestOwnerTransferAcceptsExactlyOnce`；`go test -count=1 -run '^TestOwnerTransferAcceptsExactlyOnce$' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-06",
       "status": "pass",
-      "evidence": "`TestTransferOwnerIsAtomicAndClearsFunctionAxis、TestOwnerTransferAuditFailureRollsBackBusinessWrite`；`go test -count=1 -run '^TestTransferOwnerIsAtomic|^TestOwnerTransferAuditFailure' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestTransferOwnerIsAtomicAndClearsFunctionAxis、TestOwnerTransferAuditFailureRollsBackBusinessWrite`；`go test -count=1 -run '^TestTransferOwnerIsAtomic|^TestOwnerTransferAuditFailure' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-07、TD-02.6",
       "status": "pass",
-      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit、TestFirstPassInvitationRequiresAcceptanceAndResendVersion`；`go test -count=1 -run '^TestFirstPassInvitation|^TestActivationRequiresOwner' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit、TestFirstPassInvitationRequiresAcceptanceAndResendVersion`；`go test -count=1 -run '^TestFirstPassInvitation|^TestActivationRequiresOwner' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-08",
       "status": "pass",
-      "evidence": "`TestTenantRoleMatrixCapsProjectMemberPermissions、TestActivationRequiresOwnerAndRecordsAtomicAudit`；`go test -count=1 -run '^TestTenantRoleMatrixCapsProjectMemberPermissions$' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestTenantRoleMatrixCapsProjectMemberPermissions、TestActivationRequiresOwnerAndRecordsAtomicAudit`；`go test -count=1 -run '^TestTenantRoleMatrixCapsProjectMemberPermissions$' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-10、US-11、TD-03.4",
       "status": "pass",
-      "evidence": "`TestTwoWritersSameSpecRevision`；`go test -count=1 -run '^TestTwoWritersSameSpecRevision$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestTwoWritersSameSpecRevision`；`go test -count=1 -run '^TestTwoWritersSameSpecRevision$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-12、TD-02.4",
       "status": "pass",
-      "evidence": "`TestOriginUsesRealTurnAndServerCreator、TestDraftSpecCarriesProvenanceAndCandidatePool`；`go test -count=1 -run '^TestOriginUsesRealTurnAndServerCreator$|^TestDraftSpecCarriesProvenance' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestOriginUsesRealTurnAndServerCreator、TestDraftSpecCarriesProvenanceAndCandidatePool`；`go test -count=1 -run '^TestOriginUsesRealTurnAndServerCreator$|^TestDraftSpecCarriesProvenance' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-13、US-14、US-17、US-18、US-19、TD-02.5",
       "status": "pass",
-      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool`；`go test -count=1 -run '^TestDraftSpecCarriesProvenanceAndCandidatePool$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool`；`go test -count=1 -run '^TestDraftSpecCarriesProvenanceAndCandidatePool$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-15",
       "status": "pass",
-      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool、TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance`；`go test -count=1 -run '^TestDraftSpecCarriesProvenanceAndCandidatePool$|^TestDiscardRestoreBlocksWrites' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool、TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance`；`go test -count=1 -run '^TestDraftSpecCarriesProvenanceAndCandidatePool$|^TestDiscardRestoreBlocksWrites' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-16",
       "status": "pass",
-      "evidence": "`TestAIGeneratedFieldCannotSelfConfirm`；`go test -count=1 -run '^TestAIGeneratedFieldCannotSelfConfirm$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestAIGeneratedFieldCannotSelfConfirm`；`go test -count=1 -run '^TestAIGeneratedFieldCannotSelfConfirm$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-20、US-21",
       "status": "pass",
-      "evidence": "`TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields`；`go test -count=1 -run '^TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields`；`go test -count=1 -run '^TestActivationDiffSeparatesCollaboratorChangesFromPendingAIFields$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-22、TD-02.8",
       "status": "pass",
-      "evidence": "`TestFirstPassActivationRequiresCurrentHumanReadingAndBlocksBulkJoin、TestActivationDiffBindsConfirmationToProjectVersion`；`go test -count=1 -run '^TestFirstPassActivationRequires|^TestActivationDiffBindsConfirmation' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestFirstPassActivationRequiresCurrentHumanReadingAndBlocksBulkJoin、TestActivationDiffBindsConfirmationToProjectVersion`；`go test -count=1 -run '^TestFirstPassActivationRequires|^TestActivationDiffBindsConfirmation' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-23、US-27、TD-02.10、TD-03.6",
       "status": "pass",
-      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit`；`go test -count=1 -run '^TestActivationRequiresOwnerAndRecordsAtomicAudit$' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit`；`go test -count=1 -run '^TestActivationRequiresOwnerAndRecordsAtomicAudit$' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "US-24、TD-02.9",
       "status": "pass",
-      "evidence": "`TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar`；`go test -count=1 -run '^TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar`；`go test -count=1 -run '^TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-25、TD-03.7",
       "status": "pass",
-      "evidence": "`TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar、TestUnknownLegacySourceIsRetainedHiddenAndCannotActivate`；`go test -count=1 -run '^TestInitializationUsesEffectiveCanonicalRules|^TestUnknownLegacySource' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar、TestUnknownLegacySourceIsRetainedHiddenAndCannotActivate`；`go test -count=1 -run '^TestInitializationUsesEffectiveCanonicalRules|^TestUnknownLegacySource' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-26",
       "status": "pass",
-      "evidence": "`TestInitializationWarningDoesNotBlockActivation`；`go test -count=1 -run '^TestInitializationWarningDoesNotBlockActivation$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestInitializationWarningDoesNotBlockActivation`；`go test -count=1 -run '^TestInitializationWarningDoesNotBlockActivation$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-28、US-30",
       "status": "pass",
-      "evidence": "`TestActiveProjectRejectsOrdinarySpecSave`；`go test -count=1 -run '^TestActiveProjectRejectsOrdinarySpecSave$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestActiveProjectRejectsOrdinarySpecSave`；`go test -count=1 -run '^TestActiveProjectRejectsOrdinarySpecSave$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-29",
       "status": "pass",
-      "evidence": "`TestActivationKeepsDraftCandidatesAtRevisionZero`；`go test -count=1 -run '^TestActivationKeepsDraftCandidatesAtRevisionZero$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestActivationKeepsDraftCandidatesAtRevisionZero`；`go test -count=1 -run '^TestActivationKeepsDraftCandidatesAtRevisionZero$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-31、US-32、TD-02.11、TD-03.10",
       "status": "pass",
-      "evidence": "`TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance`；`go test -count=1 -run '^TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance`；`go test -count=1 -run '^TestDiscardRestoreBlocksWritesAndMarksRevokedProvenance$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "US-33",
       "status": "pass",
-      "evidence": "`TestDraftProjectCannotBeArchived、TestOwnerArchivesAnActiveProject`；`go test -count=1 -run '^TestDraftProjectCannotBeArchived$|^TestOwnerArchivesAnActiveProject$' ./internal/router/`；head `0f6f95c6`"
+      "evidence": "`TestDraftProjectCannotBeArchived、TestOwnerArchivesAnActiveProject`；`go test -count=1 -run '^TestDraftProjectCannotBeArchived$|^TestOwnerArchivesAnActiveProject$' ./internal/router/`；head `d2e75af6`"
     },
     {
       "id": "US-34、TD-03.8",
       "status": "pass",
-      "evidence": "`TestActivationFreezesWhileTheOwnerIsUnavailable`；`go test -count=1 -run '^TestActivationFreezesWhileTheOwnerIsUnavailable$' ./internal/router/`；head `0f6f95c6`"
+      "evidence": "`TestActivationFreezesWhileTheOwnerIsUnavailable`；`go test -count=1 -run '^TestActivationFreezesWhileTheOwnerIsUnavailable$' ./internal/router/`；head `d2e75af6`"
     },
     {
       "id": "US-35、TD-03.2",
       "status": "pass",
-      "evidence": "`TestAccessStatusHidesTheProjectFromNonMembers`；`go test -count=1 -run '^TestAccessStatusHidesTheProjectFromNonMembers$' ./internal/lingdoc/workspace/`；head `0f6f95c6`"
+      "evidence": "`TestAccessStatusHidesTheProjectFromNonMembers`；`go test -count=1 -run '^TestAccessStatusHidesTheProjectFromNonMembers$' ./internal/lingdoc/workspace/`；head `d2e75af6`"
     },
     {
       "id": "US-36",
       "status": "pass",
-      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool、TestActivationRequiresOwnerAndRecordsAtomicAudit、TestOwnerTransferAuditFailureRollsBackBusinessWrite`；`go test -count=1 -run '^TestDraftSpecCarriesProvenance|^TestActivationRequiresOwner' ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestDraftSpecCarriesProvenanceAndCandidatePool、TestActivationRequiresOwnerAndRecordsAtomicAudit、TestOwnerTransferAuditFailureRollsBackBusinessWrite`；`go test -count=1 -run '^TestDraftSpecCarriesProvenance|^TestActivationRequiresOwner' ./internal/lingdoc/workspacecore/ ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "TD-01",
       "status": "pass",
-      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit、TestActivationFreezesWhileTheOwnerIsUnavailable`；`go test -count=1 -run '^TestActivationRequiresOwnerAndRecordsAtomicAudit$' ./internal/lingdoc/membership/`；head `0f6f95c6`"
+      "evidence": "`TestActivationRequiresOwnerAndRecordsAtomicAudit、TestActivationFreezesWhileTheOwnerIsUnavailable`；`go test -count=1 -run '^TestActivationRequiresOwnerAndRecordsAtomicAudit$' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "TD-02.3",
       "status": "pass",
-      "evidence": "`TestProjectChapterDurabilityAndReplay、TestPostgresMigrationAndRepositoryContract`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestProjectChapterDurabilityAndReplay、TestPostgresMigrationAndRepositoryContract`；`go test -count=1 -run '^TestProjectChapterDurabilityAndReplay$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
+    },
+    {
+      "id": "TD-03.1",
+      "status": "pass",
+      "evidence": "`TestCreateProjectRejectsInactiveTenantMember`；`go test -count=1 -run '^TestCreateProjectRejectsInactiveTenantMember$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "TD-03.5",
       "status": "pass",
-      "evidence": "`TestActivationDiffBindsConfirmationToProjectVersion`；`go test -count=1 -run '^TestActivationDiffBindsConfirmationToProjectVersion$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestActivationDiffBindsConfirmationToProjectVersion`；`go test -count=1 -run '^TestActivationDiffBindsConfirmationToProjectVersion$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "TD-03.9",
       "status": "pass",
-      "evidence": "`TestFirstPassCurrentTenantRoleRejectsOldTokenAndReplay`；`go test -count=1 -run '^TestFirstPassCurrentTenantRoleRejectsOldTokenAndReplay$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestFirstPassCurrentTenantRoleRejectsOldTokenAndReplay`；`go test -count=1 -run '^TestFirstPassCurrentTenantRoleRejectsOldTokenAndReplay$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
+    },
+    {
+      "id": "TD-03.11",
+      "status": "pass",
+      "evidence": "`TestRestoreProjectRefusesNonOwner、TestOwnerTransferAuditFailureRollsBackBusinessWrite`；`go test -count=1 -run '^TestRestoreProjectRefusesNonOwner$|^TestOwnerTransferAuditFailure' ./internal/lingdoc/membership/`；head `d2e75af6`"
     },
     {
       "id": "TD-05",
       "status": "pass",
-      "evidence": "`TestProjectChapterDurabilityAndReplay 等 17 项(见矩阵组合命令)`；`go test -count=1 ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestProjectChapterDurabilityAndReplay 等 19 项(见矩阵组合命令)`；`go test -count=1 ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
     },
     {
       "id": "TD-06",
       "status": "pass",
-      "evidence": "`TestPostgresMigrationAndRepositoryContract`；`LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=<隔离端口> user=<隔离账号> password=<合成口令> dbname=<隔离库> sslmode=disable' go test -count=1 -run '^TestPostgresMigrationAndRepositoryContract$' ./internal/lingdoc/workspacecore/`；head `0f6f95c6`"
+      "evidence": "`TestPostgresMigrationAndRepositoryContract`；`LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=<隔离端口> user=<隔离账号> password=<合成口令> dbname=<隔离库> sslmode=disable' go test -count=1 -run '^TestPostgresMigrationAndRepositoryContract$' ./internal/lingdoc/workspacecore/`；head `d2e75af6`"
+    },
+    {
+      "id": "TD-07",
+      "status": "pass",
+      "evidence": "`「立项对话框把修改字段与待确认 AI 字段分列，他人修改单独列出并显示来源」等 4 项 + 既有 34 项(共 38 pass / 0 fail)`；`npx tsx --test src/views/lingdoc/workspaceActivationReview.test.ts src/views/lingdoc/DraftCandidatePanel.test.js src/views/lingdoc/projectContextWorkspace.test.js src/views/lingdoc/projectMembers.test.ts src/composables/useOwnerAvailability.test.ts src/views/lingdoc/workspaceOwnerFreeze.test.js（frontend/ 下执行）`；head `d2e75af6`"
+    },
+    {
+      "id": "TD-08",
+      "status": "pass",
+      "evidence": "`TestAcceptanceRecordsStaySeparateFromBetaProtocol`；`python -m unittest scripts.ci.test_lingdoc_acceptance_status -v（59 项 OK，含红验证）`；head `d2e75af6`"
     }
   ],
   "not_run": [],
   "known_limits": [
-    "四处 FAIL 为验证面缺口（实现面已在 main，属「补证据/补守护」级，不需要补产品实现）：TD-03.1 缺「非 active 租户创建被拒」具名用例；TD-03.11 的「恢复越权」半边缺具名用例（审计失败回滚半边已有直接证据）；TD-07 缺立项对话框差异两类列表、过期确认恢复、丢弃/恢复面板三个前端子面的组件级测试（对话框内嵌 Workspace.vue，组件级测试受「Workspace 挂载=保留路径集成步骤」记账约束，#695）；TD-08 为边界声明条目，无可 grep 的具名代码用例（判定器 GO_TEST_NAME/FRONTEND_TITLE 只认 Go TestXxx 与「前端测试标题」，python 守护类名不匹配）——元约束条目在现行三件套谓词下无 PASS 通道，回 M-0（#458）议。解除条件见矩阵对应行。",
-    "证据列的单跑命令是矩阵头部三条组合命令的子集；三条组合命令与两个全包命令（workspacecore ok 55.385s、membership ok 4.787s）均在该 head 实跑全绿。本机 Windows 原生 go test 因 gojieba 原生扩展崩溃（membership 包），Go 侧一律经 WSL（Ubuntu）执行。",
-    "TD-06 的隔离 PostgreSQL 17 为一次性容器（lingdoc-pg17-g1，postgres:17-alpine，独立端口/卷/库），既有 WeKnora-*/lingdoc-pg17-iso 容器零改动，取证后容器与卷已删除；DSN 口令为合成值不入仓（命令中占位书写）。internal/database 的 PG 全套（ok 37.763s）与 SQLite 侧全量（ok 29.449s）同 head 全绿。",
-    "语义覆盖无人背书（口径 §4.1/§7 已接受的代价）：US-19 的「项目资料」半边由 G5/G2 资产与来源投影面承接、TD-04 的「差异读取后他人修改」「激活与保存竞争」两面由读取-再保存-过期拒绝链与同一 CAS 闸门近似、TD-08 为边界声明条目（无产品行为，机器判定=判定器三态+守护测试）。",
-    "本表全部证据零引用 #120 作为完成依据；#120 的 Beta 首版结论独立记录于 docs/BETA_STATUS.md 与验收协议（TD-08）。"
+    "证据列的单跑命令是矩阵头部组合命令的子集；组合命令与两个全包命令均在该 head 实跑全绿。本机 Windows 原生 go test 因 gojieba 原生扩展崩溃（membership 包），Go 侧一律经 WSL（Ubuntu）执行。",
+    "TD-06 的隔离 PostgreSQL 17 为一次性容器（lingdoc-pg17-g1，postgres:17-alpine，独立端口/卷/库），既有 WeKnora-*/lingdoc-pg17-iso 容器零改动，取证后容器与卷已删除；DSN 口令为合成值不入仓（命令中占位书写）。缺口轮在 d2e75af6 重跑时宿主临时源端口曾撞占 55433 致 Docker 端口映射静默失败，换 55439 后双侧全绿（workspacecore 契约 ok 1.996s；database PG 全套 ok 60.672s；SQLite 侧 ok 59.208s）。",
+    "语义覆盖无人背书（口径 §4.1/§7 已接受的代价）：US-19 的「项目资料」半边由 G5/G2 资产与来源投影面承接、TD-04 的「差异读取后他人修改」「激活与保存竞争」两面由读取-再保存-过期拒绝链与同一 CAS 闸门近似、TD-07 的切片渲染测试证明真实模板的呈现结构与状态投影但不证明浏览器端行为、TD-08 的守护证明记录纪律而非产品行为。",
+    "TD-08 的守护类名以 Test 开头是为满足判定器 GO_TEST_NAME 谓词的具名用例要求；元约束条目判定谓词的系统澄清仍可作 M-0（#458）后续议题。本表全部证据零引用 #120 作为完成依据；#120 的 Beta 首版结论独立记录于 docs/BETA_STATUS.md 与《Beta首版真实验收协议》（TD-08）。"
   ]
 }
