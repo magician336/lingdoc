@@ -432,6 +432,158 @@ class BaseMoveCoverageTests(DecisionFixture):
             self.assertIn("Format, vet, test, and build", markdown)
 
 
+class FrontendDelegationTests(DecisionFixture):
+    """The gate does not run the frontend checks; it delegates them (#723).
+
+    ADR 0014, section three: the frontend verification lives once, in the
+    frontend workflow's ``verify`` job.  The gate's own frontend rerun is
+    gone, so the decision's frontend facts have to say **who** verifies:
+
+    * the coverage table names the delegated job of the frontend workflow,
+      not a gate-internal step that no longer exists;
+    * the published ``frontend`` verdict is a delegation statement naming
+      the delegated job -- delegation, not a skip.  "Skipped means NOT RUN,
+      not passed" stays true, so a head where the delegated job does not
+      run says "not run", never "delegated";
+    * require-coverage does not weaken (#602): when nothing runs for the
+      frontend on this head, the gate is red.
+    """
+
+    def _frontend_contribution(self, root: Path) -> decision.Decision:
+        return self._contribution(root, {
+            "frontend/src/views/lingdoc/Workspace.vue":
+                "<template>delegated</template>\n",
+        })
+
+    def test_a_frontend_change_selects_the_delegated_frontend_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+
+            # The delegated job runs: the frontend workflow's verify job is
+            # the one that tests, type-checks and builds the frontend.
+            self.assertTrue(_job_runs(
+                result, ".github/workflows/frontend.yml", "verify"))
+            self.assertFalse(result.uncovered)
+
+    def test_the_coverage_names_the_delegated_job_not_a_gate_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+
+            row = next(row for row in result.coverage
+                       if row.surface.startswith("frontend/"))
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Test, type-check, and build", row.verified_by)
+            # The gate's own frontend step is gone: naming it would point at
+            # a check nobody runs.
+            self.assertNotIn("Frontend: test, type-check and build",
+                             row.verified_by)
+            self.assertNotIn("Frontend: test, type-check and build",
+                             row.watched_by)
+
+    def test_the_published_frontend_verdict_is_a_delegation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._frontend_contribution(root)
+            outputs = decision.write_outputs(result)
+
+            self.assertIn("delegated", outputs["frontend"])
+            self.assertIn("frontend.yml#verify", outputs["frontend"])
+            self.assertIn("Test, type-check, and build", outputs["frontend"])
+
+    def test_a_change_that_touches_no_frontend_says_not_run(self):
+        """Delegation is not a skip, and a skip is not a delegation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertFalse(result.frontend)
+            self.assertTrue(outputs["frontend"].startswith("not run"),
+                            outputs["frontend"])
+            self.assertNotIn("delegated", outputs["frontend"])
+
+    def test_a_manual_run_does_not_claim_a_delegation(self):
+        """A dispatch starts no frontend workflow on this head."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide(
+                {"action": "manual", "reason": "full scope requested"}, root)
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.frontend)
+            self.assertTrue(outputs["frontend"].startswith("not run"),
+                            outputs["frontend"])
+            self.assertNotIn("delegated", outputs["frontend"])
+
+    def _manifest_without_a_frontend_runner(self) -> tuple:
+        """A manifest in which nothing runs for the frontend on this head.
+
+        The two frontend surfaces stop watching ``frontend/`` and the only
+        surface that still claims it is the provider step -- which does not
+        run for a frontend-only change.  This is the shape "the delegated
+        run was removed" takes at the judgement seam.
+        """
+        patched = []
+        for surface in manifest.load_surfaces():
+            if surface.name in ("frontend", "pr-gate-frontend"):
+                patched.append(dataclasses.replace(surface,
+                                                   paths=("elsewhere/**",)))
+            elif surface.name == "pr-gate-provider":
+                patched.append(dataclasses.replace(
+                    surface, paths=surface.paths + ("frontend/",)))
+            else:
+                patched.append(surface)
+        return tuple(patched)
+
+    def test_removing_the_delegated_run_leaves_the_frontend_uncovered(self):
+        """require-coverage does not weaken behind the delegation (#602)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "frontend/src/views/lingdoc/Workspace.vue",
+                  "<template>delegated</template>\n")
+            git(root, "add", "-A"); git(root, "commit", "-m", "contribution")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=self._manifest_without_a_frontend_runner()):
+                result = decision.decide(event, root)
+
+            row = next(row for row in result.coverage
+                       if row.surface.startswith("frontend/"))
+            self.assertEqual(row.status, "not verified")
+            self.assertEqual(row.verified_by, ())
+            self.assertTrue(result.uncovered)
+            self.assertIn("no job that compiles or tests", result.reason)
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=self._manifest_without_a_frontend_runner()):
+                with self.assertRaises(SystemExit) as caught:
+                    decision.publish(event, root, require_coverage=True,
+                                     whitespace=False)
+            self.assertNotEqual(caught.exception.code, 0)
+
+
 class GovernanceTests(DecisionFixture):
     """The gate judges itself: a change to the gate runs the whole gate."""
 
@@ -840,13 +992,24 @@ class PreRefactorGoldenTests(DecisionFixture):
                         self.assertEqual(outputs[field], expected, field)
 
     # What the pull request gate read before the refactor, and still reads.
+    # The ``frontend`` value changed with #723 (ADR 0014): the gate no longer
+    # runs the frontend itself, so the flag became a verdict -- a delegation
+    # when the delegated job runs on this head, an honest "not run" when it
+    # does not.  These three scenarios touch no frontend, so the value is the
+    # not-run wording on every row.
     GATE_GOLDEN = {
         "code_change": {"contracts": "true", "backend": "true",
-                        "frontend": "false", "provider_tests": "true"},
+                        "frontend": "not run: frontend verification is not "
+                                    "selected on this head",
+                        "provider_tests": "true"},
         "docs_push": {"contracts": "true", "backend": "true",
-                      "frontend": "false", "provider_tests": "false"},
+                      "frontend": "not run: frontend verification is not "
+                                  "selected on this head",
+                      "provider_tests": "false"},
         "baseline_merge": {"contracts": "true", "backend": "true",
-                           "frontend": "false", "provider_tests": "true"},
+                           "frontend": "not run: frontend verification is not "
+                                       "selected on this head",
+                           "provider_tests": "true"},
     }
 
     def test_the_gate_flags_are_the_ones_the_old_implementation_gave(self):
@@ -1602,7 +1765,11 @@ class PushEventTests(DecisionFixture):
             self.assertEqual(outputs["run_targeted"], "true")
             self.assertEqual(outputs["contracts"], "true")
             self.assertEqual(outputs["backend"], "true")
-            self.assertEqual(outputs["frontend"], "true")
+            # #723: the whole-scope frontend verification is delegated to the
+            # frontend workflow's verify job, and the verdict names it.
+            self.assertEqual(outputs["frontend"],
+                             "delegated to frontend.yml#verify "
+                             "(Test, type-check, and build)")
             self.assertIn("frontend", outputs["surface"])
             self.assertIn("./internal/lingdoc/...", outputs["provider_packages"])
 

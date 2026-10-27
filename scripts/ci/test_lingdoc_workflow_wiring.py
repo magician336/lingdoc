@@ -190,10 +190,11 @@ class GateStepWiringTests(unittest.TestCase):
     """The steps of the pull request gate read one decision boolean each.
 
     The pull request gate is a *step-level* gate: its job always runs and its
-    steps are skipped one by one.  These three mistakes stay silent in CI --
-    a step that decides the formatting-only shortcut a second time, a step
-    that keeps running when the shortcut says otherwise, and a step whose
-    condition combines two booleans -- so they are guarded here.
+    steps are skipped one by one.  Mistakes that stay silent in CI are guarded
+    here: a step that decides the formatting-only shortcut a second time, a
+    step whose condition combines two booleans -- and, since #723, the return
+    of the deleted frontend rerun in any form, be it a dead ``run_frontend``
+    read or the npm commands themselves.
     """
 
     REVIEW = "lingdoc-review.yml"
@@ -223,20 +224,56 @@ class GateStepWiringTests(unittest.TestCase):
         for step in contract_steps:
             self.assertNotIn("format_only", str(step.get("if", "")))
 
-    def test_the_provider_and_frontend_steps_are_gated(self):
+    def test_the_provider_step_is_gated(self):
         gated = [step for step in self._steps(self.REVIEW)
-                 if "run_providers" in str(step.get("if", ""))
-                 or ("run_frontend" in str(step.get("if", ""))
-                     and "contracts" not in str(step.get("if", "")))]
-        self.assertTrue(gated, "the provider and frontend steps were not found")
+                 if "run_providers" in str(step.get("if", ""))]
+        self.assertTrue(gated, "the provider step was not found")
         for step in gated:
-            # One boolean each: the decision module already folded the
+            # One boolean: the decision module already folded the
             # formatting-only shortcut into it.
             condition = str(step.get("if", ""))
             self.assertNotIn("format_only", condition)
             self.assertNotIn("&&", condition)
-            self.assertRegex(condition,
-                             r"steps\.scope\.outputs\.run_(providers|frontend) == 'true'")
+            self.assertEqual(condition,
+                             "steps.scope.outputs.run_providers == 'true'")
+
+    def test_the_gate_no_longer_reruns_the_frontend(self):
+        """The frontend verification lives once, in the frontend workflow.
+
+        ADR 0014, section three: the gate's own setup-node step and its
+        "Test, type-check and build frontend" step are gone, and with them
+        the ``run_frontend`` read.  A leftover condition on ``run_frontend``
+        would read an output the workflow never consumes, and a leftover npm
+        step would be the second copy of the three commands this ticket
+        exists to delete.
+        """
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertNotIn(
+            "run_frontend", text,
+            "the gate still reads run_frontend; the frontend rerun was to be "
+            "deleted, not kept on a dead output")
+        self.assertNotIn("setup-node", text,
+                         "the gate still sets up Node; it runs no JavaScript")
+        self.assertNotIn("npm", text,
+                         "the gate still runs an npm command; the three "
+                         "frontend commands live in frontend.yml alone")
+
+    def test_the_gate_publishes_the_delegated_frontend_verdict(self):
+        """The summary's frontend row reads the decision, not a dead outcome.
+
+        The five-key table keeps its frontend field; its value is now the
+        decision's delegation statement, so the step summary can say who
+        verifies the frontend instead of reporting the outcome of a step
+        that no longer exists.
+        """
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertIn("steps.scope.outputs.frontend", text)
+        self.assertNotIn("steps.frontend.outcome", text)
+        # The wording keeps delegation and skip apart (ADR 0014): a
+        # delegated check has real evidence on the named job; a skipped
+        # check is NOT RUN.
+        self.assertIn("Skipped means NOT RUN", text)
+        self.assertIn("Delegated", text)
 
 
 if __name__ == "__main__":
