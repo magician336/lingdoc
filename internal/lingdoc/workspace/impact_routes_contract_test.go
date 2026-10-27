@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -163,7 +164,7 @@ func validateOperationResponse(t *testing.T, doc map[string]any, compiler *jsons
 		t.Fatalf("%s %s returned unparsable JSON: %v", strings.ToUpper(method), path, err)
 	}
 	if err := schema.Validate(value); err != nil {
-		t.Fatalf("%s %s response does not satisfy %s:\n%s", strings.ToUpper(method), path, ref, string(body))
+		t.Fatalf("%s %s response does not satisfy %s: %v\n%s", strings.ToUpper(method), path, ref, err, string(body))
 	}
 }
 
@@ -172,6 +173,7 @@ func validateOperationResponse(t *testing.T, doc map[string]any, compiler *jsons
 type routeContractFixture struct {
 	engine   *gin.Engine
 	service  *core.Service
+	db       *gorm.DB
 	project  Project
 	chapters []Chapter
 }
@@ -203,7 +205,7 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 	if err != nil {
 		t.Fatalf("read fixture chapters: %v", err)
 	}
-	return routeContractFixture{engine: engine, service: service, project: project, chapters: chapters}
+	return routeContractFixture{engine: engine, service: service, db: db, project: project, chapters: chapters}
 }
 
 // createChangeForAssessment creates a real ChangeSet without applying it and
@@ -259,15 +261,16 @@ func acceptanceTasks(t *testing.T, f routeContractFixture) []core.ImpactTask {
 }
 
 // impactOwnedPathSuffixes is the impact acceptance surface named by Spec #198,
-// and it is the complete G3 published surface of RegisterImpactRoutes. The G6
-// runtime/trial/route families are registered by the same helper but belong to
-// the G6 track and are deliberately out of scope here; the residual gap between
-// the G6 router and the contract is tracked as G6 debt, not asserted as an
-// impact failure. Within this list the coverage is bidirectional and total:
-// every registered path must be published, every published path must be
-// served, and every response body must satisfy the schema (see the three tests
-// below). `impact-assessment` joined this list in #207, which closed the gap
-// #203 recorded here.
+// and it is the complete G3 published surface of RegisterImpactRoutes. Within
+// this list the coverage is bidirectional and total: every registered path must
+// be published, every published path must be served, and every response body
+// must satisfy the schema (see the three tests below). `impact-assessment`
+// joined this list in #207, which closed the gap #203 recorded here.
+//
+// The G6 runtime/trial families are registered by the same helper and used to
+// be left out of this file as G6 debt. #471 closed that debt: they are checked
+// by the same two directions (isG6OwnedPath below), with their own exact count,
+// so the G6 segment and the contract cannot drift apart unnoticed either.
 //
 // `/assess` joined this list in #223. It was registered but unpublished, so a
 // generated client had no way to trigger an assessment; the contract now
@@ -308,10 +311,35 @@ func isRoadmapOwnedPath(path string) bool {
 	return false
 }
 
+// runtimeOwnedOperationCount is the number of runtime/trial operations #382/#383
+// registered through RegisterImpactRoutes. Like the roadmap count, it is
+// asserted as **exact equality** in both directions: a predicate that matched
+// part of the family would otherwise read as coverage while leaving the rest
+// unchecked, which is the same silent-skip defect the G6 debt itself was.
+const runtimeOwnedOperationCount = 18
+
+// isG6OwnedPath tells whether a path belongs to the G6 runtime/trial surface.
+// It accepts the contract form ({projectId}) and the registered gin form
+// (:projectId) for the same reason isRoadmapOwnedPath does.
+//
+// The prefix `/trial-` also covers `/trial-decisions/{decisionId}/sign`, which
+// sits outside the `/trial-windows` subtree but belongs to the same family.
+func isG6OwnedPath(path string) bool {
+	for _, prefix := range []string{
+		"/projects/{projectId}/runtime/", "/projects/:projectId/runtime/",
+		"/projects/{projectId}/trial-", "/projects/:projectId/trial-",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Direction 1: every impact/dependency/stabilize/preflight route the server
 // registers is published in the contract, and the same holds for the roadmap
-// routes #250 added. An unpublished route is a route no generated client can
-// call.
+// routes #250 added and for the G6 runtime/trial family #471 folded in here. An
+// unpublished route is a route no generated client can call.
 func TestEveryImpactRouteIsPublished(t *testing.T) {
 	doc, _ := contractDocument(t)
 	// The roadmap fixture registers the impact routes and the roadmap routes on
@@ -319,16 +347,20 @@ func TestEveryImpactRouteIsPublished(t *testing.T) {
 	engine := newRoadmapHTTPFixture(t).engine
 	registered := routedOperations(engine)
 	var missing, checked []string
-	roadmapChecked := 0
+	roadmapChecked, g6Checked := 0, 0
 	for method, paths := range registered {
 		for path := range paths {
 			roadmap := isRoadmapOwnedPath(path)
-			if !roadmap && !isImpactOwnedPath(path, impactOwnedPathSuffixes) {
+			g6 := isG6OwnedPath(path)
+			if !roadmap && !g6 && !isImpactOwnedPath(path, impactOwnedPathSuffixes) {
 				continue
 			}
 			checked = append(checked, strings.ToUpper(method)+" "+path)
 			if roadmap {
 				roadmapChecked++
+			}
+			if g6 {
+				g6Checked++
 			}
 			if _, ok := contractOperation(t, doc, method, path); !ok {
 				missing = append(missing, strings.ToUpper(method)+" "+path)
@@ -338,20 +370,23 @@ func TestEveryImpactRouteIsPublished(t *testing.T) {
 	if len(checked) == 0 {
 		t.Fatal("no impact routes were checked; the path filter matched nothing")
 	}
+	t.Logf("direction 1: %d registered operations checked, %d of them roadmap, %d runtime/trial", len(checked), roadmapChecked, g6Checked)
+	sort.Strings(missing)
+	for _, operation := range missing {
+		t.Errorf("registered route %s is absent from the OpenAPI contract", operation)
+	}
 	if roadmapChecked != roadmapOwnedOperationCount {
 		t.Fatalf("only %d roadmap operations were checked; the roadmap path filter did not match exactly the %d routes #250 registered", roadmapChecked, roadmapOwnedOperationCount)
 	}
-	t.Logf("direction 1: %d registered operations checked, %d of them roadmap", len(checked), roadmapChecked)
-	sort.Strings(missing)
-	for _, operation := range missing {
-		t.Errorf("registered impact route %s is absent from the OpenAPI contract", operation)
+	if g6Checked != runtimeOwnedOperationCount {
+		t.Fatalf("%d runtime/trial operations were checked; the G6 path filter did not match exactly the %d routes #382/#383 registered", g6Checked, runtimeOwnedOperationCount)
 	}
 }
 
 // Direction 2: every published impact/dependency/stabilize/preflight
 // operation is actually served, and the same holds for the published roadmap
-// operations. A contract path with no handler is a promise the server does not
-// keep.
+// operations and for the published G6 runtime/trial operations. A contract path
+// with no handler is a promise the server does not keep.
 func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	doc, _ := contractDocument(t)
 	engine := newRoadmapHTTPFixture(t).engine
@@ -361,18 +396,20 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	if !ok {
 		t.Fatal("contract has no paths object")
 	}
-	// Only the impact surface is in scope here; the G4/G5/G6 trial and runtime
-	// families are registered by this same helper but are not part of the impact
-	// impact/dependency/stabilization acceptance surface.
+	// The impact surface, the roadmap surface and the G6 runtime/trial family
+	// are all registered by the fixtures above; the G6 family joined this
+	// direction in #471.
 	owned := impactOwnedPathSuffixes
 	checked := 0
 	roadmapChecked := 0
+	g6Checked := 0
 	for path, item := range paths {
 		if !strings.HasPrefix(path, "/projects/{projectId}/") {
 			continue
 		}
 		roadmap := isRoadmapOwnedPath(path)
-		if !roadmap && !isImpactOwnedPath(path, owned) {
+		g6 := isG6OwnedPath(path)
+		if !roadmap && !g6 && !isImpactOwnedPath(path, owned) {
 			continue
 		}
 		item, ok := item.(map[string]any)
@@ -383,6 +420,9 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 			checked++
 			if roadmap {
 				roadmapChecked++
+			}
+			if g6 {
+				g6Checked++
 			}
 			if registered[strings.ToLower(method)][path] {
 				continue
@@ -396,7 +436,10 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	if roadmapChecked != roadmapOwnedOperationCount {
 		t.Fatalf("only %d roadmap contract operations were checked; the roadmap path filter did not match exactly the %d operations #297 published", roadmapChecked, roadmapOwnedOperationCount)
 	}
-	t.Logf("direction 2: %d published operations checked, %d of them roadmap", checked, roadmapChecked)
+	if g6Checked != runtimeOwnedOperationCount {
+		t.Fatalf("only %d runtime/trial contract operations were checked; the G6 path filter did not match exactly the %d operations #382/#383 published", g6Checked, runtimeOwnedOperationCount)
+	}
+	t.Logf("direction 2: %d published operations checked, %d of them roadmap, %d runtime/trial", checked, roadmapChecked, g6Checked)
 }
 
 // Direction 3: the bytes the running server returns satisfy the schema the
@@ -673,6 +716,267 @@ func TestRuntimeResponsesSatisfyPublishedSchemas(t *testing.T) {
 		t.Fatalf("%d roadmap operations were validated against the published schemas; the roadmap surface has %d published operations", len(roadmapResponses), roadmapOwnedOperationCount)
 	}
 	t.Logf("direction 3: %d roadmap operations validated against the published schemas", len(roadmapResponses))
+}
+
+// Direction 3 for the G6 runtime/trial family (#471): the two endpoints #382
+// added and the #383 rollback are reachable over HTTP, and the bytes both sides
+// exchange satisfy the schemas the contract advertises.
+//
+// Path existence alone (direction 2) would not catch a request field the Go
+// input type accepts but the contract forbids, a response field the handler
+// emits but the contract omits, or an error body whose shape drifted from the
+// published ErrorResponse. Those are exactly the drifts a generated client
+// breaks on, so each case below validates the real request and the real
+// response body, not the handler in isolation.
+//
+// The same fixture and the same validators as the impact direction 3 are used
+// on purpose: one contract document, one comparator, two families.
+func TestRuntimeRoutesSatisfyPublishedSchemas(t *testing.T) {
+	doc, compiler := contractDocument(t)
+	f := newRouteContractFixture(t)
+	base := "/api/projects/" + f.project.ID
+	contractBase := "/projects/{projectId}"
+
+	send := func(ctx context.Context, method, path, key, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
+		if key != "" {
+			request.Header.Set("Idempotency-Key", key)
+		}
+		response := httptest.NewRecorder()
+		f.engine.ServeHTTP(response, request)
+		return response
+	}
+	human := func(method, path, key, body string) *httptest.ResponseRecorder {
+		return send(actorContext("reader"), method, path, key, body)
+	}
+	// requireError asserts the published status and code of a refusal, and
+	// validates the refusal body against the schema the contract publishes for
+	// that status.
+	requireError := func(response *httptest.ResponseRecorder, method, path string, status int, code string) {
+		t.Helper()
+		if response.Code != status {
+			t.Fatalf("%s %s = %d, want %d: %s", method, path, response.Code, status, response.Body.String())
+		}
+		// A body that is not JSON at all means the router answered, not the
+		// handler: gin's own 404 page is text. Say so instead of letting the
+		// schema compiler report "unparsable JSON", which reads like a contract
+		// defect rather than a missing route.
+		var envelope map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("%s %s answered %d with a non-JSON body (%s); no handler matched this route?", method, path, status, response.Body.String())
+		}
+		validateOperationResponse(t, doc, compiler, method, path, strconv.Itoa(status), response.Body.Bytes())
+		failure, ok := envelope["error"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s %s refusal has no error object: %s", method, path, response.Body.String())
+		}
+		if failure["code"] != code {
+			t.Fatalf("%s %s refusal = %s, want code %q", method, path, response.Body.String(), code)
+		}
+	}
+
+	// requireHumanDecisionRefusal asserts the 403 the identity guard returns.
+	//
+	// This one refusal cannot go through requireError: the guard answers with
+	// sendErrorDetails, which always emits `details` (null when it has none),
+	// while the published Error schema declares details `type: object,
+	// nullable: true`. `nullable` is OpenAPI 3.0 vocabulary and the
+	// JSON-Schema validator used here does not implement it, so real bytes with
+	// `"details": null` fail at /error/details. Asserting the shape item by
+	// item keeps the check honest instead of skipping the body; the nullable
+	// mismatch is a contract defect of its own and is not #471's to rewrite.
+	requireHumanDecisionRefusal := func(response *httptest.ResponseRecorder, method, path string) {
+		t.Helper()
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("%s %s = %d, want 403: %s", method, path, response.Code, response.Body.String())
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("decode refusal %s: %v", response.Body.String(), err)
+		}
+		if _, ok := envelope["request_id"]; !ok {
+			t.Fatalf("%s %s refusal has no request_id: %s", method, path, response.Body.String())
+		}
+		failure, ok := envelope["error"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s %s refusal has no error object: %s", method, path, response.Body.String())
+		}
+		if failure["code"] != "human_decision_required" || failure["message"] == "" || failure["retryable"] != false {
+			t.Fatalf("%s %s human-decision refusal = %s, want human_decision_required and retryable false", method, path, response.Body.String())
+		}
+		details, present := failure["details"]
+		if !present || details != nil {
+			// sendErrorDetails carries details explicitly; the value is null
+			// because this refusal has nothing extra to disclose.
+			t.Fatalf("%s %s human-decision refusal details = %v (present=%v), want an explicit null", method, path, details, present)
+		}
+	}
+
+	// #382-A read-back: an empty projection is still a contract-shaped payload,
+	// so the shape is checked before any rule exists.
+	response := human(http.MethodGet, base+"/runtime/alert-rules", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("list alert rules status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase+"/runtime/alert-rules", "200", response.Body.Bytes())
+
+	// #382-A create: the request is validated against the published input
+	// schema, so a Go field the contract does not declare fails here.
+	createBody := `{"signal":"audit/failed","severity":"P1","action":"notify","responsible_id":"reader"}`
+	response = human(http.MethodPost, base+"/runtime/alert-rules", "g6-contract-rule", createBody)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create alert rule status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/runtime/alert-rules", []byte(createBody))
+	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/runtime/alert-rules", "201", response.Body.Bytes())
+	var created struct {
+		Data core.RuntimeAlertRule `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created rule: %v", err)
+	}
+	rule := created.Data
+	if rule.ID == "" || rule.Status != "ACTIVE" || rule.Version != 1 {
+		t.Fatalf("created rule = %+v, want an ACTIVE version 1 rule", rule)
+	}
+
+	// #382-B disable: the operator decision goes through the published action
+	// route and bumps the rule's version. This runs before the refusal cases so
+	// that a handler removed from the router fails here — on a success status —
+	// rather than hiding behind the 404 that the out-of-scope caller also gets.
+	disableBody := `{"expected_version":1,"operation":"disable","reason":"停用合成规则"}`
+	response = human(http.MethodPost, base+"/runtime/alert-rules/"+rule.ID+"/actions", "g6-contract-disable", disableBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("disable alert rule status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions", []byte(disableBody))
+	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions", "200", response.Body.Bytes())
+	var disabled struct {
+		Data core.RuntimeAlertRule `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &disabled); err != nil {
+		t.Fatalf("decode disabled rule: %v", err)
+	}
+	if disabled.Data.Status != "DISABLED" || disabled.Data.Version != 2 || disabled.Data.ID != rule.ID {
+		t.Fatalf("disabled rule = %+v, want the same rule DISABLED at version 2", disabled.Data)
+	}
+
+	// #382-B refusal: a tenant member who is not a member of this project is
+	// answered 404 — the refusal must not reveal that the project or its rules
+	// exist — and it must leave the rule untouched.
+	if err := f.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, ?)", 7, "outsider", "active").Error; err != nil {
+		t.Fatalf("seed outsider: %v", err)
+	}
+	outsider := func(method, path, key, body string) *httptest.ResponseRecorder {
+		return send(actorContext("outsider"), method, path, key, body)
+	}
+	response = outsider(http.MethodGet, base+"/runtime/alert-rules", "", "")
+	requireError(response, http.MethodGet, contractBase+"/runtime/alert-rules", http.StatusNotFound, "not_found")
+
+	response = outsider(http.MethodPost, base+"/runtime/alert-rules/"+rule.ID+"/actions", "g6-contract-outsider",
+		`{"expected_version":2,"operation":"enable","reason":"越权启用合成规则"}`)
+	requireError(response, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions", http.StatusNotFound, "not_found")
+
+	// #382-B refusal: an API-key principal is a machine, not a person, so the
+	// human-decision guard refuses the action before it reaches the domain.
+	response = send(machineContext(), http.MethodPost, base+"/runtime/alert-rules/"+rule.ID+"/actions", "g6-contract-machine",
+		`{"expected_version":2,"operation":"enable","reason":"机器启用合成规则"}`)
+	requireHumanDecisionRefusal(response, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions")
+
+	// The two refusals above changed nothing: the owner still reads one rule,
+	// still DISABLED at version 2. This is the read-back #382-A added, over the
+	// same HTTP seam.
+	response = human(http.MethodGet, base+"/runtime/alert-rules", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("list alert rules after refusals status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase+"/runtime/alert-rules", "200", response.Body.Bytes())
+	var listed struct {
+		Data []core.RuntimeAlertRule `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode rule list: %v", err)
+	}
+	if len(listed.Data) != 1 || listed.Data[0].Status != "DISABLED" || listed.Data[0].Version != 2 {
+		t.Fatalf("rules after refusals = %+v, want the one rule DISABLED at version 2", listed.Data)
+	}
+
+	// A stale expected_version is a 409 with the published error shape, not a
+	// silent overwrite.
+	response = human(http.MethodPost, base+"/runtime/alert-rules/"+rule.ID+"/actions", "g6-contract-stale",
+		`{"expected_version":1,"operation":"enable","reason":"过期版本启用"}`)
+	requireError(response, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions", http.StatusConflict, "version_conflict")
+
+	// An undeclared field is a 400 with the published error shape: the request
+	// type does not silently accept a client-supplied "confirmed" flag.
+	response = human(http.MethodPost, base+"/runtime/alert-rules/"+rule.ID+"/actions", "g6-contract-unknown",
+		`{"expected_version":2,"operation":"enable","reason":"未知字段启用","confirmed":true}`)
+	requireError(response, http.MethodPost, contractBase+"/runtime/alert-rules/{ruleId}/actions", http.StatusBadRequest, "invalid_request")
+
+	// The refused writes above changed nothing either, and the disabled rule is
+	// still readable: it is turned off, not deleted.
+	response = human(http.MethodGet, base+"/runtime/alert-rules", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("list alert rules after disable status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase+"/runtime/alert-rules", "200", response.Body.Bytes())
+	listed = struct {
+		Data []core.RuntimeAlertRule `json:"data"`
+	}{}
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode rule list: %v", err)
+	}
+	if len(listed.Data) != 1 || listed.Data[0].Status != "DISABLED" || listed.Data[0].Version != 2 {
+		t.Fatalf("rules after disable = %+v, want the same rule DISABLED at version 2", listed.Data)
+	}
+
+	// #383 rollback: a rollback without a target is refused before anything is
+	// written, and a machine principal is refused by the human-decision guard.
+	response = human(http.MethodPost, base+"/runtime/controls", "g6-contract-rollback-empty",
+		`{"expected_version":0,"scope":{"kind":"project","value":"`+f.project.ID+`"},"action":"rollback","reason":"没有目标"}`)
+	requireError(response, http.MethodPost, contractBase+"/runtime/controls", http.StatusBadRequest, "invalid_request")
+
+	rollbackBody := `{"expected_version":0,"scope":{"kind":"project","value":"` + f.project.ID + `"},"action":"rollback","reason":"回退到已验证配置","rollback":{"template_version":"` + f.project.TemplateVersion + `"}}`
+	response = send(machineContext(), http.MethodPost, base+"/runtime/controls", "g6-contract-rollback-machine", rollbackBody)
+	requireHumanDecisionRefusal(response, http.MethodPost, contractBase+"/runtime/controls")
+
+	// The rollback records the configuration it points at and stops new writes;
+	// both the request shape and the returned control are contract-checked.
+	response = human(http.MethodPost, base+"/runtime/controls", "g6-contract-rollback", rollbackBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rollback status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/runtime/controls", []byte(rollbackBody))
+	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/runtime/controls", "200", response.Body.Bytes())
+	var controlled struct {
+		Data core.RuntimeControl `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &controlled); err != nil {
+		t.Fatalf("decode runtime control: %v", err)
+	}
+	control := controlled.Data
+	if control.Status != "PAUSED" || control.Version != 1 || control.RollbackTo == nil ||
+		control.RollbackTo.TemplateVersion != f.project.TemplateVersion {
+		t.Fatalf("runtime control = %+v, want a PAUSED version 1 control pointing at %s", control, f.project.TemplateVersion)
+	}
+
+	// The control is readable back over HTTP, which is what makes the rollback
+	// auditable rather than a write-only side effect.
+	response = human(http.MethodGet, base+"/runtime/controls", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("list runtime controls status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase+"/runtime/controls", "200", response.Body.Bytes())
+	var controls struct {
+		Data []core.RuntimeControl `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &controls); err != nil {
+		t.Fatalf("decode runtime controls: %v", err)
+	}
+	if len(controls.Data) != 1 || controls.Data[0].Status != "PAUSED" {
+		t.Fatalf("runtime controls = %+v, want the one PAUSED control", controls.Data)
+	}
 }
 
 // seedContractRouteEdge writes one frozen route edge version into the table
