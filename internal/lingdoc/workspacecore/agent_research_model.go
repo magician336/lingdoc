@@ -192,14 +192,15 @@ type ResearchResult struct {
 	Status         string    `json:"status"`
 }
 type ResearchRound struct {
-	Number      int       `json:"number"`
-	Query       string    `json:"query"`
-	Provider    string    `json:"provider"`
-	RetrievedAt time.Time `json:"retrieved_at"`
-	ResultIDs   []string  `json:"result_ids"`
-	Status      string    `json:"status"`
-	FailureCode string    `json:"failure_code,omitempty"`
-	Feedback    string    `json:"feedback,omitempty"`
+	Number        int       `json:"number"`
+	Query         string    `json:"query"`
+	Provider      string    `json:"provider"`
+	RetrievedAt   time.Time `json:"retrieved_at"`
+	ResultIDs     []string  `json:"result_ids"`
+	Status        string    `json:"status"`
+	FailureCode   string    `json:"failure_code,omitempty"`
+	FailureDetail string    `json:"failure_detail,omitempty"`
+	Feedback      string    `json:"feedback,omitempty"`
 }
 type ResearchRun struct {
 	ID            string           `json:"id"`
@@ -212,6 +213,7 @@ type ResearchRun struct {
 	Results       []ResearchResult `json:"results"`
 	Status        string           `json:"status"`
 	FailureCode   string           `json:"failure_code,omitempty"`
+	FailureDetail string           `json:"failure_detail,omitempty"`
 	RunMode       string           `json:"run_mode"`
 	CorrelationID string           `json:"correlation_id"`
 	CreatedBy     string           `json:"created_by"`

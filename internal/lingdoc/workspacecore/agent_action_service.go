@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/google/uuid"
 )
 
@@ -234,6 +235,10 @@ func (s *Service) runAgentOperation(ctx context.Context, actor Actor, projectID,
 	return outcome.Body, outcome.Status, outcome.Replayed, nil
 }
 func agentFailureCode(err error) string {
+	var search *ResearchSearchError
+	if errors.As(err, &search) && search.Provider == "" && search.Material != "" {
+		return "material_failure"
+	}
 	switch {
 	case errors.Is(err, ErrOutcomeUnknown):
 		return "outcome_unknown"
@@ -561,14 +566,28 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			}
 		}
 		round := ResearchRound{Number: number + 1, Query: task.Queries[number], Provider: providerIdentity, RetrievedAt: time.Now().UTC(), ResultIDs: []string{}, Status: "completed"}
+		roundFailed := searchErr != nil
 		if searchErr != nil {
-			round.Status = "failed"
-			round.FailureCode = agentFailureCode(searchErr)
-			run.Status = round.FailureCode
-			if run.Status != "cancelled" {
-				run.Status = "failed"
+			var partial *ResearchSearchError
+			if errors.As(searchErr, &partial) && partial.Partial && len(results) > 0 &&
+				!errors.Is(searchErr, context.Canceled) && !errors.Is(searchErr, context.DeadlineExceeded) {
+				// One retrieval path is degraded but the other returned hits:
+				// the round is not failed, and the degradation stays visible.
+				roundFailed = false
+				round.FailureDetail = ResearchFailureDetail(searchErr)
+				logger.Warnf(ctx, "[Research] round %d degraded: %s (project=%s task=%s)", round.Number, round.FailureDetail, projectID, task.ID)
+			} else {
+				round.Status = "failed"
+				round.FailureCode = agentFailureCode(searchErr)
+				round.FailureDetail = ResearchFailureDetail(searchErr)
+				run.Status = round.FailureCode
+				if run.Status != "cancelled" {
+					run.Status = "failed"
+				}
+				run.FailureCode = round.FailureCode
+				run.FailureDetail = round.FailureDetail
+				logger.Errorf(ctx, "[Research] round %d failed: code=%s provider=%s project=%s task=%s detail=%s", round.Number, round.FailureCode, providerIdentity, projectID, task.ID, round.FailureDetail)
 			}
-			run.FailureCode = round.FailureCode
 		}
 		if !validAgentMode(mode) {
 			mode = "real"
@@ -595,13 +614,13 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 			}
 		}
 		run.Rounds = append(run.Rounds, round)
-		if number == len(task.Queries)-1 && searchErr == nil {
+		if number == len(task.Queries)-1 && !roundFailed {
 			run.Status = "completed"
 		}
 		if persistErr := s.persistResearchProgress(context.WithoutCancel(ctx), actor, projectID, &run); persistErr != nil {
 			return nil, 0, false, persistErr
 		}
-		if searchErr != nil {
+		if roundFailed {
 			break
 		}
 	}

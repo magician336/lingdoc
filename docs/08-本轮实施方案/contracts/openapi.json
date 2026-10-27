@@ -47954,6 +47954,9 @@
           "failure_code": {
             "type": "string"
           },
+          "failure_detail": {
+            "type": "string"
+          },
           "feedback": {
             "type": "string"
           }
@@ -48093,6 +48096,9 @@
             "type": "string"
           },
           "failure_code": {
+            "type": "string"
+          },
+          "failure_detail": {
             "type": "string"
           },
           "run_mode": {

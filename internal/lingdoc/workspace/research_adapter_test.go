@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
@@ -46,6 +47,7 @@ type adapterSourcesStub struct {
 	SourceApplicationService
 	assets         []evidence.Asset
 	retrievalCalls int
+	retrieveErr    error
 	input          RetrieveSourcesInput
 	getSourceCalls int
 }
@@ -56,6 +58,9 @@ func (s *adapterSourcesStub) ListAssets(context.Context, Actor, string) ([]evide
 func (s *adapterSourcesStub) RetrieveSources(_ context.Context, _ Actor, _ string, input RetrieveSourcesInput) ([]evidence.Source, error) {
 	s.retrievalCalls++
 	s.input = input
+	if s.retrieveErr != nil {
+		return nil, s.retrieveErr
+	}
 	return []evidence.Source{}, nil
 }
 func (s *adapterSourcesStub) GetSource(context.Context, Actor, string, string) (evidence.Source, error) {
@@ -156,6 +161,36 @@ func TestSourceReadChecksFunctionScopeBeforeReturningExcerpt(t *testing.T) {
 		t.Fatalf("source excerpt was fetched %d times before function-scope authorization", sources.getSourceCalls)
 	}
 }
+
+// TestSearchResearchKeepsTheExternalPathWhenMaterialRetrievalFails pins the
+// first half of #335 at the adapter seam: the material path used to return
+// early, so a project whose local index was unavailable never reached a
+// configured external provider at all.  The provider result must still come
+// back, and the material failure must remain visible as a partial failure
+// rather than disappearing.
+func TestSearchResearchKeepsTheExternalPathWhenMaterialRetrievalFails(t *testing.T) {
+	db := adapterTestDB(t)
+	sources := &adapterSourcesStub{
+		assets:      []evidence.Asset{{ID: "asset", AssetRevision: 1, ProcessingState: evidence.AssetStateReady}},
+		retrieveErr: errors.New("no retrievable indexing pipelines across 1 KBs"),
+	}
+	web := &adapterWebStub{}
+	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, nil, web)
+	actor := core.Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleOwner}
+	results, _, err := adapter.SearchResearch(context.Background(), actor, "project",
+		core.ResearchTask{AssetIDs: []string{"asset"}, ProviderID: "synthetic-provider"}, "合成检索")
+	if web.calls != 1 {
+		t.Fatalf("external provider never reached: calls=%d err=%v", web.calls, err)
+	}
+	if len(results) != 1 || results[0].Level != "unread_search_summary" {
+		t.Fatalf("external hits were dropped: %+v", results)
+	}
+	var degraded *core.ResearchSearchError
+	if !errors.As(err, &degraded) || !degraded.Partial || !strings.Contains(degraded.Material, "indexing pipelines") {
+		t.Fatalf("material degradation is invisible: %v", err)
+	}
+}
+
 func TestWebSearchAdapterUsesTenantProviderAndKeepsSummaryLowerTier(t *testing.T) {
 	db := adapterTestDB(t)
 	projects := &adapterProjectsStub{}
