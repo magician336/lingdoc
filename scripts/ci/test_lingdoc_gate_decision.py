@@ -682,12 +682,15 @@ class ProviderDelegationTests(DecisionFixture):
             self.assertTrue(result.provider_shards)
             self.assertEqual(outputs["provider_delegate"],
                              "./internal/lingdoc/workspace/...")
-            # The key is the shard list's own union: the workflow-side
-            # consumer learns nothing the shards do not run.
+            # The key is the shard list's own union -- a set of packages,
+            # deduped: one package may serve several `-run` shards
+            # (ADR 0015) and the consumer learns nothing the shards do
+            # not run.
             self.assertEqual(
                 outputs["provider_delegate"],
-                " ".join(pattern for shard in result.provider_shards
-                         for pattern in shard.packages))
+                " ".join(dict.fromkeys(
+                    pattern for shard in result.provider_shards
+                    for pattern in shard.packages)))
 
     def test_a_change_touching_no_provider_publishes_no_delegate(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -712,13 +715,23 @@ class ProviderDelegationTests(DecisionFixture):
             row = next(row for row in result.coverage
                        if row.surface == "internal/lingdoc/workspace")
             self.assertEqual(row.status, "verified")
-            self.assertIn("Provider shard lingdoc-workspace", row.verified_by)
+            # ADR 0015 splits the workspace family into `-run` shards; the
+            # coverage names every shard that ran, never the app job.
+            attributed = " ".join(
+                row.verified_by if isinstance(row.verified_by, (list, tuple))
+                else [row.verified_by])
+            watched = " ".join(
+                row.watched_by if isinstance(row.watched_by, (list, tuple))
+                else [row.watched_by])
+            for shard in ("lingdoc-workspace-a", "lingdoc-workspace-b",
+                          "lingdoc-workspace-c"):
+                self.assertIn(f"Provider shard {shard}", attributed)
             # The app job left this package to the shards on this head:
             # naming it here would credit a run that did not happen.
-            self.assertNotIn("Format, vet, test, and build", row.verified_by)
+            self.assertNotIn("Format, vet, test, and build", attributed)
             # The app surface still watches the paths -- it is the fail-open
             # verifier for the head where the shards do not run.
-            self.assertIn("Format, vet, test, and build", row.watched_by)
+            self.assertIn("Format, vet, test, and build", watched)
 
     def test_when_the_shards_do_not_run_the_app_job_keeps_the_claim(self):
         """Fail-open at the coverage seam: no delegate run, no dropped claim."""

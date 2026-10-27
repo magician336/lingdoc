@@ -1883,8 +1883,13 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         # empty value means no delegation, and the workflow side falls
         # back to the full list on any failure of this data (fail-open).
         "provider_delegate": " ".join(
-            pattern for shard in decision.provider_shards
-            for pattern in shard.packages),
+            dict.fromkeys(
+                pattern for shard in decision.provider_shards
+                for pattern in shard.packages)),
+        # The delegate is a set of packages: one package may serve several
+        # `-run` shards (ADR 0015 splits the workspace package by test
+        # name), and the consuming `go list` cares about paths, not
+        # partitions.
         # The shard matrix (#724, ADR 0014): JSON the workflow feeds to
         # fromJSON.  The workflow learns no package names from it -- the
         # list is spelled here and only here.  Empty (``[]``) exactly when
