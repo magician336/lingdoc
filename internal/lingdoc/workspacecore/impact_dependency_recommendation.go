@@ -242,7 +242,11 @@ func (s *Service) RecommendDependencyCandidates(ctx context.Context, actor Actor
 		Scope:     input.Scope,
 	})
 	if err != nil {
-		return nil, 0, false, err
+		// Whatever the adapter said, a model that could not answer is an
+		// unavailable recommender to the caller: the cause stays first in the
+		// chain, an adapter that already declared its own client form keeps
+		// it, and a bare provider error cannot leak as an internal error.
+		return nil, 0, false, errors.Join(err, ErrDependencyRecommendationUnavailable)
 	}
 	if result.ModelRunID == "" {
 		return nil, 0, false, ErrDependencyRecommendationInvalidOutput
