@@ -789,7 +789,7 @@ LEDGER_COLUMNS = ("id", "tenant_id", "project_id", "kind", "provider", "model_id
                   "source_kind", "source_id", "switched_from_model_id", "switch_reason",
                   "affected_steps_json", "created_at")
 
-# The cost basis values the DB ledger's money columns can carry (#527). The
+# The cost basis values the DB ledger's money columns can carry. The
 # vocabulary is owned by the Go acceptancebudget package; these names only
 # recognise the two readings that decide how the budget block is rendered.
 COST_BASIS_NOT_APPLICABLE = "not_applicable"
@@ -1575,7 +1575,7 @@ def ledger_summary(rows: list[dict[str, Any]], reason: str) -> dict[str, Any]:
     """The model parameters, the budget and the model switches, read from the ledger.
 
     The budget block sums only the rows whose cost basis says their money
-    columns were priced (#527 / F-2). A row under the "not_applicable" basis
+    columns were priced (F-2 review finding). A row under the "not_applicable" basis
     (the controlled Qwen profile) computed no amount: its 0 means "not
     computed", not "free", so it must not render as a free call -- the block
     says how many such rows exist instead. A row with no basis at all was

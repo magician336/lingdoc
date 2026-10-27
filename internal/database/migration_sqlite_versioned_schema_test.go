@@ -83,7 +83,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"memory_items":                    {"replaces_id"},                                                                                                   // 000094
 	"tenants":                         {"api_principal_config"},                                                                                          // 000064
 	"users":                           {"is_system_admin"},                                                                                               // 000053
-	"knowledges":                      {"pending_subtasks_count", "index_status"},                                                                       // 000056 / 000136 (#599)
+	"knowledges":                      {"pending_subtasks_count", "index_status"},                                                                        // 000056 / 000136 (#599)
 	"messages":                        {"attachments", "usage"},                                                                                          // 000034, 000085
 	"tenant_invitations":              {"token", "accepted_count"},                                                                                       // 000054
 	"embed_channels":                  {"allow_memory"},                                                                                                  // 000060

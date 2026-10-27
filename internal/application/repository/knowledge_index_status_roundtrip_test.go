@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -10,43 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// knowledgesIndexStatusDDL mirrors the knowledges columns a full-struct Save
-// (UpdateKnowledge) writes, plus the index_status column from migration
-// 000136 (sqlite 000057). custom_metadata is absent on purpose: UpdateKnowledge
-// omits it when the struct value is nil (same as knowledgesTestDDL).
-const knowledgesIndexStatusDDL = `
-CREATE TABLE IF NOT EXISTS knowledges (
-    id VARCHAR(36) PRIMARY KEY,
-    tenant_id INTEGER NOT NULL,
-    knowledge_base_id VARCHAR(36) NOT NULL,
-    type VARCHAR(50) NOT NULL DEFAULT '',
-    title VARCHAR(255) NOT NULL DEFAULT '',
-    description TEXT,
-    source VARCHAR(2048) NOT NULL DEFAULT '',
-    parse_status VARCHAR(50) NOT NULL DEFAULT 'unprocessed',
-    enable_status VARCHAR(50) NOT NULL DEFAULT 'enabled',
-    embedding_model_id VARCHAR(64),
-    file_name VARCHAR(255),
-    folder_path VARCHAR(1024) NOT NULL DEFAULT '',
-    file_type VARCHAR(50),
-    file_size BIGINT,
-    file_path TEXT,
-    file_hash VARCHAR(64),
-    storage_size BIGINT NOT NULL DEFAULT 0,
-    metadata TEXT,
-    tag_id VARCHAR(36),
-    summary_status VARCHAR(32) DEFAULT 'none',
-    last_faq_import_result TEXT DEFAULT NULL,
-    channel VARCHAR(50) NOT NULL DEFAULT 'web',
-    pending_subtasks_count INT NOT NULL DEFAULT 0,
-    index_status VARCHAR(16) NOT NULL DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    processed_at DATETIME,
-    error_message TEXT,
-    deleted_at DATETIME
-);
-`
+// indexStatusRoundTripMigrations 是本用例的库形态来源：基线 000000 建出
+// knowledges/chunks 的生产形状，000057 加 index_status 列并按 chunk 证据回填
+// ——夹具不得再手抄生产表结构（scripts/ci/test_lingdoc_fixture_schema_source.py）。
+var indexStatusRoundTripMigrations = []string{
+	"000000_init.up.sql",
+	"000057_knowledge_index_status.up.sql",
+}
 
 // The row-level index marker must survive the real repository seam: what the
 // parse run stamps on the struct must be what a reader gets back from
@@ -60,7 +32,11 @@ func TestKnowledgeIndexStatusRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	require.NoError(t, db.Exec(knowledgesIndexStatusDDL).Error)
+	for _, name := range indexStatusRoundTripMigrations {
+		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		require.NoError(t, err, "read migration %s", name)
+		require.NoError(t, db.Exec(string(body)).Error, "apply migration %s", name)
+	}
 	repo := NewKnowledgeRepository(db)
 	ctx := context.Background()
 

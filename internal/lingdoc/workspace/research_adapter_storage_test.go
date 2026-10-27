@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -28,6 +30,22 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
+
+// applySQLiteMigrations 让夹具的库形态来自生产迁移文件本身，而不是手抄
+// 生产表结构（scripts/ci/test_lingdoc_fixture_schema_source.py 守护的形状：
+// 基表 + 生产迁移，二者只能以迁移文件为准）。
+func applySQLiteMigrations(t *testing.T, db *gorm.DB, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		if err != nil {
+			t.Fatalf("read migration %s: %v", name, err)
+		}
+		if err := db.Exec(string(body)).Error; err != nil {
+			t.Fatalf("apply migration %s: %v", name, err)
+		}
+	}
+}
 
 // adapterStorageStub 是存储侧端口：按 #623 复现形态回答资料的源文件字节，
 // 或回答「读不到」。它只实现 GetKnowledgeFile——这正是 KnowledgeFileSource
@@ -64,18 +82,16 @@ func (s *adapterStorageSourcesStub) GetSource(context.Context, Actor, string, st
 }
 
 // seedStorageBackedKnowledge 把 seedBoundSource 落好的资料改成 #623 的复现
-// 形态：txt、file_path 是 resource:// 存储引用。并补上资产策略读取需要的
-// 对象表。
+// 形态：txt、file_path 是 resource:// 存储引用。资产策略读取需要的对象表与
+// 知识库表按生产迁移文件落（基线 000000 的 knowledge_bases ＋ 000037 的
+// lingdoc_g2_objects；均为 IF NOT EXISTS / 全新表，先落好的 knowledges/chunks
+// 不受影响）。
 func seedStorageBackedKnowledge(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`).Error; err != nil {
-		t.Fatalf("create object table: %v", err)
-	}
-	// UsesBuiltinConverter 按 KB 的解析路由回答 txt 是否走内置直读；表在即可，
-	// 无 chunking_config 即默认路由。
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_bases(id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,chunking_config TEXT,deleted_at DATETIME)`).Error; err != nil {
-		t.Fatalf("create knowledge base table: %v", err)
-	}
+	applySQLiteMigrations(t, db,
+		"000000_init.up.sql",
+		"000037_lingdoc_full_workflow.up.sql",
+	)
 	if err := db.Exec("INSERT OR IGNORE INTO knowledge_bases(id,tenant_id) VALUES(?,?)", "kb-1", 7).Error; err != nil {
 		t.Fatalf("seed knowledge base: %v", err)
 	}
@@ -133,16 +149,16 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	_, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db, deliveryMethodChapter())
 	ensureImpactRouteTables(t, db)
-	for _, ddl := range []string{
-		`CREATE TABLE knowledge_bases(id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,chunking_config TEXT,deleted_at DATETIME)`,
-		`CREATE TABLE lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
-		`CREATE TABLE lingdoc_g2_object_versions(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id,version))`,
-		`CREATE TABLE lingdoc_working_copies(project_id TEXT NOT NULL,chapter_id TEXT NOT NULL,base_chapter_version_id TEXT,spec_revision INTEGER NOT NULL,working_copy_revision INTEGER NOT NULL,body_markdown TEXT NOT NULL,source_ids_json TEXT NOT NULL,citation_usages_json TEXT NOT NULL,review_items_json TEXT NOT NULL,created_at DATETIME,updated_at DATETIME,PRIMARY KEY(project_id,chapter_id))`,
-	} {
-		if err := db.Exec(ddl).Error; err != nil {
-			t.Fatalf("create table: %v", err)
-		}
-	}
+	// 知识库/对象/工作副本表按生产迁移文件落：基线 000000（knowledge_bases、
+	// chunks 的生产形状）、000033（lingdoc_working_copies）、000037
+	//（lingdoc_g2_objects / g2_object_versions）。seedBoundSource 已建窄形状
+	// knowledges/chunks 的场合，基线的 IF NOT EXISTS 会跳过它们，故 chunks 的
+	// source_content 仍需补一列（ALTER 不属手抄生产表的守护范围）。
+	applySQLiteMigrations(t, db,
+		"000000_init.up.sql",
+		"000033_lingdoc_working_copies.up.sql",
+		"000037_lingdoc_full_workflow.up.sql",
+	)
 	if err := db.Exec("ALTER TABLE chunks ADD COLUMN source_content TEXT NOT NULL DEFAULT ''").Error; err != nil {
 		t.Fatalf("alter chunks: %v", err)
 	}
