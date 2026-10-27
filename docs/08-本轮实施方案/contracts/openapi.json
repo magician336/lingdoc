@@ -34879,6 +34879,108 @@
         "x-delivery-phase": "core"
       }
     },
+    "/projects/{projectId}/dependency-recommendations": {
+      "post": {
+        "operationId": "recommendDependencyCandidates",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "AI 推荐依赖边候选（冷启动）：服务端收集项目信号调模型产候选，逐条复核后进既有候选队列；模型只建议不建边",
+        "description": "人工触发的推荐动作。服务端收集正文 [[source:]] 引用、CitationUsage、证据卡 scope_chapter_ids、模板字段-章节结构与 RouteNode 声明等信号，调用项目默认生成模型产候选边；每条候选经服务端复核（对象必须真实存在、版本由服务端补齐、action 合法、不与既有边重复）后进入既有 dependency-candidates 队列（Origin=ai），由人工逐条 confirm/modify/reject。模型调用按次计入 lingdoc_model_call_ledger。同一幂等键重放返回原批次，不重复调用模型。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyRecommendationInput"
+              },
+              "example": {
+                "reason": "冷启动建边",
+                "scope": {
+                  "target_kinds": [
+                    "ChapterVersion",
+                    "EvidenceCard"
+                  ],
+                  "reason": "先补章节与证据卡的关联"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "推荐完成：复核通过的候选已写入既有候选批次；被复核拒绝的模型建议带原因记入 dropped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyRecommendationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "机器主体触发（human_decision_required）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "dependency_recommendation_invalid_output：模型返回内容无法解析，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "dependency_recommendation_unavailable：无可用推荐模型或模型调用失败，零写入；人工登记路径不受影响",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "dependency_recommendation_no_valid_candidates：模型建议全部未通过复核，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/roadmap": {
       "get": {
         "operationId": "readRoadmapBaseline",
@@ -52894,6 +52996,175 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/DependencyCandidateDecisionResult"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ModelProposedDependency": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_kind",
+          "source_id",
+          "target_kind",
+          "target_id",
+          "relation",
+          "action",
+          "evidence",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "source_kind": {
+            "type": "string",
+            "description": "信号清单内的对象类型；模型不得编造对象"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE",
+              "NO_ACTION"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "引用信号包中的具体依据，可追溯"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "DependencyRecommendationDrop": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "proposal",
+          "reason"
+        ],
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/ModelProposedDependency"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "fabricated_object",
+              "invalid_field",
+              "invalid_action",
+              "scope_violation",
+              "duplicate",
+              "edge_already_present",
+              "overflow"
+            ],
+            "description": "复核拒绝原因"
+          }
+        }
+      },
+      "DependencyRecommendationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "默认取传输层 Idempotency-Key；同键重放原批次且不重复调用模型"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DependencyCandidateScope"
+          }
+        }
+      },
+      "DependencyRecommendationModelInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "run_mode": {
+            "type": "string"
+          },
+          "model_run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyRecommendationOutcome": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "batch",
+          "model"
+        ],
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/DependencyCandidateBatch"
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyRecommendationDrop"
+            }
+          },
+          "model": {
+            "$ref": "#/components/schemas/DependencyRecommendationModelInfo"
+          }
+        }
+      },
+      "DependencyRecommendationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyRecommendationOutcome"
           },
           "request_id": {
             "type": "string"
