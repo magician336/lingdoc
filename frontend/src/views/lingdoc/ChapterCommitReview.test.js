@@ -25,3 +25,15 @@ test('three explicit choices compile without a default commit or scientific clas
   assert.match(descriptor.template.content, /@click="emit\('semantic'\)"/)
   assert.match(descriptor.template.content, /autofocus @click="emit\('cancel'\)"/)
 })
+
+test('the suspected second state shows the server list and gates the dismissal on a reason', () => {
+  const source = descriptor.template.content
+  assert.match(source, /suspectedConditions && suspectedConditions\.length/)
+  assert.match(source, /v-for="item in suspectedConditions"/)
+  assert.match(source, /:disabled="!dismissalReason\.trim\(\)"/)
+  assert.match(source, /emit\('dismiss', dismissalReason\.trim\(\)\)/)
+  assert.match(source, /@wording="emit\('wording'\)"|emit\('wording'\)/)
+  // The plain wording exit must NOT be offered while suspicions are showing.
+  const suspectedBlock = source.slice(source.indexOf('suspectedConditions && suspectedConditions.length'), source.indexOf('<div v-else class="commit-choices">'))
+  assert.doesNotMatch(suspectedBlock, /emit\('wording'\)/)
+})

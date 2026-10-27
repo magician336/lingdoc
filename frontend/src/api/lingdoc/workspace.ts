@@ -542,6 +542,9 @@ export const commitWorkingCopy = (projectId: string, chapterId: string, input: {
   expected_spec_revision: number
   expected_working_copy_revision: number
   expected_chapter_version_id: string | null
+  // #753: optional audited dismissal of a suspected condition change; the
+  // server only accepts it when it names the suspicions it just recomputed.
+  condition_change_dismissal?: { dismissed_fields: string[]; reason: string }
 }, key: string) => post<Result<CommittedChapterVersion>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy/commit`, input, keyHeader(key),
 )

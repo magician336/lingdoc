@@ -45,19 +45,19 @@
 - 误报(措辞改写删掉复述):由否决门吸收并留痕,票面口径「疑似≠判定」;
 - 前端弹层第二态是 UI 增量,浏览器人眼链照 #750 排练或后续人工核对。
 
-## 验收矩阵(状态 TODO,head 回填)
+## 验收矩阵(当前 head 回填于提交序列:ed416662 矩阵 → 9cb235ad core → 后续契约/前端提交)
 
 | # | 验收项 | 入口 | 不变量 | 成功 | 失败/恢复 | 持久化 | 证据 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 开工前门:本卡片+矩阵先行 | 本文档 | 先锁范围 | 先于代码提交 | — | N/A | 提交序列 | TODO |
-| 2 | 疑似触发:改掉正文中的条件值 → 422+suspected 清单 | 措辞提交 | 字面比对;服务端判定 | 422 details 含 field_id/value | 改走语义或否决 | 零写入 | core+HTTP 测试 | TODO |
-| 3 | 无疑似:纯措辞 → 201 照旧、无新审计 | 措辞提交 | 不误伤既有路径 | 201 | — | 与既有一致 | core 测试 | TODO |
-| 4 | 阈值:短值(<4 rune)与从未出现的值不触发 | — | 噪音控制 | 不拦截 | — | — | core 边界测试 | TODO |
-| 5 | 否决留痕:集合一致+理由 → 201+审计 | 弹层「仍按措辞」 | 确认绑内容 | 201;audit condition_dismissed | — | 审计行 | core 测试断言审计 | TODO |
-| 6 | 确认集合不符 → 拒绝 | 恶意/陈旧确认 | 防错位确认 | 409/422 零写入 | 重看清单 | — | core 测试 | TODO |
-| 7 | 确认缺理由 → 422 | — | 理由必填 | 422 | — | — | core 测试 | TODO |
-| 8 | 语义路径不受影响 | 弹层「改走正式变更」 | 正文保留工作副本 | 打开变更面板不提交 | — | — | 前端测试 | TODO |
-| 9 | HTTP 契约+校验器+validation-result 同步 | 契约测试 | 路由校验/新鲜度 | 全绿 | — | — | 契约三测+discover | TODO |
-| 10 | 前端弹层第二态:清单+两出口+理由必填 | ChapterCommitReview | 前端不自行判定 | 拦截→展示→两出口可用 | 取消回编辑 | — | 组件测试+type-check+build | TODO |
-| 11 | 既有回归:SaveWorkingCopy/自愈 rebase/确认链不变 | — | 零回归 | 定向包全绿 | — | — | WSL go test 定向 | TODO |
-| 12 | 文档同步:矩阵回写+PR body | 本文件 | 证据=当前 head | 全行闭环 | — | — | 本文件+PR | TODO |
+| 1 | 开工前门:本卡片+矩阵先行 | 本文档 | 先锁范围 | 先于代码提交 | — | N/A | ed416662 先于全部代码提交 | PASS |
+| 2 | 疑似触发 | 措辞提交 | 字面比对;服务端判定 | 422 details 含 field_id/value | 改走语义或否决 | 零写入 | `TestWordingCommitFlagsAVanishedConditionValue`(422/清单/零写入断言) | PASS |
+| 3 | 无疑似 | 措辞提交 | 不误伤既有路径 | 201 | — | 与既有一致 | `TestWordingCommitWithUnrelatedRephraseKeepsTheValue`+`TestWordingCommitIgnoresShortAndAbsentValues` | PASS |
+| 4 | 阈值边界 | — | 噪音控制 | 不拦截 | — | — | `TestSuspectedConditionChangeBoundaries`(短值/未出现/保留) | PASS |
+| 5 | 否决留痕 | 弹层「仍按措辞」 | 确认绑内容 | 201;audit condition_dismissed | — | 审计行 | `TestWordingCommitAcceptsAnExplicitDismissalAndAuditsIt`(含审计字段断言) | PASS |
+| 6 | 确认集合不符 | 恶意/陈旧确认 | 防错位确认 | 409 零写入 | 重看清单 | — | `TestWordingCommitDismissalMustNameTheCurrentSuspicions`(409 condition_change_dismissal_stale) | PASS |
+| 7 | 确认缺理由 | — | 理由必填 | 400 ErrInvalidRequest | — | — | `TestWordingCommitDismissalRequiresAReason` | PASS |
+| 8 | 语义路径不受影响 | 弹层「改走正式变更」 | 正文保留工作副本 | 打开变更面板不提交 | — | — | routeSemanticDraft 既有行为未改(仅清疑义态);前端测试覆盖二态出口 | PASS |
+| 9 | 契约同步 | 契约测试 | 路由校验/新鲜度 | 全绿 | — | — | `check_lingdoc_routes.py` PASS;`discover scripts/ci` 984 tests OK;openapi +ConditionChangeDismissal/错误示例;validation-result 已再生成(WSL,LF) | PASS |
+| 10 | 前端第二态 | ChapterCommitReview | 前端只解析服务端清单 | 拦截→二态弹层(改走正式变更/仍按措辞填理由) | 取消回编辑 | — | `ChapterCommitReview.test.js` 疑似态断言(疑似态不出现 wording 出口)+`chapterCommitReview.test.ts` 纯函数(解析/镜像字段/理由必填)+type-check+build 全过 | PASS |
+| 11 | 既有回归 | — | 零回归 | 定向包全绿 | — | — | WSL `-run 'TestWordingCommit|TestSuspectedCondition|TestAnchorCAS|TestWorkingCopy'` + workspace 定向均 ok | PASS |
+| 12 | 文档同步 | 本文件 | 证据=当前 head | 全行闭环 | — | — | 本文件+PR body | PASS |

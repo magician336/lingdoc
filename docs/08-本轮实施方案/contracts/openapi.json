@@ -34214,6 +34214,17 @@
                       },
                       "request_id": "req-demo"
                     }
+                  },
+                  "condition_change_dismissal_stale": {
+                    "summary": "否决清单与服务端重算不一致（#753）",
+                    "value": {
+                      "error": {
+                        "code": "condition_change_dismissal_stale",
+                        "message": "确认的研究条件疑义清单与当前不一致，请重新查看后再决定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
                   }
                 }
               }
@@ -34242,6 +34253,25 @@
                         "code": "invalid_state",
                         "message": "当前阶段不能执行该动作。",
                         "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "condition_change_confirmation_required": {
+                    "summary": "正文中不再出现已登记的研究条件值（#753）",
+                    "value": {
+                      "error": {
+                        "code": "condition_change_confirmation_required",
+                        "message": "正文中不再出现已登记的研究条件值，疑似研究条件变化：请改走正式变更，或确认仍按措辞提交。",
+                        "retryable": false,
+                        "details": {
+                          "suspected_condition_changes": [
+                            {
+                              "field_id": "research_subject",
+                              "value": "旧研究主题值"
+                            }
+                          ]
+                        }
                       },
                       "request_id": "req-demo"
                     }
@@ -52350,6 +52380,15 @@
             "type": "string",
             "nullable": true,
             "description": "可为null；省略按Go指针零值null解释。必须与当前正式版本/工作副本base一致，否则409。"
+          },
+          "condition_change_dismissal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConditionChangeDismissal"
+              }
+            ],
+            "nullable": true,
+            "description": "可选：携带时表示操作者已看过疑似清单并确认仍按措辞提交。"
           }
         },
         "required": [
@@ -55303,6 +55342,30 @@
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ConditionChangeDismissal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dismissed_fields",
+          "reason"
+        ],
+        "description": "措辞提交时对疑似研究条件变化的显式否决（#753）：dismissed_fields 必须与服务端重算的疑似字段集合一致，否则 409 condition_change_dismissal_stale；否决放行后写入 chapter.commit.condition_dismissed 审计。",
+        "properties": {
+          "dismissed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "操作者看过并否决的疑似字段 id 清单"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "否决理由（必填，进审计）"
           }
         }
       }
