@@ -129,6 +129,12 @@ jobs:
       - name: Ask the witness whether an earlier green run may be reused
         id: attest
         continue-on-error: true
+        # The witness reads the Actions API through the gh CLI; inside a
+        # runner gh refuses to run without GH_TOKEN, and a tokenless gh is
+        # an API failure the witness answers with the full rerun.  The
+        # workflow's actions: read permission is what this token spends.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/ci/lingdoc_gate_attest_witness.py \
             --artifact-dir "$RUNNER_TEMP/lingdoc-checks"
