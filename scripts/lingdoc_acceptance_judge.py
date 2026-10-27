@@ -100,8 +100,13 @@ NOT_COMPARED = "未比对"
 COORDINATE = re.compile(r"^(?:US|TD|IMPL|AC)-\d+(?:[.-]\d+)*$")
 
 #: Every coordinate inside free text -- a report id may name several
-#: coordinates ("US-01、US-03") or one wrapped in prose.
-COORDINATE_IN_TEXT = re.compile(r"\b(?:US|TD|IMPL|AC)-\d+(?:[.-]\d+)*\b")
+#: coordinates ("US-01、US-03") or one wrapped in prose.  The trailing
+#: boundary is ``(?![0-9])`` and not ``\\b``: CJK characters are word
+#: characters to Python's ``\\b``, so a coordinate followed by Chinese prose
+#: ("TD-03.6的撤权半边") would fail the boundary and greedily backtrack to a
+#: **shorter** coordinate ("TD-03") -- a different acceptance point.
+COORDINATE_IN_TEXT = re.compile(
+    r"(?<![A-Za-z0-9])(?:US|TD|IMPL|AC)-\d+(?:[.-]\d+)*(?![0-9])")
 
 #: A grep-able Go case name (§4.2: the Go side names ``TestXxx``).
 GO_TEST_NAME = re.compile(r"\bTest[A-Z][A-Za-z0-9_]*\b")
@@ -212,6 +217,38 @@ def judgement_table(text: str) -> tuple[list[str], list[tuple[int, list[str]]]]:
     if header is None:
         raise KeyError("no judgement table")
     return header, rows
+
+
+def auxiliary_coordinates(text: str) -> set[str]:
+    """Coordinates recorded in a matrix's auxiliary judgement tables.
+
+    A matrix document may carry a second judgement table -- typically the
+    "environment-restricted and human-prerequisite" series (header 登记号 /
+    判定状态) whose rows are explicitly excluded from the main point total.
+    Its coordinates are still matrix rows: a report entry that covers one of
+    them must not be answered with "矩阵没有该行".  Only the first column of
+    such a table is read, and only coordinate-shaped cells count, so the
+    main table's counting and per-row judgement stay untouched.
+    """
+    coordinates: set[str] = set()
+    header: list[str] | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            header = None
+            continue
+        cells = split_cells(stripped)
+        if header is None:
+            if ("登记号" in cells) and ("判定状态" in cells) and ("定位坐标" not in cells):
+                header = cells
+            continue
+        if all(set(cell) <= set("-: ") for cell in cells):
+            continue
+        if len(cells) > 1:
+            coordinate = cells[0].strip()
+            if COORDINATE.match(coordinate) and not coordinate.startswith("IMPL"):
+                coordinates.add(coordinate)
+    return coordinates
 
 
 def citation_problems(text: str) -> list[str]:
@@ -561,6 +598,7 @@ def judge(matrix_text: str, report: Mapping[str, Any] | None,
                                 for finding in row.findings)
                 if COORDINATE.match(row.coordinate):
                     seen_coordinates.add(row.coordinate)
+            seen_coordinates |= auxiliary_coordinates(matrix_text)
             if report:
                 for coordinate in sorted(coordinates["passed"] - seen_coordinates):
                     findings.append(
