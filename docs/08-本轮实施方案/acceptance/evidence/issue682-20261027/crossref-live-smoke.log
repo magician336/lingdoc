@@ -1,0 +1,5 @@
+=== RUN   TestLiveCrossrefSearchSmoke
+    client_test.go:239: live Crossref metadata smoke passed: one DOI and title returned
+--- PASS: TestLiveCrossrefSearchSmoke (9.02s)
+PASS
+ok  	github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref	9.039s
