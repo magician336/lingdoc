@@ -188,8 +188,10 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 	ensureImpactRouteTables(t, db)
 	// The recommendation trigger writes a candidate batch, so the candidate
 	// tables the focused fixtures build are part of this fixture too. It also
-	// reads the evidence-card object store, whose table the delivery fixture
-	// does not build on its own.
+	// reads the evidence-card object store: the production schema for that
+	// table comes from the migrations (000037_lingdoc_full_workflow), and the
+	// copy below is the focused HTTP fixture's aligned subset, matching the
+	// candidate fixture's convention.
 	ensureDependencyCandidateTables(t, db)
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`).Error; err != nil {
 		t.Fatalf("seed g2 objects table: %v", err)

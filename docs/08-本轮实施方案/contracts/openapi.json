@@ -34853,18 +34853,47 @@
             }
           },
           "403": {
-            "description": "机器主体触发（human_decision_required）"
+            "description": "机器主体触发（human_decision_required）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "502": {
-            "description": "dependency_recommendation_invalid_output：模型返回内容无法解析，零写入"
+            "description": "dependency_recommendation_invalid_output：模型返回内容无法解析，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "503": {
-            "description": "dependency_recommendation_unavailable：无可用推荐模型或模型调用失败，零写入；人工登记路径不受影响"
+            "description": "dependency_recommendation_unavailable：无可用推荐模型或模型调用失败，零写入；人工登记路径不受影响",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "422": {
-            "description": "dependency_recommendation_no_valid_candidates：模型建议全部未通过复核，零写入"
+            "description": "dependency_recommendation_no_valid_candidates：模型建议全部未通过复核，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "x-delivery-phase": "core"
       }
     },
     "/projects/{projectId}/roadmap": {

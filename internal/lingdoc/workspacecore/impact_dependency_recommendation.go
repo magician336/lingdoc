@@ -40,8 +40,6 @@ import (
 //     not a second queue.
 
 const (
-	operationRecommendDependencyCandidates operationName = "recommendDependencyCandidates"
-
 	// dependencyRecommendationCallTimeout bounds one recommendation call. The
 	// route is synchronous: a recommendation that hangs must surface as a
 	// timeout instead of holding the panel forever. A real qwen3.8-flash call
