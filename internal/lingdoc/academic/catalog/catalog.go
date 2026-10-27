@@ -4,14 +4,13 @@
 package catalog
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
@@ -122,11 +121,8 @@ func Combine(global Snapshot, projectRules []Rule) Snapshot {
 		GlobalVersion: strings.TrimSpace(global.Version),
 		Rules:         rules,
 	}
-	payload, _ := json.Marshal(identity) // The fixed struct contains only JSON-safe values.
-	sum := sha256.Sum256(payload)
-
 	return Snapshot{
-		Version: "sha256:" + hex.EncodeToString(sum[:]),
+		Version: "sha256:" + operationcore.ValueHash(identity),
 		Rules:   rules,
 	}
 }
