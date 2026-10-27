@@ -341,3 +341,15 @@ test('evidence JSON cannot smuggle confirmation or source authority through the 
  state.cardEditor.value=JSON.stringify({claim_ref:{id:'claim',version:1},anchor_refs:[{id:'anchor',version:1}],support_type:'supports',scope:'scope',scope_chapter_ids:['chapter'],status:'CONFIRMED'})
  state.addSemanticDelta();assert.equal(state.semanticDraft.value.length,0);assert.match(state.error.value,/合法证据关系/)
 })
+
+test('the AI recommendation sends only the operator reason and reports the review outcome', async () => {
+  const { state, calls } = setup(false, { handlers: { recommendDependencyCandidates: async () => ({ data: { batch: { candidates: [{ id: 'c1' }, { id: 'c2' }] }, dropped: [{ proposal: {}, reason: 'fabricated_object' }], model: { model_id: 'm1' } } }) } })
+  state.reason.value = '冷启动建边'
+  await state.recommendDependencies()
+  const call = calls.find(item => item.method === 'recommendDependencyCandidates')
+  assert.ok(call, 'the recommendation must go through the api client')
+  assert.equal(call.args[1].reason, '冷启动建边')
+  assert.equal(call.args[1].candidates, undefined)
+  assert.ok(call.args[2].startsWith('lingdoc-'))
+  assert.match(state.message.value, /2 条候选进入队列；1 条建议未通过复核/)
+})

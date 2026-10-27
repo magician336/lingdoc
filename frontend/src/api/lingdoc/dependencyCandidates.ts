@@ -113,6 +113,48 @@ export interface DependencyCandidateDecisionResult {
   edge?: DependencyEdge
 }
 
+// The recommendation trigger (#751): a human fires it, the server collects the
+// project's own signals, calls the default generation model, reviews every
+// proposal (object versions are server-stamped; fabricated objects never reach
+// the queue) and queues the survivors through the batch endpoint above. The
+// client never fabricates proposals and never decides anything.
+export interface DependencyRecommendationInput {
+  idempotency_key?: string
+  reason: string
+  scope?: DependencyCandidateScope
+}
+
+export interface ModelProposedDependency {
+  source_kind: string
+  source_id: string
+  target_kind: string
+  target_id: string
+  relation: string
+  action: string
+  evidence: string
+  reason: string
+  confidence: number
+}
+
+// Why the review refused one model proposal: fabricated_object, invalid_field,
+// invalid_action, scope_violation, duplicate, edge_already_present, overflow.
+export interface DependencyRecommendationDrop {
+  proposal: ModelProposedDependency
+  reason: string
+}
+
+export interface DependencyRecommendationModelInfo {
+  model_id?: string
+  run_mode?: string
+  model_run_id?: string
+}
+
+export interface DependencyRecommendationOutcome {
+  batch: DependencyCandidateBatch
+  dropped?: DependencyRecommendationDrop[]
+  model: DependencyRecommendationModelInfo
+}
+
 const segment = (id: string) => encodeURIComponent(id)
 const base = (id: string) => `/api/v1/lingdoc/projects/${segment(id)}`
 const headers = (key: string) => ({ headers: { 'Idempotency-Key': key } })
@@ -123,3 +165,5 @@ export const submitDependencyCandidateBatch = (id: string, input: DependencyCand
   post<Result<DependencyCandidateBatch>>(`${base(id)}/dependency-candidates`, input, headers(key))
 export const decideDependencyCandidate = (id: string, candidateId: string, input: DependencyCandidateDecisionInput, key: string) =>
   post<Result<DependencyCandidateDecisionResult>>(`${base(id)}/dependency-candidates/${segment(candidateId)}/decision`, input, headers(key))
+export const recommendDependencyCandidates = (id: string, input: DependencyRecommendationInput, key: string) =>
+  post<Result<DependencyRecommendationOutcome>>(`${base(id)}/dependency-recommendations`, input, headers(key))
