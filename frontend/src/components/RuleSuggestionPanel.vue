@@ -139,11 +139,11 @@ defineExpose({
           目标 {{ run.scope.target_kind }}:{{ run.scope.target_id }}
         </span>
         <span v-if="run.output" class="suggestion-explanation">{{ run.output.explanation }}</span>
-        <button v-if="canManageSuggestions && !isStale(run)" :disabled="busy || isPending(run)"
+        <button v-if="canManageSuggestions && !isStale(run)" :disabled="busy || (isPending(run) && pendingAction !== 'accept')"
                 data-action="accept" @click="act(run, 'accept', {})">
           {{ isPending(run) && pendingAction === 'accept' ? '确认接受（落草稿）' : '接受' }}
         </button>
-        <button v-if="canManageSuggestions && !isStale(run)" :disabled="busy || isPending(run)"
+        <button v-if="canManageSuggestions && !isStale(run)" :disabled="busy || (isPending(run) && pendingAction !== 'reject')"
                 data-action="reject" @click="act(run, 'reject', {})">
           {{ isPending(run) && pendingAction === 'reject' ? '确认拒绝' : '拒绝' }}
         </button>
