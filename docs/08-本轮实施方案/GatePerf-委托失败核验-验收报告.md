@@ -34,7 +34,7 @@
 | M16 | 红线四：工作流零新增路径知识（本票只加 job 显示名过滤与轮询参数，无包名/目录/分片名） | 既有 `test_the_workflow_carries_no_package_names` 全套绿内复核；新 heredoc 无任何路径字面量 | PASS |
 | M17 | 概念登记：`frontend_delegate` 归入「委托」概念 keys；GLOSSARY 委托条目补核验句；ADR 0014 §三补核验机制条目 | `DocumentationContractTests` 双向契约（全套绿内） | PASS |
 | M18 | 全套守护测试全绿（基线 943 项）+ PyYAML 自检 | 见 §4：红态 16 失败 → 绿 961 → merge 后 967 全 OK；PyYAML 解析两份 YAML | PASS |
-| M19 | 真实 PR 验证：碰前端的 PR 上令 verify 失败（临时分支）→ gate 必须红 | 由编排者在 push 后采集 | NOT RUN（pending-orchestrator，见 §6） |
+| M19 | 真实 PR 验证：前端 verify 失败 → gate 红且点名 | 验证 PR #741（run 40480884603，head 32ca4330）| PASS：gate `error: the delegated frontend verification did not pass on this head: Test, type-check, and build (conclusion=failure)`，decide 同 head 绿（命名/空白符修正后）；对照路径（verify 成功→委托绿）见 #731 与 40457683775 批次 |
 
 ## 2. 红绿样本对照
 
@@ -80,6 +80,8 @@
 ## 5. gate wall 影响（已接受的正确性代价）
 
 前端类 PR 的 gate publish 步将等待被委托 job 收尾：典型情形前端 job 实测 ~154s（Phase 0），30s 轮询间隔下 gate 大约等 0–2.5 分钟（gate 的 prepare+providers 本身就要数分钟，多数情形轮询第一拍即 success）；极端情形轮询窗口 10 分钟封顶（gate 红）。gate job 自身超时从 10 分钟上调到 15 分钟以容纳窗口与下载余量。这是 ADR 0014 失败子句成立的直接代价：gate 的绿从此依赖「被委托 job 在同一 head 上真实成功」，而不是「它被声明要跑」。
+
+**current-head 注记（评审 F2，2026-10-27）**：本报告部分证据行最初钉在 `81327555`；最终头为 `4875bec2`（评审修复 F3/F4/F5 + 本 M19 回填），修复后定向套件（decision+wiring）与全量 967 项在当前 head 复跑全绿。首次 dispatch 红/绿两 run 与 M12 数据不受影响。
 
 ## 6. pending-orchestrator（NOT RUN，解除条件）
 
