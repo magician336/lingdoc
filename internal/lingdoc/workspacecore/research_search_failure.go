@@ -43,8 +43,8 @@ func ResearchFailureDetail(err error) string {
 	}
 	const limit = 512
 	detail := err.Error()
-	if len(detail) > limit {
-		detail = detail[:limit] + "…"
+	if runes := []rune(detail); len(runes) > limit {
+		detail = string(runes[:limit]) + "…"
 	}
 	return detail
 }
