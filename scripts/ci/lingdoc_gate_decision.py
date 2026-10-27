@@ -885,6 +885,36 @@ def _surface_runs(decision: Decision, surface: manifest.Surface,
     return any(job.run for job in decision.jobs if job.surface == surface.name)
 
 
+def _subsumed_by_delegate(surface: manifest.Surface,
+                          row_paths: Sequence[str],
+                          running: Sequence[manifest.Surface],
+                          surfaces: Sequence[manifest.Surface],
+                          outputs: Mapping[str, str]) -> bool:
+    """Whether the surface this one delegates to subsumes its claim here.
+
+    The reverse delegation (#737): a surface record may name the surface
+    whose verification carries its delegated paths -- the app workflow's
+    pull_request test set leaves the touched provider packages to the
+    gate's shards.  While that delegate really runs on this head, the
+    delegating surface does not stand as evidence for the rows the delegate
+    owns: the coverage table credits the delegate's own names (the shard
+    jobs), not the job that skipped the duplicate.  When the delegate does
+    not run, the claim stands -- dropping it would report a verification
+    that did not happen, or turn an honest row red (fail-open, the same
+    direction the workflow side takes on any failure of the delegation
+    data).
+    """
+    if surface.delegates is None:
+        return False
+    target = next((candidate for candidate in surfaces
+                   if candidate.name == surface.delegates), None)
+    if target is None or not target.verifies:
+        return False
+    if not _touches(list(row_paths), list(target.paths), target.path_kind):
+        return False
+    return target in running
+
+
 def _owner_names(surface: manifest.Surface,
                  decision: Decision | None = None) -> str:
     """The name of the job (or step) that owns a surface, as a reader sees it.
@@ -938,8 +968,14 @@ def _coverage_rows(decision: Decision,
         watching = [surface for surface in surfaces
                     if _touches(paths, surface.paths, surface.path_kind)]
         verifying = [surface for surface in watching if surface.verifies]
-        running = [surface for surface in verifying
-                   if _surface_runs(decision, surface, outputs)]
+        running_all = [surface for surface in verifying
+                       if _surface_runs(decision, surface, outputs)]
+        # A surface whose delegate runs on this head is not the evidence
+        # for the rows the delegate owns (#737); the claim stands whenever
+        # the delegate does not run.
+        running = [surface for surface in running_all
+                   if not _subsumed_by_delegate(surface, paths, running_all,
+                                                surfaces, outputs)]
         if running:
             status = "verified"
         elif verifying:
@@ -1715,6 +1751,18 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "run_providers": _text(decision.provider_tests and not decision.format_only),
         "provider_tests": _text(decision.provider_tests),
         "provider_packages": " ".join(decision.provider_packages),
+        # The reverse delegation (#737): the packages the gate's provider
+        # shards verify on this head, published for the app workflow's
+        # pull_request test set -- it leaves exactly these out instead of
+        # running them a second time without -race (ADR 0014, red line
+        # two).  Non-empty exactly when the shards run, like
+        # frontend_delegate; whether this is the pull_request side at all
+        # is the workflow's own fact (a push keeps the full list).  An
+        # empty value means no delegation, and the workflow side falls
+        # back to the full list on any failure of this data (fail-open).
+        "provider_delegate": " ".join(
+            pattern for shard in decision.provider_shards
+            for pattern in shard.packages),
         # The shard matrix (#724, ADR 0014): JSON the workflow feeds to
         # fromJSON.  The workflow learns no package names from it -- the
         # list is spelled here and only here.  Empty (``[]``) exactly when
