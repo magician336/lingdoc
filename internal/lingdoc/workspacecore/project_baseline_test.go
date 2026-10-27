@@ -128,10 +128,18 @@ func (provenanceTemplateReader) Get(id, version string) (Template, error) {
 	if id == "template-alt" && (version == "" || version == "2") {
 		return Template{ID: "template-alt", Name: "替代演示模板", Version: "2", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}}, nil
 	}
+	if id == "template-alt" && version == "3" {
+		return Template{ID: "template-alt", Name: "兼容旧字段的替代演示模板", Version: "3", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}, Fields: []TemplateField{
+			{ID: "research_subject", Label: "研究对象", Type: "string", Required: true},
+			{ID: "research_method", Label: "研究方法", Type: "string", Required: true},
+			{ID: "research_goal", Label: "研究目标", Type: "string"},
+			{ID: "legacy", Label: "历史字段", Type: "string"},
+		}}, nil
+	}
 	return ContractDemoTemplate{}.Get(id, version)
 }
 
-func TestTemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.T) {
+func TestTemplateMigrationRejectsUnresolvedRisksAndCommitsWithoutDroppingValues(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-template-migration.db"))
 	svc.templates = provenanceTemplateReader{}
 	actor := Actor{TenantID: 85, UserID: "owner"}
@@ -148,12 +156,32 @@ func TestTemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.T)
 	if err != nil || len(preview.Orphaned) != 2 || len(preview.MissingRequired) != 1 {
 		t.Fatalf("preview = %+v, err=%v", preview, err)
 	}
-	changed, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-05", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-alt", TemplateVersion: "2"})
+	// Historically this switch was accepted with missing and orphaned fields.
+	// Unresolved risks now block the write without discarding either old value.
+	if _, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-05", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-alt", TemplateVersion: "2"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("unresolved migration error = %v, want %v", err, ErrInvalidRequest)
+	}
+	unchanged, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || unchanged.ProjectVersion != 2 || unchanged.TemplateID != "template-demo" || unchanged.Spec["research_goal"] != "目标" || unchanged.Spec["legacy"] != "保留" {
+		t.Fatalf("rejected migration changed the project or old values: %+v err=%v", unchanged, err)
+	}
+	// Keep the historic values and choose a target that declares their fields.
+	// The newly required field can be filled before the switch and re-previewed.
+	filled, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-template-resolve", SaveSpecInput{ExpectedSpecRevision: unchanged.SpecRevision, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标", "legacy": "保留", "research_method": "方法"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := asProject(t, filled)
+	resolvedPreview, err := svc.PreviewTemplateMigration(context.Background(), actor, project.ID, TemplateMigrationInput{ExpectedProjectVersion: resolved.ProjectVersion, TemplateID: "template-alt", TemplateVersion: "3"})
+	if err != nil || len(resolvedPreview.Orphaned)+len(resolvedPreview.MissingRequired)+len(resolvedPreview.Incompatible) != 0 {
+		t.Fatalf("resolved preview = %+v, err=%v", resolvedPreview, err)
+	}
+	changed, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-05", TemplateMigrationInput{ExpectedProjectVersion: resolved.ProjectVersion, TemplateID: "template-alt", TemplateVersion: "3"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := asProject(t, changed)
-	if result.TemplateID != "template-alt" || result.ProjectVersion != 3 || result.Spec["legacy"] != "保留" {
+	if result.TemplateID != "template-alt" || result.TemplateVersion != "3" || result.ProjectVersion != 4 || result.Spec["research_goal"] != "目标" || result.Spec["legacy"] != "保留" {
 		t.Fatalf("changed project = %+v", result)
 	}
 	if _, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-stale", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-demo", TemplateVersion: "1"}); !errors.Is(err, ErrVersionConflict) {

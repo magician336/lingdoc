@@ -221,20 +221,22 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := asProject(t, raw)
-	raw, _, _, err = svc.BindTemplateCopyRuleSet(context.Background(), owner, project.ID, "ruleset-migration-bind-v1", BindTemplateCopyRuleSetInput{
-		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
-		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash},
-	})
-	if err != nil {
-		t.Fatalf("bind original RuleSet version: %v", err)
-	}
-	project = asProject(t, raw)
+	// A new template-copy binding requires the draft's mandatory fields to be
+	// filled; the versioned ChangeSet assertions below remain unchanged.
 	raw, _, _, err = svc.SaveSpec(context.Background(), owner, project.ID, "ruleset-migration-spec", SaveSpecInput{
 		ExpectedSpecRevision: project.SpecRevision,
 		Fields:               map[string]string{"research_subject": "迁移主题", "research_goal": "迁移目标"},
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	raw, _, _, err = svc.BindTemplateCopyRuleSet(context.Background(), owner, project.ID, "ruleset-migration-bind-v1", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash},
+	})
+	if err != nil {
+		t.Fatalf("bind original RuleSet version: %v", err)
 	}
 	project = asProject(t, raw)
 	raw, _, _, err = svc.ActivateProject(context.Background(), owner, project.ID, "ruleset-migration-activate", ActivateProjectInput{

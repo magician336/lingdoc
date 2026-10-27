@@ -867,6 +867,16 @@ func TestTemplateVersionRuleSetReferenceIsPersistedAndReadBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := asProject(t, created)
+	// Binding appends a template-copy version and therefore requires a draft
+	// whose existing mandatory fields have no unresolved migration risk.
+	filled, _, _, err := svc.SaveSpec(ctx, owner, project.ID, "ruleset-ref-spec", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "规则引用主题", "research_goal": "规则引用目标"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, filled)
 	set := publishedWorkspaceRuleSet(t)
 	service := svc.WithRuleSetSnapshotReader(&transactionalRuleSetSnapshotReaderStub{set: set})
 	boundRaw, _, _, err := service.BindTemplateCopyRuleSet(ctx, owner, project.ID, "ruleset-ref-bind", BindTemplateCopyRuleSetInput{

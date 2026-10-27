@@ -47,6 +47,11 @@ type TemplateApplication interface {
 	ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error)
 	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
 	BindTemplateCopyRuleSetResult(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (ProjectMutationResult, error)
+	ApplyLegacyRuleOverridesResult(context.Context, Actor, string, string, LegacyRuleOverridesInput) (ProjectMutationResult, error)
+	CreateFieldArchiveResult(context.Context, Actor, string, string, CreateFieldArchiveInput) (FieldArchiveResult, error)
+	RemoveArchivedFieldResult(context.Context, Actor, string, string, string, RemoveArchivedFieldInput) (FieldArchiveResult, error)
+	ListFieldArchives(context.Context, Actor, string) ([]FieldArchiveView, error)
+	GetFieldArchive(context.Context, Actor, string, string) (FieldArchiveView, error)
 }
 
 // ChangeSetApplication 是 变更集 上下文的窄口。

@@ -150,6 +150,8 @@ var (
 	_ core.ImpactRuleChecker               = (*TemplateGovernanceRuntime)(nil)
 	_ core.TemplateCatalogResolver         = (*TemplateGovernanceRuntime)(nil)
 	_ core.TemplateCopyAuditRecorder       = (*TemplateGovernanceRuntime)(nil)
+	_ core.TemplateCatalogSwitchResolver   = (*TemplateGovernanceRuntime)(nil)
+	_ core.TemplateSwitchAuditRecorder     = (*TemplateGovernanceRuntime)(nil)
 )
 
 func governanceCallerContext(ctx context.Context, actor core.Actor) context.Context {
@@ -317,6 +319,59 @@ func (r *TemplateGovernanceRuntime) RecordCopyFailure(ctx context.Context, actor
 		AuditPersistenceFailure: failure.AuditPersistenceFailure,
 	})
 }
+
+func (r *TemplateGovernanceRuntime) RecordTemplateSwitchSuccess(ctx context.Context, tx core.Transaction, actor core.Actor, details core.TemplateCopyAudit) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	db, err := core.TransactionDatabase(tx)
+	if err != nil {
+		return err
+	}
+	return r.service.RecordSwitchSuccess(ctx, db, governanceActor(actor), details.ProjectID, details.CopyID,
+		details.CopyVersion, details.TemplateID, details.TemplateVersion, details.ContentHash,
+		details.RuleSetHash, details.RuleSetID, details.RuleSetVersion, details.SourcePolicyHash)
+}
+
+func (r *TemplateGovernanceRuntime) RecordTemplateSwitchFailure(ctx context.Context, actor core.Actor, failure core.TemplateCopyFailure) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	cause := failure.Cause
+	if errors.Is(cause, core.ErrInvalidRequest) {
+		cause = errors.Join(governance.ErrInvalidRequest, cause)
+	} else if errors.Is(cause, core.ErrVersionConflict) {
+		cause = errors.Join(governance.ErrVersionConflict, cause)
+	} else if errors.Is(cause, core.ErrInvalidState) {
+		cause = errors.Join(governance.ErrInvalidState, cause)
+	}
+	return r.service.RecordSwitchFailure(ctx, governanceActor(actor), governance.CopyFailure{
+		TemplateID: failure.TemplateID, TemplateVersion: failure.TemplateVersion,
+		ProjectID: failure.ProjectID, Cause: cause, AuditPersistenceFailure: failure.AuditPersistenceFailure,
+	})
+}
+
+func (r *TemplateGovernanceRuntime) ResolveTemplateSwitch(ctx context.Context, tx core.Transaction, actor core.Actor, id, version string, forUpdate bool) (core.CatalogTemplateDefinition, error) {
+	if r == nil || r.service == nil {
+		return core.CatalogTemplateDefinition{}, governance.ErrUnavailable
+	}
+	db, err := core.TransactionDatabase(tx)
+	if err != nil {
+		return core.CatalogTemplateDefinition{}, err
+	}
+	v, err := r.service.ResolveForSwitch(ctx, db, governanceActor(actor), id, version, forUpdate)
+	if err != nil {
+		if errors.Is(err, governance.ErrInvalidState) {
+			return core.CatalogTemplateDefinition{}, fmt.Errorf("%w: %w", core.ErrInvalidState, err)
+		}
+		return core.CatalogTemplateDefinition{}, err
+	}
+	snapshot := v.RuleSetSnapshot
+	return core.CatalogTemplateDefinition{Definition: template.Clone(v.Definition), RuleSetSnapshot: &snapshot,
+		SourceRuleSetID: v.RuleSet.ID, SourceRuleSetVersion: v.RuleSet.Version, SourceRuleSetHash: v.RuleSet.Hash,
+		BindingPolicies: v.BindingPolicies, SourcePolicyHash: v.PolicyHash}, nil
+}
+
 func (r *TemplateGovernanceRuntime) Resolve(ctx context.Context, tx core.Transaction, actor core.Actor, id, version string) (core.CatalogTemplateDefinition, error) {
 	db, err := core.TransactionDatabase(tx)
 	if err != nil {

@@ -43,6 +43,14 @@ func (s *Service) createAssessedChangeMutation(ctx context.Context, actor Actor,
 			if p.ProjectVersion != requested.ExpectedProjectVersion || p.TemplateCopy == nil || p.TemplateCopyVersion != requested.ExpectedTemplateCopyVersion || p.TemplateCopy.Status != TemplateCopyBound {
 				return operationResult[ChangeSet]{}, ErrVersionConflict
 			}
+			// Only the server-owned inverse plan may restore a historical
+			// projection. Ordinary upgrades cannot bypass the legacy policy by
+			// editing compiled rules independently of the sidecar snapshot.
+			if _, controlledInverse := ctx.Value(inverseTemplatePlanKey{}).(inverseTemplatePlan); !controlledInverse {
+				if err := requireUnmodifiedLegacyRuleProjection(p.TemplateCopy, requested.Rules); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
 			definition, err := editableTemplateDefinitionFromUpgrade(p.TemplateCopy.Definition, *requested)
 			if plan, ok := ctx.Value(inverseTemplatePlanKey{}).(inverseTemplatePlan); ok {
 				controlled, _ := ctx.Value(controlledInverseKey{}).(string)

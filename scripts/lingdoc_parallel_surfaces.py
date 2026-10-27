@@ -1809,6 +1809,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         ),
         "resolves": (),
         "summary": (
+            "2026-10-27 #686 模板页面施工临时借用本面持有的 frontend/src/components/TemplateGovernancePanel.vue 与 TemplateGovernancePanel.test.ts；owner 仍为 PF-13，不移交；PF-686 两侧记录。Workspace.vue 是共享保留集成点。"
             "G4 模板目录与版本治理（Spec #139）的施工面，票面即 PR #248 本身。"
             "**2026-10-27 路径移交**：两份验收证据文档（Spec-139 矩阵与 T139 报告）永久移交给验收簇 PF-696（票 #696，TRANSFERS 有记录）；本面不再持有活证据文件。"
             "**2026-10-23 交面**（本 PR 只做交面）：PR-1（代码、测试、契约产物与验收证据 = PR #248）已于 2026-10-23 合入 main（合并提交 19d9df9c），本面随之登记为 done，"
@@ -2001,6 +2002,31 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**跨面借用记账**：共享路径图 owner 仍是 PF-7，本面只改内容不夺所有权。"
             "依据票：#696（面）、#695（地图）、#458（判定器 M-0）。"
             "**2026-10-27 由 magician336 认领**，同日交首轮判定与缺口轮。"
+        ),
+    },
+    {
+        "name": "PF-686 模板治理与项目模板页面",
+        "issue": 686,
+        "issues": (139, 140, 142),
+        "status": "claimed",
+        "claimed_by": "Lees-42",
+        "paths": (
+            ("docs/08-本轮实施方案/Spec-686-template-pages-matrix.md", "file"),
+            ("frontend/src/api/lingdoc/templateGovernance.ts", "file"),
+            ("frontend/src/api/lingdoc/templateGovernance.test.ts", "file"),
+            ("frontend/src/views/lingdoc/DeliveryPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/DeliveryPanel.template-flow.test.js", "file"),
+            ("frontend/src/views/lingdoc/Workspace.template-copy-recovery.test.js", "file"),
+            ("frontend/src/views/lingdoc/templateCopyState.ts", "file"),
+            ("frontend/src/views/lingdoc/templateCopyState.test.ts", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "#686 模板目录、项目副本及检查交付页面；认领人为 Lees-42。"
+            "临时借用 PF-13 持有的 TemplateGovernancePanel.vue 和 TemplateGovernancePanel.test.ts；"
+            "owner 不变，借用双方均已登记，借用文件不纳入本面 paths。"
+            "Workspace.vue 为保留集成路径，只记录改动事实，不声明归属。"
+            "原补丁与 #717 并行；其后 #717 已合并，续作的服务端跨面改动仍需按当前基线核对。"
         ),
     },
 )

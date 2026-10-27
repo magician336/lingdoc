@@ -258,7 +258,7 @@ func currentSemanticValue(tx Transaction, p Project, delta SemanticDelta) (Seman
 				value = binding
 				found = true
 				if binding.TargetKind == "chapter" {
-					chapter, err := tx.Chapter(p.ID, binding.TargetID)
+					chapter, err := chapterForRuleSection(tx, p.ID, binding.TargetID)
 					if err != nil {
 						return out, err
 					}
@@ -353,8 +353,11 @@ func validateSemanticProposal(tx Transaction, p Project, delta SemanticDelta) er
 		if err != nil {
 			return err
 		}
-		_, err = governance.ApplyBindingOverrides(*p.TemplateCopy.RuleSetSnapshot, "project-"+p.ID, strconv.FormatInt(p.TemplateCopyVersion+1, 10), policies, []governance.BindingOverride{*delta.ProposedBinding})
-		return semanticBindingError(err)
+		effective, err := governance.ApplyBindingOverrides(*p.TemplateCopy.RuleSetSnapshot, "project-"+p.ID, strconv.FormatInt(p.TemplateCopyVersion+1, 10), policies, []governance.BindingOverride{*delta.ProposedBinding})
+		if err != nil {
+			return semanticBindingError(err)
+		}
+		return semanticBindingError(governance.ValidateChangedBindingTargets(p.TemplateCopy.Definition, *p.TemplateCopy.RuleSetSnapshot, effective))
 	case "RouteNode":
 		node := delta.ProposedRoute
 		if strings.TrimSpace(node.Name) == "" || len(node.Name) > 240 || len(node.Inputs) > 100 || !slices.Contains(RoadmapNodeStatuses, node.Status) {
@@ -443,8 +446,8 @@ func (s *Service) PinSemanticDeltas(ctx context.Context, tx Transaction, actor A
 			}
 			delta.SourceIDs = append(delta.SourceIDs, ids...)
 		}
-		if delta.ProposedBinding != nil && delta.ProposedBinding.TargetKind == "chapter" && delta.ProposedBinding.TargetID != "" {
-			chapter, e := tx.Chapter(p.ID, delta.ProposedBinding.TargetID)
+		if kind, id := resultingBindingTarget(p, delta); kind == "chapter" {
+			chapter, e := chapterForRuleSection(tx, p.ID, id)
 			if e != nil {
 				return nil, e
 			}
@@ -585,6 +588,9 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 		}
 		effective, err := governance.ApplyBindingOverrides(*before.TemplateCopy.RuleSetSnapshot, "project-"+before.ID, strconv.FormatInt(before.TemplateCopyVersion+1, 10), policies, bindingOverrides)
 		if err != nil {
+			return semanticBindingError(err)
+		}
+		if err := governance.ValidateChangedBindingTargets(before.TemplateCopy.Definition, *before.TemplateCopy.RuleSetSnapshot, effective); err != nil {
 			return semanticBindingError(err)
 		}
 		definition := template.Clone(before.TemplateCopy.Definition)
@@ -812,6 +818,52 @@ func currentRouteImpactObject(tx Transaction, p Project, ref ObjectVersionRef, s
 	}
 	return state, nil
 }
+
+// A rule target identifies a template section, while project chapter IDs are
+// independently generated. Resolve by section in this project and reject an
+// absent or ambiguous match rather than reading another chapter's sources.
+func chapterForRuleSection(tx Transaction, projectID, sectionID string) (Chapter, error) {
+	chapters, err := tx.Chapters(projectID)
+	if err != nil {
+		return Chapter{}, err
+	}
+	var found *Chapter
+	for i := range chapters {
+		if chapters[i].SectionID != sectionID {
+			continue
+		}
+		if found != nil {
+			return Chapter{}, ErrInvalidState
+		}
+		found = &chapters[i]
+	}
+	if found == nil {
+		return Chapter{}, ErrNotFound
+	}
+	return *found, nil
+}
+
+// A partial override retains whichever target coordinate it does not change.
+func resultingBindingTarget(p Project, delta SemanticDelta) (string, string) {
+	if delta.ProposedBinding == nil || p.TemplateCopy == nil || p.TemplateCopy.RuleSetSnapshot == nil {
+		return "", ""
+	}
+	for _, binding := range p.TemplateCopy.RuleSetSnapshot.Bindings {
+		if binding.RuleID != delta.ProposedBinding.RuleID {
+			continue
+		}
+		kind, id := binding.TargetKind, binding.TargetID
+		if delta.ProposedBinding.TargetKind != "" {
+			kind = delta.ProposedBinding.TargetKind
+		}
+		if delta.ProposedBinding.TargetID != "" {
+			id = delta.ProposedBinding.TargetID
+		}
+		return kind, id
+	}
+	return "", ""
+}
+
 func semanticSourceIDs(tx Transaction, p Project, deltas []SemanticDelta) ([]string, error) {
 	if err := validateCurrentCardClaimBatch(tx, p, deltas); err != nil {
 		return nil, err
@@ -831,8 +883,8 @@ func semanticSourceIDs(tx Transaction, p Project, deltas []SemanticDelta) ([]str
 			}
 			ids = append(ids, proposedIDs...)
 		}
-		if delta.ProposedBinding != nil && delta.ProposedBinding.TargetKind == "chapter" && delta.ProposedBinding.TargetID != "" {
-			chapter, e := tx.Chapter(p.ID, delta.ProposedBinding.TargetID)
+		if kind, id := resultingBindingTarget(p, delta); kind == "chapter" {
+			chapter, e := chapterForRuleSection(tx, p.ID, id)
 			if e != nil {
 				return nil, e
 			}

@@ -48,7 +48,7 @@ func (s *Service) ListAuditHistory(ctx context.Context, actor Actor, templateID 
 		actions := []string{
 			"lingdoc.template.create_profile", "lingdoc.template.save_draft",
 			"lingdoc.template.publish", "lingdoc.template.withdraw",
-			"lingdoc.template.recall", "lingdoc.template.copy",
+			"lingdoc.template.recall", "lingdoc.template.copy", "lingdoc.template.switch",
 		}
 		detailsTarget := "json_extract(details, '$.target_ref')"
 		if tx.Name() == "postgres" {

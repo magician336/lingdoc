@@ -67,6 +67,17 @@ type TemplateCatalogResolver interface {
 	Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error)
 }
 
+// TemplateCatalogSwitchResolver distinguishes read-only previews from writes
+// that must lock the published template and its published RuleSet.
+type TemplateCatalogSwitchResolver interface {
+	ResolveTemplateSwitch(context.Context, Transaction, Actor, string, string, bool) (CatalogTemplateDefinition, error)
+}
+
+type TemplateSwitchAuditRecorder interface {
+	RecordTemplateSwitchSuccess(context.Context, Transaction, Actor, TemplateCopyAudit) error
+	RecordTemplateSwitchFailure(context.Context, Actor, TemplateCopyFailure) error
+}
+
 // TemplateCopyAudit contains server-computed identities for a successful
 // catalog copy. The recorder writes it through the same project transaction.
 type TemplateCopyAudit struct {
@@ -102,6 +113,27 @@ type TemplateCopyAuditRecorder interface {
 }
 
 func (s *Service) SetTemplateCatalogResolver(resolver TemplateCatalogResolver) { s.catalog = resolver }
+
+// The boolean says whether the target was a published catalog entry. A fixed
+// demo fallback is not a published catalog copy and cannot receive that audit.
+func (s *Service) resolveTemplateSwitch(ctx context.Context, tx Transaction, actor Actor, id, version string, forUpdate bool) (CatalogTemplateDefinition, bool, error) {
+	if s.catalog != nil {
+		resolver, ok := s.catalog.(TemplateCatalogSwitchResolver)
+		if !ok {
+			return CatalogTemplateDefinition{}, false, ErrInvalidState
+		}
+		value, err := resolver.ResolveTemplateSwitch(ctx, tx, actor, id, version, forUpdate)
+		if err == nil {
+			return value, true, nil
+		}
+		if id != template.DemoTemplateID || !errors.Is(err, governance.ErrCatalogVersionAbsent) {
+			return CatalogTemplateDefinition{}, false, err
+		}
+	}
+	definition, err := s.templates.Get(id, version)
+	return CatalogTemplateDefinition{Definition: definition}, false, err
+}
+
 func (s *Service) resolveTemplate(ctx context.Context, tx Transaction, actor Actor, id, version string) (CatalogTemplateDefinition, error) {
 	if s.catalog != nil {
 		value, err := s.catalog.Resolve(ctx, tx, actor, id, version)
@@ -147,11 +179,19 @@ func makeCatalogTemplateCopy(actor Actor, pid string, version int64, value Catal
 	}
 	return copy, nil
 }
+
+// Preserve the original source snapshot separately from a legacy project's
+// derived effective snapshot. Older sidecars lack this optional evidence.
+type projectTemplateBindingSidecar struct {
+	ProjectTemplateCopy
+	LegacySourceRuleSetSnapshot *template.RuleSet `json:"legacy_source_rule_set_snapshot,omitempty"`
+}
+
 func hydrateTemplateBinding(db *gorm.DB, copy *ProjectTemplateCopy) error {
 	if copy == nil || !db.Migrator().HasTable(&projectRecordRow{}) {
 		return nil
 	}
-	var value ProjectTemplateCopy
+	var value projectTemplateBindingSidecar
 	_, err := (gormTransaction{db}).GetProjectRecord(copy.ProjectID, "template_binding", copy.ID, &value)
 	if err == ErrNotFound {
 		return nil
@@ -165,13 +205,23 @@ func hydrateTemplateBinding(db *gorm.DB, copy *ProjectTemplateCopy) error {
 	copy.SourceRuleSetID = value.SourceRuleSetID
 	copy.SourceRuleSetVersion = value.SourceRuleSetVersion
 	copy.SourceRuleSetHash = value.SourceRuleSetHash
+	copy.legacySourceRuleSetSnapshot = value.LegacySourceRuleSetSnapshot
+	if err := validateLegacySourceSnapshot(copy); err != nil {
+		return err
+	}
 	return nil
 }
 func saveTemplateBinding(tx gormTransaction, copy ProjectTemplateCopy) error {
 	if copy.RuleSetSnapshot == nil && copy.SourcePolicyHash == "" {
 		return nil
 	}
-	return tx.PutProjectRecord(copy.ProjectID, "template_binding", copy.ID, 0, ProjectTemplateCopy{BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash})
+	if err := validateLegacySourceSnapshot(&copy); err != nil {
+		return err
+	}
+	return tx.PutProjectRecord(copy.ProjectID, "template_binding", copy.ID, 0, projectTemplateBindingSidecar{
+		ProjectTemplateCopy:         ProjectTemplateCopy{BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash},
+		LegacySourceRuleSetSnapshot: copy.legacySourceRuleSetSnapshot,
+	})
 }
 func sanitizedSpecAudit(fields map[string]SpecField) map[string]any {
 	out := map[string]any{}

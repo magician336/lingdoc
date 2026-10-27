@@ -50,24 +50,28 @@ type Project struct {
 // published template version. Lifecycle status may advance; Definition and
 // its server-computed hashes never change after the row is inserted.
 type ProjectTemplateCopy struct {
-	BindingPolicies           []governance.BindingPolicy        `json:"binding_policies,omitempty"`
-	SourcePolicyHash          string                            `json:"source_policy_hash,omitempty"`
-	RuleSetSnapshot           *lingdoctemplate.RuleSet          `json:"rule_set_snapshot,omitempty"`
-	SourceRuleSetID           string                            `json:"source_ruleset_id,omitempty"`
-	SourceRuleSetVersion      string                            `json:"source_ruleset_version,omitempty"`
-	SourceRuleSetHash         string                            `json:"source_ruleset_hash,omitempty"`
-	ID                        string                            `json:"id"`
-	ProjectID                 string                            `json:"project_id"`
-	SourceTemplateID          string                            `json:"source_template_id"`
-	SourceTemplateVersion     string                            `json:"source_template_version"`
-	Version                   int64                             `json:"version"`
-	Status                    string                            `json:"status"`
-	ContentHash               string                            `json:"content_hash"`
-	RulesetHash               string                            `json:"ruleset_hash"`
-	TemplateVersionRuleSetRef *lingdoctemplate.RuleSetReference `json:"template_version_ruleset_ref,omitempty"`
-	Definition                lingdoctemplate.Template          `json:"definition"`
-	CreatedBy                 string                            `json:"created_by"`
-	CreatedAt                 time.Time                         `json:"created_at"`
+	// legacySourceRuleSetSnapshot is immutable source evidence for a legacy
+	// project-owned effective RuleSet. It is stored only in the server-owned
+	// template_binding sidecar and is never accepted from a client request.
+	legacySourceRuleSetSnapshot *lingdoctemplate.RuleSet
+	BindingPolicies             []governance.BindingPolicy        `json:"binding_policies,omitempty"`
+	SourcePolicyHash            string                            `json:"source_policy_hash,omitempty"`
+	RuleSetSnapshot             *lingdoctemplate.RuleSet          `json:"rule_set_snapshot,omitempty"`
+	SourceRuleSetID             string                            `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion        string                            `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash           string                            `json:"source_ruleset_hash,omitempty"`
+	ID                          string                            `json:"id"`
+	ProjectID                   string                            `json:"project_id"`
+	SourceTemplateID            string                            `json:"source_template_id"`
+	SourceTemplateVersion       string                            `json:"source_template_version"`
+	Version                     int64                             `json:"version"`
+	Status                      string                            `json:"status"`
+	ContentHash                 string                            `json:"content_hash"`
+	RulesetHash                 string                            `json:"ruleset_hash"`
+	TemplateVersionRuleSetRef   *lingdoctemplate.RuleSetReference `json:"template_version_ruleset_ref,omitempty"`
+	Definition                  lingdoctemplate.Template          `json:"definition"`
+	CreatedBy                   string                            `json:"created_by"`
+	CreatedAt                   time.Time                         `json:"created_at"`
 }
 
 const (

@@ -87,6 +87,16 @@ func sourcePolicyProject(t *testing.T, path string) (*Service, Actor, Project, l
 	}
 	project := asProject(t, raw)
 	assertSourcePolicySidecar(t, svc, project.TemplateCopy)
+	// The tests below exercise binding and source-policy history, so give the
+	// draft the required values before binding its next template-copy version.
+	raw, _, _, err = svc.SaveSpec(context.Background(), owner, project.ID, "policy-fixture-required", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "policy fixture subject", "research_goal": "policy fixture goal"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
 	return svc, owner, project, set
 }
 
@@ -216,6 +226,16 @@ func TestBindRuleSetPersistsSourcePolicyAndCanonicalSidecar(t *testing.T) {
 func TestSaveTemplateCopyPersistsLegacySourcePolicyAndHistory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy-save-template.db")
 	svc, owner, project, _ := sourcePolicyProject(t, path)
+	// Populate the existing required fields before editing the copy; unresolved
+	// migration risks now block the write, including unrelated structural edits.
+	filled, _, _, err := svc.SaveSpec(context.Background(), owner, project.ID, "policy-required-spec", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "Synthetic subject", "research_goal": "Synthetic goal"},
+	})
+	if err != nil {
+		t.Fatalf("prepare required fields before editing: %v", err)
+	}
+	project = asProject(t, filled)
 	original := project.TemplateCopy
 	oldSidecar := sourcePolicySidecarBytes(t, svc, original)
 	definition := lingdoctemplate.Clone(original.Definition)

@@ -1,5 +1,6 @@
 import { get, post, postNoBody, put } from '@/utils/request'
 import type { AdoptionConfirmation } from './candidateAdoption'
+import type { RuleSet } from './templateGovernance'
 
 export type ProjectFunctionRole = 'author' | 'researcher' | 'reviewer' | 'observer'
 export type ProjectGovernanceRole = 'owner' | 'admin' | 'member'
@@ -75,6 +76,31 @@ export interface TemplateCopyDefinition {
   rules: TemplateRule[]
 }
 
+export interface ProjectBindingPolicy {
+  rule_id: string
+  may_disable: boolean
+  allowed_target_kinds?: string[]
+  allowed_target_ids?: string[]
+  allowed_severities?: string[]
+  allowed_parameter_keys?: string[]
+  parameter_bounds?: Record<string, { minimum?: number; maximum?: number }>
+}
+
+export interface LegacyRuleOverrideInput {
+  expected_project_version: number
+  expected_template_copy_version: number
+  reason: string
+  overrides: Array<{
+    rule_id: string
+    enabled?: boolean
+    target_kind?: string
+    target_id?: string
+    severity?: string
+    parameters?: Record<string, unknown>
+    remove_parameter_keys?: string[]
+  }>
+}
+
 export interface ProjectTemplateCopy {
   id: string
   project_id: string
@@ -84,7 +110,10 @@ export interface ProjectTemplateCopy {
   status: 'draft' | 'bound' | 'superseded' | 'discarded'
   content_hash: string
   ruleset_hash: string
-  definition: TemplateCopyDefinition & { id: string; name: string; version: string; is_demo: boolean }
+  definition: TemplateCopyDefinition & { id: string; name: string; version: string; is_demo: boolean; ruleset_snapshot?: unknown; ruleset_ref?: unknown }
+  rule_set_snapshot?: RuleSet
+  binding_policies?: ProjectBindingPolicy[]
+  source_policy_hash?: string
   created_by: string
   created_at: string
 }
@@ -92,6 +121,48 @@ export interface ProjectTemplateCopy {
 export interface TemplateCopyEditInput extends TemplateCopyDefinition {
   expected_project_version: number
   expected_template_copy_version: number
+}
+
+export interface TemplateFieldArchive {
+  id: string
+  project_id: string
+  field_id: string
+  status: 'recorded' | 'removed'
+  archive_version: number
+  value_present: boolean
+  value: string
+  metadata_present: boolean
+  metadata?: NonNullable<Project['spec_fields']>[string]
+  value_redacted: boolean
+  created_by: string
+  created_at: string
+  project_version: number
+  spec_revision: number
+  template_copy_version: number
+  target_content_hash: string
+  removed_at?: string
+}
+
+export interface TemplateFieldArchiveReceipt {
+  id: string
+  status: 'recorded' | 'removed'
+  archive_version: number
+  project_version: number
+  spec_revision: number
+  template_copy_version: number
+}
+
+export interface CreateTemplateFieldArchiveInput {
+  field_id: string
+  expected_spec_revision: number
+  template_copy: TemplateCopyEditInput
+}
+
+export interface RemoveArchivedTemplateFieldInput {
+  confirmed: true
+  expected_archive_version: number
+  expected_spec_revision: number
+  template_copy: TemplateCopyEditInput
 }
 
 export interface TemplateMigrationPreview {
@@ -519,6 +590,16 @@ export const previewTemplateCopyEdit = (projectId: string, input: TemplateCopyEd
   post<Result<TemplateMigrationPreview>>(`${base}/${segment(projectId)}/template-copy/preview`, input)
 export const saveTemplateCopyEdit = (projectId: string, input: TemplateCopyEditInput, key: string) =>
   put<Result<Project>>(`${base}/${segment(projectId)}/template-copy`, input, keyHeader(key))
+export const saveLegacyRuleOverrides = (projectId: string, input: LegacyRuleOverrideInput, key: string) =>
+  put<Result<Project>>(`${base}/${segment(projectId)}/template-copy/legacy-rule-overrides`, input, keyHeader(key))
+export const listTemplateFieldArchives = (projectId: string) =>
+  get<Result<{ items: TemplateFieldArchive[] }>>(`${base}/${segment(projectId)}/template-copy/field-archives`)
+export const getTemplateFieldArchive = (projectId: string, archiveId: string) =>
+  get<Result<TemplateFieldArchive>>(`${base}/${segment(projectId)}/template-copy/field-archives/${segment(archiveId)}`)
+export const createTemplateFieldArchive = (projectId: string, input: CreateTemplateFieldArchiveInput, key: string) =>
+  post<Result<TemplateFieldArchiveReceipt>>(`${base}/${segment(projectId)}/template-copy/field-archives`, input, keyHeader(key))
+export const removeArchivedTemplateField = (projectId: string, archiveId: string, input: RemoveArchivedTemplateFieldInput, key: string) =>
+  post<Result<TemplateFieldArchiveReceipt>>(`${base}/${segment(projectId)}/template-copy/field-archives/${segment(archiveId)}/remove`, input, keyHeader(key))
 export const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>
   put<Result<Project>>(`${base}/${segment(id)}/spec`,
     { expected_spec_revision: expected, fields }, keyHeader(key))
