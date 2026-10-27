@@ -48,6 +48,23 @@ def git(root: Path, *args: str) -> str:
         ["git", *args], cwd=root, stderr=subprocess.DEVNULL).decode().strip()
 
 
+def hermetic_env(**overrides: str) -> dict:
+    """A subprocess environment in which only the fixture speaks.
+
+    The gate CLI reads GITHUB_* to learn which event it serves. The CI step
+    running this suite sits inside a real event, so an inherited environment
+    overrides every fixture's own event file and flips the verdict under
+    test — four tests failed exactly this way on the runner and passed
+    nowhere else (#720 shard ticket's first real run). Fixtures speak only
+    through their explicit event files and explicit overrides: every
+    inherited GITHUB_* variable is stripped here.
+    """
+    env = {name: value for name, value in os.environ.items()
+           if not name.startswith("GITHUB_")}
+    env.update(overrides)
+    return env
+
+
 def write(root: Path, relative: str, content: str) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -408,7 +425,7 @@ class BaseMoveCoverageTests(DecisionFixture):
                  "--event", str(event_path), "--root", str(root),
                  "--require-coverage", "--no-whitespace"],
                 capture_output=True, text=True, encoding="utf-8",
-                errors="replace")
+                errors="replace", env=hermetic_env())
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("no job that compiles or tests", result.stderr)
@@ -1085,7 +1102,7 @@ class OfflineEntryPointTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--event", str(event_path), "--root", str(root)],
-                capture_output=True, text=True)
+                capture_output=True, text=True, env=hermetic_env())
 
             self.assertEqual(result.returncode, 0, result.stderr)
             report = json.loads(result.stdout)
@@ -1147,7 +1164,7 @@ class PullRequestGateWiringTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--event", str(event_path), "--root", str(root)],
-                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                env=hermetic_env(GITHUB_OUTPUT=str(output)),
                 capture_output=True, text=True)
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1308,7 +1325,7 @@ class ProviderSelectionTests(DecisionFixture):
             result = subprocess.run(
                 [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
                  "--all", "--root", str(root)],
-                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                env=hermetic_env(GITHUB_OUTPUT=str(output)),
                 capture_output=True, text=True)
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1817,7 +1834,7 @@ class WhitespaceBoundaryTests(DecisionFixture):
         return subprocess.run(
             [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
              "--event", str(event_path), "--root", str(root)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=hermetic_env())
 
     def test_an_upstream_merge_is_not_a_pull_request_defect(self):
         with tempfile.TemporaryDirectory() as tmp:
