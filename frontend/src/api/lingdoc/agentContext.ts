@@ -4,13 +4,16 @@
 // 三条规则决定了这个模块的形状：
 //   - 事实区的每一个值都来自服务端返回。本地不推断「这一轮带了什么」。
 //   - 契约类型由传输层模块（agentApi.ts）拥有。这里只读不改，不复制第二份。
-//   - 选择理由按服务端原文逐条透传，不解析成条目映射。
+//   - 选择理由按服务端给的结构化条目透传，并按 kind + id 挂接条目；text 只作
+//     展示，不参与映射。
 import { listEvidenceCards, previewAgentContext } from './agentApi'
 import type {
   AgentContextInput,
   AgentContextPackage,
   AgentSourceRef,
   EvidenceCard,
+  SelectionReason,
+  SelectionReasonKind,
   VersionRef,
 } from './agentApi'
 
@@ -181,8 +184,8 @@ export interface ContextFactGroups {
   cards: ContextCardStatus[]
   /** 这一轮带了哪些来源，保持服务端给的顺序。 */
   sources: AgentSourceRef[]
-  /** 服务端给的理由，原文逐条透传。 */
-  reasons: string[]
+  /** 服务端给的理由，保持服务端给的条数与顺序；按 kind + id 挂接条目。 */
+  reasons: SelectionReason[]
   /** 这一轮据以组装的版本基线。 */
   version_baseline: Pick<
     AgentContextPackage,
@@ -190,6 +193,7 @@ export interface ContextFactGroups {
     | 'spec_revision'
     | 'context_revision'
     | 'chapter_version_id'
+    | 'task_id'
     | 'task_version'
     | 'template_id'
     | 'template_version'
@@ -212,10 +216,22 @@ export interface ContextFacts {
 }
 
 /**
+ * 某个条目在这一轮的理由：按 kind 与 id 取，不看 text。
+ *
+ * 这是理由到条目的唯一映射规则。后端换措辞时 text 变了，kind/id 不变，映射
+ * 因此不动；前端也没有任何按 text 猜条目的代码。
+ */
+export const reasonsForEntry = (
+  reasons: SelectionReason[],
+  kind: SelectionReasonKind,
+  id: string,
+): SelectionReason[] => reasons.filter(reason => reason.kind === kind && reason.id === id)
+
+/**
  * 把服务端组装好的那一份分成六组可展示的事实。
  *
- * 来源保持服务端给的顺序；理由保持服务端给的条数与顺序。理由是不透明字符串，
- * 这里原样透传——不按理由的文本去配对条目，也不按文本筛卡片。
+ * 来源保持服务端给的顺序；理由保持服务端给的条数与顺序，并保留结构化条目键。
+ * 理由的 text 只作展示，这里不按 text 配对或筛选条目。
  *
  * `cards` 是 `undefined` 表示证据卡清单没读到：范围照常来自上下文包，卡片状态
  * 一律记「状态未知」。
@@ -228,12 +244,13 @@ export const groupContextFacts = (
   groups: {
     cards: alignCardStatuses(pkg.card_refs, cards),
     sources: [...pkg.source_refs],
-    reasons: [...pkg.selection_reasons],
+    reasons: pkg.selection_reasons.map(reason => ({ ...reason })),
     version_baseline: {
       project_version: pkg.project_version,
       spec_revision: pkg.spec_revision,
       context_revision: pkg.context_revision,
       chapter_version_id: pkg.chapter_version_id,
+      task_id: pkg.task_id,
       task_version: pkg.task_version,
       template_id: pkg.template_id,
       template_version: pkg.template_version,

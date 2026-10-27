@@ -408,25 +408,51 @@ type AgentSourceRef struct {
 	QuotedText      string `json:"quoted_text,omitempty"`
 	ModelUseAllowed bool   `json:"model_use_allowed"`
 }
+
+// SelectionReason is why one entry of the context package is present. The text
+// is for the reader; the other three fields are the machine-readable key. Kind
+// names what the ID belongs to, and Code names the rule that pulled the entry
+// in. Rewording Text must never change Kind, ID or Code: the front end attaches
+// each reason to its entry by those three fields, never by the prose.
+type SelectionReason struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Code string `json:"code"`
+	Text string `json:"text"`
+}
+
+// The closed vocabularies of SelectionReason. A new kind or code is a contract
+// change: the OpenAPI schema and the front-end union move with it.
+const (
+	SelectionReasonKindCard   = "card"
+	SelectionReasonKindSource = "source"
+	SelectionReasonKindTask   = "task"
+
+	SelectionReasonUserSelectedTask   = "user_selected_task"
+	SelectionReasonUserSelectedCard   = "user_selected_card"
+	SelectionReasonUserSelectedSource = "user_selected_source"
+	SelectionReasonCardDependency     = "card_dependency"
+)
+
 type AgentContextPackage struct {
-	ProjectID          string           `json:"project_id"`
-	ProjectVersion     int64            `json:"project_version"`
-	SpecRevision       int64            `json:"spec_revision"`
-	ContextRevision    int64            `json:"context_revision"`
-	ChapterID          string           `json:"chapter_id,omitempty"`
-	ChapterVersionID   string           `json:"chapter_version_id,omitempty"`
-	TaskID             string           `json:"task_id,omitempty"`
-	TaskVersion        int64            `json:"task_version,omitempty"`
-	TemplateID         string           `json:"template_id"`
-	TemplateVersion    string           `json:"template_version"`
-	RuleSetID          string           `json:"ruleset_id,omitempty"`
-	RuleSetVersion     string           `json:"ruleset_version,omitempty"`
-	SourceRefs         []AgentSourceRef `json:"source_refs"`
-	CardRefs           []VersionRef     `json:"card_refs"`
-	SelectionReasons   []string         `json:"selection_reasons"`
-	AuthorizationState string           `json:"authorization_state"`
-	OutputConstraints  []string         `json:"output_constraints"`
-	CorrelationID      string           `json:"correlation_id"`
+	ProjectID          string            `json:"project_id"`
+	ProjectVersion     int64             `json:"project_version"`
+	SpecRevision       int64             `json:"spec_revision"`
+	ContextRevision    int64             `json:"context_revision"`
+	ChapterID          string            `json:"chapter_id,omitempty"`
+	ChapterVersionID   string            `json:"chapter_version_id,omitempty"`
+	TaskID             string            `json:"task_id,omitempty"`
+	TaskVersion        int64             `json:"task_version,omitempty"`
+	TemplateID         string            `json:"template_id"`
+	TemplateVersion    string            `json:"template_version"`
+	RuleSetID          string            `json:"ruleset_id,omitempty"`
+	RuleSetVersion     string            `json:"ruleset_version,omitempty"`
+	SourceRefs         []AgentSourceRef  `json:"source_refs"`
+	CardRefs           []VersionRef      `json:"card_refs"`
+	SelectionReasons   []SelectionReason `json:"selection_reasons"`
+	AuthorizationState string            `json:"authorization_state"`
+	OutputConstraints  []string          `json:"output_constraints"`
+	CorrelationID      string            `json:"correlation_id"`
 }
 type AgentMessage struct {
 	Role    string `json:"role"`

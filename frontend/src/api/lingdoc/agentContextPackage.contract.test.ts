@@ -22,6 +22,9 @@ import type { AgentContextPackage } from './agentApi'
  *      意味着「默认没有例外」；真要放宽，得在这里写下一个名字，而不是让
  *      比对悄悄变松。
  *
+ * `AgentContextPackage` 与嵌套的 `SelectionReason` 用同一条比对规则：#432
+ * 之后理由带条目键，嵌套形状漂了，前端就会按错的字段挂接理由。
+ *
  * 前端目录可能被单独 checkout（只带 `frontend/`），读不到服务端源码时**显式
  * skip**，绝不静默通过——静默通过等于没有这条守护。
  */
@@ -37,9 +40,9 @@ const SERVER_AVAILABLE = existsSync(SERVER_MODEL)
 const OPTIONALITY_EXEMPTIONS: ReadonlySet<string> = new Set<string>()
 
 /** 服务端结构体的字段名与 `omitempty` 语义。 */
-function serverContextPackageFields(source = readFileSync(SERVER_MODEL, 'utf8')): ContextField[] {
-  const block = source.match(/type AgentContextPackage struct \{[\s\S]*?\n\}/)
-  if (!block) throw new Error('服务端契约里没有找到 AgentContextPackage 结构体')
+function serverStructFields(structName: string, source = readFileSync(SERVER_MODEL, 'utf8')): ContextField[] {
+  const block = source.match(new RegExp(`type ${structName} struct \\{[\\s\\S]*?\\n\\}`))
+  if (!block) throw new Error(`服务端契约里没有找到 ${structName} 结构体`)
 
   const fields: ContextField[] = []
   for (const rawLine of block[0].split('\n')) {
@@ -56,29 +59,44 @@ function serverContextPackageFields(source = readFileSync(SERVER_MODEL, 'utf8'))
     if (!name) throw new Error(`服务端字段 ${declaration[1]} 的 json tag 没有名字`)
     fields.push({ name, optional: options.includes('omitempty') })
   }
-  if (!fields.length) throw new Error('服务端 AgentContextPackage 没有解析到任何字段')
+  if (!fields.length) throw new Error(`服务端 ${structName} 没有解析到任何字段`)
   return fields
 }
 
+function serverContextPackageFields(source = readFileSync(SERVER_MODEL, 'utf8')): ContextField[] {
+  return serverStructFields('AgentContextPackage', source)
+}
+
+function serverSelectionReasonFields(source = readFileSync(SERVER_MODEL, 'utf8')): ContextField[] {
+  return serverStructFields('SelectionReason', source)
+}
+
 /** 前端接口的字段名与 `?` 语义。 */
-function clientContextPackageFields(source = readFileSync(CLIENT_API, 'utf8')): ContextField[] {
+function clientInterfaceFields(
+  interfaceName: string,
+  source = readFileSync(CLIENT_API, 'utf8'),
+): ContextField[] {
   const file = ts.createSourceFile(CLIENT_API, source, ts.ScriptTarget.ES2022, true)
   const declaration = file.statements.find(
     (statement): statement is ts.InterfaceDeclaration =>
-      ts.isInterfaceDeclaration(statement) && statement.name.text === 'AgentContextPackage',
+      ts.isInterfaceDeclaration(statement) && statement.name.text === interfaceName,
   )
-  if (!declaration) throw new Error('前端 API 里没有找到 AgentContextPackage 接口')
+  if (!declaration) throw new Error(`前端 API 里没有找到 ${interfaceName} 接口`)
 
   const fields: ContextField[] = []
   for (const member of declaration.members) {
-    if (!ts.isPropertySignature(member) || !member.name) throw new Error('AgentContextPackage 里出现了非字段成员')
+    if (!ts.isPropertySignature(member) || !member.name) throw new Error(`${interfaceName} 里出现了非字段成员`)
     fields.push({
       name: member.name.getText(file).replace(/^['"]|['"]$/g, ''),
       optional: Boolean(member.questionToken),
     })
   }
-  if (!fields.length) throw new Error('前端 AgentContextPackage 没有解析到任何字段')
+  if (!fields.length) throw new Error(`前端 ${interfaceName} 没有解析到任何字段`)
   return fields
+}
+
+function clientContextPackageFields(source = readFileSync(CLIENT_API, 'utf8')): ContextField[] {
+  return clientInterfaceFields('AgentContextPackage', source)
 }
 
 /** 返回漂移清单；空数组表示两边逐字段一致。 */
@@ -119,6 +137,35 @@ test('前端上下文包类型的字段集合与服务端契约逐字段相等',
     [],
     '前端 AgentContextPackage 与服务端契约漂移：两边必须一起改',
   )
+})
+
+test('嵌套的 SelectionReason 字段集合与可选性也逐字段相等', (t) => {
+  if (!SERVER_AVAILABLE) {
+    t.skip(`读不到服务端契约（${SERVER_MODEL}），跳过理由字段比对`)
+    return
+  }
+  assert.deepEqual(
+    contextPackageDrift(serverSelectionReasonFields(), clientInterfaceFields('SelectionReason')),
+    [],
+    '前端 SelectionReason 与服务端契约漂移：kind、id、code、text 必须一一对应',
+  )
+})
+
+test('嵌套理由少一个字段时比对变红', () => {
+  const drift = contextPackageDrift(
+    [
+      { name: 'kind', optional: false },
+      { name: 'id', optional: false },
+      { name: 'code', optional: false },
+      { name: 'text', optional: false },
+    ],
+    [
+      { name: 'kind', optional: false },
+      { name: 'id', optional: false },
+      { name: 'code', optional: false },
+    ],
+  )
+  assert.deepEqual(drift, ['前端缺字段 text'])
 })
 
 test('规则集基线两个字段前端可读：与服务端同名', (t) => {
@@ -185,7 +232,7 @@ const contextPackageWithBaseline: AgentContextPackage = {
   ruleset_version: '7',
   source_refs: [],
   card_refs: [],
-  selection_reasons: [],
+  selection_reasons: [{ kind: 'card', id: 'card-1', code: 'user_selected_card', text: '用户勾选' }],
   authorization_state: 'allowed',
   output_constraints: [],
   correlation_id: 'correlation-1',
@@ -194,4 +241,12 @@ const contextPackageWithBaseline: AgentContextPackage = {
 test('上下文包类型收得下规则集基线，值原样可读', () => {
   assert.equal(contextPackageWithBaseline.ruleset_id, 'ruleset-1')
   assert.equal(contextPackageWithBaseline.ruleset_version, '7')
+})
+
+test('上下文包类型收得下结构化理由，条目键可读', () => {
+  const [reason] = contextPackageWithBaseline.selection_reasons
+  assert.equal(reason.kind, 'card')
+  assert.equal(reason.id, 'card-1')
+  assert.equal(reason.code, 'user_selected_card')
+  assert.equal(reason.text, '用户勾选')
 })
