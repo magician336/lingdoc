@@ -1,0 +1,73 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#141 G4 模型辅助规则建议的验收证据。按《验收判定口径》v1.1 判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，Spec-141-模型辅助规则建议验收矩阵.md 是它的人读副本。首轮判定：能力由 PR #122 一线交付（internal/lingdoc/templategovernance/suggestion.go），此前无任何针对本 Spec 的验收记录。",
+  "head": "0cc506e32279b04410d29ff92f908dd83cbb6718",
+  "base": "c8785d1f18a349a9803fb10a8b7cafa1d972b9ff",
+  "head_note": "落证 head：0cc506e32279b04410d29ff92f908dd83cbb6718（缺口轮 C4 候选）。C1/C3 轮证据分别在 c8785d1f / 824c17ff 取得；C4 已在 0cc506e3 上重跑全部 Go 证据（templategovernance 整包 + workspace 定向）与前端测试。",
+  "base_note": "判定所依据的基线：c8785d1f（本轮开工时 main 尖端；纯证据提交无代码差）。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 23,
+  "passed": [
+    {
+      "id": "US-01、US-03、TD-02.1",
+      "status": "pass",
+      "evidence": "`TestSuggestionModelCompletionRechecksAuthorizationAndBasis`；`go test -count=1 -run '^TestSuggestionModelCompletionRechecksAuthorizationAndBasis$' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-02",
+      "status": "pass",
+      "evidence": "`TestRuleSuggestionPromptKeepsSyntheticTemplateAndAuthorizedScope`；`go test -count=1 -run '^TestRuleSuggestionPromptKeepsSyntheticTemplateAndAuthorizedScope$' ./internal/lingdoc/workspace/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-04、US-06、US-07、TD-01、TD-02.3、TD-02.4、TD-03.1",
+      "status": "pass",
+      "evidence": "`TestSuggestionAcceptOnlyCreatesDraftAndReplaysWithoutModelOrNewWrites`；`go test -count=1 ./internal/lingdoc/templategovernance/`（整包 ok 7.005s，8 项 suggestion 测试全 PASS）；head `c8785d1f`"
+    },
+    {
+      "id": "US-05、TD-02.5",
+      "status": "pass",
+      "evidence": "`TestMachineCannotMakeHumanPublicationOrSuggestionDecisions`；`go test -count=1 -run '^TestMachineCannotMakeHumanPublicationOrSuggestionDecisions$' ./internal/lingdoc/workspace/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-08",
+      "status": "pass",
+      "evidence": "`TestSuggestionAcceptAuditFailureRollsBackExistingRuleSetStoreSavepoint`；`go test -count=1 -run '^TestSuggestionAcceptAuditFailureRollsBackExistingRuleSetStoreSavepoint$' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-09、TD-03.3",
+      "status": "pass",
+      "evidence": "`TestSuggestionSourceScopeAndUnavailableModelFailClosed`；`go test -count=1 -run '^TestSuggestionSourceScopeAndUnavailableModelFailClosed$' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-10、TD-03.4",
+      "status": "pass",
+      "evidence": "`TestSuggestionStaleAndRevokedActorCannotAcceptOrReadCachedSuccess`、`TestSuggestionCannotBindAnotherCatalogWithOtherwiseCurrentProjectBasis`；`go test -count=1 -run 'TestSuggestionStale|TestSuggestionCannotBindAnotherCatalog' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "TD-02.2、TD-03.2、TD-03.5",
+      "status": "pass",
+      "evidence": "`TestSuggestionRejectsUnsafeModelOutputAndHumanBlocking`；`go test -count=1 -run '^TestSuggestionRejectsUnsafeModelOutputAndHumanBlocking$' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "TD-04",
+      "status": "pass",
+      "evidence": "`TestSuggestionPreservesSharedFakeModelModeWithoutClaimingRealModel`；`go test -count=1 -run '^TestSuggestionPreservesSharedFakeModelModeWithoutClaimingRealModel$' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "TD-05",
+      "status": "pass",
+      "evidence": "「面板加载后展示建议标识与建议边界（模板/RuleSet/目标）」等 6 个用例；`npx tsx --test src/components/RuleSuggestionPanel.test.ts`（pass 6）；head `824c17ff`",
+      "note": "C3 交付 RuleSuggestionPanel.vue（组件级；Workspace 挂载走保留路径集成步骤，未挂载）。"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "本表按《验收判定口径》v1.1 判定；口径 commit = c8785d1f18a349a9803fb10a8b7cafa1d972b9ff；本表验收点总数 = 23（原子验收点口径）。",
+    "语义覆盖无人背书：机器只证明「有对应且跑得通的测试」，不证明「该测试真的覆盖这条验收点」（口径 §4.1/§7 已接受的代价）。US-03（理由与证据的逐字段投影）、US-08（审计明细含模型/范围/版本的逐字段断言）依赖测试名的近似对应。",
+    "本机 Windows 原生 go test 因 gojieba 原生扩展崩溃，全部 Go 命令经 WSL（Ubuntu, go1.26.0）在 /mnt/d/code_warehouse/Projects/lingdoc 下实跑；CI 的 ubuntu runner 与 LingDoc PR gate 走同源工具链，可复现。",
+    "「真实模型另行记录」半边：本轮未发起任何真实模型调用；真实调用证据由模型调用账本（#453 已关）与放行验收（#482 已关）承接。",
+    "TD-05 是本 Spec 唯一未闭合点（1/23）：22 PASS + 1 NOT RUN，Spec 票 #141 保持 open，缺口进地图 #695 的聚面流程。",
+    "C3 缺口轮（2026-10-27）：TD-05 由 RuleSuggestionPanel.vue + 6 项测试关闭，#141 现全点 PASS（23/23）。面板未挂载 Workspace.vue（保留路径，集成走显式步骤）；组件级语义覆盖依赖测试与验收点文本的近似对应（口径 §4.1 已接受）。",
+    "C4 缺口轮（2026-10-27）：全部行证据已在 C4 候选 0cc506e3 上重跑翻新；#141 维持 23/23 全 PASS。"
+  ]
+}

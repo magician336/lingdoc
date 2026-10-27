@@ -98,9 +98,16 @@ func closeBlockingTasks(t *testing.T, svc *Service, actor Actor, projectID strin
 				continue
 			}
 			evidence := confirmImpactTarget(t, svc, actor, projectID, task.Target.ID, round)
-			current := taskFor(t, tasksInProject(t, svc, actor, projectID), task.ChangeSetID)
-			if current.ID != task.ID {
-				continue
+			// Match by the task's own ID: a change set raises one task per
+			// impacted object, and matching by change ID alone made every
+			// iteration after the first resolve to the first task and skip
+			// the rest (#727's multi-object upgrade fixture).
+			current := task
+			for _, candidate := range tasksInProject(t, svc, actor, projectID) {
+				if candidate.ID == task.ID {
+					current = candidate
+					break
+				}
 			}
 			if current.AssigneeID != actor.UserID {
 				raw, _, _, err := svc.ActOnImpactTask(context.Background(), actor, projectID, task.ID,

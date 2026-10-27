@@ -1,0 +1,97 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#142 G4 模板升级与 G3 稳定化交接的验收证据。按《验收判定口径》v1.1 判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，Spec-142-模板升级与G3稳定化交接验收矩阵.md 是它的人读副本。首轮判定：能力由 PR #122 一线交付（internal/lingdoc/workspacecore/change_creation_mutation.go 等），此前无任何针对本 Spec 的验收记录。",
+  "head": "0cc506e32279b04410d29ff92f908dd83cbb6718",
+  "base": "c8785d1f18a349a9803fb10a8b7cafa1d972b9ff",
+  "head_note": "落证 head：0cc506e32279b04410d29ff92f908dd83cbb6718（缺口轮 C4 候选，含 TD-05 的 PG 验收测试）。C1/C2/C3 轮证据分别在 c8785d1f / 737ef594 / 824c17ff 取得；C4 已在 0cc506e3 上重跑全部 Go 与前端证据。",
+  "base_note": "判定所依据的基线：c8785d1f（本轮开工时 main 尖端；纯证据提交无代码差）。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 30,
+  "passed": [
+    {
+      "id": "US-01、US-04、US-05、US-06、TD-02.1",
+      "status": "pass",
+      "evidence": "`TestUpgradePlanPreservesMigrationFailuresAndEmitsAllDomainFacts`、`TestUpgradePlanStableOrderingAndTargetPublicationGate`；`go test -count=1 -run '^TestUpgradePlan' ./internal/lingdoc/templategovernance/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-02、US-07、US-08、TD-02.2、TD-02.3、TD-03.6的撤权半边",
+      "status": "pass",
+      "evidence": "`TestTemplateUpgradeApplyRejectsStaleOrRevokedAndRollsBackMidWrite`；`go test -count=1 -run '^TestTemplateUpgradeApply' ./internal/lingdoc/workspacecore/`（与 TestTemplateUpgradeRejectsUnmappedRequiredField、TestTemplateUpgradeApplyRechecksRuleSetLifecycleBeforeWrites 同批：--- PASS ×4，ok 2.402s 定向）；head `c8785d1f`",
+      "matrix_note": "TD-03.6 整点判 FAIL（审计失败半边无用例），本条目只记撤权证据，不判 TD-03.6。"
+    },
+    {
+      "id": "US-03、TD-03.1",
+      "status": "pass",
+      "evidence": "`TestUpgradePlanPreservesMigrationFailuresAndEmitsAllDomainFacts`、`TestTemplateUpgradeRejectsUnmappedRequiredField`；`go test -count=1 -run 'TestUpgradePlanPreservesMigrationFailures|TestTemplateUpgradeRejectsUnmappedRequiredField' ./internal/lingdoc/workspacecore/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-09、TD-02.6",
+      "status": "pass",
+      "evidence": "`TestActiveTemplateCopyUpgradeUsesOwnerChangeSetAndKeepsHistory`、`TestR27OptionalTemplateFieldUpgradeReverseAfterReopen`；`go test -count=1 -run 'TestActiveTemplateCopyUpgrade|TestR27OptionalTemplateFieldUpgrade' ./internal/lingdoc/workspacecore/`；head `c8785d1f`"
+    },
+    {
+      "id": "US-10、TD-02.5、TD-03.3、TD-03.4、TD-04、TD-01",
+      "status": "pass",
+      "evidence": "`TestReleaseGateRejectsNotCurrentRequiredRoute`、`TestStabilizationBlocksNotCurrentRequiredRoute`、`TestStabilizationGateFallThroughNeedsResolvableResultSources`；`go test -count=1 -run 'TestReleaseGateRejects|TestStabilization' ./internal/lingdoc/workspacecore/`（stabilization_guard_test.go 23 项）；head `c8785d1f`"
+    },
+    {
+      "id": "US-11",
+      "status": "pass",
+      "evidence": "`TestStabilizationBlocksStaleClosureEvidence`（修复后以新幂等键重跑，guard-closure-retry stabilization_guard_test.go:326；guard-rules-retry :609 同型）；`go test -count=1 -run '^TestStabilizationBlocksStaleClosureEvidence$' ./internal/lingdoc/workspacecore/`；head `c8785d1f`"
+    },
+    {
+      "id": "TD-02.7、US-12的重新校验半边、TD-02.8的重新确认半边",
+      "status": "pass",
+      "evidence": "`TestTemplateUpgradeRequiresExactRuleSetHash`、`TestTemplateUpgradeApplyRechecksRuleSetLifecycleBeforeWrites`；`go test -count=1 -run 'TestTemplateUpgradeRequiresExactRuleSetHash|TestTemplateUpgradeApplyRechecks' ./internal/lingdoc/workspacecore/`；head `c8785d1f`",
+      "matrix_note": "TD-02.8 整点判 FAIL（导出放行半边无用例）、US-12 判 FAIL（审计链路无断言），本条目只记已覆盖半边，不判那两点。"
+    },
+    {
+      "id": "US-12、TD-03.6",
+      "status": "pass",
+      "evidence": "`TestTemplateUpgradeAuditTrailLinksCreateApplyAndNewCopy`、`TestTemplateUpgradeApplyAuditFailureRollsBackUpgradeWrites`；`go test -count=1 -run 'TestTemplateUpgradeAuditTrail|TestTemplateUpgradeApplyAuditFailure' ./internal/lingdoc/workspacecore/`；head `737ef594`",
+      "note": "C2（#696 缺口轮）新增：审计链断言（create/apply 两事件带 template_upgrade 明细并以 change.ID 关联）与升级 apply 审计失败整笔回滚（#310 注入器）。"
+    },
+    {
+      "id": "TD-02.4、TD-03.5",
+      "status": "pass",
+      "evidence": "`TestTemplateUpgradeApplyCreatesImpactTasksAndHandoff`、`TestTemplateUpgradeApplyReplaysSameKeyAndRejectsDifferentInput`；`go test -count=1 -run 'TestTemplateUpgradeApplyCreatesImpactTasks|TestTemplateUpgradeApplyReplays' ./internal/lingdoc/workspacecore/`；head `737ef594`",
+      "note": "C2 新增：升级 apply 落 ImpactTask（ChangeSetID 关联）；同键幂等重放零位移、同键不同请求 409。"
+    },
+    {
+      "id": "TD-03.2",
+      "status": "pass",
+      "evidence": "`TestActiveRuleSetMigrationUsesExactVersionedChangeSet`；`go test -count=1 -run '^TestActiveRuleSetMigration' ./internal/lingdoc/workspacecore/`；head `737ef594`",
+      "note": "C2 复核更正：v1 处置不带到 v2 issue 的断言在该测试内已存在（C1 漏判），本票只补记证据不新增代码。"
+    },
+    {
+      "id": "TD-02.8",
+      "status": "pass",
+      "evidence": "`TestTemplateUpgradeRepairReachesStabilizedAndOpensDeliveryGate`；`go test -count=1 -run '^TestTemplateUpgradeRepair' ./internal/lingdoc/workspacecore/`；head `824c17ff`",
+      "note": "C3 关闭 #727（确认行唯一 id / closeBlockingTasks 多任务匹配 / TemplateCopy 根自身 advance 豁免——A1 等值纪律，仅豁免评估版本 +1）后升级全链走通：apply → 门禁关 → 修复 → STABILIZED → 门禁开。冻结/导出半边由 workspace 包 TestDeliveryGateFreezeAndExportRequireStabilization 覆盖。"
+    },
+    {
+      "id": "TD-06",
+      "status": "pass",
+      "evidence": "「面板展示任务进度（闭环计数）与历史/当前副本标签」等 5 个用例；`npx tsx --test src/components/TemplateUpgradeProgressPanel.test.ts`（pass 5）；head `824c17ff`",
+      "note": "C3 交付 TemplateUpgradeProgressPanel.vue（组件级；Workspace 挂载走保留路径集成步骤，未挂载）。"
+    },
+    {
+      "id": "TD-05",
+      "status": "pass",
+      "evidence": "`TestPostgresTemplateUpgradeTransactionReplayAndRestartReadBack`；`LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55432 user=lingdoc_iso password=<合成口令> dbname=lingdoc_pg17_iso sslmode=disable' go test -count=1 -run 'TestPostgresTemplateUpgrade' ./internal/lingdoc/workspacecore/`；head `0cc506e3`",
+      "note": "C4（#730）：隔离 PostgreSQL 17（容器 lingdoc-pg17-iso，postgres:17-alpine，127.0.0.1:55432，一次性数据库逐轮建删）上，生产 versioned 迁移链（135 文件，app.skip_embedding 跳过 embeddings——与 CI 的 postgres:17 service 同分支）建库后验证升级链四件事：apply 原子推进、重启读回（关闭连接池重建服务后状态保持）、同幂等键跨重启重放零位移、审计写失败注入后无部分写入。SQLite 侧由 change_set_upgrade_acceptance_test.go 覆盖。测试 DSN 门控：无 DSN 显式 NOT RUN（不是 parity pass）。"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "本表按《验收判定口径》v1.1 判定；口径 commit = c8785d1f18a349a9803fb10a8b7cafa1d972b9ff；本表验收点总数 = 30（原子验收点口径：US 12 + TD 18，聚合条目「Must pass/Must fail」分别切 8/6，「and」连接不拆）。",
+    "语义覆盖无人背书（口径 §4.1/§7 已接受的代价）；US-04/05/06 依赖「EmitsAllDomainFacts」一个测试近似覆盖三个影响类别的可见性。",
+    "本机 Windows 原生 go test 因 gojieba 原生扩展崩溃，全部 Go 命令经 WSL（Ubuntu, go1.26.0）实跑；CI ubuntu runner 同源可复现。",
+    "判定结果：PASS 22 / FAIL 4（US-12、TD-02.8、TD-03.6、TD-05，全部是「半边已钉、半边无用例」的证据缺口，交付分类=证据缺失）/ NOT RUN 4（TD-02.4、TD-03.2、TD-03.5、TD-06）。Spec 票 #142 保持 open，8 项缺口进地图 #695 的聚面流程。",
+    "TD-05 的 PG 半边：CI 的 PG 作业（lingdoc-interface-integration.yml:111-112）覆盖 internal/database 与既有 TestPostgres*，不含升级链专项；补 PG 侧升级链证据时可复用 #360 已落地的作业位置或隔离 PG 实例（T139 的 lingdoc-pg17-iso 形态）。",
+    "TD-02.8 的升级特定半边被缺陷 #727 阻断：修复后 StabilizeRevision 撞 lingdoc_chapter_confirmations 唯一键（close/confirm/both 三种修复形态都崩、不修复则正常 BLOCKED ⇒ 崩溃点与修复后状态的组合相关）。C2 的 TestTemplateUpgradeClosesDeliveryGateWithStructuredBlockers 钉住已证半边（门禁关闭 + 结构化 blockers），#727 关闭后补全链断言翻 PASS。",
+    "C2 缺口轮后的判定分布：PASS 27 / FAIL 2（TD-02.8 被 #727 阻断、TD-05 PG 侧无专项证据）/ NOT RUN 1（TD-06 升级前端未建）。落证 head 737ef594（缺口轮候选）；新测试文件 internal/lingdoc/workspacecore/change_set_upgrade_acceptance_test.go。",
+    "C3 缺口轮（2026-10-27）：#727 关闭（三层根因：确认行常量 id 测试辅助件 bug、closeBlockingTasks 多任务错配、TemplateCopy 根自身 advance 豁免缺口——A1 同构），TD-02.8 翻 PASS；TD-06 由 TemplateUpgradeProgressPanel.vue + 5 项测试关闭。#142 现 29 PASS / 1 FAIL（TD-05 PG 侧，承接票 #730）/ 0 NOT RUN。两个面板均为组件级，Workspace 挂载走保留路径集成步骤。",
+    "C4 缺口轮（2026-10-27）：TD-05 由 change_set_upgrade_postgres_test.go（DSN 门控）关闭，#730 可随合并关闭；#142 现 **30/30 全 PASS**（判定器 exit 0）。PG 证据的一次性数据库每轮新建删除；带 vector/pg_search 扩展的迁移分支两侧仍未验（T139 known_limits 已记，与本票无关）。"
+  ]
+}
