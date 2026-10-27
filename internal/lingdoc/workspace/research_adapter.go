@@ -269,21 +269,28 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		return nil, "real", err
 	}
 	out := []core.ResearchResult{}
+	materialFailure := ""
 	if len(task.AssetIDs) > 0 {
 		sources, err := r.sources.RetrieveSources(ctx, actor, projectID, RetrieveSourcesInput{Query: query, AssetIDs: task.AssetIDs, ChapterID: task.ChapterID})
 		if err != nil {
-			return out, "real", err
-		}
-		for _, source := range sources {
-			current, err := r.readResearchSource(ctx, actor, projectID, task.ChapterID, source.ID)
-			if err != nil {
-				return out, "real", err
+			// The project's own index being degraded must not hide a
+			// configured external provider (#335): record the failure and
+			// keep going, then report it as a partial failure if the
+			// external path produced hits.
+			materialFailure = core.ResearchFailureDetail(err)
+		} else {
+			for _, source := range sources {
+				current, err := r.readResearchSource(ctx, actor, projectID, task.ChapterID, source.ID)
+				if err != nil {
+					materialFailure = core.ResearchFailureDetail(err)
+					break
+				}
+				level := "background_lead"
+				if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
+					level = "candidate_evidence"
+				}
+				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 			}
-			level := "background_lead"
-			if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
-				level = "candidate_evidence"
-			}
-			out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 		}
 	}
 	if task.ProviderID != "" {
@@ -295,7 +302,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			return out, "real", core.ErrDependencyUnavailable
 		}
 		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
-			return out, "real", err
+			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
 		config := types.EffectiveWebSearchConfig(tenant.WebSearchConfig)
 		config.CompressionMethod = "none"
@@ -304,7 +311,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		}
 		results, err := r.web.Search(ctx, task.ProviderID, config, query)
 		if err != nil {
-			return out, "real", err
+			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
 		for _, result := range results {
 			if result == nil {
@@ -320,6 +327,9 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			}
 			out = append(out, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
 		}
+	}
+	if materialFailure != "" {
+		return out, "real", &core.ResearchSearchError{Material: materialFailure, Partial: len(out) > 0}
 	}
 	return out, "real", nil
 }
