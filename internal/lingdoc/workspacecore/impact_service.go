@@ -1160,6 +1160,23 @@ func impactConfirmationBlockers(tx Transaction, p Project, store impactTransacti
 			}
 			continue
 		}
+		// The template root is the same shape as the spec root above: applying a
+		// template upgrade advances the copy by exactly one version -- the step
+		// the upgrade's own optimistic lock declared (ExpectedTemplateCopyVersion
+		// at pin time) -- so the assessed version can never be current again, and
+		// reading that as drift would make every upgrade structurally impossible
+		// to stabilize. The root is judged at the copy version that is exactly the
+		// assessed one plus this change set's own step: a copy that moved further
+		// is somebody else's upgrade and stays drift (A1's equality discipline). A
+		// template root carries no confirmation to re-bind.
+		if object.Ref.Kind == "TemplateCopy" {
+			assessed, parseErr := strconv.ParseInt(object.Ref.Version, 10, 64)
+			if parseErr != nil || p.TemplateCopyVersion != assessed+1 {
+				blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
+					Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			}
+			continue
+		}
 		// A material is judged on version validity, not on a re-confirmation.
 		// The spec asks for a re-review and a re-bound confirmation for
 		// EvidenceCard, ResearchClaim, Chapter and RouteNode; for ProjectAsset

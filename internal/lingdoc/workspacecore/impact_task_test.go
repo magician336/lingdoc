@@ -473,7 +473,10 @@ func confirmChapterAtSpecRevision(t *testing.T, svc *Service, actor Actor, proje
 	if chapter.CurrentVersionID == nil {
 		t.Fatal("chapter has no current version")
 	}
-	id := "impact-confirmation"
+	// The id must be unique per (chapter, version): the stabilization repair
+	// loop confirms every impacted chapter, and a constant id turned the
+	// second confirm into a PRIMARY KEY collision (#727).
+	id := "impact-confirmation-" + chapter.ID + "-" + *chapter.CurrentVersionID
 	details, err := json.Marshal(chapterConfirmationDetails{ID: id, ChapterID: chapter.ID,
 		ChapterVersionID: *chapter.CurrentVersionID, SpecRevision: p.SpecRevision,
 		TemplateVersion: p.TemplateVersion, ActorUserID: actor.UserID,
