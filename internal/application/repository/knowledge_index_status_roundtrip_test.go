@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -12,12 +14,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// indexStatusRoundTripMigrations 是本用例的库形态来源：基线 000000 建出
-// knowledges/chunks 的生产形状，000057 加 index_status 列并按 chunk 证据回填
-// ——夹具不得再手抄生产表结构（scripts/ci/test_lingdoc_fixture_schema_source.py）。
-var indexStatusRoundTripMigrations = []string{
-	"000000_init.up.sql",
-	"000057_knowledge_index_status.up.sql",
+// applyFullSQLiteChain 把 migrations/sqlite 的全部 up 迁移按序应用到空库：
+// 夹具的库形态完全来自生产迁移链本身（000000 基线 + 后续 ALTER/回填，含
+// 000057 的 index_status），不得手抄生产表结构
+// （scripts/ci/test_lingdoc_fixture_schema_source.py 守护的形状）。
+func applyFullSQLiteChain(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	dir := filepath.Join("..", "..", "..", "migrations", "sqlite")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".up.sql") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err, "read migration %s", name)
+		require.NoError(t, db.Exec(string(body)).Error, "apply migration %s", name)
+	}
 }
 
 // The row-level index marker must survive the real repository seam: what the
@@ -32,11 +49,7 @@ func TestKnowledgeIndexStatusRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	for _, name := range indexStatusRoundTripMigrations {
-		body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
-		require.NoError(t, err, "read migration %s", name)
-		require.NoError(t, db.Exec(string(body)).Error, "apply migration %s", name)
-	}
+	applyFullSQLiteChain(t, db)
 	repo := NewKnowledgeRepository(db)
 	ctx := context.Background()
 

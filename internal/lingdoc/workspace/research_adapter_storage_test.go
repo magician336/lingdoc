@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -43,6 +44,28 @@ func applySQLiteMigrations(t *testing.T, db *gorm.DB, names ...string) {
 		}
 		if err := db.Exec(string(body)).Error; err != nil {
 			t.Fatalf("apply migration %s: %v", name, err)
+		}
+	}
+}
+
+// applyCreateTablesFromMigration 从迁移文件里提取指定表的 CREATE TABLE 语句
+// 执行——表定义仍以迁移文件为准，只是不整文件应用（本包既有夹具已用窄形状
+// 建过 knowledges/chunks，整跑基线的 IF NOT EXISTS 会跳过建表、却让基线里
+// 针对这些表的索引语句失败）。
+func applyCreateTablesFromMigration(t *testing.T, db *gorm.DB, migrationFile string, tables ...string) {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", migrationFile))
+	if err != nil {
+		t.Fatalf("read migration %s: %v", migrationFile, err)
+	}
+	for _, table := range tables {
+		pattern := regexp.MustCompile(`(?is)CREATE TABLE (?:IF NOT EXISTS )?` + table + `\s*\(.*?\);`)
+		stmt := pattern.FindString(string(body))
+		if stmt == "" {
+			t.Fatalf("no CREATE TABLE %s statement in %s", table, migrationFile)
+		}
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("apply CREATE TABLE %s from %s: %v", table, migrationFile, err)
 		}
 	}
 }
@@ -88,11 +111,9 @@ func (s *adapterStorageSourcesStub) GetSource(context.Context, Actor, string, st
 // 不受影响）。
 func seedStorageBackedKnowledge(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	applySQLiteMigrations(t, db,
-		"000000_init.up.sql",
-		"000037_lingdoc_full_workflow.up.sql",
-	)
-	if err := db.Exec("INSERT OR IGNORE INTO knowledge_bases(id,tenant_id) VALUES(?,?)", "kb-1", 7).Error; err != nil {
+	applyCreateTablesFromMigration(t, db, "000000_init.up.sql", "knowledge_bases")
+	applyCreateTablesFromMigration(t, db, "000037_lingdoc_full_workflow.up.sql", "lingdoc_g2_objects")
+	if err := db.Exec("INSERT OR IGNORE INTO knowledge_bases(id,tenant_id,name,embedding_model_id,summary_model_id) VALUES(?,?,?,?,?)", "kb-1", 7, "synthetic-kb", "embed-1", "summary-1").Error; err != nil {
 		t.Fatalf("seed knowledge base: %v", err)
 	}
 	if err := db.Exec("UPDATE knowledges SET file_type='txt', file_path='resource://synthetic-storage-object' WHERE id=?", "knowledge-1").Error; err != nil {
@@ -149,20 +170,19 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	_, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db, deliveryMethodChapter())
 	ensureImpactRouteTables(t, db)
-	// 知识库/对象/工作副本表按生产迁移文件落：基线 000000（knowledge_bases、
-	// chunks 的生产形状）、000033（lingdoc_working_copies）、000037
-	//（lingdoc_g2_objects / g2_object_versions）。seedBoundSource 已建窄形状
-	// knowledges/chunks 的场合，基线的 IF NOT EXISTS 会跳过它们，故 chunks 的
-	// source_content 仍需补一列（ALTER 不属手抄生产表的守护范围）。
-	applySQLiteMigrations(t, db,
-		"000000_init.up.sql",
-		"000033_lingdoc_working_copies.up.sql",
-		"000037_lingdoc_full_workflow.up.sql",
-	)
+	// 知识库/对象/工作副本表按生产迁移文件落：knowledge_bases 的 CREATE 从
+	// 基线文件提取，lingdoc_g2_objects / g2_object_versions 从 000037 提取
+	//（000037 非独立迁移——其中语句引用 lingdoc_change_sets 等先序表），
+	// lingdoc_working_copies 用独立的 000033。chunks 的 source_content 仍需补
+	// 一列（ALTER 不属手抄生产表的守护范围）。
+	applyCreateTablesFromMigration(t, db, "000000_init.up.sql", "knowledge_bases")
+	applySQLiteMigrations(t, db, "000033_lingdoc_working_copies.up.sql")
+	applyCreateTablesFromMigration(t, db, "000037_lingdoc_full_workflow.up.sql",
+		"lingdoc_g2_objects", "lingdoc_g2_object_versions")
 	if err := db.Exec("ALTER TABLE chunks ADD COLUMN source_content TEXT NOT NULL DEFAULT ''").Error; err != nil {
 		t.Fatalf("alter chunks: %v", err)
 	}
-	if err := db.Exec("INSERT INTO knowledge_bases(id,tenant_id) VALUES(?,?)", "kb-1", 7).Error; err != nil {
+	if err := db.Exec("INSERT INTO knowledge_bases(id,tenant_id,name,embedding_model_id,summary_model_id) VALUES(?,?,?,?,?)", "kb-1", 7, "synthetic-kb", "embed-1", "summary-1").Error; err != nil {
 		t.Fatalf("seed knowledge base: %v", err)
 	}
 	// #623 的复现形态：上传的 txt，file_path 是 resource:// 存储引用。
