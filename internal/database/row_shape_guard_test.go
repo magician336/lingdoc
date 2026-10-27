@@ -39,16 +39,16 @@ package database
 //     type that no rule covers is itself a violation telling the contributor
 //     to extend the table here — never silently accepted, never downgraded to
 //     report-only.
-//  4. Length — a declared `size` is compared only when the artifact side
-//     exposes a length. SQLite decl types carry no length, so on this dialect
-//     a declared size never mismatches (documented no-op). PostgreSQL's
-//     information seam does expose character_maximum_length, and #710's first
-//     full run proved the comparison end-to-end by flagging two true
-//     declaration-side width drifts on the delivery structs — production
-//     declarations that ticket's zero-runtime-change red line forbids
-//     touching, so the length rule stays unactivated on both dialects until
-//     #713 fixes those declarations and turns it on. Not silently dropped:
-//     the finding and the unlock condition live on #713.
+//  4. Length — a declared `size` is compared whenever the artifact side
+//     exposes a length. SQLite decl types carry no enforced length (SQLite
+//     accepts any string into a varchar column regardless of its declared
+//     width), so on this dialect the comparison stays a documented no-op.
+//     PostgreSQL's information seam exposes character_maximum_length and the
+//     PostgreSQL reader feeds it into the same comparison: #710's first full
+//     run proved it end-to-end by flagging two true declaration-side width
+//     drifts on the delivery structs, and #713 fixed those declarations and
+//     turned the rule on. Silence here means the declared width matches the
+//     migrated column; it is never a skipped comparison.
 //
 // What is NOT compared (v1): default values, foreign keys, indexes, unique
 // constraints, autoincrement, primary-key semantics.
@@ -78,10 +78,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
@@ -135,11 +138,45 @@ func rowShapeModel(pkg, typeName string) any {
 	if !ok {
 		panic("row-shape guard: 清单登记的包没有声明门（RowShapesForSchemaGuard）：" + pkg)
 	}
+	return rowShapeModelFromDoor(door, pkg, typeName)
+}
+
+// rowShapeModelFromDoor is the one door lookup both the domain and the host
+// registrars share: a missing key fails loudly at init, never silently.
+func rowShapeModelFromDoor(door func() map[string]any, label, typeName string) any {
 	model, ok := door()[typeName]
 	if !ok {
-		panic("row-shape guard: 行结构 " + pkg + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
+		panic("row-shape guard: 行结构 " + label + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
 	}
 	return model
+}
+
+// hostRowShapeDoors maps one full import path to the owning package's
+// RowShapesForSchemaGuard door, for row structures that live outside
+// internal/lingdoc but belong to LingDoc tables the guard watches.
+var hostRowShapeDoors = map[string]func() map[string]any{
+	"github.com/Tencent/WeKnora/internal/evidence": evidence.RowShapesForSchemaGuard,
+}
+
+// hostRegistration registers one out-of-domain row structure: its owning
+// package sits outside internal/lingdoc, but its table is a LingDoc table.
+// #713 registered the first one — lingdoc_project_assets' full row lives in
+// internal/evidence while the domain only holds a narrow projection — so the
+// reverse coverage check unions the real owner's columns, not just the
+// projection's. The identity assertions treat it exactly like a domain
+// entry; the AST scan does not demand it, because that scan only patrols the
+// domain (host entries are extra coverage, never scan obligations).
+func hostRegistration(pkgPath, typeName, table string) rowShapeRegistration {
+	door, ok := hostRowShapeDoors[pkgPath]
+	if !ok {
+		panic("row-shape guard: 域外包没有声明门（RowShapesForSchemaGuard）：" + pkgPath)
+	}
+	return rowShapeRegistration{
+		PackagePath: pkgPath,
+		TypeName:    typeName,
+		TableName:   table,
+		model:       rowShapeModelFromDoor(door, pkgPath, typeName),
+	}
 }
 
 // rowShapeExclusion is one explicitly deferred checklist entry. The target
@@ -175,6 +212,14 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("candidateadoption", "confirmationIdempotencyRow", "lingdoc_chapter_confirmation_requests"),
 	registration("candidateadoption", "confirmationRow", "lingdoc_chapter_confirmations"),
 	registration("candidateadoption", "projectAssetRow", "lingdoc_project_assets"),
+	// internal/evidence —— 宿主侧持有的 LingDoc 行结构（#713）：资料域的
+	// 完整行结构落在域外包里（该表的设计对应关系见 ProjectAsset 头注），
+	// 域内只登记了窄投影；反向覆盖检查需要完整行的列并集。宿主扫描
+	// （TestHostRowShapeRegistrationsAreReal）以与域内相同的标准巡逻该包：
+	// evidence 持有的全部 LingDoc 行结构都登记，不留静默盲区。
+	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "ProjectAsset", "lingdoc_project_assets"),
+	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "ProjectAssetRevision", "lingdoc_asset_revisions"),
+	hostRegistration("github.com/Tencent/WeKnora/internal/evidence", "operationRow", "lingdoc_operations"),
 	registration("candidateadoption", "projectAuditRow", "lingdoc_project_audits"),
 	registration("candidateadoption", "projectRow", "lingdoc_projects"),
 	registration("candidateadoption", "projectTemplateCopyRow", "lingdoc_project_template_copies"),
@@ -248,10 +293,12 @@ func (v rowShapeViolation) Error() string {
 }
 
 const (
-	rowShapeColumnMissing = "column-existence"
-	rowShapeNullability   = "nullability"
-	rowShapeTypeMismatch  = "type-mismatch"
-	rowShapeTypeUnknown   = "type-not-in-normalization-table"
+	rowShapeColumnMissing  = "column-existence"
+	rowShapeNullability    = "nullability"
+	rowShapeTypeMismatch   = "type-mismatch"
+	rowShapeTypeUnknown    = "type-not-in-normalization-table"
+	rowShapeLengthMismatch = "length-mismatch"
+	rowShapeUnmappedColumn = "artifact-column-not-declared"
 )
 
 // The dialects the guard runs against. The checklist and the comparison
@@ -264,11 +311,15 @@ const (
 
 // migrationColumnShape is one column of a real migration chain's product,
 // read straight out of the dialect's schema seam: PRAGMA table_info on
-// SQLite, information_schema.columns on PostgreSQL.
+// SQLite, information_schema.columns on PostgreSQL. Length carries the
+// column's maximum length when the dialect enforces one; the SQLite reader
+// leaves it unset (rule 4 above), which keeps the length comparison a
+// documented no-op on that dialect.
 type migrationColumnShape struct {
 	Name     string
 	DeclType string
 	NotNull  bool
+	Length   sql.NullInt64
 }
 
 // migratedSQLiteChainForShapeGuard builds a fresh database through the real
@@ -360,6 +411,81 @@ func guardedRowShapeEntry(typeName string) *rowShapeRegistration {
 	return nil
 }
 
+// runRowShapeColumnCoverageAgainst is rule 1's reverse, at table level
+// (#713): every column the migration chain builds must be declared by at
+// least one registered row structure of the same table. The check unions the
+// declared columns across the table's checklist entries — part-projection
+// structs are legitimate, so a column is only unmapped when NO structure of
+// that table declares it. Such a column is invisible to every forward rule
+// and to every gorm reader; it is either a missing declaration or schema
+// debt, and either way it deserves a red light instead of silence.
+func runRowShapeColumnCoverageAgainst(t *testing.T, dialect string, registrations []rowShapeRegistration, readShapes rowShapeArtifactReader) []rowShapeViolation {
+	t.Helper()
+	declaredByTable := map[string]map[string]string{}
+	for _, reg := range registrations {
+		require.NotNil(t, reg.model, "checklist entry "+reg.PackagePath+"."+reg.TypeName+" resolved to no row structure")
+		parsed, err := parseRowShape(reg.model)
+		require.NoError(t, err)
+		require.Equal(t, reg.TableName, parsed.Table,
+			"checklist entry "+reg.PackagePath+"."+reg.TypeName+"'s table must agree with the row structure's own TableName()")
+		if declaredByTable[parsed.Table] == nil {
+			declaredByTable[parsed.Table] = map[string]string{}
+		}
+		for _, field := range parsed.Fields {
+			if field.DBName == "" {
+				// Mirrors compareRowShape's rule-1 skip: a gorm `-` field
+				// maps to no column, so it joins no union either.
+				continue
+			}
+			declaredByTable[parsed.Table][field.DBName] = reg.PackagePath + "." + reg.TypeName
+		}
+	}
+	var violations []rowShapeViolation
+	seenTables := map[string]bool{}
+	for _, reg := range registrations {
+		if seenTables[reg.TableName] {
+			continue
+		}
+		seenTables[reg.TableName] = true
+		artifact := readShapes(t, reg.TableName)
+		declared := declaredByTable[reg.TableName]
+		names := make([]string, 0, len(artifact))
+		for name := range artifact {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if declared[name] != "" {
+				continue
+			}
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: name,
+				Kind:   rowShapeUnmappedColumn,
+				Declared: fmt.Sprintf(
+					"no registered row structure declares it (union across %s's %d checklist entries covers %d columns)",
+					reg.TableName, countTableRegistrations(registrations, reg.TableName), len(declared),
+				),
+				Artifact: fmt.Sprintf(
+					"decl type %q, built by the real %s migration chain",
+					artifact[name].DeclType, dialect,
+				),
+			})
+		}
+	}
+	return violations
+}
+
+func countTableRegistrations(registrations []rowShapeRegistration, table string) int {
+	n := 0
+	for _, reg := range registrations {
+		if reg.TableName == table {
+			n++
+		}
+	}
+	return n
+}
+
 // declaredTypeFamilies is one half of rule 3's normalization (single source,
 // see the block at the top of this file): it maps gorm's parsed DataType
 // strings onto canonical type families. The first group is gorm's own
@@ -442,6 +568,54 @@ func postgresColumnTypeFamily(dataType string) (string, bool) {
 		return "time", true
 	}
 	return "", false
+}
+
+// declaredTypeFamily is rule 3's declared-side lookup, over
+// declaredTypeFamilies. Beyond exact hits it strips a parenthesized length
+// suffix from `type:`-tag spellings ("varchar(36)" → "varchar") before the
+// lookup: #713 brought internal/evidence's ProjectAsset under the guard and
+// its tags spell lengths inline, the same family the bare spellings already
+// map to. The length itself is rule 4's business (declaredRowShapeWidth and
+// character_maximum_length), never re-tested here.
+func declaredTypeFamily(dataType string) (string, bool) {
+	if family, ok := declaredTypeFamilies[dataType]; ok {
+		return family, true
+	}
+	if cut := strings.Index(dataType, "("); cut > 0 {
+		family, ok := declaredTypeFamilies[dataType[:cut]]
+		return family, ok
+	}
+	return "", false
+}
+
+// declaredRowShapeWidth is rule 4's declared-side width, the other half of
+// the paren handling above. gorm fills Size only from a `size:` tag, so a
+// `type:varchar(N)` spelling — the spellings the evidence row structures use
+// — carries its width inside the DataType string and Size stays 0; without
+// this extraction those columns would silently never enter the length
+// comparison. A type without a parenthesized length (text, datetime,
+// bigint…) declares no width; precision-style spellings such as
+// numeric(10,2) are excluded on purpose — their parenthesized pair is not a
+// character width, and the artifact side reports no character_maximum_length
+// for them, so the comparison could never fire anyway.
+func declaredRowShapeWidth(dataType string, size int64) (int64, bool) {
+	if size > 0 {
+		return size, true
+	}
+	open := strings.Index(dataType, "(")
+	closed := strings.LastIndex(dataType, ")")
+	if open < 0 || closed < open {
+		return 0, false
+	}
+	inner := strings.TrimSpace(dataType[open+1 : closed])
+	if inner == "" || strings.Contains(inner, ",") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(inner)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return int64(n), true
 }
 
 // artifactTypeFamily selects the dialect's tier of the artifact-side
@@ -544,7 +718,7 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 		// Rule 3: type, compared loosely through the normalization tables.
 		// An uncovered type on either side is its own violation — the fix is
 		// extending the table here, never silently accepting the column.
-		declaredFamily, declaredKnown := declaredTypeFamilies[string(field.DataType)]
+		declaredFamily, declaredKnown := declaredTypeFamily(string(field.DataType))
 		artifactFamily, artifactKnown := artifactTypeFamily(dialect, shape.DeclType)
 		if !declaredKnown || !artifactKnown {
 			violations = append(violations, rowShapeViolation{
@@ -579,10 +753,28 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rule 4 (length) is deliberately not compared here in v1 — see the
-		// header block: the mechanism was proven end-to-end on PostgreSQL and
-		// its activation is parked on #713, which first fixes the two
-		// declaration-side width drifts that run surfaced.
+		// Rule 4: length. A declared width is compared when the artifact side
+		// enforces a length: the SQLite reader leaves Length unset, so the
+		// comparison never fires on that dialect (rule 4 above), while the
+		// PostgreSQL reader feeds character_maximum_length into it (#713).
+		// The declared width comes from declaredRowShapeWidth so both the
+		// `size:` and the `type:varchar(N)` spellings are covered (#713
+		// review: gorm parses Size only from `size:`, never from `type:`).
+		if declaredWidth, hasWidth := declaredRowShapeWidth(string(field.DataType), int64(field.Size)); hasWidth && shape.Length.Valid && declaredWidth != shape.Length.Int64 {
+			violations = append(violations, rowShapeViolation{
+				Table:  reg.TableName,
+				Column: field.DBName,
+				Kind:   rowShapeLengthMismatch,
+				Declared: fmt.Sprintf(
+					"width %d (field %s %s, gorm tag %q)",
+					declaredWidth, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+				),
+				Artifact: fmt.Sprintf(
+					"length %d (data type %q)",
+					shape.Length.Int64, shape.DeclType,
+				),
+			})
+		}
 	}
 
 	return violations
@@ -815,4 +1007,35 @@ func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
 	violations := runRowShapeGuard(t, db, guardedRowShapes)
 	require.Empty(t, violations,
 		"every registered row structure and the real migration chain must agree on every guarded column")
+}
+
+// TestGuardedTablesCoverEverySQLiteMigrationColumn is rule 1's reverse on the
+// SQLite dialect (#713): every column the real migration chain builds must be
+// declared by at least one registered row structure of the same table —
+// part-projection structs union their columns, and only a column no structure
+// declares is a violation. The table-list net below closes the outer blind
+// spot (#713 review): a chain table no checklist entry mentions would
+// otherwise be silent on both this check and the AST scan.
+func TestGuardedTablesCoverEverySQLiteMigrationColumn(t *testing.T) {
+	db := migratedSQLiteChainForShapeGuard(t)
+	violations := runRowShapeColumnCoverageAgainst(t, dialectSQLite, guardedRowShapes, func(t *testing.T, table string) map[string]migrationColumnShape {
+		return migrationTableShapes(t, db, table)
+	})
+	require.Empty(t, violations,
+		"every column the SQLite migration chain builds must be declared by at least one registered row structure")
+
+	registeredTables := map[string]bool{}
+	for _, reg := range guardedRowShapes {
+		registeredTables[reg.TableName] = true
+	}
+	names, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lingdoc%'")
+	require.NoError(t, err)
+	defer func() { _ = names.Close() }()
+	for names.Next() {
+		var table string
+		require.NoError(t, names.Scan(&table))
+		require.Truef(t, registeredTables[table],
+			"SQLite migration chain builds table %s but no checklist entry registers it — register a row structure (or adjudicate explicitly), never silently", table)
+	}
+	require.NoError(t, names.Err())
 }

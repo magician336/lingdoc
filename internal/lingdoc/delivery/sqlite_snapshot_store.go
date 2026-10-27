@@ -52,7 +52,7 @@ func NewSQLiteSnapshotStore(db *gorm.DB) *SQLiteSnapshotStore {
 // （SQLite 与 PostgreSQL 同一条），所以这些行不会互相撞车。
 type releaseSnapshotRow struct {
 	ID                string    `gorm:"column:id;primaryKey;size:64"`
-	ProjectID         string    `gorm:"column:project_id;not null;size:64"`
+	ProjectID         string    `gorm:"column:project_id;not null;size:36"`
 	FrozenInputJSON   string    `gorm:"column:frozen_input_json;not null;type:text"`
 	SnapshotDigest    string    `gorm:"column:snapshot_digest;not null;size:64"`
 	CheckJSON         string    `gorm:"column:check_json;not null;type:text"`
