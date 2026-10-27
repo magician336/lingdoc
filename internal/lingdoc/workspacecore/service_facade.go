@@ -214,7 +214,11 @@ type Service struct {
 	agentRuntime    AgentRuntime
 	impactPreflight ImpactPreflightChecker
 	impactRules     ImpactRuleChecker
-	runtimeRecovery RuntimeRecoveryChecker
+	// recommendationModel is the dependency-edge recommender (#751). It is
+	// nil in the default composition: the recommender fails closed and the
+	// manual registration form is unaffected.
+	recommendationModel DependencyRecommendationModel
+	runtimeRecovery     RuntimeRecoveryChecker
 	// impactTasks and businessAudit are the narrow writer ports of the
 	// change-set apply transaction. They are nil in the default composition,
 	// in which case the writes go through the caller's transaction exactly as

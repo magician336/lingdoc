@@ -103,6 +103,11 @@ func NewLingDocWorkspaceHandler(
 	model := workspace.NewHostAgentModel(models,
 		workspace.WithModelCallLedger(runtime.ModelCallLedger()))
 	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
+	// The dependency-edge recommender (#751) shares the same registry and the
+	// same ledger instance: one row per call, the same rows the agent turns
+	// and generation runs write to.
+	projectService.SetDependencyRecommendationModel(workspace.NewHostDependencyRecommendationModel(models,
+		workspace.WithRecommendationLedger(runtime.ModelCallLedger())))
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
 		return LingDocWorkspace{}, err
