@@ -79,6 +79,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -137,9 +138,15 @@ func rowShapeModel(pkg, typeName string) any {
 	if !ok {
 		panic("row-shape guard: 清单登记的包没有声明门（RowShapesForSchemaGuard）：" + pkg)
 	}
+	return rowShapeModelFromDoor(door, pkg, typeName)
+}
+
+// rowShapeModelFromDoor is the one door lookup both the domain and the host
+// registrars share: a missing key fails loudly at init, never silently.
+func rowShapeModelFromDoor(door func() map[string]any, label, typeName string) any {
 	model, ok := door()[typeName]
 	if !ok {
-		panic("row-shape guard: 行结构 " + pkg + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
+		panic("row-shape guard: 行结构 " + label + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
 	}
 	return model
 }
@@ -164,15 +171,11 @@ func hostRegistration(pkgPath, typeName, table string) rowShapeRegistration {
 	if !ok {
 		panic("row-shape guard: 域外包没有声明门（RowShapesForSchemaGuard）：" + pkgPath)
 	}
-	model, ok := door()[typeName]
-	if !ok {
-		panic("row-shape guard: 行结构 " + pkgPath + "." + typeName + " 未由其包的门提供——清单与门的键名必须一致")
-	}
 	return rowShapeRegistration{
 		PackagePath: pkgPath,
 		TypeName:    typeName,
 		TableName:   table,
-		model:       model,
+		model:       rowShapeModelFromDoor(door, pkgPath, typeName),
 	}
 }
 
@@ -423,10 +426,17 @@ func runRowShapeColumnCoverageAgainst(t *testing.T, dialect string, registration
 		require.NotNil(t, reg.model, "checklist entry "+reg.PackagePath+"."+reg.TypeName+" resolved to no row structure")
 		parsed, err := parseRowShape(reg.model)
 		require.NoError(t, err)
+		require.Equal(t, reg.TableName, parsed.Table,
+			"checklist entry "+reg.PackagePath+"."+reg.TypeName+"'s table must agree with the row structure's own TableName()")
 		if declaredByTable[parsed.Table] == nil {
 			declaredByTable[parsed.Table] = map[string]string{}
 		}
 		for _, field := range parsed.Fields {
+			if field.DBName == "" {
+				// Mirrors compareRowShape's rule-1 skip: a gorm `-` field
+				// maps to no column, so it joins no union either.
+				continue
+			}
 			declaredByTable[parsed.Table][field.DBName] = reg.PackagePath + "." + reg.TypeName
 		}
 	}
@@ -541,24 +551,6 @@ func sqliteDeclTypeFamily(declType string) (string, bool) {
 // own layer, the mismatch is a false positive of the normalization tier. The
 // acceptance stays family-equal, so only string-family declarations pass over
 // these columns — an integer or bool declaration cannot hide behind it.
-// declaredTypeFamily is rule 3's declared-side lookup, over
-// declaredTypeFamilies. Beyond exact hits it strips a parenthesized length
-// suffix from `type:`-tag spellings ("varchar(36)" → "varchar") before the
-// lookup: #713 brought internal/evidence's ProjectAsset under the guard and
-// its tags spell lengths inline, the same family the bare spellings already
-// map to. The length itself is rule 4's business (size/character_maximum_
-// length), never re-tested here.
-func declaredTypeFamily(dataType string) (string, bool) {
-	if family, ok := declaredTypeFamilies[dataType]; ok {
-		return family, true
-	}
-	if cut := strings.Index(dataType, "("); cut > 0 {
-		family, ok := declaredTypeFamilies[dataType[:cut]]
-		return family, ok
-	}
-	return "", false
-}
-
 func postgresColumnTypeFamily(dataType string) (string, bool) {
 	switch strings.ToLower(dataType) {
 	case "boolean":
@@ -576,6 +568,54 @@ func postgresColumnTypeFamily(dataType string) (string, bool) {
 		return "time", true
 	}
 	return "", false
+}
+
+// declaredTypeFamily is rule 3's declared-side lookup, over
+// declaredTypeFamilies. Beyond exact hits it strips a parenthesized length
+// suffix from `type:`-tag spellings ("varchar(36)" → "varchar") before the
+// lookup: #713 brought internal/evidence's ProjectAsset under the guard and
+// its tags spell lengths inline, the same family the bare spellings already
+// map to. The length itself is rule 4's business (declaredRowShapeWidth and
+// character_maximum_length), never re-tested here.
+func declaredTypeFamily(dataType string) (string, bool) {
+	if family, ok := declaredTypeFamilies[dataType]; ok {
+		return family, true
+	}
+	if cut := strings.Index(dataType, "("); cut > 0 {
+		family, ok := declaredTypeFamilies[dataType[:cut]]
+		return family, ok
+	}
+	return "", false
+}
+
+// declaredRowShapeWidth is rule 4's declared-side width, the other half of
+// the paren handling above. gorm fills Size only from a `size:` tag, so a
+// `type:varchar(N)` spelling — the spellings the evidence row structures use
+// — carries its width inside the DataType string and Size stays 0; without
+// this extraction those columns would silently never enter the length
+// comparison. A type without a parenthesized length (text, datetime,
+// bigint…) declares no width; precision-style spellings such as
+// numeric(10,2) are excluded on purpose — their parenthesized pair is not a
+// character width, and the artifact side reports no character_maximum_length
+// for them, so the comparison could never fire anyway.
+func declaredRowShapeWidth(dataType string, size int64) (int64, bool) {
+	if size > 0 {
+		return size, true
+	}
+	open := strings.Index(dataType, "(")
+	closed := strings.LastIndex(dataType, ")")
+	if open < 0 || closed < open {
+		return 0, false
+	}
+	inner := strings.TrimSpace(dataType[open+1 : closed])
+	if inner == "" || strings.Contains(inner, ",") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(inner)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return int64(n), true
 }
 
 // artifactTypeFamily selects the dialect's tier of the artifact-side
@@ -713,18 +753,21 @@ func compareRowShape(reg rowShapeRegistration, parsed *schema.Schema, artifact m
 			continue
 		}
 
-		// Rule 4: length. A declared `size` is compared when the artifact side
+		// Rule 4: length. A declared width is compared when the artifact side
 		// enforces a length: the SQLite reader leaves Length unset, so the
 		// comparison never fires on that dialect (rule 4 above), while the
 		// PostgreSQL reader feeds character_maximum_length into it (#713).
-		if field.Size > 0 && shape.Length.Valid && int64(field.Size) != shape.Length.Int64 {
+		// The declared width comes from declaredRowShapeWidth so both the
+		// `size:` and the `type:varchar(N)` spellings are covered (#713
+		// review: gorm parses Size only from `size:`, never from `type:`).
+		if declaredWidth, hasWidth := declaredRowShapeWidth(string(field.DataType), int64(field.Size)); hasWidth && shape.Length.Valid && declaredWidth != shape.Length.Int64 {
 			violations = append(violations, rowShapeViolation{
 				Table:  reg.TableName,
 				Column: field.DBName,
 				Kind:   rowShapeLengthMismatch,
 				Declared: fmt.Sprintf(
-					"size %d (field %s %s, gorm tag %q)",
-					field.Size, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
+					"width %d (field %s %s, gorm tag %q)",
+					declaredWidth, field.Name, field.FieldType.String(), field.Tag.Get("gorm"),
 				),
 				Artifact: fmt.Sprintf(
 					"length %d (data type %q)",
@@ -970,7 +1013,9 @@ func TestGuardedRowShapesMatchTheSQLiteMigrationChain(t *testing.T) {
 // SQLite dialect (#713): every column the real migration chain builds must be
 // declared by at least one registered row structure of the same table —
 // part-projection structs union their columns, and only a column no structure
-// declares is a violation.
+// declares is a violation. The table-list net below closes the outer blind
+// spot (#713 review): a chain table no checklist entry mentions would
+// otherwise be silent on both this check and the AST scan.
 func TestGuardedTablesCoverEverySQLiteMigrationColumn(t *testing.T) {
 	db := migratedSQLiteChainForShapeGuard(t)
 	violations := runRowShapeColumnCoverageAgainst(t, dialectSQLite, guardedRowShapes, func(t *testing.T, table string) map[string]migrationColumnShape {
@@ -978,4 +1023,19 @@ func TestGuardedTablesCoverEverySQLiteMigrationColumn(t *testing.T) {
 	})
 	require.Empty(t, violations,
 		"every column the SQLite migration chain builds must be declared by at least one registered row structure")
+
+	registeredTables := map[string]bool{}
+	for _, reg := range guardedRowShapes {
+		registeredTables[reg.TableName] = true
+	}
+	names, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lingdoc%'")
+	require.NoError(t, err)
+	defer func() { _ = names.Close() }()
+	for names.Next() {
+		var table string
+		require.NoError(t, names.Scan(&table))
+		require.Truef(t, registeredTables[table],
+			"SQLite migration chain builds table %s but no checklist entry registers it — register a row structure (or adjudicate explicitly), never silently", table)
+	}
+	require.NoError(t, names.Err())
 }

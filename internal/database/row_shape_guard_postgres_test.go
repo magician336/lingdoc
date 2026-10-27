@@ -135,6 +135,8 @@ func TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain(t *testing.T) {
 // 在 PostgreSQL 侧的孪生（#713）：versioned 链建出的每一列都必须被同表至少
 // 一个登记行结构声明——同表多结构体按并集合并，部分投影合法；没有任何结构体
 // 声明的列才是违规。长度规则在本侧激活（character_maximum_length）。
+// 末尾的表清单网与 SQLite 侧同源（#713 评审 F4）：链建出的每张 lingdoc 表
+// 都必须有清单登记，否则新建无行结构的表会两边静默。
 func TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn(t *testing.T) {
 	db, schema := migratedPostgresChainForShapeGuard(t)
 	violations := runRowShapeColumnCoverageAgainst(t, dialectPostgreSQL, guardedRowShapes, func(t *testing.T, table string) map[string]migrationColumnShape {
@@ -142,6 +144,25 @@ func TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn(t *testing.T) {
 	})
 	require.Empty(t, violations,
 		"every column the versioned migration chain builds must be declared by at least one registered row structure")
+
+	registeredTables := map[string]bool{}
+	for _, reg := range guardedRowShapes {
+		registeredTables[reg.TableName] = true
+	}
+	names, err := db.Query(
+		"SELECT table_name FROM information_schema.tables "+
+			"WHERE table_schema = $1 AND table_name LIKE 'lingdoc%'",
+		schema,
+	)
+	require.NoError(t, err)
+	defer func() { _ = names.Close() }()
+	for names.Next() {
+		var table string
+		require.NoError(t, names.Scan(&table))
+		require.Truef(t, registeredTables[table],
+			"versioned migration chain builds table %s but no checklist entry registers it — register a row structure (or adjudicate explicitly), never silently", table)
+	}
+	require.NoError(t, names.Err())
 }
 
 // --- 守护自测红夹具 ----------------------------------------------------------
@@ -216,6 +237,43 @@ func TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn(t *te
 	require.Contains(t, message, "project_id", "failure must name the column")
 	require.Contains(t, message, "nullable", "failure must show the declared nullability")
 	require.Contains(t, message, "NOT NULL", "failure must show the artifact's nullability")
+}
+
+// postgresRowShapeGuardLengthFixture 是规则 4 的常驻红夹具（#713 评审 F2）：
+// `type:varchar(35)` 拼写（gorm 不把它的长度解析进 Size），指向真实
+// varchar(36) 的 lingdoc_release_snapshots.project_id（000103）。它同时钉住
+// declaredRowShapeWidth 的宽度提取管道——没有它，type: 拼写的列在 PG 侧
+// 静默绕过长度比对（假绿），这正是评审抓到的形态。
+type postgresRowShapeGuardLengthFixture struct {
+	ProjectID string `gorm:"column:project_id;not null;type:varchar(35)"`
+}
+
+func (postgresRowShapeGuardLengthFixture) TableName() string {
+	return "lingdoc_release_snapshots"
+}
+
+func TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn(t *testing.T) {
+	db, schema := migratedPostgresChainForShapeGuard(t)
+
+	registrations := []rowShapeRegistration{{
+		PackagePath: "github.com/Tencent/WeKnora/internal/database",
+		TypeName:    "postgresRowShapeGuardLengthFixture",
+		TableName:   "lingdoc_release_snapshots",
+		model:       &postgresRowShapeGuardLengthFixture{},
+	}}
+	violations := runRowShapeGuardAgainst(t, dialectPostgreSQL, registrations, func(t *testing.T, table string) map[string]migrationColumnShape {
+		return postgresTableShapes(t, db, schema, table)
+	})
+
+	violation, found := findRowShapeViolation(violations, "project_id", rowShapeLengthMismatch)
+	require.Truef(t, found,
+		"the PostgreSQL twin must flag a declared width (from the type: spelling) over a column of a different enforced length; got %v", violations)
+
+	message := violation.Error()
+	require.Contains(t, message, "lingdoc_release_snapshots", "failure must name the table")
+	require.Contains(t, message, "project_id", "failure must name the column")
+	require.Contains(t, message, "width 35", "failure must show the declared width")
+	require.Contains(t, message, "length 36", "failure must show the artifact's enforced length")
 }
 
 // postgresRowShapeGuardBooleanFixture 钉住 PostgreSQL 侧的同族直比：声明的
