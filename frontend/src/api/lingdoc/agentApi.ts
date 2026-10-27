@@ -62,9 +62,13 @@ export interface SaveEvidenceCardInput extends VersionExpectation {
   card_id?: string; claim_ref?: VersionRef; anchor_refs: VersionRef[]; support_type: string; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean
 }
 export interface AgentSourceRef { source_id: string; asset_id: string; asset_revision: number; quoted_text_hash: string; locator: string; quoted_text?: string; model_use_allowed: boolean }
+// 上下文包的字段集合由服务端契约拥有（internal/lingdoc/workspacecore/agent_research_model.go 的
+// AgentContextPackage）：这里逐字段对齐，漏一个键界面就拿不到服务端已经给出的字段。
+// 规则集基线是可选字段——服务端 omitempty，没有绑规则集时不出现。
 export interface AgentContextPackage {
   project_id: string; project_version: number; spec_revision: number; context_revision: number; chapter_id?: string; chapter_version_id?: string; task_id?: string; task_version?: number
-  template_id: string; template_version: string; source_refs: AgentSourceRef[]; card_refs: VersionRef[]; selection_reasons: string[]; authorization_state: string; output_constraints: string[]; correlation_id: string
+  template_id: string; template_version: string; ruleset_id?: string; ruleset_version?: string
+  source_refs: AgentSourceRef[]; card_refs: VersionRef[]; selection_reasons: string[]; authorization_state: string; output_constraints: string[]; correlation_id: string
 }
 export interface AgentContextInput extends VersionExpectation { chapter_id?: string; task_id?: string; source_ids: string[]; card_refs: VersionRef[]; sensitive_context_confirmed: boolean }
 export type LingDocAgent = 'task_assistant' | 'research_agent'
