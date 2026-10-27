@@ -23,24 +23,30 @@
 | M6 | 概念登记：「委托」进 `lingdoc_gate_concepts.py` 与 `GLOSSARY.md` 门禁判定节（定义 + _避免_ 行）；「分片」不动（留 #724） | `test_lingdoc_gate_contracts.py::DocumentationContractTests`（双向契约） | PASS（本地） |
 | M7 | 工作流 YAML 零新增路径知识 | 既有 `test_no_workflow_carries_a_path_table_any_more`（wiring + surfaces 两份）+ M3 的人工复核 | PASS（本地） |
 | M8 | 门禁 job 永远存在；cancel-in-progress 与 race 语义不动 | 既有 `test_lingdoc_gate_workflow_triggers.py`；diff 复核（并发段与 provider 步零改动） | PASS（本地） |
-| M9 | 全套守护测试全绿（基线 898 项） | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | PASS（本地，908 项） |
+| M9 | 全套守护测试全绿（基线 898 项） | `python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` | PASS（本地，906 项） |
 | M10 | 真实 PR 验证：碰前端 / 不碰前端两种贡献面的 gate 结论与耗时对比（与 Phase 0 同口径） | 由编排者在 push 后采集 | NOT RUN（pending-orchestrator） |
 
 ## 2. 红绿样本对照
 
-| 样本 | 红（实现前） | 绿（实现后） |
+提交序列：`2830f020`（docs：矩阵先行）→ `65ae068f`（test：红样本，10 处失败）→ `cfe15867`（feat：转绿）。
+
+| 样本 | 红（`65ae068f` 时点） | 绿（`cfe15867` 时点） |
 |---|---|---|
-| 只碰 `frontend/**` 的 PR | coverage 的 verified_by 含 gate 内步骤名 `Frontend: test, type-check and build`；outputs.frontend=`true`（布尔，无归属） | verified_by=`Test, type-check, and build`（前端工作流 job）；outputs.frontend=`delegated to frontend.yml#verify (Test, type-check, and build)` |
+| 只碰 `frontend/**` 的 PR | coverage 的 verified_by 含 gate 内步骤名 `Frontend: test, type-check and build`；outputs.frontend=`true`（布尔，无归属） | verified_by=`Test, type-check, and build`（前端工作流 job，去重后不再重复计名）；outputs.frontend=`delegated to frontend.yml#verify (Test, type-check, and build)` |
 | 只碰 Go 的 PR | outputs.frontend=`false` | outputs.frontend=`not run: frontend verification is not selected on this head` |
-| 手动全量（workflow_dispatch） | outputs.frontend=`true`，gate 自己跑前端三命令 | outputs.frontend=`not run: … this event does not start …`（不虚指委托；前端证据由前端工作流在该 head 上的真实运行承接） |
-| 前端面运行证据被抽掉（补丁清单） | 无人验证前端仍可绿（未钉住） | coverage `not verified` → `uncovered` → scope 步失败（gate 红） |
-| 接线：gate 工作流 | 存在 `run_frontend` 条件步与 `steps.frontend.outcome` 读取 | 零 `run_frontend` 引用；FRONTEND 汇总值读 `steps.scope.outputs.frontend` |
+| 手动全量（workflow_dispatch） | outputs.frontend=`true`，gate 自己跑前端三命令 | outputs.frontend=`not run: frontend verification is selected on this head, but this event does not start frontend.yml#verify (…)`（不虚指委托） |
+| 前端面运行证据被抽掉（补丁清单：两个前端面停看 `frontend/`，provider 面扩看） | 无人验证前端仍可绿（未钉住） | coverage `not verified` → `uncovered` → scope 步失败（gate 红，`publish(require_coverage=True)` 抛 SystemExit） |
+| 接线：gate 工作流 | 存在 `run_frontend` 条件步与 `steps.frontend.outcome` 读取 | 零 `run_frontend` 引用、零 `setup-node`、零 npm 命令；FRONTEND 汇总值读 `steps.scope.outputs.frontend` |
+
+红样本落点：`scripts/ci/test_lingdoc_gate_decision.py::FrontendDelegationTests`（6 用例，红时 4 失败 2 护栏通过）与 `test_lingdoc_workflow_wiring.py::GateStepWiringTests`（3 用例，红时 2 失败）；金样本（GOLDEN / GATE_GOLDEN / push-governance）随语义更新，红时一并失败（4 处），合计红态 10 失败。
 
 ## 3. 验证命令与结果
 
-- 全套守护：`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` → `Ran 908 tests ... OK`（实现后；基线 898 + 新增 10）。
-- YAML 自检：PyYAML `safe_load` 解析改动的两个工作流 + `python scripts/ci/lingdoc_gate_surfaces.py` 清单校验 → PASS。
-- `git merge spec-720/gate-perf` → 已是合并头（`af6d07bf` 包含 `068193e6`），无冲突。
+- 全套守护（实现后 head）：`python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'` → `Ran 906 tests in 142.8s` `OK`（基线 898 全绿；新增 6 个委托判定用例 + 接线用例 1 拆 3，净增 8）。
+- YAML 自检：PyYAML `safe_load` 解析 `lingdoc-review.yml`（jobs=gate）与 `frontend.yml`（jobs=scope/verify/docker-image）；逐 step 断言 gate 内无 `npm`/`setup-node`/`run_frontend` → PASS。
+- 清单校验：`python scripts/ci/lingdoc_gate_surfaces.py` → `13 gate surfaces validated`。
+- CLI 冒烟（离线入口）：head 上 no-op PR 范围 → frontend 判定 `not run: …not selected…`、`run_frontend` 键不存在；`--all --require-coverage`（dispatch 路径）→ exit 0、frontend 判定为不虚指的 not run、coverage 空。
+- `git merge spec-720/gate-perf` → `Already up to date`（`af6d07bf` 已含 `068193e6`）。
 
 ## 4. pending-orchestrator（NOT RUN，解除条件）
 
