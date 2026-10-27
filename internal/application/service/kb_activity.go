@@ -155,6 +155,15 @@ func recordKBActivity(
 		}
 	}
 	actorID := auditActor(ctx)
+	// #559 的结论：这里的空串有确定语义，保留。取值口径（#535 管理会话
+	// 裁定）把 audit_logs.actor_role 的词表登记为「租户四角色 ∪ 平台面固定
+	// 值（system_admin / platform_api_key）∪ 空串＝未知（历史遗留）」——
+	// 词表是封闭的，为「无人工操作者」新增一个固定值属于术语表变更，须走
+	// 术语表裁定，不在本票单方面扩词。actorID 非空时 auditActorRole 取
+	// TenantRoleFromContext，其 viewer 回退保证它永不为空串；空串只在
+	// actorID 为空（服务内部流程：无发起者的系统任务、注册期 EnsureOwner）
+	// 时出现，且此时 ActorUserID 同为空串——读侧从「操作者为空」即可判定
+	// 这是无人工 actor 的系统行为，不与「角色未知」的历史空串混淆。
 	actorRole := ""
 	if actorID != "" {
 		actorRole = auditActorRole(ctx)

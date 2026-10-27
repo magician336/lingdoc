@@ -599,6 +599,120 @@ class FrontendDelegationTests(DecisionFixture):
                     decision.publish(event, root, require_coverage=True,
                                      whitespace=False)
             self.assertNotEqual(caught.exception.code, 0)
+class ForcePushTests(DecisionFixture):
+    """A force push makes ``before`` unfetchable; the scope still narrows (#539).
+
+    A force push replaces the branch's history, so the CI runner never
+    fetched the ``before`` head and ``git diff base...before`` fails.  Before
+    the fix that one failure threw the whole judgement into the full-scope
+    fallback: a pull request whose contribution was one path-map document
+    and one registry script (PR #508) then ran the Go integration job for
+    more than twenty minutes.
+
+    The previous surface is an **absence claim** -- it is what lets the gate
+    say "nothing changed".  A ``before`` that cannot be read gives that claim
+    up, exactly as an opened pull request does; the contribution, which
+    resolved, still narrows the scope.  Only the current head being
+    unreadable is a failed judgement (see ``MalformedEventTests``).
+    """
+
+    # A well-formed SHA that no fetch will ever resolve: the shape the CI
+    # runner saw for the pre-force-push head.
+    ABSENT = "0" * 39 + "1"
+
+    def test_an_unfetchable_previous_head_keeps_the_scope_narrow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(
+                root, {"docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md": "path map\n",
+                       "scripts/lingdoc_parallel_surfaces.py": "STATE = {}\n"})
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(self.ABSENT, head, result.base)
+
+            replay = decision.decide(event, root)
+
+            # The judgement did not fail: the scope is narrowed, not forced.
+            self.assertFalse(replay.forced)
+            self.assertFalse(replay.undecided)
+            self.assertNotIn("fell back to the full scope", replay.reason)
+            # The contribution is the pull request's own two non-Go files.
+            self.assertEqual(
+                set(replay.contribution),
+                {"docs/08-本轮实施方案/G1-G7-Spec-完成路径图.md",
+                 "scripts/lingdoc_parallel_surfaces.py"})
+            # The "unchanged" shortcut is given up -- that is the
+            # conservative direction -- but no Go gate is selected by it.
+            self.assertTrue(replay.surface_changed)
+            self.assertFalse(_job_runs(
+                replay, ".github/workflows/lingdoc-interface-integration.yml",
+                "integration"))
+            self.assertFalse(_job_runs(
+                replay, ".github/workflows/app.yml", "verify"))
+            outputs = decision.write_outputs(replay)
+            self.assertEqual(
+                outputs["job_lingdoc_interface_integration_integration"],
+                "false")
+
+    def test_an_unfetchable_previous_head_still_selects_the_go_gates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            # A real code change, not a comment: the formatting fast path
+            # (ADR 0005) would rightly keep the test jobs away from a
+            # comment-only update.
+            write(root, "internal/lingdoc/workspace/service.go",
+                  "package workspace\n\nfunc Extra() string { return \"extra\" }\n")
+            git(root, "add", ".")
+            git(root, "commit", "-m", "code")
+            head = git(root, "rev-parse", "HEAD")
+
+            replay = decision.decide(self._event(self.ABSENT, head, base), root)
+
+            # Narrowing never weakens the Go gates: a contribution that
+            # touches the integration surface still runs it, forced or not.
+            self.assertFalse(replay.forced)
+            self.assertTrue(_job_runs(
+                replay, ".github/workflows/lingdoc-interface-integration.yml",
+                "integration"))
+            self.assertTrue(_job_runs(
+                replay, ".github/workflows/app.yml", "verify"))
+            self.assertEqual(replay.provider_packages,
+                             ("./internal/lingdoc/workspace/...",))
+            self.assertTrue(replay.provider_tests)
+
+    def test_an_acceptance_script_change_still_selects_integration(self):
+        """The integration job runs the acceptance scripts, so it watches them.
+
+        This pins the design decision the same ticket re-asked (#528): a
+        change under ``scripts/acceptance/**`` selects the integration job,
+        because that job executes those scripts.  The force-push fix must
+        not narrow this away.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            write(root, "scripts/acceptance/beta_material_ingest.py",
+                  "import sys\n")
+            git(root, "add", ".")
+            git(root, "commit", "-m", "evidence script")
+            head = git(root, "rev-parse", "HEAD")
+            # PR #528's shape: the pull request opens with the script.
+            opened = {"action": "opened",
+                      "pull_request": {"base": {"sha": base},
+                                       "head": {"sha": head}}}
+
+            result = decision.decide(opened, root)
+
+            self.assertTrue(_job_runs(
+                result, ".github/workflows/lingdoc-interface-integration.yml",
+                "integration"))
+            self.assertFalse(_job_runs(
+                result, ".github/workflows/app.yml", "verify"))
 
 
 class GovernanceTests(DecisionFixture):

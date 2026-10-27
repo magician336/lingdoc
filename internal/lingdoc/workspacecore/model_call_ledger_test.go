@@ -240,6 +240,75 @@ func TestModelCallLedgerRecordsOneCallRowWithProviderParametersAndBudget(t *test
 	require.Empty(t, row.AffectedStepsJSON)
 }
 
+// The money columns name their meaning (#527): a 0 that means "no amount was
+// computed" must not read as "the call was free", and that difference is a
+// fact of the row, so it is recorded with the row.
+//
+// The row this test guards is the one the controlled Qwen profile leaves: no
+// price basis, no reservation, no computed amount. Read alone -- no JSON
+// ledger beside it -- the row still says which of the two readings its zeros
+// carry. A row written before the column existed carries no basis at all,
+// which reads as "basis unknown", never as a priced row.
+func TestModelCallLedgerRowNamesItsCostBasis(t *testing.T) {
+	db := ledgerTestDB(t)
+	ledger := core.NewGORMModelCallLedger(db)
+	require.NotNil(t, ledger)
+
+	// The controlled Qwen profile's row: cost basis not_applicable, and the
+	// money columns 0 because nothing was priced, not because it cost nothing.
+	unpriced := ledgerCallEntry()
+	unpriced.SourceID = "ledger-correlation-unpriced"
+	unpriced.CostBasis = acceptancebudget.CostBasisNotApplicable
+	unpriced.ReservedNanoUSD = 0
+	unpriced.ActualNanoUSD = 0
+	require.NoError(t, ledger.RecordModelCall(context.Background(), unpriced))
+
+	// A priced profile's row keeps the basis its amounts were computed under.
+	priced := ledgerCallEntry()
+	priced.SourceID = "ledger-correlation-priced"
+	priced.CostBasis = acceptancebudget.CostBasisDeepSeekPeakUSD
+	require.NoError(t, ledger.RecordModelCall(context.Background(), priced))
+
+	// A row from before the column existed: no basis to name, and none
+	// invented -- backfilling a priced basis would make history look computed.
+	historical := ledgerCallEntry()
+	historical.SourceID = "ledger-correlation-historical"
+	require.NoError(t, ledger.RecordModelCall(context.Background(), historical))
+
+	entries, err := ledger.ModelCallEntriesBySource(context.Background(), 7,
+		core.ModelCallLedgerSourceAgentTurn, "ledger-correlation-unpriced")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, acceptancebudget.CostBasisNotApplicable, entries[0].CostBasis)
+	require.Zero(t, entries[0].ReservedNanoUSD)
+	require.Zero(t, entries[0].ActualNanoUSD)
+
+	entries, err = ledger.ModelCallEntriesBySource(context.Background(), 7,
+		core.ModelCallLedgerSourceAgentTurn, "ledger-correlation-priced")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, acceptancebudget.CostBasisDeepSeekPeakUSD, entries[0].CostBasis)
+
+	entries, err = ledger.ModelCallEntriesBySource(context.Background(), 7,
+		core.ModelCallLedgerSourceAgentTurn, "ledger-correlation-historical")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Empty(t, entries[0].CostBasis)
+
+	// The column the evidence script reads is the one the migrations built:
+	// unpriced says not_applicable, historical stays NULL -- not an empty
+	// string that could be mistaken for a basis.
+	var unpricedBasis *string
+	require.NoError(t, db.Raw("SELECT cost_basis FROM lingdoc_model_call_ledger WHERE source_id = ?",
+		"ledger-correlation-unpriced").Scan(&unpricedBasis).Error)
+	require.NotNil(t, unpricedBasis)
+	require.Equal(t, acceptancebudget.CostBasisNotApplicable, *unpricedBasis)
+	var historicalBasis *string
+	require.NoError(t, db.Raw("SELECT cost_basis FROM lingdoc_model_call_ledger WHERE source_id = ?",
+		"ledger-correlation-historical").Scan(&historicalBasis).Error)
+	require.Nil(t, historicalBasis)
+}
+
 // A failed call is recorded as a failure with its error code. It is never
 // recorded as a success: a retry must not be able to look like a first
 // success.

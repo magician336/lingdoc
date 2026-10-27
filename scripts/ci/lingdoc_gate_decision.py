@@ -1423,7 +1423,24 @@ def _decide(event: Mapping[str, Any], root: Path,
     before_sha = before if isinstance(before, str) and SHA.fullmatch(before) else None
 
     current = _surface_at(root, base, after_sha)
-    previous = _surface_at(root, base, before_sha) if before_sha else None
+    previous = None
+    if before_sha:
+        try:
+            previous = _surface_at(root, base, before_sha)
+        except (subprocess.CalledProcessError, OSError) as error:
+            # A force push replaces the branch's history, so the runner never
+            # fetched the ``before`` head and its surface cannot be read.  The
+            # previous surface is an **absence claim** -- it is what lets the
+            # gate say "nothing changed".  A ``before`` that cannot be read
+            # gives that claim up, exactly as an opened pull request does;
+            # the current contribution, which resolved, still narrows the
+            # scope.  Failing the whole judgement here instead forced every
+            # job onto pure documentation changes (issue #539); the current
+            # head being unreadable remains a failed judgement, because
+            # ``current`` above is resolved first.
+            print(f"warning: the previous head {before_sha} cannot be read "
+                  f"({error}); judging the pull request as if it was just "
+                  "opened", file=sys.stderr)
 
     surface_changed = True
     base_moved = False
