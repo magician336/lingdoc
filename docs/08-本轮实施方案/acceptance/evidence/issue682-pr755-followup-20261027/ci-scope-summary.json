@@ -1,0 +1,16 @@
+{
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "command": "python -m unittest discover -s scripts/ci -p test_lingdoc_*.py",
+  "exit_code": 0,
+  "result_lines": [
+    "Ran 982 tests in 320.096s",
+    "OK (skipped=1)"
+  ],
+  "skipped_followup": {
+    "exit_code": 0,
+    "result": "49 tests OK, no skips",
+    "command": "python -m unittest discover -s scripts/ci -p test_lingdoc_parallel_consistency.py -v",
+    "setup": "Set local refs/remotes/origin/main to exact verified base 65ef7a03; the previously skipped main comparison ran."
+  },
+  "windows_initial_failure": "Old Windows Git lacks git init -b; Linux equivalent passed. Original log retained locally."
+}

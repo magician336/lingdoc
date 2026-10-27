@@ -1,0 +1,10 @@
+{
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "result": "PASS",
+  "scope": "static_design_artifacts_and_reference_trace_only",
+  "route_parity": {
+    "result": "PASS",
+    "registered_operations": 99,
+    "frontend_calls": 72
+  }
+}

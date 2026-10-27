@@ -1,0 +1,6 @@
+{
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "result": "PASS",
+  "scope": "Existing synthetic local project; login and persisted fail-closed Research Run readback screenshot only",
+  "screenshot": "pr755-final-browser.png"
+}
