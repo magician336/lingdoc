@@ -50,4 +50,4 @@ G5 Spec 要求：「普通读取的审计写入失败采用 fail-open 并告警�
 - **`applyRuntimeAlerts` 的首行是裸类型断言** `tx.(runtimeTransaction)`（`runtime_control.go:472`）。新增调用点必须自己保证事务实现了该端口。
 - **告警自身失败只记日志**，绝不阻塞那一次读。
 - 本决策的接口契约与不变量见 `docs/08-本轮实施方案/PF-3-审计告警接线与AuditEvent字段.md` §3。
-- **相关但独立**：PostgreSQL 上「读类审计失败会让读一并失败」（事务 aborted ⇒ 提交回滚）这个缺口**不在**本决策范围内，另见 [#387](https://github.com/magician336/lingdoc/issues/387)。
+- **相关但独立**：PostgreSQL 上「读类审计失败会让读一并失败」（事务 aborted ⇒ 提交回滚）这个缺口**不在**本决策范围内，另见 [#387](https://github.com/magician336/lingdoc/issues/387)；该缺口已由 [ADR 0015](0015-read-audit-outside-the-read-transaction.md) 处置（读类审计移到业务读事务之外）。

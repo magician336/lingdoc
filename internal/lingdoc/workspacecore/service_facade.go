@@ -505,6 +505,15 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 // read still succeeds, and the failure is published as an operational alert
 // after the transaction has ended.
 //
+// The audit write runs on its **own transaction, after the read's transaction
+// has ended**. Sharing the read's transaction looks cheaper and works on
+// SQLite (RAISE(ABORT) undoes only the failing statement), but PostgreSQL
+// aborts the whole transaction on any failed statement: the audit INSERT
+// takes the read down with it and fail-open stops existing on the production
+// dialect (#387). The two writes are therefore no longer atomic — acceptable
+// for a read that changes no state, and the only way the promise holds on
+// both dialects.
+//
 // It is deliberately not the same seam as recordAuditInTransaction. Write
 // paths must fail closed, and a caller that cannot tell the two apart would
 // have to re-implement that difference at every call site.
@@ -515,20 +524,39 @@ func (s *Service) readWithAudit(
 	options TransactionOptions,
 	body func(tx Transaction) (Project, error),
 ) error {
-	var auditErr error
+	var bodyErr error
 	err := s.repository.Transaction(ctx, options, func(tx Transaction) error {
-		_, bodyErr := body(tx)
-		// The audit error is remembered, not returned: a failed audit write
-		// must not turn an ordinary read into a failure.
-		auditErr = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, bodyErr)
-		return bodyErr
+		_, readErr := body(tx)
+		bodyErr = readErr
+		return readErr
 	})
+	if err != nil {
+		bodyErr = err
+	}
+	// The audit transaction starts only after the read's has ended: SQLite
+	// uses a single connection and would deadlock otherwise (ADR 0011), and
+	// PostgreSQL would poison the read's transaction (ADR 0015).
+	auditErr := s.recordReadAudit(ctx, actor, projectID, capability, bodyErr)
 	if auditErr != nil {
-		// The alert is published after the transaction ended. Written inside
-		// it, the alert would vanish with the very failure it reports.
+		// The alert is published after the audit transaction ended. Written
+		// inside it, the alert would vanish with the very failure it reports.
 		_ = s.EmitAuditFailureAlert(ctx, actor, projectID, capability, auditErr)
 	}
 	return err
+}
+
+// recordReadAudit writes one read-class audit row in a transaction of its own.
+//
+// It is the read-side counterpart of recordAuditInTransaction: same event
+// shape, same tenant/project rules, but the caller's transaction is never
+// involved, so a failing audit write cannot abort the read it describes.
+func (s *Service) recordReadAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	if s.audit == nil {
+		return nil
+	}
+	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+		return s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+	})
 }
 
 func auditDecision(err error) string {

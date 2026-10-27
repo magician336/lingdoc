@@ -139,9 +139,11 @@ CONCEPTS: tuple[Concept, ...] = (
         snippet="委托的证据在另一个 job 上真实存在",
         # The delegation is carried by the frontend verdict: the published
         # ``frontend`` key names the delegated job instead of reporting this
-        # gate's own outcome (#723, ADR 0014).
+        # gate's own outcome (#723, ADR 0014).  ``frontend_delegate`` is the
+        # key the failure verification reads: the delegated job's display
+        # name, empty exactly when the delegation does not hold (#734).
         fields=("Decision.frontend",),
-        keys=("frontend",),
+        keys=("frontend", "frontend_delegate"),
     ),
     Concept(
         term="分片",

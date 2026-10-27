@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/database/fixturemigrations"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
@@ -176,6 +177,63 @@ func applyRuleSetSQLiteSchema(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// ruleSetPostgresFixtureTables declares the production tables this end-to-end
+// scenario depends on. The migration version numbers are deliberately absent:
+// they are resolved from migrations/versioned by table name (issue #386).
+//
+// The list is the set of LingDoc tables the scenario actually reads or writes
+// (measured through pg_stat_user_tables while running the scenario against the
+// full chain). A new migration that touches one of them is picked up
+// automatically; a migration that creates a table nobody here uses is not
+// applied, so the fixture keeps building only what it needs.
+var ruleSetPostgresFixtureTables = []string{
+	"lingdoc_asset_revisions",
+	"lingdoc_candidate_adoptions",
+	"lingdoc_candidates",
+	"lingdoc_change_sets",
+	"lingdoc_chapter_confirmation_requests",
+	"lingdoc_chapter_confirmations",
+	"lingdoc_chapter_versions",
+	"lingdoc_chapters",
+	"lingdoc_draft_candidates",
+	"lingdoc_export_artifacts",
+	"lingdoc_g2_object_versions",
+	"lingdoc_g2_objects",
+	"lingdoc_g3_dependency_candidate_batches",
+	"lingdoc_g3_dependency_candidates",
+	"lingdoc_g3_records",
+	"lingdoc_g3_roadmap_edit_sessions",
+	"lingdoc_g3_route_edges",
+	"lingdoc_g5_records",
+	"lingdoc_g6_records",
+	"lingdoc_generation_runs",
+	"lingdoc_member_permissions",
+	"lingdoc_members",
+	"lingdoc_model_call_ledger",
+	"lingdoc_operations",
+	"lingdoc_owner_transfers",
+	"lingdoc_project_assets",
+	"lingdoc_project_audits",
+	"lingdoc_project_template_copies",
+	"lingdoc_projects",
+	"lingdoc_release_snapshots",
+	"lingdoc_review_reports",
+	"lingdoc_rule_sets",
+	"lingdoc_rule_suggestion_runs",
+	"lingdoc_ruleset_metrics",
+	"lingdoc_ruleset_use_audits",
+	"lingdoc_selected_rewrites",
+	"lingdoc_template_governance_operations",
+	"lingdoc_template_profiles",
+	"lingdoc_template_versions",
+	"lingdoc_working_copies",
+}
+
+// ruleSetPostgresFixtureStubs are platform tables the fixture builds itself.
+// The LingDoc chain only references them, or does not touch them, so applying
+// the selected migrations never collides with these stubs.
+var ruleSetPostgresFixtureStubs = []string{"tenants", "users", "chunks", "tenant_members", "audit_logs"}
+
 func applyRuleSetPostgresSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
@@ -201,30 +259,20 @@ func applyRuleSetPostgresSchema(t *testing.T, db *gorm.DB) {
 			t.Fatalf("create PostgreSQL test prerequisite: %v", err)
 		}
 	}
-	for _, name := range []string{
-		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
-		"000099_lingdoc_candidate_adoption.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
-		"000103_lingdoc_delivery_stores.up.sql", "000104_lingdoc_member_permissions.up.sql",
-		"000105_lingdoc_project_context_revision.up.sql", "000106_lingdoc_draft_provenance.up.sql",
-		"000107_lingdoc_owner_transfers.up.sql", "000108_lingdoc_project_discard.up.sql",
-		"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
-		"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
-		"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_rule_sets.up.sql", "000116_lingdoc_full_workflow.up.sql",
-		"000118_lingdoc_ruleset_export_reference.up.sql",
-		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
-		"000121_lingdoc_ruleset_metrics.up.sql",
-		"000131_lingdoc_audit_version_fields.up.sql",
-		// 000133 adds the audit decision columns (#415). Without them the
-		// audit insert of every write fails on this fixture.
-		"000133_lingdoc_audit_decision_fields.up.sql",
-	} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "versioned", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Exec(string(raw)).Error; err != nil {
-			t.Fatalf("apply production PostgreSQL migration %s: %v", name, err)
+	dir := filepath.Join("..", "..", "migrations", "versioned")
+	selection, err := fixturemigrations.Select(dir, ruleSetPostgresFixtureTables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("PostgreSQL fixture applies %d production LingDoc migrations through %s",
+		len(selection.Names), selection.Names[len(selection.Names)-1])
+	statements, err := selection.SQL(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement.SQL).Error; err != nil {
+			t.Fatalf("apply production PostgreSQL migration %s: %v", statement.Name, err)
 		}
 	}
 }

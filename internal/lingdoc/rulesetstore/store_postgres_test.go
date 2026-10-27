@@ -9,12 +9,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/database/fixturemigrations"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// postgresFixtureTables declares the production tables this fixture depends on.
+//
+// The migration version numbers are deliberately absent: they are resolved from
+// migrations/versioned by table name (issue #386). The previous hand-copied list
+// of five files was a subset that nothing kept honest, so the next migration to
+// add a column to these tables would have left this fixture building a schema
+// the server no longer has.
+var postgresFixtureTables = []string{
+	"lingdoc_projects",
+	"lingdoc_members",
+	"lingdoc_export_artifacts",
+	"lingdoc_release_snapshots",
+	"lingdoc_project_template_copies",
+	"lingdoc_rule_sets",
+	"lingdoc_ruleset_use_audits",
+	"lingdoc_ruleset_metrics",
+}
+
+// postgresFixtureStubs are platform tables the fixture builds itself. The
+// LingDoc migration chain only references them (tenants via foreign keys) or
+// does not touch them at all (audit_logs), so applying the selected migrations
+// never collides with these stubs.
+var postgresFixtureStubs = []string{"tenants", "audit_logs"}
 
 // This contract test uses a disposable schema and applies the production
 // migration unchanged. It never targets the application database.
@@ -60,13 +85,14 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 			t.Errorf("close test database: %v", err)
 		}
 	}()
-	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO tenants (id) VALUES (1)").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`CREATE TABLE audit_logs (
+	// These platform tables are not owned by the LingDoc migration chain: it
+	// either only references them or never touches them. The fixture builds
+	// them as stubs, and every LingDoc-owned table below comes from the
+	// production migrations selected by postgresFixtureTables.
+	for _, statement := range []string{
+		`CREATE TABLE tenants (id BIGINT PRIMARY KEY)`,
+		`INSERT INTO tenants (id) VALUES (1)`,
+		`CREATE TABLE audit_logs (
 		id BIGSERIAL PRIMARY KEY,
 		tenant_id BIGINT NOT NULL,
 		actor_user_id VARCHAR(36) NOT NULL DEFAULT '',
@@ -82,34 +108,25 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 		scope_type VARCHAR(32) NOT NULL DEFAULT '',
 		scope_id VARCHAR(64) NOT NULL DEFAULT '',
 		created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`).Error; err != nil {
-		t.Fatal(err)
-	}
-	// These three existing tables are extended by the production migrations
-	// under test. Keep only the columns needed by their ALTER statements and FK.
-	for _, statement := range []string{
-		`CREATE TABLE lingdoc_projects (id VARCHAR(64) PRIMARY KEY, tenant_id BIGINT NOT NULL)`,
-		`CREATE TABLE lingdoc_members (project_id VARCHAR(64) NOT NULL, user_id VARCHAR(64) NOT NULL, role VARCHAR(20) NOT NULL, PRIMARY KEY (project_id, user_id))`,
-		`CREATE TABLE lingdoc_project_template_copies (id VARCHAR(64) PRIMARY KEY)`,
-		`CREATE TABLE lingdoc_export_artifacts (id VARCHAR(64) PRIMARY KEY, project_id VARCHAR(64) NOT NULL, snapshot_id VARCHAR(64) NOT NULL)`,
+	)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{
-		"000115_lingdoc_rule_sets.up.sql",
-		"000118_lingdoc_ruleset_export_reference.up.sql",
-		"000119_lingdoc_ruleset_use_audits.up.sql",
-		"000120_lingdoc_template_version_ruleset_ref.up.sql",
-		"000121_lingdoc_ruleset_metrics.up.sql",
-	} {
-		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Exec(string(migration)).Error; err != nil {
-			t.Fatalf("apply PostgreSQL migration %s: %v", name, err)
+	migrations, err := fixturemigrations.Select(filepath.Join("..", "..", "..", "migrations", "versioned"), postgresFixtureTables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("PostgreSQL fixture applies %d production LingDoc migrations through %s",
+		len(migrations.Names), migrations.Names[len(migrations.Names)-1])
+	statements, err := migrations.SQL(filepath.Join("..", "..", "..", "migrations", "versioned"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement.SQL).Error; err != nil {
+			t.Fatalf("apply PostgreSQL migration %s: %v", statement.Name, err)
 		}
 	}
 
@@ -159,7 +176,10 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	if !strings.Contains(audit.Details, draft.ID) || !strings.Contains(audit.Details, draft.Version) {
 		t.Fatalf("PostgreSQL audit details lost the full identity: %s", audit.Details)
 	}
-	if err := db.Exec("INSERT INTO lingdoc_projects (id, tenant_id) VALUES (?, ?)", "project-pg-ruleset", actor.TenantID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO lingdoc_projects
+		(id, tenant_id, name, status, project_version, spec_revision, template_id, template_version)
+		VALUES (?, ?, ?, 'active', 1, 0, 'template-pg-ruleset', 'v1')`,
+		"project-pg-ruleset", actor.TenantID, "PostgreSQL ruleset fixture").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-pg-ruleset", actor.UserID, "owner").Error; err != nil {

@@ -515,6 +515,52 @@ class FrontendDelegationTests(DecisionFixture):
             self.assertIn("frontend.yml#verify", outputs["frontend"])
             self.assertIn("Test, type-check, and build", outputs["frontend"])
 
+    def test_the_delegation_publishes_the_delegated_job_as_a_key(self):
+        """The failure verification (#734) reads the job from a key, not from
+        the verdict sentence.
+
+        The gate's aggregation queries the delegated job's real result on
+        the head; the name it filters the check runs by is the manifest's
+        own registration, published as the ``frontend_delegate`` key --
+        exactly when the delegation holds, empty otherwise, so the workflow
+        never re-parses a reader-facing sentence for structured data.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            outputs = decision.write_outputs(self._frontend_contribution(root))
+
+            self.assertEqual(outputs["frontend_delegate"],
+                             "Test, type-check, and build")
+
+    def test_a_change_that_touches_no_frontend_publishes_no_delegate(self):
+        """An unselected face is never verified: the key stays empty."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 7 }\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertFalse(result.frontend)
+            self.assertEqual(outputs["frontend_delegate"], "")
+
+    def test_a_manual_run_publishes_no_delegate(self):
+        """A dispatch starts no frontend workflow; there is nothing to query."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide(
+                {"action": "manual", "reason": "full scope requested"}, root)
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.frontend)
+            self.assertEqual(outputs["frontend_delegate"], "")
+
     def test_a_change_that_touches_no_frontend_says_not_run(self):
         """Delegation is not a skip, and a skip is not a delegation."""
         with tempfile.TemporaryDirectory() as tmp:
