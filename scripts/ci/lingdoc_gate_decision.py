@@ -1623,9 +1623,17 @@ def _text(value: bool) -> str:
     return "true" if value else "false"
 
 
-def _frontend_verdict(decision: Decision,
-                      verdicts: Mapping[str, bool]) -> str:
-    """The published frontend verdict: a delegation, or an honest not-run.
+def _frontend_delegation(decision: Decision,
+                         verdicts: Mapping[str, bool]) -> tuple[str, str]:
+    """The frontend verdict, and the job the delegation names.
+
+    Returns ``(verdict, delegate)``.  ``verdict`` is the published frontend
+    sentence -- a delegation, or an honest not-run.  ``delegate`` is the
+    display name of the delegated job when -- and only when -- the
+    delegation holds on this head (#734): the failure verification queries
+    that job's real result on the head SHA, so an empty delegate means zero
+    queries.  The name is the manifest's own registration, published as a
+    key; nothing re-parses the reader-facing sentence for structured data.
 
     The gate does not run the frontend checks itself any more (#723, ADR
     0014): the verification is delegated to the frontend workflow job the
@@ -1644,16 +1652,22 @@ def _frontend_verdict(decision: Decision,
     delegated = [job for job in decision.jobs
                  if job.role == manifest.ROLE_FRONTEND]
     if not delegated:
-        return _text(decision.frontend)
+        return _text(decision.frontend), ""
     job = delegated[0]
     target = f"{Path(job.workflow).name}#{job.job} ({job.job_name})"
     runs = verdicts.get(job.key, False)
     if runs and not (decision.forced and not decision.diff_range):
-        return f"delegated to {target}"
+        return f"delegated to {target}", job.job_name
     if runs:
         return (f"not run: frontend verification is selected on this head, "
-                f"but this event does not start {target}")
-    return "not run: frontend verification is not selected on this head"
+                f"but this event does not start {target}"), ""
+    return "not run: frontend verification is not selected on this head", ""
+
+
+def _frontend_verdict(decision: Decision,
+                      verdicts: Mapping[str, bool]) -> str:
+    """The published frontend verdict: a delegation, or an honest not-run."""
+    return _frontend_delegation(decision, verdicts)[0]
 
 
 def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
@@ -1681,6 +1695,8 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
     verdicts: dict[str, bool] = {}
     for job in decision.jobs:
         verdicts[job.key] = verdicts.get(job.key, False) or job.run
+    frontend_verdict, frontend_delegate = _frontend_delegation(decision,
+                                                               verdicts)
     outputs = {
         "run": _text(run),
         "run_code": _text(decision.run_code),
@@ -1694,7 +1710,12 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         # job, or an honest "not run" (#723).  There is no run_frontend key
         # any more: the gate runs no frontend step, and the verification it
         # delegates is carried by this verdict.
-        "frontend": _frontend_verdict(decision, verdicts),
+        "frontend": frontend_verdict,
+        # The job the delegation names, when it holds (#734): the gate's
+        # aggregation verifies that job's real result on the head SHA.
+        # Empty exactly when the delegation does not hold, so a face that
+        # was not delegated costs zero queries.
+        "frontend_delegate": frontend_delegate,
         # The provider step reads one boolean: the formatting-only shortcut
         # is already folded in, so no condition has to combine two outputs.
         "run_providers": _text(decision.provider_tests and not decision.format_only),
