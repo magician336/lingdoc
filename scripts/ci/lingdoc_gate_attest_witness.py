@@ -437,6 +437,28 @@ def _summary_fallback(verdict: Mapping[str, Any]) -> str:
     ]))
 
 
+def effective_event(settings: Mapping[str, str]) -> str:
+    """The trigger name the reuse rule compares against: for ``pull_request``
+    webhooks the payload's ``action`` (``ready_for_review`` is one such
+    action), otherwise the event name itself.
+
+    ``GITHUB_EVENT_NAME`` alone cannot carry the action: a ready-for-review
+    run arrives with event_name ``pull_request`` and the distinguishing
+    detail only in the payload file ``GITHUB_EVENT_PATH`` names.  Reading
+    anything else would make the reuse question unaskable in production.
+    """
+    event = settings.get("GITHUB_EVENT_NAME", "")
+    if event != "pull_request":
+        return event
+    payload_path = settings.get("GITHUB_EVENT_PATH", "")
+    try:
+        with open(payload_path, encoding="utf-8") as handle:
+            action = json.load(handle).get("action", "")
+    except (OSError, ValueError):
+        return event
+    return action if isinstance(action, str) and action else event
+
+
 def main(argv: Sequence[str] | None = None, api: Any = None,
          env: Mapping[str, str] | None = None) -> int:
     """Answer the reuse question; never fail the gate step."""
@@ -452,7 +474,7 @@ def main(argv: Sequence[str] | None = None, api: Any = None,
 
     repo = (settings.get("GITHUB_REPOSITORY", "").strip()
             or queue_state.default_repo())
-    event = settings.get("GITHUB_EVENT_NAME", "")
+    event = effective_event(settings)
     raw_run_id = settings.get("GITHUB_RUN_ID", "")
     run_id = int(raw_run_id) if raw_run_id.isdecimal() else None
 

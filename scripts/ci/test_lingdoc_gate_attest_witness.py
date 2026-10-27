@@ -300,6 +300,40 @@ class TriggerBoundaryTests(unittest.TestCase):
                                  f"{event}: the witness must not touch the API")
                 self.assertIn(event, decision["reason"])
 
+    def test_a_pull_request_webhook_resolves_its_action_from_the_payload(self):
+        """GITHUB_EVENT_NAME cannot say ``ready_for_review``; only the
+        payload's action can, so the assembly must read it (else the reuse
+        question is unaskable on a real runner)."""
+        with tempfile.TemporaryDirectory() as folder:
+            payload = Path(folder) / "event.json"
+            payload.write_text(json.dumps({"action": "ready_for_review"}),
+                               encoding="utf-8")
+            event = witness.effective_event({
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": str(payload),
+            })
+        self.assertEqual(event, "ready_for_review")
+
+    def test_a_synchronize_webhook_names_synchronize_not_pull_request(self):
+        with tempfile.TemporaryDirectory() as folder:
+            payload = Path(folder) / "event.json"
+            payload.write_text(json.dumps({"action": "synchronize"}),
+                               encoding="utf-8")
+            event = witness.effective_event({
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": str(payload),
+            })
+        self.assertEqual(event, "synchronize")
+
+    def test_an_unreadable_payload_keeps_the_event_name(self):
+        event = witness.effective_event({
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_EVENT_PATH": "does-not-exist.json",
+        })
+        self.assertEqual(event, "pull_request")
+        self.assertEqual(
+            witness.effective_event({"GITHUB_EVENT_NAME": "push"}), "push")
+
 
 class FallbackTests(unittest.TestCase):
     """Every way the records can fail ends in a full rerun."""
