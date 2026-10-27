@@ -645,6 +645,139 @@ class FrontendDelegationTests(DecisionFixture):
                     decision.publish(event, root, require_coverage=True,
                                      whitespace=False)
             self.assertNotEqual(caught.exception.code, 0)
+
+
+class ProviderDelegationTests(DecisionFixture):
+    """The app workflow's reverse delegation of the provider packages (#737).
+
+    ADR 0014's delegation, in the opposite direction of #723: the app
+    workflow's pull_request test set leaves the touched provider packages to
+    the gate's shards -- they race-test exactly those packages on the same
+    head -- instead of running them a second time without ``-race`` (red
+    line two names that rerun as no substitute for gate evidence).  The
+    decision module publishes the delegated list as the ``provider_delegate``
+    key, non-empty exactly when the shards run, so:
+
+    * the coverage table credits a provider row to the shard jobs, not to
+      the app job that skipped the duplicate -- while the shards do not run,
+      the app job keeps its claim (fail-open, like the workflow side);
+    * a contribution that touches no provider package publishes an empty
+      key: nothing was delegated, nothing changes.
+    """
+
+    def _provider_contribution(self, root: Path) -> decision.Decision:
+        return self._contribution(root, {
+            "internal/lingdoc/workspace/service.go":
+                "package workspace\n\ndelegated = True\n",
+        })
+
+    def test_a_provider_change_publishes_the_delegated_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.provider_shards)
+            self.assertEqual(outputs["provider_delegate"],
+                             "./internal/lingdoc/workspace/...")
+            # The key is the shard list's own union: the workflow-side
+            # consumer learns nothing the shards do not run.
+            self.assertEqual(
+                outputs["provider_delegate"],
+                " ".join(pattern for shard in result.provider_shards
+                         for pattern in shard.packages))
+
+    def test_a_change_touching_no_provider_publishes_no_delegate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/database/store.go": "package database\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertEqual(result.provider_shards, ())
+            self.assertEqual(outputs["provider_delegate"], "")
+
+    def test_the_coverage_of_a_provider_row_names_the_shards_not_the_app_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Provider shard lingdoc-workspace", row.verified_by)
+            # The app job left this package to the shards on this head:
+            # naming it here would credit a run that did not happen.
+            self.assertNotIn("Format, vet, test, and build", row.verified_by)
+            # The app surface still watches the paths -- it is the fail-open
+            # verifier for the head where the shards do not run.
+            self.assertIn("Format, vet, test, and build", row.watched_by)
+
+    def test_when_the_shards_do_not_run_the_app_job_keeps_the_claim(self):
+        """Fail-open at the coverage seam: no delegate run, no dropped claim."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            # A non-provider contribution: the shards are not selected, so
+            # the app job's full-list run is the honest evidence.
+            result = self._contribution(root, {
+                "internal/database/store.go": "package database\n",
+            })
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace"
+                       or row.surface == "internal/database")
+            self.assertIn("Format, vet, test, and build", row.verified_by)
+
+    def test_a_delegate_that_is_not_running_leaves_the_app_claim_intact(self):
+        """The subsumption holds only while the delegate really runs.
+
+        The seam takes the shape of a miswired delegate step: its output no
+        longer says "run", so the shards do not carry the provider packages
+        on this head.  Dropping the app job's claim for a verification that
+        did not happen would be the fail-open direction lost (#602): the
+        row must stay credited to the app job that does run.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+
+            miswired = []
+            for surface in manifest.load_surfaces():
+                if surface.name == "pr-gate-provider":
+                    miswired.append(dataclasses.replace(
+                        surface, step=dataclasses.replace(
+                            surface.step, output="run_providers_miswired")))
+                else:
+                    miswired.append(surface)
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=tuple(miswired)):
+                result = decision.decide(self._reopened_event(root), root)
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Format, vet, test, and build", row.verified_by)
+
+    def _reopened_event(self, root: Path) -> dict:
+        base = git(root, "merge-base", "main", "topic")
+        head = git(root, "rev-parse", "topic")
+        return {"action": "opened",
+                "pull_request": {"base": {"sha": base},
+                                 "head": {"sha": head}}}
+
+
 class ForcePushTests(DecisionFixture):
     """A force push makes ``before`` unfetchable; the scope still narrows (#539).
 
