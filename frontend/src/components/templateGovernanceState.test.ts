@@ -3,8 +3,8 @@ import test from 'node:test'
 import { reactive } from 'vue'
 import type { GovernanceProject, ReplayFixtureSummary, TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
 import {
- catalogMatchesProject, cloneDraftInput, fixtureCoverage, governanceOperationError, fixturesForReplayTarget, mutationAttempt, parseSourceRefs, projectBasis, projectRuleSet,
- runModeLabel, splitIds, stateLabel, suggestionBindings,
+ catalogMatchesProject, cloneDraftInput, fixtureCoverage, governanceOperationError, fixturesForReplayTarget, mutationAttempt, parseFixtureBatch, parseSourceRefs, projectBasis, projectRuleSet,
+ replayCoverageRows, runModeLabel, splitIds, stateLabel, suggestionBindings,
 } from './templateGovernanceState'
 
 test('unknown server states are visible and never labeled published or successful', () => {
@@ -143,4 +143,42 @@ test('governance transport errors stay distinct and do not echo unknown response
  assert.equal(governanceOperationError(error), '服务请求失败，请重新读取状态后复核。')
  assert.doesNotMatch(governanceOperationError(error), /版本冲突|password/)
  assert.equal(governanceOperationError(new Error('声明式参数不是有效 JSON')), '声明式参数不是有效 JSON')
+})
+test('fixture batch parsing keeps unreadable JSON local and passes arrays through untouched', () => {
+ const batch = [{ fixture_id: 'org-a', rule_id: 'goal-present', scene: 'write_check', polarity: 'positive', target_ref: 'field/goal',
+  input: { project_id: 'replay-synthetic', target_version: '1', fields: { goal: '目标已确认' } }, expected_status: 'PASS', review_reference: 'review-record-2026-001' }]
+ assert.deepEqual(parseFixtureBatch(JSON.stringify(batch)), batch)
+ assert.throws(() => parseFixtureBatch('   '), /请先粘贴要登记的夹具/)
+ assert.throws(() => parseFixtureBatch('{broken'), /不是可解析的 JSON/)
+ assert.throws(() => parseFixtureBatch('{"fixture_id":"org-a"}'), /非空 JSON 数组/)
+ assert.throws(() => parseFixtureBatch('[]'), /非空 JSON 数组/)
+})
+test('coverage rows name the rule, scene and polarity gaps in binding order', () => {
+ const rows = replayCoverageRows({ entries: [
+  { rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: false, declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] },
+  { rule_id: 'source-fresh', scene: 'preflight', positive_covered: true, negative_covered: true, declared_positive_example_refs: ['ex-1'], declared_negative_example_refs: [], unsatisfied_declared_example_refs: ['ex-1'] },
+ ] })
+ assert.equal(rows.length, 2)
+ assert.equal(rows[0].missing, true)
+ assert.match(rows[0].text, /goal-present · 写作检查 · 正例已覆盖 · 反例缺失/)
+ assert.equal(rows[1].missing, true)
+ assert.match(rows[1].text, /source-fresh · 交付预检 · 正例已覆盖 · 反例已覆盖/)
+ assert.match(rows[1].text, /声明例未满足：ex-1/)
+ const complete = replayCoverageRows({ entries: [{ rule_id: 'a', scene: 'write_check', positive_covered: true, negative_covered: true, declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] }] })
+ assert.equal(complete[0].missing, false)
+})
+test('governance 400/422 evidence echoes known codes with the server message and unknown codes stay generic', () => {
+ const replay = Object.defineProperty({ status: 422, message: '夹具 org-a 声明 PASS 但实际求值 ISSUE。', error: { code: 'template_replay_required', message: '须用服务器注册且绑定当前版本的正反例完成回放。', retryable: false }, request_id: 'req-1' }, '$httpStatus', { value: 422 })
+ const shown = governanceOperationError(replay)
+ assert.match(shown, /回放核验未通过（422）/)
+ assert.match(shown, /夹具 org-a 声明 PASS 但实际求值 ISSUE/)
+ const invalid = Object.defineProperty({ status: 400, message: '夹具数量超过单批上限。', error: { code: 'invalid_request', message: '请求字段不符合约定。', retryable: false } }, '$httpStatus', { value: 400 })
+ const invalidShown = governanceOperationError(invalid)
+ assert.match(invalidShown, /登记或请求内容不符合约定（400）/)
+ assert.match(invalidShown, /超过单批上限/)
+ const idempotent = governanceOperationError({ status: 409, message: '同一幂等键对应不同请求。', error: { code: 'idempotency_conflict', message: '同一幂等键对应不同请求。', retryable: false } })
+ assert.match(idempotent, /幂等键/)
+ assert.doesNotMatch(idempotent, /版本冲突/)
+ // An unknown governance code with an arbitrary message still stays generic.
+ assert.equal(governanceOperationError(Object.defineProperty({ status: 422, message: 'internal stack trace', error: { code: 'future_code', message: 'secret detail' } }, '$httpStatus', { value: 422 })), '服务请求失败，请重新读取状态后复核。')
 })

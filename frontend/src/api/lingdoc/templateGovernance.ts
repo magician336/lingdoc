@@ -204,6 +204,73 @@ export interface ReplayFixtureSummary {
   template_id: string
   template_version: string
 }
+// Immutable evaluation input for one registered replay fixture. Hashes and
+// rule-set references are server-computed pins and are never client fields.
+export interface ReplayEvaluationInput {
+  project_id: string
+  target_version: string
+  fields?: Record<string, string>
+  chapters?: { id: string; version: string; body: string; confirmed: boolean }[]
+  sources?: { id: string; version: string; available: boolean }[]
+  review_items?: { id: string; version: string; decided: boolean }[]
+}
+export type ReplayScene = 'write_check' | 'preflight'
+export type ReplayPolarity = 'positive' | 'negative'
+export type ReplayExpectedStatus = 'PASS' | 'ISSUE' | 'UNKNOWN'
+export interface ReplayFixtureInput {
+  fixture_id: string
+  rule_id: string
+  scene: ReplayScene
+  polarity: ReplayPolarity
+  target_ref: string
+  input: ReplayEvaluationInput
+  expected_status: ReplayExpectedStatus
+  review_reference: string
+}
+export interface RegisteredFixtureSummary {
+  fixture_id: string
+  rule_id: string
+  scene: string
+  polarity: string
+  target_ref: string
+  ruleset: RuleSetRef
+}
+// The (rule × scene × polarity) matrix shared by registration receipts, the
+// coverage readback and publication Verify: one judgment, three spellings.
+export interface ReplayCoverageEntry {
+  rule_id: string
+  scene: string
+  positive_covered: boolean
+  negative_covered: boolean
+  declared_positive_example_refs: string[]
+  declared_negative_example_refs: string[]
+  unsatisfied_declared_example_refs: string[]
+}
+export interface ReplayCoverageMatrix {
+  complete: boolean
+  entries: ReplayCoverageEntry[]
+  unsatisfied_declared_example_refs: string[]
+}
+export interface RegisterReplayFixturesInput {
+  template_id: string
+  version: string
+  fixtures: ReplayFixtureInput[]
+  reason: string
+}
+export interface RegisterReplayFixturesResult {
+  template_id: string
+  version: string
+  content_hash: string
+  policy_hash: string
+  registered: RegisteredFixtureSummary[]
+  coverage: ReplayCoverageMatrix
+}
+export interface ReplayCoverageView extends ReplayCoverageMatrix {
+  template_id: string
+  version: string
+  content_hash: string
+  policy_hash: string
+}
 const base = '/api/v1/lingdoc/template-catalog'
 const segment = encodeURIComponent
 const headers = (key: string) => ({ headers: { 'Idempotency-Key': key } })
@@ -228,6 +295,10 @@ export const recallTemplateVersion = (input: TemplateGovernanceInput & { migrati
   post<Result<TemplateCatalogVersion>>(`${versionPath(input.template_id, input.version)}/recall`, input, headers(key))
 export const listRuleDefinitions = () => get<Result<RuleDefinition[]>>(`${base}/rule-definitions`)
 export const listReplayFixtures = () => get<Result<ReplayFixtureSummary[]>>(`${base}/replay-fixtures`)
+export const registerReplayFixtures = (input: RegisterReplayFixturesInput, key: string) =>
+  post<Result<RegisterReplayFixturesResult>>(`${versionPath(input.template_id, input.version)}/replay-fixtures`, input, headers(key))
+export const readReplayCoverage = (templateId: string, version: string) =>
+  get<Result<ReplayCoverageView>>(`${versionPath(templateId, version)}/replay-coverage`)
 export const listRuleSetVersions = (id: string) => get<Result<RuleSet[]>>(rulePath(id))
 export const createRuleSetDraft = (draft: RuleSet, reason: string, key: string) =>
   post<Result<RuleSet>>(rulePath(draft.ruleset_id), { draft, reason }, headers(key))
