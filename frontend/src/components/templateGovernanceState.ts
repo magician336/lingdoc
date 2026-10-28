@@ -1,5 +1,5 @@
 import type {
-  GovernanceProject, ProjectVersionBasis, ReplayFixtureSummary, RuleBinding, RuleSetRef, RuleSuggestionRun,
+  GovernanceProject, ProjectVersionBasis, ReplayCoverageMatrix, ReplayFixtureInput, ReplayFixtureSummary, RuleBinding, RuleSetRef, RuleSuggestionRun,
   SaveTemplateDraftInput, TemplateCatalogVersion, TemplateSourceRef,
 } from '@/api/lingdoc/templateGovernance'
 
@@ -125,20 +125,72 @@ export function fixtureCoverage(selectedIds: string[], fixtures: ReplayFixtureSu
 }
 export interface ReplayTarget { template_id: string; template_version: string }
 export function fixturesForReplayTarget(fixtures: ReplayFixtureSummary[], target?: ReplayTarget): ReplayFixtureSummary[] {
-  if (!target || !target.template_id.trim() || !target.template_version.trim()) return []
-  return fixtures.filter(fixture => fixture.template_id === target.template_id && fixture.template_version === target.template_version)
+ if (!target || !target.template_id.trim() || !target.template_version.trim()) return []
+ return fixtures.filter(fixture => fixture.template_id === target.template_id && fixture.template_version === target.template_version)
+}
+
+export const replaySceneLabel = (scene: string) => scene === 'write_check' ? '写作检查' : scene === 'preflight' ? '交付预检' : scene
+export const replayPolarityLabel = (polarity: string) => polarity === 'positive' ? '正例' : polarity === 'negative' ? '反例' : polarity
+
+// Local pre-validation only: the server remains the authority on shape,
+// semantics and the trial replay. This catches unreadable batches before a
+// doomed request and keeps the JSON the curator typed intact for fixing.
+export function parseFixtureBatch(text: string): ReplayFixtureInput[] {
+ const trimmed = text.trim()
+ if (!trimmed) throw new Error('请先粘贴要登记的夹具 JSON 数组。')
+ let parsed: unknown
+ try { parsed = JSON.parse(trimmed) } catch { throw new Error('夹具登记内容不是可解析的 JSON；请修正后再提交，原输入已保留。') }
+ if (!Array.isArray(parsed) || !parsed.length) throw new Error('夹具登记须是非空 JSON 数组；单批条数上限以服务器约定为准。')
+ return parsed as ReplayFixtureInput[]
+}
+
+// Coverage matrix rows in binding order for display: each line names the rule
+// and scene, whether positive/negative examples cover it, and which declared
+// example references the registered fixture set does not satisfy yet.
+export interface ReplayCoverageRow {
+ key: string
+ text: string
+ missing: boolean
+}
+export function replayCoverageRows(matrix: Pick<ReplayCoverageMatrix, 'entries'>): ReplayCoverageRow[] {
+ return matrix.entries.map(entry => ({
+  key: `${entry.rule_id}/${entry.scene}`,
+  missing: !entry.positive_covered || !entry.negative_covered || entry.unsatisfied_declared_example_refs.length > 0,
+  text: `${entry.rule_id} · ${replaySceneLabel(entry.scene)} · ${replayPolarityLabel('positive')}${entry.positive_covered ? '已覆盖' : '缺失'} · ${replayPolarityLabel('negative')}${entry.negative_covered ? '已覆盖' : '缺失'}` +
+   (entry.unsatisfied_declared_example_refs.length ? ` · 声明例未满足：${entry.unsatisfied_declared_example_refs.join('、')}` : ''),
+ }))
 }
 
 // request.ts rejects JSON payloads with a non-enumerable $httpStatus, rather
 // than necessarily an Error instance. Keep transport failures and CAS conflicts
 // distinct without echoing arbitrary server response fields into the page.
+const governanceEvidenceCodes: Record<string, string> = {
+ // 400 boundary: everything decidable without running the evaluator.
+ invalid_request: '登记或请求内容不符合约定（400）',
+ // 422 family: the trial replay rejected the declared evidence.
+ template_replay_required: '回放核验未通过（422）',
+ // Other governed decisions the panel can act on.
+ template_governance_unavailable: '目录治理服务暂不可用（503）',
+ human_decision_required: '该治理决定需要人工账号（403）',
+}
 export function governanceOperationError(error: unknown): string {
  const fallback = '服务请求失败，请重新读取状态后复核。'
  if (error && typeof error === 'object') {
   const payload = error as Record<string, unknown>
   const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
-  if (payload.$httpStatus === 409 || payload.status === 409 || payload.code === 'version_conflict' || nested?.code === 'version_conflict') {
+  const code = typeof nested?.code === 'string' && nested.code ? nested.code : typeof payload.code === 'string' ? payload.code : ''
+  if (code === 'idempotency_conflict') return '同一幂等键已对应不同请求；请复核内容后更换新的提交。'
+  if (code === 'version_conflict' || payload.$httpStatus === 409 || payload.status === 409) {
    return '内容或基线已更新（版本冲突）。请先重新读取版本，再核对保留的编辑。'
+  }
+  // Known governance codes carry readable evidence: echo the server's own
+  // message behind a recognized label; unknown codes stay behind the fallback
+  // so arbitrary response fields never reach the page.
+  const evidenceLabel = governanceEvidenceCodes[code]
+  if (evidenceLabel) {
+   const detail = typeof payload.message === 'string' && payload.message.trim() ? payload.message
+    : typeof nested?.message === 'string' && nested.message.trim() ? nested.message : ''
+   return detail ? `${evidenceLabel}：${detail}` : `${evidenceLabel}。`
   }
  }
  return error instanceof Error ? error.message : fallback

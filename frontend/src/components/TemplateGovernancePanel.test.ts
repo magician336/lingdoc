@@ -112,3 +112,93 @@ test('catalog refresh invalidates a pending profile selection response', async (
 	assert.equal(controller.versions.value.length, 0)
  assert.equal(controller.selectedVersionId.value, '')
 })
+
+// Draft version selected in the catalog tab: the registration entry and the
+// coverage matrix are manager-only and target exactly this version.
+const draftVersion = { template_id: 'template-demo', version: '3', revision: 4, state: 'draft',
+ definition: { name: 'Draft', fields: [], sections: [] }, ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }
+function selectDraftVersion(controller: any) {
+ controller.versions.value = [draftVersion]
+ controller.selectedVersionId.value = '3'
+}
+const registeredFixtureInput = {
+ fixture_id: 'org-goal-present-3-write_check-negative-1', rule_id: 'goal-present', scene: 'write_check', polarity: 'negative',
+ target_ref: 'field/goal', input: { project_id: 'replay-synthetic', target_version: '1', fields: { goal: '' } },
+ expected_status: 'ISSUE', review_reference: 'review-record-2026-001',
+}
+
+test('registerFixtures posts one audited batch; the receipt coverage and enriched catalog reach the panel', async () => {
+ const registrationCalls: any[] = []
+ let catalogLoads = 0
+ const receipt = { data: { template_id: 'template-demo', version: '3', content_hash: 'sha:content-3', policy_hash: 'sha:policy-3',
+  registered: [{ fixture_id: registeredFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'negative', target_ref: 'field/goal', ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }],
+  coverage: { complete: false, entries: [{ rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: true,
+   declared_positive_example_refs: ['ex-pos'], declared_negative_example_refs: ['ex-neg'], unsatisfied_declared_example_refs: ['ex-pos'] }], unsatisfied_declared_example_refs: ['ex-pos'] } } }
+ const { controller } = await fixture({
+  registerReplayFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(receipt) },
+  listReplayFixtures: () => { catalogLoads += 1; return Promise.resolve({ data: [{ fixture_id: registeredFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'negative', target_ref: 'field/goal', ruleset: { ruleset_id: 'ruleset-demo', version: '1' }, template_id: 'template-demo', template_version: '3' }] }) },
+ })
+ selectDraftVersion(controller)
+ controller.fixtureRegistration.reason = '补齐 goal-present 反例并核对声明引用'
+ controller.fixtureRegistration.fixturesJSON = JSON.stringify([registeredFixtureInput])
+
+ await controller.registerFixtures()
+
+ assert.equal(registrationCalls.length, 1)
+ // The panel executes inside a VM realm, so compare through JSON to avoid
+ // cross-realm prototype identity while still asserting the exact payload.
+ assert.deepEqual(JSON.parse(JSON.stringify(registrationCalls[0].input)), { template_id: 'template-demo', version: '3', reason: '补齐 goal-present 反例并核对声明引用', fixtures: [registeredFixtureInput] })
+ assert.equal(registrationCalls[0].key, 'synthetic-key')
+ assert.equal(controller.replayCoverage.value.complete, false)
+ assert.deepEqual(controller.replayCoverage.value.unsatisfied_declared_example_refs, ['ex-pos'])
+ assert.match(controller.message.value, /已登记 1 条回放夹具/)
+ assert.match(controller.message.value, /仍有缺口/)
+ // The publish picker reads the same enriched catalog source, publish payload unchanged.
+ assert.equal(catalogLoads, 1)
+ assert.deepEqual(controller.replayFixtures.value.map((item: any) => item.fixture_id), [registeredFixtureInput.fixture_id])
+ assert.equal(controller.busy.value, false)
+})
+
+test('loadReplayCoverage stores the manager-only matrix rows of the selected draft version for display', async () => {
+ const coverageCalls: string[][] = []
+ const view = { data: { template_id: 'template-demo', version: '3', content_hash: 'sha:content-3', policy_hash: 'sha:policy-3', complete: false,
+  entries: [
+   { rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: false, declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] },
+   { rule_id: 'source-fresh', scene: 'preflight', positive_covered: true, negative_covered: true, declared_positive_example_refs: ['ex-1'], declared_negative_example_refs: [], unsatisfied_declared_example_refs: ['ex-1'] },
+  ], unsatisfied_declared_example_refs: ['ex-1'] } }
+ const { controller } = await fixture({ readReplayCoverage: (...args: string[]) => { coverageCalls.push(args); return Promise.resolve(view) } })
+ selectDraftVersion(controller)
+
+ await controller.loadReplayCoverage()
+
+ assert.deepEqual(coverageCalls, [['template-demo', '3']])
+ assert.equal(controller.replayCoverage.value.complete, false)
+ assert.equal(controller.replayCoverage.value.entries[0].negative_covered, false)
+ assert.equal(controller.replayCoverage.value.entries[1].unsatisfied_declared_example_refs.join('、'), 'ex-1')
+ assert.equal(controller.busy.value, false)
+})
+
+test('failed registration presents 422/400 evidence readably and keeps the typed batch for fixing', async () => {
+ const registrationCalls: any[] = []
+ const { controller, events } = await fixture({
+  registerReplayFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.reject(Object.defineProperty({ status: 422,
+   message: '夹具 org-goal-present-3-write_check-negative-1 声明 ISSUE 但实际求值 PASS。',
+   error: { code: 'template_replay_required', message: '须用服务器注册且绑定当前版本的正反例完成回放。', retryable: false }, request_id: 'req-1' }, '$httpStatus', { value: 422 })) },
+ })
+ selectDraftVersion(controller)
+ controller.fixtureRegistration.reason = '登记理由'
+ controller.fixtureRegistration.fixturesJSON = JSON.stringify([registeredFixtureInput])
+
+ await controller.registerFixtures()
+
+ assert.match(controller.errorMessage.value, /回放核验未通过（422）/)
+ assert.match(controller.errorMessage.value, /声明 ISSUE 但实际求值 PASS/)
+ assert.equal(events.at(-1), controller.errorMessage.value)
+
+ // Local 400 boundary: unreadable JSON never reaches the server, input kept.
+ controller.fixtureRegistration.fixturesJSON = '{broken'
+ await controller.registerFixtures()
+ assert.match(controller.errorMessage.value, /不是可解析的 JSON/)
+ assert.equal(controller.fixtureRegistration.fixturesJSON, '{broken')
+ assert.equal(registrationCalls.length, 1)
+})
