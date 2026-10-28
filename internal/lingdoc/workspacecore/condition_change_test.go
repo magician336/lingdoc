@@ -26,7 +26,7 @@ func conditionFixture(t *testing.T) (*Service, Actor, Project, string, WorkingCo
 		t.Fatalf("create: %v", err)
 	}
 	project := asProject(t, raw)
-	raw, _, _, err = svc.SaveSpec(ctx, actor, project.ID, "condition-spec", SaveSpecInput{
+	_, _, _, err = svc.SaveSpec(ctx, actor, project.ID, "condition-spec", SaveSpecInput{
 		ExpectedSpecRevision: 0,
 		Fields: map[string]string{
 			"research_subject": conditionFixtureValue,
