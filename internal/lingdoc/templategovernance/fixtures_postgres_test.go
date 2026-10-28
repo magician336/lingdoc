@@ -112,12 +112,13 @@ func TestPostgresReplayFixtureRegistrationPinDeactivationAndCoverage(t *testing.
 
 	// Registration on the versioned chain fixes the same server-computed pin
 	// and answers the same coverage matrix.
-	receipt, err := s.RegisterFixtures(context.Background(), actor, "postgres-register-1", RegisterFixturesInput{TemplateID: draft.TemplateID, Version: draft.Version, Fixtures: []ReplayFixtureInput{
+	pgFixtures := []ReplayFixtureInput{
 		{FixtureID: "pg-write_check-positive", RuleID: "goal-present", Scene: "write_check", Polarity: "positive", TargetRef: "field/research_goal", Input: template.EvaluationInput{ProjectID: "pg", TargetVersion: "1", Fields: map[string]string{"research_goal": "observable objective"}}, ExpectedStatus: template.EvaluationPass, ReviewReference: "review:pg-1"},
 		{FixtureID: "pg-write_check-negative", RuleID: "goal-present", Scene: "write_check", Polarity: "negative", TargetRef: "field/research_goal", Input: template.EvaluationInput{ProjectID: "pg", TargetVersion: "1", Fields: map[string]string{}}, ExpectedStatus: template.EvaluationIssue, ReviewReference: "review:pg-1"},
 		{FixtureID: "pg-preflight-positive", RuleID: "goal-present", Scene: "preflight", Polarity: "positive", TargetRef: "field/research_goal", Input: template.EvaluationInput{ProjectID: "pg", TargetVersion: "1", Fields: map[string]string{"research_goal": "observable objective"}}, ExpectedStatus: template.EvaluationPass, ReviewReference: "review:pg-1"},
 		{FixtureID: "pg-preflight-negative", RuleID: "goal-present", Scene: "preflight", Polarity: "negative", TargetRef: "field/research_goal", Input: template.EvaluationInput{ProjectID: "pg", TargetVersion: "1", Fields: map[string]string{}}, ExpectedStatus: template.EvaluationIssue, ReviewReference: "review:pg-1"},
-	}, Reason: "postgres parity"})
+	}
+	receipt, err := s.RegisterFixtures(context.Background(), actor, "postgres-register-1", RegisterFixturesInput{TemplateID: draft.TemplateID, Version: draft.Version, Fixtures: pgFixtures, Reason: "postgres parity"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,9 +157,12 @@ func TestPostgresReplayFixtureRegistrationPinDeactivationAndCoverage(t *testing.
 	if err != nil || resaved.ContentHash == draft.ContentHash {
 		t.Fatalf("postgres re-saved draft = %v %v", resaved.ContentHash, err)
 	}
-	err = (ExampleReplayVerifier{Reader: fixtureStore}).Verify(context.Background(), actor, resaved, []string{"pg-write_check-positive", "pg-write_check-negative", "pg-preflight-positive", "pg-preflight-negative"})
-	if !errors.Is(err, ErrReplayRequired) {
-		t.Fatalf("postgres stale pin verify = %v, want the replay evidence family", err)
+	// The stale-pin verdict is the publication overlay's (the workspace
+	// runtime owns the pin-scoped precheck). At this package's seam the same
+	// fact answers through the service: the replayed operation key conflicts
+	// because the request's trial now runs against the moved draft.
+	if _, err := s.RegisterFixtures(context.Background(), actor, "postgres-register-1", RegisterFixturesInput{TemplateID: draft.TemplateID, Version: draft.Version, Fixtures: pgFixtures, Reason: "postgres parity"}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("postgres replayed registration over a moved draft = %v, want ErrVersionConflict", err)
 	}
 	if _, err := s.RegisterFixtures(context.Background(), actor, "postgres-register-after-resave", RegisterFixturesInput{TemplateID: draft.TemplateID, Version: draft.Version, Fixtures: postgresRefixtures(), Reason: "postgres re-registration"}); err != nil {
 		t.Fatal(err)
@@ -224,7 +228,11 @@ func TestPostgresRuleSetProjectionRegistrationCoverageAndPinParity(t *testing.T)
 	}
 
 	// The second rule set draft whose publication the projection unlocks.
-	if err := store.CreateDraft(ctx, actor, template.RuleSet{ID: "next-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{binding}}); err != nil {
+	// Its binding message differs from the base rule set's so the projected
+	// definition compiles different rules and moves the content pin.
+	nextBinding := binding
+	nextBinding.Message = "goal must be stated"
+	if err := store.CreateDraft(ctx, actor, template.RuleSet{ID: "next-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{nextBinding}}); err != nil {
 		t.Fatal(err)
 	}
 	receipt, err := s.RegisterRuleSetFixtures(ctx, actor, "pg-ruleset-register-1", RegisterRuleSetFixturesInput{RuleSetID: "next-rules", RuleSetVersion: "1", TemplateID: base.TemplateID, TemplateVersion: base.Version, Fixtures: postgresProjectionFixtures("pgp-"), Reason: "postgres projection parity"})

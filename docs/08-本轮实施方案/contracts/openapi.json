@@ -17326,6 +17326,26 @@
     },
     "/template-catalog/profiles/{templateId}/versions/{version}/replay-fixtures": {
       "post": {
+        "parameters": [
+         {
+          "name": "templateId",
+          "in": "path",
+          "required": true,
+          "schema": {
+           "type": "string",
+           "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+          }
+         },
+         {
+          "name": "version",
+          "in": "path",
+          "required": true,
+          "schema": {
+           "type": "string",
+           "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+          }
+         }
+        ],
         "operationId": "registerReplayFixtures",
         "tags": [
           "template-governance"
@@ -17336,7 +17356,44 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
+                            "example": {
+            "template_id": "grant-template",
+            "version": "1",
+            "fixtures": [
+              {
+                "fixture_id": "goal-write_check-positive",
+                "rule_id": "goal-present",
+                "scene": "write_check",
+                "polarity": "positive",
+                "target_ref": "field/research_goal",
+                "input": {
+                  "project_id": "server-demo-fixture",
+                  "target_version": "1",
+                  "fields": {
+                    "research_goal": "固定复核目标"
+                  }
+                },
+                "expected_status": "PASS",
+                "review_reference": "repository:templategovernance-demo-v1"
+              },
+              {
+                "fixture_id": "goal-preflight-negative",
+                "rule_id": "goal-present",
+                "scene": "preflight",
+                "polarity": "negative",
+                "target_ref": "field/research_goal",
+                "input": {
+                  "project_id": "server-demo-fixture",
+                  "target_version": "1",
+                  "fields": {}
+                },
+                "expected_status": "ISSUE",
+                "review_reference": "repository:templategovernance-demo-v1"
+              }
+            ],
+            "reason": "登记经过复核的正反例，绑定当前草稿版本"
+              },
+"schema": {
                 "$ref": "#/components/schemas/RegisterReplayFixturesInput"
               }
             }
@@ -39570,7 +39627,46 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
+                            "example": {
+            "ruleset_id": "ruleset-demo",
+            "ruleset_version": "1",
+            "template_id": "template-demo",
+            "template_version": "1",
+            "fixtures": [
+              {
+                "fixture_id": "goal-write_check-positive",
+                "rule_id": "goal-present",
+                "scene": "write_check",
+                "polarity": "positive",
+                "target_ref": "field/research_goal",
+                "input": {
+                  "project_id": "server-demo-fixture",
+                  "target_version": "1",
+                  "fields": {
+                    "research_goal": "固定复核目标"
+                  }
+                },
+                "expected_status": "PASS",
+                "review_reference": "repository:templategovernance-demo-v1"
+              },
+              {
+                "fixture_id": "goal-preflight-negative",
+                "rule_id": "goal-present",
+                "scene": "preflight",
+                "polarity": "negative",
+                "target_ref": "field/research_goal",
+                "input": {
+                  "project_id": "server-demo-fixture",
+                  "target_version": "1",
+                  "fields": {}
+                },
+                "expected_status": "ISSUE",
+                "review_reference": "repository:templategovernance-demo-v1"
+              }
+            ],
+            "reason": "规则集发布投影的正反例登记"
+              },
+"schema": {
                 "$ref": "#/components/schemas/RegisterRuleSetFixturesInput"
               }
             }
