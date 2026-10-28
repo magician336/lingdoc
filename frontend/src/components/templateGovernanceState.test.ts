@@ -3,8 +3,8 @@ import test from 'node:test'
 import { reactive } from 'vue'
 import type { GovernanceProject, ReplayFixtureSummary, TemplateCatalogVersion } from '@/api/lingdoc/templateGovernance'
 import {
- catalogMatchesProject, cloneDraftInput, fixtureCoverage, governanceOperationError, fixturesForReplayTarget, mutationAttempt, parseFixtureBatch, parseSourceRefs, projectBasis, projectRuleSet,
- replayCoverageRows, runModeLabel, splitIds, stateLabel, suggestionBindings,
+ catalogMatchesProject, cloneDraftInput, coverageViewFromReceipt, demoReplayBase, fixtureCoverage, governanceOperationError, fixturesForReplayTarget, mutationAttempt, parseFixtureBatch, parseReplayBaseChoice, parseSourceRefs, projectBasis, projectRuleSet, projectionSummary,
+ replayBaseChoiceValue, replayCoverageRows, runModeLabel, splitIds, stateLabel, suggestionBindings,
 } from './templateGovernanceState'
 
 test('unknown server states are visible and never labeled published or successful', () => {
@@ -181,4 +181,26 @@ test('governance 400/422 evidence echoes known codes with the server message and
  assert.doesNotMatch(idempotent, /版本冲突/)
  // An unknown governance code with an arbitrary message still stays generic.
  assert.equal(governanceOperationError(Object.defineProperty({ status: 422, message: 'internal stack trace', error: { code: 'future_code', message: 'secret detail' } }, '$httpStatus', { value: 422 })), '服务请求失败，请重新读取状态后复核。')
+})
+test('replay base choice defaults to the demo guided path and rejects incomplete selections', () => {
+ assert.equal(replayBaseChoiceValue(demoReplayBase), 'template-demo|1')
+ assert.deepEqual(parseReplayBaseChoice('template-demo|1'), demoReplayBase)
+ assert.deepEqual(parseReplayBaseChoice('org-template|7'), { template_id: 'org-template', template_version: '7' })
+ assert.throws(() => parseReplayBaseChoice('org-template'), /回放底版/)
+ assert.throws(() => parseReplayBaseChoice('|1'), /回放底版/)
+ assert.throws(() => parseReplayBaseChoice('org-template|'), /回放底版/)
+ assert.throws(() => parseReplayBaseChoice('  | 1 '), /回放底版/)
+})
+test('a registration receipt and the coverage readback feed one matrix view; projection survives only on the ruleset spelling', () => {
+ const receipt = { template_id: 'template-demo', version: '1', content_hash: 'sha:c', policy_hash: 'sha:p', registered: [],
+  coverage: { complete: true, entries: [], unsatisfied_declared_example_refs: [] } }
+ const plain = coverageViewFromReceipt(receipt as any)
+ assert.equal(plain.complete, true)
+ assert.equal(plain.content_hash, 'sha:c')
+ assert.equal(plain.projection, undefined)
+ const withProjection = coverageViewFromReceipt({ ...receipt,
+  projection: { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:rs' }, replay_base: { template_id: 'template-demo', version: '1' } } } as any)
+ assert.deepEqual(withProjection.projection, { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:rs' }, replay_base: { template_id: 'template-demo', version: '1' } })
+ assert.match(projectionSummary(withProjection.projection!), /投影规则集 org-rules \/ 2/)
+ assert.match(projectionSummary(withProjection.projection!), /回放底版 template-demo \/ 1/)
 })

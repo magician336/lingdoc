@@ -1,5 +1,5 @@
 import type {
-  GovernanceProject, ProjectVersionBasis, ReplayCoverageMatrix, ReplayFixtureInput, ReplayFixtureSummary, RuleBinding, RuleSetRef, RuleSuggestionRun,
+  GovernanceProject, ProjectVersionBasis, RegisterReplayFixturesResult, ReplayCoverageMatrix, ReplayCoverageView, ReplayFixtureInput, ReplayFixtureSummary, RulesetProjectionRef, RuleBinding, RuleSetRef, RuleSuggestionRun,
   SaveTemplateDraftInput, TemplateCatalogVersion, TemplateSourceRef,
 } from '@/api/lingdoc/templateGovernance'
 
@@ -159,6 +159,37 @@ export function replayCoverageRows(matrix: Pick<ReplayCoverageMatrix, 'entries'>
   text: `${entry.rule_id} · ${replaySceneLabel(entry.scene)} · ${replayPolarityLabel('positive')}${entry.positive_covered ? '已覆盖' : '缺失'} · ${replayPolarityLabel('negative')}${entry.negative_covered ? '已覆盖' : '缺失'}` +
    (entry.unsatisfied_declared_example_refs.length ? ` · 声明例未满足：${entry.unsatisfied_declared_example_refs.join('、')}` : ''),
  }))
+}
+
+// Replay base selection for ruleset-projection registration (Spec #768 D3/D12).
+// The guided path pins the first organizational rule set to the builtin demo
+// template, so that choice is the panel's default; any catalog version the
+// manager can read stays selectable through the same encoded value.
+export interface ReplayBaseChoice { template_id: string; template_version: string }
+export const demoReplayBase: ReplayBaseChoice = { template_id: 'template-demo', template_version: '1' }
+export function replayBaseChoiceValue(choice: ReplayBaseChoice): string {
+ return `${choice.template_id}|${choice.template_version}`
+}
+export function parseReplayBaseChoice(value: string): ReplayBaseChoice {
+ const at = value.indexOf('|')
+ const template_id = at <= 0 ? '' : value.slice(0, at).trim()
+ const template_version = at >= 0 && at < value.length - 1 ? value.slice(at + 1).trim() : ''
+ if (!template_id || !template_version) throw new Error('请选择回放底版模板与精确版本。')
+ return { template_id, template_version }
+}
+
+// One shared flattening: a registration receipt and a coverage readback feed
+// the same matrix display, so the panel never re-derives the view per spelling.
+// `projection` stays undefined on the template-path spelling.
+export function coverageViewFromReceipt(receipt: RegisterReplayFixturesResult): ReplayCoverageView {
+ return {
+  template_id: receipt.template_id, version: receipt.version, content_hash: receipt.content_hash, policy_hash: receipt.policy_hash,
+  complete: receipt.coverage.complete, entries: receipt.coverage.entries,
+  unsatisfied_declared_example_refs: receipt.coverage.unsatisfied_declared_example_refs, projection: receipt.projection,
+ }
+}
+export function projectionSummary(projection: RulesetProjectionRef): string {
+ return `投影规则集 ${projection.ruleset.ruleset_id} / ${projection.ruleset.version} · 回放底版 ${projection.replay_base.template_id} / ${projection.replay_base.version}`
 }
 
 // request.ts rejects JSON payloads with a non-enumerable $httpStatus, rather

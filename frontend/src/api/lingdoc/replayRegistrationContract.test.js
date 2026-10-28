@@ -5,8 +5,10 @@ const folder=path.dirname(fileURLToPath(import.meta.url)),root=path.resolve(fold
 const spec=JSON.parse(fs.readFileSync(path.join(root,'docs/08-本轮实施方案/contracts/openapi.json'),'utf8'))
 const registrationPath='/template-catalog/profiles/{templateId}/versions/{version}/replay-fixtures'
 const coveragePath='/template-catalog/profiles/{templateId}/versions/{version}/replay-coverage'
+const rulesetRegistrationPath='/template-catalog/rulesets/{rulesetId}/versions/{version}/replay-fixtures'
 const registration=spec.paths[registrationPath]?.post
 const coverage=spec.paths[coveragePath]?.get
+const rulesetRegistration=spec.paths[rulesetRegistrationPath]?.post
 const ajv=new Ajv({strict:false,validateFormats:false})
 const withComponents=schema=>({...schema,components:spec.components})
 const envelope=data=>({data,request_id:'contract-example',meta:{replayed:false,refresh_required:false}})
@@ -59,4 +61,41 @@ test('actual TypeScript client posts the batch with an Idempotency-Key and reads
  assert.deepEqual(calls[0],['POST','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/3/replay-fixtures',input,{headers:{'Idempotency-Key':'idem-key-1'}}])
  await box.exports.readReplayCoverage('template-demo','3')
  assert.deepEqual(calls[1],['GET','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/3/replay-coverage'])
+})
+
+test('ruleset-projection registration shares the receipt and error family; the client posts the draft ruleset over a named replay base',()=>{
+ assert.equal(rulesetRegistration.operationId,'registerRuleSetReplayFixtures')
+ for (const code of ['400','401','404','409','422','503']) { assert.ok(rulesetRegistration.responses[code],`ruleset registration ${code}`) }
+ assert.ok(rulesetRegistration.responses['201'])
+ assert.equal(rulesetRegistration.responses['201'].content['application/json'].schema.$ref,'#/components/schemas/RegisterReplayFixturesResponse','one receipt shape for both spellings')
+ assert.equal(rulesetRegistration.requestBody.content['application/json'].schema.$ref,'#/components/schemas/RegisterRuleSetFixturesInput')
+ const routes=fs.readFileSync(path.join(root,'internal/lingdoc/workspace/template_governance_routes.go'),'utf8')
+ assert.ok(routes.includes('catalog.POST("/rulesets/:rulesetId/versions/:version/replay-fixtures", h.registerRuleSetReplayFixtures)'))
+ const validate=ajv.compile(withComponents(rulesetRegistration.requestBody.content['application/json'].schema))
+ const body={ruleset_id:'org-rules',ruleset_version:'2',template_id:'template-demo',template_version:'1',reason:'引导底版登记',fixtures:[fixtureInput]}
+ assert.equal(validate(body),true,JSON.stringify(validate.errors))
+ const noBase=structuredClone(body);delete noBase.template_version
+ assert.equal(validate(noBase),false,'the replay base pair is mandatory on the ruleset spelling')
+ const missingReference=structuredClone(body);delete missingReference.fixtures[0].review_reference
+ assert.equal(validate(missingReference),false,'review_reference is mandatory per fixture on the ruleset spelling too')
+})
+
+test('the projection coverage readback sends the ruleset query only as a pair',async()=>{
+ const calls=[],box={exports:{}};const client=path.join(folder,'templateGovernance.ts')
+ const js=ts.transpileModule(fs.readFileSync(client,'utf8'),{fileName:client,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
+ new Function('require','module','exports',js)(id=>{assert.equal(id,'@/utils/request');return {
+  get:(...args)=>{calls.push(['GET',...args]);return Promise.resolve(envelope(coverageView))},
+  post:()=>Promise.resolve(envelope({}))
+ }},box,box.exports)
+ await box.exports.readReplayCoverage('template-demo','1',{ruleset_id:'org-rules',ruleset_version:'2'})
+ assert.deepEqual(calls[0],['GET','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/1/replay-coverage',{params:{ruleset_id:'org-rules',ruleset_version:'2'}}])
+ // A lone parameter is a server-side 400, so the client forwards a pair only.
+ await box.exports.readReplayCoverage('template-demo','1',{ruleset_id:'org-rules',ruleset_version:''})
+ await box.exports.readReplayCoverage('template-demo','1',{ruleset_id:'',ruleset_version:'2'})
+ await box.exports.readReplayCoverage('template-demo','1')
+ assert.deepEqual(calls.slice(1),[
+  ['GET','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/1/replay-coverage'],
+  ['GET','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/1/replay-coverage'],
+  ['GET','/api/v1/lingdoc/template-catalog/profiles/template-demo/versions/1/replay-coverage'],
+ ])
 })

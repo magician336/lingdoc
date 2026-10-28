@@ -5,7 +5,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { compileScript, parse } from '@vue/compiler-sfc'
-import { createSSRApp } from 'vue'
+import { createSSRApp, nextTick } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import ts from 'typescript'
 
@@ -201,4 +201,138 @@ test('failed registration presents 422/400 evidence readably and keeps the typed
  assert.match(controller.errorMessage.value, /不是可解析的 JSON/)
  assert.equal(controller.fixtureRegistration.fixturesJSON, '{broken')
  assert.equal(registrationCalls.length, 1)
+})
+
+// Draft rule set selected in the rules tab: the registration entry targets the
+// draft rule set plus its replay base (demo guided path by default). The
+// selection change resets the registration state, so tests flush the watcher
+// before typing a batch.
+const draftRuleSet = { ruleset_id: 'org-rules', version: '2', state: 'draft', ruleset_hash: 'sha:ruleset-2', bindings: [] }
+async function selectDraftRuleSet(controller: any) {
+ controller.ruleSetId.value = 'org-rules'
+ controller.rulesets.value = [draftRuleSet]
+ controller.ruleSetVersion.value = '2'
+ await nextTick()
+}
+const ruleSetFixtureInput = {
+ fixture_id: 'org-rules-2-goal-present-write_check-positive-1', rule_id: 'goal-present', scene: 'write_check', polarity: 'positive',
+ target_ref: 'field/goal', input: { project_id: 'replay-synthetic', target_version: '1', fields: { goal: '已确认研究目标' } },
+ expected_status: 'PASS', review_reference: 'review-record-2026-002',
+}
+function rulesetReceipt(templateId: string, version: string) {
+ return { data: {
+  template_id: templateId, version, content_hash: 'sha:projection-content', policy_hash: 'sha:projection-policy',
+  projection: { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:ruleset-2' }, replay_base: { template_id: templateId, version } },
+  registered: [{ fixture_id: ruleSetFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'positive', target_ref: 'field/goal', ruleset: { ruleset_id: 'org-rules', version: '2' } }],
+  coverage: { complete: false, entries: [{ rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: false,
+   declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] }], unsatisfied_declared_example_refs: [] },
+ } }
+}
+
+test('rule set registration posts the draft ruleset over the demo guided base and shows the receipt gaps', async () => {
+ const registrationCalls: any[] = []
+ const { controller } = await fixture({
+  registerRuleSetFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(rulesetReceipt('template-demo', '1')) },
+  listReplayFixtures: () => Promise.resolve({ data: [{ fixture_id: ruleSetFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'positive', target_ref: 'field/goal', ruleset: { ruleset_id: 'org-rules', version: '2' }, template_id: 'template-demo', template_version: '1' }] }),
+ })
+ await selectDraftRuleSet(controller)
+ // A publish base typed earlier must not survive the registration: the server
+ // pins the fixtures to its own projection over the registered base.
+ controller.replayTemplate.id = 'template-other'; controller.replayTemplate.version = '9'
+ controller.ruleSetRegistration.reason = '为 org-rules/2 登记投影正例'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.equal(registrationCalls.length, 1)
+ assert.deepEqual(JSON.parse(JSON.stringify(registrationCalls[0].input)), {
+  ruleset_id: 'org-rules', ruleset_version: '2', template_id: 'template-demo', template_version: '1',
+  fixtures: [ruleSetFixtureInput], reason: '为 org-rules/2 登记投影正例' })
+ assert.equal(registrationCalls[0].key, 'synthetic-key')
+ assert.equal(controller.ruleSetCoverage.value.complete, false)
+ assert.equal(controller.ruleSetCoverage.value.entries[0].negative_covered, false)
+ assert.equal(controller.ruleSetCoverage.value.projection.replay_base.template_id, 'template-demo')
+ assert.equal(controller.replayTemplate.id, 'template-demo')
+ assert.equal(controller.replayTemplate.version, '1')
+ assert.match(controller.message.value, /已登记 1 条/)
+ assert.match(controller.message.value, /仍有缺口/)
+ assert.match(controller.message.value, /发布底版已同步为 template-demo \/ 1/)
+ assert.deepEqual(controller.replayFixtures.value.map((item: any) => item.fixture_id), [ruleSetFixtureInput.fixture_id])
+ assert.equal(controller.busy.value, false)
+})
+
+test('the replay base select switches registration to a readable catalog draft version', async () => {
+ const registrationCalls: any[] = []
+ const { controller } = await fixture({
+  registerRuleSetFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(rulesetReceipt('org-template', '7')) },
+  listReplayFixtures: () => Promise.resolve({ data: [] }),
+ })
+ await selectDraftRuleSet(controller)
+ controller.versions.value = [{ template_id: 'org-template', version: '7', revision: 1, state: 'draft',
+  definition: { name: 'Org draft', fields: [], sections: [] }, ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }]
+ controller.ruleSetReplayBase.value = 'org-template|7'
+ controller.ruleSetRegistration.reason = '改用组织草稿底版'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.equal(registrationCalls.length, 1)
+ assert.equal(registrationCalls[0].input.template_id, 'org-template')
+ assert.equal(registrationCalls[0].input.template_version, '7')
+ assert.equal(controller.ruleSetCoverage.value.projection.replay_base.template_id, 'org-template')
+ assert.equal(controller.replayTemplate.id, 'org-template')
+ assert.equal(controller.replayTemplate.version, '7')
+})
+
+test('loadRuleSetCoverage reads the projection matrix through the paired ruleset query', async () => {
+ const coverageCalls: any[][] = []
+ const view = { data: { template_id: 'template-demo', version: '1', content_hash: 'sha:projection-content', policy_hash: 'sha:projection-policy',
+  projection: { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:ruleset-2' }, replay_base: { template_id: 'template-demo', version: '1' } },
+  complete: false,
+  entries: [{ rule_id: 'goal-present', scene: 'preflight', positive_covered: false, negative_covered: false,
+   declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] }],
+  unsatisfied_declared_example_refs: [] } }
+ const { controller } = await fixture({ readReplayCoverage: (...args: any[]) => { coverageCalls.push(args); return Promise.resolve(view) } })
+ await selectDraftRuleSet(controller)
+
+ await controller.loadRuleSetCoverage()
+
+ // The readback targets the replay base's profile path with both ruleset
+ // parameters; a lone parameter is a server-side 400 the panel never sends.
+ // JSON round-trips the VM-realm query object before the strict compare.
+ assert.deepEqual(coverageCalls.map(call => [call[0], call[1], JSON.parse(JSON.stringify(call[2]))]),
+  [['template-demo', '1', { ruleset_id: 'org-rules', ruleset_version: '2' }]])
+ assert.equal(controller.ruleSetCoverage.value.complete, false)
+ assert.equal(controller.ruleSetCoverage.value.projection.ruleset.ruleset_id, 'org-rules')
+ assert.equal(controller.busy.value, false)
+})
+
+test('rule set registration keeps 422 replay evidence and 409 idempotency conflicts distinct and readable', async () => {
+ let failure: unknown = Object.defineProperty({ status: 422,
+  message: '夹具 org-rules-2-goal-present-write_check-positive-1 声明 PASS 但实际求值 ISSUE。',
+  error: { code: 'template_replay_required', message: '须用服务器注册且绑定当前版本的正反例完成回放。', retryable: false } }, '$httpStatus', { value: 422 })
+ let calls = 0
+ const { controller, events } = await fixture({
+  registerRuleSetFixtures: () => { calls += 1; return Promise.reject(failure) },
+  listReplayFixtures: () => Promise.resolve({ data: [] }),
+ })
+ await selectDraftRuleSet(controller)
+ controller.ruleSetRegistration.reason = '登记理由'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.match(controller.errorMessage.value, /回放核验未通过（422）/)
+ assert.match(controller.errorMessage.value, /声明 PASS 但实际求值 ISSUE/)
+ assert.equal(events.at(-1), controller.errorMessage.value)
+ assert.equal(controller.ruleSetRegistration.fixturesJSON, JSON.stringify([ruleSetFixtureInput]))
+
+ // A reused idempotency key over different content stays an idempotency
+ // answer, never mislabeled as a version conflict.
+ failure = Object.defineProperty({ status: 409, message: '同一幂等键对应不同请求。', error: { code: 'idempotency_conflict', message: '同一幂等键对应不同请求。', retryable: false } }, '$httpStatus', { value: 409 })
+ await controller.registerRuleSetFixtureBatch()
+ assert.match(controller.errorMessage.value, /同一幂等键/)
+ assert.doesNotMatch(controller.errorMessage.value, /版本冲突/)
+ assert.equal(calls, 2)
+ assert.equal(controller.busy.value, false)
 })
