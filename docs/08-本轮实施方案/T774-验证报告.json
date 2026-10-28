@@ -1,0 +1,41 @@
+{
+  "task": "774",
+  "ticket": "magician336/lingdoc#774",
+  "head": "bcaa361c4232b54e97d3fa5ef294123420166d12",
+  "scope": "档 A(登记值出现处定位):服务端 commitChangeImpactTasks 为 ChapterVersion 影响任务附带 location_hints,前端任务卡片渲染并经 locate 事件复用 locateMarkdownRange 管道在编辑器中定位。档 B/档 C 与票面验收草案 4(真实 provider 记账)按票面\"可递进,低档先行\"留后续,不在本报告判定范围。",
+  "passed": [
+    {
+      "id": "TD-774.1 变更 apply 后影响任务携带至少一条正文位置引用(段/偏移+摘录)并落库",
+      "status": "pass",
+      "evidence": "具名用例 `TestCommitChangeImpactTasksAttachesLocationHints`、`TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestCommitChangeImpactTasksAttachesLocationHints|TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty' -count=1`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;真 sqlite(39 张生产迁移)走真实 assess→apply 链,断言三条 hints(2 条 change_old_value + 1 条 registered_spec_value,段号/UTF-16 偏移逐字段),无命中时任务照常创建且 hints 为空。"
+    },
+    {
+      "id": "TD-774.2 登记值逐字存在时定位命中:段号、UTF-16 偏移(非 BMP 计 2)、摘录正确",
+      "status": "pass",
+      "evidence": "具名用例 `TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets' -count=1`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;emoji 正文钉 UTF-16 口径,三处命中按手算偏移(15/22、31/38、44/54)与段号(2/2/3)逐字段断言,空正文/空值集返回空。"
+    },
+    {
+      "id": "TD-774.3 变更旧值定位命中且来源优先;同值去重;<4 rune 不定位",
+      "status": "pass",
+      "evidence": "具名用例 `TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues' -count=1`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;同串双来源保留 change_old_value,spec 独有值 registered_spec_value,子门槛值(\"小\")被滤,TrimSpace 生效。"
+    },
+    {
+      "id": "TD-774.4 每值≤5 处、每任务≤50 条;同输入两次运行逐字节一致且按偏移升序",
+      "status": "pass",
+      "evidence": "具名用例 `TestLocateImpactPositionsNoiseFloorCapsAndDeterminism`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsNoiseFloorCapsAndDeterminism' -count=1`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;8 次重复命中截为 5,12 值洪水命中截为 50,两轮输出逐项相等。"
+    },
+    {
+      "id": "TD-774.5 定位是附件不是判定:verdict 字段与 hints 无关;roadmap/HTTP 面行为不变",
+      "status": "pass",
+      "evidence": "具名用例 `TestImpactLocationHintsDoNotChangeTaskVerdict` 与 `TestRoadmapCommitFreezesANewNodeVersionAndCreatesTheReviewTask`,命令 `go test ./internal/lingdoc/workspacecore/ -count=1`、`go test ./internal/router/ -count=1`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;有/无命中两项目的 Action/Severity/Domain/Status/Causes 数逐字段相等,workspacecore 全包(56s)与 router 全包(31s)回归通过。"
+    },
+    {
+      "id": "TD-774.6 前端渲染位置引用与定位按钮,就近重查后复用 locateMarkdownRange,缺失即明示失败",
+      "status": "pass",
+      "evidence": "具名用例 「#774 影响任务模板渲染正文位置引用与编辑器定位事件」(frontend/src/views/lingdoc/ImpactOpsPanel.test.js)与 「#774 档 A：findNearestOccurrence 取离参考偏移最近的出现处，缺失即拒绝」(frontend/src/views/lingdoc/editor/pmSerialize.test.ts),命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`、`npx tsx --test src/views/lingdoc/editor/pmSerialize.test.ts`、`npm run type-check`、`npm test`,head `bcaa361c4232b54e97d3fa5ef294123420166d12`;面板 27/27、编辑器套件全过,type-check 通过,前端全量 1835 项 0 失败(1 skipped 为既有跳过)。"
+    }
+  ],
+  "not_run": [],
+  "environment_limits": "Go 测试经 WSL 执行(wsl -e bash -lc \"cd /mnt/d/code_warehouse/Projects/lingdoc && go test …\"):本机 Windows go test 因 gojieba 原生扩展崩溃,为既有环境限制非本票缺陷;前端命令在 frontend/ 下执行。",
+  "out_of_scope": "档 B(SourceAnchor 选段引用)、档 C(AI 句级候选及票面验收草案 4 真实 provider 记账)、路线图任务链定位:#774 票面声明可递进、低档先行,由该票继续承接。"
+}
