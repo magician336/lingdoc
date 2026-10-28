@@ -95,6 +95,12 @@ func TestLegacyRuleOverrideHTTPPersistsAndRollsBackSQLite(t *testing.T) {
 	if err := db.Exec("UPDATE lingdoc_project_template_copies SET definition_json = ?, content_hash = ?, ruleset_hash = ? WHERE id = ?", string(definitionJSON), definition.ContentHash, set.RulesetHash, project.TemplateCopy.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	// CreateProject already persists a template_binding sidecar for this copy
+	// (source-kind persistence); the fixture REPLACES it with the historical
+	// payload the scenario simulates, so the unique key must be cleared first.
+	if err := db.Exec("DELETE FROM lingdoc_g5_records WHERE project_id = ? AND kind = 'template_binding' AND id = ?", project.ID, project.TemplateCopy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("INSERT INTO lingdoc_g5_records (project_id, kind, id, version, payload_json) VALUES (?, ?, ?, 1, ?)", project.ID, "template_binding", project.TemplateCopy.ID, string(sidecarJSON)).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +215,9 @@ func TestLegacyRuleOverrideHTTPPersistsAndRollsBackSQLite(t *testing.T) {
 	// change entry through the same production handler and SQLite database.
 	active := decodeProject(request(fixture.router, http.MethodPost, "/projects", "active-target-create", map[string]any{"name": "Active target fixture", "template_id": template.DemoTemplateID}, http.StatusCreated))
 	if err := db.Exec("UPDATE lingdoc_project_template_copies SET definition_json = ?, content_hash = ?, ruleset_hash = ? WHERE id = ?", string(definitionJSON), definition.ContentHash, set.RulesetHash, active.TemplateCopy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM lingdoc_g5_records WHERE project_id = ? AND kind = 'template_binding' AND id = ?", active.ID, active.TemplateCopy.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO lingdoc_g5_records (project_id, kind, id, version, payload_json) VALUES (?, ?, ?, 1, ?)", active.ID, "template_binding", active.TemplateCopy.ID, string(sidecarJSON)).Error; err != nil {
