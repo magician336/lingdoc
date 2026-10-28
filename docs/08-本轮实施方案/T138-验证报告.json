@@ -1,0 +1,100 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#138 G2 证据失效传播、复核与生成接入的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C7（簇票 #702）首轮判定。",
+  "head": "8b6700005e32cf714b41311118d691ad9441a423",
+  "base": "8b670000",
+  "head_note": "判定 head：8b6700005e32cf714b41311118d691ad9441a423（main 合并提交；判定轮零代码补丁，分支与 main 被测代码树逐字一致，判定文档在其后提交）",
+  "base_note": "判定所依据的基线即该 head 本身。本票 30 点全部复用既有具名用例。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 30,
+  "gap_round": {
+    "first_round": "30 点全部有既有用例映射，零代码补丁",
+    "disposition": "两处语义近似按口径 §4.1 记账（US-07 范围 UI、US-11/TD-03.4 来源恢复不自动续期确认），判定 PASS 并在矩阵行备注与 known_limits 写明边界。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-05、TD-02.2",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards$'`（33 用例组合子集，ok 4.639s）；前端具名用例「两组说明各自带标题、对象与依据」「两组说明各自带对象、原因与依据，且不混用影响解析的 certainty」（assistantAffectedGroups.test.ts + ResearchPanel.test.js，前端组合 45 pass）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-01、US-05、TD-02.2"
+    },
+    {
+      "id": "US-02、US-12、TD-02.7",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAssetPolicyDeltaPinsNativeRevisionAndConsentDoesNotFollowReparse|TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-02、US-12、TD-02.7"
+    },
+    {
+      "id": "US-03、TD-02.1",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestFormalEvidenceSurvivesUnrelatedContextButNotClaimSpecDependencyChange$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-03、TD-02.1"
+    },
+    {
+      "id": "US-04、TD-03.1",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestSourceRevocationFailsClosedWithoutMutatingTask|TestAgentSessionsRebuildHistoryAndEraseRevokedContent)$'`、`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestListChaptersRedactsRevokedBoundSource$'`（组合子集，ok 4.639s / 2.507s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-04、TD-03.1"
+    },
+    {
+      "id": "US-06、TD-03.3",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestResearchOldBasisIsHistoricalAndNeverOverwrites|TestAgentJoinedTimeoutUnknownPreservesUnknownAndReplayNeverRecallsModel)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-06、TD-03.3"
+    },
+    {
+      "id": "US-07、US-08",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAgentSessionsRebuildHistoryAndEraseRevokedContent|TestDraftSpecCarriesProvenanceAndCandidatePool|TestMachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-07、US-08"
+    },
+    {
+      "id": "US-09、TD-02.6、TD-03.2",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestCandidateNeedsClaimAndConfirmedVersionForGeneration$'`、`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts|TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast)$'`（组合子集，ok 4.639s / 2.507s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-09、TD-02.6、TD-03.2"
+    },
+    {
+      "id": "US-10、TD-02.3、TD-02.4、TD-02.5",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestCurrentEvidenceObjectRechecksActualClaimAnchorAndFileFingerprint|TestRestoredSourceAccessMakesTaskWorkableAgain|TestAuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole|TestAnchorsRequireReadyVerbatimOriginalAndConsent)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-10、TD-02.3、TD-02.4、TD-02.5"
+    },
+    {
+      "id": "US-11、TD-03.4",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestChapterConfirmedRejectsEachIncompleteOrStaleRecord$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-11、TD-03.4"
+    },
+    {
+      "id": "US-13、TD-03.5",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAgentModelTimeoutPreservesInputAndNeverAutoRetries|TestResearchProviderFailureKeepsTheReason|TestMissingPermissionSchemaFailsClosedOnRead|TestMissingPermissionSchemaFailsClosedOnWrite)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-13、TD-03.5"
+    },
+    {
+      "id": "US-14、TD-02.6",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestModelCallLedgerLinksRowsToTheProductActionThatCausedThem|TestAssetPolicyDeltaRollbackAndUnknownUserCannotGrant)$'`（组合子集，ok 4.639s）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 US-14、TD-02.6 的审计面"
+    },
+    {
+      "id": "TD-01、TD-02.6、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestSelectedRewriteContinueRevocationBeforeAdoptionIsDenied$'`（组合子集，ok 2.507s）；`cd frontend && npm test -- src/views/lingdoc/ResearchPanel.test.js src/views/lingdoc/SelectedEvidenceContext.test.ts src/views/lingdoc/assistantAffectedGroups.test.ts`（45 pass / 0 fail；具名用例「unknown 回执不自动重发，旧会话成功记录也不能解除本轮不确定状态」「来源授权失效清除可见片段、助手输入和派生草稿」）；`npm run type-check`（通过）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 TD-01、TD-05、TD-06"
+    },
+    {
+      "id": "TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards$'`（对象级失效断言，组合子集，ok 4.639s）；前端具名用例「来源授权失效清除可见片段、助手输入和派生草稿」（客户端残留清理直断）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 TD-04"
+    },
+    {
+      "id": "TD-06",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/views/lingdoc/ResearchPanel.test.js`（前端组合 45 pass / 0 fail；具名用例「unknown 回执不自动重发，旧会话成功记录也不能解除本轮不确定状态」「来源授权失效清除可见片段、助手输入和派生草稿」）；落证 head `8b6700005e32cf714b41311118d691ad9441a423`；覆盖验收点 TD-06"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-138-real WeKnora/PostgreSQL/真实模型验收",
+      "status": "not_run",
+      "reason": "票面 TD-05 明文「需要真实 WeKnora、PostgreSQL 和真实模型时单独记录 real 验收」。",
+      "unblock": "真实环境就绪后按 real 验收流程单独记录；承接票 #500（同类真实外部面）"
+    }
+  ],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-07：生成上下文的范围/层级 UI 由前端承载，机器证据是 SourceIDs 显式+层级要求的 seam 断言。",
+    "US-11/TD-03.4：来源恢复不自动续期确认由确认记录当前性匹配（#133 chapter_confirmation 同链）近似，无独立直测。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；-list 核对组合匹配数（33/11），无零匹配假绿。"
+  ]
+}
