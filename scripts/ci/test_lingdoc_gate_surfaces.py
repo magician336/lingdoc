@@ -297,6 +297,44 @@ class ManifestLoadTests(unittest.TestCase):
                 imported.add(node.module.split(".")[0])
         self.assertEqual(imported & {"socket", "http", "urllib", "requests"}, set())
 
+    def test_the_app_surface_registers_its_provider_delegation(self):
+        """The reverse delegation (#737) is manifest data, not workflow text.
+
+        On pull_request events the app job's test set leaves the touched
+        provider packages to the gate's shards (ADR 0014 red line two: a
+        non-race rerun is no substitute for gate evidence).  The coverage
+        table must therefore credit those paths to the delegate's own names
+        -- the shard jobs -- while the claim stands everywhere else and
+        whenever the delegate does not run (fail-open).  The delegate is
+        named, never re-pathed: the provider roots stay registered once.
+        """
+        surfaces = {surface.name: surface
+                    for surface in manifest.load_and_validate().surfaces}
+        app = surfaces["app"]
+        self.assertEqual(app.delegates, "pr-gate-provider")
+        target = surfaces[app.delegates]
+        self.assertTrue(target.verifies,
+                        "a delegation names the surface that carries the "
+                        "evidence; a non-verifying delegate carries none")
+        self.assertEqual(target.role, manifest.ROLE_PROVIDER)
+
+    def test_a_surface_without_a_delegation_names_none(self):
+        for surface in manifest.load_and_validate().surfaces:
+            if surface.name == "app":
+                continue
+            with self.subTest(surface=surface.name):
+                self.assertIsNone(surface.delegates)
+
+    def test_the_lenient_loader_reads_the_delegates_claim_defensively(self):
+        """A delegates claim that cannot be read is no claim (fail-open)."""
+        original = manifest.SURFACES
+        try:
+            manifest.SURFACES = (dict(record(), delegates=42),)
+            surfaces = manifest.load_surfaces_lenient()
+            self.assertIsNone(surfaces[0].delegates)
+        finally:
+            manifest.SURFACES = original
+
     def test_manifest_validates_as_a_script(self):
         result = subprocess.run(
             [sys.executable, str(CI_DIR / "lingdoc_gate_surfaces.py")],
@@ -361,6 +399,14 @@ class ManifestValidationTests(unittest.TestCase):
 
     def test_unknown_role_is_rejected(self):
         self.assertRejected([record(role="magic")], "role")
+
+    def test_an_unknown_delegate_target_is_rejected(self):
+        self.assertRejected([record(delegates="nowhere")],
+                            "delegates to unknown surface", "nowhere")
+
+    def test_a_self_delegation_is_rejected(self):
+        surface = record(name="app", delegates="app")
+        self.assertRejected([surface], "cannot delegate to itself")
 
 
 class WorkflowWiringTests(unittest.TestCase):

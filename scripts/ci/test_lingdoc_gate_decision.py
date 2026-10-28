@@ -645,6 +645,152 @@ class FrontendDelegationTests(DecisionFixture):
                     decision.publish(event, root, require_coverage=True,
                                      whitespace=False)
             self.assertNotEqual(caught.exception.code, 0)
+
+
+class ProviderDelegationTests(DecisionFixture):
+    """The app workflow's reverse delegation of the provider packages (#737).
+
+    ADR 0014's delegation, in the opposite direction of #723: the app
+    workflow's pull_request test set leaves the touched provider packages to
+    the gate's shards -- they race-test exactly those packages on the same
+    head -- instead of running them a second time without ``-race`` (red
+    line two names that rerun as no substitute for gate evidence).  The
+    decision module publishes the delegated list as the ``provider_delegate``
+    key, non-empty exactly when the shards run, so:
+
+    * the coverage table credits a provider row to the shard jobs, not to
+      the app job that skipped the duplicate -- while the shards do not run,
+      the app job keeps its claim (fail-open, like the workflow side);
+    * a contribution that touches no provider package publishes an empty
+      key: nothing was delegated, nothing changes.
+    """
+
+    def _provider_contribution(self, root: Path) -> decision.Decision:
+        return self._contribution(root, {
+            "internal/lingdoc/workspace/service.go":
+                "package workspace\n\ndelegated = True\n",
+        })
+
+    def test_a_provider_change_publishes_the_delegated_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+            outputs = decision.write_outputs(result)
+
+            self.assertTrue(result.provider_shards)
+            self.assertEqual(outputs["provider_delegate"],
+                             "./internal/lingdoc/workspace/...")
+            # The key is the shard list's own union -- a set of packages,
+            # deduped: one package may serve several `-run` shards
+            # (ADR 0015) and the consumer learns nothing the shards do
+            # not run.
+            self.assertEqual(
+                outputs["provider_delegate"],
+                " ".join(dict.fromkeys(
+                    pattern for shard in result.provider_shards
+                    for pattern in shard.packages)))
+
+    def test_a_change_touching_no_provider_publishes_no_delegate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._contribution(root, {
+                "internal/database/store.go": "package database\n",
+            })
+            outputs = decision.write_outputs(result)
+
+            self.assertEqual(result.provider_shards, ())
+            self.assertEqual(outputs["provider_delegate"], "")
+
+    def test_the_coverage_of_a_provider_row_names_the_shards_not_the_app_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            # ADR 0015 splits the workspace family into `-run` shards; the
+            # coverage names every shard that ran, never the app job.
+            attributed = " ".join(
+                row.verified_by if isinstance(row.verified_by, (list, tuple))
+                else [row.verified_by])
+            watched = " ".join(
+                row.watched_by if isinstance(row.watched_by, (list, tuple))
+                else [row.watched_by])
+            for shard in ("lingdoc-workspace-a", "lingdoc-workspace-b",
+                          "lingdoc-workspace-c"):
+                self.assertIn(f"Provider shard {shard}", attributed)
+            # The app job left this package to the shards on this head:
+            # naming it here would credit a run that did not happen.
+            self.assertNotIn("Format, vet, test, and build", attributed)
+            # The app surface still watches the paths -- it is the fail-open
+            # verifier for the head where the shards do not run.
+            self.assertIn("Format, vet, test, and build", watched)
+
+    def test_when_the_shards_do_not_run_the_app_job_keeps_the_claim(self):
+        """Fail-open at the coverage seam: no delegate run, no dropped claim."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            # A non-provider contribution: the shards are not selected, so
+            # the app job's full-list run is the honest evidence.
+            result = self._contribution(root, {
+                "internal/database/store.go": "package database\n",
+            })
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace"
+                       or row.surface == "internal/database")
+            self.assertIn("Format, vet, test, and build", row.verified_by)
+
+    def test_a_delegate_that_is_not_running_leaves_the_app_claim_intact(self):
+        """The subsumption holds only while the delegate really runs.
+
+        The seam takes the shape of a miswired delegate step: its output no
+        longer says "run", so the shards do not carry the provider packages
+        on this head.  Dropping the app job's claim for a verification that
+        did not happen would be the fail-open direction lost (#602): the
+        row must stay credited to the app job that does run.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._provider_contribution(root)
+
+            miswired = []
+            for surface in manifest.load_surfaces():
+                if surface.name == "pr-gate-provider":
+                    miswired.append(dataclasses.replace(
+                        surface, step=dataclasses.replace(
+                            surface.step, output="run_providers_miswired")))
+                else:
+                    miswired.append(surface)
+            with mock.patch.object(
+                    decision, "_manifest_surfaces",
+                    return_value=tuple(miswired)):
+                result = decision.decide(self._reopened_event(root), root)
+
+            row = next(row for row in result.coverage
+                       if row.surface == "internal/lingdoc/workspace")
+            self.assertEqual(row.status, "verified")
+            self.assertIn("Format, vet, test, and build", row.verified_by)
+
+    def _reopened_event(self, root: Path) -> dict:
+        base = git(root, "merge-base", "main", "topic")
+        head = git(root, "rev-parse", "topic")
+        return {"action": "opened",
+                "pull_request": {"base": {"sha": base},
+                                 "head": {"sha": head}}}
+
+
 class ForcePushTests(DecisionFixture):
     """A force push makes ``before`` unfetchable; the scope still narrows (#539).
 
@@ -1498,11 +1644,14 @@ class ProviderShardTests(DecisionFixture):
     """The provider verification is sharded by the decision module (#724).
 
     ADR 0014, section one: the shards are **data** the decision module
-    publishes -- a shard name plus a package list, derived from the same
+    publishes -- a shard name, a package list, and (ADR 0015) optionally
+    the ``-run`` filter of a test-name slice -- derived from the same
     ``PROVIDER_ROOTS`` the gate surface manifest registers.  The workflow's
     matrix consumes the list and runs the same test command per shard; the
-    workflow itself learns no package names.  The tests here pin the output
-    contract of that sharding and the attribution it produces.
+    workflow itself learns no package names and no test names.  The tests
+    here pin the output contract of that sharding and the attribution it
+    produces; the partition property over the real test names lives in
+    ``test_lingdoc_workspace_shard_partition.py``.
     """
 
     FULL_SCOPE = ("./internal/lingdoc/...", "./internal/evidence/...",
@@ -1519,37 +1668,49 @@ class ProviderShardTests(DecisionFixture):
             path.parent.mkdir(parents=True)
             path.write_text("package workspace\n", encoding="utf-8")
             # The plan is calibrated on the real repository's package
-            # families (#724 report, section 2): the workspace family is one
-            # indivisible Go package and carries a shard of its own; the
-            # remaining families share a shard; the three other roots share
-            # one small shard.
+            # families (#724 report, section 2) and split by test name
+            # (ADR 0015): the workspace family is one indivisible Go
+            # package, so its gate slices are test-name partitions of the
+            # same package pattern; the remaining families share a shard;
+            # the three other roots share one small shard.
             shards = self._shards(self.FULL_SCOPE)
 
             self.assertEqual([s.name for s in shards],
-                             ["lingdoc-workspace", "lingdoc-core",
-                              "provider-rest"])
+                             [*decision.WORKSPACE_SHARD_NAMES,
+                              "lingdoc-core", "provider-rest"])
             for shard in shards:
                 self.assertTrue(shard.packages,
                                 "an empty shard must not exist: the sharding "
                                 "only creates entries for non-empty groups")
-            # The whole main root was expanded losslessly over the plan.
-            self.assertEqual(list(shards[0].packages),
-                             ["./internal/lingdoc/workspace/..."])
-            self.assertEqual(sorted(shards[1].packages), sorted(
+            # The whole main root was expanded losslessly over the plan:
+            # every workspace slice carries the same package pattern, told
+            # apart only by its -run filter.
+            for shard in shards[:len(decision.WORKSPACE_SHARD_NAMES)]:
+                self.assertEqual(list(shard.packages),
+                                 ["./internal/lingdoc/workspace/..."])
+                self.assertRegex(shard.test_filter, r"^\^\(Test\w+\|.*\)\$$",
+                                 "a workspace slice is an anchored -run "
+                                 "pattern over the package's test names")
+            self.assertEqual(
+                len({s.test_filter
+                     for s in shards[:len(decision.WORKSPACE_SHARD_NAMES)]}),
+                len(decision.WORKSPACE_SHARD_NAMES),
+                "identical filters would run the same tests twice")
+            self.assertEqual(sorted(shards[len(decision.WORKSPACE_SHARD_NAMES)].packages), sorted(
                 f"./internal/lingdoc/{name}/..." for name in
                 ("access", "candidateadoption", "delivery", "demoroute",
                  "docx", "generation", "materiallingest", "membership",
                  "operationcore", "reviewanchor", "rulesetstore",
                  "sourcemarker", "sourcepolicy", "template",
                  "templategovernance", "workspacecore", "writingaction")))
-            self.assertEqual(sorted(shards[2].packages),
+            self.assertEqual(sorted(shards[-1].packages),
                              ["./cmd/acceptance-budget-reconcile/...",
                               "./internal/evidence/...",
                               "./internal/models/acceptancebudget/..."])
 
     def test_every_package_lands_in_exactly_one_shard(self):
-        packages = ["./internal/lingdoc/workspace/...",
-                    "./internal/lingdoc/delivery/...",
+        packages = ["./internal/lingdoc/delivery/...",
+                    "./internal/lingdoc/workspacecore/...",
                     "./internal/evidence/store/...",
                     "./cmd/acceptance-budget-reconcile/..."]
 
@@ -1560,6 +1721,25 @@ class ProviderShardTests(DecisionFixture):
                          "the shards must cover every package of the input")
         self.assertEqual(len(assigned), len(set(assigned)),
                          "the shards must not overlap")
+
+    def test_a_split_family_pattern_runs_in_every_slice_under_its_filter(self):
+        """A pattern naming a split family is a slice of it (ADR 0015).
+
+        The package pattern is the same in every workspace slice; the
+        -run filters are what keeps the family's tests a partition.  A
+        contribution that names the family (or a subdirectory of it)
+        directly must therefore reach every slice, not just one.
+        """
+        for pattern in ("./internal/lingdoc/workspace/...",
+                        "./internal/lingdoc/workspace/http/..."):
+            shards = self._shards([pattern])
+            self.assertEqual([s.name for s in shards],
+                             list(decision.WORKSPACE_SHARD_NAMES))
+            for shard in shards:
+                self.assertEqual(shard.packages, (pattern,))
+                self.assertTrue(shard.test_filter,
+                                "a slice without its filter would run the "
+                                "whole family: the slices would overlap")
 
     def test_the_sharding_is_deterministic_regardless_of_input_order(self):
         forward = self._shards(self.FULL_SCOPE)
@@ -1611,14 +1791,18 @@ class ProviderShardTests(DecisionFixture):
 
             self.assertEqual(outputs["run_providers"], "true")
             self.assertEqual([s.name for s in result.provider_shards],
-                             ["lingdoc-workspace"])
+                             list(decision.WORKSPACE_SHARD_NAMES))
             # The matrix entry carries the packages as one space-joined
             # string: the shard job expands it straight onto the command
-            # line, with no list parsing in the workflow.
+            # line, with no list parsing in the workflow.  The split
+            # family's slices carry their -run filter the same way (ADR
+            # 0015): one string, expanded onto the command line.
             self.assertEqual(
                 json.loads(outputs["provider_shards"]),
-                [{"name": "lingdoc-workspace",
-                  "packages": "./internal/lingdoc/workspace/..."}])
+                [{"name": name,
+                  "packages": "./internal/lingdoc/workspace/...",
+                  "go_test_filter": decision._SHARD_TEST_FILTERS[name]}
+                 for name in decision.WORKSPACE_SHARD_NAMES])
 
     def test_the_coverage_names_the_shard_jobs(self):
         """The coverage table attributes the verification to the shards."""
@@ -1634,7 +1818,12 @@ class ProviderShardTests(DecisionFixture):
             row = next(row for row in result.coverage
                        if row.surface == "internal/lingdoc/workspace")
             self.assertEqual(row.status, "verified")
-            self.assertIn("Provider shard lingdoc-workspace", row.verified_by)
+            self.assertIn(
+                "; ".join(f"Provider shard {shard.name}"
+                          for shard in result.provider_shards),
+                row.verified_by,
+                "the coverage records the slice jobs the verification "
+                "actually ran on")
             # The gate's own step no longer runs the provider tests: naming
             # it would point at a check nobody runs.
             self.assertNotIn("Provider packages: test and vet",
@@ -1654,8 +1843,9 @@ class ProviderShardTests(DecisionFixture):
 
             provider = next(check for check in conclusion["checks"]
                             if check["check"] == "pr-gate-provider")
-            self.assertIn("Provider shard lingdoc-workspace",
-                          provider["reason"])
+            for shard in result.provider_shards:
+                self.assertIn(f"Provider shard {shard.name}",
+                              provider["reason"])
             self.assertIn("./internal/lingdoc/workspace/...",
                           provider["reason"])
 
@@ -1685,6 +1875,44 @@ class ProviderShardTests(DecisionFixture):
                          [decision.LINGDOC_FALLBACK_SHARD])
         self.assertEqual(shards[0].packages,
                          ("./internal/lingdoc/somefuturefamily/...",))
+        self.assertEqual(shards[0].test_filter, "",
+                         "only the split family carries a filter")
+
+    def test_an_unavailable_enumeration_degrades_to_one_unsharded_shard(self):
+        """No test names -> one unfiltered workspace shard (#724 shape).
+
+        The degradation only slows the gate down; it can never drop a
+        test from the run (ADR 0015): the whole unfiltered package runs
+        every test the split would have partitioned.
+        """
+        self.assertTrue(decision._SHARD_TEST_FILTERS,
+                        "the real repository enumerates tests; an empty "
+                        "filter table here means the enumeration broke")
+        with mock.patch.object(decision, "_SHARD_TEST_FILTERS", {}), \
+                mock.patch.object(decision, "LINGDOC_FAMILY_SHARDS",
+                                  decision._effective_family_shards()):
+            shards = self._shards(self.FULL_SCOPE)
+        self.assertEqual([s.name for s in shards],
+                         ["lingdoc-workspace", "lingdoc-core",
+                          "provider-rest"])
+        self.assertEqual([s.test_filter for s in shards], ["", "", ""])
+
+    def test_the_test_name_filters_are_deterministic(self):
+        first = decision._workspace_shard_filters()
+        second = decision._workspace_shard_filters()
+        self.assertEqual(first, second,
+                         "the same tree must produce the same partition")
+        self.assertEqual(sorted(first), sorted(decision.WORKSPACE_SHARD_NAMES))
+        for pattern in first.values():
+            self.assertTrue(pattern.startswith("^(")
+                            and pattern.endswith(")$"),
+                            "an unanchored pattern would match by substring "
+                            "and break the partition")
+            # One anchored alternation branch per test of the slice; the
+            # branch names are exactly what the enumeration produced.
+            branches = pattern[2:-1].split("|")
+            self.assertTrue(all(branch.startswith("Test")
+                                for branch in branches))
 
     def test_the_plan_covers_the_real_main_root_losslessly(self):
         """The whole-root expansion is only lossless while it is complete."""
@@ -1692,8 +1920,9 @@ class ProviderShardTests(DecisionFixture):
         families = sorted(path.name for path
                           in (repo / "internal/lingdoc").iterdir()
                           if path.is_dir())
-        planned = [family for _name, families in decision.LINGDOC_FAMILY_SHARDS
-                   for family in families]
+        planned = sorted({family for _name, families
+                          in decision.LINGDOC_FAMILY_SHARDS
+                          for family in families})
         self.assertEqual(sorted(planned), families,
                          "a package family of the main root is missing from "
                          "the shard plan; register it in the decision module")

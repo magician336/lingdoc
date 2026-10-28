@@ -18,7 +18,12 @@ ownership: for every surface it records
 * the **role** of the surface: what the surface means for the decision
   (``paths``, ``provider``, ``frontend``, ``contracts`` or ``governance``),
 * the **step** of the pull request gate that consumes it, when it has one: the
-  step's display name, the boolean output that selects it and what it judges.
+  step's display name, the boolean output that selects it and what it judges,
+* the surface a consuming job **delegates** to, when its pull_request
+  verification leaves a named surface's paths to that surface's own
+  verification on the same head (``delegates``, #737): while the delegate
+  runs, the coverage table credits those paths to the delegate's names, not
+  to the job that skipped the duplicate.
 
 The manifest is **declarative data**.  It answers ownership questions only:
 which job watches which paths.  It contains no decision logic, and it does not
@@ -243,6 +248,16 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "Format, vet, test, and build"},
         ),
         "skipped_on_format_only": True,
+        # Reverse delegation (#737, ADR 0014's delegation in the opposite
+        # direction of #723): on pull_request events this job leaves the
+        # touched provider packages to the gate's shards -- they race-test
+        # exactly those packages on the same head, and a non-race rerun is
+        # no substitute for gate evidence (red line two).  While the
+        # delegate runs, the coverage table credits provider paths to the
+        # shard jobs; whenever it does not, this claim stands (fail-open).
+        # The delegate is named, never re-pathed: the provider roots stay
+        # registered once, in PROVIDER_ROOTS above.
+        "delegates": "pr-gate-provider",
         # This is the full Go build and test: it compiles and runs every
         # package of the root module, so it verifies what it watches.
         "verifies": True,
@@ -522,6 +537,11 @@ class Surface:
     verifies: bool
     role: str = ROLE_PATHS
     step: Step | None = None
+    # The surface whose verification carries this surface's delegated paths
+    # on the same head (#737): while the delegate runs, the coverage table
+    # credits those paths to the delegate's names.  ``None`` -- no
+    # delegation -- is the fail-open default: the claim always stands.
+    delegates: str | None = None
 
 
 @dataclass(frozen=True)
@@ -617,6 +637,9 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
             f"surface {name!r} must state verifies as true or false: a surface "
             "has to say whether its job compiles and tests it or only inspects it")
     step = mapping.get("step")
+    delegates = mapping.get("delegates")
+    if delegates is not None:
+        delegates = _require_text(delegates, f"surface {name!r} delegates")
     return Surface(
         name=name,
         paths=tuple(paths),
@@ -627,6 +650,7 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
         verifies=mapping["verifies"],
         role=role,
         step=_step_from_record(step, name) if step is not None else None,
+        delegates=delegates,
     )
 
 
@@ -695,6 +719,19 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...
                 f"and #{index} declare the same surface")
         seen[surface.name] = index
         surfaces.append(surface)
+    # A delegation names the surface that carries the evidence (#737): a
+    # name that points nowhere would silently drop the claim (or never
+    # apply), so a broken reference is rejected, never guessed.
+    for surface in surfaces:
+        if surface.delegates is None:
+            continue
+        if surface.delegates == surface.name:
+            raise SurfaceManifestError(
+                f"surface {surface.name!r} cannot delegate to itself")
+        if surface.delegates not in seen:
+            raise SurfaceManifestError(
+                f"surface {surface.name!r} delegates to unknown surface "
+                f"{surface.delegates!r}")
     return tuple(surfaces)
 
 
@@ -752,6 +789,12 @@ def load_surfaces_lenient() -> tuple[Surface, ...]:
                 step = _step_from_record(raw_step, name)
             except SurfaceManifestError:
                 step = None
+        # A delegation claim that cannot be read is no claim: the
+        # delegating surface keeps its own verification, which is the
+        # fail-open direction (#737).
+        raw_delegates = entry.get("delegates")
+        delegates = raw_delegates.strip() if (
+            isinstance(raw_delegates, str) and raw_delegates.strip()) else None
         surfaces.append(Surface(
             name=name,
             paths=paths,
@@ -765,6 +808,7 @@ def load_surfaces_lenient() -> tuple[Surface, ...]:
             verifies=bool(entry.get("verifies", True)),
             role=role,
             step=step,
+            delegates=delegates,
         ))
     return tuple(surfaces)
 

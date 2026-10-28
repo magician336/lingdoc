@@ -68,6 +68,14 @@ NEEDS_OUTPUT = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_.-]+)"
 # ``steps.<step>.outputs.<key>``
 STEP_OUTPUT = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_.-]+)")
 
+# The scope allow-list's one registered extension (#737): app.yml also
+# forwards the decision's provider_delegate key -- the reverse delegation's
+# package list, the packages the gate's provider shards verify on this head.
+# Like the allow-list itself the extension is explicit: a workflow that
+# forwards an undeclared key reads an empty string, and a key that joins
+# this map without the workflow carrying it fails the triad below.
+DELEGATION_FORWARDS = {"app.yml": {"provider_delegate"}}
+
 
 # --------------------------------------------------------------------------
 # reading the repository
@@ -240,6 +248,7 @@ class WiringTriadTests(unittest.TestCase):
             forwarded = set(decision_aliases(name, SCOPE_JOB).values())
             expected = {key for key in self.keys
                         if key.startswith(workflow_key_prefix(name))}
+            expected |= DELEGATION_FORWARDS.get(name, set())
             with self.subTest(workflow=name):
                 self.assertEqual(
                     forwarded, expected,
