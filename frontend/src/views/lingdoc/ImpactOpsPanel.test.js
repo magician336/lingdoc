@@ -353,3 +353,15 @@ test('the AI recommendation sends only the operator reason and reports the revie
   assert.ok(call.args[2].startsWith('lingdoc-'))
   assert.match(state.message.value, /2 条候选进入队列；1 条建议未通过复核/)
 })
+
+test('#774 影响任务模板渲染正文位置引用与编辑器定位事件', () => {
+  const result = sfc.compileTemplate({ id: 'test-impact-ops', filename: filename.pathname, source: parsed.descriptor.template.content, compilerOptions: { bindingMetadata: compiled.bindings } })
+  assert.equal(result.errors.length, 0)
+  const code = result.code
+  assert.match(code, /location_hints/)
+  assert.match(code, /paragraph_index/)
+  assert.match(code, /excerpt/)
+  assert.match(code, /在编辑器中定位/)
+  assert.match(code, /referenceOffset/)
+  assert.match(code, /["']locate["']/)
+})

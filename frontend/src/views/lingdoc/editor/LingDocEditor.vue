@@ -16,7 +16,7 @@ import { validateCandidate, draftBlockReason } from './guard'
 import type { EditorContext, Candidate } from './guard'
 import { canWriteChapter, checkChapterWriteTransaction, chapterReadonlyReason } from './editorScope'
 import { parseChapterMarkdown, chapterToMarkdown, parseInlineText, plainOf } from './markdown'
-import { chapterMaps, savedMarkdownOf, pmRangeToUtf16, semanticText, buildSemanticIndex, findSemanticHits, semanticRangeToMd, mdOffsetToPmPos, markdownRangeToPm } from './pmSerialize'
+import { chapterMaps, savedMarkdownOf, pmRangeToUtf16, semanticText, buildSemanticIndex, findSemanticHits, semanticRangeToMd, mdOffsetToPmPos, markdownRangeToPm, findNearestOccurrence } from './pmSerialize'
 
 const props = withDefaults(defineProps<{
   chapters: ChapterSpec[]
@@ -292,6 +292,17 @@ function locateMarkdownRange(chapterId: string, from: number, to: number, quote:
   const range=markdownRangeToPm(ed.state.doc,chapterId,from,to,quote)
   return !!range && ed.chain().focus().setTextSelection(range).scrollIntoView().run()
 }
+
+// #774 档 A：影响任务正文位置引用的定位。服务端偏移只是参考——以引用值原文在
+// 规范化基线上重查、取离参考偏移最近的出现处，再走与批注相同的 range 校验管道；
+// 值已不在正文或该章有未保存编辑时返回 false，调用方明示失败，不做猜测。
+function locateValueHint(chapterId: string, value: string, referenceOffset: number): boolean {
+  const markdown = chapterMarkdowns.get(chapterId)
+  if (markdown === undefined) return false
+  const range = findNearestOccurrence(markdown, value, referenceOffset)
+  if (!range) return false
+  return locateMarkdownRange(chapterId, range.start, range.end, value)
+}
 watch(() => props.reviewAnchors,()=>{const ed=editor.value;if(ed)ed.view.dispatch(ed.state.tr.setMeta('review-markers-refresh',true))},{deep:true})
 watch(() => [props.chapterWritePermissions, props.chapterWritePermissionReasons], () => {
   const ed = editor.value
@@ -548,7 +559,7 @@ async function pauseForNavigation() {
   editor.value?.setEditable(false)
   await queue.pauseAndWait()
 }
-defineExpose({ pauseForNavigation, flushSave, queue, editor, buildCandidate, candidate, candidateValid, blockReasons, selectionToUtf16, collectChanges, hasUnsaved, currentMarkdown, synchronizeServer, focusChapter, currentParagraphSources, locateMarkdownRange })
+defineExpose({ pauseForNavigation, flushSave, queue, editor, buildCandidate, candidate, candidateValid, blockReasons, selectionToUtf16, collectChanges, hasUnsaved, currentMarkdown, synchronizeServer, focusChapter, currentParagraphSources, locateMarkdownRange, locateValueHint })
 
 const showFind = ref(false)
 </script>

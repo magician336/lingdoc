@@ -38,7 +38,10 @@ export type ImpactTaskStaleReason = 'target_version_replaced' | 'assignee_revoke
 // prevents stabilization, and only a non-blocking impact may be accepted, so a
 // client can decide the accept affordance from this value alone.
 export type ImpactTaskSeverity = 'blocking' | 'warning' | 'info'
-export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: ImpactTaskSeverity; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
+// #774 档 A：正文位置引用是任务的附件而非判定。start_offset/end_offset 是服务端
+// 对章节正文口径的 UTF-16 偏移，只作参考——客户端定位时以 value 原文就近重查。
+export interface ImpactLocationHint { source: 'change_old_value' | 'registered_spec_value'; field_key: string; value: string; paragraph_index: number; start_offset: number; end_offset: number; excerpt: string }
+export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: ImpactTaskSeverity; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; location_hints?: ImpactLocationHint[]; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
 // An object state records what the assessment concluded about one object
 // version: whether its confirmation survived, which source versions back it,
 // and the baseline revision that verdict was recorded at. `objects` is the
