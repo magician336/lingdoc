@@ -1,0 +1,109 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#146 G6 真实试用窗口、指标与扩大决策的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C8（簇票 #703）收官判定。",
+  "head": "ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e",
+  "base": "ba1e3db8",
+  "head_note": "判定 head：ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e（main 合并提交；判定轮零代码补丁，分支与 main 被测代码树逐字一致，判定文档在其后提交）",
+  "base_note": "判定所依据的基线即该 head 本身。本票 36 点全部复用既有具名用例。G6-06 的 10 个 real 样本按票面只作历史窗口输入。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 36,
+  "gap_round": {
+    "first_round": "36 点全部有既有用例映射，零代码补丁",
+    "disposition": "六处语义近似按口径 §4.1 记账（US-05 process evidence 字段、US-07 人工工时、US-09 误报分项直测、US-10 P2 补救、TD-02.5、TD-03.1 事后扩围），判定 PASS 并在矩阵行备注与 known_limits 写明边界。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-11、US-15、TD-02.1、TD-02.9、TD-02.10、TD-03.7",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory$'`（14 用例组合子集，ok 3.339s；WAITING_HUMAN→product/qa/safety 三方签名→DECIDED、PAUSED 后窗口/决策历史完整）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-01、US-11、US-15、TD-02.1、TD-02.9、TD-02.10、TD-03.7"
+    },
+    {
+      "id": "US-02、US-03、US-04、US-12、TD-02.2、TD-02.3、TD-02.6、TD-03.1、TD-03.2、TD-03.3、TD-03.5、TD-03.6、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6TrialNeverPromotesUnreviewedOrNonRealSamples$'`（组合子集，ok 3.339s；自动 PASS 拒、NOT RUN 落库、Eligible=0、Readiness=NOT READY、无分母不造比率、空窗口 expand 拒、WordRoundtripEvidence 字段、FixtureDigest/InputHash 回指）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-02、US-03、US-04、US-12、TD-02.2、TD-02.3、TD-02.6、TD-03.1、TD-03.2、TD-03.3、TD-03.5、TD-03.6、TD-04"
+    },
+    {
+      "id": "US-06、TD-02.3、TD-03.2",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestModelCallLedgerSeparatesRealSamplesFromMockAndFakeModelSamples$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-06、TD-02.3、TD-03.2 的模式分离面"
+    },
+    {
+      "id": "US-07、TD-02.4",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestModelCallLedgerRecordsOneCallRowWithProviderParametersAndBudget|TestG6TrialNeverPromotesUnreviewedOrNonRealSamples)$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-07 的账本面、TD-02.4"
+    },
+    {
+      "id": "US-08、TD-02.6",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts$'`（组合子集，ok 3.044s；导出损失边界）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-08 的导出损失半边"
+    },
+    {
+      "id": "US-09",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6ReportedEventsCannotTriggerAutomaticRuntimePause$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-09 的事件分项面"
+    },
+    {
+      "id": "US-10、TD-02.5",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestDependencyRecommendationQueuesReviewedProposals$'`、`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-10、TD-02.5"
+    },
+    {
+      "id": "US-13",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory|TestModelCallLedgerLinksRowsToTheProductActionThatCausedThem)$'`（组合子集，ok 3.339s；ReportHash 绑定+决策历史+账本关联）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-13"
+    },
+    {
+      "id": "TD-02.7、TD-03.4",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestStabilizationBlockedReturnsCompleteReasons|TestStabilizationFailsClosedOnMissingRuleAdapter)$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 TD-02.7（BLOCKED）、TD-03.4（依赖未验证 fail-closed）"
+    },
+    {
+      "id": "TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestActionConfirmationIsExplicitAndIdempotent$'`（组合子集，ok 3.339s；幂等重放直断）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 TD-05 的幂等/版本化并发面"
+    },
+    {
+      "id": "TD-06",
+      "status": "passed",
+      "evidence": "`cd frontend && npm run type-check`（通过）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 TD-06（条件句「若提供窗口页面」——当前未提供独立窗口页面，条件未触发）"
+    },
+    {
+      "id": "US-05、TD-02.5",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory|TestClaimReviewRecordsDisputeOrRetirement|TestDependencyRecommendationQueuesReviewedProposals)$'`（组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-05、TD-02.5"
+    },
+    {
+      "id": "US-14",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6TrialNeverPromotesUnreviewedOrNonRealSamples$'`（组合子集，ok 3.339s；WordRoundtripEvidence 字段直断）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 US-14"
+    },
+    {
+      "id": "TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestG6TrialNeverPromotesUnreviewedOrNonRealSamples|TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory)$'`（RecordTrialSample/GetTrialReport/ReviewTrialSample/CreateTrialDecision 全链，组合子集，ok 3.339s）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 TD-01"
+    },
+    {
+      "id": "TD-02.8",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestG6TrialNeverPromotesUnreviewedOrNonRealSamples$'`（组合子集，ok 3.339s；空窗口 expand 被 ErrInvalidState 拒——expand 门槛直断）；落证 head `ba1e3db8f7956e398b954a2a4dd2e8ae4b78db1e`；覆盖验收点 TD-02.8"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-146-real 模式真实样本窗口",
+      "status": "not_run",
+      "reason": "票面 Further Notes 明文：G6-06 的 10 个 real 样本只作历史窗口输入；新窗口的 real 模式样本需要真实用户/项目/时间窗口。",
+      "unblock": "真实试用窗口开启后按本 Spec 的 TrialWindow/TrialSample 流程录入并单独记录；承接票 #500（同类真实面）"
+    }
+  ],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-05：process evidence 的逐项字段完整性由决策历史+复核记录近似。",
+    "US-07：人工投入时间由账本耗时/预算字段近似，无人工工时录入直测。",
+    "US-09：规则/模型误报的分项计数直测无，由指标字典逐项结构近似。",
+    "US-10：P2 补救复跑由决策签名+复核队列近似。",
+    "TD-03.1：事后扩围由窗口版本化+样本版本绑定近似。",
+    "TD-05：PostgreSQL 侧由 CI 集成面覆盖，不是本机可复制命令。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；-list 核对组合匹配数（14/4），无零匹配假绿。"
+  ]
+}
