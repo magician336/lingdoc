@@ -34,6 +34,7 @@ func RegisterTemplateGovernanceRoutes(group *gin.RouterGroup, runtime *TemplateG
 	catalog.GET("/rule-definitions", h.ruleDefinitions)
 	catalog.GET("/rulesets/:rulesetId/versions", h.listRuleSets)
 	catalog.POST("/rulesets/:rulesetId/versions", h.createRuleSet)
+	catalog.POST("/rulesets/:rulesetId/versions/:version/replay-fixtures", h.registerRuleSetReplayFixtures)
 	catalog.POST("/rulesets/:rulesetId/versions/:version/publish", h.ruleTransition("publish"))
 	catalog.POST("/rulesets/:rulesetId/versions/:version/withdraw", h.ruleTransition("withdraw"))
 	catalog.POST("/rulesets/:rulesetId/versions/:version/recall", h.ruleTransition("recall"))
@@ -124,14 +125,51 @@ func (h governanceRoutesHandler) registerReplayFixtures(c *gin.Context) {
 	sendGovernanceOK(c, 201, out, false)
 }
 
+// registerRuleSetReplayFixtures is the ruleset-projection spelling of the same
+// registration operation (Spec #768 D3): it binds the path identity to the
+// body, requires a human decision like publish, and renders what the operation
+// declares. The replay target — the draft rule set's publication projection
+// over the body-named replay base — is resolved inside the operation by the
+// rule set publication's own function; this handler spells nothing twice.
+func (h governanceRoutesHandler) registerRuleSetReplayFixtures(c *gin.Context) {
+	actor, ok := h.actor(c, true)
+	if !ok {
+		return
+	}
+	var input governance.RegisterRuleSetFixturesInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	if input.RuleSetID != c.Param("rulesetId") || input.RuleSetVersion != c.Param("version") {
+		sendError(c, ErrInvalidRequest)
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	out, err := h.runtime.Service().RegisterRuleSetFixtures(c.Request.Context(), actor, key, input)
+	if err != nil {
+		sendGovernanceError(c, err)
+		return
+	}
+	sendGovernanceOK(c, 201, out, false)
+}
+
 // replayCoverage is the manager-only coverage readback; the operation itself
-// answers non-managers with the anti-enumerating not-found.
+// answers non-managers with the anti-enumerating not-found. The ruleset_id and
+// ruleset_version query parameters (both or neither) switch the readback to
+// the named draft rule set's publication projection over the path version.
 func (h governanceRoutesHandler) replayCoverage(c *gin.Context) {
 	actor, ok := h.actor(c, true)
 	if !ok {
 		return
 	}
-	out, err := h.runtime.Service().ReplayCoverage(c.Request.Context(), actor, c.Param("templateId"), c.Param("version"))
+	var projection *governance.RuleSetCoverageQuery
+	if rulesetID, rulesetVersion := c.Query("ruleset_id"), c.Query("ruleset_version"); rulesetID != "" || rulesetVersion != "" {
+		projection = &governance.RuleSetCoverageQuery{RuleSetID: rulesetID, RuleSetVersion: rulesetVersion}
+	}
+	out, err := h.runtime.Service().ReplayCoverage(c.Request.Context(), actor, c.Param("templateId"), c.Param("version"), projection)
 	if err != nil {
 		sendGovernanceError(c, err)
 		return

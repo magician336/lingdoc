@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -228,6 +229,21 @@ func fixtureRecordFromRow(row fixtureRow) (ReplayFixtureRecord, error) {
 	}, nil
 }
 
+// ReplayBaseRef names the version a ruleset projection was computed from.
+type ReplayBaseRef struct {
+	TemplateID string `json:"template_id"`
+	Version    string `json:"version"`
+}
+
+// RulesetProjectionRef identifies the ruleset-projection spelling of a fixture
+// operation (Spec #768 D3): the draft rule set whose publication the pinned
+// fixtures unlock, and the replay base version the projection was computed
+// from. Both halves are server-computed; a client never supplies them.
+type RulesetProjectionRef struct {
+	RuleSet    RuleSetRef    `json:"ruleset"`
+	ReplayBase ReplayBaseRef `json:"replay_base"`
+}
+
 // ReplayFixtureInput is one fixture of a registration batch. It carries only
 // semantic fields: the ruleset reference, the content hash and the policy hash
 // are computed by the server from the registered version (D4), and any
@@ -254,6 +270,26 @@ type RegisterFixturesInput struct {
 	Reason     string               `json:"reason"`
 }
 
+// RegisterRuleSetFixturesInput is the ruleset-path spelling (Spec #768 D3):
+// one batch for a draft rule set plus the replay base version whose projection
+// publication Verify will replay. The projection is computed by the rule set
+// publication's own function; the batch is atomic like the template path.
+type RegisterRuleSetFixturesInput struct {
+	RuleSetID       string               `json:"ruleset_id"`
+	RuleSetVersion  string               `json:"ruleset_version"`
+	TemplateID      string               `json:"template_id"`
+	TemplateVersion string               `json:"template_version"`
+	Fixtures        []ReplayFixtureInput `json:"fixtures"`
+	Reason          string               `json:"reason"`
+}
+
+// RuleSetCoverageQuery names the ruleset draft whose publication projection a
+// coverage readback describes (D9). Both identifiers or neither.
+type RuleSetCoverageQuery struct {
+	RuleSetID      string
+	RuleSetVersion string
+}
+
 // RegisteredFixtureSummary is one registered fixture's metadata receipt.
 type RegisteredFixtureSummary struct {
 	FixtureID string     `json:"fixture_id"`
@@ -267,28 +303,124 @@ type RegisteredFixtureSummary struct {
 // RegisterFixturesReceipt states the server-fixed pin, what was registered,
 // and the shared coverage matrix of the version after this batch — the same
 // computation the coverage readback and publication Verify consume.
+// Projection is set only on the ruleset-projection spelling: it names the
+// draft rule set whose publication this batch unlocks and the replay base the
+// projection was computed from.
 type RegisterFixturesReceipt struct {
 	TemplateID  string                     `json:"template_id"`
 	Version     string                     `json:"version"`
 	ContentHash string                     `json:"content_hash"`
 	PolicyHash  string                     `json:"policy_hash"`
+	Projection  *RulesetProjectionRef      `json:"projection,omitempty"`
 	Registered  []RegisteredFixtureSummary `json:"registered"`
 	Coverage    ReplayCoverageReport       `json:"coverage"`
 }
 
-// RegisterFixtures is the single registration operation (Spec #768 D3/D10).
-// Within one transaction it rechecks current authorization and membership,
-// loads the stored draft version, computes the server-fixed pin, validates
+// registrationRequest carries one batch to the single registration operation
+// (Spec #768 D3). The two HTTP spellings differ only in how the replay target
+// is resolved and which identities the receipt and the audit receipt name;
+// validation, trial replay, the atomic insert, idempotency and audit live in
+// registerFixtures and trialAndInsert, once.
+type registrationRequest struct {
+	// request is the value hashed into the idempotency operation row.
+	request any
+	// opTarget is the idempotency operation target ("id/version").
+	opTarget string
+	fixtures []ReplayFixtureInput
+	reason   string
+	// auditID/auditVersion name the failure receipt's governed object.
+	auditID      string
+	auditVersion string
+	// targets are the request's identifiers, judged against the shared
+	// identifier lexicon at the 400 boundary.
+	targets []string
+	// rulesetPath marks the projection spelling: the receipt then carries the
+	// ruleset and replay base references and the success audit names both.
+	rulesetPath bool
+	// resolveTarget authorizes and returns the replay target inside the
+	// registration transaction: the stored draft version (template path) or
+	// the publication projection (ruleset path).
+	resolveTarget func(tx *gorm.DB) (TemplateVersion, error)
+}
+
+// RegisterFixtures is the single registration operation's template-path
+// spelling: the replay target is the stored draft version itself.
+func (s *Service) RegisterFixtures(ctx context.Context, actor Actor, key string, input RegisterFixturesInput) (receipt RegisterFixturesReceipt, err error) {
+	return s.registerFixtures(ctx, actor, key, registrationRequest{
+		request: input, opTarget: input.TemplateID + "/" + input.Version,
+		fixtures: input.Fixtures, reason: input.Reason,
+		auditID: input.TemplateID, auditVersion: input.Version,
+		targets: []string{input.TemplateID, input.Version},
+		resolveTarget: func(tx *gorm.DB) (TemplateVersion, error) {
+			if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRegisterFixture, input.TemplateID); err != nil {
+				return TemplateVersion{}, err
+			}
+			current, err := loadVersion(tx, actor, input.TemplateID, input.Version)
+			if err != nil {
+				return TemplateVersion{}, err
+			}
+			if current.State != template.RuleSetDraft {
+				return TemplateVersion{}, ErrInvalidState
+			}
+			return current, nil
+		},
+	})
+}
+
+// RegisterRuleSetFixtures is the single registration operation's ruleset-path
+// spelling (Spec #768 D3): the replay target is the rule set publication's own
+// projection — the replay base version with the draft rule set rebound and the
+// content digests recomputed by ruleReplayVersion, the same function
+// governRuleSet runs at publication. The pin therefore matches exactly what
+// publishing this draft will replay, and a base draft re-save (new content
+// hash) deactivates it. The demo base follows ruleReplayVersion's demo branch,
+// so the first organization rule set has no stored-version prerequisite.
+func (s *Service) RegisterRuleSetFixtures(ctx context.Context, actor Actor, key string, input RegisterRuleSetFixturesInput) (receipt RegisterFixturesReceipt, err error) {
+	if s.ports.RuleSets == nil {
+		return RegisterFixturesReceipt{}, ErrUnavailable
+	}
+	return s.registerFixtures(ctx, actor, key, registrationRequest{
+		request: input, opTarget: input.RuleSetID + "/" + input.RuleSetVersion,
+		fixtures: input.Fixtures, reason: input.Reason,
+		auditID: input.RuleSetID, auditVersion: input.RuleSetVersion,
+		targets:     []string{input.RuleSetID, input.RuleSetVersion, input.TemplateID, input.TemplateVersion},
+		rulesetPath: true,
+		resolveTarget: func(tx *gorm.DB) (TemplateVersion, error) {
+			draft, err := rulesetstore.NewStore(tx, s.ports.RuleSets).GetVersion(ctx, actor, input.RuleSetID, input.RuleSetVersion)
+			if err != nil {
+				return TemplateVersion{}, err
+			}
+			if draft.State != template.RuleSetDraft {
+				return TemplateVersion{}, ErrInvalidState
+			}
+			// Publication-strength gate (D2): registration is the same human
+			// governance decision as publish, answered by the same authorizer
+			// and keeping its anti-enumerating denial shape.
+			if err := s.ports.RuleSets.AuthorizeRuleSet(ctx, tx, actor, rulesetstore.ActionPublish, &draft); err != nil {
+				return TemplateVersion{}, err
+			}
+			published, err := template.PublishRuleSet(draft)
+			if err != nil {
+				return TemplateVersion{}, err
+			}
+			return s.ruleReplayVersion(ctx, tx, actor, RuleGovernanceInput{TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion}, published)
+		},
+	})
+}
+
+// registerFixtures is the one registration operation (Spec #768 D3/D10).
+// Within one transaction it resolves the authorized replay target, validates
 // every fixture's shape and semantics, trials every fixture with the same
 // judge publication Verify uses, inserts the whole batch append-only and
 // records the success audit. Any failure rolls the transaction back (zero
 // writes); the failure receipt is written afterwards in its own bounded
 // transaction. Idempotency follows the governance operation table: the same
 // key with the same request replays the same receipt, the same key with a
-// different request is ErrIdempotencyConflict.
-func (s *Service) RegisterFixtures(ctx context.Context, actor Actor, key string, input RegisterFixturesInput) (receipt RegisterFixturesReceipt, err error) {
+// different request is ErrIdempotencyConflict. A receipt minted on a pin that
+// no longer answers the current replay target is ErrVersionConflict.
+func (s *Service) registerFixtures(ctx context.Context, actor Actor, key string, req registrationRequest) (receipt RegisterFixturesReceipt, err error) {
 	defer func() {
-		if auditErr := s.auditCatalogFailure(ctx, actor, ActionRegisterFixture, input.TemplateID, input.Version, input.Reason, err); auditErr != nil {
+		if auditErr := s.auditCatalogFailure(ctx, actor, ActionRegisterFixture, req.auditID, req.auditVersion, req.reason, err); auditErr != nil {
 			err = errors.Join(err, fmt.Errorf("record catalog failure receipt: %w", auditErr))
 		}
 	}()
@@ -303,10 +435,10 @@ func (s *Service) RegisterFixtures(ctx context.Context, actor Actor, key string,
 		// channel and no silent builtin-only substitute.
 		return RegisterFixturesReceipt{}, ErrUnavailable
 	}
-	if err := validateRegisterFixturesInput(input); err != nil {
+	if err := validateRegistrationRequest(req); err != nil {
 		return RegisterFixturesReceipt{}, err
 	}
-	for _, fixture := range input.Fixtures {
+	for _, fixture := range req.fixtures {
 		if s.ports.Fixtures.ConflictsBuiltin(fixture.FixtureID) {
 			// The builtin set is code-defined; a tenant row can never claim
 			// one of its identities (D4).
@@ -314,30 +446,24 @@ func (s *Service) RegisterFixtures(ctx context.Context, actor Actor, key string,
 		}
 	}
 	err = s.withTx(ctx, func(tx *gorm.DB) error {
-		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRegisterFixture, input.TemplateID); err != nil {
-			return err
-		}
-		current, err := loadVersion(tx, actor, input.TemplateID, input.Version)
+		current, err := req.resolveTarget(tx)
 		if err != nil {
 			return err
 		}
-		if current.State != template.RuleSetDraft {
-			return ErrInvalidState
-		}
-		op := operationIdentity(actor, "register_fixture", input.TemplateID+"/"+input.Version, key)
-		found, err := operationGet(tx, op, input, &receipt)
+		op := operationIdentity(actor, "register_fixture", req.opTarget, key)
+		found, err := operationGet(tx, op, req.request, &receipt)
 		if err != nil {
 			return err
 		}
 		if found {
 			if current.ContentHash != receipt.ContentHash || current.PolicyHash != receipt.PolicyHash {
-				// The draft moved since this receipt was minted; its pin no
-				// longer answers the current version.
+				// The replay target moved since this receipt was minted; its
+				// pin no longer answers the current projection/version.
 				return ErrVersionConflict
 			}
 			return nil
 		}
-		newReceipt, trialErr := s.trialAndInsert(ctx, tx, actor, op, current, input)
+		newReceipt, trialErr := s.trialAndInsert(tx, actor, op, current, req)
 		if trialErr != nil {
 			return trialErr
 		}
@@ -350,20 +476,28 @@ func (s *Service) RegisterFixtures(ctx context.Context, actor Actor, key string,
 // trialAndInsert runs the batch: server-fixed pin, per-fixture 400 boundary
 // then trial replay (422 family), then the append-only insert. It runs inside
 // the caller's transaction and returns the receipt to store as the
-// operation's replayable result.
-func (s *Service) trialAndInsert(_ context.Context, tx *gorm.DB, actor Actor, op operationRow, current TemplateVersion, input RegisterFixturesInput) (RegisterFixturesReceipt, error) {
+// operation's replayable result. On the ruleset path the receipt and the
+// success audit additionally name the projected rule set and the replay base
+// (D10's dual reference).
+func (s *Service) trialAndInsert(tx *gorm.DB, actor Actor, op operationRow, current TemplateVersion, req registrationRequest) (RegisterFixturesReceipt, error) {
 	receipt := RegisterFixturesReceipt{
 		TemplateID:  current.TemplateID,
 		Version:     current.Version,
 		ContentHash: current.ContentHash,
 		PolicyHash:  current.PolicyHash,
-		Registered:  make([]RegisteredFixtureSummary, 0, len(input.Fixtures)),
+		Registered:  make([]RegisteredFixtureSummary, 0, len(req.fixtures)),
 		Coverage:    ReplayCoverageReport{Entries: []ReplayCoverageEntry{}},
 	}
-	rows := make([]fixtureRow, 0, len(input.Fixtures))
+	if req.rulesetPath {
+		receipt.Projection = &RulesetProjectionRef{
+			RuleSet:    current.RuleSet,
+			ReplayBase: ReplayBaseRef{TemplateID: current.TemplateID, Version: current.Version},
+		}
+	}
+	rows := make([]fixtureRow, 0, len(req.fixtures))
 	seen := map[string]bool{}
 	now := time.Now().UTC()
-	for _, in := range input.Fixtures {
+	for _, in := range req.fixtures {
 		if seen[in.FixtureID] {
 			return RegisterFixturesReceipt{}, ErrInvalidRequest
 		}
@@ -426,12 +560,19 @@ func (s *Service) trialAndInsert(_ context.Context, tx *gorm.DB, actor Actor, op
 	for _, summary := range receipt.Registered {
 		ids = append(ids, summary.FixtureID)
 	}
-	if err := recordAudit(tx, actor, ActionRegisterFixture, op.Target, input.Reason, map[string]any{
+	details := map[string]any{
 		"fixture_ids": ids, "content_hash": current.ContentHash, "policy_hash": current.PolicyHash, "ruleset": current.RuleSet,
-	}); err != nil {
+	}
+	if req.rulesetPath {
+		// D10's dual reference: the ruleset path names both the rule set whose
+		// publication this batch unlocks and the replay base it was projected
+		// from, so the audit history reads the whole story.
+		details["replay_base"] = ReplayBaseRef{TemplateID: current.TemplateID, Version: current.Version}
+	}
+	if err := recordAudit(tx, actor, ActionRegisterFixture, op.Target, req.reason, details); err != nil {
 		return RegisterFixturesReceipt{}, err
 	}
-	return receipt, operationSave(tx, op, input, receipt, map[string]any{"content_hash": current.ContentHash, "policy_hash": current.PolicyHash, "count": len(rows)})
+	return receipt, operationSave(tx, op, req.request, receipt, map[string]any{"content_hash": current.ContentHash, "policy_hash": current.PolicyHash, "count": len(rows)})
 }
 
 // insertFixtureRow appends one row. A primary-key collision is an append-only
@@ -463,16 +604,28 @@ func sameFixtureContent(existing, next fixtureRow) bool {
 		existing.ExpectedStatus == next.ExpectedStatus && existing.ReviewReference == next.ReviewReference
 }
 
-// validateRegisterFixturesInput is the request-level 400 boundary: identifiers,
-// batch bounds and per-fixture field shapes that need no rule set knowledge.
-func validateRegisterFixturesInput(input RegisterFixturesInput) error {
-	if !identifier.MatchString(input.TemplateID) || !identifier.MatchString(input.Version) || !validReason(input.Reason) {
+// validateRegistrationRequest is the request-level 400 boundary: the target
+// identifiers, the governance reason and the per-fixture field shapes that
+// need no rule set knowledge. Each spelling names its own targets.
+func validateRegistrationRequest(req registrationRequest) error {
+	if !validReason(req.reason) {
 		return ErrInvalidRequest
 	}
-	if len(input.Fixtures) == 0 || len(input.Fixtures) > MaxReplayFixturesPerBatch {
+	for _, target := range req.targets {
+		if !identifier.MatchString(target) {
+			return ErrInvalidRequest
+		}
+	}
+	return validateRegistrationBatch(req.fixtures)
+}
+
+// validateRegistrationBatch bounds one batch and checks per-fixture field
+// shapes; it is shared verbatim by both registration spellings (D3).
+func validateRegistrationBatch(fixtures []ReplayFixtureInput) error {
+	if len(fixtures) == 0 || len(fixtures) > MaxReplayFixturesPerBatch {
 		return ErrInvalidRequest
 	}
-	for _, fixture := range input.Fixtures {
+	for _, fixture := range fixtures {
 		if !identifier.MatchString(fixture.FixtureID) || !identifier.MatchString(fixture.RuleID) {
 			return ErrInvalidRequest
 		}
@@ -520,32 +673,44 @@ func validateFixtureSemantics(current TemplateVersion, in ReplayFixtureInput) er
 }
 
 // ReplayCoverageView is the coverage readback for one stored version: the
-// version identity it describes plus the shared matrix.
+// version identity it describes plus the shared matrix. Projection is set only
+// on the ruleset-projection query: the view then describes the publication
+// projection computed from the named draft rule set over the named base.
 type ReplayCoverageView struct {
-	TemplateID  string `json:"template_id"`
-	Version     string `json:"version"`
-	ContentHash string `json:"content_hash"`
-	PolicyHash  string `json:"policy_hash"`
+	TemplateID  string                `json:"template_id"`
+	Version     string                `json:"version"`
+	ContentHash string                `json:"content_hash"`
+	PolicyHash  string                `json:"policy_hash"`
+	Projection  *RulesetProjectionRef `json:"projection,omitempty"`
 	ReplayCoverageReport
 }
 
 // ReplayCoverage is the manager-only coverage readback (D9). The draft's
 // coverage matrix is draft metadata: any current tenant manager may read it,
-// nobody else — non-managers get the anti-enumerating ErrNotFound. The
+// nobody else — non-managers get the anti-enumerating ErrNotFound. A non-nil
+// projection names a draft rule set whose publication projection (computed by
+// the rule set publication's own function over the named base version) the
+// matrix describes — the same target the ruleset registration path pins. The
 // fixture read happens outside the authorization transaction so the store's
 // query never competes for the single-connection SQLite pool; the view names
 // the content hash it describes.
-func (s *Service) ReplayCoverage(ctx context.Context, actor Actor, templateID, version string) (ReplayCoverageView, error) {
+func (s *Service) ReplayCoverage(ctx context.Context, actor Actor, templateID, version string, projection *RuleSetCoverageQuery) (ReplayCoverageView, error) {
 	if err := s.ready(actor); err != nil {
 		return ReplayCoverageView{}, err
 	}
 	if !identifier.MatchString(templateID) || !identifier.MatchString(version) {
 		return ReplayCoverageView{}, ErrInvalidRequest
 	}
+	if projection != nil {
+		if !identifier.MatchString(projection.RuleSetID) || !identifier.MatchString(projection.RuleSetVersion) {
+			return ReplayCoverageView{}, ErrInvalidRequest
+		}
+	}
 	if s.ports.Fixtures == nil {
 		return ReplayCoverageView{}, ErrUnavailable
 	}
 	var current TemplateVersion
+	var viewProjection *RulesetProjectionRef
 	if err := s.withTx(ctx, func(tx *gorm.DB) error {
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRead, templateID); err != nil {
 			return err
@@ -558,12 +723,39 @@ func (s *Service) ReplayCoverage(ctx context.Context, actor Actor, templateID, v
 			return ErrNotFound
 		}
 		current, err = loadVersion(tx, actor, templateID, version)
-		return err
+		if err != nil {
+			return err
+		}
+		if projection != nil {
+			if s.ports.RuleSets == nil {
+				return ErrUnavailable
+			}
+			draft, err := rulesetstore.NewStore(tx, s.ports.RuleSets).GetVersion(ctx, actor, projection.RuleSetID, projection.RuleSetVersion)
+			if err != nil {
+				return err
+			}
+			if draft.State != template.RuleSetDraft {
+				return ErrInvalidState
+			}
+			published, err := template.PublishRuleSet(draft)
+			if err != nil {
+				return err
+			}
+			current, err = s.ruleReplayVersion(ctx, tx, actor, RuleGovernanceInput{TemplateID: templateID, TemplateVersion: version}, published)
+			if err != nil {
+				return err
+			}
+			viewProjection = &RulesetProjectionRef{
+				RuleSet:    current.RuleSet,
+				ReplayBase: ReplayBaseRef{TemplateID: current.TemplateID, Version: current.Version},
+			}
+		}
+		return nil
 	}); err != nil {
 		return ReplayCoverageView{}, err
 	}
 	records, err := s.ports.Fixtures.FixturesForPin(ctx, actor.TenantID, FixturePin{
-		TemplateID: templateID, TemplateVersion: version, ContentHash: current.ContentHash, PolicyHash: current.PolicyHash,
+		TemplateID: current.TemplateID, TemplateVersion: current.Version, ContentHash: current.ContentHash, PolicyHash: current.PolicyHash,
 	})
 	if err != nil {
 		return ReplayCoverageView{}, err
@@ -577,6 +769,7 @@ func (s *Service) ReplayCoverage(ctx context.Context, actor Actor, templateID, v
 		Version:              version,
 		ContentHash:          current.ContentHash,
 		PolicyHash:           current.PolicyHash,
+		Projection:           viewProjection,
 		ReplayCoverageReport: JudgeReplayCoverage(current, fixtures),
 	}, nil
 }

@@ -450,12 +450,12 @@ func TestTemplateReplayCoverageReadbackIsManagerOnly(t *testing.T) {
 	if _, err := s.RegisterFixtures(ctx, actor, "register-coverage-1", registerInput(draft, registrationFixtureInputs())); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.ReplayCoverage(ctx, actor, draft.TemplateID, draft.Version)
+	view, err := s.ReplayCoverage(ctx, actor, draft.TemplateID, draft.Version, nil)
 	if err != nil || !view.Complete || view.ContentHash != draft.ContentHash {
 		t.Fatalf("manager coverage view = %+v %v", view, err)
 	}
 	reader := Actor{TenantID: actor.TenantID, UserID: "reader", Role: string(types.TenantRoleViewer)}
-	if _, err := s.ReplayCoverage(ctx, reader, draft.TemplateID, draft.Version); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ReplayCoverage(ctx, reader, draft.TemplateID, draft.Version, nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("non-manager coverage read = %v, want anti-enumerating 404", err)
 	}
 }

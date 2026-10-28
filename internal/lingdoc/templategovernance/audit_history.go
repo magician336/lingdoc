@@ -55,19 +55,26 @@ func (s *Service) ListAuditHistory(ctx context.Context, actor Actor, templateID 
 			"lingdoc.template.register_fixture",
 		}
 		detailsTarget := "json_extract(details, '$.target_ref')"
+		// Ruleset-path registration pins the replay base's version, so its
+		// receipts belong to the base template's history; the details carry
+		// the replay base reference (D10's dual reference) and this filter
+		// matches on it.
+		replayBaseTarget := "json_extract(details, '$.details.replay_base.template_id')"
 		if tx.Name() == "postgres" {
 			// The application table uses JSONB, while legacy/test audit tables
 			// may expose the same serialized details as text. Cast explicitly so
 			// both PostgreSQL shapes read consistently.
 			detailsTarget = "CAST(details AS jsonb) ->> 'target_ref'"
+			replayBaseTarget = "CAST(details AS jsonb) -> 'details' -> 'replay_base' ->> 'template_id'"
 		}
 		prefix := templateID + "/"
 		q := tx.Table("audit_logs").
 			Where("tenant_id=? AND scope_type=? AND action IN ?", actor.TenantID, "lingdoc_template", actions).
-			Where("(scope_id=? OR substr(scope_id,1,?)=? OR target_id=? OR substr(target_id,1,?)=? OR "+detailsTarget+"=? OR substr("+detailsTarget+",1,?)=?)",
+			Where("(scope_id=? OR substr(scope_id,1,?)=? OR target_id=? OR substr(target_id,1,?)=? OR "+detailsTarget+"=? OR substr("+detailsTarget+",1,?)=? OR "+replayBaseTarget+"=?)",
 				templateID, len(prefix), prefix,
 				templateID, len(prefix), prefix,
-				templateID, len(prefix), prefix)
+				templateID, len(prefix), prefix,
+				templateID)
 		if filter.AfterID > 0 {
 			q = q.Where("id < ?", filter.AfterID)
 		}

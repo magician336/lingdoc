@@ -751,25 +751,60 @@ func (r *TemplateGovernanceRuntime) GetReplayFixture(ctx context.Context, actor 
 var ErrStaleReplayPin = clienterror.Wrap(clienterror.Form{Status: 422, Code: "template_replay_required", Message: "已登记夹具与当前版本内容摘要不一致，旧 pin 已失活，请对当前 pin 重新登记后再发布。", Retryable: false}, "template_governance_stale_replay_pin", governance.ErrReplayRequired)
 
 // Verify keeps its pin precheck (template id, version, content hash and policy
-// hash must all match the stored record) before the shared replay judgment. A
-// fixture that is not registered for this tenant under the current pin is a
-// replay requirement; a fixture-storage failure is fail-closed (Spec #768
-// D7): it propagates as the explicit unavailable error and never silently
-// degrades to a builtin-only verdict.
+// hash must all match the stored record) before the shared replay judgment.
+// The precheck is pin-scoped: the store answers the set registered under the
+// version's exact pin, so an id re-registered on the current pin never resolves
+// to an older row of the same id (append-only keeps those). An id that exists
+// only under a different pin is the stale-pin answer; an id this tenant never
+// registered is a replay requirement; a fixture-storage failure is fail-closed
+// (Spec #768 D7): it propagates as the explicit unavailable error and never
+// silently degrades to a builtin-only verdict.
 func (r *TemplateGovernanceRuntime) Verify(ctx context.Context, actor governance.Actor, version governance.TemplateVersion, ids []string) error {
+	records, err := r.fixtures.FixturesForPin(ctx, actor.TenantID, governance.FixturePin{
+		TemplateID: version.TemplateID, TemplateVersion: version.Version, ContentHash: version.ContentHash, PolicyHash: version.PolicyHash,
+	})
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]governance.ReplayFixture, len(records))
+	for _, record := range records {
+		byID[record.Fixture.ID] = record.Fixture
+	}
+	seen := map[string]bool{}
 	for _, id := range ids {
-		record, err := r.fixtures.GetFixture(ctx, actor.TenantID, id)
-		if errors.Is(err, governance.ErrFixtureNotStored) {
-			return fmt.Errorf("%w: fixture %s 未绑定当前版本 pin，请对当前内容摘要重新登记", governance.ErrReplayRequired, id)
+		if strings.TrimSpace(id) == "" || seen[id] {
+			// The shared verifier owns the request-shape answers; the precheck
+			// only classifies ids that could legitimately resolve.
+			continue
 		}
-		if err != nil {
-			return err
+		seen[id] = true
+		if _, stored := byID[id]; stored {
+			continue
 		}
-		if record.TemplateID != version.TemplateID || record.TemplateVersion != version.Version || record.TemplateContentHash != version.ContentHash || record.PolicyHash != version.PolicyHash {
+		_, storedErr := r.fixtures.GetFixture(ctx, actor.TenantID, id)
+		if storedErr == nil {
 			return fmt.Errorf("%w: fixture %s", ErrStaleReplayPin, id)
 		}
+		if errors.Is(storedErr, governance.ErrFixtureNotStored) {
+			return fmt.Errorf("%w: fixture %s 未绑定当前版本 pin，请对当前内容摘要重新登记", governance.ErrReplayRequired, id)
+		}
+		return storedErr
 	}
-	return (governance.ExampleReplayVerifier{Reader: r}).Verify(ctx, actor, version, ids)
+	return (governance.ExampleReplayVerifier{Reader: pinScopedReader{byID: byID}}).Verify(ctx, actor, version, ids)
+}
+
+// pinScopedReader answers only the fixtures registered under the version's
+// pin; the shared verifier consumes it unchanged, so registration and
+// publication keep the one judge.
+type pinScopedReader struct {
+	byID map[string]governance.ReplayFixture
+}
+
+func (r pinScopedReader) GetReplayFixture(_ context.Context, _ governance.Actor, id string) (governance.ReplayFixture, error) {
+	if fixture, ok := r.byID[id]; ok {
+		return fixture, nil
+	}
+	return governance.ReplayFixture{}, governance.ErrReplayRequired
 }
 
 // TemplateGovernanceDemoRuleSet reproduces the existing five computed demo
