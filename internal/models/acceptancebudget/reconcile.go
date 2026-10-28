@@ -57,9 +57,15 @@ type ReconcileEmbeddingHTTPErrorInput struct {
 // ReconcileEmbeddingHTTPError is an explicit local operator operation. No
 // provider/client/HTTP path calls it. It preserves the failed request, including
 // unknown token counters, and never refunds either reserved or actual cost.
-// Only CostOnlyProfile embedding HTTP 4xx/5xx failures are supported initially.
+//
+// It is available on the profiles that price embedding calls (the
+// cost-only profile and the controlled embedding profile), because a provider
+// 4xx on such a call freezes the window and the authorized budget would
+// otherwise be retired by the FIRST failure. See
+// ProfileSupportsEmbeddingHTTPErrorReconciliation for what the capability
+// means and what it deliberately does not cover.
 func (b *Budget) ReconcileEmbeddingHTTPError(ctx context.Context, input ReconcileEmbeddingHTTPErrorInput) error {
-	if b == nil || b.profile != CostOnlyProfile || !filepath.IsAbs(b.ledgerPath) ||
+	if b == nil || !ProfileSupportsEmbeddingHTTPErrorReconciliation(b.profile) || !filepath.IsAbs(b.ledgerPath) ||
 		!input.ConfirmFullReserveCharge || !validSHA256(input.ExpectedLedgerSHA256) ||
 		input.RequestNumber < 1 || input.ExpectedStatus != "http_error" || input.ExpectedBlockedReason != "http_error" ||
 		!validEvidence(input.Evidence) || input.Evidence.LedgerSHA256 != input.ExpectedLedgerSHA256 ||
@@ -155,6 +161,7 @@ func digestSHA256(data []byte) string {
 
 func requestSHA256(request Request) string {
 	request.Reconciliation = nil
+	request.UnresolvedReconciliation = nil
 	data, err := json.Marshal(request)
 	if err != nil {
 		return ""
@@ -167,8 +174,17 @@ func requestUnresolved(request Request) bool {
 	case "http_error":
 		return !validEmbeddingHTTPErrorReconciliation(request)
 	case "in_flight", "outcome_unknown", "usage_unknown", "limit_violation", "cancel_reconciliation_required":
+		// A row an operator settled is resolved; a row whose settlement is
+		// missing, incomplete or tampered with is NOT: the window stays
+		// frozen rather than opening on a proof nobody can check.
+		if request.UnresolvedReconciliation != nil {
+			return !validUnresolvedCallReconciliation(request)
+		}
 		return true
 	default:
+		if request.UnresolvedReconciliation != nil {
+			return !validUnresolvedCallReconciliation(request)
+		}
 		return request.Reconciliation != nil && !validEmbeddingHTTPErrorReconciliation(request)
 	}
 }
@@ -198,7 +214,10 @@ func decodeLedger(data []byte) (Ledger, error) {
 		return Ledger{}, ErrUnavailable
 	}
 	for _, request := range ledger.Requests {
-		if request.Reconciliation != nil && (ledger.Profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
+		if request.Reconciliation != nil && (!ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) || !validEmbeddingHTTPErrorReconciliation(request)) {
+			return Ledger{}, ErrUnavailable
+		}
+		if request.UnresolvedReconciliation != nil && (!ProfileSupportsUnresolvedCallReconciliation(ledger.Profile) || !validUnresolvedCallReconciliation(request)) {
 			return Ledger{}, ErrUnavailable
 		}
 	}

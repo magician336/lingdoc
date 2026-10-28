@@ -1,0 +1,54 @@
+{
+  "http_exit": 0,
+  "browser_exit": 0,
+  "parity_exit": 0,
+  "base_url": "http://127.0.0.1:18087/api/v1/lingdoc",
+  "frontend_url": "http://127.0.0.1:5173",
+  "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+  "ledger_rows_before": 4,
+  "ledger_rows_after": 4,
+  "llm_debug_before": 4,
+  "llm_debug_after": 4,
+  "json_ledger_before": {
+    "qwen-beta-sqlite.json": {
+      "sha256": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4",
+      "size": 2224,
+      "mtime": 1792892032.6251671
+    },
+    "qwen-beta-sqlite.json.calls.json": {
+      "sha256": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea",
+      "size": 2305,
+      "mtime": 1792892032.625775
+    },
+    "llm_debug_files": [
+      "20261024_173737.438.log",
+      "20261024_200027.173.log",
+      "20261024_215353.088.log",
+      "20261025_093352.622.log"
+    ],
+    "llm_debug_count": 4
+  },
+  "json_ledger_after": {
+    "qwen-beta-sqlite.json": {
+      "sha256": "74e86abcad63e3d16f0b6ef34be108e04c3987decb0a71a7457f6ea8488106d4",
+      "size": 2224,
+      "mtime": 1792892032.6251671
+    },
+    "qwen-beta-sqlite.json.calls.json": {
+      "sha256": "dd39a0cb4bfa2c3154c9be947c0fc3312b56cc070ecf206c22beeebbaf1b69ea",
+      "size": 2305,
+      "mtime": 1792892032.625775
+    },
+    "llm_debug_files": [
+      "20261024_173737.438.log",
+      "20261024_200027.173.log",
+      "20261024_215353.088.log",
+      "20261025_093352.622.log"
+    ],
+    "llm_debug_count": 4
+  },
+  "parity_status": "PASS",
+  "parity_checked": 10,
+  "parity_mismatches": [],
+  "parity_not_run_count": 2
+}

@@ -127,6 +127,8 @@
           <button type="button" class="ghost" :disabled="!project" @click="specOpen = true">研究条件 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="templateOpen = true">当前模板副本 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('research')">调研与证据 →</button>
+          <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('context')">上下文包 →</button>
+          <button type="button" class="ghost" :disabled="!project" @click="openInspector('sources')">上传与项目资料 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('changes')">正式变更与运行 →</button>
           <button type="button" class="ghost" :disabled="!project || project.status !== 'active'" @click="openFullPanel('operations')">运行观测与试用 →</button>
           <button type="button" class="ghost" :disabled="!project" @click="openFullPanel('governance')">模板目录与规则 →</button>
@@ -339,7 +341,9 @@
 </div>
 
         <div class="wb-pane wb-pane-sources">
+        <button type="button" class="ghost" @click="closeInsp">收起项目资料</button>
         <section class="assets">
+          <ProjectMaterialIntakePanel :key="materialIdentity + ':' + project.id" :project-id="project.id" :project-name="project.name" :identity="materialIdentity" @bound="refreshMaterialAssets" />
           <h3>课题绑定资料</h3>
           <a href="/platform/knowledge-bases" target="_blank" rel="noopener" class="native-bank-link">管理资料库（WeKnora，新窗口）</a><p class="muted">资料库用于保管和索引资料；本窗口保留当前文稿。绑定和正文引用仍在此处分别完成。</p>
           <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
@@ -747,6 +751,7 @@
       <section class="full-workflow-dialog" role="dialog" aria-modal="true" :aria-label="fullPanelLabel" tabindex="-1">
         <header class="full-workflow-head"><strong>{{ fullPanelLabel }}</strong><button type="button" :disabled="fullPanelBusy" @click="closeFullPanel">返回文稿 ×</button></header>
         <ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
+        <ProjectContextPackagePanel v-if="fullPanel === 'context'" :key="materialIdentity + ':' + project.id" :project="project" :identity="materialIdentity" @research="openFullPanel('research')" />
         <ImpactOpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <RuntimeOpsPanel v-if="fullPanel === 'operations'" ref="runtimeOpsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" :can-manage-catalog="auth.hasRole('admin')" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
@@ -755,7 +760,9 @@
       </section>
     </div>
     <ChapterCommitReview v-if="pendingChapterCommit && chapter" :chapter-title="chapter.title"
-      @wording="commitWordingDraft" @semantic="routeSemanticDraft" @cancel="pendingChapterCommit = null" />
+      :suspected-conditions="suspectedConditionChanges"
+      @wording="commitWordingDraft" @semantic="routeSemanticDraft" @dismiss="dismissWordingCommit"
+      @cancel="closeCommitReview" />
     <p v-if="commitIntentNotice" class="muted" role="status">{{ commitIntentNotice }}</p>
     <div v-if="activationOpen && activationDiff && project" ref="activationDialogRef" class="full-workflow-backdrop" @mousedown.self="closeActivationReview">
       <section class="full-workflow-dialog activation-review" role="dialog" aria-modal="true" aria-labelledby="activation-title" tabindex="-1">
@@ -791,7 +798,10 @@ import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import RuntimeOpsPanel from './RuntimeOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
 import GenerationActionPanel from './GenerationActionPanel.vue'
-import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
+import {
+  dismissalFromSuspected, parseSuspectedConditions, sameChapterCommitBasis,
+  type ChapterCommitBasis, type SuspectedConditionChange,
+} from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
 import { listMyProjectInvitations, acceptProjectInvitation, type ProjectInvitation } from '@/api/lingdoc/collaboration'
@@ -821,6 +831,9 @@ import { rewriteAdoptionConfirmation } from './candidateAdoption'
 import { OWNER_DECISION_UNAVAILABLE_TEXT, useOwnerAvailability } from '@/composables/useOwnerAvailability'
 import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 import { listKnowledgeBases, listKnowledgeFiles } from '@/api/knowledge-base'
+import ProjectMaterialIntakePanel from './ProjectMaterialIntakePanel.vue'
+import ProjectContextPackagePanel from './ProjectContextPackagePanel.vue'
+import { materialIntakeIdentity } from './projectMaterialIntake'
 import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
 import { plainOf, parseInlineText } from './editor/markdown'
@@ -836,6 +849,8 @@ import {
 
 const projects = ref<Project[]>([])
 const auth = useAuthStore()
+// 材料接入面板的缓存身份只在唯一一处构造：:key 与 :identity 都取这个值。
+const materialIdentity = computed(() => materialIntakeIdentity(auth.currentUserId ?? '', String(auth.effectiveTenantId ?? '')))
 const truncated = ref(false)
 const project = ref<Project | null>(null)
 // Owner 可用性事实与恢复指引文案都在这一处持有：按钮的置灰条件与提示文案
@@ -851,12 +866,12 @@ const {
 const memberSaving = ref(false)
 const memberDraftDirty = ref(false)
 
-type FullPanel = 'research' | 'changes' | 'operations' | 'governance' | 'members' | 'review'
+type FullPanel = 'research' | 'changes' | 'operations' | 'governance' | 'members' | 'review' | 'context'
 const fullPanel=ref<FullPanel|null>(null),fullPanelDirty=ref(false),fullDrawerRef=ref<HTMLElement|null>(null)
 const researchPanelRef=ref<InstanceType<typeof ResearchPanel>|null>(null)
 const opsPanelRef=ref<InstanceType<typeof ImpactOpsPanel>|null>(null),runtimeOpsPanelRef=ref<InstanceType<typeof RuntimeOpsPanel>|null>(null),governancePanelRef=ref<InstanceType<typeof TemplateGovernancePanel>|null>(null),collaborationPanelRef=ref<InstanceType<typeof ProjectCollaborationPanel>|null>(null),chapterReviewPanelRef=ref<InstanceType<typeof ChapterReviewPanel>|null>(null)
 const fullPanelBusy=computed(()=>!!researchPanelRef.value?.operationBusy||!!opsPanelRef.value?.busy||!!runtimeOpsPanelRef.value?.busy||!!governancePanelRef.value?.busy||!!collaborationPanelRef.value?.busy||!!chapterReviewPanelRef.value?.busy)
-const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',operations:'运行观测与真实试用',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注'}[fullPanel.value??'research']))
+const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',operations:'运行观测与真实试用',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注',context:'上下文包'}[fullPanel.value??'research']))
 const fullReadonly=computed(()=>{const m=project.value?.members.find(x=>x.user_id===auth.currentUserId);return restricted.value||!m||m.status!==undefined&&m.status!==''&&m.status!=='active'||m.role!=='owner'&&m.governance_role!=='admin'&&!(m.function_roles??[]).some(x=>x!=='observer')})
 const commentSelection=ref<CommentSelection|undefined>(undefined)
 const generationEvidenceRefs=ref<VersionRef[]>([])
@@ -922,6 +937,12 @@ const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
 const knowledgeId = ref('')
+async function refreshMaterialAssets() {
+  const id = project.value?.id, session = editorSessionEpoch
+  if (!id) return
+  try { const result = await listAssets(id); if (project.value?.id === id && session === editorSessionEpoch) assets.value = result.data ?? [] }
+  catch { if (project.value?.id === id && session === editorSessionEpoch) bindingNoticeText.value = '材料操作后资料列表暂不可读，请重新读取。' }
+}
 /* 按名称绑定：知识库可用资料 / 课题绑定资料（assets 列表）/ 本段实际引用（paraCitationLabel）三层分开 */
 const kbList = ref<Array<{ kb_id: string; kb_name: string }>>([])
 const kbFiles = ref<Array<{ id: string; file_name: string }>>([])
@@ -2777,6 +2798,12 @@ async function onReviewReportApplied(copy: WorkingCopy) {
 
 const pendingChapterCommit = ref<ChapterCommitBasis | null>(null)
 const commitIntentNotice = ref('')
+// #753: the server-reported suspicions behind the dialog's second state.
+const suspectedConditionChanges = ref<SuspectedConditionChange[]>([])
+function closeCommitReview() {
+  pendingChapterCommit.value = null
+  suspectedConditionChanges.value = []
+}
 function currentChapterCommitBasis(): ChapterCommitBasis | null {
   if (!project.value || !chapter.value || !workingCopy.value) return null
   return {
@@ -2803,6 +2830,7 @@ function currentCommitChoice(): ChapterCommitBasis | null {
 }
 function routeSemanticDraft() {
   if (!currentCommitChoice()) return
+  suspectedConditionChanges.value = []
   pendingChapterCommit.value = null
   commitIntentNotice.value = '正文仍保留在工作副本，尚未提交。请在正式变更中填写实际条件或语义差异并评估；只有当前 Owner 应用后才改变研究基线。'
   openFullPanel('changes')
@@ -2811,7 +2839,7 @@ watch([() => project.value?.id, () => chapter.value?.id, () => auth.currentUserI
   pendingChapterCommit.value = null
   commitIntentNotice.value = ''
 })
-async function commitWordingDraft() {
+async function commitWordingDraft(dismissal?: { dismissed_fields: string[]; reason: string }) {
   const reviewed = currentCommitChoice()
   if (!reviewed || !project.value || !chapter.value || !workingCopy.value || !workingCopyDiffersFromFormal.value) return
   pendingChapterCommit.value = null
@@ -2819,14 +2847,16 @@ async function commitWordingDraft() {
   errorMessage.value = ''
   const projectId = project.value.id
   const chapterId = chapter.value.id
-  const input = {
+  const input: Parameters<typeof commitWorkingCopy>[2] = {
     expected_spec_revision: project.value.spec_revision,
     expected_working_copy_revision: workingCopy.value.working_copy_revision,
     expected_chapter_version_id: chapter.value.current_version_id,
   }
+  if (dismissal) input.condition_change_dismissal = dismissal
   const key = operationKey(`commit-working-copy:${chapterId}`, input)
   try {
     await commitWorkingCopy(projectId, chapterId, input, key)
+    suspectedConditionChanges.value = []
     attempts.delete(`commit-working-copy:${chapterId}`)
     // 真实提交回执 → 已提交基线推进（解除"已保存未提交"阻断；非按保存回执假定）
     const committedNow = (workingCopy.value?.working_copy_revision ?? 0)
@@ -2840,8 +2870,23 @@ async function commitWordingDraft() {
     chapter.value = chapterResult.data.find(item => item.id === chapterId) ?? null
     if (chapter.value) await loadChapterDraft(projectId, chapterId)
     clearRewriteCandidate(projectId, chapterId)
-  } catch (error) { failure(error) }
-  finally { busy.value = false }
+  } catch (error) {
+    // #753: a refusal carries the server's suspicion list — reopen the same
+    // reviewed dialog in its second state instead of a raw error line.
+    const suspected = parseSuspectedConditions(error)
+    if (suspected && suspected.length > 0) {
+      suspectedConditionChanges.value = suspected
+      pendingChapterCommit.value = reviewed
+      return
+    }
+    failure(error)
+  } finally { busy.value = false }
+}
+
+function dismissWordingCommit(reason: string) {
+  const dismissal = dismissalFromSuspected(suspectedConditionChanges.value, reason)
+  if (!dismissal) return
+  void commitWordingDraft(dismissal)
 }
 
 async function restoreVersion(version: ChapterVersion) {

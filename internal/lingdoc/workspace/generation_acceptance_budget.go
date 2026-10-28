@@ -209,7 +209,18 @@ func (b *generationAcceptanceBudget) approvedModel(requested string) (string, er
 	if active := activeAcceptanceProfile(); active != "" && active != profile {
 		return "", errAcceptanceLedgerIO
 	}
-	approved := acceptancebudget.ProfileApprovedModel(profile)
+	// A profile that approves no chat model cannot serve a chat call.
+	//
+	// The reservation below uses the profile's APPROVED model, so without this
+	// check a chat request under an EMBEDDING profile would be reserved (and
+	// counted) as an embedding call and then sent to the provider -- a chat
+	// request the embedding endpoint does not serve, and one that no chat
+	// budget was written for. The refusal happens here, before the request
+	// leaves the process.
+	approved, ok := acceptancebudget.ProfileApprovedChatModel(profile)
+	if !ok {
+		return "", errAcceptanceWrongModel
+	}
 	if requested != generationAcceptanceModel && requested != approved {
 		return "", errAcceptanceWrongModel
 	}

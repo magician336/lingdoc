@@ -36,7 +36,7 @@ func NewSQLiteExportStore(db *gorm.DB) *SQLiteExportStore {
 // 每列都写 column 标签的理由与快照行逐字相同：表是手写迁移建的，不经 AutoMigrate。
 type exportArtifactRow struct {
 	ID                string    `gorm:"column:id;primaryKey;size:64"`
-	ProjectID         string    `gorm:"column:project_id;not null;size:64"`
+	ProjectID         string    `gorm:"column:project_id;not null;size:36"`
 	SnapshotID        string    `gorm:"column:snapshot_id;not null;size:64"`
 	Status            string    `gorm:"column:status;not null;size:16"`
 	RuleSetRefJSON    string    `gorm:"column:ruleset_ref_json;not null;type:text"`

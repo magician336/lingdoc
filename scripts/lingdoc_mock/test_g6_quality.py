@@ -488,14 +488,26 @@ class G6MetricsTest(unittest.TestCase):
 
 class G6MainPathTest(unittest.TestCase):
     def _complete_report(self):
+        """A report in which every node the contract declares answered and
+        every machine assertion the contract declares was evaluated and held.
+
+        The assertions are the contract's own, read now: a report that leaves
+        some of them unevaluated is NOT RUN, and a "complete" report that says
+        so would be a lie.
+        """
         workflow = json.loads(main_path_evidence.WORKFLOW_PATH.read_text(encoding="utf-8"))
         steps = [{"id": step["id"], "operation_id": step["operation_id"],
                   "verdict": "passed", "actual_http": step["expected_http"]}
                  for step in workflow["steps"]]
+        checks = [{"step_id": check["step_id"], "path": check["path"],
+                   "operator": check["operator"], "status": "passed"}
+                  for check in main_path_evidence.declared_contract_checks()]
         return {"runner_status": "completed", "completed_steps": len(steps),
                 "workflow": "F01",
                 "total_steps": len(steps), "verification_scope": "http_smoke_only",
-                "steps": steps}
+                "provider_semantics_status": "verified",
+                "manual_assertions": [],
+                "steps": steps, "checks": checks}
 
     def test_complete_path_stays_blocked_until_failure_side_effect_is_read_back(self):
         pending = main_path_evidence.build_main_path_report(main_report=self._complete_report())
@@ -564,7 +576,15 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["main_path"]["result"], "PASS")
         self.assertEqual(report["result"], "PASS")
 
-    def test_actual_f01_runner_report_shape_is_accepted(self):
+    def test_actual_f01_runner_report_shape_is_accepted_and_is_not_run(self):
+        """A real runner report is read -- and it is NOT RUN today.
+
+        The runner reports the contract's four prose assertions as
+        ``not_run`` and the provider's semantics as ``not_verified``:
+        nobody judged them.  A run like that has not verified the delivery
+        chain, so this path says NOT RUN -- the same verdict the main path
+        gives the very same run.
+        """
         main, failure = main_path_evidence.build_mock_main_path_fixture()
         runner = main_path_evidence.ScenarioRunner.from_files(
             main_path_evidence.OPENAPI_PATH, main_path_evidence.WORKFLOW_PATH,
@@ -578,8 +598,9 @@ class G6MainPathTest(unittest.TestCase):
         report = main_path_evidence.build_main_path_report(
             main_report=raw_report, failure_observation=failure,
             runtime_mode="real_api_fake_model")
-        self.assertEqual(report["main_path"]["result"], "PASS")
-        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(raw_report["provider_semantics_status"], "not_verified")
+        self.assertEqual(report["main_path"]["result"], "NOT RUN")
+        self.assertEqual(report["result"], "NOT RUN")
 
     def test_fixture_digest_changes_when_redacted_fixture_state_changes(self):
         main, failure = main_path_evidence.build_mock_main_path_fixture()
@@ -738,11 +759,13 @@ class G6MainPathTest(unittest.TestCase):
 
     def test_r30_declared_receipt_node_is_required_and_status_checked(self):
         main, failure = main_path_evidence.build_mock_main_path_fixture()
-        self.assertEqual(len(main["steps"]), 28)
+        self.assertEqual(len(main["steps"]), 31)
         self.assertEqual([step["step_id"] for step in main["steps"] if step["step_id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{n:02d}" for n in range(7, 24)])
+                         + [f"F01-{n:02d}" for n in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{n:02d}" for n in range(19, 24)])
         complete = main_path_evidence.build_main_path_report(main_report=main, failure_observation=failure)
         self.assertEqual(complete["result"], "PASS")
         missing = copy.deepcopy(main)

@@ -38,6 +38,13 @@ type LingDocWorkspace struct {
 	Runtime            *workspace.SourceRuntime
 	Audit              workspacecore.AuditSink
 	CapabilityObserver delivery.TransactionalCapabilityObserver
+	// The manual-judgement channel of the F01 runner (#649). The project
+	// service implements this narrow port too, and the composition root
+	// hands it over by name, the way the four optional capabilities above
+	// are handed over: a run-time type assertion would be a back door,
+	// because it could hand back any operation of the aggregate rather
+	// than only the ones the narrow port names.
+	ManualJudgement workspace.ManualJudgementApplication
 }
 
 func NewLingDocWorkspaceHandler(
@@ -55,6 +62,12 @@ func NewLingDocWorkspaceHandler(
 	}
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, kbShares, knowledge, templates, auditSink)
+	// The origin text of an uploaded material lives in storage: its file path
+	// is a storage reference, not a filesystem path. The runtime needs the
+	// storage side to read it — without it every quote can only be checked
+	// against the chunk itself, and no source of that material counts as a
+	// stable original.
+	runtime.ConnectOriginFiles(workspace.KnowledgeFileOriginReader{Service: knowledgeObjects})
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	// 受控故障注入只在环境变量显式点名注入点与演示租户时装配（#256）。未装配
 	// 时，下面的策略与写入端口与本票之前完全一致。
@@ -90,6 +103,11 @@ func NewLingDocWorkspaceHandler(
 	model := workspace.NewHostAgentModel(models,
 		workspace.WithModelCallLedger(runtime.ModelCallLedger()))
 	projectService.ConfigureAgentRuntime(workspacecore.AgentRuntime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewAgentActionExecutor(projectService, runtime, nil)})
+	// The dependency-edge recommender (#751) shares the same registry and the
+	// same ledger instance: one row per call, the same rows the agent turns
+	// and generation runs write to.
+	projectService.SetDependencyRecommendationModel(workspace.NewHostDependencyRecommendationModel(models,
+		workspace.WithRecommendationLedger(runtime.ModelCallLedger())))
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
 		return LingDocWorkspace{}, err
@@ -170,7 +188,10 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, err
 	}
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
+	// The manual-judgement channel of the F01 runner (#649): the same
+	// project service, handed over by name as the narrow port the two
+	// routes speak to.
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore, ManualJudgement: projectService}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
@@ -234,6 +255,20 @@ func NewLingDocTemplateCatalog() lingdoctemplate.Reader {
 
 type workspaceAuditSink struct{ service interfaces.AuditLogService }
 
+// ErrAuditActorRoleEmpty is the refusal the audit sink returns for an event
+// whose actor role is the zero value (#559).
+//
+// audit_logs.actor_role 的空串含义是「未知」，落库口径（#535 管理会话裁定）
+// 已把它登记为 2026-10-07 之前的历史遗留，由 90 天保留期自行清除；写侧不再
+// 产生新的空串。AuditEvent.Role 的零值恰恰是空串，而上游的填充靠约定——
+// HTTP 面的 TenantRoleFromContext / CallerFromContext 各自回退 viewer——
+// 不是类型保证，一个漏填的构造点就能再写出一批空串。所以 sink 是最后一道
+// 闸：事件不带角色 ⇒ 拒绝写审计、返回可判定错误、一行不落。调用方的语义
+// 沿用既有分工：写路径 fail-closed（状态变更不得不可追溯），读路径
+// fail-open（丢弃错误、照常发布审计失败告警），拒绝只是少一行无法归因的
+// 审计，不改变任何权限结果。
+var ErrAuditActorRoleEmpty = errors.New("lingdoc audit event actor role is empty")
+
 // Record writes one authorization audit record to the platform audit log.
 //
 // The port contract is `Record(context.Context, AuditEvent) error`, and this
@@ -254,6 +289,12 @@ type workspaceAuditSink struct{ service interfaces.AuditLogService }
 func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.AuditEvent) error {
 	if s.service == nil {
 		return nil
+	}
+	if event.Role == "" {
+		err := fmt.Errorf("%w: refusing to write an unattributable audit row (tenant %d, project %s, capability %s)",
+			ErrAuditActorRoleEmpty, event.TenantID, event.ProjectID, event.Capability)
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization"})
+		return err
 	}
 	eventDetails := map[string]any{"capability": event.Capability, "decision": event.Decision, "reason": event.Reason}
 	for key, value := range event.Details {

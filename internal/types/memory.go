@@ -250,21 +250,15 @@ func (p *MemoryPendingSessions) Scan(value interface{}) error {
 		*p = nil
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
+	}
+	if len(raw) == 0 {
 		*p = nil
 		return nil
 	}
-	if len(b) == 0 {
-		*p = nil
-		return nil
-	}
-	return json.Unmarshal(b, p)
+	return json.Unmarshal(raw, p)
 }
 
 // Append adds a session id without dropping existing work.
@@ -430,19 +424,14 @@ func (c *MemoryConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
+	}
+	if len(raw) == 0 {
 		return nil
 	}
-	if len(b) == 0 {
-		return nil
-	}
-	return json.Unmarshal(b, c)
+	return json.Unmarshal(raw, c)
 }
 
 // Normalize applies defaults and rejects unknown write modes.
@@ -744,20 +733,15 @@ func (a *MemoryTopicAliases) Scan(value interface{}) error {
 		*a = nil
 		return nil
 	}
-	var data []byte
-	switch v := value.(type) {
-	case []byte:
-		data = v
-	case string:
-		data = []byte(v)
-	default:
-		return fmt.Errorf("unsupported type for MemoryTopicAliases: %T", value)
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
 	}
-	if len(data) == 0 {
+	if len(raw) == 0 {
 		*a = nil
 		return nil
 	}
-	return json.Unmarshal(data, a)
+	return json.Unmarshal(raw, a)
 }
 
 // Has reports whether a surface form has already resolved to this topic.
@@ -1105,21 +1089,15 @@ func (u *UsedMemories) Scan(value interface{}) error {
 		*u = make(UsedMemories, 0)
 		return nil
 	}
-	var b []byte
-	switch v := value.(type) {
-	case []byte:
-		b = v
-	case string:
-		b = []byte(v)
-	default:
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		return err
+	}
+	if len(raw) == 0 {
 		*u = make(UsedMemories, 0)
 		return nil
 	}
-	if len(b) == 0 {
-		*u = make(UsedMemories, 0)
-		return nil
-	}
-	return json.Unmarshal(b, u)
+	return json.Unmarshal(raw, u)
 }
 
 // UsedMemoriesFromItems projects items into the client-facing shape.

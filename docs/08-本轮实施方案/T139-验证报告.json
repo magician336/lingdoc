@@ -4,7 +4,7 @@
   "head": "0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c",
   "head_tree": "0fbb6fa9ee3b0bc21330d0400c402d7009833189",
   "base": "3c65618ba8328b5ed7c1bbf5edde6cab104ff4ab",
-  "head_note": "产品与测试候选：实现、测试与契约都在这一个提交上（0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c，父提交 = main@a91e3697，即落基八的落证；面号已由 PF-10 改为 PF-13，登记处与路径图在证据提交里改），其中含两处门禁修复：PG 夹具去 G4 编号命名、两处 gofmt，均不改产品行为；证据文档（判定矩阵、本报告、登记处移交）在其后的提交。落基九（main@0ec51042）、落基十（main@bbd461ac）、落基十一（main@81d0b099）与落基十二（main@3c65618b）只动基线，本面 24 条路径的产品代码逐字节未变（git diff 0131b8eb HEAD -- <24 条路径> 命中两处且都不是产品漂移：internal/lingdoc/workspacecore/context_ports_test.go 的 main 侧行号位移——本面增量逐行相同，与 internal/lingdoc/workspace/template_governance_routes_test.go 的本轮收尾新增用例）。 2026-10-24 增补（票 #524 的 PG 侧真实验收）：TD-04 / AC-04-01 / AC-04-02 / AC-04-04 四条判 PASS，其落证 head 是 19d9df9c（main，含已合入的 PR #248），不是 0131b8eb —— PG 相关代码在 0131b8eb..19d9df9c 之间变过 33 个文件；而 git diff 7270e69e..19d9df9c 在 PG 路径上为空、且 7270e69e（PR #248 head）是 19d9df9c 的祖先 ⇒ 同一份证据对 PR #248 的 head 与 main 同时成立。其余 27 条仍绑 0131b8eb（产品与测试候选）。",
+  "head_note": "产品与测试候选：实现、测试与契约都在这一个提交上（0131b8eb9f40e64f2eb2d2da0d0f00f0f51a029c，父提交 = main@a91e3697，即落基八的落证；面号已由 PF-10 改为 PF-13，登记处与路径图在证据提交里改），其中含两处门禁修复：PG 夹具去 G4 编号命名、两处 gofmt，均不改产品行为；证据文档（判定矩阵、本报告、登记处移交）在其后的提交。落基九（main@0ec51042）、落基十（main@bbd461ac）、落基十一（main@81d0b099）与落基十二（main@3c65618b）只动基线，本面 24 条路径的产品代码逐字节未变（git diff 0131b8eb HEAD -- <24 条路径> 命中两处且都不是产品漂移：internal/lingdoc/workspacecore/context_ports_test.go 的 main 侧行号位移——本面增量逐行相同，与 internal/lingdoc/workspace/template_governance_routes_test.go 的本轮收尾新增用例）。 2026-10-24 增补（票 #524 的 PG 侧真实验收）：TD-04 / AC-04-01 / AC-04-02 / AC-04-04 四条判 PASS，其落证 head 是 19d9df9c（main，含已合入的 PR #248），不是 0131b8eb —— PG 相关代码在 0131b8eb..19d9df9c 之间变过 33 个文件；而 git diff 7270e69e..19d9df9c 在 PG 路径上为空、且 7270e69e（PR #248 head）是 19d9df9c 的祖先 ⇒ 同一份证据对 PR #248 的 head 与 main 同时成立。其余 27 条仍绑 0131b8eb（产品与测试候选）。 2026-10-27 增补（簇票 #696 / C1）：AC-04-05（CI 缩面观测）依解除条件双侧观测翻 PASS，证据以 GitHub Actions run/job 记录为准（见该条目），v1 已作出的其余判定结论按口径 v1.1 继续有效、不重判。",
   "base_note": "本面按此基线落基：本会话内 main 前移七次（PR #446 合入、PR #472 登记 PF-7 / PF-9、PR #473 写 PF-8 移交顺序、PR #475 让 #465 的 PF-10 取迁移号、PR #443 合入 PF-6 上下文包前端消费、PR #478 合入 PF-6 交面、PR #474 合入 #465 的 PF-10 Beta 面），本面因此落基八遍；语义重做的起点是 main@041ebe0f，第二遍在 05fa6b6f（29 个改动文件里 24 个三方合并干净、冲突面 5 个文件），第三遍在 275d438b（29 个文件里 28 个与第二遍逐字节相同、三方合并零冲突），第四遍在 015bd122（29 个文件里 28 个与第三遍逐字节相同、三方合并零冲突），第五遍在 f0fbd487（同样 28 个逐字节相同、零冲突），第六遍在 52f5b615（main 也改了登记处与路径图：登记处三方合并自动成功、路径图一处冲突手解，30 个文件里 28 个逐字节相同），第七遍在 743db967（PF-6 的交面 PR 同样改这两个共享文件：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同），第八遍在 a91e3697（#474 把 #465 的 PF-10 面登记进 main：登记处自动合并、路径图两处冲突手解，同样 28 个逐字节相同，loader 校验 11 个面）。八遍的语义增量完全一致。落基十一（main@81d0b099，PR #149 与 PR #503 合入后）与落基十二（main@3c65618b，PR #520/#521/#522 合入后）都是纯基线合并（git merge origin/main，合并零冲突）：main 侧改动全在 internal/types/、internal/lingdoc/generation/、internal/application/service/，不与本面 24 条路径相交，本面产品代码与候选 0131b8eb 逐字节相同，候选不变。",
   "caliber": "v1",
   "caliber_commit": "1f195def6fb984d43876567bfe365222c34b46b5",
@@ -227,35 +227,38 @@
       "evidence": "`go test -count=3 -v -run '^TestPostgresCatalogSchemaLifecycleAndAuditRollback$' ./internal/lingdoc/templategovernance/`（3× PASS，ok 1.519s；另有 -count=1 单跑对照 PASS 0.73s）；head `19d9df9c`",
       "note": "隔离环境：隔离 PostgreSQL 17.11（容器 lingdoc-pg17-iso、镜像 postgres:17-alpine、命名卷 lingdoc-pg17-iso-vol、库 lingdoc_pg17_iso、账号 lingdoc_iso、127.0.0.1:55432；既有 WeKnora-*／coforge-* 容器与库零改动）。既有 WeKnora-*／coforge-* 容器与库零改动（只做过 docker ps 列表）。用例覆盖面（internal/lingdoc/templategovernance/catalog_postgres_test.go:22）：生产迁移 000115_lingdoc_rule_sets → 建表 → 草稿 → 发布 → 重开新连接池读回（重启读回）→ 幂等重试 → 并发发布只成一次 → 触发器注入审计失败验证整体回滚。PG 服务端日志可见对应的故障注入确实发生（deny_template_audit() 的 audit unavailable、parity_deny_copy_fn() 的 synthetic audit failure）。本条落证 head 为 19d9df9c。",
       "follow_up_ticket": "#524"
-    }
-  ],
-  "not_run": [
-    {
-      "id": "AC-04-03 真人浏览器完整链（模板目录 → 版本列表 → 版本详情 → 授权来源检查 → 发布 → 导出）",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
-      "executed": false,
-      "follow_up_issue": "#523",
-      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/523",
-      "ticket": "#523",
-      "unblock_condition": "#523 关闭且证据满足：按步骤命名的截图落仓外证据目录、控制台无错误、关键请求与响应摘要、人工判定结论，并回填本条目的证据路径（保留条目本身，不删除）；证据不含密钥",
-      "reason": "本轮未在真实浏览器执行该链；本机 Docker engine pipe 不存在，Hosted CI 的 HTTP/数据库测试不等于浏览器验收。按现行验收协议门槛，矩阵判定状态记为 DEFERRED_MANUAL：代码侧条件已满足、人工验收未完成，既不是 PASS，也不是把 NOT RUN 改写成通过。DEFERRED_MANUAL 的状态定义见验收协议（另由独立 PR 落地），本报告只使用状态名",
-      "unblock": "解除条件：按 #523 的验收步骤在真实浏览器跑完该链并把证据绑到当前 head（跟进票 #523）。在带 postgres:17 的本地栈用真实浏览器跑完该链，并把截图与读回写进 T139-验证报告.json 的 passed[]"
     },
     {
       "id": "AC-04-05 按 diff 内容缩面而跳过的 CI 作业",
-      "status": "not_run",
-      "matrix_status": "DEFERRED_MANUAL",
-      "executed": false,
+      "status": "pass",
+      "matrix_status": "PASS",
+      "executed": true,
       "follow_up_issue": "#524",
-      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/524",
       "ticket": "#524",
-      "unblock_condition": "解除条件：#524 关闭且证据满足（CI 观测型，机器可读；本机不可解除）",
-      "reason": "属 CI 侧观测面，本机无 GitHub Actions 运行观测面：#360 的修法（PR #463）已落地，lingdoc-interface-integration.yml:63-73 带 postgres:17 service、:111-112 跑 PG 迁移演练；但该作业是否真的跑/被跳过，只能由一次真实 CI run 的 job 记录证明（scripts/ci/lingdoc_gate_surfaces.py:292-319 的路径表 + lingdoc-interface-integration.yml:60 的 if 条件）。本机只用仓内同一判定模块做了两次可复现推演（Case A：diff 仅触及本矩阵与本报告 ⇒ job_lingdoc_interface_integration_integration=false（PG 演练作业被跳过）；Case B：diff 触及 internal/database/**、internal/lingdoc/**、internal/container/lingdoc* 等 20 个文件 ⇒ 同一键为 true（作业被纳入）），判定模块自己的输出写着「Selection only; not a test result or an approval.」⇒ 该推演只能用来写解除条件，不能充当本条的证据。本机结果不得冒充本条通过。",
-      "unblock": "解除条件（CI 观测型，机器可读）：按 #524 —— 在触及 internal/database/**、internal/lingdoc/**、scripts/acceptance/**、internal/container/lingdoc*、internal/router/lingdoc* 的 PR 上观察一次真实 CI run，其 scope 作业发布的 artifact 中 job_lingdoc_interface_integration_integration 为 true 且 integration 作业的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤为 green；同时再取一次 diff 仅触及上述路径集之外的 run，其同一键为 false（作业 skipped）；两者的 run id 与 artifact 链接回填 T139-验证报告.json。本条属 CI 侧观测面 ⇒ 本机不可解除；跟进票 #524。 跟进票 #524；本机不可解除（解除面在 CI 侧）。",
+      "evidence": "`TestPostgres`（`go test -count=1 -v -run '^TestPostgres' ./internal/database/...`，即 integration job 121776907428 的 \"Rehearse PostgreSQL migration upgrades and rollbacks\" 步骤，Run 40380987157，head `1f63069a`，step conclusion=success、`ok github.com/Tencent/WeKnora/internal/database 17.922s`）；阴性对照：PR #711 的 Run 40366193209 / 40418918807（diff 仅 scripts/*.py 与证据 JSON ⇒ integration job SKIPPED）；阳性落证 head `1f63069a`、阴性 `b9a546d8295d`",
+      "note": "2026-10-27 C1（簇票 #696）依解除条件翻 PASS：阳性（#712 分支，触及 internal/lingdoc/** ⇒ scope 选入 integration，PG 演练步骤绿）与阴性（#711，路径集之外 ⇒ integration skipped）双侧都有 run/job/step 级记录；机制文件（lingdoc-interface-integration.yml:60 的 if 条件 + scripts/ci/lingdoc_gate_surfaces.py 路径表）在两个观测 run 之前最后一次变更是 eb89749b，其后未变 ⇒ 观测对现行机制成立。step/job 结论取自 GitHub Actions API 的 conclusion 字段，非本机断言。#524 于 2026-10-24 关闭（关闭评论把 05 误列入 PG 用例，实际落盘的 PG 证据是 TD-04/01/02/04），CI 观测证据由 C1 补齐并回填本条。",
+      "unblock": "已解除：解除条件双侧满足（见 evidence 与 note）",
+      "unblock_condition": "已解除：#524 关闭且双侧 CI run 观测证据已回填本条目（2026-10-27 完成）",
       "follow_up_ticket": "#524"
+    },
+    {
+      "id": "AC-04-03 真人浏览器完整链（模板目录 → 版本列表 → 版本详情 → 授权来源检查 → 发布 → 导出）",
+      "status": "pass",
+      "matrix_status": "PASS",
+      "executed": true,
+      "follow_up_issue": "#523",
+      "follow_up_issue_url": "https://github.com/magician336/lingdoc/issues/523",
+      "ticket": "#523",
+      "evidence": "真实浏览器（ZCode IAB Chromium 1280x720）+ 本地栈（后端构建自 main ef2a77b5 带 sqlite_fts5，18120；main 前端 Vite dev 5173，代理到 18120）。Owner（beta-explorer，tenant owner）逐步真实操作：模板目录（治理工作台三 tab、过滤器、空选态）→ 版本列表（尚无版本→准备新版本）→ 版本详情（UI 表单保存草稿：版本1/internal-demo/灵档内置/ruleset-demo·1/2字段2章节/术语null，服务返回待审核草稿修订1）→ 授权来源检查（详情卡核对哈希与来源材料：内容 c155efc6…、规则集 444f8cbc… 与内置回放样例登记哈希逐字节一致、覆盖政策 4f53cda1…；「来源类型不代表官方认证」声明可见）→ 发布（治理理由+20个服务器注册正反例，UI 显示已覆盖 20/20，服务端真实执行回放后返回「服务返回：已发布。」，历史版本变「1·已发布」）→ 导出（交付面板：交付检查通过（项目版本8）→ 冻结快照 2026/10/27 14:29:26 → 生成 export-6 → 下载 lingdoc-delivery-snapshot.docx 3890 字节合法 OOXML）。逐项人工确认四边界：① 非管理员（g4-nonadmin，tenant contributor/项目 governance member）不可达治理工作台入口（governance_role=member 边界）且发布前检查在 UI 上以禁用态强制（理由/样例不全不可提交）；② 审计出口 Owner 200（5条事件与操作一一对应）/ 同租户 contributor 403（forbidden）/ 跨租户 404（反枚举），网络面记录落盘；③ 不可归属的拒绝不留收据：审计 5 条 actor 全为 Owner，g4-nonadmin 当日多次被拒零收据；④ 演示模板与真实目录区分：发布前项目页「演示模板状态暂不可读」告警截图 vs 发布后告警消失，入口页「内部两章演示模板，不代表正式申报要求」文案可见。证据目录（仓外）：D:/wt/lingdoc-beta-firstrun/evidence/AC-04-03-20261027/（9 张截图+2 份网络面记录+导出 DOCX+RUN-SUMMARY.md，不含密钥）。复现：`go build -tags \"sqlite_fts5\" -o D:/wt/lingdoc-beta-firstrun/bin/lingdoc-beta-firstrun.exe ./cmd/server`（main ef2a77b5）→ `bash D:/wt/lingdoc-beta-firstrun/start-server.sh`（:18120）→ `cd frontend && VITE_DEV_PROXY_TARGET=http://127.0.0.1:18120 npm run dev`（:5173）→ 以 beta-explorer 登录后按 RUN-SUMMARY.md 的六步链在治理工作台重放；审计边界复现 `curl -H \"Authorization: Bearer <token>\" http://127.0.0.1:18120/api/v1/lingdoc/template-catalog/profiles/template-demo/audit-events`（owner 200 / 同租户 contributor 403 / 跨租户 404）",
+      "note": "2026-10-27 依 #523 解除条件执行并翻 PASS。被测实例为本日自 main ef2a77b5 重建的 beta-firstrun 实例（数据库沿用）。前置规则集 ruleset-demo/1 草稿经 API 复刻内置绑定（发布时服务端真实执行 20 个正反例回放通过、ruleset_hash 与内置样例登记一致），档案 template-demo 经 API 创建；被测行为本身（列表→详情→来源检查→发布→导出与全部边界观察）均为浏览器真实操作。环境限制如实记录：IAB 的坐标点击/截图表面在后半段持续超时，Owner 主链点击经 DOM-CUA 节点路径（真实 DOM 事件）完成、非管理员课题选择经页面原生 DOM 事件完成，全部状态变更以服务端响应与 API 读回二次证实；加载态因本地响应过快未截得独立截图，错误态以发布前「演示模板状态暂不可读」真实告警截图为证（四态完整矩阵另有 templateGovernanceState.test.ts 组件级覆盖）。#523 关闭评论与本条同步。",
+      "unblock": "已解除：#523 四件事全部完成且证据满足（见 evidence 与 note）",
+      "unblock_condition": "#523 关闭且证据满足：按步骤命名的截图落仓外证据目录、控制台无错误、关键请求与响应摘要、人工判定结论，并回填本条目的证据路径（保留条目本身，不删除）；证据不含密钥",
+      "evidence_dir": "D:/wt/lingdoc-beta-firstrun/evidence/AC-04-03-20261027/",
+      "tested_head": "ef2a77b5",
+      "executed_at": "2026-10-27"
     }
   ],
+  "not_run": [],
   "known_limits": [
     "本表按《验收判定口径》v1 判定；口径 commit = 1f195def6fb984d43876567bfe365222c34b46b5",
     "语义覆盖无人背书：机器只证明「有对应且跑得通的测试」，不证明「该测试真的覆盖这条验收点」（口径 v1 §7 明写的代价）。",
@@ -283,6 +286,7 @@
     "词表漂移（真实代码项）：governance.Actor.Role 仍是无类型 string（governance.Actor 是 rulesetstore.Actor 的类型别名，internal/lingdoc/templategovernance/model.go:18；rulesetstore.Actor.Role 见 internal/lingdoc/rulesetstore/store.go:59-63）。把 Role 收成 types.TenantRole 不改变 API 契约的字段形状（该结构不跨 HTTP 边界，contracts/openapi.json 无此字段），但会连带改动 rulesetstore 包、internal/container/lingdoc.go（登记处属 PF-7）、internal/router/lingdoc_routes_test.go（属 PF-8）与 internal/lingdoc/workspace/template_governance_adapter_test.go（属 PF-11），并牵动 rulesetstore 既有取值（如 tenant_admin）不在 types.TenantRole 的四个合法值内 ⇒ 属跨包契约变更，本 PR 不改，另开票处理。本 PR 在本面路径内补了运行期断言：治理 seam 拒绝非法角色取值，且身份不可归属时不以该身份署名写收据（TestTemplateGovernanceRejectsArbitraryRoleClaimWithoutAuthoringReceipt）。",
     "带 vector／pg_search 扩展的 PG 迁移链两侧都还没有证据：隔离实例只有 pg_trgm，没有 vector／pg_search，因此演练走 app.skip_embedding=true 分支（internal/database/migration_candidate_shape_upgrade_test.go:835-850）；实测不带该参数时 000002_embeddings.up.sql 直接失败（ERROR: extension \"vector\" is not available），带则 NOTICE: Skipping migration embeddings (app.skip_embedding=true)。CI 的 postgres:17 service 同样不内置 vector／pg_search ⇒ 两侧走同一条 skip 分支，但这条路径两边都没验过。解除条件：换成带 pgvector 的镜像（或在现有 PG 上安装 vector／pg_search）后重跑 go test -count=1 -v -run '^TestPostgres' ./internal/database/... 并全绿 ⇒ 建议单独开票。",
     "AC-04-05 属 CI 侧观测面、本机不可取证：它的证据形态是一次真实 GitHub Actions run 的 job 记录（作业被缩面跳过的结论 ＋ scope 作业发布的 artifact）；本机只能用仓内同一个判定模块做「选择结论」推演，判定模块自己的输出写着「Selection only; not a test result or an approval.」⇒ 不能充当该条的证据。跟票 #524；本机不可解除。",
-    "F01-07 在真实链路上被服务端的资料授权判定拒绝过一次（已知缺口，跟票 #545）：2026-10-24 隔离环境的受控真实调用中，POST /startGeneration（F01-07，expected_http: 202）返回 422 asset_not_authorized（零 provider 请求）；授权判定三层里 ① KB 读权 PASS、② 项目 scope PASS、③ model use 判定 FAIL —— 契约 F01-06 bindAsset 只建资产与修订、不建「模型使用许可」记录（对象 kind = project_asset_policy），生成路径的 researchPolicyGateway{forModel: true} 要求 policy.ModelUseAllowed && policy.AssetRevision == asset.AssetRevision，缺记录时 ReadProjectAssetPolicy 落到 ErrNotFound 分支 ⇒ 返回默认 policy（ModelUseAllowed 零值 false、AssetRevision 零值 0）⇒ 绑定成功（processing_state=ready）但生成仍被拒。已裁定修法是契约补节点（Go／OpenAPI／执行器各 0 行；复用仓内现成机制 ApplyProjectAssetPolicyDelta ＋ 一条生产可达 HTTP 链），不放宽「没有显式同意就不放行」这条语义。本报告只如实登记这条已知缺口：F01-07 不写成已通过，也不在报告里插「许可已就绪」；隔离库里为取证临时补的那条记录是取证手段、不是修法（该表原本为空，可完整恢复）。F01-07 是 Beta F01 链的坐标，不在本报告 31 个原子验收点内 ⇒ 本条不改本报告任何验收点的判定。跟票 #545（父票 #485）。"
+    "F01-07 在真实链路上被服务端的资料授权判定拒绝过一次（已知缺口，跟票 #545）：2026-10-24 隔离环境的受控真实调用中，POST /startGeneration（F01-07，expected_http: 202）返回 422 asset_not_authorized（零 provider 请求）；授权判定三层里 ① KB 读权 PASS、② 项目 scope PASS、③ model use 判定 FAIL —— 契约 F01-06 bindAsset 只建资产与修订、不建「模型使用许可」记录（对象 kind = project_asset_policy），生成路径的 researchPolicyGateway{forModel: true} 要求 policy.ModelUseAllowed && policy.AssetRevision == asset.AssetRevision，缺记录时 ReadProjectAssetPolicy 落到 ErrNotFound 分支 ⇒ 返回默认 policy（ModelUseAllowed 零值 false、AssetRevision 零值 0）⇒ 绑定成功（processing_state=ready）但生成仍被拒。已裁定修法是契约补节点（Go／OpenAPI／执行器各 0 行；复用仓内现成机制 ApplyProjectAssetPolicyDelta ＋ 一条生产可达 HTTP 链），不放宽「没有显式同意就不放行」这条语义。本报告只如实登记这条已知缺口：F01-07 不写成已通过，也不在报告里插「许可已就绪」；隔离库里为取证临时补的那条记录是取证手段、不是修法（该表原本为空，可完整恢复）。F01-07 是 Beta F01 链的坐标，不在本报告 31 个原子验收点内 ⇒ 本条不改本报告任何验收点的判定。跟票 #545（父票 #485）。",
+    "判定器对偶（2026-10-27 C1 记录）：按报告自声明 head（0131b8eb）判定本对时，判定器如实报 5 项发现——TD-04 矩阵行绑 19d9df9c（#524 的 PG 增补证据，报告 known_limits 有 rebase 连续性论证）与 AC-04-01/02/04/05 四个证据粒度坐标不在 31 个票面原子点内（来源 #524 追加验收）。这些都是既知且已文档化的多 head/追加点形态，v1.1 明文 v1 结论继续有效、不要求重判；判定器的严格谓词照常成立，发现清单随 C1 判定记录归档。"
   ]
 }

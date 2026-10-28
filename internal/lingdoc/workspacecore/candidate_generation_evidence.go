@@ -101,7 +101,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 			if e != nil {
 				return ctx, selected, e
 			}
-			if source.Status != "available" || source.ProcessingState != "ready" || !source.ModelUseAllowed {
+			if source.Status != string(evidence.SourceAvailable) || source.ProcessingState != "ready" || !source.ModelUseAllowed {
 				return ctx, selected, ErrSourceUnavailable
 			}
 			selected.Sources = append(selected.Sources, AgentSourceRef{SourceID: source.SourceID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, QuotedTextHash: source.QuotedTextHash, Locator: source.Locator, QuotedText: source.QuotedText, ModelUseAllowed: true})

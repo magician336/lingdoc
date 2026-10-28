@@ -176,6 +176,18 @@ type Request struct {
 	FinishReason    string                            `json:"finish_reason,omitempty"`
 	CreatedAt       time.Time                         `json:"created_at"`
 	Reconciliation  *EmbeddingHTTPErrorReconciliation `json:"reconciliation,omitempty"`
+	// UnresolvedReconciliation is the annotation of a call whose OUTCOME
+	// could not be confirmed and that an operator settled afterwards.
+	//
+	// It is a field of its own, never a reuse of the HTTP error
+	// reconciliation above: that one means "the provider refused the
+	// call", this one means "nobody can say what the call did". It is
+	// OPTIONAL, so a ledger written before it existed still decodes.
+	//
+	// The settlement only APPENDS it: the row's status, counters, money
+	// and usage status are never rewritten, and the failed call keeps its
+	// reservation.
+	UnresolvedReconciliation *UnresolvedCallReconciliation `json:"unresolved_reconciliation,omitempty"`
 }
 
 // Usage is the token usage one provider call reported.
@@ -641,7 +653,10 @@ func validLedger(ledger Ledger, profile string) bool {
 		if !ProfileAllowsModel(profile, request.Model) {
 			return false
 		}
-		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
+		if request.Reconciliation != nil && (!ProfileSupportsEmbeddingHTTPErrorReconciliation(profile) || !validEmbeddingHTTPErrorReconciliation(request)) {
+			return false
+		}
+		if request.UnresolvedReconciliation != nil && (!ProfileSupportsUnresolvedCallReconciliation(profile) || !validUnresolvedCallReconciliation(request)) {
 			return false
 		}
 		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > inputMax ||
@@ -716,11 +731,41 @@ func (l Ledger) tracksCumulativeTokens() bool {
 // Such a call is not a smaller usage: it is an UNKNOWN usage. The window
 // cannot promise that the next call stays inside the ceiling, because the
 // ceiling has to be measured against a number nobody can produce.
+//
+// A call that an operator SETTLED is not unverifiable: the reconciliation
+// charges the FULL reserved upper bound and the call's tokens were reserved
+// at that same bound, so the remaining budget is provable. Without this
+// exception a reconciled window would stay closed for ever -- the recovery
+// would be a record, not a recovery (ticket #671).
+//
+// The same argument settles an operator-confirmed UNCONFIRMABLE outcome
+// (ticket #675). The settlement charges the full reserved upper bound and
+// the failed call keeps its token reservation counted -- nothing is given
+// back -- so the remaining cumulative budget is provable in exactly the same
+// way. This is NOT a loosening of the ceiling: the settled call's whole
+// reservation stays in the cumulative counter, and a reservation that would
+// pass the ceiling is still refused after the settlement.
+//
+// The difference from the HTTP error case is the reason, not the amount: a
+// 4xx means the provider refused the call, while an unconfirmable outcome
+// may well have been executed. Both are charged conservatively and both keep
+// their reservation, so both leave a provable remaining budget.
 func ledgerUsageUnverifiable(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.UsageStatus == UsageStatusUnavailable {
-			return true
+		if request.UsageStatus != UsageStatusUnavailable {
+			continue
 		}
+		if request.Reconciliation != nil &&
+			ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) &&
+			validEmbeddingHTTPErrorReconciliation(request) {
+			continue
+		}
+		if request.UnresolvedReconciliation != nil &&
+			ProfileSupportsUnresolvedCallReconciliation(ledger.Profile) &&
+			validUnresolvedCallReconciliation(request) {
+			continue
+		}
+		return true
 	}
 	return false
 }
@@ -760,7 +805,10 @@ func validUsageStatus(status string) bool {
 
 func hasUnresolved(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.Reconciliation != nil && ledger.Profile != CostOnlyProfile {
+		if request.Reconciliation != nil && !ProfileSupportsEmbeddingHTTPErrorReconciliation(ledger.Profile) {
+			return true
+		}
+		if request.UnresolvedReconciliation != nil && !ProfileSupportsUnresolvedCallReconciliation(ledger.Profile) {
 			return true
 		}
 		if requestUnresolved(request) {

@@ -158,7 +158,7 @@ func TestIdempotencyKeyFromAnOlderDigestVersionExpiresOnEveryPath(t *testing.T) 
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
 		ActorID: input.ActorID, Key: input.IdempotencyKey, RequestHash: legacyDigest,
-		DigestVersion: 1, ChapterVersionID: "version-1", ResponseJSON: "{}",
+		DigestVersion: 1, ChapterVersionID: stringPtr("version-1"), ResponseJSON: "{}",
 	}).Error)
 
 	_, err := store.ReplayCandidateAcceptance(ctx, input)
@@ -211,7 +211,7 @@ func TestIdempotencyKeyFromThePreviousDigestVersionExpires(t *testing.T) {
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
 		ActorID: input.ActorID, Key: input.IdempotencyKey, RequestHash: previousDigest,
-		DigestVersion: adoptionDigestVersion - 1, ChapterVersionID: "version-1", ResponseJSON: "{}",
+		DigestVersion: adoptionDigestVersion - 1, ChapterVersionID: stringPtr("version-1"), ResponseJSON: "{}",
 	}).Error)
 
 	_, err := store.ReplayCandidateAcceptance(ctx, input)
@@ -250,7 +250,7 @@ func TestSameVersionDifferentDigestConflictsOnEveryPath(t *testing.T) {
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
 		ActorID: input.ActorID, Key: input.IdempotencyKey, RequestHash: "another-request-digest",
-		DigestVersion: adoptionDigestVersion, ChapterVersionID: "version-1", ResponseJSON: "{}",
+		DigestVersion: adoptionDigestVersion, ChapterVersionID: stringPtr("version-1"), ResponseJSON: "{}",
 	}).Error)
 
 	_, err := store.ReplayCandidateAcceptance(ctx, input)

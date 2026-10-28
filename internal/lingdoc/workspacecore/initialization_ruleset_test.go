@@ -34,3 +34,25 @@ func TestInitializationUsesEffectiveCanonicalRulesWithSourceSidecar(t *testing.T
 		t.Fatalf("effective allowed override must be evaluated rather than its source sidecar: %v", err)
 	}
 }
+
+// warning 级失败不进激活拒绝条件：检查结果必须显示，但阻断只属于 blocking（#143 US-26）。
+func TestInitializationWarningDoesNotBlockActivation(t *testing.T) {
+	set, err := template.PublishRuleSet(template.RuleSet{ID: "initialization-warning-rules", Version: "1", State: template.RuleSetDraft,
+		Bindings: []template.RuleBinding{{RuleID: "goal-pattern", DefinitionID: "pattern", DefinitionVersion: "1", Origin: "project", TargetKind: "field", TargetID: "research_goal", Severity: "warning", TriggerScenes: []string{"write_check", "preflight"}, Enabled: true, Owner: "synthetic", Parameters: map[string]any{"pattern": "^unoverridden$"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := template.DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &template.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	bound := template.Clone(definition)
+	bound, err = template.WithHashes(bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateInitializationRules(Project{ID: "synthetic-warning-project", ProjectVersion: 1,
+		Spec:         map[string]string{"research_subject": "synthetic subject", "research_goal": "unmatched goal"},
+		TemplateCopy: &ProjectTemplateCopy{Definition: bound, RuleSetSnapshot: &set}}); err != nil {
+		t.Fatalf("warning-level rule failure must not block initialization: %v", err)
+	}
+}

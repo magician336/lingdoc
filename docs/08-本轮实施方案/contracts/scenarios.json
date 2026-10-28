@@ -882,7 +882,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-accept-0001"}, "json": {"candidate_id": "{{f15.candidate_id}}", "expected_chapter_version_id": "{{f15.question_version}}", "expected_spec_revision": 1, "replace_existing": false}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-accept-0001"}, "json": {"candidate_id": "{{f15.candidate_id}}", "expected_chapter_version_id": "{{f15.question_version}}", "expected_spec_revision": 1, "replace_existing": false, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f15.adopted_version": "/data/current_version_id"},
           "assertion": "采纳候选后，正文与待核项分别按候选保存。",
           "response_example": "success"
@@ -1450,7 +1450,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-accept-0001"}, "json": {"candidate_id": "{{f20.first_candidate_id}}", "expected_chapter_version_id": "{{f20.human_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-accept-0001"}, "json": {"candidate_id": "{{f20.first_candidate_id}}", "expected_chapter_version_id": "{{f20.human_version}}", "expected_spec_revision": 1, "replace_existing": true, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f20.first_accepted_version": "/data/current_version_id"},
           "assertion": "采纳初始候选，完整保存正文和待核项。",
           "response_example": "success"
@@ -1518,7 +1518,7 @@
           "operation_id": "acceptCandidate",
           "actor": "u-owner",
           "expected_http": 201,
-          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-reaccept-0001"}, "json": {"candidate_id": "{{f20.candidate_id}}", "expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-reaccept-0001"}, "json": {"candidate_id": "{{f20.candidate_id}}", "expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "replace_existing": true, "confirmation": {"writing_action": "generate", "adoption_target": "formal_version_whole", "confirmed_at": "2026-10-24T00:00:00Z", "confirmed_by": "u-owner", "origin": "ai_generated"}}},
           "capture": {"f20.new_version": "/data/current_version_id"},
           "assertion": "明确替换后以候选完整替换正文、来源与待核项，产生未确认的新版本。",
           "response_example": "success"
@@ -1604,7 +1604,14 @@
           "candidate_id": "candidate-second",
           "expected_chapter_version_id": "cv-question-2",
           "expected_spec_revision": 1,
-          "replace_existing": true
+          "replace_existing": true,
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "u-owner",
+            "origin": "ai_generated"
+          }
         },
         "result": {
           "id": "ch-question",
@@ -3183,6 +3190,181 @@
             }
           ],
           "assertion": "形状非法的提案被整份拒绝、零写入、界面上不出现这份草案；那一轮的自然语言回复仍在。"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "F34",
+      "name": "影响任务未闭环时稳定化被阻断",
+      "starting_state": "S5",
+      "setup": "项目已应用一条许可变更集，变更集在当前基线上留下一条 BLOCK_RELEASE 影响任务；这条任务还没有被当前基线下的交付检查回执闭环。Owner 请服务端判定当前基线是否稳定。",
+      "steps": [
+        {
+          "id": "F34-01",
+          "operation_id": "listImpactTasks",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {},
+            "json": null
+          },
+          "capture": {
+            "f34.change_set_id": "/data/0/change_set_id"
+          },
+          "checks": [
+            {
+              "path": "/data/0/status",
+              "equals": "OPEN",
+              "intent": "发布阻断任务还开着：没有人拿交付检查回执闭环它，它就一直是稳定化上的阻断项。"
+            },
+            {
+              "path": "/data/0/action",
+              "equals": "BLOCK_RELEASE",
+              "intent": "这条任务的动作确实是 BLOCK_RELEASE：它挡住的是发布，不是别的义务。"
+            }
+          ],
+          "assertion": "读出当前基线上尚未闭环的影响任务，并记住它属于哪个变更集。",
+          "response_example": "synthetic_block_release_open"
+        },
+        {
+          "id": "F34-02",
+          "operation_id": "stabilizeRevision",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "changeSetId": "{{f34.change_set_id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f34-stabilize-open-task-0001"
+            },
+            "json": {}
+          },
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "BLOCKED",
+              "intent": "稳定化不是用状态码表达阻断的：BLOCKED 与 STABILIZED 都是 200，结论在 status 字段里。客户端不得由 200 推断「已经稳定」。"
+            },
+            {
+              "path": "/data/blockers/0/code",
+              "equals": "impact_task_open",
+              "intent": "阻断原因逐条列出：这次是发布阻断任务仍未闭环，客户端据此知道该修什么，而不是只看到一个笼统的失败。"
+            }
+          ],
+          "assertion": "服务端给出它自己的稳定化判定与全部阻断清单；Owner 据此闭环影响任务后再判一次。",
+          "response_example": "synthetic_blocked_open_task"
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "F35",
+      "name": "回执闭环后仍因受影响对象版本被替换而稳定化被阻断",
+      "starting_state": "S5",
+      "setup": "同一条发布阻断任务已经用当前基线下的交付检查回执闭环，任务的闭环证据就是那份回执；但这次变更影响到的资料版本已经被替换，受影响对象的版本不再成立。Owner 再判一次稳定化。",
+      "steps": [
+        {
+          "id": "F35-01",
+          "operation_id": "listImpactTasks",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {},
+            "json": null
+          },
+          "capture": {
+            "f35.change_set_id": "/data/0/change_set_id",
+            "f35.receipt_id": "/data/0/closure_evidence/0/id"
+          },
+          "checks": [
+            {
+              "path": "/data/0/status",
+              "equals": "DONE",
+              "intent": "发布阻断任务已被闭环：它的闭环证据是一次真实的交付检查回执，不是空口声明。"
+            },
+            {
+              "path": "/data/0/closure_evidence/0/kind",
+              "equals": "ComputationReceipt",
+              "intent": "闭环证据的种类是计算回执：闭环凭据必须是服务端真的算出来过的那一次检查，不能是别的凭据。"
+            }
+          ],
+          "assertion": "读出已闭环的影响任务，并从它的闭环证据里取出那份交付检查回执的 ID。",
+          "response_example": "synthetic_block_release_closed"
+        },
+        {
+          "id": "F35-02",
+          "operation_id": "acknowledgeImpactPreflight",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "changeSetId": "{{f35.change_set_id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f35-preflight-ack-0001"
+            },
+            "json": {
+              "proof_id": "{{f35.receipt_id}}"
+            }
+          },
+          "checks": [
+            {
+              "path": "/data/closed_task_ids",
+              "non_empty": true,
+              "intent": "这次闭环确实关掉了发布阻断任务：服务端认下的是当前基线下真实存在的那条任务。"
+            },
+            {
+              "path": "/data/proof_id",
+              "equals": "{{f35.receipt_id}}",
+              "intent": "闭环用的凭据就是那份交付检查回执的 ID（不是冻结快照 ID，也不是幂等键）；服务端回显它，因此这里能逐字对上。"
+            }
+          ],
+          "assertion": "用当前基线下真实产生的交付检查回执闭环发布阻断任务。",
+          "response_example": "synthetic_success"
+        },
+        {
+          "id": "F35-03",
+          "operation_id": "stabilizeRevision",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "changeSetId": "{{f35.change_set_id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f35-stabilize-stale-object-0001"
+            },
+            "json": {}
+          },
+          "checks": [
+            {
+              "path": "/data/status",
+              "equals": "BLOCKED",
+              "intent": "闭环了一条任务不等于基线就稳定：稳定化是服务端对当前基线的整体判定，结论仍在 status 字段里。"
+            },
+            {
+              "path": "/data/blockers/0/code",
+              "equals": "impact_object_stale",
+              "intent": "这次阻断的原因是受影响对象的版本已被替换：任务闭环了，但影响评估所依据的那个对象版本已经不存在，需要重新评估影响。"
+            }
+          ],
+          "assertion": "服务端给出它自己的稳定化判定与全部阻断清单；客户端不得因为任务已闭环就自行推断可以冻结。",
+          "response_example": "synthetic_blocked_stale_object"
         }
       ],
       "providers": [

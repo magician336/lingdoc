@@ -387,11 +387,13 @@ class F01SequenceUnchangedTest(unittest.TestCase):
 
     def test_the_f01_sequence_still_has_its_nodes_and_no_two_step_relation(self):
         spec = load_spec(WORKFLOW_PATH)
-        self.assertEqual(len(spec.steps), 28)
+        self.assertEqual(len(spec.steps), 31)
         self.assertEqual([step["id"] for step in spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{number:02d}" for number in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{number:02d}" for number in range(7, 24)])
+                         + [f"F01-{number:02d}" for number in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{number:02d}" for number in range(19, 24)])
         for step in spec.steps:
             self.assertNotIn("after_step", step, step["id"])
 
@@ -415,7 +417,7 @@ class F01SequenceUnchangedTest(unittest.TestCase):
 
         runner.client.opener = opener
         result = runner.run()
-        self.assertEqual(result["completed_steps"], 28)
+        self.assertEqual(result["completed_steps"], 31)
         for step in result["steps"]:
             self.assertEqual(set(step), {"id", "operation_id", "http_status", "content_type"}
                              | ({"observation"} if step.get("observation") else set()))

@@ -131,7 +131,44 @@ CONCEPTS: tuple[Concept, ...] = (
         doc=ADR_0006,
         snippet="前端侧无法缩",
         fields=("Decision.frontend",),
-        keys=("frontend", "run_frontend"),
+        keys=("frontend",),
+    ),
+    Concept(
+        term="委托",
+        doc=GLOSSARY,
+        snippet="委托的证据在另一个 job 上真实存在",
+        # The delegation is carried by the frontend verdict: the published
+        # ``frontend`` key names the delegated job instead of reporting this
+        # gate's own outcome (#723, ADR 0014).  ``frontend_delegate`` is the
+        # key the failure verification reads: the delegated job's display
+        # name, empty exactly when the delegation does not hold (#734).
+        fields=("Decision.frontend",),
+        keys=("frontend", "frontend_delegate"),
+    ),
+    Concept(
+        term="分片",
+        doc=GLOSSARY,
+        snippet="分片策略只写在判定模块一处",
+        # The sharding is carried by the shard list the decision publishes:
+        # the workflow's matrix is generated from this output (#724, ADR
+        # 0014), and the coverage table names the shard jobs.
+        fields=("Decision.provider_shards",),
+        keys=("provider_shards",),
+    ),
+    Concept(
+        term="反向委托",
+        doc=GLOSSARY,
+        snippet="app 工作流在 PR 事件上把 gate 分片正在验证的 provider 包从自己的测试集剔除",
+        # The reverse delegation (#737, ADR 0014's delegation in the
+        # opposite direction of #723): the app workflow's pull_request test
+        # set leaves the delegated packages to the gate's shards.  The
+        # published ``provider_delegate`` key carries the delegated list --
+        # non-empty exactly when the shards run -- and the coverage table
+        # credits the delegated paths to the shard jobs, not to the app job
+        # that skipped the duplicate.  The workflow keeps the full list on
+        # a push and falls back to it on any failure of this data.
+        fields=("Decision.provider_shards",),
+        keys=("provider_delegate",),
     ),
     Concept(
         term="未判定回退全量",
@@ -163,7 +200,7 @@ CONCEPTS: tuple[Concept, ...] = (
                 "JobDecision.run", "JobDecision.gate_level",
                 "JobDecision.path_kind", "JobDecision.paths",
                 "JobDecision.skipped_on_format_only", "JobDecision.key",
-                "JobDecision.readable_key"),
+                "JobDecision.readable_key", "JobDecision.role"),
         keys=("run",),
         covers_job_keys=True,
     ),
@@ -193,7 +230,7 @@ CONCEPTS: tuple[Concept, ...] = (
         doc=ADR_0005,
         snippet="纯格式提交跳过测试类 job",
         fields=("Decision.format_only", "Decision.format_reasons"),
-        keys=("format_only", "format_reasons", "run_providers", "run_frontend"),
+        keys=("format_only", "format_reasons", "run_providers"),
     ),
     Concept(
         term="白名单",
@@ -246,6 +283,15 @@ INTERNAL_MEMBERS: dict[str, str] = {
         "后端范围分类（internal/、migrations/、config/ 等路径）。文档没有为"
         "它命名，工作流也不读它；它只参与判定，不进入产物。"
     ),
+    "Decision.coverage": (
+        "贡献触及的每个面的覆盖情况：谁在这个 head 上编译、测试或构建了它。"
+        "文档没有为它命名；它进入门禁结论（产物与摘要），工作流不读它作为"
+        "输出。"
+    ),
+    "Decision.uncovered": (
+        "是否有一个贡献触及的面在这个 head 上完全没有编译或测试证据。文档"
+        "没有为它命名；它只参与判定，并作为门禁的放行条件。"
+    ),
 }
 
 # The published keys that no document names, and why.
@@ -253,5 +299,13 @@ INTERNAL_KEYS: dict[str, str] = {
     "backend": (
         "后端范围分类的字符串形式，与 Decision.backend 同源；同样没有文档"
         "概念，也没有工作流读取。"
+    ),
+    "coverage": (
+        "覆盖情况的单行字符串形式（每个面一行）。GitHub 输出值不能带换行，"
+        "所以完整表格在门禁结论里；工作流不读它作为输出。"
+    ),
+    "uncovered": (
+        "是否存在完全没有证据的面。与 Decision.uncovered 同源；工作流不读"
+        "它作为输出。"
     ),
 }

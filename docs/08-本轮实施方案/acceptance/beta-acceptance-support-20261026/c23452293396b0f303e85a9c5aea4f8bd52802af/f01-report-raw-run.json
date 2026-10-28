@@ -1,0 +1,1083 @@
+{
+  "workflow": "F01",
+  "run_id": "f01-20261025T013341Z-5105ae32",
+  "runner_status": "completed",
+  "completed_steps": 31,
+  "total_steps": 31,
+  "steps": [
+    {
+      "id": "F01-01",
+      "operation_id": "getTemplate",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-02",
+      "operation_id": "createProject",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-03",
+      "operation_id": "saveSpec",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-03b",
+      "operation_id": "recordActivationRead",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-04",
+      "operation_id": "activateProject",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-05",
+      "operation_id": "listChapters",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-05",
+        "after_step": "F01-04",
+        "operation_id": "listChapters"
+      }
+    },
+    {
+      "id": "F01-06",
+      "operation_id": "bindAsset",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-06b",
+      "operation_id": "createChangeDraftPostPolicyProposal",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-06c",
+      "operation_id": "assessChangeSet",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-06d",
+      "operation_id": "applyChangeSet",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-06e",
+      "operation_id": "getProjectAssetPolicy",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-06e",
+        "after_step": "F01-06d",
+        "operation_id": "getProjectAssetPolicy"
+      }
+    },
+    {
+      "id": "F01-07",
+      "operation_id": "startGeneration",
+      "http_status": 202,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-08",
+      "operation_id": "getGeneration",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-09",
+      "operation_id": "getCandidate",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "id": "F01-10",
+      "operation_id": "getSource",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-10",
+        "after_step": "F01-07",
+        "operation_id": "getSource"
+      }
+    },
+    {
+      "id": "F01-11",
+      "operation_id": "acceptCandidate",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-12",
+      "operation_id": "acceptCandidate",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-13",
+      "operation_id": "saveChapter",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-14",
+      "operation_id": "saveChapter",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-15",
+      "operation_id": "saveChapter",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-16",
+      "operation_id": "confirmChapter",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-17",
+      "operation_id": "confirmChapter",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-18",
+      "operation_id": "getProject",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-18",
+        "after_step": "F01-17",
+        "operation_id": "getProject"
+      }
+    },
+    {
+      "id": "F01-19a",
+      "operation_id": "checkCurrent",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-19b",
+      "operation_id": "acknowledgeImpactPreflight",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-19c",
+      "operation_id": "stabilizeRevision",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-19",
+      "operation_id": "prepareRelease",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-20",
+      "operation_id": "prepareRelease",
+      "http_status": 201,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-21",
+      "operation_id": "startExport",
+      "http_status": 202,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "F01-22",
+      "operation_id": "getExport",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-22",
+        "after_step": "F01-21",
+        "operation_id": "getExport"
+      }
+    },
+    {
+      "id": "F01-23",
+      "operation_id": "downloadExport",
+      "http_status": 200,
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
+  ],
+  "verification_scope": "http_smoke_only",
+  "provider_semantics_status": "not_verified",
+  "manual_assertions": [
+    {
+      "step_id": "F01-06b",
+      "assertion": "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。",
+      "status": "not_run"
+    },
+    {
+      "step_id": "F01-06c",
+      "assertion": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+      "status": "not_run"
+    },
+    {
+      "step_id": "F01-06d",
+      "assertion": "应用这一步才真正写下 model-use 许可记录（对象 kind = project_asset_policy），并把资料推进到新一版修订。",
+      "status": "not_run"
+    },
+    {
+      "step_id": "F01-06e",
+      "assertion": "把许可读回来看：它带 model_use_allowed=true，且钉在这一版资料修订上。",
+      "status": "not_run"
+    }
+  ],
+  "manual_decisions": [],
+  "material_gate_stages": [
+    "content",
+    "full"
+  ],
+  "checks": [
+    {
+      "step_id": "F01-01",
+      "path": "/data/ruleset_hash",
+      "operator": "length",
+      "intent": "模板规则集摘要是 64 位十六进制：冻结输入靠它与模板对齐",
+      "expected": 64,
+      "actual": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-02",
+      "path": "/data/template_id",
+      "operator": "equals",
+      "intent": "项目绑定的模板就是本轮读到的那个模板",
+      "expected": "{{template_id}}",
+      "actual": "{{template_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-03",
+      "path": "/data/spec/research_subject",
+      "operator": "equals",
+      "intent": "规格字段按请求原样落库",
+      "expected": "公开的合成调查样本",
+      "actual": "公开的合成调查样本",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-03b",
+      "path": "/data/actor_id",
+      "operator": "equals",
+      "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执的actor就是执行本次审阅的Owner）",
+      "expected": "{{owner_user_id}}",
+      "actual": "{{owner_user_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-03b",
+      "path": "/data/project_version",
+      "operator": "equals",
+      "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执记的是当前项目版本——审阅的就是当前版本）",
+      "expected": 2,
+      "actual": 2,
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-03b",
+      "path": "/data/spec_revision",
+      "operator": "equals",
+      "intent": "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。（回执记的是当前规格修订）",
+      "expected": 1,
+      "actual": 1,
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-04",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "项目激活后状态为active，章节骨架从此可写",
+      "expected": "active",
+      "actual": "active",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-05",
+      "path": "/data/0/section_id",
+      "operator": "readback_equals",
+      "intent": "激活之后从库里真实读回章节骨架：第一章是研究问题",
+      "expected": "question",
+      "actual": "question",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-05",
+        "after_step": "F01-04",
+        "operation_id": "listChapters"
+      }
+    },
+    {
+      "step_id": "F01-05",
+      "path": "/data/1/section_id",
+      "operator": "readback_equals",
+      "intent": "激活之后从库里真实读回章节骨架：第二章是研究方案",
+      "expected": "method",
+      "actual": "method",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-05",
+        "after_step": "F01-04",
+        "operation_id": "listChapters"
+      }
+    },
+    {
+      "step_id": "F01-06",
+      "path": "/data/processing_state",
+      "operator": "equals",
+      "intent": "合成材料真的经过接入与处理，处理就绪（协议 §1）",
+      "expected": "ready",
+      "actual": "ready",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-06",
+      "path": "/data",
+      "operator": "keys",
+      "intent": "绑定资料的响应恰好带这六个字段：处理状态、资料标识与所属项目都在，没有多余也没有少（协议 §1）",
+      "expected": [
+        "asset_revision",
+        "id",
+        "knowledge_id",
+        "processing_state",
+        "project_id",
+        "title"
+      ],
+      "actual": {
+        "id": "{{asset_id}}",
+        "project_id": "{{project_id}}",
+        "knowledge_id": "<provider-id>",
+        "title": "synth-chapter-c.md",
+        "asset_revision": 1,
+        "processing_state": "ready"
+      },
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-06b",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "这一步只建立变更草案，本身不产生许可：许可要等评估与应用之后才成立（协议 §4 的 model-use 同意）",
+      "expected": "draft",
+      "actual": "draft",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-06c",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "评估完成：变更集进入 assessed，才谈得上被应用",
+      "expected": "assessed",
+      "actual": "assessed",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-06e",
+      "path": "/data/model_use_allowed",
+      "operator": "equals",
+      "intent": "许可记录真的建立了模型使用许可：没有这条记录时这里是默认的零值 false",
+      "expected": true,
+      "actual": true,
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-06e",
+        "after_step": "F01-06d",
+        "operation_id": "getProjectAssetPolicy"
+      }
+    },
+    {
+      "step_id": "F01-06e",
+      "path": "/data/version",
+      "operator": "version_bound",
+      "intent": "许可钉在资料当前的这一版修订上：策略版本与资产修订一致，资料重新解析后旧许可不再跟随",
+      "expected": [
+        2
+      ],
+      "actual": 2,
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-06e",
+        "after_step": "F01-06d",
+        "operation_id": "getProjectAssetPolicy"
+      }
+    },
+    {
+      "step_id": "F01-07",
+      "path": "/data/chapter_id",
+      "operator": "equals",
+      "intent": "生成任务落在待起草的那一章上",
+      "expected": "{{question_id}}",
+      "actual": "{{question_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-08",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "轮询只GET，超时不重新创建任务；状态最终succeeded，失败则本场景失败。",
+      "expected": "succeeded",
+      "actual": "succeeded",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-08",
+      "path": "/data/id",
+      "operator": "equals",
+      "intent": "轮询只GET，超时不重新创建任务；状态最终succeeded，失败则本场景失败。（读回的是同一个生成任务，没有重新创建）",
+      "expected": "{{run_id}}",
+      "actual": "{{run_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-09",
+      "path": "/data/chapter_id",
+      "operator": "readback_equals",
+      "intent": "候选稿读回的是本轮起草的那一章",
+      "expected": "{{question_id}}",
+      "actual": "{{question_id}}",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "step_id": "F01-09",
+      "path": "/data/review_items/0",
+      "operator": "marked_or_absent",
+      "intent": "正文故意没有待核实提示；结构化review_items仍必须保留。（待核事项要么被显式标记、要么不出现）",
+      "expected": "确认‘孔隙率每上升 5 个百分点，平均强度下降约 12.4 MPa’这一量化关系是否作为核心假设提出，还是仅作为背景描述。",
+      "actual": {
+        "id": "{{review_id}}",
+        "statement": "确认‘孔隙率每上升 5 个百分点，平均强度下降约 12.4 MPa’这一量化关系是否作为核心假设提出，还是仅作为背景描述。",
+        "origin_candidate_id": "{{candidate_id}}"
+      },
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "step_id": "F01-09",
+      "path": "/data/basis/spec_revision",
+      "operator": "equals",
+      "intent": "候选稿绑定的是当前规格修订",
+      "expected": 1,
+      "actual": 1,
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "step_id": "F01-09",
+      "path": "/data/basis/chapter_version_id",
+      "operator": "equals",
+      "intent": "候选稿绑定的是起草当时的正文版本",
+      "expected": null,
+      "actual": null,
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "step_id": "F01-09",
+      "path": "/data/validity",
+      "operator": "one_of",
+      "intent": "候选的新鲜度落在契约给出的三个取值里：被判过期的候选不会冒充当前结果（协议 §3）",
+      "expected": [
+        "fresh",
+        "stale",
+        "not_authorized"
+      ],
+      "actual": "fresh",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-09",
+        "after_step": "F01-07",
+        "operation_id": "getCandidate"
+      }
+    },
+    {
+      "step_id": "F01-10",
+      "path": "/data/asset_id",
+      "operator": "readback_equals",
+      "intent": "来源绑定的是本轮绑定的资料",
+      "expected": "{{asset_id}}",
+      "actual": "{{asset_id}}",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-10",
+        "after_step": "F01-07",
+        "operation_id": "getSource"
+      }
+    },
+    {
+      "step_id": "F01-10",
+      "path": "/data/locator",
+      "operator": "non_empty",
+      "intent": "来源定位可读（协议 §3）",
+      "expected": true,
+      "actual": "synth-chapter-c.md · 第 0 段",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-10",
+        "after_step": "F01-07",
+        "operation_id": "getSource"
+      }
+    },
+    {
+      "step_id": "F01-10",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "被引用的来源在合成材料里可用（协议 §3）",
+      "expected": "available",
+      "actual": "available",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-10",
+        "after_step": "F01-07",
+        "operation_id": "getSource"
+      }
+    },
+    {
+      "step_id": "F01-11",
+      "path": "{{review_id}}",
+      "operator": "ref_in",
+      "intent": "新版本继承review_items；项目版本增加到5。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）",
+      "expected": [
+        "<provider-id>",
+        "{{review_id}}",
+        "<provider-id>"
+      ],
+      "actual": "{{review_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-11",
+      "path": "/data/current_version_id",
+      "operator": "non_empty",
+      "intent": "新版本继承review_items；项目版本增加到5。（采纳产生了新的正文版本）",
+      "expected": true,
+      "actual": "{{accepted_question_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-12",
+      "path": "/data/current_version_id",
+      "operator": "equals",
+      "intent": "模拟首次响应丢失：返回同一版本；不做旧expected_version前置校验，不新增章节版本。",
+      "expected": "{{accepted_question_version}}",
+      "actual": "{{accepted_question_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-12",
+      "path": "{{review_id}}",
+      "operator": "ref_in",
+      "intent": "模拟首次响应丢失：返回同一版本；不做旧expected_version前置校验，不新增章节版本。（重投没有丢掉待核事项）",
+      "expected": [
+        "<provider-id>",
+        "{{review_id}}",
+        "<provider-id>"
+      ],
+      "actual": "{{review_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-13",
+      "path": "{{review_id}}",
+      "operator": "ref_in",
+      "intent": "普通保存由后端继承上版review_items；请求不允许覆盖或删除它们。（请求没有覆盖它们，后端继承上版的待核事项）",
+      "expected": [
+        "<provider-id>",
+        "{{review_id}}",
+        "<provider-id>"
+      ],
+      "actual": "{{review_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-13",
+      "path": "/data/body_markdown",
+      "operator": "non_empty",
+      "intent": "章节正文非空（协议 §3）",
+      "expected": true,
+      "actual": "人工编辑：演示资料包含100条虚构记录 [[source:{{source_id}}]]。不把它视为真实科研结果。",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-14",
+      "path": "/data/current_version_id",
+      "operator": "equals",
+      "intent": "成功后响应丢失的重试不产生假409，项目版本仍为6。（重投返回同一正文版本，没有新增章节版本；假409由契约声明的HTTP 201排除）",
+      "expected": "{{question_version}}",
+      "actual": "{{question_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-14",
+      "path": "{{review_id}}",
+      "operator": "ref_in",
+      "intent": "成功后响应丢失的重试不产生假409，项目版本仍为6。（重投之后待核事项仍在）",
+      "expected": [
+        "<provider-id>",
+        "{{review_id}}",
+        "<provider-id>"
+      ],
+      "actual": "{{review_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-15",
+      "path": "/data/body_markdown",
+      "operator": "non_empty",
+      "intent": "第二章正文非空（协议 §3）",
+      "expected": true,
+      "actual": "使用合成记录检验软件流程，结果仅用于内部演示。",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-16",
+      "path": "/data/chapter_version_id",
+      "operator": "equals",
+      "intent": "确认绑定的是被确认的那一版正文（候选、采纳、确认和冻结绑定正确正文版本，协议 §3）",
+      "expected": "{{question_version}}",
+      "actual": "{{question_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-16",
+      "path": "/data/valid",
+      "operator": "equals",
+      "intent": "确认结果有效",
+      "expected": true,
+      "actual": true,
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-16",
+      "path": "/data/review_decisions",
+      "operator": "one_to_one",
+      "intent": "待核事项有明确处置（保留并说明原因）：处置集合与该章节的待核项集合一一对应，与顺序无关",
+      "expected": [
+        "{{review_id}}",
+        "<provider-id>",
+        "<provider-id>"
+      ],
+      "actual": [
+        {
+          "review_item_id": "<provider-id>",
+          "disposition": "retained_warning",
+          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+        },
+        {
+          "review_item_id": "{{review_id}}",
+          "disposition": "retained_warning",
+          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+        },
+        {
+          "review_item_id": "<provider-id>",
+          "disposition": "retained_warning",
+          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+        }
+      ],
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-17",
+      "path": "/data/chapter_version_id",
+      "operator": "equals",
+      "intent": "第二章确认绑定的正文版本正确",
+      "expected": "{{method_version}}",
+      "actual": "{{method_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-17",
+      "path": "/data/valid",
+      "operator": "equals",
+      "intent": "第二章确认结果有效",
+      "expected": true,
+      "actual": true,
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-18",
+      "path": "/data/spec_revision",
+      "operator": "readback_equals",
+      "intent": "确认之后从库里读回项目：规格修订仍是本轮的修订（数据库副作用通过读回核对，协议 §3）",
+      "expected": 1,
+      "actual": 1,
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-18",
+        "after_step": "F01-17",
+        "operation_id": "getProject"
+      }
+    },
+    {
+      "step_id": "F01-18",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "读回的项目仍是激活状态",
+      "expected": "active",
+      "actual": "active",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-18",
+        "after_step": "F01-17",
+        "operation_id": "getProject"
+      }
+    },
+    {
+      "step_id": "F01-19a",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "冻结之前先在当前基线上跑一次交付检查并确认它通过；没有这份结论，后面闭环影响任务用的回执就没有依据。",
+      "expected": "passed",
+      "actual": "passed",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19a",
+      "path": "/data/receipt_id",
+      "operator": "non_empty",
+      "intent": "这次检查产出一份可读回的计算回执：闭环影响任务要用的就是它的 ID，缺了它就只剩一句结论而没有凭据。",
+      "expected": true,
+      "actual": "{{receipt_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19b",
+      "path": "/data/closed_task_ids",
+      "operator": "non_empty",
+      "intent": "这次闭环确实关掉了发布阻断任务：服务端认下的是当前基线下真实存在的 BLOCK_RELEASE 任务，不是凭据上的一个说法。",
+      "expected": true,
+      "actual": [
+        "<provider-id>"
+      ],
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19b",
+      "path": "/data/proof_id",
+      "operator": "equals",
+      "intent": "闭环用的凭据就是上一步交付检查回执的 ID（不是冻结快照 ID，也不是幂等键）；服务端回显它，因此这里能逐字对上。",
+      "expected": "{{receipt_id}}",
+      "actual": "{{receipt_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19c",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "稳定化不是用状态码表达的：BLOCKED 与 STABILIZED 都是 200，结论在 status 字段里。这条断言读的就是那个字段，不是 HTTP 码。",
+      "expected": "STABILIZED",
+      "actual": "STABILIZED",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19c",
+      "path": "/data/blockers",
+      "operator": "length",
+      "intent": "服务端给出的全部阻断清单为空：没有任何一条未闭环的影响任务或失效的受影响对象挡住这次冻结。",
+      "expected": 0,
+      "actual": [],
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/snapshot_digest",
+      "operator": "length",
+      "intent": "digest由frozen_input计算；它含待核事项和保留决定，独立于当前Source和动态is_current。（摘要是 64 位十六进制，由冻结输入算出）",
+      "expected": 64,
+      "actual": "1a61a9e986014978b503264197cbd57d030c51488eaf621fe0678bcd3ce68aa0",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/chapters/0/source_ids/0",
+      "operator": "ref_in",
+      "intent": "引用指向合成材料中的有效来源（协议 §3）",
+      "expected": [
+        "{{source_id}}"
+      ],
+      "actual": "{{source_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/sources/0/asset_id",
+      "operator": "ref_in",
+      "intent": "模型不声称已读取实际未授权的材料：冻结输入里的来源都在授权资料集合内（协议 §3）",
+      "expected": [
+        "{{asset_id}}"
+      ],
+      "actual": "{{asset_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/chapters/0/review_items/0/id",
+      "operator": "ref_in",
+      "intent": "digest由frozen_input计算；它含待核事项和保留决定（冻结输入里的待核事项都有保留决定）",
+      "expected": [
+        "<provider-id>",
+        "{{review_id}}",
+        "<provider-id>"
+      ],
+      "actual": "{{review_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/chapters/0/chapter_version_id",
+      "operator": "version_bound",
+      "intent": "候选、采纳、确认和冻结绑定正确正文版本：冻结的章节版本与确认的正文版本互相绑定（协议 §3）",
+      "expected": [
+        "{{question_version}}"
+      ],
+      "actual": "{{question_version}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/check/project_version",
+      "operator": "version_bound",
+      "intent": "冻结检查用的项目版本与冻结输入里的项目版本一致",
+      "expected": [
+        9
+      ],
+      "actual": 9,
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/chapters/0/body_markdown",
+      "operator": "non_empty",
+      "intent": "章节正文非空（协议 §3）",
+      "expected": true,
+      "actual": "人工编辑：演示资料包含100条虚构记录 [[source:{{source_id}}]]。不把它视为真实科研结果。",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/sources/0/locator",
+      "operator": "non_empty",
+      "intent": "冻结输入自带来源定位，不依赖当前Source与动态is_current",
+      "expected": true,
+      "actual": "synth-chapter-c.md · 第 0 段",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/asset_versions",
+      "operator": "all_non_empty",
+      "intent": "冻结输入里的依赖登记逐项齐全：每一条资产版本都登记了标识与修订，没有空项（协议 §2 步骤 4）",
+      "expected": true,
+      "actual": [
+        {
+          "asset_id": "{{asset_id}}",
+          "asset_revision": 2
+        }
+      ],
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-19",
+      "path": "/data/frozen_input/sources/0/quoted_text_hash",
+      "operator": "equals_step",
+      "intent": "冻结输入里的材料哈希与绑定资料时读到的那一份一致：输入侧登记与运行时读到的是同一个事实（协议 §2 步骤 1）",
+      "expected": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "actual": "a63b6fdc5ac61a017860fe296186273db461fafe7619946aed831307b2ab69ed",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-20",
+      "path": "/data/id",
+      "operator": "equals",
+      "intent": "同键返回同一snapshot_id；不再创建快照。",
+      "expected": "{{snapshot_id}}",
+      "actual": "{{snapshot_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-21",
+      "path": "/data/snapshot_id",
+      "operator": "equals",
+      "intent": "导出的是本轮冻结的那一份快照",
+      "expected": "{{snapshot_id}}",
+      "actual": "{{snapshot_id}}",
+      "found": true,
+      "status": "passed"
+    },
+    {
+      "step_id": "F01-22",
+      "path": "/data/snapshot_id",
+      "operator": "readback_equals",
+      "intent": "导出记录绑定的快照就是本轮冻结的快照（读回核对）",
+      "expected": "{{snapshot_id}}",
+      "actual": "{{snapshot_id}}",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-22",
+        "after_step": "F01-21",
+        "operation_id": "getExport"
+      }
+    },
+    {
+      "step_id": "F01-22",
+      "path": "/data/status",
+      "operator": "equals",
+      "intent": "导出进入终态",
+      "expected": "verified",
+      "actual": "verified",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-22",
+        "after_step": "F01-21",
+        "operation_id": "getExport"
+      }
+    },
+    {
+      "step_id": "F01-22",
+      "path": "/data/file_sha256",
+      "operator": "length",
+      "intent": "文件hash在真实测试中由实际文件字节比较；本参考trace的零hash仅为占位，不能当实物证据。（导出记录里的哈希是 64 位十六进制；它与真实字节的比较由 F01-23 的 hash_equals 完成）",
+      "expected": 64,
+      "actual": "{{expected_export_sha256}}",
+      "found": true,
+      "status": "passed",
+      "observation": {
+        "kind": "readback",
+        "request_step_id": "F01-22",
+        "after_step": "F01-21",
+        "operation_id": "getExport"
+      }
+    },
+    {
+      "step_id": "F01-23",
+      "path": "/data/file_sha256",
+      "operator": "hash_equals",
+      "intent": "本文件不含DOCX实物；提供方联调测试必须实际执行以上断言。（摘要hash与下载真实字节相等：文件哈希与导出记录一致，协议 §3）",
+      "expected": "{{expected_export_sha256}}",
+      "actual": "{{expected_export_sha256}}",
+      "found": true,
+      "status": "passed"
+    }
+  ]
+}

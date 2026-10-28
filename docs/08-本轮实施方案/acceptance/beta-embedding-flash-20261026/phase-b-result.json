@@ -1,0 +1,215 @@
+{
+  "phase": "B",
+  "base": "http://127.0.0.1:18096/api/v1",
+  "kb": "895c0a35-e7d5-4c28-b374-16f5d694ddea",
+  "query": "mesoporous oxide thin film porosity compressive strength",
+  "started_at": "2026-10-26T07:58:39+0800",
+  "ledger_before": {
+    "requests": 2,
+    "blocked": false,
+    "reserved_tokens": 6170,
+    "actual_tokens": 648,
+    "reserved_nano_cny": 1928125,
+    "actual_nano_cny": 1623500,
+    "max_reserve_nano_cny": 8000000,
+    "cumulative_token_max": 8000,
+    "rows": [
+      {
+        "number": 1,
+        "model": "qwen3.7-text-embedding",
+        "status": "http_error",
+        "input_upper_bound_tokens": 3085,
+        "output_limit_tokens": 0,
+        "input_tokens": 3085,
+        "usage_status": "unavailable",
+        "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+        "reserved_nano_cny": 1542500,
+        "actual_nano_cny": 1542500,
+        "created_at": "2026-10-25T13:54:57.6417521Z",
+        "reconciliation": {
+          "kind": "embedding_http_error_full_reserve_v1",
+          "evidence": {
+            "ledger_sha256": "238ca5bf91331e7761ff529ae712c306f3daac5d1782d72d33e5fe51bb6903ac",
+            "request_number": 1,
+            "original_status": "http_error",
+            "original_blocked_reason": "http_error",
+            "http_status": 403,
+            "response_evidence_sha256": "2915d119c83147145ef37fa2ec94455bafb9903e3ca087534f84b5aa3014328e",
+            "operator": "lingdoc acceptance agent, acting under the repository owner's authorization of 2026-10-26",
+            "reason": "the provider answered HTTP 403 insufficient_quota on 2026-10-25 (free tier exhausted); the request produced no usage, so the window is settled at the full reserved upper bound and the authorized window is reopened for the Flash model"
+          },
+          "original_request_sha256": "27bafe583c6cb844e1e588319b20775372a270e92f9c563665c2a7c940f706da",
+          "charge_basis": "full_reserved_upper_bound_not_provider_usage",
+          "provider_token_usage": "unknown",
+          "charged_nano_cny": 1542500,
+          "charged_nano_usd": 0,
+          "reconciled_at": "2026-10-25T23:54:36.0361118Z"
+        }
+      },
+      {
+        "number": 2,
+        "model": "qwen3.7-text-embedding-flash",
+        "status": "response_received",
+        "input_upper_bound_tokens": 3085,
+        "output_limit_tokens": 0,
+        "input_tokens": 648,
+        "total_tokens": 648,
+        "usage_status": "reported",
+        "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+        "reserved_nano_cny": 385625,
+        "actual_nano_cny": 81000,
+        "created_at": "2026-10-25T23:57:50.0488082Z"
+      }
+    ]
+  },
+  "login_status": 200,
+  "search_status": 200,
+  "search_response": {
+    "data": [
+      {
+        "id": "46833d0a-6d5c-4a61-9e32-6eef20799a60",
+        "content": "# 合成材料研究记录 C：多孔氧化物复合薄膜的孔隙率与强度关系\n\n- 文档编号：SYNTH-RPT-C-01\n- 版本：v1.0（固定版本，供重复验收使用）\n- 数据性质：全合成数据。不含任何真实实验记录、真实人员信息、真实机构名称或未公开数据。\n- 合成日期：2026-04-18\n- 用途：为 LingDoc Beta 首版真实验收提供「固定合成科研材料」，供资料接入、处理与检索流程核对。\n\n## 1. 研究目的\n\n本记录评估合成多孔氧化物复合薄膜的孔隙率与抗压强度之间的关系，并登记每一处结论的来源，供下游章节生成时逐条核对。\n\n## 2. 材料与方法\n\n### 2.1 样品\n\n合成基体为氧化物-氧化物复合体系，编号 PC-01 至 PC-08。烧结温度设定为 1150 °C，保温 2 h，冷却速率 3 °C/min。\n\n### 2.2 测试条件\n\n- 孔隙率：阿基米德排水法，每个样品平行测 3 次。\n- 抗压强度：准静态压缩，加载速率 0.5 mm/min，取 5 个平行样的算术平均。\n- 所有结果均为合成数据，不做显著性检验。\n\n### 2.3 数据处理\n\n",
+        "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+        "chunk_index": 0,
+        "knowledge_title": "synth-chapter-c.md",
+        "start_at": 0,
+        "end_at": 489,
+        "seq": 0,
+        "score": 0.598921537399292,
+        "match_type": 0,
+        "sub_chunk_id": null,
+        "metadata": {},
+        "chunk_type": "text",
+        "parent_chunk_id": "",
+        "image_info": "",
+        "knowledge_filename": "synth-chapter-c.md",
+        "knowledge_source": "",
+        "knowledge_channel": "web",
+        "matched_content": "synth-chapter-c.md\n# 合成材料研究记录 C：多孔氧化物复合薄膜的孔隙率与强度关系\n\n- 文档编号：SYNTH-RPT-C-01\n- 版本：v1.0（固定版本，供重复验收使用）\n- 数据性质：全合成数据。不含任何真实实验记录、真实人员信息、真实机构名称或未公开数据。\n- 合成日期：2026-04-18\n- 用途：为 LingDoc Beta 首版真实验收提供「固定合成科研材料」，供资料接入、处理与检索流程核对。\n\n## 1. 研究目的\n\n本记录评估合成多孔氧化物复合薄膜的孔隙率与抗压强度之间的关系，并登记每一处结论的来源，供下游章节生成时逐条核对。\n\n## 2. 材料与方法\n\n### 2.1 样品\n\n合成基体为氧化物-氧化物复合体系，编号 PC-01 至 PC-08。烧结温度设定为 1150 °C，保温 2 h，冷却速率 3 °C/min。\n\n### 2.2 测试条件\n\n- 孔隙率：阿基米德排水法，每个样品平行测 3 次。\n- 抗压强度：准静态压缩，加载速率 0.5 mm/min，取 5 个平行样的算术平均。\n- 所有结果均为合成数据，不做显著性检验。\n\n### 2.3 数据处理",
+        "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea"
+      },
+      {
+        "id": "3c7f6524-1f74-413c-931b-38d990e3f0ea",
+        "content": "### 2.3 数据处理\n\n孔隙率按体积分数换算，强度保留到 0.1 MPa。\n\n## 3. 结果\n\n### 3.1 孔隙率\n\n八个样品的孔隙率在 11.4% 到 27.8% 之间，平均 19.6%。\n\n### 3.2 抗压强度\n\n抗压强度在 22.4 MPa 到 96.7 MPa 之间，平均 58.2 MPa。孔隙率最高的样品 PC-08 强度最低，24.1 MPa。\n\n### 3.3 关系\n\n在本合成体系内，孔隙率与抗压强度呈负相关；孔隙率每上升 5 个百分点，平均强度下降约 12.4 MPa。\n\n## 4. 局限\n\n1. 样本量为 8，趋势可辨但区间较宽。\n2. 未做烧结温度的对照组，强度差异可能部分来自温度。\n3. 结论仅适用于本合成体系与本合成数据，不能外推到真实材料。\n\n## 5. 结论\n\n在本合成数据集内，孔隙率升高伴随抗压强度下降；该关系在 PC-01 至 PC-08 八个样品上一致可见，后续验证需增加样本量与烧结温度对照。\n",
+        "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+        "chunk_index": 1,
+        "knowledge_title": "synth-chapter-c.md",
+        "start_at": 475,
+        "end_at": 902,
+        "seq": 1,
+        "score": 0.45536285638809204,
+        "match_type": 0,
+        "sub_chunk_id": null,
+        "metadata": {},
+        "chunk_type": "text",
+        "parent_chunk_id": "",
+        "image_info": "",
+        "knowledge_filename": "synth-chapter-c.md",
+        "knowledge_source": "",
+        "knowledge_channel": "web",
+        "matched_content": "synth-chapter-c.md\n### 2.3 数据处理\n\n孔隙率按体积分数换算，强度保留到 0.1 MPa。\n\n## 3. 结果\n\n### 3.1 孔隙率\n\n八个样品的孔隙率在 11.4% 到 27.8% 之间，平均 19.6%。\n\n### 3.2 抗压强度\n\n抗压强度在 22.4 MPa 到 96.7 MPa 之间，平均 58.2 MPa。孔隙率最高的样品 PC-08 强度最低，24.1 MPa。\n\n### 3.3 关系\n\n在本合成体系内，孔隙率与抗压强度呈负相关；孔隙率每上升 5 个百分点，平均强度下降约 12.4 MPa。\n\n## 4. 局限\n\n1. 样本量为 8，趋势可辨但区间较宽。\n2. 未做烧结温度的对照组，强度差异可能部分来自温度。\n3. 结论仅适用于本合成体系与本合成数据，不能外推到真实材料。\n\n## 5. 结论\n\n在本合成数据集内，孔隙率升高伴随抗压强度下降；该关系在 PC-01 至 PC-08 八个样品上一致可见，后续验证需增加样本量与烧结温度对照。",
+        "knowledge_base_id": "895c0a35-e7d5-4c28-b374-16f5d694ddea"
+      }
+    ],
+    "success": true
+  },
+  "hits": [
+    {
+      "position": 1,
+      "id": "46833d0a-6d5c-4a61-9e32-6eef20799a60",
+      "chunk_id": "46833d0a-6d5c-4a61-9e32-6eef20799a60",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_filename": "synth-chapter-c.md",
+      "start_at": 0,
+      "end_at": 489,
+      "score": 0.598921537399292,
+      "match_type": 0,
+      "content_head": "# 合成材料研究记录 C：多孔氧化物复合薄膜的孔隙率与强度关系\n\n- 文档编号：SYNTH-RPT-C-01\n- 版本：v1.0（固定版本，供重复验收使用）\n- 数据性质：全合成数据。不含任何真实实验记录、真实人员信息、真实机构名称或未公开"
+    },
+    {
+      "position": 2,
+      "id": "3c7f6524-1f74-413c-931b-38d990e3f0ea",
+      "chunk_id": "3c7f6524-1f74-413c-931b-38d990e3f0ea",
+      "knowledge_id": "c04d8954-dcc7-47dc-bc8b-8deb5f312ac2",
+      "knowledge_filename": "synth-chapter-c.md",
+      "start_at": 475,
+      "end_at": 902,
+      "score": 0.45536285638809204,
+      "match_type": 0,
+      "content_head": "### 2.3 数据处理\n\n孔隙率按体积分数换算，强度保留到 0.1 MPa。\n\n## 3. 结果\n\n### 3.1 孔隙率\n\n八个样品的孔隙率在 11.4% 到 27.8% 之间，平均 19.6%。\n\n### 3.2 抗压强度\n\n抗压强度"
+    }
+  ],
+  "ledger_after": {
+    "requests": 3,
+    "blocked": false,
+    "reserved_tokens": 7250,
+    "actual_tokens": 675,
+    "reserved_nano_cny": 2063125,
+    "actual_nano_cny": 1626875,
+    "max_reserve_nano_cny": 8000000,
+    "cumulative_token_max": 8000,
+    "rows": [
+      {
+        "number": 1,
+        "model": "qwen3.7-text-embedding",
+        "status": "http_error",
+        "input_upper_bound_tokens": 3085,
+        "output_limit_tokens": 0,
+        "input_tokens": 3085,
+        "usage_status": "unavailable",
+        "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+        "reserved_nano_cny": 1542500,
+        "actual_nano_cny": 1542500,
+        "created_at": "2026-10-25T13:54:57.6417521Z",
+        "reconciliation": {
+          "kind": "embedding_http_error_full_reserve_v1",
+          "evidence": {
+            "ledger_sha256": "238ca5bf91331e7761ff529ae712c306f3daac5d1782d72d33e5fe51bb6903ac",
+            "request_number": 1,
+            "original_status": "http_error",
+            "original_blocked_reason": "http_error",
+            "http_status": 403,
+            "response_evidence_sha256": "2915d119c83147145ef37fa2ec94455bafb9903e3ca087534f84b5aa3014328e",
+            "operator": "lingdoc acceptance agent, acting under the repository owner's authorization of 2026-10-26",
+            "reason": "the provider answered HTTP 403 insufficient_quota on 2026-10-25 (free tier exhausted); the request produced no usage, so the window is settled at the full reserved upper bound and the authorized window is reopened for the Flash model"
+          },
+          "original_request_sha256": "27bafe583c6cb844e1e588319b20775372a270e92f9c563665c2a7c940f706da",
+          "charge_basis": "full_reserved_upper_bound_not_provider_usage",
+          "provider_token_usage": "unknown",
+          "charged_nano_cny": 1542500,
+          "charged_nano_usd": 0,
+          "reconciled_at": "2026-10-25T23:54:36.0361118Z"
+        }
+      },
+      {
+        "number": 2,
+        "model": "qwen3.7-text-embedding-flash",
+        "status": "response_received",
+        "input_upper_bound_tokens": 3085,
+        "output_limit_tokens": 0,
+        "input_tokens": 648,
+        "total_tokens": 648,
+        "usage_status": "reported",
+        "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+        "reserved_nano_cny": 385625,
+        "actual_nano_cny": 81000,
+        "created_at": "2026-10-25T23:57:50.0488082Z"
+      },
+      {
+        "number": 3,
+        "model": "qwen3.7-text-embedding-flash",
+        "status": "response_received",
+        "input_upper_bound_tokens": 1080,
+        "output_limit_tokens": 0,
+        "input_tokens": 27,
+        "total_tokens": 27,
+        "usage_status": "reported",
+        "cost_basis": "qwen_embedding_nano_cny_2026_10_25",
+        "reserved_nano_cny": 135000,
+        "actual_nano_cny": 3375,
+        "created_at": "2026-10-25T23:58:39.9569256Z"
+      }
+    ]
+  },
+  "finished_at": "2026-10-26T07:58:40+0800"
+}

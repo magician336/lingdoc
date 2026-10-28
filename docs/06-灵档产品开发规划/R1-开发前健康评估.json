@@ -1,0 +1,317 @@
+{
+  "head": "21b5fb8d5d11b11f0aeb92e083eca57dbcee144f",
+  "issue": 606,
+  "phase": "preimplementation scoped assessment",
+  "confidence": "B",
+  "scope": "R1 project material intake seam, not whole repository",
+  "H_L": 55.800000000000004,
+  "F_R": 61.599999999999994,
+  "indicators": [
+    {
+      "dimension": "复杂性控制",
+      "name": "变化放大",
+      "weight": 8,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "Workspace同时拥有知识库选择、绑定与写作；解析与索引状态分散，诊断API还合成终态占位。",
+      "action": "上传/恢复状态收进独立材料控制器；平台适配器收窄为真实观察，不把阶段判据复制进Workspace。"
+    },
+    {
+      "dimension": "复杂性控制",
+      "name": "认知负荷",
+      "weight": 7,
+      "H_L": 2,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "Workspace同时拥有知识库选择、绑定与写作；解析与索引状态分散，诊断API还合成终态占位。",
+      "action": "上传/恢复状态收进独立材料控制器；平台适配器收窄为真实观察，不把阶段判据复制进Workspace。"
+    },
+    {
+      "dimension": "复杂性控制",
+      "name": "特例与信息泄漏",
+      "weight": 5,
+      "H_L": 2,
+      "F_R": 2,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "Workspace同时拥有知识库选择、绑定与写作；解析与索引状态分散，诊断API还合成终态占位。",
+      "action": "上传/恢复状态收进独立材料控制器；平台适配器收窄为真实观察，不把阶段判据复制进Workspace。"
+    },
+    {
+      "dimension": "模块深度与边界",
+      "name": "接口成本",
+      "weight": 7,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "复用materiallingest需浏览器→临时文件→验收命名→底座多跳，而且当前ready只读parse_status。",
+      "action": "复用现平台API而不扩大验收桥；单一控制器拥有身份、请求序号和阶段证据归属。"
+    },
+    {
+      "dimension": "模块深度与边界",
+      "name": "信息隐藏",
+      "weight": 6,
+      "H_L": 2,
+      "F_R": 2,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "复用materiallingest需浏览器→临时文件→验收命名→底座多跳，而且当前ready只读parse_status。",
+      "action": "复用现平台API而不扩大验收桥；单一控制器拥有身份、请求序号和阶段证据归属。"
+    },
+    {
+      "dimension": "模块深度与边界",
+      "name": "层次错位",
+      "weight": 4,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "复用materiallingest需浏览器→临时文件→验收命名→底座多跳，而且当前ready只读parse_status。",
+      "action": "复用现平台API而不扩大验收桥；单一控制器拥有身份、请求序号和阶段证据归属。"
+    },
+    {
+      "dimension": "模块深度与边界",
+      "name": "耦合透传",
+      "weight": 3,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "复用materiallingest需浏览器→临时文件→验收命名→底座多跳，而且当前ready只读parse_status。",
+      "action": "复用现平台API而不扩大验收桥；单一控制器拥有身份、请求序号和阶段证据归属。"
+    },
+    {
+      "dimension": "演化式设计",
+      "name": "候选方案",
+      "weight": 5,
+      "H_L": 4,
+      "F_R": 4,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "#599字段未冻结；若前端猜字段将产生返工。",
+      "action": "使用已存在spans API的真实索引阶段，拒绝合成占位；#599只在观察适配边界后续整合。"
+    },
+    {
+      "dimension": "演化式设计",
+      "name": "增量回退",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 4,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "#599字段未冻结；若前端猜字段将产生返工。",
+      "action": "使用已存在spans API的真实索引阶段，拒绝合成占位；#599只在观察适配边界后续整合。"
+    },
+    {
+      "dimension": "演化式设计",
+      "name": "持续重构",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "#599字段未冻结；若前端猜字段将产生返工。",
+      "action": "使用已存在spans API的真实索引阶段，拒绝合成占位；#599只在观察适配边界后续整合。"
+    },
+    {
+      "dimension": "战略执行",
+      "name": "债务",
+      "weight": 6,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "R1与#484目标不同，容易误改Beta执行链；共享Workspace是集成点。",
+      "action": "只新增材料组件/控制器及极小挂载；不触碰#590/#602/F01/预算或并行登记处。"
+    },
+    {
+      "dimension": "战略执行",
+      "name": "路线依赖",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 4,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "R1与#484目标不同，容易误改Beta执行链；共享Workspace是集成点。",
+      "action": "只新增材料组件/控制器及极小挂载；不触碰#590/#602/F01/预算或并行登记处。"
+    },
+    {
+      "dimension": "战略执行",
+      "name": "变更局部性",
+      "weight": 4,
+      "H_L": 4,
+      "F_R": 4,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "R1与#484目标不同，容易误改Beta执行链；共享Workspace是集成点。",
+      "action": "只新增材料组件/控制器及极小挂载；不触碰#590/#602/F01/预算或并行登记处。"
+    },
+    {
+      "dimension": "一致性",
+      "name": "术语文档",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "completed和ready在现项目/平台两处含义不等价；旧#599初判需按当前main纠正。",
+      "action": "待处理/处理中/解析失败/索引待确认/真实索引完成区分；仅绑定是项目资料注册，不自动声称检索命中。"
+    },
+    {
+      "dimension": "一致性",
+      "name": "契约注释",
+      "weight": 3,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "completed和ready在现项目/平台两处含义不等价；旧#599初判需按当前main纠正。",
+      "action": "待处理/处理中/解析失败/索引待确认/真实索引完成区分；仅绑定是项目资料注册，不自动声称检索命中。"
+    },
+    {
+      "dimension": "一致性",
+      "name": "代码语义",
+      "weight": 4,
+      "H_L": 2,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "completed和ready在现项目/平台两处含义不等价；旧#599初判需按当前main纠正。",
+      "action": "待处理/处理中/解析失败/索引待确认/真实索引完成区分；仅绑定是项目资料注册，不自动声称检索命中。"
+    },
+    {
+      "dimension": "一致性",
+      "name": "自动约束",
+      "weight": 3,
+      "H_L": 2,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "completed和ready在现项目/平台两处含义不等价；旧#599初判需按当前main纠正。",
+      "action": "待处理/处理中/解析失败/索引待确认/真实索引完成区分；仅绑定是项目资料注册，不自动声称检索命中。"
+    },
+    {
+      "dimension": "证据反馈恢复",
+      "name": "未知发现",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "新增用户路径尚无当前代码/浏览器证据；禁止真实模型/embedding调用限制真实检索验收。",
+      "action": "先做控制器与真实SFC测试；隔离HTTP/浏览器验证另记，禁止把模拟provider当真实功能完成。"
+    },
+    {
+      "dimension": "证据反馈恢复",
+      "name": "失败权限恢复",
+      "weight": 5,
+      "H_L": 2,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "新增用户路径尚无当前代码/浏览器证据；禁止真实模型/embedding调用限制真实检索验收。",
+      "action": "先做控制器与真实SFC测试；隔离HTTP/浏览器验证另记，禁止把模拟provider当真实功能完成。"
+    },
+    {
+      "dimension": "证据反馈恢复",
+      "name": "CI观测回退",
+      "weight": 5,
+      "H_L": 3,
+      "F_R": 3,
+      "evidence": [
+        "frontend/src/views/lingdoc/Workspace.vue",
+        "internal/handler/knowledge.go:buildSpanTree",
+        "internal/application/service/knowledge_process.go",
+        "internal/lingdoc/materiallingest/ingest.go"
+      ],
+      "risk": "新增用户路径尚无当前代码/浏览器证据；禁止真实模型/embedding调用限制真实检索验收。",
+      "action": "先做控制器与真实SFC测试；隔离HTTP/浏览器验证另记，禁止把模拟provider当真实功能完成。"
+    }
+  ],
+  "below_2": [],
+  "not_run": [
+    "R1 new component/controller implementation/tests",
+    "real upload/parse/index/bind/retrieve browser loop"
+  ],
+  "codegraph": "No CodeGraph requirement in current AGENTS; source sampling only."
+}

@@ -214,7 +214,11 @@ type Service struct {
 	agentRuntime    AgentRuntime
 	impactPreflight ImpactPreflightChecker
 	impactRules     ImpactRuleChecker
-	runtimeRecovery RuntimeRecoveryChecker
+	// recommendationModel is the dependency-edge recommender (#751). It is
+	// nil in the default composition: the recommender fails closed and the
+	// manual registration form is unaffected.
+	recommendationModel DependencyRecommendationModel
+	runtimeRecovery     RuntimeRecoveryChecker
 	// impactTasks and businessAudit are the narrow writer ports of the
 	// change-set apply transaction. They are nil in the default composition,
 	// in which case the writes go through the caller's transaction exactly as
@@ -505,6 +509,15 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 // read still succeeds, and the failure is published as an operational alert
 // after the transaction has ended.
 //
+// The audit write runs on its **own transaction, after the read's transaction
+// has ended**. Sharing the read's transaction looks cheaper and works on
+// SQLite (RAISE(ABORT) undoes only the failing statement), but PostgreSQL
+// aborts the whole transaction on any failed statement: the audit INSERT
+// takes the read down with it and fail-open stops existing on the production
+// dialect (#387). The two writes are therefore no longer atomic — acceptable
+// for a read that changes no state, and the only way the promise holds on
+// both dialects.
+//
 // It is deliberately not the same seam as recordAuditInTransaction. Write
 // paths must fail closed, and a caller that cannot tell the two apart would
 // have to re-implement that difference at every call site.
@@ -515,20 +528,39 @@ func (s *Service) readWithAudit(
 	options TransactionOptions,
 	body func(tx Transaction) (Project, error),
 ) error {
-	var auditErr error
+	var bodyErr error
 	err := s.repository.Transaction(ctx, options, func(tx Transaction) error {
-		_, bodyErr := body(tx)
-		// The audit error is remembered, not returned: a failed audit write
-		// must not turn an ordinary read into a failure.
-		auditErr = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, bodyErr)
-		return bodyErr
+		_, readErr := body(tx)
+		bodyErr = readErr
+		return readErr
 	})
+	if err != nil {
+		bodyErr = err
+	}
+	// The audit transaction starts only after the read's has ended: SQLite
+	// uses a single connection and would deadlock otherwise (ADR 0011), and
+	// PostgreSQL would poison the read's transaction (ADR 0015).
+	auditErr := s.recordReadAudit(ctx, actor, projectID, capability, bodyErr)
 	if auditErr != nil {
-		// The alert is published after the transaction ended. Written inside
-		// it, the alert would vanish with the very failure it reports.
+		// The alert is published after the audit transaction ended. Written
+		// inside it, the alert would vanish with the very failure it reports.
 		_ = s.EmitAuditFailureAlert(ctx, actor, projectID, capability, auditErr)
 	}
 	return err
+}
+
+// recordReadAudit writes one read-class audit row in a transaction of its own.
+//
+// It is the read-side counterpart of recordAuditInTransaction: same event
+// shape, same tenant/project rules, but the caller's transaction is never
+// involved, so a failing audit write cannot abort the read it describes.
+func (s *Service) recordReadAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	if s.audit == nil {
+		return nil
+	}
+	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+		return s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+	})
 }
 
 func auditDecision(err error) string {
@@ -1486,6 +1518,18 @@ type CommitWorkingCopyInput struct {
 	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
 	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
 	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+	// ConditionChange carries the operator's explicit dismissal of a suspected
+	// condition change (#753). It is only accepted when it names exactly the
+	// suspicions the server recomputes at commit time; a wording commit that
+	// drops a registered condition value without it is refused.
+	ConditionChange *ConditionChangeDismissal `json:"condition_change_dismissal,omitempty"`
+}
+
+// ConditionChangeDismissal is the audited "still wording" decision: the field
+// ids whose suspected changes the operator saw and overruled, and why.
+type ConditionChangeDismissal struct {
+	DismissedFields []string `json:"dismissed_fields"`
+	Reason          string   `json:"reason"`
 }
 
 type RestoreWorkingCopyInput struct {
@@ -2122,6 +2166,39 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 	return s.changeProvenanceProjection(ctx, actor, result)
 }
 
+// checkChangeSetApplyState applies the change-set state machine to an apply
+// request before the operation decodes its sources.
+//
+// It reads the change set, so a change set that does not exist is still a not
+// found (404). A change set that exists but is not in a legal predecessor
+// state of an apply is refused as an invalid state (422) — the same verdict
+// the write path gives, only earlier and without touching anything.
+//
+// The write path keeps its own check: this one is a pre-flight, not the
+// authority, and the state may still move between the two.
+func (s *Service) checkChangeSetApplyState(ctx context.Context, projectID, changeSetID string) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		change, err := store.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return err
+		}
+		// A change set whose apply has already been answered keeps its
+		// answer: the operation's idempotent replay must be able to return
+		// it, so the pre-flight does not refuse those states here.
+		if ChangeSetApplyAnswered(change.Status) {
+			return nil
+		}
+		if !ChangeSetStatusCanMove("apply", change.Status) {
+			return ErrInvalidState
+		}
+		return nil
+	})
+}
+
 func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
@@ -2133,6 +2210,16 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		return nil, 0, false, err
 	}
 	if err := s.Authorize(ctx, actor, projectID, "manage"); err != nil {
+		return nil, 0, false, err
+	}
+	// The change-set state machine decides whether an apply is allowed at
+	// all, and it runs before this operation decodes its sources. Decoding
+	// reads the change set's assessment record; an unassessed change set has
+	// none, so the refusal used to arrive as "not found" — a 404 for a change
+	// set that does exist. A change set that is not in a legal predecessor
+	// state is now refused as an invalid state (422), and a change set that
+	// does not exist is still a not found (404).
+	if err := s.checkChangeSetApplyState(ctx, projectID, changeSetID); err != nil {
 		return nil, 0, false, err
 	}
 	changeInput := map[string]string{"change_set_id": changeSetID}
@@ -3266,13 +3353,13 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 						return nil, ErrSourceUnavailable
 					}
 					result[i].CitationStatuses = append(result[i].CitationStatuses, status)
-					if status.Status == "unavailable" {
+					if status.Status == CitationStatusUnavailable {
 						// A revoked source invalidates the derived chapter read.  Returning
 						// a redacted 200 here leaves a caller with a seemingly readable
 						// chapter list and violates F07's fail-closed contract.
 						return nil, ErrSourceUnavailable
 					}
-					if status.Status != "available" {
+					if status.Status != CitationStatusAvailable {
 						redact = true
 					}
 				}

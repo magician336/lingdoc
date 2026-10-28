@@ -18,6 +18,13 @@ This module is the form scan for those shapes (#454). It does not migrate the
 fixtures: it reports the shapes, so a new one cannot appear unnoticed. The
 audit event's own column set is checked by the Go guard in
 ``internal/database/audit_event_columns_test.go`` — one invariant, one owner.
+
+Issue #416 closed the audit-table half of this: every fixture that needs
+``lingdoc_project_audits`` now declares the table and applies the production
+migrations that shape it (``fixturemigrations.ApplySQLite``), so
+``test_no_fixture_hand_writes_the_audit_table`` below is a hard rule rather than
+a ratchet — that table has no known copies left, and a new one is red on
+appearance. The general ratchet stays for the rest of the repository.
 """
 
 from __future__ import annotations
@@ -38,6 +45,17 @@ CREATE_TABLE = re.compile(
 MIGRATION_FILE = re.compile(r"(\d{6})_[A-Za-z0-9_]+\.(?:up|down)\.sql")
 VERSION_CONSTANT = re.compile(
     r"const\s+expectedSQLiteMigrationVersion\s*=\s*(\d+)"
+)
+
+# The audit table has no known copies left (#416). Its fixtures declare the
+# table and apply the production migrations that shape it, through
+# internal/database/fixturemigrations. A Go test that spells out its columns
+# again is the exact shape that broke 29 cases when PF-3 added two columns, so
+# this is a hard rule, not a ratchet entry.
+AUDIT_TABLE = "lingdoc_project_audits"
+AUDIT_TABLE_COPY = re.compile(
+    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?" + AUDIT_TABLE + r"\"?(?!\w)",
+    re.IGNORECASE,
 )
 
 
@@ -62,7 +80,6 @@ KNOWN_SCHEMA_COPY_FIXTURES = (
     "internal/container/reset_pending_tasks_test.go",
     "internal/container/tenant_skill_reaper_test.go",
     "internal/im/service_lifecycle_test.go",
-    "internal/lingdoc/candidateadoption/adoption_confirmation_test.go",
     "internal/lingdoc/candidateadoption/candidate_basis_test.go",
     "internal/lingdoc/candidateadoption/delivery_input_test.go",
     "internal/lingdoc/rulesetstore/http_test.go",
@@ -149,6 +166,55 @@ class TestFixtureSchemaSource(unittest.TestCase):
             new_offenders,
             "new fixtures that carry their own copy of a production schema:\n"
             + "\n".join(new_offenders),
+        )
+
+    def test_no_fixture_hand_writes_the_audit_table(self) -> None:
+        """No Go test may spell out lingdoc_project_audits' shape (#416).
+
+        The table belongs to the production migration chain. A fixture that
+        needs it declares the table and applies the migrations that shape it
+        (``fixturemigrations.ApplySQLite``); the resulting shape is compared
+        with the row model by ``internal/database/audit_event_columns_test.go``.
+        Hand-writing the columns is what made the next migration's column break
+        29 cases with an opaque 500 (#327).
+        """
+        offenders = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in go_test_files()
+            if AUDIT_TABLE_COPY.search(path.read_text(encoding="utf-8", errors="replace"))
+        ]
+        self.assertEqual(
+            [],
+            offenders,
+            "fixtures that hand-write lingdoc_project_audits instead of applying its "
+            "production migrations (declare the table and call "
+            "fixturemigrations.ApplySQLite):\n" + "\n".join(offenders),
+        )
+
+    def test_the_known_offender_list_has_no_stale_entries(self) -> None:
+        """The ratchet may only get shorter (#454, #416).
+
+        An entry that no longer offends is stale: leaving it in the list hides
+        that the debt was paid and makes the next reader migrate it twice.
+        """
+        production = production_tables(SQLITE_MIGRATIONS) | production_tables(
+            VERSIONED_MIGRATIONS
+        )
+        offenders = set()
+        for path in go_test_files():
+            source = path.read_text(encoding="utf-8", errors="replace")
+            hand_written = {
+                match.group(1)
+                for match in CREATE_TABLE.finditer(source)
+                if match.group(1) in production
+            }
+            if hand_written and "migrations" not in source:
+                offenders.add(path.relative_to(REPO_ROOT).as_posix())
+        stale = sorted(set(KNOWN_SCHEMA_COPY_FIXTURES) - offenders)
+        self.assertEqual(
+            [],
+            stale,
+            "KNOWN_SCHEMA_COPY_FIXTURES lists fixtures that no longer offend; delete them",
         )
 
     def test_the_migration_version_constant_matches_the_chain(self) -> None:

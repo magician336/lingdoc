@@ -1,0 +1,30 @@
+{
+  "source": "http",
+  "at": "2026-10-25T03:25:06Z",
+  "items": {
+    "browser_snapshot_digest_matches_http": "0f4793ad02b7",
+    "snapshot_id_matches": "snapshot",
+    "project_version_matches": 7,
+    "spec_revision_matches": 1,
+    "chapters_in_snapshot_matches": 2,
+    "sources_in_snapshot_matches": 0,
+    "snapshot_check_status": "passed",
+    "browser_export_id_matches_http": "export-9",
+    "browser_export_sha_matches_http": "8cf9cd6971a2",
+    "current_check_status": "passed"
+  },
+  "status": "PASS",
+  "not_run": [
+    {
+      "item": "browser_candidate_adoption_state_matches",
+      "reason": "候选采纳的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。",
+      "unblock": "起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。"
+    },
+    {
+      "item": "browser_candidate_cancelled_state_matches",
+      "reason": "候选取消的读回需要一份真实生成的候选稿；本面不跑真实模型（54-Spec 决策 9）。",
+      "unblock": "起真实模型（55-Spec / Beta 协议 §2 的模型账本）后重跑 HTTP 侧与浏览器侧。"
+    }
+  ],
+  "base_url": "http://127.0.0.1:51846/api/v1/lingdoc"
+}

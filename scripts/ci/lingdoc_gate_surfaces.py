@@ -12,11 +12,18 @@ ownership: for every surface it records
   it,
 * the gate level (``repository`` or ``targeted``),
 * whether that job is skipped on a formatting-only change,
+* whether that job **verifies** the surface -- compiles, tests or builds it --
+  or only **inspects** it, the way a lint job does,
 * the kind of the path set (``glob``, ``prefix`` or ``exact``),
 * the **role** of the surface: what the surface means for the decision
   (``paths``, ``provider``, ``frontend``, ``contracts`` or ``governance``),
 * the **step** of the pull request gate that consumes it, when it has one: the
-  step's display name, the boolean output that selects it and what it judges.
+  step's display name, the boolean output that selects it and what it judges,
+* the surface a consuming job **delegates** to, when its pull_request
+  verification leaves a named surface's paths to that surface's own
+  verification on the same head (``delegates``, #737): while the delegate
+  runs, the coverage table credits those paths to the delegate's names, not
+  to the job that skipped the duplicate.
 
 The manifest is **declarative data**.  It answers ownership questions only:
 which job watches which paths.  It contains no decision logic, and it does not
@@ -30,8 +37,10 @@ that watch that surface.  The relation is many-to-many and is read like this:
 
 * one surface may be consumed by several jobs (the frontend surface is watched
   by both the test job and the image job of the frontend workflow);
-* one job may consume several surfaces (the PR gate job watches the provider
-  packages, the frontend, the contracts and the governance surface).
+* one job may consume several surfaces (the frontend workflow's verify job
+  watches the workflow-level frontend surface and the delegated frontend
+  surface; the PR gate job watches the provider packages, the contracts and
+  the governance surface).
 
 How to add a surface
 --------------------
@@ -61,8 +70,18 @@ Terms
     Whether the consuming job is skipped outright when the change is
     formatting-only.  A lint job is the judge of formatting, so it is never
     skipped; test jobs are skipped.  This is a job-level fact: the PR gate job
-    itself is never skipped, while its provider and frontend *steps* honour
-    the formatting-only shortcut.
+    itself is never skipped, while its provider *step* and every test job it
+    selects -- including the delegated frontend job -- honour the
+    formatting-only shortcut.
+
+``verifies``
+    Whether the consuming job **verifies** the surface: compiles it, tests it
+    or builds it.  A lint job only **inspects** the code -- it reads it and
+    reports style defects, it never compiles or runs it -- so it cannot stand
+    in as evidence that a surface was tested.  This is the fact the decision
+    reads when it asks "who tests this surface?": a surface that no verifying
+    job watches has no compile or test evidence at all, and the decision has
+    to say so instead of skipping it in silence.
 
 ``role``
     What the surface means for the decision.  ``paths`` -- the surface is
@@ -77,7 +96,10 @@ Terms
     The step of the pull request gate that consumes the surface, when the
     surface has one: its display name, the boolean output that selects it,
     whether the formatting-only shortcut skips it, and what it judges.  A
-    surface without a step is a whole-job surface.
+    surface without a step is a whole-job surface.  Since #723 the frontend
+    surface has no step: the gate delegates the frontend verification to the
+    frontend workflow's verify job instead of running a step of its own, so
+    only the provider and contracts surfaces carry one.
 
 Ownership knowledge (provider roots, contracts directory, governance file
 set, frontend root) is registered here exactly once.  The gate decision
@@ -138,7 +160,7 @@ GOVERNANCE_DIRS = ("scripts/ci/",)
 FRONTEND_ROOT = "frontend/"
 
 # --- the surfaces -----------------------------------------------------------
-# The path sets of the seven workflow-level gates are byte-for-byte the path
+# The path sets of the eight workflow-level gates are byte-for-byte the path
 # tables those workflows carried before the rewiring.  The workflows carry no
 # path table any more (#304): the manifest is the only registration of the
 # path ownership.  Do not reformat these paths -- the wiring test compares
@@ -163,6 +185,9 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "Docker multi-stage image"},
         ),
         "skipped_on_format_only": True,
+        # The frontend job tests, type-checks and builds the frontend: it
+        # verifies what it watches.
+        "verifies": True,
     },
     {
         "name": "go-lint",
@@ -185,6 +210,10 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "golangci-lint (${{ matrix.module }})"},
         ),
         "skipped_on_format_only": False,
+        # A lint job reads the code and reports style defects.  It never
+        # compiles it and never runs it, so it cannot stand in as evidence
+        # that a surface was tested.
+        "verifies": False,
     },
     {
         "name": "app",
@@ -219,6 +248,45 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "Format, vet, test, and build"},
         ),
         "skipped_on_format_only": True,
+        # Reverse delegation (#737, ADR 0014's delegation in the opposite
+        # direction of #723): on pull_request events this job leaves the
+        # touched provider packages to the gate's shards -- they race-test
+        # exactly those packages on the same head, and a non-race rerun is
+        # no substitute for gate evidence (red line two).  While the
+        # delegate runs, the coverage table credits provider paths to the
+        # shard jobs; whenever it does not, this claim stands (fail-open).
+        # The delegate is named, never re-pathed: the provider roots stay
+        # registered once, in PROVIDER_ROOTS above.
+        "delegates": "pr-gate-provider",
+        # This is the full Go build and test: it compiles and runs every
+        # package of the root module, so it verifies what it watches.
+        "verifies": True,
+    },
+    {
+        # The client module is a module of its own (client/go.mod), so the
+        # root module's build never sees it -- app.yml excludes it on
+        # purpose.  Before #605 nothing compiled or tested it: a pull
+        # request that only touched client/ reached main without a single
+        # compile or test of that code.  This surface is what makes the
+        # coverage judgement count the client module as a surface that has
+        # to carry compile or test evidence.
+        "name": "client",
+        "gate_level": GATE_LEVEL_REPOSITORY,
+        "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
+        "paths": (
+            "client/**",
+            ".github/workflows/client.yml",
+        ),
+        "consumers": (
+            {"workflow": ".github/workflows/client.yml",
+             "job": "verify",
+             "job_name": "Build and test the client module"},
+        ),
+        "skipped_on_format_only": True,
+        # The job builds the client module, vets it and really runs its
+        # tests: it verifies what it watches.
+        "verifies": True,
     },
     {
         "name": "lingdoc-mock",
@@ -243,6 +311,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "T06 fixed mock and request consumer"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-f01-runner",
@@ -268,6 +337,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "F01 runner regression"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-workspace-concurrency",
@@ -287,6 +357,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "workspace-concurrency"},
         ),
         "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "lingdoc-interface-integration",
@@ -316,6 +387,10 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "frontend"},
         ),
         "skipped_on_format_only": True,
+        # The integration job rehearses the migrations against a real
+        # PostgreSQL server and runs the backend closeout: it verifies what it
+        # watches.
+        "verifies": True,
     },
     {
         "name": "pr-gate-provider",
@@ -329,6 +404,9 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The provider step runs the provider packages' tests and vet: it
+        # verifies them.
+        "verifies": True,
         "step": {
             "name": "Provider packages: test and vet",
             "output": "run_providers",
@@ -337,23 +415,27 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         },
     },
     {
+        # The pull request gate does not run the frontend checks itself any
+        # more (#723): the three commands live once, in the frontend
+        # workflow's verify job, and the gate **delegates** the verification
+        # to it (ADR 0014).  The consumer entry below is that delegated job:
+        # the coverage table names it, and the published frontend verdict is
+        # a delegation statement naming it.  Delegation is not a skip -- the
+        # evidence is real on the named job -- so the consumer is a verifying
+        # test job that honours the formatting-only shortcut, like every
+        # other test job.
         "name": "pr-gate-frontend",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_PREFIX,
         "role": ROLE_FRONTEND,
         "paths": (FRONTEND_ROOT,),
         "consumers": (
-            {"workflow": ".github/workflows/lingdoc-review.yml",
-             "job": "gate",
-             "job_name": "LingDoc PR gate"},
+            {"workflow": ".github/workflows/frontend.yml",
+             "job": "verify",
+             "job_name": "Test, type-check, and build"},
         ),
-        "skipped_on_format_only": False,
-        "step": {
-            "name": "Frontend: test, type-check and build",
-            "output": "run_frontend",
-            "skipped_on_format_only": True,
-            "subject": "the frontend",
-        },
+        "skipped_on_format_only": True,
+        "verifies": True,
     },
     {
         "name": "contracts",
@@ -367,6 +449,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "verifies": True,
         "step": {
             "name": "Contract examples and reference trace",
             "output": "contracts",
@@ -386,6 +469,8 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The gate always runs, and its own tests read these files.
+        "verifies": True,
     },
     {
         "name": "governance-scripts",
@@ -399,11 +484,13 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        # The gate always runs its own test suite: it verifies these scripts.
+        "verifies": True,
     },
 )
 
 SURFACE_FIELDS = ("name", "gate_level", "path_kind", "paths", "consumers",
-                  "skipped_on_format_only", "role")
+                  "skipped_on_format_only", "verifies", "role")
 CONSUMER_FIELDS = ("workflow", "job", "job_name")
 STEP_FIELDS = ("name", "output", "skipped_on_format_only", "subject")
 
@@ -447,8 +534,14 @@ class Surface:
     gate_level: str
     path_kind: str
     skipped_on_format_only: bool
+    verifies: bool
     role: str = ROLE_PATHS
     step: Step | None = None
+    # The surface whose verification carries this surface's delegated paths
+    # on the same head (#737): while the delegate runs, the coverage table
+    # credits those paths to the delegate's names.  ``None`` -- no
+    # delegation -- is the fail-open default: the claim always stands.
+    delegates: str | None = None
 
 
 @dataclass(frozen=True)
@@ -539,7 +632,14 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
     if not isinstance(mapping["skipped_on_format_only"], bool):
         raise SurfaceManifestError(
             f"surface {name!r} must state skipped_on_format_only as true or false")
+    if not isinstance(mapping["verifies"], bool):
+        raise SurfaceManifestError(
+            f"surface {name!r} must state verifies as true or false: a surface "
+            "has to say whether its job compiles and tests it or only inspects it")
     step = mapping.get("step")
+    delegates = mapping.get("delegates")
+    if delegates is not None:
+        delegates = _require_text(delegates, f"surface {name!r} delegates")
     return Surface(
         name=name,
         paths=tuple(paths),
@@ -547,8 +647,10 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
         gate_level=gate_level,
         path_kind=path_kind,
         skipped_on_format_only=mapping["skipped_on_format_only"],
+        verifies=mapping["verifies"],
         role=role,
         step=_step_from_record(step, name) if step is not None else None,
+        delegates=delegates,
     )
 
 
@@ -617,6 +719,19 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...
                 f"and #{index} declare the same surface")
         seen[surface.name] = index
         surfaces.append(surface)
+    # A delegation names the surface that carries the evidence (#737): a
+    # name that points nowhere would silently drop the claim (or never
+    # apply), so a broken reference is rejected, never guessed.
+    for surface in surfaces:
+        if surface.delegates is None:
+            continue
+        if surface.delegates == surface.name:
+            raise SurfaceManifestError(
+                f"surface {surface.name!r} cannot delegate to itself")
+        if surface.delegates not in seen:
+            raise SurfaceManifestError(
+                f"surface {surface.name!r} delegates to unknown surface "
+                f"{surface.delegates!r}")
     return tuple(surfaces)
 
 
@@ -674,6 +789,12 @@ def load_surfaces_lenient() -> tuple[Surface, ...]:
                 step = _step_from_record(raw_step, name)
             except SurfaceManifestError:
                 step = None
+        # A delegation claim that cannot be read is no claim: the
+        # delegating surface keeps its own verification, which is the
+        # fail-open direction (#737).
+        raw_delegates = entry.get("delegates")
+        delegates = raw_delegates.strip() if (
+            isinstance(raw_delegates, str) and raw_delegates.strip()) else None
         surfaces.append(Surface(
             name=name,
             paths=paths,
@@ -681,8 +802,13 @@ def load_surfaces_lenient() -> tuple[Surface, ...]:
             gate_level=gate_level,
             path_kind=path_kind,
             skipped_on_format_only=bool(entry.get("skipped_on_format_only")),
+            # A record that cannot be read is never guessed: the lenient
+            # loader treats the surface as verifying, which is the safe
+            # direction (the gate then asks for the evidence).
+            verifies=bool(entry.get("verifies", True)),
             role=role,
             step=step,
+            delegates=delegates,
         ))
     return tuple(surfaces)
 

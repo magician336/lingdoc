@@ -265,6 +265,160 @@ class TicketParsingTests(unittest.TestCase):
         self.assertIn("shorthand", result.drifts[0].kind)
 
 
+class NaturalShapeTests(unittest.TestCase):
+    """A ticket written the natural way must still be compared.
+
+    The detector used to accept one exact shape: the heading had to be the
+    bare word, the path had to follow the bullet immediately, and only one
+    path per line was read.  A ticket that added a count to its heading
+    (``文件所有权（路径集 9 条）``) or explained a hand-over before the paths
+    dropped out of the comparison entirely -- and the skip reason said the
+    ticket had *no* ownership section, which was false.  These tests pin the
+    natural shapes so the check cannot go quiet that way again.
+    """
+
+    def test_a_heading_with_a_trailing_count_is_recognised(self):
+        body = """## 文件所有权（路径集 9 条）
+
+- `internal/a.go`
+- `internal/b.go`
+"""
+        self.assertEqual(
+            ownership.extract_declared_paths(body),
+            ("internal/a.go", "internal/b.go"),
+        )
+
+    def test_an_english_heading_with_a_trailing_note_is_recognised(self):
+        body = "## File ownership (9 files)\n\n- `internal/a.go`\n"
+        self.assertEqual(ownership.extract_declared_paths(body),
+                         ("internal/a.go",))
+
+    def test_paths_after_prose_in_a_bullet_are_read(self):
+        body = """## 文件所有权
+
+- 从 **PF-3** 移交（3）：`internal/a.go`、`internal/b.go`
+"""
+        self.assertEqual(ownership.extract_declared_paths(body),
+                         ("internal/a.go", "internal/b.go"))
+
+    def test_every_path_on_one_line_is_read(self):
+        body = """## 文件所有权
+
+- 新增 `internal/a.go`，修改 `internal/b.go`，以及 `internal/c.go`
+"""
+        self.assertEqual(
+            ownership.extract_declared_paths(body),
+            ("internal/a.go", "internal/b.go", "internal/c.go"),
+        )
+
+    def test_a_path_with_non_ascii_segments_is_read(self):
+        body = """## 文件所有权
+
+- `docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md`
+"""
+        self.assertEqual(
+            ownership.extract_declared_paths(body),
+            ("docs/08-本轮实施方案/Spec-139-模板目录验收矩阵.md",),
+        )
+
+    def test_prose_identifiers_are_not_paths(self):
+        body = """## 文件所有权
+
+- `Request.Body` 是请求体，`SelectionReasons` 是理由字段
+- `internal/a.go`
+"""
+        self.assertEqual(ownership.extract_declared_paths(body),
+                         ("internal/a.go",))
+
+    def test_a_short_shorthand_after_prose_is_still_reported(self):
+        body = """## 文件所有权（路径集 2 条）
+
+- 两个方向：`migrations/sqlite/000052_thing.{up,down}.sql`
+"""
+        self.assertEqual(
+            ownership.find_shorthand_paths(body),
+            ("migrations/sqlite/000052_thing.{up,down}.sql",),
+        )
+
+
+class UnparsedOwnershipTests(unittest.TestCase):
+    """A section that yields no paths is a shape problem, not a pass.
+
+    "The ticket could not be read", "the ticket has no ownership section" and
+    "the ticket has a section but nothing in it parses" are three different
+    failures with three different fixes.  Collapsing them into one sentence
+    made a silent skip look like a clean comparison.
+    """
+
+    def test_a_section_without_paths_yields_an_empty_tuple(self):
+        body = "## 文件所有权\n\n本面没有需要声明的路径。\n"
+        self.assertEqual(ownership.extract_declared_paths(body), ())
+
+    def test_a_section_without_paths_is_reported_as_unparsed(self):
+        original = ownership._gh
+        try:
+            ownership._gh = lambda *args: (0, _body_json(
+                "## 文件所有权\n\n本面没有需要声明的路径。\n"))
+            faces = _faces(_face(issue=900, status="claimed",
+                                  claimed_by="someone",
+                                  paths=("internal/ok.go",)))
+            result = ownership.compare_ticket_to_registry(faces)
+        finally:
+            ownership._gh = original
+        self.assertEqual(result.drifts, ())
+        self.assertEqual(result.unparsed, (900,))
+
+    def test_an_unreadable_ticket_is_not_a_shape_problem(self):
+        original = ownership._gh
+        try:
+            ownership._gh = lambda *args: (1, "")
+            faces = _faces(_face(issue=900, status="claimed",
+                                  claimed_by="someone",
+                                  paths=("internal/ok.go",)))
+            result = ownership.compare_ticket_to_registry(faces)
+        finally:
+            ownership._gh = original
+        self.assertEqual(result.unparsed, ())
+        self.assertTrue(any("unavailable" in reason
+                            for reason in result.skipped))
+
+    def test_an_unreadable_ticket_exits_not_compared(self):
+        self.assertEqual(self._main_exit_for(lambda *args: (1, "")), 2)
+
+    def test_a_section_without_paths_exits_unparsed(self):
+        exit_code = self._main_exit_for(lambda *args: (0, _body_json(
+            "## 文件所有权\n\n本面没有需要声明的路径。\n")))
+        self.assertEqual(exit_code, 3)
+
+    def test_the_unparsed_output_names_the_ticket(self):
+        code, err = self._run_main(lambda *args: (0, _body_json(
+            "## 文件所有权\n\n本面没有需要声明的路径。\n")))
+        self.assertEqual(code, 3)
+        self.assertIn("#900", err)
+        self.assertIn("no readable path", err)
+
+    def _main_exit_for(self, gh):
+        return self._run_main(gh)[0]
+
+    def _run_main(self, gh):
+        original_gh = ownership._gh
+        original_load = ownership.manifest.load_and_validate
+        import contextlib
+        import io
+        err = io.StringIO()
+        try:
+            ownership._gh = gh
+            ownership.manifest.load_and_validate = lambda: _faces(
+                _face(issue=900, status="claimed", claimed_by="someone",
+                      paths=("internal/ok.go",)))
+            with contextlib.redirect_stderr(err):
+                code = ownership.main([])
+        finally:
+            ownership._gh = original_gh
+            ownership.manifest.load_and_validate = original_load
+        return code, err.getvalue()
+
+
 class TicketDriftTests(unittest.TestCase):
     """An ownership collision is drift; an unrecorded path is not."""
 

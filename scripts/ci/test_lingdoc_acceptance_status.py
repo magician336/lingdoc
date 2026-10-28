@@ -208,6 +208,67 @@ class BetaReleaseGateTests(unittest.TestCase):
         self.assertTrue(status.beta_release_blocks(deferred))
 
 
+class BlockingSpellingTests(unittest.TestCase):
+    """A reader that only knows one spelling cannot see a failure.
+
+    The vocabulary is upper case; the readers of it are not all written that
+    way.  The evidence producer (``scripts/acceptance/beta_evidence.py``)
+    writes the verdict of every conclusion item in lower case, and a report's
+    run fact is written ``not_run``.  Those are spellings of the words the
+    matrix writes as ``FAIL`` / ``BLOCKED`` / ``NOT RUN``.
+
+    The rule this class pins: the reader sees a **blocking** fact in every
+    spelling, and it does **not** read a run fact as a matrix registration.
+    The first direction is what keeps a failure from being invisible; the
+    second is what keeps a gate from being softened.
+    """
+
+    def test_a_failure_the_producer_wrote_in_lower_case_blocks_the_release(self):
+        for spelling in ("failed", "blocked", "not_run"):
+            with self.subTest(spelling=spelling):
+                self.assertTrue(status.beta_release_blocks([spelling]))
+
+    def test_the_word_that_is_returned_is_the_vocabulary_own(self):
+        self.assertEqual(status.normalize_status("failed"), status.FAIL)
+        self.assertEqual(status.normalize_status("blocked"), status.BLOCKED)
+        self.assertEqual(status.normalize_status("not_run"), status.NOT_RUN)
+
+    def test_a_lower_case_registration_is_read_as_that_registration(self):
+        self.assertEqual(status.normalize_status("fail"), status.FAIL)
+        self.assertEqual(status.normalize_status("blocked"), status.BLOCKED)
+        self.assertEqual(status.normalize_status("not run"), status.NOT_RUN)
+        self.assertEqual(status.normalize_status("pass (follow-up)"),
+                         status.PASS_FOLLOW_UP)
+
+    def test_a_registration_written_in_another_case_is_the_same_word(self):
+        """The case of a word is not a different word."""
+        for spelling in ("Fail", "Blocked", "Not Run", "Pass"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(status.normalize_status(spelling),
+                                 status.normalize_status(spelling.upper()))
+
+    def test_a_run_fact_is_not_read_as_the_matrix_registration(self):
+        """A run fact is not a registration: ``PASS`` needs the evidence triple."""
+        self.assertNotEqual(status.normalize_status("passed"), status.PASS)
+        self.assertFalse(status.beta_release_blocks(["passed"]))
+
+    def test_the_vocabulary_itself_is_unchanged(self):
+        """The fix is in the reader, not in the words or in the gates."""
+        self.assertEqual(status.FAIL, "FAIL")
+        self.assertEqual(status.BLOCKED, "BLOCKED")
+        self.assertEqual(status.NOT_RUN, "NOT RUN")
+        self.assertEqual(status.PASS, "PASS")
+        self.assertEqual(status.BETA_RELEASE_BLOCKING,
+                         ("FAIL", "BLOCKED", "NOT RUN", "DEFERRED_MANUAL"))
+        self.assertEqual(status.MERGE_BLOCKING, ("TODO", "NOT RUN", "BLOCKED"))
+
+    def test_an_unknown_word_is_still_an_unknown_word(self):
+        """Normalising the case does not make every word a known one."""
+        self.assertEqual(status.normalize_status("passed"), "passed")
+        self.assertEqual(status.normalize_status("held"), "held")
+        self.assertEqual(status.normalize_status("DEFERRED"), "DEFERRED")
+
+
 class DeferralCarrierTests(unittest.TestCase):
     """A deferral must carry its release condition and its follow-up ticket."""
 
@@ -588,3 +649,30 @@ class RealReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestAcceptanceRecordsStaySeparateFromBetaProtocol(unittest.TestCase):
+    """判定产物与 Beta 首版验收记录是两份文件（#143 TD-08 的守护半边）。
+
+    口径 §4.2 的具名用例谓词（``GO_TEST_NAME``）只认 ``Test`` 开头的名字——
+    边界声明类验收点没有产品行为可断言，原本凑不出那种用例。这个类名以
+    ``Test`` 开头，让判定器可以把本守护当作 TD-08 的具名用例；断言本体：
+    Beta 进度源与验收协议各自独立存在，且没有任何判定矩阵把 #120 的 Beta
+    首版结论写进 PASS 行的证据列。
+    """
+
+    def test_beta_protocol_and_progress_source_exist_as_their_own_files(self):
+        self.assertTrue(
+            (REPO_ROOT / "docs" / "08-本轮实施方案" / "Beta首版真实验收协议.md").is_file())
+        self.assertTrue((REPO_ROOT / "docs" / "BETA_STATUS.md").is_file())
+
+    def test_no_pass_row_cites_issue_120_as_evidence(self):
+        matrices = sorted((REPO_ROOT / "docs" / "08-本轮实施方案").glob("Spec-*矩阵*.md"))
+        self.assertTrue(matrices, "判定矩阵目录不应为空")
+        for matrix in matrices:
+            for line in matrix.read_text(encoding="utf-8").splitlines():
+                cells = [cell.strip() for cell in line.split("|")]
+                if len(cells) < 7 or cells[3] != "PASS":
+                    continue
+                self.assertNotIn(
+                    "#120", cells[5],
+                    f"{matrix.name}: PASS 行的证据列引用了 #120 的 Beta 首版结论")

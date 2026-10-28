@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/database/fixturemigrations"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/stretchr/testify/require"
 )
@@ -21,26 +22,24 @@ import (
 // fell back to `actor_id` alone (#415).
 //
 // The table is now the authority for its own shape, and this file keeps the two
-// dialects and the row model honest about it:
+// dialects, the row model and the fixtures honest about it:
 //
 //   - the SQLite chain and the PostgreSQL chain must produce the **same column
 //     set** for lingdoc_project_audits. A column added on one side only is a
 //     write that fails on the other side;
-//   - the five decision columns must be there, so a reader can rebuild a
-//     decision without parsing JSON.
+//   - the row model and the table must declare exactly the same columns, in
+//     both directions. There is deliberately no third list here: the model is
+//     the declaration and the migration chain is the artifact (#416 removed the
+//     hand-written column list this file used to carry);
+//   - the fixture path the LingDoc tests use must build the table from the
+//     production chain and land on the same column set. That is the guard for
+//     the mechanism, not for one accident: the next migration that adds a
+//     column is picked up by the fixture automatically, and a fixture that goes
+//     back to copying the shape turns this red.
 //
-// The row model itself is checked by the form scan in
-// scripts/ci/test_lingdoc_fixture_schema_source.py: the model lives in another
-// package, so the same invariant is checked in one place, not two.
-
-// auditEventColumns are the columns the audit event is allowed to have. The
-// list is the *result* of the production migration chain, spelled out so a
-// change in either dialect has to be spelled out here as well.
-var auditEventColumns = []string{
-	"id", "project_id", "actor_id", "action", "target", "details_json", "created_at",
-	"target_version", "project_revision",
-	"tenant_id", "user_id", "role", "capability", "decision",
-}
+// The row model lives in another package, so the declaration side is reached
+// through workspacecore.AuditEventRowColumns — GORM's own answer, not a
+// re-implementation of its naming strategy.
 
 func TestAuditEventColumnsMatchTheProductionMigrations(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
@@ -53,10 +52,8 @@ func TestAuditEventColumnsMatchTheProductionMigrations(t *testing.T) {
 
 	columns := sqliteTableColumns(t, db, "lingdoc_project_audits")
 	sort.Strings(columns)
-	expected := append([]string(nil), auditEventColumns...)
-	sort.Strings(expected)
-	require.Equal(t, expected, columns,
-		"the SQLite migration chain does not produce the audit event's declared columns")
+	require.Equal(t, core.AuditEventRowColumns(), columns,
+		"the SQLite migration chain and the audit event's row model declare different columns")
 }
 
 // TestAuditEventRowModelDeclaresExactlyTheTableColumns is the whole invariant
@@ -66,7 +63,7 @@ func TestAuditEventColumnsMatchTheProductionMigrations(t *testing.T) {
 // (core.AuditEventRowColumns), so the check compares two answers produced by
 // the production code itself, not two re-implementations of it. A field added
 // to the model without a column, or a column added without a field, is what
-// used to hide here (#415).
+// used to hide here (#415, #416).
 func TestAuditEventRowModelDeclaresExactlyTheTableColumns(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
 	chdirAndRestore(t, repoRoot)
@@ -86,10 +83,8 @@ func TestAuditEventColumnsAreTheSameInBothDialects(t *testing.T) {
 
 	sqlite := migrationChainColumns(t, filepath.Join("migrations", "sqlite"), "lingdoc_project_audits")
 	versioned := migrationChainColumns(t, filepath.Join("migrations", "versioned"), "lingdoc_project_audits")
-	expected := append([]string(nil), auditEventColumns...)
-	sort.Strings(expected)
-	require.Equal(t, expected, sqlite,
-		"the SQLite migration chain does not spell out the audit event's declared columns")
+	require.Equal(t, core.AuditEventRowColumns(), sqlite,
+		"the SQLite migration chain and the row model disagree about the audit event's columns")
 	require.Equal(t, sqlite, versioned,
 		"the two dialects disagree about the audit event's columns; a write that works on one fails on the other")
 }
@@ -105,6 +100,30 @@ func TestAuditEventDecisionColumnsExistInBothDialects(t *testing.T) {
 				"the %s dialect does not carry the audit event's %s column", dialect, column)
 		}
 	}
+}
+
+// TestAuditTableFixtureShapeComesFromTheProductionChain drives the same helper
+// the LingDoc fixtures call (fixturemigrations.ApplySQLite) and asserts what it
+// builds is the model's column set (#416).
+//
+// This is the acceptance's regression gate: with the fixture shape discovered
+// from the migration chain by table name, a migration that adds a column needs
+// no fixture edit at all — the model guard above is the one that has to be
+// updated, and it fails until it is.
+func TestAuditTableFixtureShapeComesFromTheProductionChain(t *testing.T) {
+	repoRoot := sqliteRepoRoot(t)
+	chdirAndRestore(t, repoRoot)
+
+	dir := filepath.Join("migrations", "sqlite")
+	db := openSQLiteDB(t, filepath.Join(t.TempDir(), "audit-fixture.db"))
+	selection, err := fixturemigrations.ApplySQLite(db, dir, []string{"lingdoc_project_audits"})
+	require.NoError(t, err, "the fixture must be able to build the audit table from the production chain")
+	require.NotEmpty(t, selection.Names, "the fixture applied no migration")
+
+	columns := sqliteTableColumns(t, db, "lingdoc_project_audits")
+	sort.Strings(columns)
+	require.Equal(t, core.AuditEventRowColumns(), columns,
+		"the fixture-built audit table and the row model declare different columns; a fixture that copies the shape again (or a migration the discovery misses) is the regression")
 }
 
 // sqliteTableColumns reads the columns of one table out of a live database.

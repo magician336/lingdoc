@@ -95,7 +95,7 @@ func (r *generationInputResolver) resolveFormalEvidence(ctx context.Context, act
 	sources := []generation.Source{}
 	for _, ref := range selected.Sources {
 		source, err := r.sources.GetSource(ctx, generationWorkspaceActor(ctx, actor), projectID, ref.SourceID)
-		if err != nil || source.AssetID != ref.AssetID || source.AssetRevision != ref.AssetRevision || source.QuotedTextHash != ref.QuotedTextHash || string(source.Status) != "available" {
+		if err != nil || source.AssetID != ref.AssetID || source.AssetRevision != ref.AssetRevision || source.QuotedTextHash != ref.QuotedTextHash || source.Status != evidence.SourceAvailable {
 			return nil, nil, generation.ErrSourceAccessDenied
 		}
 		sources = append(sources, generationSourceFromEvidence(source))

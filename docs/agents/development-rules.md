@@ -31,7 +31,7 @@
 
 ### 门禁触发说明
 
-八个门禁（七个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
+九个门禁（八个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
 
 - **门禁始终创建**：门禁 job 永远创建，跑不跑由 job 条件决定。顶层 `paths:` 过滤会让工作流根本不启动，必需检查永远 Pending，门禁连结论都没有地方发布——所以触发器不按 PR 路径过滤，缩面发生在 job 条件里。被跳过的步骤给出 skipped 状态与理由，而不是让检查变成 Pending。
 - **路径归属只登记一次**：门禁看的路径写在门禁面清单 `scripts/ci/lingdoc_gate_surfaces.py` 里，门禁工作流不再带路径表。工作流级门禁的 `push:` 触发器保留一份静态镜像（GitHub 不能动态生成 `paths:`），镜像由手工维护：改清单就要同时改这份镜像。
@@ -40,7 +40,7 @@
 
 #### 门禁面边界
 
-**门禁层只有这八个工作流**：`frontend.yml` / `go-lint.yml` / `app.yml` / `lingdoc-mock.yml` / `lingdoc-f01-runner.yml` / `lingdoc-workspace-concurrency.yml` / `lingdoc-interface-integration.yml` / `lingdoc-review.yml`。清单里登记了 12 个门禁面，加上 PR gate，就是这八个工作流。
+**门禁层只有这九个工作流**：`frontend.yml` / `go-lint.yml` / `app.yml` / `client.yml` / `lingdoc-mock.yml` / `lingdoc-f01-runner.yml` / `lingdoc-workspace-concurrency.yml` / `lingdoc-interface-integration.yml` / `lingdoc-review.yml`。清单里登记了 13 个门禁面，加上 PR gate，就是这九个工作流。
 
 清单里没有登记的工作流不是门禁。它们各有各的起跑方式，不要按门禁的方式改：
 
@@ -63,7 +63,7 @@
 - **gofmt 等价**：改动后的文件正是 `gofmt` 对改动前的文件会产出的结果。
 - **只改注释与空白**：去掉注释、去掉字符串字面量之外的空白之后，两版的 token 序列逐行相同。
 
-判定为纯格式提交时，**测试类** job（Go 测试、前端测试、integration、workspace-concurrency、mock、镜像构建、PR gate 里的 provider tests 与 frontend 步骤）以 job-level `if` 产生 skipped 状态。**lint 不跳**——它就是格式的裁判；contracts 校验、diff 空白检查与检查边界发布也不跳。判定模块把这条快判**折进**它给出的那一个布尔量：工作流的 `if:` 只读判定结果，不再自己组合「跑不跑」与「是不是格式改动」。
+判定为纯格式提交时，**测试类** job（Go 测试、前端测试、integration、workspace-concurrency、mock、镜像构建、PR gate 的 provider 分片 job、前端工作流的 verify job）以 job-level `if` 产生 skipped 状态。**lint 不跳**——它就是格式的裁判；contracts 校验、diff 空白检查与检查边界发布也不跳。判定模块把这条快判**折进**它给出的那一个布尔量：工作流的 `if:` 只读判定结果，不再自己组合「跑不跑」与「是不是格式改动」。PR gate 不自带前端步骤（#723）：前端三命令只在 `frontend.yml` 的 verify job 跑一份，gate 的前端结论是**委托**——coverage 的 `verified_by` 记被委托的 job；委托的证据在另一个 job 上真实存在，跳过才是 NOT RUN。PR gate 的 provider 验证是分片 job（#724）：判定模块输出「分片名 + 包清单（+ 可选 `-run` 过滤器）」，工作流 matrix 逐片并行跑同一条 `-race` 命令骨架；workspace 单一 Go 包按**测试名分区**再分（#736，ADR 0016：判定模块枚举包内全部顶层测试名、确定性分桶，枚举即分区，新测试不可能被漏跑），`verified_by` 记分片 job 名；分片策略只写在判定模块一处，工作流不带任何包名与测试名。
 
 边界：
 

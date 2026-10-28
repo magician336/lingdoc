@@ -58,10 +58,23 @@ SCOPE_JOB = "scope"
 # GitHub's workflow schema, and the guard has to name the offending name as
 # the workflow spells it.
 FORWARD = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_.-]+)")
+# ``<job>.outputs.<alias>: ${{ steps.<step>.outcome }}`` -- a step outcome a
+# dependent job reads across the job boundary.  It is a declaration like any
+# other: an undeclared one reads an empty string (#724's gate job reads the
+# decision job's step outcomes this way).
+OUTCOME = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outcome\s*\}")
 # ``needs.<job>.outputs.<alias>``
 NEEDS_OUTPUT = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_.-]+)")
 # ``steps.<step>.outputs.<key>``
 STEP_OUTPUT = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_.-]+)")
+
+# The scope allow-list's one registered extension (#737): app.yml also
+# forwards the decision's provider_delegate key -- the reverse delegation's
+# package list, the packages the gate's provider shards verify on this head.
+# Like the allow-list itself the extension is explicit: a workflow that
+# forwards an undeclared key reads an empty string, and a key that joins
+# this map without the workflow carrying it fails the triad below.
+DELEGATION_FORWARDS = {"app.yml": {"provider_delegate"}}
 
 
 # --------------------------------------------------------------------------
@@ -117,6 +130,20 @@ def decision_aliases(name: str, job_key: str) -> dict[str, str]:
     aliases = declared_outputs(name).get(job_key, {})
     return {alias: key for alias, (step, key) in aliases.items()
             if step == SCOPE_STEP}
+
+
+def declared_outcomes(name: str) -> dict[str, dict[str, str]]:
+    """``job key -> {alias: step}`` for aliases that forward an outcome."""
+    declared: dict[str, dict[str, str]] = {}
+    for job_key, job in jobs_of(name).items():
+        aliases: dict[str, str] = {}
+        for alias, value in (job.get("outputs") or {}).items():
+            match = OUTCOME.search(str(value))
+            if match:
+                aliases[alias] = match.group(1)
+        if aliases:
+            declared[job_key] = aliases
+    return declared
 
 
 def output_reads(name: str) -> list[tuple[str, str, str, str]]:
@@ -221,6 +248,7 @@ class WiringTriadTests(unittest.TestCase):
             forwarded = set(decision_aliases(name, SCOPE_JOB).values())
             expected = {key for key in self.keys
                         if key.startswith(workflow_key_prefix(name))}
+            expected |= DELEGATION_FORWARDS.get(name, set())
             with self.subTest(workflow=name):
                 self.assertEqual(
                     forwarded, expected,
@@ -247,18 +275,21 @@ class WiringTriadTests(unittest.TestCase):
     def test_every_alias_a_condition_reads_is_declared_by_its_job(self):
         for name in self.workflows:
             declared = declared_outputs(name)
+            outcomes = declared_outcomes(name)
             for job, kind, provider, alias in output_reads(name):
                 if kind != "needs":
                     continue
                 with self.subTest(workflow=name, job=job,
                                   provider=provider, alias=alias):
                     where = line_of(name, f"needs.{provider}.outputs.{alias}")
-                    self.assertIn(provider, declared,
-                                  f"{where}: {job} reads needs.{provider}."
-                                  f"outputs.{alias}, but {provider} declares no "
-                                  f"output at all")
-                    self.assertIn(
-                        alias, declared[provider],
+                    self.assertTrue(
+                        provider in declared or provider in outcomes,
+                        f"{where}: {job} reads needs.{provider}."
+                        f"outputs.{alias}, but {provider} declares no output "
+                        f"at all")
+                    self.assertTrue(
+                        alias in declared.get(provider, {})
+                        or alias in outcomes.get(provider, {}),
                         f"{where}: {job} reads needs.{provider}.outputs.{alias}, "
                         f"which {provider} never declares; the read yields an "
                         f"empty string")
@@ -323,9 +354,19 @@ class RequiredCheckTests(unittest.TestCase):
                     f"for that name and the workflow has to show it")
 
     def test_a_required_check_workflow_publishes_no_unregistered_check(self):
-        """The other direction: no check appears without being registered."""
+        """The other direction: no check appears without being registered.
+
+        Since #724 the gate workflow also carries the decision job and the
+        provider shard matrix.  Those checks hold no merge requirement of
+        their own -- the ruleset asks for the aggregated gate check alone --
+        so they are registered separately, in
+        ``lingdoc_required_checks.GATE_INTERNAL_JOB_NAMES``.  An unregistered
+        name here means either a check that joined the merge requirement in
+        silence or a helper nobody signed off on.
+        """
         published = self._published_checks()
         registry = set(required_checks.REQUIRED_CHECK_NAMES)
+        internal = set(required_checks.GATE_INTERNAL_JOB_NAMES)
         workflows = {workflow
                      for name in registry
                      for workflow, _job in published.get(name, ())}
@@ -334,11 +375,13 @@ class RequiredCheckTests(unittest.TestCase):
                 name = str(job.get("name") or job_key)
                 with self.subTest(workflow=workflow, job=job_key):
                     self.assertIn(
-                        name, registry,
+                        name, registry | internal,
                         f"{line_of(workflow, 'name: ' + name)}: "
                         f"{workflow}:{job_key} publishes the check {name!r}, "
-                        f"which is not in the required check list; either "
-                        f"register it or move it out of this workflow")
+                        f"which is not registered; register it as a required "
+                        f"check, add it to GATE_INTERNAL_JOB_NAMES with the "
+                        f"reason it holds no merge requirement, or move it "
+                        f"out of this workflow")
 
     def test_the_required_check_names_are_unique(self):
         names = list(required_checks.REQUIRED_CHECK_NAMES)

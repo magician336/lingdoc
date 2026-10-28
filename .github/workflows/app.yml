@@ -50,10 +50,16 @@ jobs:
     name: Decide what this gate runs
     runs-on: ubuntu-latest
     # The job outputs are an explicit allow-list.  The decision module
-    # publishes one key per consuming job; only the declared ones reach the
-    # jobs below, and a name that is not declared reads as an empty string.
+    # publishes one key per consuming job, plus the reverse-delegation list
+    # the verify job consumes (#737); only the declared ones reach the jobs
+    # below, and a name that is not declared reads as an empty string.
     outputs:
       verify: ${{ steps.scope.outputs.job_app_verify }}
+      # The reverse delegation (#737, ADR 0014): on pull_request events the
+      # verify job leaves the provider packages the gate's shards verify to
+      # those shards.  The package list is the decision module's answer --
+      # this workflow carries no package names (red line four).
+      provider_delegate: ${{ steps.scope.outputs.provider_delegate }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -96,6 +102,12 @@ jobs:
     if: needs.scope.outputs.verify == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The delegated provider packages (#737): the decision module's list,
+      # empty exactly when the gate's provider shards do not run on this
+      # head.  The vet-and-test step treats every failure of this data as
+      # "run everything" (fail-open).
+      PROVIDER_DELEGATION: ${{ needs.scope.outputs.provider_delegate }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -143,6 +155,33 @@ jobs:
         shell: bash
         run: |
           mapfile -t pkgs < <(go list ./... | grep -v '/docreader/')
+
+          # Ticket #737 (the reverse delegation, ADR 0014): on pull_request
+          # events the provider packages that the PR gate's shards really
+          # verify on this head (-race -count=1) are not run a second time
+          # here without -race.  A push to main keeps the full list: the
+          # repository-wide validation does not shrink.  Fail-open: a
+          # non-PR event, an empty or unreadable delegation, or an
+          # exclusion that would empty the test set all fall back to
+          # running everything.
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PROVIDER_DELEGATION" ]; then
+            if delegated=$(go list $PROVIDER_DELEGATION 2>/dev/null) && [ -n "$delegated" ]; then
+              mapfile -t delegated_pkgs < <(printf '%s\n' "$delegated")
+              mapfile -t remaining < <(
+                printf '%s\n' "${pkgs[@]}" | grep -vxF -f <(printf '%s\n' "$delegated") || true
+              )
+              if [ "${#remaining[@]}" -gt 0 ]; then
+                echo "Provider verification is delegated to the PR gate's provider shards on this head (race): $PROVIDER_DELEGATION"
+                echo "Delegated ${#delegated_pkgs[@]} provider package(s); vetting and testing the remaining ${#remaining[@]}."
+                pkgs=("${remaining[@]}")
+              else
+                echo "The delegation would empty the test set; keeping the full list."
+              fi
+            else
+              echo "The delegated package list could not be resolved; keeping the full list."
+            fi
+          fi
+
           go vet "${pkgs[@]}"
           go test "${pkgs[@]}"
 

@@ -68,7 +68,7 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 | # | 验收项 | 用户可见入口 | 领域不变量 / 事务边界 | 成功 | 失败 / 权限 / 恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | US1 面板列出本轮实际带的卡片 | 面板事实区·卡片 | 事实只来自服务端包 `card_refs` | 显示服务端返回的每张卡（id + version） | 服务端没返回的卡不显示 | N/A（纯读） | `agentContext.test.ts` 事实分组用例 | PASS |
-| 2 | US2 显示每条选择理由 | 面板事实区·理由 | 理由按服务端 `selection_reasons` **原文**逐条 | 条数与顺序与服务端一致 | 服务端给几条就显示几条 | N/A | `agentContext.test.ts` 理由保序用例 | PASS |
+| 2 | US2 显示每条选择理由 | 面板事实区·理由 | 理由按服务端 `selection_reasons` 的结构化条目逐条展示：按 `kind + id` 挂到条目，`text` 原文显示 | 条数与顺序与服务端一致 | 服务端给几条就显示几条 | N/A | `agentContext.test.ts` 理由保序与挂接用例 | PASS |
 | 3 | US3 显示本轮版本基线 | 面板事实区·基线 | 基线取服务端包的 `project_version` / `spec_revision` / `context_revision` / `chapter_version_id` / `task_version` / `template_id` / `template_version` | 六个值与服务端一致 | 服务端没给的字段不显示 | N/A | `agentContext.test.ts` 基线分组用例 | PASS |
 | 4 | US4 显示卡片是候选还是已确认 | 面板事实区·卡片状态 | 状态来自证据卡端点，按 id **且** version 对齐 | 对齐上则显示服务端给的状态 | version 不等 ⇒ 「状态未知（版本已变）」 | N/A | `agentContext.test.ts` 对齐三例 | PASS |
 | 5 | US5 显示逐来源的模型使用许可 | 面板事实区·来源 | 许可取包内 `source_refs[].model_use_allowed` | 逐条显示 | 缺字段 ⇒ 不显示该项 | N/A | `agentContext.test.ts` 来源分组用例 | PASS |
@@ -102,7 +102,7 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 | 33 | 恢复场景：预览失败后重试成功 | 面板 | 重试由用户发起 | 新包显示 | 失败期间事实区为空 | N/A | `ContextPackagePanel.test.ts` | PASS |
 | 34 | 恢复场景：切会话后重来 | 面板 | 意图与事实一并清空 | 新会话从空范围开始 | 不带上一会话的意图 | N/A | `ContextPackagePanel.test.ts` | PASS |
 | 35 | 环境限制：真实模型链路 | — | 本面不接触模型调用 | — | — | — | **N/A**（不接触模型调用） | N/A |
-| 36 | 环境限制：浏览器端到端 | — | 面板需集成后才可见 | — | — | — | **NOT RUN**（集成归保留路径，本面无入口可验） | NOT RUN |
+| 36 | 环境限制：浏览器端到端 | Workspace侧栏→上下文包 | #476/R3集成，复用原面板 | 真实选卡/移除/刷新，逐项对账 | 真停机恢复、成员撤权清空、409及切项目 | 隔离PG/临时双账号/合成manual资料 | 2026-10-24产品a121b8b2，T431报告integration_r3及R3验收报告；上传资料定位#623不在此PASS内 | PASS |
 
 矩阵共 36 行：28 条 user story + 7 条失败/权限/恢复场景 + 1 条 N/A。
 
@@ -218,7 +218,7 @@ ContextPackagePanel.vue  ──值导入──>  agentContext.ts  ──值导�
 
 1. `frontend/src/views/lingdoc/ResearchPanel.vue` → 同一份请求体构造知识有两个拥有者 → 把构造归位到单一入口，研究面板改为调用它 → 减少「加一个字段要改两处」的变化放大 → 回归门槛：全仓只有一处构造 `AgentContextInput`（#434）。
 2. `frontend/src/api/lingdoc/agentApi.ts` ↔ `workspacecore/agent_research_model.go` → 前端契约类型是服务端形状的手抄，漏了两个字段 → 补齐 + 加一条逐字段比对的守护测试 → 减少「手抄漂移」的认知负荷 → 回归门槛：两端字段集合逐字段相等，漏一边即红（#435）。
-3. `workspacecore/agent_research_model.go` 的 `SelectionReasons` → 理由是自由文本，理由到条目没有机器可读映射 → 服务端改成结构化（类别 + 条目标识 + 原因码 + 自由文本） → 减少前端「只能摊开显示」的展示债 → 回归门槛：每条理由能确定地对应一个条目，前端不再需要字符串匹配（#432）。
+3. `workspacecore/agent_research_model.go` 的 `SelectionReasons` → **已由 #432 关闭**：理由改为结构化条目（类别 + 条目标识 + 原因码 + 自由文本），前端按 `kind + id` 挂接条目、不再需要字符串匹配；回归门槛是每条理由能确定地对应一个条目（Go 契约用例 + 前端形状守护）。
 4. `workspacecore/agent_action_service.go` 的授权判定 → 「低风险状态卡免额外确认」不成立，判定只看来源数量 → 服务端补卡片风险分级，或明确改写 Spec #124 的这条要求 → 减少「前端要显示什么」的语义分歧 → 回归门槛：带低风险卡且无来源时不要求额外确认，其余仍要求（#433）。
 
 ### 8.4 未覆盖风险

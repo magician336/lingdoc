@@ -1,0 +1,184 @@
+{
+  "base_url": "http://127.0.0.1:18095",
+  "project_id": "0a6c35d0-9f5d-4a70-b9cf-3887179b8cd0",
+  "run_id": "f01-20261025T013341Z-5105ae32",
+  "pre_check_existing_count": 4,
+  "submissions": [
+    {
+      "assertion_id": "F01-06b",
+      "request_body": {
+        "assertion_id": "F01-06b",
+        "assertion_text": "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。",
+        "verdict": "passed",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-1"
+      },
+      "status": null,
+      "response": null,
+      "idempotency_key": "judgement-F01-06b-f01-20261025T013341Z-5105ae32",
+      "skipped_already_recorded": true,
+      "existing": {
+        "audit_id": "9bdeffbc-aff5-4d64-a4f2-4460da4b645f",
+        "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+        "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+        "channel": "unverified_channel",
+        "occurred_at": "2026-10-25T09:10:49Z",
+        "assertion_id": "F01-06b",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-1",
+        "assertion_text": "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。",
+        "channel_class": "user_session",
+        "channel_ui_origin": "unprovable",
+        "channel_automation": "unprovable"
+      }
+    },
+    {
+      "assertion_id": "F01-06c",
+      "request_body": {
+        "assertion_id": "F01-06c",
+        "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+        "verdict": "passed",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/a2-negative/REPORT.md"
+      },
+      "status": null,
+      "response": null,
+      "idempotency_key": "judgement-F01-06c-f01-20261025T013341Z-5105ae32",
+      "skipped_already_recorded": true,
+      "existing": {
+        "audit_id": "9d180db7-7bcc-4fa2-98b3-a8e3bf8b92c5",
+        "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+        "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+        "channel": "unverified_channel",
+        "occurred_at": "2026-10-25T09:13:01Z",
+        "assertion_id": "F01-06c",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/a2-negative/REPORT.md",
+        "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+        "channel_class": "user_session",
+        "channel_ui_origin": "unprovable",
+        "channel_automation": "unprovable"
+      }
+    },
+    {
+      "assertion_id": "F01-06d",
+      "request_body": {
+        "assertion_id": "F01-06d",
+        "assertion_text": "应用这一步才真正写下 model-use 许可记录（对象 kind = project_asset_policy），并把资料推进到新一版修订。",
+        "verdict": "passed",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-3"
+      },
+      "status": null,
+      "response": null,
+      "idempotency_key": "judgement-F01-06d-f01-20261025T013341Z-5105ae32",
+      "skipped_already_recorded": true,
+      "existing": {
+        "audit_id": "5e6c2b90-c06b-4ea5-8043-70b03dda4d6f",
+        "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+        "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+        "channel": "unverified_channel",
+        "occurred_at": "2026-10-25T09:13:01Z",
+        "assertion_id": "F01-06d",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-3",
+        "assertion_text": "应用这一步才真正写下 model-use 许可记录（对象 kind = project_asset_policy），并把资料推进到新一版修订。",
+        "channel_class": "user_session",
+        "channel_ui_origin": "unprovable",
+        "channel_automation": "unprovable"
+      }
+    },
+    {
+      "assertion_id": "F01-06e",
+      "request_body": {
+        "assertion_id": "F01-06e",
+        "assertion_text": "把许可读回来看：它带 model_use_allowed=true，且钉在这一版资料修订上。",
+        "verdict": "passed",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-4"
+      },
+      "status": null,
+      "response": null,
+      "idempotency_key": "judgement-F01-06e-f01-20261025T013341Z-5105ae32",
+      "skipped_already_recorded": true,
+      "existing": {
+        "audit_id": "c6d9afdc-32d7-4786-9132-2f04bdb8b0c2",
+        "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+        "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+        "channel": "unverified_channel",
+        "occurred_at": "2026-10-25T09:13:01Z",
+        "assertion_id": "F01-06e",
+        "run_id": "f01-20261025T013341Z-5105ae32",
+        "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-4",
+        "assertion_text": "把许可读回来看：它带 model_use_allowed=true，且钉在这一版资料修订上。",
+        "channel_class": "user_session",
+        "channel_ui_origin": "unprovable",
+        "channel_automation": "unprovable"
+      }
+    }
+  ],
+  "readback_status": 200,
+  "readback_records": [
+    {
+      "audit_id": "9bdeffbc-aff5-4d64-a4f2-4460da4b645f",
+      "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+      "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+      "channel": "unverified_channel",
+      "occurred_at": "2026-10-25T09:10:49Z",
+      "assertion_id": "F01-06b",
+      "run_id": "f01-20261025T013341Z-5105ae32",
+      "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-1",
+      "assertion_text": "把「允许用这份资料做模型生成」写成一条显式提案，绑定该资料当前的修订号与项目的上下文修订号；版本不符即冲突，不猜版本。",
+      "channel_class": "user_session",
+      "channel_ui_origin": "unprovable",
+      "channel_automation": "unprovable"
+    },
+    {
+      "audit_id": "9d180db7-7bcc-4fa2-98b3-a8e3bf8b92c5",
+      "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+      "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+      "channel": "unverified_channel",
+      "occurred_at": "2026-10-25T09:13:01Z",
+      "assertion_id": "F01-06c",
+      "run_id": "f01-20261025T013341Z-5105ae32",
+      "evidence_ref": "run:f01-20261025T013341Z-5105ae32/a2-negative/REPORT.md",
+      "assertion_text": "变更集评估后才允许应用；服务端的合法前态只有 assessed。",
+      "channel_class": "user_session",
+      "channel_ui_origin": "unprovable",
+      "channel_automation": "unprovable"
+    },
+    {
+      "audit_id": "5e6c2b90-c06b-4ea5-8043-70b03dda4d6f",
+      "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+      "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+      "channel": "unverified_channel",
+      "occurred_at": "2026-10-25T09:13:01Z",
+      "assertion_id": "F01-06d",
+      "run_id": "f01-20261025T013341Z-5105ae32",
+      "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-3",
+      "assertion_text": "应用这一步才真正写下 model-use 许可记录（对象 kind = project_asset_policy），并把资料推进到新一版修订。",
+      "channel_class": "user_session",
+      "channel_ui_origin": "unprovable",
+      "channel_automation": "unprovable"
+    },
+    {
+      "audit_id": "c6d9afdc-32d7-4786-9132-2f04bdb8b0c2",
+      "actor": "619a1613-bd14-4eae-b4b8-5d3518e0c2ab",
+      "authorization": "method=project_membership_capability_and_owner_check;capability=manage;project_owner=true;human_decision_gate=passed_not_a_machine_principal",
+      "channel": "unverified_channel",
+      "occurred_at": "2026-10-25T09:13:01Z",
+      "assertion_id": "F01-06e",
+      "run_id": "f01-20261025T013341Z-5105ae32",
+      "evidence_ref": "run:f01-20261025T013341Z-5105ae32/human-action-sheet.md#A-4",
+      "assertion_text": "把许可读回来看：它带 model_use_allowed=true，且钉在这一版资料修订上。",
+      "channel_class": "user_session",
+      "channel_ui_origin": "unprovable",
+      "channel_automation": "unprovable"
+    }
+  ],
+  "readback_count": 4,
+  "problems": [
+    "F01-06b: verdict matches the user's verdict (write-side record)",
+    "F01-06b: verdict is one of passed/held/rejected"
+  ]
+}

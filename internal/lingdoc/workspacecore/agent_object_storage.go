@@ -249,9 +249,21 @@ func (t gormTransaction) AssetTruth(p Project, id string) (assetTruth, error) {
 	}
 	return out, nil
 }
+
+// assetPolicyVersionAdvance is how far ONE applied asset-policy change moves
+// the material's own revision forward.
+//
+// It lives here, next to the writer that performs the move, and the writer
+// uses it. That is deliberate: the version a change set is expected to produce
+// and the version it really produces are then the same number by construction,
+// so the stabilization re-read can compare against exactly this step when it
+// has to tell "this change set's own step" from "somebody else moved the
+// material on".
+const assetPolicyVersionAdvance = 1
+
 func (t gormTransaction) AdvanceAssetPolicy(truth assetTruth) error {
 	now := time.Now().UTC()
-	changed := t.db.Model(&evidence.ProjectAsset{}).Where("id = ? AND project_id = ? AND asset_revision = ? AND deleted_at IS NULL", truth.Asset.ID, truth.Asset.ProjectID, truth.Asset.AssetRevision).Updates(map[string]any{"asset_revision": truth.Asset.AssetRevision + 1, "updated_at": now})
+	changed := t.db.Model(&evidence.ProjectAsset{}).Where("id = ? AND project_id = ? AND asset_revision = ? AND deleted_at IS NULL", truth.Asset.ID, truth.Asset.ProjectID, truth.Asset.AssetRevision).Updates(map[string]any{"asset_revision": truth.Asset.AssetRevision + assetPolicyVersionAdvance, "updated_at": now})
 	if err := affected(changed); err != nil {
 		return err
 	}
@@ -259,7 +271,7 @@ func (t gormTransaction) AdvanceAssetPolicy(truth assetTruth) error {
 	if err := affected(old); err != nil {
 		return err
 	}
-	return t.db.Create(&evidence.ProjectAssetRevision{ID: uuid.NewString(), AssetID: truth.Asset.ID, RevisionNo: truth.Asset.AssetRevision + 1, KnowledgeID: truth.Asset.KnowledgeID, ContentHash: truth.Fingerprint, Status: evidence.RevisionActive, Metadata: truth.Revision.Metadata, CreatedAt: now}).Error
+	return t.db.Create(&evidence.ProjectAssetRevision{ID: uuid.NewString(), AssetID: truth.Asset.ID, RevisionNo: truth.Asset.AssetRevision + assetPolicyVersionAdvance, KnowledgeID: truth.Asset.KnowledgeID, ContentHash: truth.Fingerprint, Status: evidence.RevisionActive, Metadata: truth.Revision.Metadata, CreatedAt: now}).Error
 }
 func ReadProjectAssetPolicy(tx Transaction, p Project, assetID string) (ProjectAssetPolicy, []string, string, error) {
 	port, ok := tx.(assetPolicyTransaction)

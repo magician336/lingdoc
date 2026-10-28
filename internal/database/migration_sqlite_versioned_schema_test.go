@@ -83,7 +83,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"memory_items":                    {"replaces_id"},                                                                                                   // 000094
 	"tenants":                         {"api_principal_config"},                                                                                          // 000064
 	"users":                           {"is_system_admin"},                                                                                               // 000053
-	"knowledges":                      {"pending_subtasks_count"},                                                                                        // 000056
+	"knowledges":                      {"pending_subtasks_count", "index_status"},                                                                        // 000056 / 000136 (#599)
 	"messages":                        {"attachments", "usage"},                                                                                          // 000034, 000085
 	"tenant_invitations":              {"token", "accepted_count"},                                                                                       // 000054
 	"embed_channels":                  {"allow_memory"},                                                                                                  // 000060
@@ -94,6 +94,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_projects":                {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
 	"lingdoc_candidates":              {"writing_action", "origin", "run_mode", "model_id"},                                                              // 000126
 	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000126
+	"lingdoc_model_call_ledger":       {"cost_basis"},                                                                                                    // 000058 / 000137 (#527)
 }
 
 // 000046 rebuilds lingdoc_project_audits in place to bound its action
@@ -101,8 +102,13 @@ var versionedSQLiteColumns = map[string][]string{
 // 000053 rebuilds lingdoc_projects in place to widen its status vocabulary
 // (the archived terminal state). 000055 adds the model-call ledger table
 // (55-Spec / #453), so the table set grows by one. 000054 is the audit
-// decision fields (PF-7), which main already records.
-const expectedSQLiteMigrationVersion = 55
+// decision fields (PF-7), which main already records. 000056 makes the
+// adoption idempotency row's chapter_version_id nullable (#693). 000057 adds
+// the knowledge row's index_status column (#599): an indexed-but-failed parse
+// must stay visible at the knowledge-row level. 000058 adds the ledger's
+// cost_basis column (#527): the money columns' 0 must read as
+// "not computed" when the profile computed no money, not as "free".
+const expectedSQLiteMigrationVersion = 58
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

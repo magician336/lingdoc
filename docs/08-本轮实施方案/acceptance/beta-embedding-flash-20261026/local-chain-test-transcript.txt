@@ -1,0 +1,24 @@
+=== RUN   TestZZFlashChainLocalNoNetwork
+    zz_flash_chain_local_test.go:159: knowledge title: "synth-chapter-c.md"
+    zz_flash_chain_local_test.go:179: batch bound=3085 (cost 385625 nano-CNY), query bound=1080 (cost 135000 nano-CNY), cumulative with the settled request=7250 of 8000 tokens
+DEBUG[2026-10-26 07:53:25.684] []                      | OpenAIEmbedder BatchEmbed: model=qwen3.7-text-embedding-flash, input_count=2, truncate_tokens=511
+DEBUG[2026-10-26 07:53:25.696] []                      | OpenAIEmbedder BatchEmbed input[0]: length=1134, preview=synth-chapter-c.md
+# 合成材料研究记录 C：多孔氧化物复合薄膜的孔隙率与强度关系
+
+- 文档编号：SYNTH-RPT-C-01
+- 版本：v1.0（固定版本，供重复验收使用）
+- �...
+DEBUG[2026-10-26 07:53:25.696] []                      | OpenAIEmbedder BatchEmbed input[1]: length=927, preview=synth-chapter-c.md
+### 2.3 数据处理
+
+孔隙率按体积分数换算，强度保留到 0.1 MPa。
+
+## 3. 结果
+
+### 3.1 孔隙率
+
+八个样品的孔隙率在 11.4% 到 27.8% 之间，平均 19.6%...
+    zz_flash_chain_local_test.go:270: ledger: model=qwen3.7-text-embedding-flash status=response_received bound=3085 reserved=385625 actual=875
+--- PASS: TestZZFlashChainLocalNoNetwork (0.24s)
+PASS
+ok  	github.com/Tencent/WeKnora/internal/models/embedding	0.881s

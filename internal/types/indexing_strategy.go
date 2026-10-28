@@ -64,12 +64,15 @@ func (s *IndexingStrategy) Scan(value interface{}) error {
 		*s = DefaultIndexingStrategy()
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		*s = DefaultIndexingStrategy()
-		return nil
+	raw, err := jsonColumnBytes(value)
+	if err != nil {
+		// An unrecognised carrier is not legacy data, it is an anomaly we
+		// must not hide behind a default.
+		return err
 	}
-	if err := json.Unmarshal(b, s); err != nil {
+	if err := json.Unmarshal(raw, s); err != nil {
+		// A payload that does not match the current shape predates this
+		// struct: fall back to the default instead of failing the load.
 		*s = DefaultIndexingStrategy()
 		return nil
 	}

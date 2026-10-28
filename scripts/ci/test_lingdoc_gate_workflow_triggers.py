@@ -264,10 +264,17 @@ class PushMirrorTests(unittest.TestCase):
             if not paths:
                 continue
             checked += 1
-            surfaces = surfaces_of(name)
+            # The mirror is a gitignore-style path list, so it mirrors the
+            # workflow-level (glob) ownership surface.  Since #723 the
+            # frontend workflow's verify job also consumes the delegated
+            # frontend surface -- a prefix table the PR gate's judgement
+            # rides on -- and that prefix set is subsumed by the same
+            # mirror; it is not a second table to copy.
+            ownership = [surface for surface in surfaces_of(name)
+                         if surface.path_kind == manifest.PATH_KIND_GLOB]
             with self.subTest(workflow=name):
-                self.assertEqual(len(surfaces), 1)
-                self.assertEqual(list(paths), list(surfaces[0].paths))
+                self.assertEqual(len(ownership), 1)
+                self.assertEqual(list(paths), list(ownership[0].paths))
         self.assertGreater(checked, 0,
                            "no gated workflow keeps a push path list; the "
                            "mirror and its maintenance note are untested")

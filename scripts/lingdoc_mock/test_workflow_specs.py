@@ -86,18 +86,20 @@ class SpecificationLoadTest(unittest.TestCase):
     def test_repository_f01_workflow_still_loads_as_its_own_specification(self):
         spec = load_spec(WORKFLOW_PATH)
         self.assertEqual(spec.id, "F01")
-        self.assertEqual(len(spec.steps), 28)
+        self.assertEqual(len(spec.steps), 31)
         self.assertEqual([step["id"] for step in spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 7)]
                          + ["F01-06b", "F01-06c", "F01-06d", "F01-06e"]
-                         + [f"F01-{n:02d}" for n in range(7, 24)])
+                         + [f"F01-{n:02d}" for n in range(7, 19)]
+                         + ["F01-19a", "F01-19b", "F01-19c"]
+                         + [f"F01-{n:02d}" for n in range(19, 24)])
         self.assertEqual([step["id"] for step in spec.steps][2:5], ["F01-03", "F01-03b", "F01-04"])
         self.assertEqual(spec.download_sha256_variable, "expected_export_sha256")
 
     def test_named_scenario_follows_the_specification_file_the_contract_declares(self):
         spec = load_spec(SCENARIOS_PATH, "F01")
         self.assertEqual(spec.id, "F01")
-        self.assertEqual(len(spec.steps), 28)
+        self.assertEqual(len(spec.steps), 31)
         self.assertEqual(spec.download_sha256_variable, "expected_export_sha256")
 
     def test_unknown_scenario_is_refused_by_name(self):

@@ -1,6 +1,6 @@
 {
   "id": "F01",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "mode": "specification_not_executed_against_provider",
   "related_scenarios": [
     {
@@ -16,6 +16,19 @@
     "ready_knowledge": "必须由运行时提供：F01-06 绑定资料用的是 {{knowledge_id}}，执行器用 --knowledge-id <真实标识> 注入；没有默认值，不提供时执行器在发出第一个请求前就报错（不得回退到演示标识）。",
     "model_adapter": "固定候选输出只允许用于诊断路径与单测；放行路径必须用真实模型调用，并逐段记账（见 provenance 声明）。",
     "renderer": "完整验收时必须使用真实导出器。"
+  },
+  "adoption_request": {
+    "note": "F01-11 与 F01-12 是同一个 acceptCandidate 操作：F01-12 用同一个 Idempotency-Key 重投，所以两者的请求体必须逐字相同（静态校验的 replay 一致性检查要求 body 与 data 都相同；服务端的幂等摘要也要求两者相同，确认时刻不进摘要）。",
+    "confirmation_is_required": "服务端把确认载荷当必填：缺了它，采纳被拒（400 invalid_request），重投也不例外——所以契约必须显式提交这次采纳确认了什么，而不是让服务端替它猜。",
+    "value_sources": {
+      "writing_action": "generate：F01-07 的 startGeneration 走生成端点，候选自己记下的动作就是 generate；确认的动作与候选对不上，服务端拒。",
+      "adoption_target": "formal_version_whole：F01-11 的参考响应里 current_version_id 从空变成 cv-question-1，即这次采纳建了正式版本；generate 允许这个目标。",
+      "origin": "ai_generated：生成端点产出的候选，来源标注固定是 AI 生成。",
+      "confirmed_by": "{{owner_user_id}}：F01-02 捕获的项目 owner 用户标识，就是这次请求的认证身份；确认人必须等于认证身份，代他人确认一律拒。",
+      "confirmed_at": "契约钉住的确认时刻（RFC3339）。确认时刻不进幂等摘要，所以 F01-12 重投时带同一个值仍然是同一次请求。",
+      "expected_working_copy_revision": "1：章节骨架在项目激活时创建，工作副本行从修订号 1 开始；F01-04 到 F01-11 之间没有任何一步写过这一章的工作副本（只有 saveChapter 会推进它，而它在 F01-13 之后）。",
+      "expected_body_hash": "空章节的工作副本正文是空的，摘要就是正文字节 SHA-256 的小写十六进制（e3b0c442…b855）。服务端拿它与当前工作副本正文对不上就拒（working_copy_dirty）。"
+    }
   },
   "provenance": {
     "policy": "放行路径的每一段都必须真的跑：单个真实调用不代表整链为真（TD-06 / US-10 / US-11）。",
@@ -51,7 +64,7 @@
   "failure_states": {
     "how_expressed": "失败态用「失败路径节点 + http_error 断言」表达：失败响应必须真的是错误状态码，且错误信封的 code 与契约声明的一致（光有错误体不算失败路径）。",
     "where_they_are": "contracts/scenarios.json 已有的失败路径节点上：F05-04 的 409 version_conflict、F06 的 409 stale_input、F07 的 403 source_access_denied、F11-10 的 409 stale_input、F12-04 的 409 version_conflict、F22-01 的 422 asset_not_authorized。",
-    "why_not_in_this_sequence": "F01 这 24 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容）；该结构已由 #501 落地（形状与用例见 contracts/scenarios.json 的 F24），但 F01 序列的节点数由验收协议 §2 钉死（24 个节点 = 原 23 个业务步骤 + F01-03b 前置），4xx 节点仍未挂进本序列 ⇒ GAP-FAILURE-PATH-NODES 未解除。",
+    "why_not_in_this_sequence": "F01 这 31 个节点里没有任何 4xx 节点：序列内的失败态要靠「先操作同一资源、再断言」的两步结构（例如先撤权、再取内容）；该结构已由 #501 落地（形状与用例见 contracts/scenarios.json 的 F24），但 F01 序列的节点数由验收协议 §2 钉死（31 个节点 = 原 23 个业务步骤 + F01-03b 前置 + F01-06b…F01-06e 四个 model-use 许可节点 + F01-19a…F01-19c 三个稳定化节点），4xx 节点仍未挂进本序列 ⇒ GAP-FAILURE-PATH-NODES 未解除。",
     "until_then": "涉及失败态的放行要求一律登记为未完成项（NOT RUN），不得记为已通过；解除条件见 acceptance/gaps.json 的 GAP-FAILURE-PATH-NODES。",
     "gap": "GAP-FAILURE-PATH-NODES"
   },
@@ -65,7 +78,7 @@
       }
     ]
   },
-  "variable_syntax": "{{name}}占据整个值时保留捕获值类型（包括null/int）；嵌在文本中时按字符串替换。请求path、引用标记均用捕获ID。",
+  "variable_syntax": "{{name}}占据整个值时保留捕获值类型（包括null/int）；嵌在文本中时按字符串替换。请求path、引用标记均用捕获ID。{\"$expand\":{\"collection\":<已捕获变量名>,\"item\":<元素模板>}}把一个已捕获的数组按元素模板投影成数组（模板里的{\"$item\":\"字段名\"}取当前元素的该字段）；集合不存在、不是数组或元素缺字段一律报错停止，不得静默补值。",
   "polling": "getGeneration/getExport轮询直到终态；同一个request不重新POST。",
   "reference_ids": "参考响应的ID仅供静态语义检查；真实执行从capture取ID，内容比对忽略动态ID及时间。",
   "steps": [
@@ -741,7 +754,7 @@
         }
       ],
       "assertions": [],
-      "retrieval": "vector_required"
+      "retrieval": "keyword_only"
     },
     {
       "id": "F01-08",
@@ -943,7 +956,16 @@
           "candidate_id": "{{candidate_id}}",
           "expected_chapter_version_id": null,
           "expected_spec_revision": "{{spec_revision}}",
-          "replace_existing": false
+          "replace_existing": false,
+          "expected_working_copy_revision": 1,
+          "expected_body_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "{{owner_user_id}}",
+            "origin": "ai_generated"
+          }
         }
       },
       "expected_http": 201,
@@ -980,12 +1002,12 @@
         {
           "path": "{{review_id}}",
           "ref_in": "/data/review_items",
-          "intent": "新版本继承review_items；项目版本增加到5。（候选的待核事项出现在新版本里；项目版本的递增由 F01-18 的读回核对）"
+          "intent": "候选的待核事项出现在新版本里：新版本继承 review_items（本断言只核对引用出现在 /data/review_items，不核对新版本与候选的 review_items 逐字一致）。project_version 的递增不在本契约任何断言内——目前只有行为级证据：#679 实测一次采纳 4→5，PR #690 回归测试钉住恰好 +1（0.5.1 起 intent 只声称断言覆盖的内容；变更记录见 docs/08-本轮实施方案/Spec-Beta-F01-11-intent口径变更-689.md）。"
         },
         {
           "path": "/data/current_version_id",
           "non_empty": true,
-          "intent": "新版本继承review_items；项目版本增加到5。（采纳产生了新的正文版本）"
+          "intent": "采纳产生了新的正文版本：当前版本指向新版本（current_version_id 非空）。"
         }
       ],
       "assertions": []
@@ -1006,7 +1028,16 @@
           "candidate_id": "{{candidate_id}}",
           "expected_chapter_version_id": null,
           "expected_spec_revision": "{{spec_revision}}",
-          "replace_existing": false
+          "replace_existing": false,
+          "expected_working_copy_revision": 1,
+          "expected_body_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "confirmation": {
+            "writing_action": "generate",
+            "adoption_target": "formal_version_whole",
+            "confirmed_at": "2026-10-24T00:00:00Z",
+            "confirmed_by": "{{owner_user_id}}",
+            "origin": "ai_generated"
+          }
         }
       },
       "expected_http": 201,
@@ -1100,7 +1131,8 @@
         }
       },
       "capture": {
-        "question_version": "/data/current_version_id"
+        "question_version": "/data/current_version_id",
+        "question_review_items": "/data/review_items"
       },
       "checks": [
         {
@@ -1218,7 +1250,8 @@
         }
       },
       "capture": {
-        "method_version": "/data/current_version_id"
+        "method_version": "/data/current_version_id",
+        "method_review_items": "/data/review_items"
       },
       "checks": [
         {
@@ -1244,13 +1277,16 @@
         "json": {
           "expected_chapter_version_id": "{{question_version}}",
           "expected_spec_revision": "{{spec_revision}}",
-          "review_decisions": [
-            {
-              "review_item_id": "{{review_id}}",
-              "disposition": "retained_warning",
-              "reason": "仅作内部演示，保留该项并随文件明确列出。"
+          "review_decisions": {
+            "$expand": {
+              "collection": "question_review_items",
+              "item": {
+                "review_item_id": {"$item": "id"},
+                "disposition": "retained_warning",
+                "reason": "仅作内部演示，保留该项并随文件明确列出。"
+              }
             }
-          ]
+          }
         }
       },
       "expected_http": 201,
@@ -1297,9 +1333,20 @@
           "intent": "确认结果有效"
         },
         {
-          "path": "/data/review_decisions/0/review_item_id",
-          "equals": "{{review_id}}",
-          "intent": "待核事项有明确处置（保留并说明原因）"
+          "path": "/data/review_decisions",
+          "one_to_one": {
+            "from_step": "F01-13",
+            "path": "/data/review_items",
+            "id_field": "review_item_id",
+            "other_id_field": "id",
+            "entry_equals": {
+              "disposition": "retained_warning"
+            },
+            "entry_non_empty": [
+              "reason"
+            ]
+          },
+          "intent": "待核事项有明确处置（保留并说明原因）：处置集合与该章节的待核项集合一一对应，与顺序无关"
         }
       ],
       "assertions": []
@@ -1319,7 +1366,16 @@
         "json": {
           "expected_chapter_version_id": "{{method_version}}",
           "expected_spec_revision": "{{spec_revision}}",
-          "review_decisions": []
+          "review_decisions": {
+            "$expand": {
+              "collection": "method_review_items",
+              "item": {
+                "review_item_id": {"$item": "id"},
+                "disposition": "retained_warning",
+                "reason": "仅作内部演示，保留该项并随文件明确列出。"
+              }
+            }
+          }
         }
       },
       "expected_http": 201,
@@ -1412,6 +1468,154 @@
           "path": "/data/status",
           "equals": "active",
           "intent": "读回的项目仍是激活状态"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19a",
+      "operation_id": "checkCurrent",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}"
+        },
+        "headers": {},
+        "json": {
+          "expected_project_version": "{{project_version}}"
+        }
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "receipt_id": "receipt-demo",
+          "project_version": 9,
+          "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+          "status": "passed",
+          "issues": [
+            {
+              "id": "warning-review-1",
+              "rule_id": "review-items-decided",
+              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+              "severity": "warning",
+              "target_id": "ch-question",
+              "target_version": "cv-question-2",
+              "evidence": [],
+              "evaluator_version": "lingdoc-rules/1",
+              "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+            }
+          ]
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {
+        "receipt_id": "/data/receipt_id"
+      },
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "passed",
+          "intent": "冻结之前先在当前基线上跑一次交付检查并确认它通过；没有这份结论，后面闭环影响任务用的回执就没有依据。"
+        },
+        {
+          "path": "/data/receipt_id",
+          "non_empty": true,
+          "intent": "这次检查产出一份可读回的计算回执：闭环影响任务要用的就是它的 ID，缺了它就只剩一句结论而没有凭据。"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19b",
+      "operation_id": "acknowledgeImpactPreflight",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-preflight-ack-0001"
+        },
+        "json": {
+          "proof_id": "{{receipt_id}}"
+        }
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "closed_task_ids": [
+            "impact-task-demo"
+          ],
+          "proof_id": "receipt-demo",
+          "context_revision": 2
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {},
+      "checks": [
+        {
+          "path": "/data/closed_task_ids",
+          "non_empty": true,
+          "intent": "这次闭环确实关掉了发布阻断任务：服务端认下的是当前基线下真实存在的 BLOCK_RELEASE 任务，不是凭据上的一个说法。"
+        },
+        {
+          "path": "/data/proof_id",
+          "equals": "{{receipt_id}}",
+          "intent": "闭环用的凭据就是上一步交付检查回执的 ID（不是冻结快照 ID，也不是幂等键）；服务端回显它，因此这里能逐字对上。"
+        }
+      ],
+      "assertions": []
+    },
+    {
+      "id": "F01-19c",
+      "operation_id": "stabilizeRevision",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}",
+          "changeSetId": "{{policy_change_set_id}}"
+        },
+        "headers": {
+          "Idempotency-Key": "f01-stabilize-0001"
+        },
+        "json": {}
+      },
+      "expected_http": 200,
+      "reference_response": {
+        "data": {
+          "change_set_id": "cs-policy-demo",
+          "context_revision": 2,
+          "status": "STABILIZED",
+          "blockers": [],
+          "checked_at": "2026-10-19T14:30:00Z",
+          "stale_task_ids": []
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {},
+      "checks": [
+        {
+          "path": "/data/status",
+          "equals": "STABILIZED",
+          "intent": "稳定化不是用状态码表达的：BLOCKED 与 STABILIZED 都是 200，结论在 status 字段里。这条断言读的就是那个字段，不是 HTTP 码。"
+        },
+        {
+          "path": "/data/blockers",
+          "length": 0,
+          "intent": "服务端给出的全部阻断清单为空：没有任何一条未闭环的影响任务或失效的受影响对象挡住这次冻结。"
         }
       ],
       "assertions": []
@@ -2019,8 +2223,8 @@
       "vector_required"
     ],
     "meaning": {
-      "keyword_only": "该节点不依赖向量语义召回：在受控窗口里它可以被正常判定，执行器核验该窗口的验收预算账本里没有 embedding 调用行",
-      "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK"
+      "keyword_only": "该节点在**本轮所用的知识库部署配置**下不依赖向量语义召回：向量开关（知识库的 indexing_strategy）是**部署/环境属性**，不是本契约能声明的属性。执行器核验的是**受控窗口的机器事实** —— 该窗口的两本验收预算账本里没有 embedding 调用行 ⇒ 窗口 PASS 时该节点被判定、窗口 FAIL 时该节点随之失败、两本账本读不到时该节点 NOT RUN。⚠️ 窗口 PASS 只等于「账本里没有 embedding 行」：**被受控 profile 在 transport 之前拒绝的 embedding 尝试不落账本行**，所以「没有 embedding 调用行」**不蕴含**「没有尝试过 embedding」——后者要由 provider 调试日志与应用日志这两条独立于账本的证据来判。",
+      "vector_required": "该节点确实需要向量检索：在受控窗口里它是 NOT RUN，解除条件见 scripts/lingdoc_mock/controlled_window_check.py 的 VECTOR_REQUIRED_UNBLOCK。本契约当前没有任何节点声明它；该取值仍在封闭词表里，供将来确有节点需要向量检索时使用。"
     },
     "deployment_property": "知识库 indexing_strategy 的向量开关是部署/环境属性，不是受控 profile 的一部分：受控执行不得靠永久改知识库配置来达成「不调用 embedding」；临时改了必须还原并留下还原证据。",
     "window_fact": "受控窗口的机器事实是验收预算账本（internal/models/acceptancebudget 的 ledger）：窗口里出现 embedding 行 ⇒ 窗口整体判失败；账本读不到 ⇒ NOT RUN，不得记为通过。"

@@ -126,8 +126,7 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 	}
 	stable := false
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
-		origins := NewGORMSourcePorts(r.db, r.shares).Origins
-		original, available, originErr := origins.OriginText(ctx, asset.KnowledgeID)
+		original, available, originErr := r.originReader().OriginText(ctx, asset.KnowledgeID)
 		if originErr != nil {
 			return core.ResearchSource{}, originErr
 		}
@@ -138,6 +137,18 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 		return core.ResearchSource{}, err
 	}
 	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: source.Locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed}, nil
+}
+
+// originReader 组装本适配器的原文读取器，构造与 SourceRuntime.origins() 同款：
+// dbKnowledgeReader 携带存储字节能力（KnowledgeFileOriginReader）。
+//
+// 上传资料的 file_path 是存储引用（resource://…），不是文件系统路径；不接
+// 存储端口，每份上传资料都读不到原文，StableOriginal 恒为 false，真实
+// source-anchor 只能答 evidence_incomplete（#623）。knowledge 服务已满足
+// KnowledgeFileSource 端口（GetKnowledgeFile）；它缺席时读取器退回本地
+// 路径直读，与接端口之前的行为一致。
+func (r *ResearchAdapter) originReader() evidence.OriginReader {
+	return evidence.NewOriginReader(dbKnowledgeReader{db: r.db, files: KnowledgeFileOriginReader{Service: r.knowledge}})
 }
 func (r *ResearchAdapter) modelUseAllowed(ctx context.Context, actor core.Actor, projectID, assetID, knowledgeID string) (bool, error) {
 	policy, err := core.ReadProjectAssetPolicyFromDB(ctx, r.db, projectID, assetID)
@@ -258,21 +269,28 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		return nil, "real", err
 	}
 	out := []core.ResearchResult{}
+	materialFailure := ""
 	if len(task.AssetIDs) > 0 {
 		sources, err := r.sources.RetrieveSources(ctx, actor, projectID, RetrieveSourcesInput{Query: query, AssetIDs: task.AssetIDs, ChapterID: task.ChapterID})
 		if err != nil {
-			return out, "real", err
-		}
-		for _, source := range sources {
-			current, err := r.readResearchSource(ctx, actor, projectID, task.ChapterID, source.ID)
-			if err != nil {
-				return out, "real", err
+			// The project's own index being degraded must not hide a
+			// configured external provider (#335): record the failure and
+			// keep going, then report it as a partial failure if the
+			// external path produced hits.
+			materialFailure = core.ResearchFailureDetail(err)
+		} else {
+			for _, source := range sources {
+				current, err := r.readResearchSource(ctx, actor, projectID, task.ChapterID, source.ID)
+				if err != nil {
+					materialFailure = core.ResearchFailureDetail(err)
+					break
+				}
+				level := "background_lead"
+				if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
+					level = "candidate_evidence"
+				}
+				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 			}
-			level := "background_lead"
-			if current.StableOriginal && current.Status == "available" {
-				level = "candidate_evidence"
-			}
-			out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 		}
 	}
 	if task.ProviderID != "" {
@@ -284,7 +302,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			return out, "real", core.ErrDependencyUnavailable
 		}
 		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
-			return out, "real", err
+			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
 		config := types.EffectiveWebSearchConfig(tenant.WebSearchConfig)
 		config.CompressionMethod = "none"
@@ -293,7 +311,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		}
 		results, err := r.web.Search(ctx, task.ProviderID, config, query)
 		if err != nil {
-			return out, "real", err
+			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
 		for _, result := range results {
 			if result == nil {
@@ -309,6 +327,9 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			}
 			out = append(out, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
 		}
+	}
+	if materialFailure != "" {
+		return out, "real", &core.ResearchSearchError{Material: materialFailure, Partial: len(out) > 0}
 	}
 	return out, "real", nil
 }

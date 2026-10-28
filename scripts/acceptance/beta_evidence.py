@@ -50,6 +50,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,15 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
     WorkflowError,
     redact,
 )
+from scripts.lingdoc_check_kinds import CheckKindError, declared_kind  # noqa: E402
+from scripts.lingdoc_mock.controlled_window_check import (  # noqa: E402
+    PASS as CONTROLLED_WINDOW_PASS,
+    FAIL as CONTROLLED_WINDOW_FAIL,
+    NOT_RUN as CONTROLLED_WINDOW_NOT_RUN,
+    RETRIEVAL_UNDECLARED,
+    RETRIEVAL_UNKNOWN,
+    judge_window,
+)
 
 # The three states of the protocol §5, plus the word for "this expectation
 # held".  The passing word is deliberately not "passed": a report that says
@@ -86,6 +96,9 @@ HELD = "held"
 FAILED = "failed"
 BLOCKED = "blocked"
 NOT_RUN = "not_run"
+
+#: The only provider-semantics verdict that lets a run claim it verified them.
+PROVIDER_SEMANTICS_VERIFIED = "verified"
 
 SIX_ARTIFACTS = ("README.md", "f01-report.json", "runtime-manifest.json",
                  "browser-check.md", "restart-readback.json", "word-check.md")
@@ -266,19 +279,69 @@ def run_command(command: list[str], *, cwd: Path = ROOT, timeout: float = 900.0)
 # ---------------------------------------------------------------------------
 # The F01 sequence
 # ---------------------------------------------------------------------------
+def f01_node_count() -> int | None:
+    """How many nodes the F01 contract declares, read from the contract.
+
+    The number is never written down here: a hardcoded count goes stale the
+    moment the contract gains a node, and the evidence then tells the reader
+    the contract is shorter than it is.  ``None`` means the contract could not
+    be read, and the caller has to say so rather than fall back to a guess.
+    """
+    document = read_json(WORKFLOW_PATH)
+    if document is None:
+        return None
+    steps = document.get("steps")
+    if not isinstance(steps, list):
+        return None
+    return len(steps)
+
+
+def f01_sequence_label() -> str:
+    """The name of the F01 sequence item, with the contract's own node count.
+
+    When the contract cannot be read, the item says that the count is
+    unknown: "24" was a number nobody had checked, and an unchecked number in
+    the name of the item is how a reader ends up believing a sequence is
+    shorter than it is.
+    """
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约序列（节点数未读到）"
+    return f"F01 契约序列（{count} 个节点）"
+
+
+def f01_scope_label() -> str:
+    """The scope line that says how long the F01 sequence is."""
+    count = f01_node_count()
+    if count is None:
+        return "F01 契约的节点数未读到（contracts/workflow.json 读不到，本轮用契约的断言求值）"
+    return f"F01 契约的 {count} 个节点（本轮用 contracts/workflow.json 的断言求值）"
+
+
 def run_f01(base_url: str, token: str | None, identities: dict[str, str],
-             knowledge_id: str = "") -> tuple[list[Outcome], dict[str, Any]]:
+             knowledge_id: str = "", *,
+             run_id: str | None = None,
+             decision_ledger: Path | str | None = None,
+             audit_source: str | None = None) -> tuple[list[Outcome], dict[str, Any]]:
     """Drive the F01 contract against the provider and turn it into outcomes.
 
     The runner is the one in ``scripts/lingdoc_mock/run_f01.py``: the steps and
     the assertions live in the contract, and this script only asks for the
     result.  A provider that cannot be reached is BLOCKED, not a failure of
     the assertions and not a pass either.
+
+    The human judgements travel with the run: ``decision_ledger``
+    is the ledger of judgements this run may read, ``audit_source`` is the
+    server-side audit export the runner checks them against, and ``run_id``
+    names the batch they belong to.  Without them the contract's prose
+    assertions stay ``not_run`` and the sequence cannot reach PASS -- which is
+    the honest answer for a run nobody judged, not a defect of this function.
     """
     outcomes: list[Outcome] = []
+    label = f01_sequence_label()
     if not base_url:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence="没有给出 --base-url，本轮没有对任何提供方执行。",
             reason="未提供真实后端地址，F01 契约序列没有执行。",
             unblock="用 --base-url <真实后端地址> 重跑本脚本。"))
@@ -287,10 +350,13 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner = ScenarioRunner.from_files(
             OPENAPI_PATH, WORKFLOW_PATH, base_url=base_url, token=token,
             identities=identities,
-            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}))
+            variables=({"knowledge_id": knowledge_id} if knowledge_id else {}),
+            run_id=run_id,
+            decision_ledger=Path(decision_ledger) if decision_ledger else None,
+            audit_source=audit_source)
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"执行器拒绝了这轮配置：{error}",
             reason=f"执行器在发出第一个请求前就拒绝了本轮配置：{error}",
             unblock="按错误信息补齐 --token / --identity 后重跑本脚本。"))
@@ -299,20 +365,50 @@ def run_f01(base_url: str, token: str | None, identities: dict[str, str],
         runner.run(stop_on_mismatch=False)
     except WorkflowError as error:
         outcomes.append(Outcome(
-            id="F01 契约序列（24 个节点）", status=BLOCKED,
+            id=label, status=BLOCKED,
             evidence=f"序列中断：{error}",
             reason=f"主流程缺依赖或无法继续：{error}",
             unblock="让真实后端可达（隔离 PostgreSQL + 迁移 + 启动）后重跑本脚本。"))
         report = runner.report("failed")
-        outcomes.extend(check_outcomes(report))
+        outcomes.extend(check_outcomes(report, read_json(WORKFLOW_PATH) or {}))
         return outcomes, report
     report = runner.report("completed")
-    outcomes.extend(check_outcomes(report))
+    outcomes.extend(check_outcomes(report, read_json(WORKFLOW_PATH) or {}))
     return outcomes, report
 
 
-def check_outcomes(report: dict[str, Any]) -> list[Outcome]:
-    """Turn the runner's record into one outcome per step and per check."""
+def contract_expectations(contract: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """The steps and the checks a contract declares, in the contract's own order.
+
+    The difference between this list and the machine report is the thing the
+    release decision has to see: a step or a check nobody evaluated is not a
+    pass, it is a fact nobody produced.
+    """
+    steps: list[dict[str, str]] = []
+    checks: list[dict[str, str]] = []
+    for step in contract.get("steps", []) or []:
+        step_id = str(step.get("id", ""))
+        steps.append({"id": step_id, "operation_id": str(step.get("operation_id", ""))})
+        for check in step.get("checks", []) or []:
+            try:
+                operator = declared_kind(check, f"{step_id} check")
+            except CheckKindError:
+                operator = "unknown"
+            checks.append({"step_id": step_id, "operator": operator,
+                           "path": str(check.get("path", ""))})
+    return steps, checks
+
+
+def check_outcomes(report: dict[str, Any], contract: dict[str, Any] | None = None) -> list[Outcome]:
+    """Turn the runner's record into one outcome per step and per check.
+
+    The record says what happened; the contract says what had to happen.  The
+    difference between the two is a conclusion of its own: a step or a check
+    the contract declares and this run never evaluated is NOT RUN, with a
+    reason and an unblock condition -- never silently absent.  The prose
+    assertions a human has to judge are NOT RUN for the same reason, and the
+    provider's semantics stay unverified until somebody judges them.
+    """
     outcomes: list[Outcome] = []
     failures = {entry.get("step_id"): entry for entry in report.get("failures", [])}
     for step in report.get("steps", []):
@@ -346,6 +442,131 @@ def check_outcomes(report: dict[str, Any]) -> list[Outcome]:
             status=FAILED,
             evidence=(f"契约声明 HTTP {failure.get('expected')}，实际 {failure.get('actual')}；"
                       f"该步没有完成，它后面的步骤没有执行。")))
+    outcomes.extend(manual_assertion_outcomes(report))
+    outcomes.extend(provider_semantics_outcome(report))
+    if contract is not None:
+        outcomes.extend(unevaluated_outcomes(report, contract))
+    return outcomes
+
+
+def manual_assertion_outcomes(report: dict[str, Any]) -> list[Outcome]:
+    """One NOT RUN outcome per prose assertion nobody judged.
+
+    A prose assertion is one no machine can read.  Until a human judges it,
+    the run has not verified it -- and a run that does not say so looks like a
+    run that did.
+    """
+    outcomes: list[Outcome] = []
+    seen: dict[str, int] = {}
+    for entry in report.get("manual_assertions", []) or []:
+        if str(entry.get("status", "")).lower() in {"passed", "held", "judged"}:
+            continue
+        step_id = str(entry.get("step_id", ""))
+        identifier = f"{step_id} 人工断言" if step_id else "契约人工断言"
+        seen[identifier] = seen.get(identifier, 0) + 1
+        if seen[identifier] > 1:
+            identifier = f"{identifier} {seen[identifier]}"
+        outcomes.append(Outcome(
+            id=identifier,
+            status=NOT_RUN,
+            reason=("契约把这一条断言留给人工判定，机器读不了它："
+                    f"{short(entry.get('assertion'))}"),
+            unblock=("由人工判定这条断言，并把判定写进本轮证据后重跑本脚本："
+                     "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                     "--out <证据目录>")))
+    return outcomes
+
+
+def provider_semantics_outcome(report: dict[str, Any]) -> list[Outcome]:
+    """The provider's semantics: verified, or not verified by this run.
+
+    The runner's own verdict is the authority here.  A run that did not verify
+    the provider's semantics says so, so the release decision cannot read it
+    as a run that did.
+    """
+    status = str(report.get("provider_semantics_status", "") or "")
+    if status == PROVIDER_SEMANTICS_VERIFIED:
+        return [Outcome(id="F01 提供方语义核验（provider_semantics_status）",
+                        status=HELD,
+                        evidence=f"provider_semantics_status = {status}：机器断言全部成立，"
+                                 "契约里的散文断言没有遗留。")]
+    return [Outcome(id="F01 提供方语义核验（provider_semantics_status）",
+                    status=NOT_RUN,
+                    reason=(f"本轮没有核验提供方的语义（provider_semantics_status = {status or '未知'}）："
+                            "契约里的散文断言没有人判定，或机器断言没有全部成立。"),
+                    unblock=("让机器断言全部成立、并把契约里的散文断言交给人工判定后重跑本脚本："
+                             "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                             "--out <证据目录>"))]
+
+
+def provider_semantics_status(report: dict[str, Any]) -> str | None:
+    """The F01 scope's verdict on the provider's semantics, if the scope ran.
+
+    ``None`` means the scope did not run at all: there is no verdict to
+    weigh, and the scope's own conclusion is what says so.  A report that
+    ran but does not carry the verdict is treated as unverified -- an
+    unknown verdict is not a verified one.
+    """
+    if not report:
+        return None
+    return str(report.get("provider_semantics_status", "not_verified") or "not_verified")
+
+
+def unevaluated_outcomes(report: dict[str, Any], contract: dict[str, Any]) -> list[Outcome]:
+    """One NOT RUN outcome per step and per check the contract declares and
+    this run never evaluated.
+
+    This is the difference between "the run verified 15 of the contract's 64
+    assertions" and "the run verified 15 and nobody said anything about the
+    other 49".  The second reading is how a run that did not finish turns into
+    a release that looks finished.
+    """
+    outcomes: list[Outcome] = []
+    declared_steps, declared_checks = contract_expectations(contract)
+    if str(report.get("workflow", "")) != str(contract.get("id", "")):
+        return [Outcome(
+            id=f"{contract.get('id', '')} 契约对照（机器产物与契约不同源）".strip(),
+            status=NOT_RUN,
+            reason=(f"机器产物记的规格是 {report.get('workflow')!r}，对照的契约是 "
+                    f"{contract.get('id')!r}：两者对不上，本轮无法做差集。"),
+            unblock="用与机器产物同一个契约重跑本脚本后重判。")]
+    reached_steps = {str(step.get("id", "")) for step in report.get("steps", [])}
+    failed_steps = {str(entry.get("step_id", "")) for entry in report.get("failures", [])}
+    interrupted = report.get("failed_step") or {}
+    interrupted_id = str(interrupted.get("id", "")) if interrupted else ""
+    evaluated_checks = {(str(check.get("step_id", "")), str(check.get("operator", "")),
+                         str(check.get("path", ""))) for check in report.get("checks", [])}
+    for step in declared_steps:
+        if step["id"] in reached_steps or step["id"] in failed_steps:
+            continue
+        if step["id"] == interrupted_id:
+            outcomes.append(Outcome(
+                id=f"{step['id']} {step['operation_id']}".strip(),
+                status=NOT_RUN,
+                reason=("执行器在这个节点中断了序列，机器产物没有留下这一节点的失败详情，"
+                        "所以本轮没有判定它。"),
+                unblock=("让这个节点按契约回答、并把失败详情写进机器产物后重跑本脚本："
+                         "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                         "--out <证据目录>")))
+            continue
+        outcomes.append(Outcome(
+            id=f"{step['id']} {step['operation_id']}".strip(),
+            status=NOT_RUN,
+            reason="契约声明了这个节点，但本轮没有走到它。",
+            unblock=("让 F01 序列走到这个节点（前面的节点先成立）后重跑本脚本："
+                     "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                     "--out <证据目录>")))
+    for check in declared_checks:
+        key = (check["step_id"], check["operator"], check["path"])
+        if key in evaluated_checks:
+            continue
+        outcomes.append(Outcome(
+            id=f"{check['step_id']} {check['operator']} {check['path']}",
+            status=NOT_RUN,
+            reason="契约声明了这条断言，但本轮没有求值它。",
+            unblock=("让 F01 序列走到这个节点并求值这条断言后重跑本脚本："
+                     "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                     "--out <证据目录>")))
     return outcomes
 
 
@@ -564,27 +785,34 @@ def word_check(word_check_path: Path | None, docx_path: Path | None,
 # ---------------------------------------------------------------------------
 LEDGER_COLUMNS = ("id", "tenant_id", "project_id", "kind", "provider", "model_id", "run_mode",
                   "parameters_json", "input_tokens", "output_tokens", "reserved_nano_usd",
-                  "actual_nano_usd", "duration_ms", "status", "error_code", "source_kind",
-                  "source_id", "switched_from_model_id", "switch_reason", "affected_steps_json",
-                  "created_at")
+                  "actual_nano_usd", "cost_basis", "duration_ms", "status", "error_code",
+                  "source_kind", "source_id", "switched_from_model_id", "switch_reason",
+                  "affected_steps_json", "created_at")
+
+# The cost basis values the DB ledger's money columns can carry. The
+# vocabulary is owned by the Go acceptancebudget package; these names only
+# recognise the two readings that decide how the budget block is rendered.
+COST_BASIS_NOT_APPLICABLE = "not_applicable"
 
 
 def read_ledger(dsn: str, sqlite_path: str) -> tuple[list[dict[str, Any]], str]:
     """Read the model call ledger, or say why it could not be read."""
     if sqlite_path:
-        try:
-            import sqlite3
-        except ImportError as error:  # pragma: no cover - the stdlib always has it
-            return [], f"sqlite3 不可用：{error}"
         path = Path(sqlite_path)
         if not path.is_file():
             return [], f"账本数据库不存在：{relative_to_root(path)}"
         try:
-            with sqlite3.connect(str(path)) as connection:
+            connection = sqlite3.connect(str(path))
+            try:
                 connection.row_factory = sqlite3.Row
                 rows = connection.execute(
                     f"SELECT {', '.join(LEDGER_COLUMNS)} FROM lingdoc_model_call_ledger "
                     "ORDER BY created_at").fetchall()
+            finally:
+                # The connection has to be closed: on Windows an open handle
+                # keeps the file locked, and the model table the window check
+                # reads is often the same file.
+                connection.close()
         except Exception as error:  # sqlite3 raises a family of errors
             return [], f"读账本失败：{type(error).__name__}: {error}"
         return [dict(row) for row in rows], ""
@@ -689,12 +917,156 @@ def verification_report(mode: str, note: str, head: str, base: str, head_note: s
     }
 
 
-def overall_result(outcomes: list[Outcome]) -> str:
+def read_model_types(dsn: str, sqlite_path: str) -> tuple[dict[str, str], dict[str, tuple[str, str]], str]:
+    """The model types the deployment knows: by name, and by id.
+
+    The type is the authority for what an embedding row is -- never a name
+    convention.  Returns ``(name -> type, id -> (name, type), reason)``; the
+    reason says why the models could not be read, because "I could not look"
+    is not "there was none".
+    """
+    if sqlite_path:
+        path = Path(sqlite_path)
+        if not path.is_file():
+            return {}, {}, f"模型表所在的 SQLite 库不存在：{relative_to_root(path)}"
+        try:
+            connection = sqlite3.connect(str(path))
+            try:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute("SELECT id, name, type FROM models").fetchall()
+            finally:
+                # The connection has to be closed: on Windows an open handle
+                # keeps the file locked, and the reader's own cleanup would
+                # fail on it.
+                connection.close()
+        except Exception as error:  # sqlite3 raises a family of errors
+            return {}, {}, f"读模型表失败：{type(error).__name__}: {error}"
+        by_name = {str(row["name"]): str(row["type"]) for row in rows}
+        by_id = {str(row["id"]): (str(row["name"]), str(row["type"])) for row in rows}
+        return by_name, by_id, ""
+    if not dsn:
+        return {}, {}, "没有给出数据库位置（--ledger-dsn 或 --ledger-sqlite），模型类型读不到。"
+    parts = parse_dsn(dsn)
+    environment = os.environ.copy()
+    for key, name in (("host", "PGHOST"), ("port", "PGPORT"), ("user", "PGUSER"), ("dbname", "PGDATABASE")):
+        if parts.get(key):
+            environment[name] = str(parts[key])
+    if parts.get("password"):
+        environment["PGPASSWORD"] = str(parts["password"])
+    psql = shutil.which("psql")
+    if not psql:
+        return {}, {}, "本机没有 psql，也没有 --ledger-sqlite 可读。"
+    try:
+        result = subprocess.run([psql, "-X", "-A", "-t", "-F", "\t", "-c",
+                                 "SELECT id, name, type FROM models"],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                env=environment, check=False, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {}, {}, f"读模型表失败：{type(error).__name__}: {error}"
+    if result.returncode != 0:
+        return {}, {}, f"读模型表失败：{(result.stderr or '').strip()[:300]}"
+    by_name: dict[str, str] = {}
+    by_id: dict[str, tuple[str, str]] = {}
+    for line in (result.stdout or "").splitlines():
+        if not line.strip():
+            continue
+        values = line.split("\t")
+        if len(values) != 3:
+            continue
+        by_name[values[1]] = values[2]
+        by_id[values[0]] = (values[1], values[2])
+    return by_name, by_id, ""
+
+
+def embedding_models(ledger: list[dict[str, Any]], types_by_id: dict[str, tuple[str, str]]) -> list[str]:
+    """The models the deployment's own model-call ledger shows as embedding calls.
+
+    This is the cross-check on the window's fact: the deployment's ledger and
+    the window's budget ledgers have to agree about which models were used.
+    """
+    found: set[str] = set()
+    for row in ledger:
+        if str(row.get("kind", "")) != "call":
+            continue
+        model_id = str(row.get("model_id", "") or "")
+        if not model_id:
+            continue
+        entry = types_by_id.get(model_id)
+        if entry and entry[1] == "embedding":
+            found.add(entry[0])
+    return sorted(found)
+
+
+def controlled_window_part(contract_path: Path, ledger_paths: list[Path | None], types: dict[str, str],
+                           types_reason: str, db_embedding_models: list[str],
+                           db_reason: str) -> tuple[list[Outcome], dict[str, Any]]:
+    """The controlled window's verdict, and one outcome per declared node.
+
+    The window's fact is the two budget ledgers it writes; the deployment's
+    model-call ledger is the cross-check on it.  A window nobody can read is
+    NOT RUN, never a pass, and a node that needs vector retrieval is NOT RUN
+    in that window -- it is not judged there, and it is never recorded as
+    judged.  A node that declares nothing is named, so "nobody declared it"
+    never reads as "nobody owns it".
+    """
+    verdict = judge_window(contract_path, ledger_paths, types or None, types_reason,
+                           db_embedding_models, db_reason)
+    outcomes: list[Outcome] = []
+    window_id = "受控窗口：embedding 调用核验（受控窗口内不得有 embedding 调用行）"
+    if verdict["status"] == CONTROLLED_WINDOW_PASS:
+        outcomes.append(Outcome(id=window_id, status=HELD, evidence=verdict["reason"]))
+    elif verdict["status"] == CONTROLLED_WINDOW_FAIL:
+        outcomes.append(Outcome(id=window_id, status=FAILED, evidence=verdict["reason"]))
+    else:
+        outcomes.append(Outcome(
+            id=window_id, status=NOT_RUN,
+            reason=verdict["reason"],
+            unblock=("给出受控窗口的两本账本（--controlled-window-ledger 与 "
+                     "--controlled-window-calls-ledger）并让模型表可读后重跑本脚本："
+                     "python scripts/acceptance/beta_evidence.py --base-url <真实后端地址> "
+                     "--out <证据目录>")))
+    for node in verdict["nodes"]:
+        step_id = str(node.get("step_id", ""))
+        operation_id = str(node.get("operation_id", ""))
+        retrieval = str(node.get("retrieval", ""))
+        node_id = f"受控窗口 · {step_id} {operation_id}（{retrieval}）".strip()
+        if retrieval == "vector_required":
+            outcomes.append(Outcome(
+                id=node_id, status=NOT_RUN,
+                reason=node.get("reason", ""),
+                unblock=node.get("unblock", "")))
+        elif retrieval == RETRIEVAL_UNDECLARED:
+            outcomes.append(Outcome(
+                id=node_id, status=NOT_RUN,
+                reason=node.get("reason", ""),
+                unblock=node.get("unblock", "")))
+        elif retrieval == RETRIEVAL_UNKNOWN:
+            outcomes.append(Outcome(
+                id=node_id, status=FAILED,
+                reason=node.get("reason", ""),
+                unblock=node.get("unblock", "")))
+        elif node.get("status") == CONTROLLED_WINDOW_PASS:
+            outcomes.append(Outcome(id=node_id, status=HELD, evidence=node.get("reason", "")))
+        elif node.get("status") == CONTROLLED_WINDOW_FAIL:
+            outcomes.append(Outcome(id=node_id, status=FAILED, evidence=node.get("reason", "")))
+        else:
+            outcomes.append(Outcome(id=node_id, status=NOT_RUN,
+                                    reason=node.get("reason", ""),
+                                    unblock=node.get("unblock", "")))
+    return outcomes, verdict
+
+
+def overall_result(outcomes: list[Outcome], provider_semantics_status: str | None = None) -> str:
     """The run's overall result, decided by the main flow (protocol §5 and §6).
 
     A single failed assertion is a FAIL; a main flow that could not continue
     is BLOCKED; something that did not run is NOT RUN.  Only a run without any
     of those may say it passed.
+
+    ``provider_semantics_status`` is the runner's own verdict on the provider's
+    semantics.  A scope that does not judge it passes ``None``; every other
+    value is a claim, and only ``verified`` may lead to a PASS -- a run whose
+    semantics nobody verified has not earned one.
     """
     statuses = {outcome.status for outcome in outcomes}
     if FAILED in statuses:
@@ -702,6 +1074,8 @@ def overall_result(outcomes: list[Outcome]) -> str:
     if BLOCKED in statuses:
         return "BLOCKED"
     if NOT_RUN in statuses:
+        return "NOT RUN"
+    if provider_semantics_status is not None and provider_semantics_status != PROVIDER_SEMANTICS_VERIFIED:
         return "NOT RUN"
     if not outcomes:
         return "NOT RUN"
@@ -843,12 +1217,24 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
                         help="F01-06 绑定的真实资料标识；它作为 {{knowledge_id}} 变量注入执行器。"
                              "没有默认值：不提供时执行器在第一个请求前就报错，不得回退到演示标识")
     parser.add_argument("--word-check", type=Path, default=None, help="执行者填好的 Word 检查表")
+    parser.add_argument("--manual-decisions", type=Path, default=None,
+                        help="人工判定台账：本轮可读的人工判定。没有它，"
+                             "契约里的散文断言保持 not_run，序列不可能判 PASS。")
+    parser.add_argument("--audit-source", default=None,
+                        help="服务端审计导出（文件路径或只读 URL）：跑批器用它核验人工判定。"
+                             "不给它，每条判定都只是「声明」，不能被当作已满足。")
+    parser.add_argument("--run-id", default=None,
+                        help="本轮运行批次标识：人工判定必须绑定同一个批次。")
     parser.add_argument("--docx", type=Path, default=None, help="本轮下载的 DOCX（算哈希）")
     parser.add_argument("--modified-docx", type=Path, default=None, help="修改后的 DOCX（算哈希）")
     parser.add_argument("--ledger-dsn", default=os.environ.get("LINGDOC_LEDGER_DSN", ""),
                         help="模型调用账本的 PostgreSQL DSN")
     parser.add_argument("--ledger-sqlite", default=os.environ.get("LINGDOC_LEDGER_SQLITE", ""),
                         help="模型调用账本的 SQLite 文件")
+    parser.add_argument("--controlled-window-ledger", default=os.environ.get("LINGDOC_CONTROLLED_WINDOW_LEDGER", ""),
+                        help="受控窗口的验收预算账本（JSON）；窗口事实由它与 .calls.json 两本账本一起构成")
+    parser.add_argument("--controlled-window-calls-ledger", default=os.environ.get("LINGDOC_CONTROLLED_WINDOW_CALLS_LEDGER", ""),
+                        help="受控窗口的共享调用账本（.calls.json）")
     parser.add_argument("--server-binary", type=Path, default=None, help="服务端二进制（重启读回用）")
     parser.add_argument("--repo-root", type=Path, default=ROOT, help="仓库根目录")
     parser.add_argument("--db-driver", default=os.environ.get("LINGDOC_DB_DRIVER", ""),
@@ -920,7 +1306,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.append("python scripts/lingdoc_mock/run_f01.py --base-url <base-url> "
                     "--report <f01-report.json>   # by scripts/acceptance/beta_evidence.py")
     f01_outcomes, f01_report = run_f01(arguments.base_url, arguments.token or None, identities,
-                                    arguments.knowledge_id or "")
+                                    arguments.knowledge_id or "",
+                                    run_id=arguments.run_id,
+                                    decision_ledger=arguments.manual_decisions,
+                                    audit_source=arguments.audit_source)
     outcomes.extend(f01_outcomes)
 
     # ---- the browser side -------------------------------------------------
@@ -982,7 +1371,34 @@ def main(argv: list[str] | None = None) -> int:
             unblock="用 --material <名称>=<sha256> 给出本轮合成材料的哈希后重跑本脚本。" +
                     gap_unblock("GAP-MATERIAL-HASH")))
 
-    result = overall_result(outcomes)
+    # ---- the controlled window --------------------------------------------
+    # The contract declares how each node may retrieve; the controlled window
+    # is where that declaration is enforced.  The window's fact is the two
+    # budget ledgers it writes -- the reservation ledger and the shared
+    # ``.calls.json`` -- and the deployment's model-call ledger is the
+    # cross-check on it.
+    commands.append("python scripts/lingdoc_mock/controlled_window_check.py --contract <contract> "
+                    "--ledger <controlled-window-ledger> --calls-ledger <calls-ledger> "
+                    "--models-sqlite <models-sqlite>")
+    window_ledger = (Path(arguments.controlled_window_ledger)
+                     if arguments.controlled_window_ledger else None)
+    window_calls_ledger = (Path(arguments.controlled_window_calls_ledger)
+                           if arguments.controlled_window_calls_ledger else None)
+    if window_ledger is not None and window_calls_ledger is None:
+        # The Go budget writes the shared ledger next to the reservation
+        # ledger, under the same name plus ".calls.json".
+        window_calls_ledger = Path(str(window_ledger) + ".calls.json")
+    types_by_name, types_by_id, types_reason = read_model_types(arguments.ledger_dsn, arguments.ledger_sqlite)
+    db_embedding_models = embedding_models(ledger_rows, types_by_id)
+    db_reason = ledger_reason or ""
+    if not db_reason and not (arguments.ledger_dsn or arguments.ledger_sqlite):
+        db_reason = "本轮没有给出数据库账本位置，交叉核对没有做。"
+    window_outcomes, window_verdict = controlled_window_part(
+        CONTRACT_PATH, [window_ledger, window_calls_ledger], types_by_name,
+        types_reason, db_embedding_models, db_reason)
+    outcomes.extend(window_outcomes)
+
+    result = overall_result(outcomes, provider_semantics_status(f01_report))
 
     # ---- the manifest -----------------------------------------------------
     contract = read_json(CONTRACT_PATH) or {}
@@ -1068,7 +1484,7 @@ def main(argv: list[str] | None = None) -> int:
         "迁移版本": str(manifest["database"]["migrations"].get("version") or "（没有读到）"),
     }
     scope = [
-        "F01 契约的 24 个节点（本轮用 contracts/workflow.json 的断言求值）",
+        f01_scope_label(),
         "浏览器对偶三方比对（HTTP = 浏览器 = 刷新后读回）",
         "服务端真实重启后的读回",
         "Word 人工检查（执行者填写，执行器只算哈希与校验必填字段）",
@@ -1156,7 +1572,17 @@ def migration_version(dsn: str, sqlite_path: str) -> dict[str, Any]:
 
 
 def ledger_summary(rows: list[dict[str, Any]], reason: str) -> dict[str, Any]:
-    """The model parameters, the budget and the model switches, read from the ledger."""
+    """The model parameters, the budget and the model switches, read from the ledger.
+
+    The budget block sums only the rows whose cost basis says their money
+    columns were priced (F-2 review finding). A row under the "not_applicable" basis
+    (the controlled Qwen profile) computed no amount: its 0 means "not
+    computed", not "free", so it must not render as a free call -- the block
+    says how many such rows exist instead. A row with no basis at all was
+    written before the column existed; its basis is unknown, so it is not
+    summed either and is reported separately. Token counters are facts about
+    the call, not about money, so every row counts.
+    """
     if reason:
         return {"source": "lingdoc_model_call_ledger", "readable": False, "detail": reason,
                 "parameters": [], "budget": {}, "switches": []}
@@ -1171,20 +1597,47 @@ def ledger_summary(rows: list[dict[str, Any]], reason: str) -> dict[str, Any]:
             parsed = {"unparsable": True}
         parameters.append({"model_id": row.get("model_id"), "provider": row.get("provider"),
                            "run_mode": row.get("run_mode"), "parameters": parsed})
-    reserved = sum(int(row.get("reserved_nano_usd") or 0) for row in rows)
-    actual = sum(int(row.get("actual_nano_usd") or 0) for row in rows)
+    priced: list[dict[str, Any]] = []
+    uncomputed = 0
+    unknown_basis = 0
+    for row in rows:
+        basis = (row.get("cost_basis") or "").strip()
+        if basis == COST_BASIS_NOT_APPLICABLE:
+            uncomputed += 1
+        elif basis:
+            priced.append(row)
+        else:
+            unknown_basis += 1
+    bases = sorted({(row.get("cost_basis") or "").strip() for row in priced})
+    if bases:
+        # The sums cover exactly the priced rows; the label names the basis
+        # those sums were computed under ("mixed_priced" when more than one).
+        basis_label = bases[0] if len(bases) == 1 else "mixed_priced"
+    elif uncomputed and not unknown_basis:
+        # Every row says its money was never computed: the block's zeros say
+        # the same thing, the way the JSON acceptance ledger already does.
+        basis_label = COST_BASIS_NOT_APPLICABLE
+    else:
+        basis_label = "none_priced"
+    budget: dict[str, Any] = {
+        "reserved_nano_usd": sum(int(row.get("reserved_nano_usd") or 0) for row in priced),
+        "actual_nano_usd": sum(int(row.get("actual_nano_usd") or 0) for row in priced),
+        "cost_basis": basis_label,
+        "priced_rows": len(priced),
+        # 未核算 ≠ 免费：not_applicable 行的金额列没有核算过，不是 0 费用；
+        # 无口径行是语义列存在之前写入的旧行，口径未知。两类的金额都不计入合计。
+        "uncomputed_rows": uncomputed,
+        "unknown_basis_rows": unknown_basis,
+        "input_tokens": sum(int(row.get("input_tokens") or 0) for row in rows),
+        "output_tokens": sum(int(row.get("output_tokens") or 0) for row in rows),
+    }
     return {
         "source": "lingdoc_model_call_ledger",
         "readable": True,
         "calls": len(calls),
         "switches": len(switches),
         "parameters": parameters,
-        "budget": {
-            "reserved_nano_usd": reserved,
-            "actual_nano_usd": actual,
-            "input_tokens": sum(int(row.get("input_tokens") or 0) for row in rows),
-            "output_tokens": sum(int(row.get("output_tokens") or 0) for row in rows),
-        },
+        "budget": budget,
         "switch_records": [{"from_model_id": row.get("switched_from_model_id"),
                             "to_model_id": row.get("model_id"),
                             "reason": row.get("switch_reason"),

@@ -15,9 +15,22 @@ validates its consumers.
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import os
 from pathlib import Path
 import re
+import shlex
+import subprocess
+import tempfile
+import textwrap
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Sequence
+from urllib.parse import parse_qsl, urlparse
+from unittest import mock
 
 import yaml
 
@@ -42,6 +55,13 @@ GATED_WORKFLOWS = (
 # GitHub's workflow schema spells an output id like this.
 OUTPUT_ID = re.compile(r"^[_a-zA-Z][a-zA-Z0-9_-]*$")
 
+# The scope allow-list's one registered extension (#737): app.yml forwards
+# the decision's provider_delegate key (the reverse delegation's package
+# list) to its verify job.  A key that is forwarded but never declared reads
+# as an empty string, so both directions are pinned: the workflow test below
+# pins the read, this map pins that no other key joins it silently.
+SCOPE_DELEGATION_KEYS = {"app.yml": {"provider_delegate"}}
+
 # A cross-job output read: ``needs.<job>.outputs.<name>``.
 NEEDS_OUTPUT = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
 
@@ -61,6 +81,186 @@ def load(name: str) -> dict:
 
 def jobs_of(name: str) -> dict:
     return load(name).get("jobs") or {}
+
+
+def gate_publish_heredoc() -> str:
+    """The python source of the gate's publish step, extracted verbatim.
+
+    The aggregation logic is the python heredoc inside the publish step; the
+    tests execute the real source against a fake runner instead of trusting
+    its wording (#724, #734).
+    """
+    for step in (jobs_of("lingdoc-review.yml").get("gate") or {}).get(
+            "steps") or []:
+        match = re.search(r"python - <<'PY'\n(.*?)\nPY\n",
+                          str(step.get("run") or ""), re.DOTALL)
+        if match:
+            return textwrap.dedent(match.group(1))
+    raise AssertionError("the gate publish step carries no python heredoc")
+
+
+def run_gate_publish(env: dict, *, markers: Sequence[str] = (),
+                     shards: list[dict] | None = None,
+                     api: "CheckRunsStub | None" = None):
+    """Run the publish step's heredoc in a fake runner workspace.
+
+    Returns ``(exit, summary, stderr, folder)``: the SystemExit the heredoc
+    raised (``None`` when it finished), the step summary it wrote, its
+    stderr, and the artifact folder.  ``api`` points ``GITHUB_API_URL`` at a
+    local check-runs stub (#734); without it the URL names a closed port, so
+    an accidental query fails fast instead of reaching the real API.
+
+    Every ``GITHUB_*`` variable the heredoc reads is set here: the CI step
+    running this suite sits inside a real event, and an inherited variable
+    must never speak for the fixture (#720's lesson, kept for #734).
+    """
+    source = gate_publish_heredoc()
+    tmp = Path(tempfile.mkdtemp())
+    folder = tmp / "lingdoc-checks"
+    folder.mkdir(parents=True)
+    scope = {"coverage": [], "uncovered": False,
+             "provider_shards": (SHARD_FIXTURE if shards is None else shards)}
+    (folder / "scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    for name in markers:
+        (folder / f"provider-shard-{name}.passed").touch()
+    environment = {
+        "RUNNER_TEMP": str(tmp),
+        "GITHUB_STEP_SUMMARY": str(tmp / "summary.md"),
+        "GITHUB_SHA": "a" * 40,
+        "PREPARE_RESULT": "success",
+        "CISCRIPTS": "success",
+        "SCOPE": "success",
+        "CONTRACTS": "success",
+        "PROVIDERS": "success",
+        "FRONTEND": "delegated to frontend.yml#verify "
+                    "(Test, type-check, and build)",
+        # The delegation verification (#734) reads these; a fixture without
+        # a delegation claim must cost zero queries, and one with a claim
+        # must never reach the real API.
+        "FRONTEND_DELEGATE": "",
+        "HEAD_SHA": "a" * 40,
+        "GITHUB_REPOSITORY": "owl/example",
+        "GITHUB_API_URL": "http://127.0.0.1:1",
+        # The heredoc reads the token for its queries; an inherited real one
+        # must never flow into an exec'd fixture (#724 review F5).
+        "GITHUB_TOKEN": "",
+        "SURFACE": "internal/lingdoc/workspace",
+        "REASON": "contribution surface changed",
+        "BASE": "b" * 40,
+    }
+    if api is not None:
+        environment["GITHUB_API_URL"] = api.url
+    environment.update(env)
+    stderr = io.StringIO()
+    raised = None
+    with mock.patch.dict(os.environ, environment), \
+            contextlib.redirect_stderr(stderr):
+        try:
+            exec(compile(source, "publish-step", "exec"), {})
+        except SystemExit as exit:
+            raised = exit
+    summary_path = Path(environment["GITHUB_STEP_SUMMARY"])
+    summary = summary_path.read_text(encoding="utf-8") \
+        if summary_path.exists() else ""
+    return raised, summary, stderr.getvalue(), folder
+
+
+DELEGATED_JOB = "Test, type-check, and build"
+
+# The shard matrix a fixture scope report carries (#724's aggregation
+# tests).  One fixture shard carries a -run filter (ADR 0015): the publish
+# step treats it like any other shard, the filter is inert data here.
+SHARD_FIXTURE = [
+    {"name": "lingdoc-workspace-a",
+     "packages": ["./internal/lingdoc/workspace/..."],
+     "go_test_filter": "^(TestDelivery|TestExport)$"},
+    {"name": "provider-rest", "packages": ["./internal/evidence/..."],
+     "go_test_filter": ""},
+]
+
+
+def check_run(*, name: str = DELEGATED_JOB, status: str = "completed",
+              conclusion: str | None = "success", run_id: int = 1) -> dict:
+    """One check-run record shaped like the API returns it."""
+    return {"id": run_id, "name": name, "status": status,
+            "conclusion": conclusion, "head_sha": "a" * 40}
+
+
+def payload(*runs: dict) -> dict:
+    """The check-runs response body for one page."""
+    return {"total_count": len(runs), "check_runs": list(runs)}
+
+
+def paged_behavior(pages: dict[int, tuple[dict, ...]]):
+    """Answers ``page`` from a table; a page the table omits is empty."""
+    def behavior(_path: str, query: dict) -> tuple[int, dict]:
+        return 200, payload(*pages.get(int(query.get("page", "1")), ()))
+    return behavior
+
+
+def sequence_behavior(responses: list[tuple[int, dict]]):
+    """Consumes ``(status, payload)`` pairs in order; the last repeats."""
+    lock = threading.Lock()
+    state = {"next": 0}
+
+    def behavior(_path: str, _query: dict) -> tuple[int, dict]:
+        with lock:
+            index = state["next"]
+            state["next"] = index + 1
+        return responses[min(index, len(responses) - 1)]
+    return behavior
+
+
+class CheckRunsStub:
+    """A local stand-in for the GitHub check-runs API (#734).
+
+    The aggregation talks to ``{GITHUB_API_URL}/repos/{repo}/commits/{sha}/
+    check-runs`` through urllib; the stub answers that route with the
+    behaviour a test hands it and records every request, so a test can pin
+    the URL construction, the pagination and the polling -- all on
+    127.0.0.1, no network.
+    """
+
+    def __init__(self, behavior):
+        self.requests: list[tuple[str, dict]] = []
+        stub = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urlparse(self.path)
+                query = dict(parse_qsl(parsed.query))
+                stub.requests.append((parsed.path, query))
+                status, body = stub._behavior(parsed.path, query)
+                content = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+
+            def log_message(self, *_args):
+                pass
+
+        self._behavior = behavior
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever,
+                                        daemon=True)
+        self._thread.start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}"
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    def __enter__(self) -> "CheckRunsStub":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
 
 
 def consumers_of(workflow: str):
@@ -158,13 +358,18 @@ class WorkflowWiringTests(unittest.TestCase):
                 self.assertNotRegex(text, r"lingdoc_\w*_scope\.py")
 
     def test_the_scope_job_declares_exactly_the_keys_of_its_own_jobs(self):
+        # One registered extension (#737): app.yml also forwards the
+        # decision's provider_delegate key to its verify job -- the reverse
+        # delegation's package list.  Like the allow-list itself the
+        # extension is explicit, so a silent extra key stays impossible.
         for name in GATED_WORKFLOWS:
             declared = (jobs_of(name).get("scope") or {}).get("outputs") or {}
             expected = {consumer.job: decision.output_key(consumer.workflow,
                                                           consumer.job)
                         for consumer in consumers_of(name)}
+            allowed = SCOPE_DELEGATION_KEYS.get(name, set())
             with self.subTest(workflow=name):
-                self.assertEqual(set(declared), set(expected))
+                self.assertEqual(set(declared), set(expected) | allowed)
                 for job, key in expected.items():
                     self.assertEqual(declared[job],
                                      f"${{{{ steps.scope.outputs.{key} }}}}")
@@ -190,10 +395,11 @@ class GateStepWiringTests(unittest.TestCase):
     """The steps of the pull request gate read one decision boolean each.
 
     The pull request gate is a *step-level* gate: its job always runs and its
-    steps are skipped one by one.  These three mistakes stay silent in CI --
-    a step that decides the formatting-only shortcut a second time, a step
-    that keeps running when the shortcut says otherwise, and a step whose
-    condition combines two booleans -- so they are guarded here.
+    steps are skipped one by one.  Mistakes that stay silent in CI are guarded
+    here: a step that decides the formatting-only shortcut a second time, a
+    step whose condition combines two booleans -- and, since #723, the return
+    of the deleted frontend rerun in any form, be it a dead ``run_frontend``
+    read or the npm commands themselves.
     """
 
     REVIEW = "lingdoc-review.yml"
@@ -223,20 +429,794 @@ class GateStepWiringTests(unittest.TestCase):
         for step in contract_steps:
             self.assertNotIn("format_only", str(step.get("if", "")))
 
-    def test_the_provider_and_frontend_steps_are_gated(self):
-        gated = [step for step in self._steps(self.REVIEW)
-                 if "run_providers" in str(step.get("if", ""))
-                 or ("run_frontend" in str(step.get("if", ""))
-                     and "contracts" not in str(step.get("if", "")))]
-        self.assertTrue(gated, "the provider and frontend steps were not found")
-        for step in gated:
-            # One boolean each: the decision module already folded the
-            # formatting-only shortcut into it.
-            condition = str(step.get("if", ""))
-            self.assertNotIn("format_only", condition)
-            self.assertNotIn("&&", condition)
-            self.assertRegex(condition,
-                             r"steps\.scope\.outputs\.run_(providers|frontend) == 'true'")
+    def test_the_provider_matrix_job_is_gated(self):
+        """The provider verification is a matrix job gated by one boolean.
+
+        The decision module folded the formatting-only shortcut into
+        ``run_providers``, so the job reads that boolean and nothing else.
+        The second term only keeps the matrix from being empty (the go-lint
+        precedent): an empty matrix is a job error, not a skip -- and the
+        decision module publishes an empty shard list exactly when the
+        provider step does not run (#724).
+        """
+        providers = jobs_of(self.REVIEW).get("providers") or {}
+        self.assertTrue(providers, "the provider matrix job was not found")
+        condition = str(providers.get("if", ""))
+        self.assertNotIn("format_only", condition)
+        self.assertEqual(
+            condition,
+            "needs.prepare.outputs.run_providers == 'true' && "
+            "needs.prepare.outputs.provider_shards != '[]'")
+
+    def test_the_gate_no_longer_reruns_the_frontend(self):
+        """The frontend verification lives once, in the frontend workflow.
+
+        ADR 0014, section three: the gate's own setup-node step and its
+        "Test, type-check and build frontend" step are gone, and with them
+        the ``run_frontend`` read.  A leftover condition on ``run_frontend``
+        would read an output the workflow never consumes, and a leftover npm
+        step would be the second copy of the three commands this ticket
+        exists to delete.
+        """
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertNotIn(
+            "run_frontend", text,
+            "the gate still reads run_frontend; the frontend rerun was to be "
+            "deleted, not kept on a dead output")
+        self.assertNotIn("setup-node", text,
+                         "the gate still sets up Node; it runs no JavaScript")
+        self.assertNotIn("npm", text,
+                         "the gate still runs an npm command; the three "
+                         "frontend commands live in frontend.yml alone")
+
+    def test_the_gate_publishes_the_delegated_frontend_verdict(self):
+        """The summary's frontend row reads the decision, not a dead outcome.
+
+        The five-key table keeps its frontend field; its value is now the
+        decision's delegation statement, so the step summary can say who
+        verifies the frontend instead of reporting the outcome of a step
+        that no longer exists.
+        """
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertIn("steps.scope.outputs.frontend", text)
+        self.assertNotIn("steps.frontend.outcome", text)
+        # The wording keeps delegation and skip apart (ADR 0014): a
+        # delegated check has real evidence on the named job; a skipped
+        # check is NOT RUN.
+        self.assertIn("Skipped means NOT RUN", text)
+        self.assertIn("Delegated", text)
+
+
+class ProviderMatrixWiringTests(unittest.TestCase):
+    """The provider shards are a matrix fed by the decision module (#724).
+
+    ADR 0014, section one: the shard list is data the decision module
+    publishes; the workflow only declares that it consumes it.  A cross-job
+    reference to an undeclared output reads an empty string and degenerates
+    silently, so the prepare job must declare exactly what the shard jobs
+    and the gate job read -- the allow-list rule the workflow-level gates
+    already live under.
+
+    The gate's aggregation logic is the python heredoc inside its publish
+    step.  The tests below do not trust its wording: they execute the real
+    heredoc against a fake runner and pin what it does -- a red shard turns
+    the gate red **and names the shard**, a green matrix publishes the
+    boundary, a skipped matrix stays green without shard evidence.
+    """
+
+    REVIEW = "lingdoc-review.yml"
+
+    SHARDS = SHARD_FIXTURE
+
+    # -- reading the workflow ------------------------------------------------
+    def _gate(self) -> dict:
+        return jobs_of(self.REVIEW)["gate"]
+
+    def _providers(self) -> dict:
+        return jobs_of(self.REVIEW)["providers"]
+
+    def _publish_step(self) -> dict:
+        for step in self._gate().get("steps") or []:
+            if "python - <<'PY'" in str(step.get("run") or ""):
+                return step
+        self.fail("the gate publish step carries no python heredoc")
+
+    def _heredoc(self, run: str) -> str:
+        match = re.search(r"python - <<'PY'\n(.*?)\nPY\n", run, re.DOTALL)
+        self.assertIsNotNone(match, "no closable python heredoc in the step")
+        return textwrap.dedent(match.group(1))
+
+    # -- executing a step's python against a fake runner ---------------------
+    def _run_publish(self, env: dict, markers: list[str],
+                     shards: list[dict] | None = None):
+        """Run the publish step's heredoc in a fake runner workspace.
+
+        Returns ``(exit, summary, stderr, folder)``: the SystemExit the
+        heredoc raised (``None`` when it finished), the step summary it
+        wrote, its stderr, and the artifact folder.
+        """
+        return run_gate_publish(env, markers=markers, shards=shards)
+
+    # -- the wiring ----------------------------------------------------------
+    def test_the_provider_matrix_consumes_the_decision_output(self):
+        providers = self._providers()
+        strategy = providers.get("strategy") or {}
+        matrix = strategy.get("matrix") or {}
+        self.assertEqual(
+            matrix.get("shard"),
+            "${{ fromJSON(needs.prepare.outputs.provider_shards) }}",
+            "the matrix must be generated from the decision module's shard "
+            "list, not from a list written down in the workflow")
+        self.assertFalse(strategy.get("fail-fast", True),
+                         "a failed shard must not cancel the other shards: "
+                         "every shard is an independent verification of "
+                         "this head")
+        self.assertEqual(str(providers.get("needs") or ""), "prepare")
+
+    def test_the_prepare_job_declares_the_outputs_the_shards_read(self):
+        declared = (jobs_of(self.REVIEW).get("prepare") or {}).get("outputs") or {}
+        self.assertEqual(declared.get("provider_shards"),
+                         "${{ steps.scope.outputs.provider_shards }}")
+        self.assertEqual(declared.get("run_providers"),
+                         "${{ steps.scope.outputs.run_providers }}")
+
+    def test_every_shard_keeps_race_and_fresh_counts(self):
+        """Red line two (ADR 0014): sharding must not dilute the command."""
+        body = yaml.safe_dump(self._providers())
+        self.assertIn("go test -race -count=1", body,
+                      "a shard runs the same command as the old step: race "
+                      "detection stays on and cached results stay out")
+        self.assertIn("-timeout 15m", body,
+                      "the package-level timeout headroom the M12 review "
+                      "added stays on every shard")
+        # The not-empty assertion per shard: a shard whose suite passes zero
+        # tests must fail, with the shard name in the failure.
+        source = self._heredoc(next(
+            str(step.get("run") or "")
+            for step in self._providers().get("steps") or []
+            if "python - <<'PY'" in str(step.get("run") or "")))
+        self.assertIn("no tests passed", source)
+        self.assertIn("SHARD_NAME", source)
+
+    def test_a_shards_test_filter_is_matrix_data_not_workflow_knowledge(self):
+        """The -run filter flows from the shard list (ADR 0015, #736).
+
+        The filter is the decision module's test-name partition of the
+        family it splits.  It must be read from the matrix like the
+        package list -- spelled there and only there -- and reach the
+        command only through the environment: the workflow file carries
+        no test name, and a shard without a filter runs unfiltered.
+        """
+        providers = self._providers()
+        env = providers.get("env") or {}
+        self.assertEqual(env.get("SHARD_TEST_FILTER"),
+                         "${{ matrix.shard.go_test_filter }}",
+                         "the filter must come from the decision module's "
+                         "shard data, not from a list written down here")
+        # The run block is asserted on the raw file: a YAML dump refolds
+        # lines and would hide the exact shell spelling.
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertIn('FILTER_ARGS+=( -run "$SHARD_TEST_FILTER" )', text)
+        self.assertIn('"${FILTER_ARGS[@]}"', text)
+        self.assertNotIn("-run $SHARD_TEST_FILTER", text,
+                         "an unquoted filter would word-split the pattern")
+        self.assertIsNone(re.search(r"\bTest[A-Z]\w*\b", text),
+                          "the workflow learned a test name; filters are "
+                          "data the matrix carries, never literals here")
+
+    def test_a_shard_with_no_passing_test_fails_and_names_the_shard(self):
+        source = self._heredoc(next(
+            str(step.get("run") or "")
+            for step in self._providers().get("steps") or []
+            if "python - <<'PY'" in str(step.get("run") or "")))
+        tmp = Path(tempfile.mkdtemp())
+        log = tmp / "lingdoc-checks" / "go-test-lingdoc-workspace.jsonl"
+        log.parent.mkdir(parents=True)
+        event = json.dumps({"Action": "fail", "Test": "TestBroken",
+                            "Package": "internal/lingdoc/workspace"})
+        log.write_text("\n".join([event, event]) + "\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"RUNNER_TEMP": str(tmp),
+                                          "SHARD_NAME": "lingdoc-workspace"}):
+            with self.assertRaises(SystemExit) as caught:
+                exec(compile(source, "shard-step", "exec"), {})
+        self.assertIn("lingdoc-workspace", str(caught.exception))
+
+    def test_a_shard_with_passing_tests_publishes_the_count(self):
+        source = self._heredoc(next(
+            str(step.get("run") or "")
+            for step in self._providers().get("steps") or []
+            if "python - <<'PY'" in str(step.get("run") or "")))
+        tmp = Path(tempfile.mkdtemp())
+        log = tmp / "lingdoc-checks" / "go-test-provider-rest.jsonl"
+        log.parent.mkdir(parents=True)
+        events = [json.dumps({"Action": "pass", "Test": f"Test{i}",
+                              "Package": "internal/evidence"})
+                  for i in range(3)]
+        log.write_text("\n".join(events) + "\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"RUNNER_TEMP": str(tmp),
+                                          "SHARD_NAME": "provider-rest"}):
+            exec(compile(source, "shard-step", "exec"), {})
+
+    def test_the_workflow_carries_no_package_names(self):
+        """Red line four (ADR 0014): the workflow is a dumb executor."""
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        for root in manifest.PROVIDER_ROOTS:
+            self.assertNotIn(root, text)
+        self.assertNotRegex(
+            text, r"internal/|cmd/",
+            "the workflow learned a path; the shard list comes from the "
+            "decision module alone")
+
+    def test_the_matrix_job_name_matches_the_coverage_attribution(self):
+        template = str(self._providers().get("name") or "")
+        sample = "lingdoc-workspace"
+        expanded = template.replace("${{ matrix.shard.name }}", sample)
+        self.assertEqual(expanded,
+                         decision.SHARD_JOB_NAME.format(name=sample),
+                         "the shard check a reader sees on the pull request "
+                         "must be the name the coverage table records")
+
+    def test_the_gate_job_aggregates_the_shards(self):
+        gate = self._gate()
+        self.assertEqual(gate.get("name"), "LingDoc PR gate",
+                         "the required check keeps its stable name")
+        self.assertEqual(list(gate.get("needs") or []),
+                         ["prepare", "providers"])
+        self.assertEqual(str(gate.get("if") or ""), "always()",
+                         "the gate job is always created (#309)")
+        body = yaml.safe_dump(gate)
+        self.assertIn("needs.providers.result", body,
+                      "the gate must aggregate the shard matrix")
+        self.assertIn("download-artifact", body,
+                      "the gate publishes the scope report and shard logs, "
+                      "so it has to fetch them from the other jobs")
+
+    # -- the aggregation, executed -------------------------------------------
+    def test_a_failed_shard_fails_the_gate_and_names_it(self):
+        raised, summary, errors, folder = self._run_publish(
+            {"PROVIDERS": "failure"},
+            markers=["lingdoc-workspace"])
+
+        self.assertIsNotNone(raised,
+                             "a failed shard must fail the required check")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn("Provider shard provider-rest", errors,
+                      "the gate must name the failed shard")
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["providers"], "failure")
+        self.assertIn("boundary", result)
+
+    def test_every_shard_verified_publishes_the_boundary(self):
+        raised, summary, errors, folder = self._run_publish(
+            {}, markers=["lingdoc-workspace-a", "provider-rest"])
+
+        self.assertIsNone(raised, errors)
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["providers"], "success")
+        self.assertEqual([row["name"] for row in result["provider_shards"]],
+                         ["lingdoc-workspace-a", "provider-rest"])
+        self.assertIn("Provider shard lingdoc-workspace-a", summary)
+        self.assertIn("Skipped means NOT RUN", summary)
+
+    def test_a_skipped_matrix_keeps_the_gate_green_without_shard_evidence(self):
+        raised, summary, errors, folder = self._run_publish(
+            {"PROVIDERS": "skipped"}, markers=[], shards=[])
+
+        self.assertIsNone(raised, errors)
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["providers"], "skipped")
+        self.assertEqual(result["provider_shards"], [])
+        self.assertIn("Skipped means NOT RUN", summary)
+
+    def test_a_failed_decision_job_fails_the_gate(self):
+        raised, summary, errors, folder = self._run_publish(
+            {"PREPARE_RESULT": "failure", "SCOPE": "failure",
+             "PROVIDERS": "skipped"},
+            markers=[], shards=[])
+
+        self.assertIsNotNone(raised,
+                             "a red decision job must turn the gate red")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn("decision step", errors)
+
+
+class AppProviderDelegationWiringTests(unittest.TestCase):
+    """The app workflow's pull_request side delegates the provider packages.
+
+    ADR 0014's reverse delegation (#737): the gate's provider shards verify
+    the touched provider packages with ``-race -count=1`` on this head, so
+    the app job's pull_request test set leaves exactly those packages out
+    instead of running them a second time without ``-race`` -- red line two
+    names that rerun as no substitute for gate evidence.  The workflow
+    itself learns no package names (red line four): the list is the
+    decision module's ``provider_delegate`` output, and **every** failure of
+    that data -- a non-PR event, an empty list, a list that resolves to
+    nothing, an exclusion that would empty the test set -- falls back to
+    running everything.  The step's real shell source is extracted from
+    app.yml and executed against a stubbed ``go``, the way the shard
+    aggregation executes its real heredoc (#724).
+    """
+
+    APP = "app.yml"
+    STEP = "Vet and test"
+
+    ALL_PACKAGES = [
+        "example.dev/lingdoc/internal/container",
+        "example.dev/lingdoc/internal/database",
+        "example.dev/lingdoc/internal/lingdoc/workspace",
+    ]
+    DELEGATED_PATTERN = "./internal/lingdoc/workspace/..."
+    DELEGATED_PACKAGES = ["example.dev/lingdoc/internal/lingdoc/workspace"]
+
+    def _step_source(self) -> str:
+        for step in (jobs_of(self.APP).get("verify") or {}).get("steps") or []:
+            if step.get("name") == self.STEP:
+                return str(step.get("run") or "")
+        raise AssertionError(f"app.yml has no {self.STEP!r} step")
+
+    def _bash_argv(self) -> list[str]:
+        """The argv prefix that runs a real bash for the extracted step.
+
+        From a native Windows parent, CreateProcess resolves a bare
+        ``bash`` to System32's WSL launcher **before** it ever consults
+        PATH, and the WSL interop mangles a multi-line ``-c`` script (its
+        first line vanishes).  PATH candidates are therefore probed with a
+        two-line smoke script -- the exact shape the step needs -- and the
+        first bash that runs it wins; on the runner and inside WSL that is
+        ``/bin/bash``, on a Windows host the Git Bash from PATH.
+        """
+        smoke = "V=go-probe\necho \"[$V]\""
+        candidates: list[str] = []
+        for directory in os.environ.get("PATH", "").split(os.pathsep):
+            if not directory:
+                continue
+            for name in ("bash.exe", "bash"):
+                candidate = Path(directory) / name
+                if candidate.is_file():
+                    candidates.append(str(candidate))
+                    break
+        candidates.append("bash")
+        for candidate in candidates:
+            try:
+                completed = subprocess.run([candidate, "-c", smoke],
+                                           capture_output=True, text=True,
+                                           timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if completed.stdout.strip() == "[go-probe]":
+                return [candidate, "-c"]
+        raise AssertionError(
+            "no bash on this host runs a two-line -c script; the "
+            "delegation step cannot be executed here")
+
+    def _run_step(self, *, event_name: str, delegation: str,
+                  go_list_fails: bool = False,
+                  delegated_packages: list[str] | None = None
+                  ) -> tuple[str, str, int]:
+        """Execute the extracted step under bash with a stubbed ``go``.
+
+        A shell function defined ahead of the step shadows the PATH lookup,
+        so the step's verbatim text runs unmodified: ``go list ./...``
+        answers with the fixture packages, ``go list <pattern>`` expands the
+        delegated pattern (or fails, when ``go_list_fails``), and ``go
+        vet`` / ``go test`` are recorded.
+
+        The fixture speaks through assignments prepended to the script, not
+        through the environment: on a Windows host the ``bash`` on PATH can
+        be a WSL launcher that inherits nothing, and an inherited
+        ``GITHUB_*`` variable must never speak for the fixture anyway
+        (#720's lesson).  Assignments override any inherited value in the
+        same shell, so the step's ``$GITHUB_EVENT_NAME`` and
+        ``$PROVIDER_DELEGATION`` reads stay exactly what the fixture set.
+        """
+        packages = (self.DELEGATED_PACKAGES if delegated_packages is None
+                    else delegated_packages)
+        fixture = [
+            f"GO_CALLS_LOG={shlex.quote('go-calls.log')}",
+            f"GITHUB_EVENT_NAME={shlex.quote(event_name)}",
+            f"PROVIDER_DELEGATION={shlex.quote(delegation)}",
+        ]
+        shim = [
+            "go() {",
+            '  printf \'go %s\\n\' "$*" >> "$GO_CALLS_LOG"',
+            '  if [ "$1" != "list" ]; then return 0; fi',
+            "  shift",
+            '  if [ "${1:-}" = "./..." ]; then',
+            f"    printf '%s\\n' {shlex.join(self.ALL_PACKAGES)}",
+            "    return 0",
+            "  fi",
+        ]
+        if go_list_fails:
+            shim.append("  return 1")
+        else:
+            shim += [
+                f'  if [ "${{1:-}}" = {shlex.quote(self.DELEGATED_PATTERN)} ]; then',
+                f"    printf '%s\\n' {shlex.join(packages)}",
+                "  fi",
+                "  return 0",
+            ]
+        shim.append("}")
+
+        # A cwd-relative log name: a Windows-style absolute path would not
+        # survive the redirect inside a foreign bash, and the stub must
+        # behave identically on the runner, in WSL and on a Windows host.
+        tmp = Path(tempfile.mkdtemp())
+        log = tmp / "go-calls.log"
+        script = "\n".join([*fixture, "", *shim, "", self._step_source()])
+        environment = {name: value for name, value in os.environ.items()
+                       if not name.startswith("GITHUB_")}
+        completed = subprocess.run([*self._bash_argv(), script], cwd=tmp,
+                                   env=environment, capture_output=True,
+                                   text=True, timeout=120)
+        calls = log.read_text(encoding="utf-8") if log.exists() else ""
+        return calls, completed.stdout + completed.stderr, completed.returncode
+
+    def _invoked_packages(self, calls: str, command: str) -> list[str]:
+        """The package arguments of the last ``go <command>`` invocation."""
+        lines = [line for line in calls.splitlines()
+                 if line.startswith(f"go {command} ")]
+        self.assertTrue(lines, f"the step never ran `go {command}`")
+        return lines[-1].split()[2:]
+
+    def test_a_pull_request_test_set_leaves_out_the_delegated_packages(self):
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN)
+
+        self.assertEqual(code, 0, output)
+        # The delegation was resolved through the decision's own list.
+        self.assertIn(f"go list {self.DELEGATED_PATTERN}", calls)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            self.assertNotIn(self.DELEGATED_PACKAGES[0], invoked,
+                             f"go {command} re-ran the delegated package")
+            for kept in self.ALL_PACKAGES:
+                if kept in self.DELEGATED_PACKAGES:
+                    continue
+                self.assertIn(kept, invoked)
+        self.assertIn("delegated", output,
+                      "the step says what was left to the gate's shards")
+
+    def test_a_push_keeps_the_full_list(self):
+        """The repository-wide validation does not shrink on a main push."""
+        calls, output, code = self._run_step(
+            event_name="push", delegation=self.DELEGATED_PATTERN)
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(f"go list {self.DELEGATED_PATTERN}", calls,
+                         "the delegation was consulted on a non-PR event")
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_an_empty_delegation_keeps_the_full_list(self):
+        """No delegation, no exclusion: the fail-open default."""
+        calls, output, code = self._run_step(event_name="pull_request",
+                                             delegation="")
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_an_unresolvable_delegation_keeps_the_full_list(self):
+        """A delegated list that resolves to nothing falls back (fail-open)."""
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN,
+            go_list_fails=True)
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_a_delegation_that_would_empty_the_list_keeps_it(self):
+        """Excluding every package is a judgement failure, not a test set."""
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN,
+            delegated_packages=self.ALL_PACKAGES)
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+        self.assertIn("full list", output)
+
+    def test_the_verify_job_reads_the_declared_delegation_output(self):
+        """The cross-job read is declared by the job that provides it."""
+        verify = jobs_of(self.APP)["verify"]
+        text = yaml.safe_dump(verify)
+        self.assertIn("needs.scope.outputs.provider_delegate", text)
+        declared = (jobs_of(self.APP).get("scope") or {}).get("outputs") or {}
+        self.assertEqual(declared.get("provider_delegate"),
+                         "${{ steps.scope.outputs.provider_delegate }}")
+
+    def test_the_delegation_step_carries_no_package_names(self):
+        """Red line four: the delegated list comes from the decision module.
+
+        The step knows no provider path -- it excludes whatever package list
+        the decision output carries.  (app.yml's own trigger table and the
+        build step name other paths on purpose; the manifest is their
+        registration.)
+        """
+        source = self._step_source()
+        for root in manifest.PROVIDER_ROOTS:
+            self.assertNotIn(root, source)
+        self.assertNotRegex(source, r"internal/|cmd/")
+
+
+class DelegationVerificationTests(unittest.TestCase):
+    """The gate verifies the delegated job's real result on this head (#734).
+
+    ADR 0014, section three's failure clause: a head where the frontend
+    workflow did not really run -- trigger, queue and failure all count as
+    not run -- must be red.  Since #723 the published frontend verdict is a
+    delegation statement, so the aggregation now asks the check runs of the
+    pull request's head SHA whether the delegated job really finished, and
+    exactly one conclusion keeps the delegation green: ``success``.  A
+    failed or absent delegated job, a window that closes on a pending run,
+    and a failed query all turn the gate red **and name the job and the
+    state that caused it**; the states are executed against a local
+    check-runs stub, the same way the shard aggregation executes the real
+    heredoc (#724).
+    """
+
+    REVIEW = "lingdoc-review.yml"
+    JOB = DELEGATED_JOB
+
+    def _gate(self) -> dict:
+        return jobs_of(self.REVIEW)["gate"]
+
+    def _run_gate(self, env: dict, stub: CheckRunsStub | None = None,
+                  shards: list[dict] | None = None):
+        return run_gate_publish(env, shards=shards, api=stub)
+
+    # -- the five states, executed against the stub ---------------------------
+    def test_a_successful_delegated_job_keeps_the_gate_green(self):
+        """The one green state: the delegated job really succeeded here."""
+        with CheckRunsStub(paged_behavior({1: (check_run(),)})) as stub:
+            raised, summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        # The query is addressed to the pull request's head SHA, with the
+        # page size the lookup paginates by.
+        self.assertEqual(stub.requests, [
+            (f"/repos/owl/example/commits/{'a' * 40}/check-runs",
+             {"per_page": "100", "page": "1"}),
+        ])
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"],
+                         {"delegated_job": self.JOB,
+                          "outcome": "verified",
+                          "detail": "conclusion=success"})
+        self.assertIn("frontend delegation", summary)
+        self.assertIn(self.JOB, summary)
+
+    def test_a_failed_delegated_job_fails_the_gate_and_names_it(self):
+        """A red delegated job is a red gate, naming job and conclusion."""
+        runs = (check_run(conclusion="cancelled", run_id=1),
+                check_run(conclusion="failure", run_id=2))
+        with CheckRunsStub(paged_behavior({1: runs})) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNotNone(raised,
+                             "a failed delegated job must fail the gate")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        # The newest completed run speaks: a stale `cancelled` from a run
+        # the re-push replaced must not be the reported state.
+        self.assertIn("conclusion=failure", errors)
+        self.assertNotIn("conclusion=cancelled", errors)
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"], "failed")
+
+    def test_an_absent_delegated_job_exhausts_the_window_and_fails(self):
+        """No check run on the head: the gate polls, then fails naming it."""
+        with CheckRunsStub(paged_behavior({})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05",
+                 "GATE_DELEGATION_POLL_TIMEOUT": "0.4"}, stub=stub)
+
+        self.assertIsNotNone(raised, "an absent delegated job must fail")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        self.assertIn("no check run", errors)
+        self.assertIn("polling window exhausted", errors)
+        self.assertGreaterEqual(len(stub.requests), 3,
+                                "the lookup must poll, not ask once")
+
+    def test_an_in_progress_job_polled_past_the_window_fails(self):
+        """Queueing counts as not run once the polling window closes."""
+        pending = check_run(status="in_progress", conclusion=None)
+        with CheckRunsStub(paged_behavior({1: (pending,)})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05",
+                 "GATE_DELEGATION_POLL_TIMEOUT": "0.4"}, stub=stub)
+
+        self.assertIsNotNone(raised, "a window that closed on a pending "
+                                      "run must fail the gate")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn(self.JOB, errors)
+        self.assertIn("status=in_progress", errors)
+        self.assertIn("polling window exhausted", errors)
+
+    def test_an_in_progress_job_that_finishes_in_time_is_accepted(self):
+        """The polling waits for a live run and accepts its success."""
+        responses = [(200, payload(check_run(status="in_progress",
+                                             conclusion=None))),
+                     (200, payload(check_run())),
+                     (200, payload(check_run()))]
+        with CheckRunsStub(sequence_behavior(responses)) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05"}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertGreaterEqual(len(stub.requests), 2,
+                                "the gate must have polled, not asked once")
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"], "verified")
+
+    def test_an_api_failure_fails_closed_and_names_the_reason(self):
+        """A failed query is a red gate with the reason; never a silent pass."""
+        with CheckRunsStub(
+                lambda _path, _query: (500, {"message": "boom"})) as stub:
+            raised, _summary, errors, folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNotNone(raised, "a query failure must fail closed")
+        self.assertNotEqual(raised.code, 0)
+        self.assertIn("500", errors)
+        self.assertIn("query failed", errors)
+        self.assertEqual(len(stub.requests), 1,
+                         "a query failure must not be retried into silence")
+        result = json.loads((folder / "result.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(result["frontend_delegation"]["outcome"],
+                         "query-failed")
+
+    # -- attribution precision ------------------------------------------------
+    def test_no_delegation_claim_means_zero_queries(self):
+        """Only a delegated face is verified; every other face costs nothing.
+
+        A manual dispatch, an unselected frontend and a head that cannot
+        start the frontend workflow all publish an empty delegate key; the
+        gate must then query nothing at all.
+        """
+        with CheckRunsStub(paged_behavior({})) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": "",
+                 "FRONTEND": "not run: frontend verification is not "
+                             "selected on this head"},
+                stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertEqual(stub.requests, [])
+
+    # -- the lookup itself ----------------------------------------------------
+    def test_the_lookup_pages_through_all_check_runs(self):
+        """A delegated job beyond the first page is still found."""
+        filler = tuple(check_run(name=f"Other job {index}", run_id=index)
+                       for index in range(100))
+        with CheckRunsStub(paged_behavior({1: filler, 2: (check_run(),)})) \
+                as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertEqual([query.get("page") for _path, query in stub.requests],
+                         ["1", "2"])
+
+    def test_a_cancelled_older_run_does_not_fail_a_live_rerun(self):
+        """frontend.yml cancels in progress on a re-push.
+
+        The stale `cancelled` check run must read as *pending*, not as a
+        failure, while the live run is still going; the live run's own
+        conclusion then settles the delegation.  (The gate's publish step
+        starts minutes after the event, so the live run's check run already
+        exists by then; a state where a stale cancelled run is the only one
+        on the head is a delegation that really did not run, and fails.)
+        """
+        cancelled = check_run(conclusion="cancelled", run_id=1)
+        live_pending = check_run(status="in_progress", conclusion=None,
+                                 run_id=2)
+        responses = [
+            (200, payload(cancelled, live_pending)),
+            (200, payload(cancelled, live_pending)),
+            (200, payload(cancelled, check_run(run_id=2))),
+        ]
+        with CheckRunsStub(sequence_behavior(responses)) as stub:
+            raised, _summary, errors, _folder = self._run_gate(
+                {"FRONTEND_DELEGATE": self.JOB,
+                 "GATE_DELEGATION_POLL_INTERVAL": "0.05"}, stub=stub)
+
+        self.assertIsNone(raised, errors)
+        self.assertGreaterEqual(len(stub.requests), 3)
+
+    # -- the wiring -----------------------------------------------------------
+    def test_the_workflow_permissions_stay_minimal(self):
+        """The verification reads check runs; that read is the only addition."""
+        self.assertEqual(load(self.REVIEW).get("permissions"),
+                         {"contents": "read", "checks": "read"})
+
+    def test_the_prepare_job_declares_the_delegate_and_the_gate_reads_it(self):
+        """The cross-job reference is an explicitly declared output (ADR 0005)."""
+        declared = (jobs_of(self.REVIEW).get("prepare") or {}).get("outputs") \
+            or {}
+        self.assertEqual(declared.get("frontend_delegate"),
+                         "${{ steps.scope.outputs.frontend_delegate }}")
+        gate_env = self._gate().get("env") or {}
+        self.assertEqual(gate_env.get("FRONTEND_DELEGATE"),
+                         "${{ needs.prepare.outputs.frontend_delegate }}")
+        # The check runs attach to the pull request's head commit, not to
+        # the merge commit GITHUB_SHA names (read off PR #731's check runs).
+        self.assertEqual(gate_env.get("HEAD_SHA"),
+                         "${{ github.event.pull_request.head.sha }}")
+
+    def test_the_publish_step_authenticates_with_the_workflow_token(self):
+        for step in self._gate().get("steps") or []:
+            if "python - <<'PY'" in str(step.get("run") or ""):
+                self.assertEqual(
+                    (step.get("env") or {}).get("GITHUB_TOKEN"),
+                    "${{ github.token }}",
+                    "the query carries exactly this workflow's permissions")
+                return
+        self.fail("the gate publish step carries no python heredoc")
+
+    def test_the_polling_knobs_are_env_tunable_with_defaults(self):
+        """The window and its interval are env knobs with registered defaults."""
+        source = gate_publish_heredoc()
+        interval = re.search(r"GATE_DELEGATION_POLL_INTERVAL',\s*'([0-9.]+)'",
+                             source)
+        window = re.search(r"GATE_DELEGATION_POLL_TIMEOUT',\s*'([0-9.]+)'",
+                           source)
+        self.assertIsNotNone(interval, "the poll interval must be an env knob")
+        self.assertIsNotNone(window, "the poll window must be an env knob")
+        self.assertEqual(float(interval.group(1)), 30.0,
+                         "the registered default interval is 30 seconds")
+        self.assertEqual(float(window.group(1)), 600.0,
+                         "the registered default window is 10 minutes, the "
+                         "measured frontend job (154s) plus margin")
+
+    def test_the_gate_job_outlives_the_polling_window(self):
+        """A job timeout below the window would kill the named reason."""
+        self.assertGreaterEqual(
+            int(self._gate().get("timeout-minutes") or 0), 15,
+            "the 10-minute polling window needs job headroom; a tighter "
+            "timeout would kill the publish step and lose the failure")
+
+    def test_the_delegated_check_name_is_unique_across_the_workflows(self):
+        """The check-run filter matches the display name; an ambiguous name
+        would let the gate read another job's evidence."""
+        delegated = {consumer.job_name
+                     for surface in manifest.load_surfaces()
+                     if surface.role == manifest.ROLE_FRONTEND
+                     for consumer in surface.consumers}
+        self.assertTrue(delegated)
+        published: dict[str, list[str]] = {}
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            for job in (jobs_of(path.name)).values():
+                name = str(job.get("name") or "unnamed")
+                published.setdefault(name, []).append(path.name)
+        for name in sorted(delegated):
+            with self.subTest(job_name=name):
+                self.assertEqual(published.get(name, []), ["frontend.yml"],
+                                 f"the delegated check name {name!r} must "
+                                 "identify exactly one job in the frontend "
+                                 "workflow")
 
 
 if __name__ == "__main__":

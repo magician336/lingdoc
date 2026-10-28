@@ -1,0 +1,25 @@
+{
+  "before": {
+    "second_path_result": "NOT RUN",
+    "main_path_verdict": "NOT RUN",
+    "provider_semantics_status": "not_verified",
+    "outcome_count": 105,
+    "outcome_statuses": [
+      "held",
+      "not_run"
+    ]
+  },
+  "after": {
+    "second_path_result": "PASS",
+    "main_path_verdict": "PASS",
+    "provider_semantics_status": "verified",
+    "outcome_count": 97,
+    "outcome_statuses": [
+      "held"
+    ]
+  },
+  "report_before": "D:\\wt\\lingdoc-485-evidence\\track-d-experiment\\run-final-20261025-093259-c2345229\\f01-report.json",
+  "report_after": "D:\\wt\\lingdoc-485-evidence\\track-d-experiment\\run-final-20261025-093259-c2345229\\f01-report-rejudged.json",
+  "contract": "D:\\wt\\lingdoc-judgement-src\\docs\\08-本轮实施方案\\contracts\\workflow.json",
+  "note": "Both release paths are the production ones; the call shape is the one the repository's own guard test uses (scripts/ci/test_lingdoc_rejudge_report.py)."
+}
