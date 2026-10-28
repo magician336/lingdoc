@@ -52,6 +52,10 @@ type ImpactLocationHint struct {
 	StartOffset    int    `json:"start_offset"`
 	EndOffset      int    `json:"end_offset"`
 	Excerpt        string `json:"excerpt"`
+	// Relocate marks a hint whose value no longer occurs verbatim in the
+	// current chapter body — recomputed when the chapter advances, so a
+	// stale location is flagged for re-anchoring, never silently expired.
+	Relocate bool `json:"relocate,omitempty"`
 }
 
 // impactLocationValue is one watched string and where the watch came from.

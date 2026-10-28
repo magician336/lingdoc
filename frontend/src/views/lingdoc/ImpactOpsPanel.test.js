@@ -365,3 +365,43 @@ test('#774 影响任务模板渲染正文位置引用与编辑器定位事件', 
   assert.match(code, /referenceOffset/)
   assert.match(code, /["']locate["']/)
 })
+
+test('#774 档 C：AI 句级定位触发建议管线并如实上报丢弃', async () => {
+  const handlers = { suggestImpactLocations: () => ({ data: { task: { id: 't1' }, suggestions: [{ id: 's1' }], dropped: [{ quote: '幻觉句', reason: 'quote_not_found' }], model: { model_run_id: 'loc-1' } } }) }
+  const { state } = setup(false, { handlers })
+  state.reason.value = '定位说明'
+  await state.suggestLocations({ id: 't1', target: { kind: 'ChapterVersion', id: 'c1' }, version: 2 })
+  assert.match(state.message.value, /1 条通过逐字验证/)
+  assert.match(state.message.value, /不保证完整/)
+  // 无说明不得触发。
+  state.reason.value = ''
+  await state.suggestLocations({ id: 't1', target: { kind: 'ChapterVersion', id: 'c1' }, version: 2 })
+  assert.match(state.error.value, /定位说明/)
+})
+
+test('#774 档 C：采纳或驳回建议走决策口且必须带处置说明', async () => {
+  const calls = []
+  const handlers = { decideImpactLocationSuggestion: (...args) => { calls.push(args); return { data: { task: {}, suggestions: [], model: {} } } } }
+  const { state } = setup(false, { handlers })
+  const task = { id: 't1', target: { kind: 'ChapterVersion', id: 'c1' }, version: 3 }
+  const suggestion = { id: 's1', status: 'pending', quote: 'q', start_offset: 0 }
+  await state.decideSuggestion(task, suggestion, 'reject')
+  assert.match(state.error.value, /处置说明/)
+  assert.equal(calls.length, 0)
+  state.reason.value = '与本次变更无关'
+  await state.decideSuggestion(task, suggestion, 'reject')
+  assert.equal(calls.length, 1)
+  assert.equal(state.suggestionStatusLabel('adopted'), '已采纳')
+})
+
+test('#774 档 C：任务模板渲染建议列表、采纳驳回按钮与不保证完整声明', () => {
+  const result = sfc.compileTemplate({ id: 'test-impact-ops', filename: filename.pathname, source: parsed.descriptor.template.content, compilerOptions: { bindingMetadata: compiled.bindings } })
+  assert.equal(result.errors.length, 0)
+  const code = result.code
+  assert.match(code, /location_suggestions/)
+  assert.match(code, /AI 句级定位/)
+  assert.match(code, /不保证完整/)
+  assert.match(code, /待重新定位/)
+  assert.match(code, /suggestionStatusLabel/)
+  assert.match(code, /impact_reason/)
+})

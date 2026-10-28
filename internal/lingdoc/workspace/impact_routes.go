@@ -138,6 +138,12 @@ func RegisterImpactRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 	r.POST("/impact-tasks/:taskId/actions", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.ImpactTaskActionInput) (json.RawMessage, int, bool, error) {
 		return ports.Impact.ActOnImpactTask(c.Request.Context(), a, c.Param("projectId"), c.Param("taskId"), k, i)
 	}))
+	r.POST("/impact-tasks/:taskId/location-suggestions", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.ImpactLocationSuggestionInput) (json.RawMessage, int, bool, error) {
+		return ports.Impact.SuggestImpactLocations(c.Request.Context(), a, c.Param("projectId"), c.Param("taskId"), k, i)
+	}))
+	r.POST("/impact-tasks/:taskId/location-suggestions/:suggestionId/decision", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.ImpactLocationSuggestionDecisionInput) (json.RawMessage, int, bool, error) {
+		return ports.Impact.DecideImpactLocationSuggestion(c.Request.Context(), a, c.Param("projectId"), c.Param("taskId"), c.Param("suggestionId"), k, i)
+	}))
 	r.GET("/runtime/controls", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RuntimeControl, error) {
 		return ports.Runtime.ListRuntimeControls(c.Request.Context(), a, c.Param("projectId"))
 	}))
