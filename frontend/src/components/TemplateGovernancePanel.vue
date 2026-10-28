@@ -249,8 +249,7 @@ async function registerFixtures() {
  const input = { template_id: version.template_id, version: version.version, fixtures: parseFixtureBatch(fixtureRegistration.fixturesJSON), reason: fixtureRegistration.reason.trim() }
  const response = await registerReplayFixtures(input, key(`register-fixtures/${version.template_id}/${version.version}`, input))
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
- replayCoverage.value = { template_id: response.data.template_id, version: response.data.version, content_hash: response.data.content_hash, policy_hash: response.data.policy_hash,
-  complete: response.data.coverage.complete, entries: response.data.coverage.entries, unsatisfied_declared_example_refs: response.data.coverage.unsatisfied_declared_example_refs }
+ replayCoverage.value = coverageViewFromReceipt(response.data)
  try { replayFixtures.value = (await listReplayFixtures()).data } catch (error: unknown) { fixtureCatalogError.value = error instanceof Error ? error.message : '样例目录不可用' }
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
  message.value = `已登记 ${response.data.registered.length} 条回放夹具；覆盖矩阵${response.data.coverage.complete ? '已完整' : '仍有缺口，发布前请补齐'}。`; emit('refresh')

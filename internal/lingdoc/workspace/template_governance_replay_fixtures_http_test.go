@@ -377,6 +377,70 @@ func TestTemplateVersionReplayFixtureOldPinDeactivatesHTTP(t *testing.T) {
 	}
 }
 
+// Spec D6 boundary pins: publish input decidable without the evaluator — an
+// empty fixture selection and a duplicated fixture id — must answer the 400
+// invalid_request family, never the 422 replay family, and leave zero
+// successful writes behind: no success receipt in the audit ledger, the two
+// denial receipts classify invalid_request, and the version stays draft at its
+// original revision.
+func TestTemplateVersionPublishInvalidFixtureSelectionIs400HTTP(t *testing.T) {
+	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
+	router := gin.New()
+	RegisterTemplateGovernanceRoutes(router.Group("/api/v1/lingdoc"), runtime)
+	draft := seedOrganizationDraftFixture(t, runtime, owner, ctx)
+	inputs := demoFixtureInputs("org-d6-")
+	registeredIDs := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		registeredIDs = append(registeredIDs, input.FixtureID)
+	}
+	decodeGovernanceResponse(t, registerFixturesHTTP(t, router, ctx, draft, "http-register-d6", inputs), http.StatusCreated, nil)
+
+	publishPath := "/api/v1/lingdoc/template-catalog/profiles/" + draft.TemplateID + "/versions/" + draft.Version + "/publish"
+	publish := func(ids []string, key string) *httptest.ResponseRecorder {
+		body, err := json.Marshal(governance.PublishInput{TemplateID: draft.TemplateID, Version: draft.Version, ExpectedRevision: draft.Revision, ReplayFixtureIDs: ids, Reason: "D6 boundary pin: shape rejection without evaluation"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return governanceHTTPRequest(router, ctx, http.MethodPost, publishPath, string(body), key)
+	}
+	for _, attempt := range []struct {
+		name string
+		ids  []string
+		key  string
+	}{
+		{name: "empty replay_fixture_ids", ids: []string{}, key: "http-publish-empty-ids"},
+		{name: "duplicate fixture id", ids: []string{registeredIDs[0], registeredIDs[0]}, key: "http-publish-duplicate-id"},
+	} {
+		response := publish(attempt.ids, attempt.key)
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_request") {
+			t.Fatalf("%s = %d %s, want 400 invalid_request", attempt.name, response.Code, response.Body.String())
+		}
+	}
+
+	var successes int64
+	if err := db.Table("audit_logs").Where("action=? AND outcome=?", "lingdoc.template.publish", "success").Count(&successes).Error; err != nil || successes != 0 {
+		t.Fatalf("rejected publishes must not write success receipts: %d %v", successes, err)
+	}
+	var failures []struct{ Details string }
+	if err := db.Table("audit_logs").Select("details").Where("action=? AND outcome=?", "lingdoc.template.publish", "failure").Find(&failures).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 2 {
+		t.Fatalf("failure receipts = %d, want one denial receipt per rejected publish", len(failures))
+	}
+	for _, receipt := range failures {
+		if !strings.Contains(receipt.Details, `"error_code":"invalid_request"`) {
+			t.Fatalf("D6 denial receipts must classify invalid_request: %+v", failures)
+		}
+	}
+	versionPath := "/api/v1/lingdoc/template-catalog/profiles/" + draft.TemplateID + "/versions/" + draft.Version
+	var version governance.TemplateVersion
+	decodeGovernanceResponse(t, governanceHTTPRequest(router, ctx, http.MethodGet, versionPath, "", ""), http.StatusOK, &version)
+	if version.State != template.RuleSetDraft || version.Revision != draft.Revision {
+		t.Fatalf("rejected publishes must not advance the version: state=%s revision=%d", version.State, version.Revision)
+	}
+}
+
 func TestTemplateVersionReplayFixturePayloadBoundedHTTP(t *testing.T) {
 	runtime, db, owner, _, ctx := governanceAdapterFixture(t)
 	router := gin.New()
