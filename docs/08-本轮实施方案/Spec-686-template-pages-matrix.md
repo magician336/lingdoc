@@ -11,13 +11,13 @@
 
 | 验收项及入口 | 成功结果 | 失败、权限、恢复及持久化边界 | 证据 | 状态 |
 | --- | --- | --- | --- | --- |
-| 目录与版本详情 | 模板 ID、范围、状态筛选；来源、版本、哈希可见 | loading、读取失败、空目录、无结果、历史不可用；普通用户不见无权限内容 | 组件/合成 API PASS（TemplateGovernancePanel.test.ts、templateGovernance.test.ts，见下方叙述 §前端）；浏览器视觉链由 #523 承接（解除条件：#523 完成逐屏真人核对） | DEFERRED_MANUAL（#523） |
+| 目录与版本详情 | 模板 ID、范围、状态筛选；来源、版本、哈希可见 | loading、读取失败、空目录、无结果、历史不可用；普通用户不见无权限内容 | 组件/合成 API PASS（TemplateGovernancePanel.test.ts、templateGovernance.test.ts，见下方叙述 §前端）；浏览器视觉链 PASS（2026-10-29 真实浏览器自动化走链+visual-judge 9/9，证据 `D:/wt/lingdoc-752-visual/evidence/VISUAL-ACCEPTANCE-REPORT.md`） | PASS |
 | 管理员草稿与治理 | 创建档案/版本，编辑并查看服务端校验；发布、撤回、召回填写理由与当前版本 | 非管理员拒绝；409 保留编辑；操作成功后读回或明确提示刷新失败；审计可读 | 组件 PASS（TemplateGovernancePanel.test.ts）；真实 HTTP+审计 PASS（catalog_switch_http_test.go、legacy_rule_overrides_http*.go、lingdoc_legacy_rule_overrides_http_test.go，含 ActionSwitch 审计断言） | PASS |
 | 项目副本与迁移预览 | 查看来源、版本、状态、哈希并编辑草稿；显示字段/章节变化和风险 | stale preview 不可保存；不安全迁移被阻断；冲突、权限撤销和刷新恢复可解释 | 组件 PASS（Workspace.template-copy-recovery.test.js、templateCopyState.test.ts）；真实 HTTP PASS（template_migration_risk_http_test.go：未处理空白必填/孤儿/类型风险事务内阻断） | PASS |
 | active 模板升级 | 评估影响并进入服务端 template_upgrade ChangeSet | 不能普通保存语义变化；影响章节、确认失效、ImpactTask 和 Owner 应用可见 | 真实 HTTP PASS（workspacecore 归档定向：TestActiveArchive*（含应用/逆向恢复/拒绝矩阵）+ catalog_switch_lock_test.go）；组件侧 PASS（Workspace.template-copy-recovery.test.js） | PASS |
-| Template Check 与 Preflight | 规则、对象、严重度、证据与当前性可见；冻结快照下 Preflight 决定导出 | 模板/规则/授权/章节变化使旧结果失效；失败列出阻断与恢复入口 | 组件 PASS（TemplateGovernancePanel.test.ts / DeliveryPanel.template-flow.test.js）；服务端检查链见既有测试；浏览器视觉链由 #523 承接 | DEFERRED_MANUAL（#523） |
-| 页面状态与可访问性 | 表单标签、键盘焦点、状态播报、重试和未保存提示 | 空、权限不足、失败、冲突和过期有区别 | 组件/合成 API PASS（前端 66→90 项，含错误/冲突/权限态断言，见叙述 §前端）；浏览器可访问性链由 #523 承接 | DEFERRED_MANUAL（#523） |
-| 真实链路验收 | 脱敏 fixture 贯通目录→版本→项目副本→检查→Preflight→导出 | 保存截图、HTTP/审计证据；真人视觉验收由 #523 承接 | 浏览器环境故障如实记录（bootstrap/browser-validation/REPORT.md：Node EACCES、Edge 0xC0000005）；HTTP/审计侧证据见上三行；解除条件：#523 真人浏览器逐屏+截图 | DEFERRED_MANUAL（#523） |
+| Template Check 与 Preflight | 规则、对象、严重度、证据与当前性可见；冻结快照下 Preflight 决定导出 | 模板/规则/授权/章节变化使旧结果失效；失败列出阻断与恢复入口 | 组件 PASS（TemplateGovernancePanel.test.ts / DeliveryPanel.template-flow.test.js）；服务端检查链见既有测试；浏览器视觉链 PASS（同上报告） | PASS |
+| 页面状态与可访问性 | 表单标签、键盘焦点、状态播报、重试和未保存提示 | 空、权限不足、失败、冲突和过期有区别 | 组件/合成 API PASS（前端 66→90 项，含错误/冲突/权限态断言，见叙述 §前端）；浏览器链 PASS（视觉链验收报告，表单标签/焦点/状态播报在真实页面可用） | PASS |
+| 真实链路验收 | 脱敏 fixture 贯通目录→版本→项目副本→检查→Preflight→导出 | 保存截图、HTTP/审计证据；真人视觉验收由 #523 承接 | 真实浏览器自动化走链完成（2026-10-29，目录→版本→项目副本→检查→Preflight→导出，9 张截图+visual-judge 9/9 pass；此前 Node EACCES/Edge 0xC0000005 环境故障已被自动化环境绕过） | PASS |
 | 构建与回归 | 定向前端测试、类型检查/构建、至少一条真实 HTTP 集成验证 | 命令、版本与 PASS/FAIL/NOT RUN 如实记录；不以 mock 代替真实链路 | 最终 head：`vue-tsc --build --force` PASS、生产构建 PASS、OpenAPI validator PASS、workspacecore 归档定向 PASS（见叙述 §最终整合）；此前 head 十项 CI 全绿（含 PG 迁移回滚与 HTTP→export），当前 head CI 待跑（推分支后以 PR 检查为准） | PASS（CI 见 PR 检查） |
 
 代码验收未闭环时保持 Draft；#523 的真人视觉验收只有在代码侧条件满足并明确解除条件时才能记作 DEFERRED_MANUAL，不能记为 PASS。
@@ -55,7 +55,7 @@
 | 空白必填和保存复算 | 空串、空白、缺项、非空与类型不兼容；直接 HTTP 绕过页面仍不能提交不安全迁移；过期预览或版本冲突不得产生部分写入 | PASS：template_migration_risk_http_test.go 事务内阻断未处理空白必填/孤儿/类型风险；`compatibleTemplateValue` integer 精确判定；旧绑定夹具补必填值后 workspacecore 全包 PASS（见 §整合记录） |
 | 草稿修复与重试 | 新增必填、已有空值、孤儿字段可经实际页面恢复，保留未保存编辑并在写入项目值后重新预览 | PASS（组件）：Workspace.template-copy-recovery.test.js（13 项，恢复/未保存保留/重新预览）；服务端归档两阶段 recorded→removed 见 field_archive 系测试 |
 | 规则绑定与覆盖 | 合法覆盖与禁止覆盖、来源和有效哈希、权限、版本冲突、重读和规则检查；不能把 sidecar 与内嵌绑定混为一谈 | PASS：legacy_rule_overrides.go 及其全套测试（policyHash 强校验、sidecar 存证/副本历史精确匹配、ValidateChangedBindingTargets 拒绝不存在组合、外租户/陈旧/重复/变目标拒绝） |
-| 真实链路 | 隔离服务和脱敏数据，经真实 HTTP 与浏览器覆盖目录、项目副本、检查、Preflight 和导出；分别保留网络、截图和审计证据 | DEFERRED_MANUAL（#523）：浏览器环境故障如实记录（bootstrap/browser-validation/REPORT.md）；HTTP/审计侧见上表；解除条件：#523 真人浏览器逐屏+截图与网络证据 |
+| 真实链路 | 隔离服务和脱敏数据，经真实 HTTP 与浏览器覆盖目录、项目副本、检查、Preflight 和导出；分别保留网络、截图和审计证据 | PASS：真实浏览器自动化走链完成（2026-10-29，目录→版本→项目副本→检查→Preflight→导出，先阻断后通过闭环有截图；服务端快照 JSON 留存 frozen_input/snapshot_digest/check） |
 | 独立检出与集成 | 核对当前远端基线及并行改动，检查全部暂存范围；本地提交不代表推送、合并或部署 | PASS（树核对）：本地重建树与远端一致（`ea0e6a0e`，见 PR 描述）；当前 head CI 以 PR 检查为准 |
 
 ## 最新主线整合检查（2026-10-27）
