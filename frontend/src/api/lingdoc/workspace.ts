@@ -155,7 +155,15 @@ export interface TemplateFieldArchiveReceipt {
 export interface CreateTemplateFieldArchiveInput {
   field_id: string
   expected_spec_revision: number
-  template_copy: TemplateCopyEditInput
+  expected_context_revision?: number
+  template_copy?: TemplateCopyEditInput
+  template_upgrade?: TemplateCopyEditInput & { field_values?: Record<string, string> }
+}
+
+export interface ArchivedTemplateFieldRemoval {
+  field_id: string
+  archive_id: string
+  expected_archive_version: number
 }
 
 export interface RemoveArchivedTemplateFieldInput {
@@ -284,6 +292,7 @@ export interface ChangeSet {
     base_template_copy_version: number
     definition: ProjectTemplateCopy['definition']
     field_values: Record<string, string>
+    archived_removals?: ArchivedTemplateFieldRemoval[]
     preview: TemplateMigrationPreview
     impact?: TemplateUpgradeImpact
   }
@@ -709,7 +718,7 @@ export const createChangeSet = (projectId: string, input: {
   affected_chapter_ids: string[]
   reason: string
   reverses_change_set_id?: string
-  template_upgrade?: TemplateCopyEditInput & { field_values?: Record<string, string> }
+  template_upgrade?: TemplateCopyEditInput & { field_values?: Record<string, string>; archived_removals?: ArchivedTemplateFieldRemoval[] }
 }, key: string) => post<Result<ChangeSet>>(
   `${base}/${segment(projectId)}/change-sets`, input, keyHeader(key),
 )

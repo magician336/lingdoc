@@ -273,6 +273,13 @@
                   <input v-model="templateUpgradeFieldValues[field.field_id]" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" :aria-label="`${field.field_id} 升级映射值`" />
                 </label>
               </details>
+              <section v-if="project.status === 'active' && activeArchiveCandidates.length" class="template-editor" aria-label="正式升级中的字段归档">
+                <h4>拟移除字段的旧值</h4>
+                <p>已立项课题的旧值默认保留。若要从研究条件中移除，请先归档并查看，再选择纳入升级；只有 Owner 应用正式变更时才会移除。</p>
+                <button v-for="id in activeArchiveCandidates" :key="id" type="button" :disabled="busy || templateCopyBusy || !!templateFieldArchivePendingId || !templateCopyCanEdit || templateCopyConflict || specChanged || specBasisChanged || pendingChangeSet?.status === 'assessed'" @click="archiveTemplateField(id)">归档正式升级字段 {{ id }}</button>
+                <p v-if="!activeArchiveSelectionsCurrent" class="warning">模板草稿、映射值或项目版本已变化；请移除旧选择，重新归档并核对。</p>
+                <ul v-if="activeArchivedRemovals.length"><li v-for="item in activeArchivedRemovals" :key="item.field_id">{{ item.field_id }} 将在应用时移除（归档 {{ item.archive_id }}） <button type="button" :disabled="busy || templateCopyBusy || pendingChangeSet?.status === 'assessed'" @click="removeActiveArchiveSelection(item.field_id)">取消纳入 {{ item.field_id }}</button></li></ul>
+              </section>
               <div class="actions">
                 <template v-if="project.status === 'draft'">
                   <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
@@ -280,7 +287,7 @@
                   <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged || !templateCopyPreviewCurrent || templateCopyPreviewBlocked || templateCopyConflict" @click="saveTemplateCopy">保存为新版本</button>
                 </template>
                 <template v-else>
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged || !templateUpgradeReason.trim() || pendingChangeSet?.status === 'assessed'" @click="createTemplateUpgradeChangeSet">{{ templateCopyBusy ? '处理中…' : '创建模板升级评估' }}</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged || !templateUpgradeReason.trim() || !activeArchiveSelectionsCurrent || pendingChangeSet?.status === 'assessed'" @click="createTemplateUpgradeChangeSet">{{ templateCopyBusy ? '处理中…' : '创建模板升级评估' }}</button>
                   <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未提交改动</button>
                 </template>
               </div>
@@ -388,13 +395,16 @@
                     </template>
                     <p v-else>无字段元数据。</p>
                   </template>
-                  <p v-if="templateFieldArchive.status === 'recorded' && !canRemoveArchivedTemplateField" class="muted">确认移除需要当前草稿预览、字段值和归档版本一致；如已变化，请重新预览并归档。</p>
-                  <button v-if="templateFieldArchive.status === 'recorded'" type="button" :disabled="!canRemoveArchivedTemplateField" @click="removeTemplateFieldAfterArchive">确认移除已归档字段</button>
+                  <p v-if="project.status === 'draft' && templateFieldArchive.status === 'recorded' && !canRemoveArchivedTemplateField" class="muted">确认移除需要当前草稿预览、字段值和归档版本一致；如已变化，请重新预览并归档。</p>
+                  <button v-if="project.status === 'draft' && templateFieldArchive.status === 'recorded'" type="button" :disabled="!canRemoveArchivedTemplateField" @click="removeTemplateFieldAfterArchive">确认移除已归档字段</button>
+                  <p v-if="project.status === 'active' && templateFieldArchive.status === 'recorded'" class="muted">确认纳入后仍需创建评估并由 Owner 应用；服务端会再次核对归档与升级目标。</p>
+                  <button v-if="project.status === 'active' && templateFieldArchive.status === 'recorded'" type="button" :disabled="!canUseActiveFieldArchive" @click="selectActiveFieldArchive">确认纳入正式升级</button>
                 </div>
               </section>
               <section v-if="project.status === 'active' && pendingChangeSet?.template_upgrade" class="change-set-preview" aria-label="待应用的模板升级">
                 <p><strong>模板升级评估 {{ pendingChangeSet.id.slice(0, 8) }}</strong></p>
                 <p>将影响 {{ pendingChangeSet.impacts.length }} 个章节，并使这些章节的旧确认失效。</p>
+                <p v-if="pendingChangeSet.template_upgrade.archived_removals?.length" class="warning">应用时将移除已归档字段：{{ pendingChangeSet.template_upgrade.archived_removals.map(item => item.field_id).join('、') }}；归档与原溯源保留。</p>
                 <template v-if="pendingChangeSet.template_upgrade.impact">
                   <p>字段 {{ pendingChangeSet.template_upgrade.impact.affected_field_ids.length }} 项 · 模板章节 {{ pendingChangeSet.template_upgrade.impact.affected_section_ids.length }} 项 · 规则 {{ pendingChangeSet.template_upgrade.impact.changed_rule_ids.length }} 项有变化。</p>
                   <p>将失效的旧确认：{{ pendingChangeSet.template_upgrade.impact.invalidated_confirmation_chapter_ids.length }} 章；问题处置：{{ pendingChangeSet.template_upgrade.impact.validation_issue_effect }}</p>
@@ -994,7 +1004,7 @@ import {
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite, getCurrentConfirmation, putReviewItemAnchor,
   getTemplateFieldArchive, listTemplateFieldArchives, previewTemplateCopyEdit, rejectChangeSet, removeArchivedTemplateField, restoreWorkingCopy, retrieveSources, saveLegacyRuleOverrides, saveProjectMembers, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
   type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Confirmation, type Project, type ProjectMemberInput, type ReviewDecision,
-  type LegacyRuleOverrideInput, type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateFieldArchive, type TemplateMigrationPreview,
+  type ArchivedTemplateFieldRemoval, type LegacyRuleOverrideInput, type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateFieldArchive, type TemplateMigrationPreview,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
@@ -1144,11 +1154,13 @@ const templateFieldArchives = ref<TemplateFieldArchive[]>([])
 const templateFieldArchivesLoaded = ref(false)
 const templateFieldArchive = ref<TemplateFieldArchive | null>(null)
 const templateFieldArchivePendingId = ref('')
+type ActiveArchiveSelection = ArchivedTemplateFieldRemoval & { fingerprint: string; valuesFingerprint: string; projectVersion: number; specRevision: number; contextRevision: number; copyVersion: number }
+const activeArchiveSelections = ref<Record<string, ActiveArchiveSelection>>({})
 let templateCopyPermissionEpoch = 0
 let templateCopyOperationEpoch = 0
 const templateUpgradeReason = ref('')
 const templateUpgradeFieldValues = ref<Record<string, string>>({})
-const pendingTemplateUpgrade = ref<{ fingerprint: string; reason: string; valuesFingerprint: string } | null>(null)
+const pendingTemplateUpgrade = ref<{ fingerprint: string; reason: string; valuesFingerprint: string; removalsFingerprint: string } | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
@@ -1920,11 +1932,40 @@ const canRemoveArchivedTemplateField = computed(() => {
     templateCopyPreviewCurrent.value && templateCopyCanEdit.value && !templateCopyConflict.value &&
     !specChanged.value && !specBasisChanged.value && !busy.value && !templateCopyBusy.value
 })
+const activeArchiveCandidates = computed(() => {
+  const current = project.value, draft = templateCopyDraft.value
+  if (!current || current.status !== 'active' || !draft) return []
+  const retained = new Set([...draft.fields.map(field => field.field_id), ...draft.required_fields])
+  return [...new Set([...Object.keys(current.spec), ...Object.keys(current.spec_fields ?? {})])]
+    .filter(id => !retained.has(id)).sort()
+})
+const activeArchivedRemovals = computed<ArchivedTemplateFieldRemoval[]>(() => Object.values(activeArchiveSelections.value)
+  .map(({ field_id, archive_id, expected_archive_version }) => ({ field_id, archive_id, expected_archive_version }))
+  .sort((left, right) => left.field_id.localeCompare(right.field_id)))
+const activeArchiveRemovalsFingerprint = computed(() => JSON.stringify(activeArchivedRemovals.value))
+const activeArchiveSelectionsCurrent = computed(() => {
+  const current = project.value
+  return !!current && Object.values(activeArchiveSelections.value).every(selection =>
+    selection.fingerprint === templateCopyFingerprint.value && selection.valuesFingerprint === templateUpgradeValuesFingerprint.value &&
+    selection.projectVersion === current.project_version && selection.specRevision === current.spec_revision &&
+    selection.contextRevision === current.current_context_revision && selection.copyVersion === current.template_copy_version &&
+    activeArchiveCandidates.value.includes(selection.field_id))
+})
+const canUseActiveFieldArchive = computed(() => {
+  const current = project.value, archive = templateFieldArchive.value
+  return !!current && current.status === 'active' && !!archive && archive.project_id === current.id &&
+    archive.status === 'recorded' && !archive.value_redacted && archive.archive_version > 0 &&
+    archive.project_version === current.project_version && archive.spec_revision === current.spec_revision &&
+    archive.template_copy_version === current.template_copy_version && activeArchiveCandidates.value.includes(archive.field_id) &&
+    templateCopyCanEdit.value && !templateCopyConflict.value && pendingChangeSet.value?.status !== 'assessed' &&
+    !specChanged.value && !specBasisChanged.value && !busy.value && !templateCopyBusy.value
+})
 watch([() => project.value?.id, () => auth.currentUserId, () => auth.effectiveTenantId], () => {
   templateFieldArchives.value = []
   templateFieldArchivesLoaded.value = false
   templateFieldArchive.value = null
   templateFieldArchivePendingId.value = ''
+  activeArchiveSelections.value = {}
 }, { flush: 'sync' })
 function resetLegacyRuleEditor() {
   legacyEnabled.value = ''
@@ -1978,7 +2019,8 @@ const templateUpgradeValuesFingerprint = computed(() => JSON.stringify(templateU
 const pendingTemplateUpgradeMatches = computed(() => !!pendingChangeSet.value?.template_upgrade && !!pendingTemplateUpgrade.value &&
   pendingTemplateUpgrade.value.fingerprint === templateCopyFingerprint.value &&
   pendingTemplateUpgrade.value.reason === templateUpgradeReason.value.trim() &&
-  pendingTemplateUpgrade.value.valuesFingerprint === templateUpgradeValuesFingerprint.value)
+  pendingTemplateUpgrade.value.valuesFingerprint === templateUpgradeValuesFingerprint.value &&
+  pendingTemplateUpgrade.value.removalsFingerprint === activeArchiveRemovalsFingerprint.value && activeArchiveSelectionsCurrent.value)
 const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
 const pendingDraftMatches = computed(() => {
   if (!pendingDraft.value) return false
@@ -2150,6 +2192,7 @@ function hydrateTemplateCopyDraft(item: Project | null) {
   templateCopyLatestLoaded.value = false
   templateCopyConflictOriginal.value = null
   templateUpgradeFieldValues.value = {}
+  activeArchiveSelections.value = {}
   legacyRuleId.value = ''
   legacyReason.value = ''
   legacyOverrideNeedsReview.value = false
@@ -2262,10 +2305,10 @@ async function loadTemplateFieldArchive(id: string) {
 }
 async function archiveTemplateField(id: string) {
   const current = project.value, definition = templateCopyInput()
-  if (!current || current.status !== 'draft' || !definition || !templateCopyCanEdit.value || templateCopyConflict.value ||
-      !templateCopyPreviewCurrent.value || !(templateCopyPreview.value?.orphaned ?? []).includes(id) ||
+  if (!current || !['draft', 'active'].includes(current.status) || !definition || !templateCopyCanEdit.value || templateCopyConflict.value ||
+      (current.status === 'draft' ? (!templateCopyPreviewCurrent.value || !(templateCopyPreview.value?.orphaned ?? []).includes(id)) : (!activeArchiveCandidates.value.includes(id) || pendingChangeSet.value?.status === 'assessed')) ||
       specChanged.value || specBasisChanged.value || !!templateFieldArchivePendingId.value || busy.value || templateCopyBusy.value) return
-  const input = { field_id: id, expected_spec_revision: current.spec_revision, template_copy: definition }
+  const input = { field_id: id, expected_spec_revision: current.spec_revision, ...(current.status === 'active' ? { expected_context_revision: current.current_context_revision, template_upgrade: { ...definition, field_values: { ...templateUpgradeValues.value } } } : { template_copy: definition }) }
   const attempt = `template-field-archive:${current.id}:${id}`
   const operation = startTemplateCopyOperation(current.id)
   templateCopyNotice.value = ''
@@ -2297,6 +2340,23 @@ async function archiveTemplateField(id: string) {
     if ((error as { status?: number })?.status === 409) attempts.delete(attempt)
     templateCopyFailed(error, operation)
   } finally { finishTemplateCopyOperation(operation) }
+}
+function selectActiveFieldArchive() {
+  const current = project.value, archive = templateFieldArchive.value
+  if (!current || !archive || current.template_copy_version == null || !canUseActiveFieldArchive.value) return
+  if (!window.confirm(`确认已查看字段 ${archive.field_id} 的旧值和溯源，将其纳入正式升级？应用评估后才移除。`)) return
+  activeArchiveSelections.value = { ...activeArchiveSelections.value, [archive.field_id]: {
+    field_id: archive.field_id, archive_id: archive.id, expected_archive_version: archive.archive_version,
+    fingerprint: templateCopyFingerprint.value, valuesFingerprint: templateUpgradeValuesFingerprint.value,
+    projectVersion: current.project_version, specRevision: current.spec_revision,
+    contextRevision: current.current_context_revision, copyVersion: current.template_copy_version,
+  } }
+}
+function removeActiveArchiveSelection(id: string) {
+  if (pendingChangeSet.value?.status === 'assessed' || busy.value || templateCopyBusy.value) return
+  const next = { ...activeArchiveSelections.value }
+  delete next[id]
+  activeArchiveSelections.value = next
 }
 async function removeTemplateFieldAfterArchive() {
   const current = project.value, archive = templateFieldArchive.value, definition = templateCopyInput()
@@ -2595,7 +2655,7 @@ function acknowledgeTemplateCopyConflict() {
 }
 async function createTemplateUpgradeChangeSet() {
   if (!project.value || project.value.status !== 'active' || !templateCopyCanEdit.value || templateCopyConflict.value ||
-      !templateCopyChanged.value || !templateUpgradeReason.value.trim() || templateCopyBusy.value || pendingChangeSet.value?.status === 'assessed') return
+      !templateCopyChanged.value || !activeArchiveSelectionsCurrent.value || !templateUpgradeReason.value.trim() || templateCopyBusy.value || pendingChangeSet.value?.status === 'assessed') return
   const definition = templateCopyInput()
   if (!definition) return
   const projectId = project.value.id
@@ -2611,14 +2671,14 @@ async function createTemplateUpgradeChangeSet() {
     fields: {},
     affected_chapter_ids: [],
     reason: requestedReason,
-    template_upgrade: { ...definition, field_values: requestedValues },
+    template_upgrade: { ...definition, field_values: requestedValues, archived_removals: activeArchivedRemovals.value },
   }
   try {
     const result = await createChangeSet(projectId, input, operationKey(`template-upgrade:${projectId}`, input))
     attempts.delete(`template-upgrade:${projectId}`)
     if (!templateCopyOperationCurrent(operation)) return
     pendingChangeSet.value = normalizeChangeSet(result.data)
-    pendingTemplateUpgrade.value = { fingerprint: requestedFingerprint, reason: requestedReason, valuesFingerprint }
+    pendingTemplateUpgrade.value = { fingerprint: requestedFingerprint, reason: requestedReason, valuesFingerprint, removalsFingerprint: JSON.stringify(input.template_upgrade.archived_removals) }
     templateCopyPreview.value = result.data.template_upgrade?.preview ?? null
     templateCopyPreviewFingerprint.value = requestedFingerprint
     templateCopyPreviewBasis.value = { projectId, projectVersion: definition.expected_project_version, copyVersion: definition.expected_template_copy_version, fingerprint: requestedFingerprint }
@@ -2931,7 +2991,7 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
       templateUpgradeReason.value = assessedTemplateUpgrade.reason
       templateUpgradeFieldValues.value = { ...(assessedTemplateUpgrade.template_upgrade.field_values ?? {}) }
       pendingChangeSet.value = assessedTemplateUpgrade
-      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason, valuesFingerprint: templateUpgradeValuesFingerprint.value }
+      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason, valuesFingerprint: templateUpgradeValuesFingerprint.value, removalsFingerprint: activeArchiveRemovalsFingerprint.value }
     }
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)

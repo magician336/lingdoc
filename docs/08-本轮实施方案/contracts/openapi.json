@@ -40033,15 +40033,52 @@
         ],
         "additionalProperties": false
       },
+      "ArchivedFieldReference": {"type": "object", "properties": {"field_id": {"type": "string"}, "archive_id": {"type": "string"}, "expected_archive_version": {"type": "integer", "minimum": 1}}, "required": ["field_id", "archive_id", "expected_archive_version"], "additionalProperties": false},
       "CreateFieldArchiveInput": {
         "type": "object",
         "properties": {
-          "field_id": {"type": "string", "minLength": 1},
-          "expected_spec_revision": {"type": "integer", "minimum": 0},
-          "template_copy": {"$ref": "#/components/schemas/TemplateCopyDefinitionInput"}
+          "field_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "template_copy": {
+            "$ref": "#/components/schemas/TemplateCopyDefinitionInput"
+          },
+          "expected_context_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "template_upgrade": {
+            "$ref": "#/components/schemas/TemplateUpgradeInput"
+          }
         },
-        "required": ["field_id", "expected_spec_revision", "template_copy"],
-        "additionalProperties": false
+        "required": [
+          "field_id",
+          "expected_spec_revision"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "template_copy"
+            ],
+            "not": {
+              "required": [
+                "template_upgrade"
+              ]
+            }
+          },
+          {
+            "required": [
+              "template_upgrade",
+              "expected_context_revision"
+            ]
+          }
+        ]
       },
       "RemoveArchivedFieldInput": {
         "type": "object",
@@ -40067,16 +40104,85 @@
       "FieldArchiveView": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"}, "project_id": {"type": "string"}, "field_id": {"type": "string"},
-          "status": {"type": "string", "enum": ["recorded", "removed"]}, "archive_version": {"type": "integer"},
-          "value_present": {"type": "boolean"}, "value": {"type": "string"},
-          "metadata_present": {"type": "boolean"}, "metadata": {"$ref": "#/components/schemas/SpecField"},
-          "value_redacted": {"type": "boolean"}, "created_by": {"type": "string"},
-          "created_at": {"type": "string", "format": "date-time"}, "project_version": {"type": "integer"},
-          "spec_revision": {"type": "integer"}, "template_copy_version": {"type": "integer"},
-          "target_content_hash": {"type": "string"}, "removed_at": {"type": "string", "format": "date-time"}
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "field_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "removed"
+            ]
+          },
+          "archive_version": {
+            "type": "integer"
+          },
+          "value_present": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          },
+          "metadata_present": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/SpecField"
+          },
+          "value_redacted": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "spec_revision": {
+            "type": "integer"
+          },
+          "template_copy_version": {
+            "type": "integer"
+          },
+          "target_content_hash": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "context_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
-        "required": ["id", "project_id", "field_id", "status", "archive_version", "value_present", "value", "metadata_present", "value_redacted", "created_by", "created_at", "project_version", "spec_revision", "template_copy_version", "target_content_hash"],
+        "required": [
+          "id",
+          "project_id",
+          "field_id",
+          "status",
+          "archive_version",
+          "value_present",
+          "value",
+          "metadata_present",
+          "value_redacted",
+          "created_by",
+          "created_at",
+          "project_version",
+          "spec_revision",
+          "template_copy_version",
+          "target_content_hash"
+        ],
         "additionalProperties": false
       },
       "FieldArchiveReceiptResponse": {
@@ -40254,6 +40360,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RuleBindingOverride"
+            }
+          },
+          "archived_removals": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
             }
           }
         },
@@ -40455,6 +40568,15 @@
           "project_id": {
             "type": "string",
             "minLength": 1
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "catalog"
+            ],
+            "readOnly": true,
+            "description": "Server-owned template source identity. fixed denotes an immutable built-in snapshot; catalog denotes a resolved catalog version. Omitted for historical copies whose source cannot be proven. Catalog recall fails on matching unknown-source copies rather than guessing their origin."
           },
           "source_template_id": {
             "type": "string",
@@ -47949,6 +48071,21 @@
           },
           "impact": {
             "$ref": "#/components/schemas/TemplateUpgradeImpact"
+          },
+          "archived_removals": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
+            }
+          },
+          "archive_restores": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
+            },
+            "readOnly": true
           }
         },
         "additionalProperties": false,

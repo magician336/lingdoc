@@ -113,6 +113,9 @@ func sourcePolicySidecarBytes(t *testing.T, svc *Service, copy *ProjectTemplateC
 }
 
 func assertSourcePolicySidecar(t *testing.T, svc *Service, copy *ProjectTemplateCopy) {
+	if copy.SourceKind != "catalog" {
+		t.Fatalf("source identity lost: %q", copy.SourceKind)
+	}
 	t.Helper()
 	var stored ProjectTemplateCopy
 	if err := json.Unmarshal([]byte(sourcePolicySidecarBytes(t, svc, copy)), &stored); err != nil {

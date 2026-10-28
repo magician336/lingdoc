@@ -1543,6 +1543,10 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 		if err != nil {
 			return operationResult[Project]{}, err
 		}
+		targetCopy.SourceKind = "fixed"
+		if catalogTarget {
+			targetCopy.SourceKind = "catalog"
+		}
 		target := targetCopy.Definition
 		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
 		if err := requireResolvedTemplateMigration(preview); err != nil {
@@ -1688,6 +1692,10 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		if err != nil {
 			copyRejected = &TemplateCopyFailure{TemplateID: resolved.Definition.ID, TemplateVersion: resolved.Definition.Version, ProjectID: id, Cause: err}
 			return operationResult[Project]{}, err
+		}
+		copy.SourceKind = "fixed"
+		if catalogTarget {
+			copy.SourceKind = "catalog"
 		}
 		template := resolved.Definition
 		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
@@ -1923,6 +1931,9 @@ func validateChangeSetInput(input CreateChangeSetInput) error {
 				return ErrInvalidRequest
 			}
 		}
+		if err := validateArchivedFieldReferences(upgrade.ArchivedRemovals, upgrade.FieldValues); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -2151,6 +2162,13 @@ func templateSpecAfterUpgrade(spec map[string]string, definition lingdoctemplate
 func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
 	if err := validateChangeSetInput(input); err != nil {
 		return nil, 0, false, err
+	}
+	if input.TemplateUpgrade != nil && len(input.TemplateUpgrade.ArchivedRemovals) > 0 {
+		prepared, err := s.prepareProvenanceOperation(ctx, actor, string(operationCreateChangeSet), projectID, projectID, input)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		ctx = prepared
 	}
 	return runOperation(s, ctx, actor, sourceOperationInput(operationCreateChangeSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[ChangeSetMutationTransaction], s.createAssessedChangeMutation(ctx, actor, projectID, input))
 }
@@ -2430,9 +2448,36 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if err := ValidateSemanticDeltas(featureTx, p, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
+		var archiveRecords []fieldArchiveRecord
+		var archiveBasis lockedArchiveProject
+		if upgrade := change.TemplateUpgrade; upgrade != nil && len(upgrade.ArchivedRemovals) > 0 {
+			var err error
+			archiveBasis, archiveRecords, err = validateActiveArchiveRemovals(ctx, featureTx, actor, p, upgrade.Definition, upgrade.FieldValues, upgrade.ArchivedRemovals)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
+		var restoreRecords []fieldArchiveRecord
+		if upgrade := change.TemplateUpgrade; upgrade != nil && len(upgrade.ArchiveRestores) > 0 {
+			if len(archiveRecords) > 0 || change.ReversesChangeSetID == "" {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			source, err := store.ChangeSet(projectID, change.ReversesChangeSetID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			archiveBasis, restoreRecords, err = validateActiveArchiveRestores(ctx, featureTx, actor, p, source, upgrade.ArchiveRestores)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
 		next := p
 		next.Spec = maps.Clone(p.Spec)
 		next.SpecFields = maps.Clone(p.SpecFields)
+		if len(archiveRecords) > 0 || len(restoreRecords) > 0 {
+			next.Spec = archiveRestoreSpec(archiveBasis.Spec, restoreRecords)
+			next.SpecFields = maps.Clone(archiveBasis.Metadata)
+		}
 		if next.Spec == nil {
 			next.Spec = map[string]string{}
 		}
@@ -2477,6 +2522,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 				metadata.ModifiedAt = time.Now().UTC()
 				next.SpecFields[fieldID] = metadata
 			}
+			for _, record := range archiveRecords {
+				delete(next.Spec, record.FieldID)
+				delete(next.SpecFields, record.FieldID)
+			}
 			copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, upgrade.Definition, TemplateCopyBound)
 			if err != nil {
 				return operationResult[ChangeSet]{}, fmt.Errorf("%w: invalid template upgrade snapshot", ErrInvalidState)
@@ -2504,11 +2553,28 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			metadata.ModifiedProjectVersion = next.ProjectVersion
 			next.SpecFields[fieldID] = metadata
 		}
+		for _, record := range restoreRecords {
+			if record.ValuePresent {
+				next.Spec[record.FieldID] = record.Value
+			} else {
+				delete(next.Spec, record.FieldID)
+			}
+			if record.MetadataPresent {
+				next.SpecFields[record.FieldID] = *record.Metadata
+			} else {
+				delete(next.SpecFields, record.FieldID)
+			}
+		}
 		if err := s.ApplySemanticDeltas(ctx, featureTx, actor, p, &next, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return operationResult[ChangeSet]{}, err
+		}
+		if len(archiveRecords) > 0 {
+			if err := markActiveArchivesRemoved(featureTx, actor, p, next, archiveRecords); err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
 		}
 		targetContext, targetSpec := next.CurrentContextRevision, next.SpecRevision
 		now := time.Now().UTC()
@@ -2566,6 +2632,11 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 	input := struct {
 		SourceChangeSetID string `json:"source_change_set_id"`
 	}{SourceChangeSetID: changeSetID}
+	prepared, err := s.prepareProvenanceOperation(ctx, actor, string(operationReassessChangeSet), projectID+"/"+changeSetID, projectID, input)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	ctx = prepared
 	return runOperation(s, ctx, actor, sourceOperationInput(operationReassessChangeSet, projectID+"/"+changeSetID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		// Every reassessment writes a new proposal and must have transactional audit.
 		if _, ok := tx.(auditTransaction); !ok {
@@ -2622,11 +2693,30 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 			// Do not carry a reviewed migration over edits to its source values.
 			// The caller must inspect the latest project and create a fresh upgrade.
 			for _, field := range upgrade.Preview.Fields {
-				if p.Spec[field.FieldID] != field.Value {
+				if !archiveRestoresField(upgrade.ArchiveRestores, field.FieldID) && p.Spec[field.FieldID] != field.Value {
 					return operationResult[ChangeSet]{}, ErrVersionConflict
 				}
 			}
-			if _, err := templateSpecAfterUpgrade(p.Spec, upgrade.Definition, upgrade.FieldValues); err != nil {
+			if len(upgrade.ArchivedRemovals) > 0 {
+				if _, _, err := validateActiveArchiveRemovals(ctx, tx, actor, p, upgrade.Definition, upgrade.FieldValues, upgrade.ArchivedRemovals); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
+			var restored []fieldArchiveRecord
+			if len(upgrade.ArchiveRestores) > 0 {
+				source, err := store.ChangeSet(projectID, stale.ReversesChangeSetID)
+				if err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				_, restored, err = validateActiveArchiveRestores(ctx, tx, actor, p, source, upgrade.ArchiveRestores)
+				if err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				if _, err := inverseTemplatePolicyBasis(tx, actor, p, stale); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
+			if _, err := templateSpecAfterUpgrade(archiveRestoreSpec(p.Spec, restored), upgrade.Definition, upgrade.FieldValues); err != nil {
 				return operationResult[ChangeSet]{}, ErrInvalidState
 			}
 			chapters, err := tx.Chapters(projectID)
@@ -2640,7 +2730,10 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 				impactChapterIDs = append(impactChapterIDs, chapter.ID)
 			}
 			slices.Sort(impactChapterIDs)
-			upgrade.Preview = buildTemplateMigrationPreview(p, upgrade.Definition, p.ProjectVersion)
+			previewProject := p
+			previewProject.Spec = archiveRestoreSpec(p.Spec, restored)
+			upgrade.Preview = buildTemplateMigrationPreview(previewProject, upgrade.Definition, p.ProjectVersion)
+			redactArchiveRestorePreview(&upgrade.Preview, upgrade.ArchiveRestores)
 			upgrade.Impact = buildTemplateUpgradeImpact(p.TemplateCopy, upgrade.Definition, upgrade.Preview, impactChapterIDs, chapters)
 			templateUpgrade = &upgrade
 		} else {

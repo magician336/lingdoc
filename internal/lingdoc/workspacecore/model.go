@@ -50,6 +50,7 @@ type Project struct {
 // published template version. Lifecycle status may advance; Definition and
 // its server-computed hashes never change after the row is inserted.
 type ProjectTemplateCopy struct {
+	SourceKind string `json:"source_kind,omitempty"`
 	// legacySourceRuleSetSnapshot is immutable source evidence for a legacy
 	// project-owned effective RuleSet. It is stored only in the server-owned
 	// template_binding sidecar and is never accepted from a client request.
@@ -262,6 +263,16 @@ type TemplateUpgrade struct {
 	FieldValues             map[string]string        `json:"field_values"`
 	Preview                 TemplateMigrationPreview `json:"preview"`
 	Impact                  TemplateUpgradeImpact    `json:"impact"`
+	ArchivedRemovals        []ArchivedFieldReference `json:"archived_removals,omitempty"`
+	ArchiveRestores         []ArchivedFieldReference `json:"archive_restores,omitempty"`
+}
+
+// ArchivedFieldReference binds a reviewed field archive to the specific
+// template upgrade. Restore references are authored only by inverse planning.
+type ArchivedFieldReference struct {
+	FieldID                string `json:"field_id"`
+	ArchiveID              string `json:"archive_id"`
+	ExpectedArchiveVersion int64  `json:"expected_archive_version"`
 }
 
 // TemplateUpgradeImpact makes the non-field consequences reviewable before
@@ -288,6 +299,7 @@ type TemplateUpgradeInput struct {
 	RequiredFields              []string                              `json:"required_fields"`
 	Rules                       []lingdoctemplate.Rule                `json:"rules"`
 	FieldValues                 map[string]string                     `json:"field_values,omitempty"`
+	ArchivedRemovals            []ArchivedFieldReference              `json:"archived_removals,omitempty"`
 }
 
 type CreateChangeSetInput struct {

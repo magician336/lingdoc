@@ -199,6 +199,7 @@ func hydrateTemplateBinding(db *gorm.DB, copy *ProjectTemplateCopy) error {
 	if err != nil {
 		return err
 	}
+	copy.SourceKind = value.SourceKind
 	copy.BindingPolicies = value.BindingPolicies
 	copy.SourcePolicyHash = value.SourcePolicyHash
 	copy.RuleSetSnapshot = value.RuleSetSnapshot
@@ -212,14 +213,14 @@ func hydrateTemplateBinding(db *gorm.DB, copy *ProjectTemplateCopy) error {
 	return nil
 }
 func saveTemplateBinding(tx gormTransaction, copy ProjectTemplateCopy) error {
-	if copy.RuleSetSnapshot == nil && copy.SourcePolicyHash == "" {
+	if copy.SourceKind == "" && copy.RuleSetSnapshot == nil && copy.SourcePolicyHash == "" {
 		return nil
 	}
 	if err := validateLegacySourceSnapshot(&copy); err != nil {
 		return err
 	}
 	return tx.PutProjectRecord(copy.ProjectID, "template_binding", copy.ID, 0, projectTemplateBindingSidecar{
-		ProjectTemplateCopy:         ProjectTemplateCopy{BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash},
+		ProjectTemplateCopy:         ProjectTemplateCopy{SourceKind: copy.SourceKind, BindingPolicies: copy.BindingPolicies, SourcePolicyHash: copy.SourcePolicyHash, RuleSetSnapshot: copy.RuleSetSnapshot, SourceRuleSetID: copy.SourceRuleSetID, SourceRuleSetVersion: copy.SourceRuleSetVersion, SourceRuleSetHash: copy.SourceRuleSetHash},
 		LegacySourceRuleSetSnapshot: copy.legacySourceRuleSetSnapshot,
 	})
 }

@@ -20,9 +20,11 @@ const (
 )
 
 type CreateFieldArchiveInput struct {
-	FieldID              string                      `json:"field_id"`
-	ExpectedSpecRevision int64                       `json:"expected_spec_revision"`
-	TemplateCopy         TemplateCopyDefinitionInput `json:"template_copy"`
+	FieldID                 string                      `json:"field_id"`
+	ExpectedSpecRevision    int64                       `json:"expected_spec_revision"`
+	TemplateCopy            TemplateCopyDefinitionInput `json:"template_copy"`
+	ExpectedContextRevision int64                       `json:"expected_context_revision,omitempty"`
+	TemplateUpgrade         *TemplateUpgradeInput       `json:"template_upgrade,omitempty"`
 }
 
 type RemoveArchivedFieldInput struct {
@@ -62,6 +64,7 @@ type FieldArchiveView struct {
 	ProjectVersion      int64      `json:"project_version"`
 	SpecRevision        int64      `json:"spec_revision"`
 	TemplateCopyVersion int64      `json:"template_copy_version"`
+	ContextRevision     int64      `json:"context_revision,omitempty"`
 	TargetContentHash   string     `json:"target_content_hash"`
 	RemovedAt           *time.Time `json:"removed_at,omitempty"`
 }
@@ -95,6 +98,52 @@ func fieldArchiveCandidate(p Project, fieldID string, specRevision int64, input 
 		return "", "", fmt.Errorf("%w: target template still contains the field", ErrInvalidRequest)
 	}
 	return hashImpactValue(definition), definition.ContentHash, nil
+}
+
+func activeArchivePlanHash(definition Template, fieldValues map[string]string) string {
+	fieldValues = maps.Clone(fieldValues)
+	if fieldValues == nil {
+		fieldValues = map[string]string{}
+	}
+	return hashImpactValue(struct {
+		Definition  Template
+		FieldValues map[string]string
+	}{definition, fieldValues})
+}
+
+func (s *Service) activeFieldArchiveCandidate(ctx context.Context, tx Transaction, actor Actor, p Project, input CreateFieldArchiveInput) (string, string, error) {
+	upgrade := input.TemplateUpgrade
+	if p.Status != "active" || p.DiscardedAt != nil || p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound || upgrade == nil {
+		return "", "", ErrInvalidState
+	}
+	if p.ProjectVersion != upgrade.ExpectedProjectVersion || p.TemplateCopyVersion != upgrade.ExpectedTemplateCopyVersion ||
+		p.SpecRevision != input.ExpectedSpecRevision || p.CurrentContextRevision != input.ExpectedContextRevision {
+		return "", "", ErrVersionConflict
+	}
+	if len(upgrade.ArchivedRemovals) != 0 || input.TemplateCopy.ExpectedProjectVersion != 0 || input.TemplateCopy.Fields != nil {
+		return "", "", ErrInvalidRequest
+	}
+	if err := validateChangeSetInput(CreateChangeSetInput{ExpectedContextRevision: input.ExpectedContextRevision, Reason: "archive candidate", TemplateUpgrade: upgrade}); err != nil {
+		return "", "", err
+	}
+	if err := requireUnmodifiedLegacyRuleProjection(p.TemplateCopy, upgrade.Rules); err != nil {
+		return "", "", err
+	}
+	definition, err := editableTemplateDefinitionFromUpgrade(p.TemplateCopy.Definition, *upgrade)
+	if err != nil {
+		return "", "", err
+	}
+	definition, err = s.bindUpgradeRuleSet(ctx, tx, actor, p.TemplateCopy.Definition, definition, *upgrade)
+	if err != nil {
+		return "", "", err
+	}
+	if _, exists := templateFieldDefinitions(definition)[input.FieldID]; exists {
+		return "", "", fmt.Errorf("%w: target template still contains the field", ErrInvalidRequest)
+	}
+	if _, exists := upgrade.FieldValues[input.FieldID]; exists {
+		return "", "", ErrInvalidRequest
+	}
+	return activeArchivePlanHash(definition, upgrade.FieldValues), definition.ContentHash, nil
 }
 
 // Archive/remove need a currently readable field, not merely a previously
@@ -132,7 +181,13 @@ func (s *Service) CreateFieldArchive(ctx context.Context, actor Actor, projectID
 	operation.Output = operationOutputFieldArchive
 	return runOperation(s, prepared, actor, operation, mutationPort[Transaction],
 		func(tx Transaction, p Project) (operationResult[FieldArchiveReceipt], error) {
-			targetHash, contentHash, err := fieldArchiveCandidate(p, input.FieldID, input.ExpectedSpecRevision, input.TemplateCopy)
+			var targetHash, contentHash string
+			var err error
+			if input.TemplateUpgrade != nil {
+				targetHash, contentHash, err = s.activeFieldArchiveCandidate(prepared, tx, actor, p, input)
+			} else {
+				targetHash, contentHash, err = fieldArchiveCandidate(p, input.FieldID, input.ExpectedSpecRevision, input.TemplateCopy)
+			}
 			if err != nil {
 				return operationResult[FieldArchiveReceipt]{}, err
 			}
@@ -161,7 +216,7 @@ func (s *Service) CreateFieldArchive(ctx context.Context, actor Actor, projectID
 				Status: "recorded", ArchiveVersion: 1, ValuePresent: valuePresent, Value: value,
 				MetadataPresent: metadataPresent, CreatedBy: actor.UserID, CreatedAt: now,
 				ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, TemplateCopyVersion: p.TemplateCopyVersion,
-				TargetContentHash: contentHash}, TargetDefinitionHash: targetHash}
+				ContextRevision: p.CurrentContextRevision, TargetContentHash: contentHash}, TargetDefinitionHash: targetHash}
 			if metadataPresent {
 				record.Metadata = &metadata
 			}

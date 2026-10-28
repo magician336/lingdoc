@@ -162,6 +162,7 @@ func (s *Service) ApplyLegacyRuleOverrides(ctx context.Context, actor Actor, pro
 			if err != nil {
 				return operationResult[Project]{}, err
 			}
+			copy.SourceKind = p.TemplateCopy.SourceKind
 			copy.RuleSetSnapshot = &effective
 			copy.RulesetHash = effective.RulesetHash
 			copy.SourceRuleSetID, copy.SourceRuleSetVersion, copy.SourceRuleSetHash = p.TemplateCopy.SourceRuleSetID, p.TemplateCopy.SourceRuleSetVersion, p.TemplateCopy.SourceRuleSetHash

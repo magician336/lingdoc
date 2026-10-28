@@ -393,7 +393,33 @@ func (r *TemplateGovernanceRuntime) AffectedProjects(ctx context.Context, tx *go
 	}
 	ids := []string{}
 	err := tx.Table("lingdoc_projects p").Distinct("p.id").Joins("JOIN lingdoc_project_template_copies c ON c.project_id=p.id AND c.version=p.template_copy_version").Where("p.tenant_id=? AND p.discarded_at IS NULL AND c.source_template_id=? AND c.source_template_version=?", actor.TenantID, id, version).Order("p.id").Pluck("p.id", &ids).Error
-	return ids, err
+	if err != nil {
+		return nil, err
+	}
+	catalogIDs := []string{}
+	for _, projectID := range ids {
+		var record struct{ PayloadJSON string }
+		err := tx.Table("lingdoc_g5_records r").Select("r.payload_json").Joins("JOIN lingdoc_project_template_copies c ON c.project_id=r.project_id AND c.id=r.id").Joins("JOIN lingdoc_projects p ON p.id=c.project_id AND p.template_copy_version=c.version").Where("r.project_id=? AND r.kind=?", projectID, "template_binding").Take(&record).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		var binding struct {
+			SourceKind string `json:"source_kind"`
+		}
+		if err == nil {
+			if err := json.Unmarshal([]byte(record.PayloadJSON), &binding); err != nil {
+				return nil, err
+			}
+		}
+		switch binding.SourceKind {
+		case "fixed":
+		case "catalog":
+			catalogIDs = append(catalogIDs, projectID)
+		default:
+			return nil, fmt.Errorf("%w: template source identity is unknown for project %s", governance.ErrInvalidState, projectID)
+		}
+	}
+	return catalogIDs, nil
 }
 
 // Template-source IDs are chunk IDs. Catalog metadata can cite any project the

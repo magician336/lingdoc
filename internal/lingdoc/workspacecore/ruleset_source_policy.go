@@ -82,6 +82,7 @@ func inheritRuleSetSourcePolicy(previous, next *ProjectTemplateCopy) error {
 
 	// Mutate only after all validation succeeds. Neither the old copy nor the
 	// canonical Definition shares mutable policy/snapshot data with the sidecar.
+	next.SourceKind = previous.SourceKind
 	next.BindingPolicies, next.SourcePolicyHash = policies, previous.SourcePolicyHash
 	next.RuleSetSnapshot = source
 	next.legacySourceRuleSetSnapshot = nil

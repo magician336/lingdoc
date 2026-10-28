@@ -16,8 +16,9 @@ import (
 type controlledInverseKey struct{}
 type inverseTemplatePlanKey struct{}
 type inverseTemplatePlan struct {
-	SourceID   string
-	Definition lingdoctemplate.Template
+	SourceID        string
+	Definition      lingdoctemplate.Template
+	ArchiveRestores []ArchivedFieldReference
 }
 
 type reverseChangeSetInput struct {
@@ -35,6 +36,11 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 		return nil, 0, false, err
 	}
 	input := reverseChangeSetInput{SourceChangeSetID: changeID}
+	prepared, err := s.prepareProvenanceOperation(ctx, actor, string(operationReverseChangeSet), projectID+"/"+changeID, projectID, input)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	ctx = prepared
 	return runOperation(s, ctx, actor, sourceOperationInput(operationReverseChangeSet, projectID+"/"+changeID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), reverseChangeSetSources), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		source, err := inverseSourceAccess(tx, p, actor, changeID)
 		if err != nil {
@@ -60,6 +66,16 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 		mutationCtx := context.WithValue(ctx, controlledInverseKey{}, source.ID)
 		mutationCtx = context.WithValue(mutationCtx, reverseSourceKey{}, source.ID)
 		if source.TemplateUpgrade != nil {
+			var restores []ArchivedFieldReference
+			if len(source.TemplateUpgrade.ArchivedRemovals) > 0 {
+				restores, err = activeArchiveRestoreReferences(source)
+				if err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				if _, _, err = validateActiveArchiveRestores(ctx, tx, actor, p, source, restores); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
 			baseline, oldCopy, err := inverseTemplateBaseline(tx, actor, p.ID, source)
 			if err != nil {
 				return operationResult[ChangeSet]{}, err
@@ -86,7 +102,7 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 				upgrade.RuleBindingOverrides = append([]lingdoctemplate.RuleBindingOverride{}, lingdoctemplate.CloneRuleBindingOverrides(definition.RuleBindingOverrides)...)
 			}
 			create.TemplateUpgrade = upgrade
-			mutationCtx = context.WithValue(mutationCtx, inverseTemplatePlanKey{}, inverseTemplatePlan{SourceID: source.ID, Definition: definition})
+			mutationCtx = context.WithValue(mutationCtx, inverseTemplatePlanKey{}, inverseTemplatePlan{SourceID: source.ID, Definition: definition, ArchiveRestores: restores})
 		}
 		if len(semantic) > 0 {
 			if create.TemplateUpgrade != nil {
@@ -207,7 +223,25 @@ func inverseTemplateFieldValues(tx Transaction, p Project, source ChangeSet, bas
 	if _, err := verifyTemplateUpgradeEvidence(upgrade); err != nil {
 		return nil, err
 	}
+	var archiveRecords []fieldArchiveRecord
+	if len(upgrade.ArchivedRemovals) > 0 {
+		refs, err := activeArchiveRestoreReferences(source)
+		if err != nil {
+			return nil, err
+		}
+		archiveRecords, err = activeArchiveRestoreRecords(tx, source, refs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	expected, err := templateSpecAfterUpgrade(baseline.Spec, upgrade.Definition, upgrade.FieldValues)
+	for _, record := range archiveRecords {
+		value, present := baseline.Spec[record.FieldID]
+		if present != record.ValuePresent || value != record.Value {
+			return nil, ErrInvalidState
+		}
+		delete(expected, record.FieldID)
+	}
 	if err != nil || !maps.Equal(expected, target.Spec) {
 		return nil, ErrInvalidState
 	}
@@ -215,7 +249,14 @@ func inverseTemplateFieldValues(tx Transaction, p Project, source ChangeSet, bas
 	for key, oldValue := range baseline.Spec {
 		targetValue, targetPresent := target.Spec[key]
 		if !targetPresent {
-			return nil, ErrInvalidState
+			archived := false
+			for _, record := range archiveRecords {
+				archived = archived || record.FieldID == key
+			}
+			if !archived {
+				return nil, ErrInvalidState
+			}
+			continue
 		}
 		if targetValue == oldValue {
 			continue
@@ -228,7 +269,7 @@ func inverseTemplateFieldValues(tx Transaction, p Project, source ChangeSet, bas
 	}
 	// Newly introduced values keep the existing readable-orphan behavior of a
 	// structural migration. There is no implicit delete or empty-string value.
-	if _, err := templateSpecAfterUpgrade(p.Spec, definition, values); err != nil {
+	if _, err := templateSpecAfterUpgrade(archiveRestoreSpec(p.Spec, archiveRecords), definition, values); err != nil {
 		return nil, fmt.Errorf("%w: current fields are incompatible with the historical template: %v", ErrVersionConflict, err)
 	}
 	return values, nil

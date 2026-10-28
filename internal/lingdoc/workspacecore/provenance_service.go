@@ -213,6 +213,11 @@ func (s *Service) prepareProvenanceOperation(ctx context.Context, actor Actor, o
 			return err
 		}
 		requests = provenanceFieldRequests(p)
+		extra, err := archiveRestoreProvenanceRequests(tx, pid, op, target, body)
+		if err != nil {
+			return err
+		}
+		requests = append(requests, extra...)
 		return nil
 	})
 	if err != nil {

@@ -99,3 +99,13 @@
 | 证据、反馈与恢复 | 15 | 3 / 3 / 2 | 3 / 2 / 2 | 定向 handler/SQLite 和旧基线真实链已有证据；最终基线、全包超时、并发和 PG 仍待确认。 |
 
 按协议权重计算，局部抽样 H_L 约 50/100、F_R 约 52/100（均 C），不可与仓库历史整体暂定分数直接比较。优先的结构改进是把项目副本的迁移风险、有效规则快照及可恢复操作收敛到同一服务契约，减少 UI 与多个入口各自拼接规则；回归门槛为权限、版本冲突、审计回滚、来源/哈希、HTTP 和浏览器恢复路径均有证据。
+
+### 2026-10-28 代码续作（整合验证中）
+
+- PR head `17391bdec3fad80d78ee8fddce7426c92756f546` 的十项 CI 已全部通过；其中 Interface Integration run `40498893816` 实际完成 PostgreSQL 迁移回滚与 SQLite/PostgreSQL HTTP→export。这是上一提交证据，不自动覆盖以下新增代码。
+- 项目模板副本由服务端记录 fixed/catalog 来源并持久化到现有 sidecar；修改副本、规则覆盖及正式变更继承身份。召回排除固定演示来源，纳入目录来源；历史无标记保持未知并阻断确定性召回，不猜测历史。无需 DDL。相关 workspace/core 定向及 catalog 正向测试通过，整合版另验。
+- active 字段归档通过正式 ChangeSet 引用，应用前重新核对归档、权限、版本和字段；逆向恢复原值及元数据，公开预览不显示恢复的归档值。页面增加查看确认与正式变更引用。独立候选 HTTP/服务/契约和类型检查通过，整合后最终验证进行中。
+- 自定义组织模板原403来自验收驱动的空来源列表。修复隔离合成来源后，旧二进制真实TCP完成来源读回和模板草稿创建；发布和最终浏览器链仍需当前源码验证。
+- 人工项仍由 #523 跟进：真人完成页面试用并记录结果后解除；负责人审查并决定合并与上线。当前没有需要 gong 提供的外部账号或权限。代码、自动验证、人工验收和部署分别记录。
+
+最终整合验证：workspacecore 全包 PASS（157.128s，最后预览修复前编译）；最后修复后 `go test -vet=off -p 2 -timeout 90s -run 'TestActiveArchive|TestFieldArchiveOpenAPIContract' -count=1 ./internal/lingdoc/workspace ./internal/lingdoc/workspacecore` PASS（10.475s / 4.864s），`vue-tsc --build --force` PASS。OpenAPI validator PASS。全包证据与最终定向证据共同使用，未声称最终改动后的全包已重跑。生产构建和完整浏览器仍在验证。

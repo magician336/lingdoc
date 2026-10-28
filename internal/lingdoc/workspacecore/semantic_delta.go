@@ -606,6 +606,7 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 		if err != nil {
 			return err
 		}
+		copy.SourceKind = before.TemplateCopy.SourceKind
 		copy.RuleSetSnapshot = &effective
 		copy.SourceRuleSetID = before.TemplateCopy.SourceRuleSetID
 		copy.SourceRuleSetVersion = before.TemplateCopy.SourceRuleSetVersion
