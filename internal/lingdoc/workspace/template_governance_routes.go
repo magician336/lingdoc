@@ -27,6 +27,8 @@ func RegisterTemplateGovernanceRoutes(group *gin.RouterGroup, runtime *TemplateG
 	catalog.POST("/profiles/:templateId/versions", h.saveDraft)
 	catalog.GET("/profiles/:templateId/versions/:version", h.getVersion)
 	catalog.POST("/profiles/:templateId/versions/:version/publish", h.publish)
+	catalog.POST("/profiles/:templateId/versions/:version/replay-fixtures", h.registerReplayFixtures)
+	catalog.GET("/profiles/:templateId/versions/:version/replay-coverage", h.replayCoverage)
 	catalog.POST("/profiles/:templateId/versions/:version/withdraw", h.withdraw)
 	catalog.POST("/profiles/:templateId/versions/:version/recall", h.recall)
 	catalog.GET("/rule-definitions", h.ruleDefinitions)
@@ -87,7 +89,49 @@ func (h governanceRoutesHandler) listReplayFixtures(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := h.runtime.ListReplayFixtures(actor)
+	out, err := h.runtime.ListReplayFixtures(c.Request.Context(), actor)
+	if err != nil {
+		sendGovernanceError(c, err)
+		return
+	}
+	sendGovernanceOK(c, 200, out, false)
+}
+
+// registerReplayFixtures is the thin transport spelling of the one
+// registration operation: it binds the path identity to the body, requires a
+// human decision (machines get 403 human_decision_required like publish), and
+// renders what the operation and its errors declare. All validation, trial
+// replay, atomicity, idempotency and audit live in
+// governance.Service.RegisterFixtures.
+func (h governanceRoutesHandler) registerReplayFixtures(c *gin.Context) {
+	actor, ok := h.actor(c, true)
+	if !ok {
+		return
+	}
+	var input governance.RegisterFixturesInput
+	if !decodeBody(c, &input) || !matchesPathBody(c, input.TemplateID, input.Version) {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	out, err := h.runtime.Service().RegisterFixtures(c.Request.Context(), actor, key, input)
+	if err != nil {
+		sendGovernanceError(c, err)
+		return
+	}
+	sendGovernanceOK(c, 201, out, false)
+}
+
+// replayCoverage is the manager-only coverage readback; the operation itself
+// answers non-managers with the anti-enumerating not-found.
+func (h governanceRoutesHandler) replayCoverage(c *gin.Context) {
+	actor, ok := h.actor(c, true)
+	if !ok {
+		return
+	}
+	out, err := h.runtime.Service().ReplayCoverage(c.Request.Context(), actor, c.Param("templateId"), c.Param("version"))
 	if err != nil {
 		sendGovernanceError(c, err)
 		return

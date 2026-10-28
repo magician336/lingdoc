@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
@@ -40,41 +39,50 @@ type TemplateGovernanceRuntime struct {
 	sources      SourceApplicationService
 	model        core.AgentModel
 	service      *governance.Service
-	fixtureMu    sync.RWMutex
-	fixtures     map[string]ReviewedTemplateFixture
+	// fixtureSeed is the deployment bootstrap of the builtin in-memory
+	// backend; runtime-registered fixtures go through the audited
+	// RegisterFixtures channel instead. Both sources meet in the one merged
+	// store below.
+	fixtureSeed []ReviewedTemplateFixture
+	fixtures    governance.ReplayFixtureStore
 }
-type ReviewedTemplateFixture struct {
-	Fixture             governance.ReplayFixture
-	TemplateID          string
-	TemplateVersion     string
-	TemplateContentHash string
-	PolicyHash          string
-	ReviewedBy          string
-	ReviewReference     string
-	ReviewedAt          time.Time
-}
+
+// ReviewedTemplateFixture is one server-registered reviewed fixture with the
+// pin the server computed. It is the governance package's record type; the
+// builtin demo fixtures and deployment bootstrap seeds share it with tenant
+// registration rows.
+type ReviewedTemplateFixture = governance.ReplayFixtureRecord
 type TemplateGovernanceRuntimeOption func(*TemplateGovernanceRuntime) error
 
-// WithReviewedTemplateFixtures is server configuration, not an HTTP endpoint.
-// Entries bind actual immutable positive/negative inputs to reviewed content.
+// WithReviewedTemplateFixtures is deployment bootstrap configuration: entries
+// bind actual immutable positive/negative inputs to reviewed content before
+// the first request, joining the code-defined builtin set in the merged
+// store's in-memory backend. Spec #768 deliberately revised the earlier
+// "server configuration, not an HTTP endpoint" decision — human replay
+// evidence now also enters at runtime through the audited registration
+// channel (governance Service.RegisterFixtures); this option remains the
+// deployment-time seed only and is never populated from requests.
 func WithReviewedTemplateFixtures(fixtures []ReviewedTemplateFixture) TemplateGovernanceRuntimeOption {
 	return func(runtime *TemplateGovernanceRuntime) error {
 		for _, record := range fixtures {
 			if record.Fixture.ID == "" || record.TemplateID == "" || record.TemplateVersion == "" || record.TemplateContentHash == "" || record.PolicyHash == "" || record.ReviewedBy == "" || record.ReviewReference == "" || record.ReviewedAt.IsZero() {
 				return governance.ErrReplayRequired
 			}
-			if _, exists := runtime.fixtures[record.Fixture.ID]; exists {
-				return governance.ErrInvalidRequest
+			// A deployment seed may rebind a fixture id it already seeded
+			// (replace, never append a second row under one identity); tenant
+			// registration is the only writer of the stored set and rejects
+			// builtin identities outright.
+			replaced := false
+			for i := range runtime.fixtureSeed {
+				if runtime.fixtureSeed[i].Fixture.ID == record.Fixture.ID {
+					runtime.fixtureSeed[i] = record
+					replaced = true
+					break
+				}
 			}
-			raw, err := json.Marshal(record)
-			if err != nil {
-				return err
+			if !replaced {
+				runtime.fixtureSeed = append(runtime.fixtureSeed, record)
 			}
-			var isolated ReviewedTemplateFixture
-			if err := json.Unmarshal(raw, &isolated); err != nil {
-				return err
-			}
-			runtime.fixtures[isolated.Fixture.ID] = isolated
 		}
 		return nil
 	}
@@ -108,7 +116,7 @@ func nilPort(port any) bool {
 }
 
 func NewTemplateGovernanceRuntime(db *gorm.DB, ports TemplateGovernancePorts, sources SourceApplicationService, model core.AgentModel, options ...TemplateGovernanceRuntimeOption) (*TemplateGovernanceRuntime, error) {
-	runtime := &TemplateGovernanceRuntime{db: db, review: ports, permissions: ports, agentContext: ports, sources: sources, model: model, fixtures: map[string]ReviewedTemplateFixture{}}
+	runtime := &TemplateGovernanceRuntime{db: db, review: ports, permissions: ports, agentContext: ports, sources: sources, model: model}
 	if db == nil || nilPort(ports) {
 		return nil, governance.ErrUnavailable
 	}
@@ -127,7 +135,10 @@ func NewTemplateGovernanceRuntime(db *gorm.DB, ports TemplateGovernancePorts, so
 			return nil, err
 		}
 	}
-	runtime.service = governance.NewService(db, governance.Ports{Authorizer: runtime, RuleSets: runtime, Sources: runtime, Replay: runtime, Usage: runtime, Context: runtime, Model: runtime})
+	// The merged fixture store is assembled after the options so deployment
+	// seeds join the builtin in-memory backend of the one store.
+	runtime.fixtures = governance.NewReplayFixtureStore(db, runtime.fixtureSeed)
+	runtime.service = governance.NewService(db, governance.Ports{Authorizer: runtime, RuleSets: runtime, Sources: runtime, Replay: runtime, Usage: runtime, Context: runtime, Model: runtime, Fixtures: runtime.fixtures})
 	return runtime, nil
 }
 func (r *TemplateGovernanceRuntime) Service() *governance.Service {
@@ -683,15 +694,20 @@ type ReplayFixtureSummary struct {
 }
 
 // ListReplayFixtures returns the exact registered fixture IDs and their
-// reviewed pins in stable order. Callers with current read authority may list
-// them; listing grants no execution authority and never mutates state.
-func (r *TemplateGovernanceRuntime) ListReplayFixtures(actor governance.Actor) ([]ReplayFixtureSummary, error) {
+// reviewed pins in stable order, merged from the builtin backend and this
+// tenant's stored rows by the one fixture store. Callers with current read
+// authority may list them; listing grants no execution authority and never
+// mutates state.
+func (r *TemplateGovernanceRuntime) ListReplayFixtures(ctx context.Context, actor governance.Actor) ([]ReplayFixtureSummary, error) {
 	if r == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
 		return nil, governance.ErrUnauthorized
 	}
-	r.fixtureMu.RLock()
-	summaries := make([]ReplayFixtureSummary, 0, len(r.fixtures))
-	for _, record := range r.fixtures {
+	records, err := r.fixtures.ListFixtures(ctx, actor.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]ReplayFixtureSummary, 0, len(records))
+	for _, record := range records {
 		summaries = append(summaries, ReplayFixtureSummary{
 			FixtureID:       record.Fixture.ID,
 			RuleID:          record.Fixture.RuleID,
@@ -703,24 +719,22 @@ func (r *TemplateGovernanceRuntime) ListReplayFixtures(actor governance.Actor) (
 			TemplateVersion: record.TemplateVersion,
 		})
 	}
-	r.fixtureMu.RUnlock()
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].FixtureID < summaries[j].FixtureID })
 	return summaries, nil
 }
 
-// GetReplayFixture never performs nested pool IO. Publication already checked
-// current authority; this reader returns only server-registered reviewed data.
-func (r *TemplateGovernanceRuntime) GetReplayFixture(_ context.Context, actor governance.Actor, id string) (governance.ReplayFixture, error) {
+// GetReplayFixture never performs nested pool IO on a live transaction: the
+// publication paths call it outside their transactions, and the merged store
+// answers builtin ids from memory and tenant ids from this tenant's rows.
+func (r *TemplateGovernanceRuntime) GetReplayFixture(ctx context.Context, actor governance.Actor, id string) (governance.ReplayFixture, error) {
 	if r == nil || actor.TenantID == 0 || actor.UserID == "" {
 		return governance.ReplayFixture{}, governance.ErrUnauthorized
 	}
-	r.fixtureMu.RLock()
-	record, ok := r.fixtures[id]
-	r.fixtureMu.RUnlock()
-	if !ok {
-		return governance.ReplayFixture{}, governance.ErrReplayRequired
+	fixture, err := r.fixtures.GetReplayFixture(ctx, actor, id)
+	if err != nil {
+		return governance.ReplayFixture{}, err
 	}
-	raw, err := json.Marshal(record.Fixture)
+	raw, err := json.Marshal(fixture)
 	if err != nil {
 		return governance.ReplayFixture{}, err
 	}
@@ -728,13 +742,31 @@ func (r *TemplateGovernanceRuntime) GetReplayFixture(_ context.Context, actor go
 	err = json.Unmarshal(raw, &copy)
 	return copy, err
 }
+
+// ErrStaleReplayPin is the answer for a publication whose submitted fixtures
+// are bound to a different content pin than the current version. It keeps the
+// replay requirement's status and error code (the judgment result is
+// unchanged) and states the recovery step: register again against the current
+// pin (Spec #768 D7).
+var ErrStaleReplayPin = clienterror.Wrap(clienterror.Form{Status: 422, Code: "template_replay_required", Message: "已登记夹具与当前版本内容摘要不一致，旧 pin 已失活，请对当前 pin 重新登记后再发布。", Retryable: false}, "template_governance_stale_replay_pin", governance.ErrReplayRequired)
+
+// Verify keeps its pin precheck (template id, version, content hash and policy
+// hash must all match the stored record) before the shared replay judgment. A
+// fixture that is not registered for this tenant under the current pin is a
+// replay requirement; a fixture-storage failure is fail-closed (Spec #768
+// D7): it propagates as the explicit unavailable error and never silently
+// degrades to a builtin-only verdict.
 func (r *TemplateGovernanceRuntime) Verify(ctx context.Context, actor governance.Actor, version governance.TemplateVersion, ids []string) error {
 	for _, id := range ids {
-		r.fixtureMu.RLock()
-		record, ok := r.fixtures[id]
-		r.fixtureMu.RUnlock()
-		if !ok || record.TemplateID != version.TemplateID || record.TemplateVersion != version.Version || record.TemplateContentHash != version.ContentHash || record.PolicyHash != version.PolicyHash {
-			return governance.ErrReplayRequired
+		record, err := r.fixtures.GetFixture(ctx, actor.TenantID, id)
+		if errors.Is(err, governance.ErrFixtureNotStored) {
+			return fmt.Errorf("%w: fixture %s 未绑定当前版本 pin，请对当前内容摘要重新登记", governance.ErrReplayRequired, id)
+		}
+		if err != nil {
+			return err
+		}
+		if record.TemplateID != version.TemplateID || record.TemplateVersion != version.Version || record.TemplateContentHash != version.ContentHash || record.PolicyHash != version.PolicyHash {
+			return fmt.Errorf("%w: fixture %s", ErrStaleReplayPin, id)
 		}
 	}
 	return (governance.ExampleReplayVerifier{Reader: r}).Verify(ctx, actor, version, ids)

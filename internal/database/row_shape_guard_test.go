@@ -238,6 +238,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("rulesetstore", "ruleSetVersionRow", "lingdoc_rule_sets"),
 
 	// templategovernance —— schema.go
+	registration("templategovernance", "fixtureRow", "lingdoc_template_replay_fixtures"),
 	registration("templategovernance", "operationRow", "lingdoc_template_governance_operations"),
 	registration("templategovernance", "profileRow", "lingdoc_template_profiles"),
 	registration("templategovernance", "suggestionRow", "lingdoc_rule_suggestion_runs"),

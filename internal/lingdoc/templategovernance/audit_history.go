@@ -49,6 +49,10 @@ func (s *Service) ListAuditHistory(ctx context.Context, actor Actor, templateID 
 			"lingdoc.template.create_profile", "lingdoc.template.save_draft",
 			"lingdoc.template.publish", "lingdoc.template.withdraw",
 			"lingdoc.template.recall", "lingdoc.template.copy",
+			// Replay fixture registration is a delivered governance action: its
+			// success and failure receipts must be readable here, not only in
+			// storage tests (Spec #768 D10).
+			"lingdoc.template.register_fixture",
 		}
 		detailsTarget := "json_extract(details, '$.target_ref')"
 		if tx.Name() == "postgres" {
