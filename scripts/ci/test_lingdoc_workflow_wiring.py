@@ -21,6 +21,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
+import subprocess
 import tempfile
 import textwrap
 import threading
@@ -52,6 +54,13 @@ GATED_WORKFLOWS = (
 
 # GitHub's workflow schema spells an output id like this.
 OUTPUT_ID = re.compile(r"^[_a-zA-Z][a-zA-Z0-9_-]*$")
+
+# The scope allow-list's one registered extension (#737): app.yml forwards
+# the decision's provider_delegate key (the reverse delegation's package
+# list) to its verify job.  A key that is forwarded but never declared reads
+# as an empty string, so both directions are pinned: the workflow test below
+# pins the read, this map pins that no other key joins it silently.
+SCOPE_DELEGATION_KEYS = {"app.yml": {"provider_delegate"}}
 
 # A cross-job output read: ``needs.<job>.outputs.<name>``.
 NEEDS_OUTPUT = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
@@ -158,11 +167,15 @@ def run_gate_publish(env: dict, *, markers: Sequence[str] = (),
 
 DELEGATED_JOB = "Test, type-check, and build"
 
-# The shard matrix a fixture scope report carries (#724's aggregation tests).
+# The shard matrix a fixture scope report carries (#724's aggregation
+# tests).  One fixture shard carries a -run filter (ADR 0015): the publish
+# step treats it like any other shard, the filter is inert data here.
 SHARD_FIXTURE = [
-    {"name": "lingdoc-workspace",
-     "packages": ["./internal/lingdoc/workspace/..."]},
-    {"name": "provider-rest", "packages": ["./internal/evidence/..."]},
+    {"name": "lingdoc-workspace-a",
+     "packages": ["./internal/lingdoc/workspace/..."],
+     "go_test_filter": "^(TestDelivery|TestExport)$"},
+    {"name": "provider-rest", "packages": ["./internal/evidence/..."],
+     "go_test_filter": ""},
 ]
 
 
@@ -345,13 +358,18 @@ class WorkflowWiringTests(unittest.TestCase):
                 self.assertNotRegex(text, r"lingdoc_\w*_scope\.py")
 
     def test_the_scope_job_declares_exactly_the_keys_of_its_own_jobs(self):
+        # One registered extension (#737): app.yml also forwards the
+        # decision's provider_delegate key to its verify job -- the reverse
+        # delegation's package list.  Like the allow-list itself the
+        # extension is explicit, so a silent extra key stays impossible.
         for name in GATED_WORKFLOWS:
             declared = (jobs_of(name).get("scope") or {}).get("outputs") or {}
             expected = {consumer.job: decision.output_key(consumer.workflow,
                                                           consumer.job)
                         for consumer in consumers_of(name)}
+            allowed = SCOPE_DELEGATION_KEYS.get(name, set())
             with self.subTest(workflow=name):
-                self.assertEqual(set(declared), set(expected))
+                self.assertEqual(set(declared), set(expected) | allowed)
                 for job, key in expected.items():
                     self.assertEqual(declared[job],
                                      f"${{{{ steps.scope.outputs.{key} }}}}")
@@ -548,6 +566,9 @@ class ProviderMatrixWiringTests(unittest.TestCase):
         self.assertIn("go test -race -count=1", body,
                       "a shard runs the same command as the old step: race "
                       "detection stays on and cached results stay out")
+        self.assertIn("-timeout 15m", body,
+                      "the package-level timeout headroom the M12 review "
+                      "added stays on every shard")
         # The not-empty assertion per shard: a shard whose suite passes zero
         # tests must fail, with the shard name in the failure.
         source = self._heredoc(next(
@@ -556,6 +577,32 @@ class ProviderMatrixWiringTests(unittest.TestCase):
             if "python - <<'PY'" in str(step.get("run") or "")))
         self.assertIn("no tests passed", source)
         self.assertIn("SHARD_NAME", source)
+
+    def test_a_shards_test_filter_is_matrix_data_not_workflow_knowledge(self):
+        """The -run filter flows from the shard list (ADR 0015, #736).
+
+        The filter is the decision module's test-name partition of the
+        family it splits.  It must be read from the matrix like the
+        package list -- spelled there and only there -- and reach the
+        command only through the environment: the workflow file carries
+        no test name, and a shard without a filter runs unfiltered.
+        """
+        providers = self._providers()
+        env = providers.get("env") or {}
+        self.assertEqual(env.get("SHARD_TEST_FILTER"),
+                         "${{ matrix.shard.go_test_filter }}",
+                         "the filter must come from the decision module's "
+                         "shard data, not from a list written down here")
+        # The run block is asserted on the raw file: a YAML dump refolds
+        # lines and would hide the exact shell spelling.
+        text = (WORKFLOWS / self.REVIEW).read_text(encoding="utf-8")
+        self.assertIn('FILTER_ARGS+=( -run "$SHARD_TEST_FILTER" )', text)
+        self.assertIn('"${FILTER_ARGS[@]}"', text)
+        self.assertNotIn("-run $SHARD_TEST_FILTER", text,
+                         "an unquoted filter would word-split the pattern")
+        self.assertIsNone(re.search(r"\bTest[A-Z]\w*\b", text),
+                          "the workflow learned a test name; filters are "
+                          "data the matrix carries, never literals here")
 
     def test_a_shard_with_no_passing_test_fails_and_names_the_shard(self):
         source = self._heredoc(next(
@@ -642,15 +689,15 @@ class ProviderMatrixWiringTests(unittest.TestCase):
 
     def test_every_shard_verified_publishes_the_boundary(self):
         raised, summary, errors, folder = self._run_publish(
-            {}, markers=["lingdoc-workspace", "provider-rest"])
+            {}, markers=["lingdoc-workspace-a", "provider-rest"])
 
         self.assertIsNone(raised, errors)
         result = json.loads((folder / "result.json").read_text(
             encoding="utf-8"))
         self.assertEqual(result["providers"], "success")
         self.assertEqual([row["name"] for row in result["provider_shards"]],
-                         ["lingdoc-workspace", "provider-rest"])
-        self.assertIn("Provider shard lingdoc-workspace", summary)
+                         ["lingdoc-workspace-a", "provider-rest"])
+        self.assertIn("Provider shard lingdoc-workspace-a", summary)
         self.assertIn("Skipped means NOT RUN", summary)
 
     def test_a_skipped_matrix_keeps_the_gate_green_without_shard_evidence(self):
@@ -674,6 +721,234 @@ class ProviderMatrixWiringTests(unittest.TestCase):
                              "a red decision job must turn the gate red")
         self.assertNotEqual(raised.code, 0)
         self.assertIn("decision step", errors)
+
+
+class AppProviderDelegationWiringTests(unittest.TestCase):
+    """The app workflow's pull_request side delegates the provider packages.
+
+    ADR 0014's reverse delegation (#737): the gate's provider shards verify
+    the touched provider packages with ``-race -count=1`` on this head, so
+    the app job's pull_request test set leaves exactly those packages out
+    instead of running them a second time without ``-race`` -- red line two
+    names that rerun as no substitute for gate evidence.  The workflow
+    itself learns no package names (red line four): the list is the
+    decision module's ``provider_delegate`` output, and **every** failure of
+    that data -- a non-PR event, an empty list, a list that resolves to
+    nothing, an exclusion that would empty the test set -- falls back to
+    running everything.  The step's real shell source is extracted from
+    app.yml and executed against a stubbed ``go``, the way the shard
+    aggregation executes its real heredoc (#724).
+    """
+
+    APP = "app.yml"
+    STEP = "Vet and test"
+
+    ALL_PACKAGES = [
+        "example.dev/lingdoc/internal/container",
+        "example.dev/lingdoc/internal/database",
+        "example.dev/lingdoc/internal/lingdoc/workspace",
+    ]
+    DELEGATED_PATTERN = "./internal/lingdoc/workspace/..."
+    DELEGATED_PACKAGES = ["example.dev/lingdoc/internal/lingdoc/workspace"]
+
+    def _step_source(self) -> str:
+        for step in (jobs_of(self.APP).get("verify") or {}).get("steps") or []:
+            if step.get("name") == self.STEP:
+                return str(step.get("run") or "")
+        raise AssertionError(f"app.yml has no {self.STEP!r} step")
+
+    def _bash_argv(self) -> list[str]:
+        """The argv prefix that runs a real bash for the extracted step.
+
+        From a native Windows parent, CreateProcess resolves a bare
+        ``bash`` to System32's WSL launcher **before** it ever consults
+        PATH, and the WSL interop mangles a multi-line ``-c`` script (its
+        first line vanishes).  PATH candidates are therefore probed with a
+        two-line smoke script -- the exact shape the step needs -- and the
+        first bash that runs it wins; on the runner and inside WSL that is
+        ``/bin/bash``, on a Windows host the Git Bash from PATH.
+        """
+        smoke = "V=go-probe\necho \"[$V]\""
+        candidates: list[str] = []
+        for directory in os.environ.get("PATH", "").split(os.pathsep):
+            if not directory:
+                continue
+            for name in ("bash.exe", "bash"):
+                candidate = Path(directory) / name
+                if candidate.is_file():
+                    candidates.append(str(candidate))
+                    break
+        candidates.append("bash")
+        for candidate in candidates:
+            try:
+                completed = subprocess.run([candidate, "-c", smoke],
+                                           capture_output=True, text=True,
+                                           timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if completed.stdout.strip() == "[go-probe]":
+                return [candidate, "-c"]
+        raise AssertionError(
+            "no bash on this host runs a two-line -c script; the "
+            "delegation step cannot be executed here")
+
+    def _run_step(self, *, event_name: str, delegation: str,
+                  go_list_fails: bool = False,
+                  delegated_packages: list[str] | None = None
+                  ) -> tuple[str, str, int]:
+        """Execute the extracted step under bash with a stubbed ``go``.
+
+        A shell function defined ahead of the step shadows the PATH lookup,
+        so the step's verbatim text runs unmodified: ``go list ./...``
+        answers with the fixture packages, ``go list <pattern>`` expands the
+        delegated pattern (or fails, when ``go_list_fails``), and ``go
+        vet`` / ``go test`` are recorded.
+
+        The fixture speaks through assignments prepended to the script, not
+        through the environment: on a Windows host the ``bash`` on PATH can
+        be a WSL launcher that inherits nothing, and an inherited
+        ``GITHUB_*`` variable must never speak for the fixture anyway
+        (#720's lesson).  Assignments override any inherited value in the
+        same shell, so the step's ``$GITHUB_EVENT_NAME`` and
+        ``$PROVIDER_DELEGATION`` reads stay exactly what the fixture set.
+        """
+        packages = (self.DELEGATED_PACKAGES if delegated_packages is None
+                    else delegated_packages)
+        fixture = [
+            f"GO_CALLS_LOG={shlex.quote('go-calls.log')}",
+            f"GITHUB_EVENT_NAME={shlex.quote(event_name)}",
+            f"PROVIDER_DELEGATION={shlex.quote(delegation)}",
+        ]
+        shim = [
+            "go() {",
+            '  printf \'go %s\\n\' "$*" >> "$GO_CALLS_LOG"',
+            '  if [ "$1" != "list" ]; then return 0; fi',
+            "  shift",
+            '  if [ "${1:-}" = "./..." ]; then',
+            f"    printf '%s\\n' {shlex.join(self.ALL_PACKAGES)}",
+            "    return 0",
+            "  fi",
+        ]
+        if go_list_fails:
+            shim.append("  return 1")
+        else:
+            shim += [
+                f'  if [ "${{1:-}}" = {shlex.quote(self.DELEGATED_PATTERN)} ]; then',
+                f"    printf '%s\\n' {shlex.join(packages)}",
+                "  fi",
+                "  return 0",
+            ]
+        shim.append("}")
+
+        # A cwd-relative log name: a Windows-style absolute path would not
+        # survive the redirect inside a foreign bash, and the stub must
+        # behave identically on the runner, in WSL and on a Windows host.
+        tmp = Path(tempfile.mkdtemp())
+        log = tmp / "go-calls.log"
+        script = "\n".join([*fixture, "", *shim, "", self._step_source()])
+        environment = {name: value for name, value in os.environ.items()
+                       if not name.startswith("GITHUB_")}
+        completed = subprocess.run([*self._bash_argv(), script], cwd=tmp,
+                                   env=environment, capture_output=True,
+                                   text=True, timeout=120)
+        calls = log.read_text(encoding="utf-8") if log.exists() else ""
+        return calls, completed.stdout + completed.stderr, completed.returncode
+
+    def _invoked_packages(self, calls: str, command: str) -> list[str]:
+        """The package arguments of the last ``go <command>`` invocation."""
+        lines = [line for line in calls.splitlines()
+                 if line.startswith(f"go {command} ")]
+        self.assertTrue(lines, f"the step never ran `go {command}`")
+        return lines[-1].split()[2:]
+
+    def test_a_pull_request_test_set_leaves_out_the_delegated_packages(self):
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN)
+
+        self.assertEqual(code, 0, output)
+        # The delegation was resolved through the decision's own list.
+        self.assertIn(f"go list {self.DELEGATED_PATTERN}", calls)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            self.assertNotIn(self.DELEGATED_PACKAGES[0], invoked,
+                             f"go {command} re-ran the delegated package")
+            for kept in self.ALL_PACKAGES:
+                if kept in self.DELEGATED_PACKAGES:
+                    continue
+                self.assertIn(kept, invoked)
+        self.assertIn("delegated", output,
+                      "the step says what was left to the gate's shards")
+
+    def test_a_push_keeps_the_full_list(self):
+        """The repository-wide validation does not shrink on a main push."""
+        calls, output, code = self._run_step(
+            event_name="push", delegation=self.DELEGATED_PATTERN)
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(f"go list {self.DELEGATED_PATTERN}", calls,
+                         "the delegation was consulted on a non-PR event")
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_an_empty_delegation_keeps_the_full_list(self):
+        """No delegation, no exclusion: the fail-open default."""
+        calls, output, code = self._run_step(event_name="pull_request",
+                                             delegation="")
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_an_unresolvable_delegation_keeps_the_full_list(self):
+        """A delegated list that resolves to nothing falls back (fail-open)."""
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN,
+            go_list_fails=True)
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+
+    def test_a_delegation_that_would_empty_the_list_keeps_it(self):
+        """Excluding every package is a judgement failure, not a test set."""
+        calls, output, code = self._run_step(
+            event_name="pull_request", delegation=self.DELEGATED_PATTERN,
+            delegated_packages=self.ALL_PACKAGES)
+
+        self.assertEqual(code, 0, output)
+        for command in ("vet", "test"):
+            invoked = self._invoked_packages(calls, command)
+            for package in self.ALL_PACKAGES:
+                self.assertIn(package, invoked)
+        self.assertIn("full list", output)
+
+    def test_the_verify_job_reads_the_declared_delegation_output(self):
+        """The cross-job read is declared by the job that provides it."""
+        verify = jobs_of(self.APP)["verify"]
+        text = yaml.safe_dump(verify)
+        self.assertIn("needs.scope.outputs.provider_delegate", text)
+        declared = (jobs_of(self.APP).get("scope") or {}).get("outputs") or {}
+        self.assertEqual(declared.get("provider_delegate"),
+                         "${{ steps.scope.outputs.provider_delegate }}")
+
+    def test_the_delegation_step_carries_no_package_names(self):
+        """Red line four: the delegated list comes from the decision module.
+
+        The step knows no provider path -- it excludes whatever package list
+        the decision output carries.  (app.yml's own trigger table and the
+        build step name other paths on purpose; the manifest is their
+        registration.)
+        """
+        source = self._step_source()
+        for root in manifest.PROVIDER_ROOTS:
+            self.assertNotIn(root, source)
+        self.assertNotRegex(source, r"internal/|cmd/")
 
 
 class DelegationVerificationTests(unittest.TestCase):

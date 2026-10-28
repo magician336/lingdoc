@@ -169,7 +169,10 @@ jobs:
 
   # The provider verification, sharded (#724, ADR 0014): one shard is one
   # entry of the decision module's shard list, and every shard runs the same
-  # test command over its own package list.  The matrix is generated from the
+  # test command over its own package list.  A shard may carry a -run filter
+  # (ADR 0015): the decision module's test-name partition of a package it
+  # splits -- consumed from the matrix like the package list, never spelled
+  # here.  The matrix is generated from the
   # output the prepare job declares above -- this workflow carries no package
   # names, and adding a package root never touches it.
   providers:
@@ -193,6 +196,7 @@ jobs:
       CGO_ENABLED: "1"
       SHARD_PACKAGES: ${{ matrix.shard.packages }}
       SHARD_NAME: ${{ matrix.shard.name }}
+      SHARD_TEST_FILTER: ${{ matrix.shard.go_test_filter }}
     steps:
       # Default checkout tests the merge result; depth one is enough, the
       # shard diffed nothing -- the decision was made in the prepare job.
@@ -212,12 +216,18 @@ jobs:
       - name: Test and vet the provider packages of this shard
         run: |
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
-          # -timeout 15m: the workspace shard's single package binary ran
-          # 590-600s on the runner (job wall 642-660s, dispatch 40451195877)
-          # against go test's default 10m package timeout — zero margin, one
-          # slow runner day from an intermittent required-check red. The
+          # -timeout 15m: the workspace package's single binary ran 590-600s
+          # on the runner (job wall 642-660s, dispatch 40451195877) against
+          # go test's default 10m package timeout — zero margin, one slow
+          # runner day from an intermittent required-check red. The
           # job-level timeout still bounds a hung run.
-          go test -race -count=1 -timeout 15m -json $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
+          # -run (ADR 0015): only what the decision module's shard data
+          # carries; an empty filter runs the whole package unfiltered.
+          FILTER_ARGS=()
+          if [ -n "$SHARD_TEST_FILTER" ]; then
+            FILTER_ARGS+=( -run "$SHARD_TEST_FILTER" )
+          fi
+          go test -race -count=1 -timeout 15m -json "${FILTER_ARGS[@]}" $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
           python - <<'PY'
           import json, os
           from pathlib import Path

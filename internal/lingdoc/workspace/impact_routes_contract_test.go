@@ -187,6 +187,16 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 		deliveryMethodChapter(),
 	)
 	ensureImpactRouteTables(t, db)
+	// The recommendation trigger writes a candidate batch, so the candidate
+	// tables the focused fixtures build are part of this fixture too. It also
+	// reads the evidence-card object store: the production schema for that
+	// table comes from the migrations (000037_lingdoc_full_workflow), and the
+	// copy below is the focused HTTP fixture's aligned subset, matching the
+	// candidate fixture's convention.
+	ensureDependencyCandidateTables(t, db)
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`).Error; err != nil {
+		t.Fatalf("seed g2 objects table: %v", err)
+	}
 	if err := db.Exec("UPDATE lingdoc_projects SET current_context_revision = ? WHERE id = ?", 1, "project-1").Error; err != nil {
 		t.Fatalf("seed context revision: %v", err)
 	}
@@ -275,7 +285,7 @@ func acceptanceTasks(t *testing.T, f routeContractFixture) []core.ImpactTask {
 // `/assess` joined this list in #223. It was registered but unpublished, so a
 // generated client had no way to trigger an assessment; the contract now
 // publishes it and the bidirectional coverage below keeps it that way.
-var impactOwnedPathSuffixes = []string{"/impact-tasks", "/impact-assessment", "/assess", "/dependencies", "/dependency-candidates", "/stabilize", "/preflight", "/check-receipts"}
+var impactOwnedPathSuffixes = []string{"/impact-tasks", "/impact-assessment", "/assess", "/dependencies", "/dependency-candidates", "/dependency-recommendations", "/stabilize", "/preflight", "/check-receipts"}
 
 func isImpactOwnedPath(path string, owned []string) bool {
 	for _, suffix := range owned {
@@ -512,6 +522,27 @@ func TestRuntimeResponsesSatisfyPublishedSchemas(t *testing.T) {
 		t.Fatalf("modify decision status = %d; body=%s", response.Code, response.Body.String())
 	}
 	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/dependencies/{edgeId}/decision", "200", response.Body.Bytes())
+
+	// #751: the recommendation trigger produces the batch/dropped/model
+	// payload a generated client has to understand. The fixture service gets
+	// a stub recommender so the route runs its real seam without contacting a
+	// provider.
+	f.service.SetDependencyRecommendationModel(&contractRecommendationStub{
+		proposals: []core.ModelProposedDependency{{
+			SourceKind: "ProjectSpec", SourceID: f.project.ID,
+			TargetKind: "ChapterVersion", TargetID: f.chapters[0].ID,
+			Relation: "uses", Action: "REGENERATE",
+			Evidence: "契约校验：章节正文引用研究条件", Reason: "研究条件变化需要重生成",
+			Confidence: 0.6,
+		}},
+	})
+	recommendBody := `{"reason":"契约校验 冷启动推荐"}`
+	response = send(http.MethodPost, base+"/dependency-recommendations", "reader", "accept-recommend", recommendBody)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("recommend dependencies status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/dependency-recommendations", []byte(recommendBody))
+	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/dependency-recommendations", "201", response.Body.Bytes())
 
 	// #207: the assessment route is published, so what the running server
 	// returns for it must satisfy the published ImpactAssessment schema. Path
@@ -989,4 +1020,17 @@ func seedContractRouteEdge(t *testing.T, db *gorm.DB, projectID, edgeID, sourceI
 		"contract-edge-"+edgeID, projectID, edgeID, 1, sourceID, targetID, "supports", 1, deliveryActorID, "契约校验 合成路线边", now).Error; err != nil {
 		t.Fatalf("seed contract route edge %s: %v", edgeID, err)
 	}
+}
+
+// contractRecommendationStub stands in for the recommendation model inside the
+// contract fixture: fixed proposals over the fixture's own objects, no
+// provider.
+type contractRecommendationStub struct {
+	proposals []core.ModelProposedDependency
+}
+
+func (s *contractRecommendationStub) Recommend(context.Context, core.Actor, core.DependencyRecommendationRequest) (core.DependencyRecommendationResult, error) {
+	return core.DependencyRecommendationResult{
+		Proposals: s.proposals, ModelID: "contract-stub", RunMode: "real", ModelRunID: "contract-rec-run",
+	}, nil
 }
