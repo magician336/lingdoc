@@ -39,7 +39,7 @@ func TestActiveArchiveHTTPAssessedApplyAndStaleReference(t *testing.T) {
 	var change core.ChangeSet
 	h.call(h.ctx, http.MethodPost, "/change-sets", "active-archive-http-assess", input, http.StatusCreated, &change)
 	h.call(h.ctx, http.MethodPost, "/change-sets/"+change.ID+"/apply", "active-archive-http-apply", nil, http.StatusOK, nil)
- unchanged = core.Project{}
+	unchanged = core.Project{}
 	h.call(h.ctx, http.MethodGet, "", "", nil, http.StatusOK, &unchanged)
 	if _, ok := unchanged.Spec["research_goal"]; ok {
 		t.Fatal("applied field still present")

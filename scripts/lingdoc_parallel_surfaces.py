@@ -1635,6 +1635,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "paths": (
             # ① 从 PF-3 永久移交（3）：#415 要给 AuditEvent 补字段并让行模型与表列一致。
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            # model.go changed by PF-686 (#686 / PR #752) on 2026-10-28:
+            # the template field archive added its record shape and the
+            # fixed/catalog source-kind literals here.  Recorded in the
+            # registry because the overlap check is path-level; PF-7 keeps
+            # the ownership.
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
             # ② 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
@@ -1805,6 +1810,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/ruleset_source_policy_test.go", "file"),
             ("internal/lingdoc/workspacecore/semantic_delta_full_test.go", "file"),
             ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            # service_facade.go changed by PF-686 (#686 / PR #752) on
+            # 2026-10-28: SaveSpec omitted-key refusal, template source-kind
+            # assignment and the integer-compatibility hardening touch this
+            # file.  Borrowed, not transferred; PF-11 keeps the ownership.
             ("internal/lingdoc/workspacecore/tenant_permission_port.go", "file"),
         ),
         "resolves": (),
