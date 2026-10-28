@@ -1,0 +1,84 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#126 G5 统一权限判定器的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C3（簇票 #698）首轮判定。",
+  "head": "1edd0a9fb3aeb007d7474c9b646dbf717465250a",
+  "base": "fd4906693",
+  "head_note": "判定 head：1edd0a9fb3aeb007d7474c9b646dbf717465250a（分支 c3-g5a-acceptance-judgement，缺口轮唯一代码提交：ResearchPanel.test.js 补钉权限拒绝清空现状的具名用例，为 US-12 的 FAIL 提供现状证据；本报告与矩阵文档在其后提交，被测 Go 代码树与该 head 逐字一致）",
+  "base_note": "判定所依据的 main 基线：fd4906693（C2 合并提交，Merge pull request #754）。seam 实现落点：Service.EffectivePermission（membership/policy.go:16）与 authorizeCurrentProject（workspacecore/permission_policy.go:127）。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 17,
+  "gap_round": {
+    "first_round": "16 PASS + 1 FAIL（US-12）",
+    "disposition": "US-12 判 FAIL：main 现行为（401/403/404 触发 clearSensitive 清空表单，ResearchPanel.vue:192→resetTask/Claim/Card）与票面「权限失败保留草稿输入」相反；只有 409 版本冲突保留草稿（既有具名用例）。本轮补的具名用例钉住清空现状作为 FAIL 的现状证据，不把没验记成已验。解除条件：PR #537（OPEN，未合并）或对齐票落地后补「保留」断言并翻 PASS。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^(TestPermissionReadOutletNamesTheFreezeForOwnerOnlyCapabilities|TestPermissionReadOutletKeepsTheExistingReasonForOtherCapabilities|TestPermissionReadOutletNamesTheFreezeForTheOwnerItself|TestPermissionReadOutletKeepsTheHealthyMeaning)$'`（router 组合子集，ok 4.840s）；`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets)$'`（membership 组合子集，ok 2.406s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-01、US-05"
+    },
+    {
+      "id": "US-02、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestCreateProjectRejectsInactiveTenantMember|TestAuditedProjectReadsPersistAndStillRejectRevokedMembers|TestAssetPolicyDeltaRollbackAndUnknownUserCannotGrant)$'`（workspacecore 组合子集，ok 2.086s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-02、TD-02 的 active/inactive、撤销成员与 unknown 半边"
+    },
+    {
+      "id": "US-03、US-10、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestTenantRoleMatrixCapsProjectMemberPermissions|TestMemberAssignmentsPersistCapabilityAndScopeInTransaction|TestMemberPermissionAuditFailureRollsBackBusinessWrite)$'`（membership 组合子集，ok 2.406s）；`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit|TestAuthorizationResourceBatchAuditFailureRefusesTheBatch)$'`（workspacecore 组合子集，ok 2.086s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-03、US-10、TD-02 的角色组合与审计半边"
+    },
+    {
+      "id": "US-04、US-11、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestG5ResourceBatchAlignsChapterAuthorAndResearcherAssetScopes|TestTheMemberAndOwnerPortsMatchTheServiceVerbatim|TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts)$'`（membership 组合子集，ok 2.406s）；`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestWorkspaceUsesStructuredAuthorizationRequests|TestTypedMutationContractMatrix)$'`（workspacecore 组合子集，ok 2.086s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-04、US-11、TD-05"
+    },
+    {
+      "id": "US-06、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^(TestLingDocRealAPIThroughMainRegistration)$'`（ok 4.840s；非成员 404 同形、denied retrieval 只含 asset_id+reason、章节响应不泄露 function_scopes/grantor_id/review_items）；`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestExportRoutesRequireAnIdentity|TestExportRoutesHideAnotherProjectsExport)$'`（workspace 组合子集，ok 2.707s；无身份一律 404 不借状态码确认存在、跨项目导出 404）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-06、TD-04"
+    },
+    {
+      "id": "US-07、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead|TestAuthorAndAdminCannotConfirmEvidenceAndReplayRechecksRole)$'`（workspacecore 组合子集，ok 2.086s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-07、TD-03 的同步/异步任务面"
+    },
+    {
+      "id": "US-08、US-09、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestResearchAdapterUsesExistingRetrievalScopeAndRejectsDeniedAsset|TestExportRoutesDenyADownloadAfterAccessIsGone|TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked|TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked|TestExportListScopesArtifactsToTheProject)$'`（workspace 组合子集，ok 2.707s；撤权后导出发起与下载均 403 + source_access_denied）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-08、US-09、TD-03 的预览/导出/下载面"
+    },
+    {
+      "id": "US-06、US-04、TD-02、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^(TestLingDocRealAPIThroughMainRegistration)$'`（ok 4.840s；stale 409 不落库、native token 404、有效章节 ID 不能扩大资料范围的 403、permissions?capability= HTTP 面）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 US-04/US-06 的 HTTP 面、TD-02 的 stale/cross-identity 半边、TD-04"
+    },
+    {
+      "id": "TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets)$'`（直调 Service.EffectivePermission 断言 Allowed/ReasonCode 与资源批量决策；membership 组合子集，ok 2.406s）；`go test -count=1 ./internal/router/ -run '^(TestLingDocRealAPIThroughMainRegistration)$'`（permissions?capability= HTTP 面，ok 4.840s）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 TD-01 的 seam 与代表性 HTTP 路由两层"
+    },
+    {
+      "id": "TD-05",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/api/lingdoc/sourceRetrievalContract.test.js src/views/lingdoc/ResearchPanel.test.js`（31 pass / 0 fail；具名用例「project-wide retrieval does not invent chapter authority」）；落证 head `1edd0a9fb3aeb007d7474c9b646dbf717465250a`；覆盖验收点 TD-05 的契约夹具半边"
+    }
+  ],
+  "failed": [
+    {
+      "id": "US-12",
+      "status": "failed",
+      "matrix_status": "FAIL",
+      "evidence": "现状证据：前端具名用例「权限拒绝清空本地任务草稿并给出可读错误，且不产生第二次写入」（ResearchPanel.test.js，本轮补钉，28/28 pass）证明 403 后 taskForm 被清空；「版本冲突保留用户草稿和原幂等键，不自动重试」（既有）证明 409 保留。实现：ResearchPanel.vue report()（:199）对 401/403/404 调 clearSensitive()（:192）→ resetTask/resetClaim/resetCard。",
+      "reason": "票面要求权限失败保留草稿输入；main 现行为相反（权限拒绝清空全部本地表单）。这是安全清空设计与用户诉求的产品语义冲突，不能由测试改写事实。",
+      "unblock": "PR #537（OPEN，未合并，「保留未提交草稿」）或对齐票落地后，把「权限拒绝后 taskForm 保留」断言补进 ResearchPanel.test.js 并在当前 head 跑绿，本行翻 PASS"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-01「一个可理解的权限模型」是用户视角诉求，机器证据是拒绝原因词汇与冻结/无权分离的读出口（owner read outlet），不证明真实用户能理解。",
+    "US-06/TD-02 的跨租户半边由租户上下文反枚举（ErrNotFound 同形拒绝）与 #129 US-02 的同租户邀请限制共同承载；没有独立的跨租户 ID 直测用例。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；证据跑在隔离 SQLite 上，PostgreSQL 侧同组用例由 CI 的 Interface Integration（带一次性 postgres:17 service）覆盖，不是本机可复制命令。",
+    "-list 逐一核对四条组合命令匹配数（membership 14、workspacecore 13、workspace 8、router 5），无零匹配假绿。"
+  ]
+}
