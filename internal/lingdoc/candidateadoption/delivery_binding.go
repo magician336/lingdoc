@@ -36,7 +36,18 @@ func readDeliveryBinding(tx *gorm.DB, projectID, copyID string) (deliveryBinding
 	if err := json.Unmarshal([]byte(row.PayloadJSON), &value); err != nil {
 		return value, err
 	}
-	if value.RuleSetSnapshot == nil || value.RuleSetSnapshot.State == template.RuleSetDraft {
+	if value.RuleSetSnapshot == nil {
+		// A source-identity-only sidecar (no snapshot, no policies) is what
+		// source-kind persistence writes for template copies that never
+		// carried a legacy rule binding. Delivery reads it as "no binding":
+		// the copy's own demo rules govern the check. Anything half-bound
+		// (policies without a snapshot) stays refused.
+		if len(value.BindingPolicies) == 0 && value.SourcePolicyHash == "" {
+			return deliveryBindingSidecar{}, nil
+		}
+		return value, ErrInvalidState
+	}
+	if value.RuleSetSnapshot.State == template.RuleSetDraft {
 		return value, ErrInvalidState
 	}
 	if err := template.ValidateRuleSet(*value.RuleSetSnapshot); err != nil {
