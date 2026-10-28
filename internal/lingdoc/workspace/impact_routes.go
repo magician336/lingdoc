@@ -120,6 +120,12 @@ func RegisterImpactRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 	r.GET("/dependencies", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.DependencyEdge, error) {
 		return ports.Dependency.ListDependencyEdges(c.Request.Context(), a, c.Param("projectId"))
 	}))
+	// The recommendation trigger is a human action (the panel button), and the
+	// route deliberately avoids the /dependency-candidates/... subtree so the
+	// static segment cannot collide with the :candidateId parameter segment.
+	r.POST("/dependency-recommendations", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.DependencyRecommendationInput) (json.RawMessage, int, bool, error) {
+		return ports.Dependency.RecommendDependencyCandidates(c.Request.Context(), a, c.Param("projectId"), k, i)
+	}))
 	r.POST("/dependencies", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.DependencyEdgeInput) (json.RawMessage, int, bool, error) {
 		return ports.Dependency.CreateDependencyEdge(c.Request.Context(), a, c.Param("projectId"), k, i)
 	}))

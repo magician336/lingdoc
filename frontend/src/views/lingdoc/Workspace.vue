@@ -760,7 +760,9 @@
       </section>
     </div>
     <ChapterCommitReview v-if="pendingChapterCommit && chapter" :chapter-title="chapter.title"
-      @wording="commitWordingDraft" @semantic="routeSemanticDraft" @cancel="pendingChapterCommit = null" />
+      :suspected-conditions="suspectedConditionChanges"
+      @wording="commitWordingDraft" @semantic="routeSemanticDraft" @dismiss="dismissWordingCommit"
+      @cancel="closeCommitReview" />
     <p v-if="commitIntentNotice" class="muted" role="status">{{ commitIntentNotice }}</p>
     <div v-if="activationOpen && activationDiff && project" ref="activationDialogRef" class="full-workflow-backdrop" @mousedown.self="closeActivationReview">
       <section class="full-workflow-dialog activation-review" role="dialog" aria-modal="true" aria-labelledby="activation-title" tabindex="-1">
@@ -796,7 +798,10 @@ import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import RuntimeOpsPanel from './RuntimeOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
 import GenerationActionPanel from './GenerationActionPanel.vue'
-import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
+import {
+  dismissalFromSuspected, parseSuspectedConditions, sameChapterCommitBasis,
+  type ChapterCommitBasis, type SuspectedConditionChange,
+} from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
 import { listMyProjectInvitations, acceptProjectInvitation, type ProjectInvitation } from '@/api/lingdoc/collaboration'
@@ -2793,6 +2798,12 @@ async function onReviewReportApplied(copy: WorkingCopy) {
 
 const pendingChapterCommit = ref<ChapterCommitBasis | null>(null)
 const commitIntentNotice = ref('')
+// #753: the server-reported suspicions behind the dialog's second state.
+const suspectedConditionChanges = ref<SuspectedConditionChange[]>([])
+function closeCommitReview() {
+  pendingChapterCommit.value = null
+  suspectedConditionChanges.value = []
+}
 function currentChapterCommitBasis(): ChapterCommitBasis | null {
   if (!project.value || !chapter.value || !workingCopy.value) return null
   return {
@@ -2819,6 +2830,7 @@ function currentCommitChoice(): ChapterCommitBasis | null {
 }
 function routeSemanticDraft() {
   if (!currentCommitChoice()) return
+  suspectedConditionChanges.value = []
   pendingChapterCommit.value = null
   commitIntentNotice.value = '正文仍保留在工作副本，尚未提交。请在正式变更中填写实际条件或语义差异并评估；只有当前 Owner 应用后才改变研究基线。'
   openFullPanel('changes')
@@ -2827,7 +2839,7 @@ watch([() => project.value?.id, () => chapter.value?.id, () => auth.currentUserI
   pendingChapterCommit.value = null
   commitIntentNotice.value = ''
 })
-async function commitWordingDraft() {
+async function commitWordingDraft(dismissal?: { dismissed_fields: string[]; reason: string }) {
   const reviewed = currentCommitChoice()
   if (!reviewed || !project.value || !chapter.value || !workingCopy.value || !workingCopyDiffersFromFormal.value) return
   pendingChapterCommit.value = null
@@ -2835,14 +2847,16 @@ async function commitWordingDraft() {
   errorMessage.value = ''
   const projectId = project.value.id
   const chapterId = chapter.value.id
-  const input = {
+  const input: Parameters<typeof commitWorkingCopy>[2] = {
     expected_spec_revision: project.value.spec_revision,
     expected_working_copy_revision: workingCopy.value.working_copy_revision,
     expected_chapter_version_id: chapter.value.current_version_id,
   }
+  if (dismissal) input.condition_change_dismissal = dismissal
   const key = operationKey(`commit-working-copy:${chapterId}`, input)
   try {
     await commitWorkingCopy(projectId, chapterId, input, key)
+    suspectedConditionChanges.value = []
     attempts.delete(`commit-working-copy:${chapterId}`)
     // 真实提交回执 → 已提交基线推进（解除"已保存未提交"阻断；非按保存回执假定）
     const committedNow = (workingCopy.value?.working_copy_revision ?? 0)
@@ -2856,8 +2870,23 @@ async function commitWordingDraft() {
     chapter.value = chapterResult.data.find(item => item.id === chapterId) ?? null
     if (chapter.value) await loadChapterDraft(projectId, chapterId)
     clearRewriteCandidate(projectId, chapterId)
-  } catch (error) { failure(error) }
-  finally { busy.value = false }
+  } catch (error) {
+    // #753: a refusal carries the server's suspicion list — reopen the same
+    // reviewed dialog in its second state instead of a raw error line.
+    const suspected = parseSuspectedConditions(error)
+    if (suspected && suspected.length > 0) {
+      suspectedConditionChanges.value = suspected
+      pendingChapterCommit.value = reviewed
+      return
+    }
+    failure(error)
+  } finally { busy.value = false }
+}
+
+function dismissWordingCommit(reason: string) {
+  const dismissal = dismissalFromSuspected(suspectedConditionChanges.value, reason)
+  if (!dismissal) return
+  void commitWordingDraft(dismissal)
 }
 
 async function restoreVersion(version: ChapterVersion) {

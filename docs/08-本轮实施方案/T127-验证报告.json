@@ -1,0 +1,64 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#127 G5 Owner 生命周期与转让的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C4（簇票 #699）首轮判定。",
+  "head": "3017840bf3638c839f20a8d69855054c0d519fee",
+  "base": "97ce243a",
+  "head_note": "判定 head：3017840bf3638c839f20a8d69855054c0d519fee（分支 c4-g5b-acceptance-judgement，缺口轮 2 个测试补丁提交之后；本报告与矩阵文档在其后提交，被测产品代码树与该 head 逐字一致）",
+  "base_note": "判定所依据的 main 基线：97ce243a（PR #537 合并提交）。本轮对 #127 补 1 条用例（TestOwnerTransferSecondRequestLosesAndPendingKeepsOwner，覆盖 US-03/US-09/US-11），其余 14 点复用既有具名用例。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 17,
+  "gap_round": {
+    "first_round": "14 点有既有用例 + 3 点缺口（US-03 pending 保 Owner、US-09 并发一个赢家、US-11 stale 拒绝）",
+    "disposition": "缺口轮补 1 条三合一用例 TestOwnerTransferSecondRequestLosesAndPendingKeepsOwner：pending 期 Owner 角色不变、pending 转让的 project_id 唯一约束即「一个赢家」（第二请求必败且不扰动赢家票据，赢家仍可接受、终态恰 1 owner）、stale 版本拒绝。全部命令在新 head 重跑。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-02、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestOwnerTransferAcceptsExactlyOnce|TestOwnerTransferSecondRequestLosesAndPendingKeepsOwner|TestOwnerTransferAuditFailureRollsBackBusinessWrite)$'`（membership 组合子集，ok 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-01、US-02、TD-01（接受后恰 1 owner、显式接受+重放拒、七面中六面直证）"
+    },
+    {
+      "id": "US-03、US-09、US-11、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^TestOwnerTransferSecondRequestLosesAndPendingKeepsOwner$'`（membership 组合子集，ok 3.020s；本轮补断言）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-03、US-09、US-11"
+    },
+    {
+      "id": "US-04、US-05、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestTransferOwnerIsAtomicAndClearsFunctionAxis|TestAuthReviewFormerSuccessorDoesNotRegainOldAuthorScope)$'`（membership 组合子集，ok 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-04、US-05、TD-02"
+    },
+    {
+      "id": "US-06、US-07、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^(TestOwnerUnavailableDoesNotFreezeOrdinaryCollaboration|TestOwnerUnavailableFreezesChangeSetDecision|TestOwnerUnavailableRefusalIsNotTheOwnersOwnRefusal|TestOwnerUnavailableUnfreezesWhenTheIdentityComesBack|TestActivationFreezesWhileTheOwnerIsUnavailable|TestActivationAndTemplateUpgradeShareTheFreezeReason|TestPermissionOutletAgreesWithTheActivationRefusal|TestDraftCollaborationSurvivesTheOwnerFreeze|TestActiveCollaborationSurvivesTheOwnerFreeze|TestOwnerUnavailableFreezesArchive|TestOwnerUnavailableFreezesFormalExport)$'`（router 组合子集，ok 11.081s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-06、US-07、TD-03"
+    },
+    {
+      "id": "US-08、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestTenantOwnerCanRecoverTransferWhenOwnerIsInactive|TestOwnerTransferKeepsTheTenantOwnerRecovery|TestOwnerTransferRefusalDoesNotNameTheFreezeForANonOwner|TestAuthReviewRecoveryChecksCurrentPredecessorAndRequester)$'`（membership 组合子集，ok 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-08、TD-04"
+    },
+    {
+      "id": "US-10",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestOwnerTransferAuditFailureRollsBackBusinessWrite|TestAuthReviewOwnerTransferBusinessAuditRollsBackAtomically)$'`（membership 组合子集，ok 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-10"
+    },
+    {
+      "id": "US-12",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^(TestOwnerUnavailableUnfreezesWhenTheIdentityComesBack|TestActivationUnfreezesWhenTheIdentityComesBack|TestCompletedOwnerTransferSurvivesThePredecessorRestoration)$'`（router 组合子集，ok 11.081s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-12"
+    },
+    {
+      "id": "TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^TestLingDocRealAPIThroughMainRegistration$'`（router 组合子集，ok 11.081s）；membership fixture 经 39 条生产迁移建库（`TestOwnerTransferAcceptsExactlyOnce` 运行日志）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 TD-05"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-02/TD-01 的 rejection/expiry（拒绝/过期）面无直接具名用例：由「接受只能一次（ErrInvalidState）+ pending 转让 project_id 唯一约束」语义近似；真实时钟推进的过期测试不存在。",
+    "US-09 的「并发」在测试里是串行化形态（同一基线的第二请求必败），生产保证是数据库唯一约束；不是真实并行 goroutine 竞态测试。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；证据跑在隔离 SQLite 上，PostgreSQL 侧同组用例由 CI 的 Interface Integration（带一次性 postgres:17 service）覆盖。",
+    "-list 逐一核对组合命令匹配数（membership 18、router 15），无零匹配假绿。"
+  ]
+}

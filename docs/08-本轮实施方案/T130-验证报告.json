@@ -1,0 +1,60 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#130 G5 审计与权限可见性的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C4（簇票 #699）首轮判定。",
+  "head": "3017840bf3638c839f20a8d69855054c0d519fee",
+  "base": "97ce243a",
+  "head_note": "判定 head：3017840bf3638c839f20a8d69855054c0d519fee（分支 c4-g5b-acceptance-judgement，缺口轮补本票用例 TestAuditQueryFiltersByRoleAndRefusesStrangers 后全部命令在该 head 重跑）",
+  "base_note": "判定所依据的 main 基线：97ce243a（PR #537 合并提交）。审计查询面落点：Service.ListAuditEvents（service_facade.go:2775，先 authorizeProject 再按治理角色过滤）；fail-open/fail-closed 分层落点：readWithAudit（PF-4）与关键写事务审计 seam。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 17,
+  "gap_round": {
+    "first_round": "14 点有既有用例 + 3 点缺口（US-03/US-04 角色过滤查询、US-11 跨项目审计查询反枚举）",
+    "disposition": "缺口轮补 1 条用例 TestAuditQueryFiltersByRoleAndRefusesStrangers：Owner 全量、普通成员逐行过滤只看自己（ActorID/UserID == 自己，直证 service_facade.go:2775 的过滤逻辑）、陌生者经 authorizeProject 拿到与其他入口一致的 not-found 反枚举。全部命令在新 head 重跑。"
+  },
+  "passed": [
+    {
+      "id": "US-01、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestAuthReviewListOmitsInvitedRemovedAndPendingTenantRecovery|TestMemberAssignmentsPersistCapabilityAndScopeInTransaction|TestAuditQueryFiltersByRoleAndRefusesStrangers)$'`（membership 组合子集，ok 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-01、TD-04（成员/scope 变更审计持久化半边）"
+    },
+    {
+      "id": "US-02、US-09、TD-03、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAuthorizationResourceBatchLogModeWritesAggregateShadowAudit|TestAuthorizationResourceBatchAuditFailureRefusesTheBatch)$'`、`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestMemberPermissionAuditFailureRollsBackBusinessWrite|TestOwnerTransferAuditFailureRollsBackBusinessWrite|TestAuthReviewOwnerTransferBusinessAuditRollsBackAtomically)$'`（组合子集，ok 2.460s / 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-02、US-09、TD-03、TD-05"
+    },
+    {
+      "id": "US-03、US-04、US-11、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/membership/ -run '^TestAuditQueryFiltersByRoleAndRefusesStrangers$'`（membership 组合子集，ok 3.020s；本轮补断言：Owner 全量 ≥3 行、普通成员恰 1 行且 ActorID 为自己、陌生者 ErrNotFound）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-03、US-04、US-11、TD-01 的过滤与反枚举面"
+    },
+    {
+      "id": "US-05、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestAccessStatusHidesTheProjectFromNonMembers|TestAccessStatusReportsContentAccess)$'`、`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestListChaptersRedactsRevokedBoundSource$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-05、TD-01 的撤权最小可见与脱敏面"
+    },
+    {
+      "id": "US-06、US-07、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAuditWriterEmitsTheCurrentShapeOnly|TestAuditReadSideReturnsBothActionShapes|TestAuditActionColumnStaysWithinItsBound)$'`、`go test -count=1 ./internal/lingdoc/membership/ -run '^(TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets)$'`（组合子集，ok 2.460s / 3.020s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-06、US-07、TD-04 的形状白名单半边"
+    },
+    {
+      "id": "US-08、US-12、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAuditFailurePublishesRuntimeEventAndAlert|TestAuditFailureDoesNotChangeTheAuthorizationDecision|TestAlertWriteFailureDoesNotBlockTheRead)$'`（workspacecore 组合子集，ok 2.460s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-08、US-12、TD-02"
+    },
+    {
+      "id": "US-10",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestAuditedProjectReadsPersistAndStillRejectRevokedMembers|TestCreateProjectRejectsInactiveTenantMember)$'`（workspacecore 组合子集，ok 2.460s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-10"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-06：allow/deny 事件的逐字段全量断言（actor/tenant/project/capability/target/version/reason 七字段同时）无单一用例，由审计形状（写读两侧）+ 决策结构（Capability/Target/ReasonCode）断言语义近似。",
+    "TD-04：来源撤权/确认/导出/下载面的审计持久化由交付与来源测试同通路承载（#128 TD-02 同源），本票用例直证的是 allow/deny/成员/scope/转让/读审计。",
+    "US-12 的 PG 侧同断言（TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres）由 CI 集成面覆盖，不是本机可复制命令。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；证据跑在隔离 SQLite 上。",
+    "-list 逐一核对组合命令匹配数（membership 18、workspacecore 18），无零匹配假绿。"
+  ]
+}

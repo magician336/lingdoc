@@ -67,6 +67,7 @@ type DependencyApplication interface {
 	ListDependencyCandidates(ctx context.Context, actor Actor, projectID, batchID string) ([]DependencyCandidateBatch, error)
 	DecideDependencyCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input DependencyDecisionInput) (json.RawMessage, int, bool, error)
 	SubmitDependencyCandidateBatch(ctx context.Context, actor Actor, projectID, key string, input DependencyCandidateBatchInput) (json.RawMessage, int, bool, error)
+	RecommendDependencyCandidates(ctx context.Context, actor Actor, projectID, key string, input DependencyRecommendationInput) (json.RawMessage, int, bool, error)
 }
 
 // RuntimeApplication 是运行时：控制项、事件流、指标与告警规则。

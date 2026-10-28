@@ -55,3 +55,14 @@ test('a confirmation never states anything the server decides', async () => {
   assert.equal('status' in body, false)
   assert.equal('edge_id' in body, false)
 })
+
+test('the recommendation trigger posts only the human reason and keeps its idempotency key', async () => {
+  const { api, calls } = harness()
+  await api.recommendDependencyCandidates('p', { reason: '冷启动建边' }, 'recommend-run-001')
+  assert.equal(calls[0].method, 'post')
+  assert.equal(calls[0].url, '/api/v1/lingdoc/projects/p/dependency-recommendations')
+  assert.equal(calls[0].options.headers['Idempotency-Key'], 'recommend-run-001')
+  assert.equal(calls[0].input.reason, '冷启动建边')
+  assert.equal('candidates' in calls[0].input, false)
+  assert.equal('dropped' in calls[0].input, false)
+})

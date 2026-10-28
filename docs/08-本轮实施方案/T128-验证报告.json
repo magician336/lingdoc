@@ -1,0 +1,61 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#128 G5 资料授权、撤权与再鉴权的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C4（簇票 #699）首轮判定。",
+  "head": "3017840bf3638c839f20a8d69855054c0d519fee",
+  "base": "97ce243a",
+  "head_note": "判定 head：3017840bf3638c839f20a8d69855054c0d519fee（分支 c4-g5b-acceptance-judgement；C4 缺口轮的 2 个测试补丁属 #127/#130，本票 17 点全部复用既有具名用例在该 head 重跑）",
+  "base_note": "判定所依据的 main 基线：97ce243a（PR #537 合并提交）。来源授权链落点：AssetGateway/SourcePolicy（workspacecore source_policy.go）、来源读取与导出授权（internal/lingdoc/workspace）、KB-share 边界（internal/router 集成）。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 17,
+  "gap_round": {
+    "first_round": "17 点全部有既有用例映射，零代码补丁",
+    "disposition": "四处语义近似按口径 §4.1 记账（US-03 purpose/version 字段直断、US-11 跨租户 source ID 直测、TD-01 KB viewer/editor 半边、TD-03 pre-signed URL 直测），判定 PASS 并在矩阵行备注与 known_limits 写明边界。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-04、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestAccessStatusReportsContentAccess|TestOriginalInspectionReusesFetcherAndRequiresCurrentProvider)$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-01、US-04、TD-05"
+    },
+    {
+      "id": "US-02、US-12、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestResearchAdapterUsesExistingRetrievalScopeAndRejectsDeniedAsset$'`、`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead$'`（组合子集，ok 3.834s / 2.460s）；`go test -count=1 ./internal/router/ -run '^TestLingDocRealAPIThroughMainRegistration$'`（ok 11.081s；KB-share 拒绝断言）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-02、US-12、TD-01"
+    },
+    {
+      "id": "US-03、US-11、TD-01",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/router/ -run '^TestLingDocRealAPIThroughMainRegistration$'`（ok 11.081s；KB-share 显式拒绝、跨项目导出 404 由 workspace 组合承载）；`go test -count=1 ./internal/lingdoc/workspace/ -run '^TestExportRoutesHideAnotherProjectsExport$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-03、US-11"
+    },
+    {
+      "id": "US-05、US-06、US-08、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestG5ResourceBatchAlignsChapterAuthorAndResearcherAssetScopes|TestG5AuthReviewEmptyResearcherScopeDoesNotAuthorizeDraftSummaryOrAssets|TestSourceRevocationFailsClosedWithoutMutatingTask|TestRestoredSourceAccessMakesTaskWorkableAgain)$'`（workspacecore 组合子集，ok 2.460s）；`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked)$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-05、US-06、US-08、TD-02"
+    },
+    {
+      "id": "US-07、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestExportRoutesDenyADownloadAfterAccessIsGone|TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked|TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts|TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast)$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-07、TD-03"
+    },
+    {
+      "id": "US-09、US-10、TD-04",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestListChaptersRedactsRevokedBoundSource|TestAccessStatusHidesTheProjectFromNonMembers)$'`（workspace 组合子集，ok 3.834s）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 US-09、US-10、TD-04"
+    },
+    {
+      "id": "TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestSourceReadChecksFunctionScopeBeforeReturningExcerpt|TestOriginalInspectionReusesFetcherAndRequiresCurrentProvider|TestExportRoutesDenyADownloadAfterAccessIsGone)$'`、`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestSourceRevocationFailsClosedWithoutMutatingTask)$'`（组合子集）；`cd frontend && npm test -- src/api/lingdoc/sourceRetrievalContract.test.js`（组合 60 pass）；落证 head `3017840bf3638c839f20a8d69855054c0d519fee`；覆盖验收点 TD-05"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-03：绑定 purpose/version 字段的独立断言无直接用例，由 KB-share 授权拒绝 + 项目审计通路语义近似。",
+    "US-11：跨租户 source ID 无独立直测，由租户上下文反枚举（not-found 同形）与跨项目导出 404 语义近似。",
+    "TD-01：KB viewer/editor 与 API Key scope 半边由 KB-share 拒绝断言与 API Key 网关语义近似。",
+    "TD-03：pre-signed URL 直测无独立用例（导出走服务端授权下载，无预签名地址通路），由快照 currentness 拒绝语义近似。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；证据跑在隔离 SQLite 上，PostgreSQL 侧同组用例由 CI 的 Interface Integration 覆盖。",
+    "-list 逐一核对组合命令匹配数（workspace 12、router 15），无零匹配假绿；TestSourceRevocationFailsClosedWithoutMutatingTask 与 TestRestoredSourceAccessMakesTaskWorkableAgain 在 workspacecore 包（盘点时曾误记 workspace 侧，已按真实包归属重跑）。"
+  ]
+}
