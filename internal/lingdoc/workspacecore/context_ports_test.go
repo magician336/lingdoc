@@ -64,6 +64,7 @@ var narrowPortMethods = map[string][]string{
 		"DecideDependencyEdge",
 		"ListDependencyCandidates",
 		"ListDependencyEdges",
+		"RecommendDependencyCandidates",
 		"SubmitDependencyCandidateBatch",
 	},
 	"RuntimeApplication": {

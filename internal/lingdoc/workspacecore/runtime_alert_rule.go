@@ -64,6 +64,35 @@ func validRuntimeAlertDisposition(disposition string) bool {
 	return slices.Contains([]string{"notify", "retry", "pause", "block_export", "rollback", "human_confirm"}, disposition)
 }
 
+// resaveRuntimeAlertRule applies a save onto the rule that already holds the
+// same signal and scope.
+//
+// The fields the save carries are the rule's configuration; the rule's status
+// is not one of them. A rule an operator turned off stays off: re-arming is
+// the `enable` decision, with its own reason and its own audit row. A save
+// that carries exactly what is stored writes nothing at all, so pressing save
+// twice does not manufacture a version either.
+func resaveRuntimeAlertRule(tx Transaction, actor Actor, store runtimeTransaction, p Project, existing RuntimeAlertRule, recordKey string, version int64, input RuntimeAlertRule) (operationResult[RuntimeAlertRule], error) {
+	if existing.Severity == input.Severity && existing.Action == input.Action && existing.ResponsibleID == input.ResponsibleID {
+		return operationResult[RuntimeAlertRule]{Value: existing, Status: operationStatusOK}, nil
+	}
+	next := existing
+	next.Severity = input.Severity
+	next.Action = input.Action
+	next.ResponsibleID = input.ResponsibleID
+	next.Version = version + 1
+	if err := store.CompareAndSwapRuntimeRecord(actor.TenantID, p.ID, "alert_rule", recordKey, version, next); err != nil {
+		return operationResult[RuntimeAlertRule]{}, err
+	}
+	if err := recordAuditEvent(tx, actor, p.ID, "runtime.alert_rule.update", recordKey, map[string]any{
+		"operation": "save", "signal": next.Signal, "severity": next.Severity,
+		"action": next.Action, "responsible_id": next.ResponsibleID, "version": next.Version,
+	}); err != nil {
+		return operationResult[RuntimeAlertRule]{}, err
+	}
+	return operationResult[RuntimeAlertRule]{Value: next, Status: operationStatusOK}, nil
+}
+
 // validRuntimeAlertRule answers whether a whole rule is legal.
 func validRuntimeAlertRule(rule RuntimeAlertRule) bool {
 	return validRuntimeAlertSignal(rule.Signal) && rule.ResponsibleID != "" &&
@@ -93,21 +122,69 @@ func (s *Service) ListRuntimeAlertRules(ctx context.Context, actor Actor, projec
 		}
 		result = []RuntimeAlertRule{}
 		for _, row := range rows {
-			var rule RuntimeAlertRule
-			if err := json.Unmarshal([]byte(row.BodyJSON), &rule); err != nil {
+			rule, err := runtimeAlertRuleFromRow(row)
+			if err != nil {
 				return err
-			}
-			if rule.Version == 0 {
-				rule.Version = row.Version
-			}
-			if rule.Status == "" {
-				rule.Status = runtimeAlertRuleActive
 			}
 			result = append(result, rule)
 		}
 		return nil
 	})
 	return result, err
+}
+
+// runtimeAlertRuleFromRow decodes one stored rule.
+//
+// The stored model grows, so a record written before Version/Status existed
+// reads as an armed rule at the version the store holds for it. The decode
+// lives here once: every read path must agree on what a stored row means.
+func runtimeAlertRuleFromRow(row runtimeRecordRow) (RuntimeAlertRule, error) {
+	var rule RuntimeAlertRule
+	if err := json.Unmarshal([]byte(row.BodyJSON), &rule); err != nil {
+		return RuntimeAlertRule{}, err
+	}
+	if rule.Version == 0 {
+		rule.Version = row.Version
+	}
+	if rule.Status == "" {
+		rule.Status = runtimeAlertRuleActive
+	}
+	if rule.ID == "" {
+		// The record key is the identifier every other path uses, including
+		// the actions route, so a rule read without one still names itself.
+		rule.ID = row.RecordKey
+	}
+	return rule, nil
+}
+
+// sameRuntimeAlertRuleIdentity reports whether a stored rule holds the given
+// signal and scope.
+//
+// A rule is identified by its signal and its scope: a project arms one rule
+// per pair. Severity, disposition and the responsible member are fields of
+// that rule, not part of what makes it a different rule (#470).
+func sameRuntimeAlertRuleIdentity(rule RuntimeAlertRule, signal string, scope RuntimeScope) bool {
+	return rule.Signal == signal && rule.Scope == scope
+}
+
+// findRuntimeAlertRuleByIdentity reads the rule a save is about: the one that
+// already holds this signal and scope, under whatever record key it was
+// created with.
+func findRuntimeAlertRuleByIdentity(store runtimeTransaction, tenantID uint64, projectID, signal string, scope RuntimeScope) (RuntimeAlertRule, string, int64, error) {
+	rows, err := store.ListRuntimeRecords(tenantID, projectID, "alert_rule")
+	if err != nil {
+		return RuntimeAlertRule{}, "", 0, err
+	}
+	for _, row := range rows {
+		rule, err := runtimeAlertRuleFromRow(row)
+		if err != nil {
+			return RuntimeAlertRule{}, "", 0, err
+		}
+		if sameRuntimeAlertRuleIdentity(rule, signal, scope) {
+			return rule, row.RecordKey, row.Version, nil
+		}
+	}
+	return RuntimeAlertRule{}, "", 0, ErrNotFound
 }
 
 // findRuntimeAlertRule reads one rule by its record key, together with the
@@ -121,15 +198,9 @@ func findRuntimeAlertRule(store runtimeTransaction, tenantID uint64, projectID, 
 		if row.RecordKey != ruleID {
 			continue
 		}
-		var rule RuntimeAlertRule
-		if err := json.Unmarshal([]byte(row.BodyJSON), &rule); err != nil {
+		rule, err := runtimeAlertRuleFromRow(row)
+		if err != nil {
 			return RuntimeAlertRule{}, 0, err
-		}
-		if rule.Version == 0 {
-			rule.Version = row.Version
-		}
-		if rule.Status == "" {
-			rule.Status = runtimeAlertRuleActive
 		}
 		return rule, row.Version, nil
 	}

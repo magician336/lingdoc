@@ -10,6 +10,10 @@ on:
 
 permissions:
   contents: read
+  # The delegation failure verification (#734, ADR 0014) reads the check
+  # runs of the head the gate publishes about; read is the least that
+  # answers it.
+  checks: read
 
 concurrency:
   group: lingdoc-review-${{ github.event.pull_request.number || github.ref }}
@@ -53,6 +57,11 @@ jobs:
       # is spelled by the decision module, and only there.
       provider_shards: ${{ steps.scope.outputs.provider_shards }}
       frontend: ${{ steps.scope.outputs.frontend }}
+      # The job the delegation names (#734): the gate job verifies its real
+      # result on the head SHA before publishing.  Empty exactly when the
+      # delegation does not hold, so a face that was not delegated -- or an
+      # event that starts no frontend workflow -- costs zero queries.
+      frontend_delegate: ${{ steps.scope.outputs.frontend_delegate }}
       surface: ${{ steps.scope.outputs.surface }}
       reason: ${{ steps.scope.outputs.reason }}
       base: ${{ steps.scope.outputs.base }}
@@ -160,7 +169,10 @@ jobs:
 
   # The provider verification, sharded (#724, ADR 0014): one shard is one
   # entry of the decision module's shard list, and every shard runs the same
-  # test command over its own package list.  The matrix is generated from the
+  # test command over its own package list.  A shard may carry a -run filter
+  # (ADR 0015): the decision module's test-name partition of a package it
+  # splits -- consumed from the matrix like the package list, never spelled
+  # here.  The matrix is generated from the
   # output the prepare job declares above -- this workflow carries no package
   # names, and adding a package root never touches it.
   providers:
@@ -184,6 +196,7 @@ jobs:
       CGO_ENABLED: "1"
       SHARD_PACKAGES: ${{ matrix.shard.packages }}
       SHARD_NAME: ${{ matrix.shard.name }}
+      SHARD_TEST_FILTER: ${{ matrix.shard.go_test_filter }}
     steps:
       # Default checkout tests the merge result; depth one is enough, the
       # shard diffed nothing -- the decision was made in the prepare job.
@@ -203,12 +216,18 @@ jobs:
       - name: Test and vet the provider packages of this shard
         run: |
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
-          # -timeout 15m: the workspace shard's single package binary ran
-          # 590-600s on the runner (job wall 642-660s, dispatch 40451195877)
-          # against go test's default 10m package timeout — zero margin, one
-          # slow runner day from an intermittent required-check red. The
+          # -timeout 15m: the workspace package's single binary ran 590-600s
+          # on the runner (job wall 642-660s, dispatch 40451195877) against
+          # go test's default 10m package timeout — zero margin, one slow
+          # runner day from an intermittent required-check red. The
           # job-level timeout still bounds a hung run.
-          go test -race -count=1 -timeout 15m -json $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
+          # -run (ADR 0015): only what the decision module's shard data
+          # carries; an empty filter runs the whole package unfiltered.
+          FILTER_ARGS=()
+          if [ -n "$SHARD_TEST_FILTER" ]; then
+            FILTER_ARGS+=( -run "$SHARD_TEST_FILTER" )
+          fi
+          go test -race -count=1 -timeout 15m -json "${FILTER_ARGS[@]}" $SHARD_PACKAGES | tee "$RUNNER_TEMP/lingdoc-checks/go-test-$SHARD_NAME.jsonl"
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -248,7 +267,10 @@ jobs:
     needs: [prepare, providers]
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15 minutes: the publish step waits for the delegated frontend job
+    # inside a 10-minute polling window (#734); the extra five cover the
+    # artifact downloads and the setup steps.
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
@@ -262,6 +284,12 @@ jobs:
       # to frontend.yml#verify (...)" or an explicit "not run"), not the
       # outcome of a step this workflow no longer has.
       FRONTEND: ${{ needs.prepare.outputs.frontend }}
+      # The delegation failure verification (#734, ADR 0014): the job the
+      # delegation names, and the pull request's head SHA -- the frontend
+      # workflow's check runs attach to the head commit, not to the merge
+      # commit GITHUB_SHA names (read off PR #731's check runs).
+      FRONTEND_DELEGATE: ${{ needs.prepare.outputs.frontend_delegate }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       SURFACE: ${{ needs.prepare.outputs.surface }}
       REASON: ${{ needs.prepare.outputs.reason }}
       BASE: ${{ needs.prepare.outputs.base }}
@@ -291,9 +319,15 @@ jobs:
 
       - name: Publish check boundary and results
         if: always()
+        env:
+          # The delegation verification (#734) reads the head's check runs;
+          # this token carries exactly this workflow's permissions
+          # (contents: read, checks: read) and nothing more.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import json, os, sys
+          import json, os, sys, time
+          import urllib.request
           from pathlib import Path
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
           result = {key.lower(): os.environ.get(key, '') for key in
@@ -320,6 +354,111 @@ jobs:
               coverage = published.get('coverage') or []
               uncovered = bool(published.get('uncovered'))
               shards = published.get('provider_shards') or []
+
+          # -- the delegation failure verification (#734, ADR 0014) -----------
+          # The gate does not run the frontend checks; the frontend workflow's
+          # verify job does.  When the decision delegated the verification,
+          # the gate asks the check runs of the pull request's head SHA
+          # whether that job really finished here -- and exactly one
+          # conclusion keeps the delegation green: success.  A head where the
+          # frontend workflow did not really run (trigger, queue, failure all
+          # count as not run) must stay red, so a failed conclusion, a window
+          # that closes on an absent or pending run, and a failed query all
+          # turn this gate red and name the job and the state that caused
+          # it.  A query failure fails closed: it is never a silent pass.
+          def api_get(url, token):
+              headers = {'Accept': 'application/vnd.github+json'}
+              if token:
+                  headers['Authorization'] = 'Bearer ' + token
+              request = urllib.request.Request(url, headers=headers)
+              # The runner's proxy settings must not intercept this query.
+              opener = urllib.request.build_opener(
+                  urllib.request.ProxyHandler({}))
+              with opener.open(request, timeout=30) as response:
+                  return (response.status,
+                          json.loads(response.read().decode('utf-8')))
+
+          def delegate_verdict(runs, name):
+              # The observed state of the delegated job on this head.
+              # Same-named runs are judged together: a real success settles
+              # the delegation; a live run keeps the gate waiting
+              # (frontend.yml cancels in progress on a re-push, and a stale
+              # `cancelled` run must not read as a failure); otherwise the
+              # newest completed run's conclusion names the failure.
+              found = sorted((run for run in runs if run.get('name') == name),
+                             key=lambda run: run.get('id') or 0)
+              if not found:
+                  return 'pending', 'no check run on this head yet'
+              for run in found:
+                  if (run.get('status') == 'completed'
+                          and run.get('conclusion') == 'success'):
+                      return 'verified', 'conclusion=success'
+              for run in found:
+                  if run.get('status') != 'completed':
+                      return 'pending', 'status=' + str(run.get('status'))
+              return 'failed', 'conclusion=' + str(found[-1].get('conclusion'))
+
+          def fetch_check_runs(base, repo, sha, token):
+              # All check runs of one head, paging through the whole list.
+              runs = []
+              page = 1
+              while True:
+                  url = (f'{base}/repos/{repo}/commits/{sha}/check-runs'
+                         f'?per_page=100&page={page}')
+                  status, body = api_get(url, token)
+                  if status != 200:
+                      raise RuntimeError(f'HTTP {status} from {url}')
+                  batch = list((body or {}).get('check_runs') or ())
+                  runs.extend(batch)
+                  if len(batch) < 100:
+                      return runs
+                  page += 1
+
+          def verify_delegation(name, head):
+              # Poll the delegated job's real result; never fail open.  The
+              # window and its interval are env knobs (defaults: 30s
+              # interval, 10-minute window -- the measured frontend job runs
+              # ~154s, so the window carries a wide margin).
+              api = os.environ.get('GITHUB_API_URL',
+                                   'https://api.github.com').rstrip('/')
+              repo = os.environ.get('GITHUB_REPOSITORY', '')
+              token = os.environ.get('GITHUB_TOKEN', '')
+              interval = float(os.environ.get('GATE_DELEGATION_POLL_INTERVAL',
+                                              '30'))
+              window = float(os.environ.get('GATE_DELEGATION_POLL_TIMEOUT',
+                                            '600'))
+              deadline = time.monotonic() + window
+              while True:
+                  if not head:
+                      return {'delegated_job': name,
+                              'outcome': 'query-failed',
+                              'detail': 'query failed: no head SHA to ask '
+                                        'about'}
+                  try:
+                      runs = fetch_check_runs(api, repo, head, token)
+                  except Exception as error:  # fail closed on any failure
+                      return {'delegated_job': name,
+                              'outcome': 'query-failed',
+                              'detail': 'query failed: ' + str(error)}
+                  outcome, detail = delegate_verdict(runs, name)
+                  if outcome != 'pending':
+                      return {'delegated_job': name, 'outcome': outcome,
+                              'detail': detail}
+                  if time.monotonic() >= deadline:
+                      return {'delegated_job': name, 'outcome': 'timeout',
+                              'detail': (detail + '; polling window exhausted '
+                                         f'({window:g}s)')}
+                  time.sleep(interval)
+
+          # Only a delegated face is verified: an empty delegate key -- an
+          # unselected frontend, a dispatch that starts no frontend
+          # workflow -- costs zero queries.
+          delegate = os.environ.get('FRONTEND_DELEGATE', '').strip()
+          delegation = {}
+          if delegate:
+              delegation = verify_delegation(
+                  delegate, os.environ.get('HEAD_SHA', '').strip())
+
           # A shard is verified when its marker exists: the marker step only
           # runs after that shard's tests, its not-empty assertion and its
           # vet all passed (#724).
@@ -331,6 +470,10 @@ jobs:
           result['provider_shards'] = outcomes
           result['coverage'] = coverage
           result['uncovered'] = uncovered
+          # The delegated job's real result on this head, when the gate had
+          # to ask (#734): an empty object says no delegation held, so
+          # nothing was queried.
+          result['frontend_delegation'] = delegation
           # The boundary keeps delegation and skipping apart (ADR 0014): a
           # delegated check has real evidence on the named job of the
           # frontend workflow on this head; a skipped check is NOT RUN.
@@ -362,12 +505,24 @@ jobs:
                                               for name in failed_shards))
               else:
                   failures.append(f'the provider shard matrix ended with {providers}')
+          if not failures and delegation and delegation['outcome'] != 'verified':
+              # The delegation's real result on this head (ADR 0014): the
+              # failure names the delegated job and the state that caused it.
+              failures.append(
+                  'the delegated frontend verification did not pass on this '
+                  f"head: {delegation['delegated_job']} "
+                  f"({delegation['detail']})")
           if not failures and os.environ.get('PREPARE_RESULT') != 'success':
               failures.append('the decision job did not finish successfully')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
               for key in ('ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
+              if delegation:
+                  handle.write('| frontend delegation | '
+                               + delegation['delegated_job'] + ': '
+                               + delegation['outcome'] + ' ('
+                               + delegation['detail'] + ') |\n')
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
               handle.write(f'Base: {result["base"] or "(not recorded)"}\n')

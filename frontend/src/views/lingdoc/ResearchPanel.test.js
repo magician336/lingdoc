@@ -70,6 +70,18 @@ test('版本冲突保留用户草稿和原幂等键，不自动重试',async()=>
  assert.equal(writes.length,2);assert.equal(writes[0][2],writes[1][2])
  f.close()
 })
+test('权限拒绝清空本地任务草稿并给出可读错误，且不产生第二次写入',async()=>{
+ const writes=[]
+ const f=fixture({api:{saveResearchTask:(...args)=>{writes.push(args);return Promise.reject({status:403,message:'权限已变化'})}}});await tick()
+ Object.assign(f.state.taskForm,{goal:'权限拒绝后被清空',queries:'定义\n反例',assets:['asset'],scope:'仅此资料'})
+ await f.state.saveTask()
+ assert.equal(writes.length,1)
+ assert.equal(f.state.taskForm.goal,'')
+ assert.match(f.state.error.value,/权限已变化/)
+ await f.state.saveTask()
+ assert.equal(writes.length,1)
+ f.close()
+})
 test('实际来源请求返回前切换项目，旧片段不会进入新项目',async()=>{
  let finish
  const f=fixture({workspace:{getSource:()=>new Promise(resolve=>{finish=resolve})}});await tick()

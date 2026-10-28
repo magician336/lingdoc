@@ -193,6 +193,10 @@ async function decide(candidate: DependencyCandidate, decision: DependencyCandid
 }
 
 watch(() => props.projectId, () => { void refresh() }, { immediate: true })
+// The recommendation trigger (#751) lives in the parent panel: after it queues
+// a new batch, it calls this refresh so the queue shows the new candidates
+// without the user re-opening the panel.
+defineExpose({ refresh })
 </script>
 
 <style scoped>

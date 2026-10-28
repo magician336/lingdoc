@@ -139,9 +139,11 @@ CONCEPTS: tuple[Concept, ...] = (
         snippet="委托的证据在另一个 job 上真实存在",
         # The delegation is carried by the frontend verdict: the published
         # ``frontend`` key names the delegated job instead of reporting this
-        # gate's own outcome (#723, ADR 0014).
+        # gate's own outcome (#723, ADR 0014).  ``frontend_delegate`` is the
+        # key the failure verification reads: the delegated job's display
+        # name, empty exactly when the delegation does not hold (#734).
         fields=("Decision.frontend",),
-        keys=("frontend",),
+        keys=("frontend", "frontend_delegate"),
     ),
     Concept(
         term="分片",
@@ -152,6 +154,21 @@ CONCEPTS: tuple[Concept, ...] = (
         # 0014), and the coverage table names the shard jobs.
         fields=("Decision.provider_shards",),
         keys=("provider_shards",),
+    ),
+    Concept(
+        term="反向委托",
+        doc=GLOSSARY,
+        snippet="app 工作流在 PR 事件上把 gate 分片正在验证的 provider 包从自己的测试集剔除",
+        # The reverse delegation (#737, ADR 0014's delegation in the
+        # opposite direction of #723): the app workflow's pull_request test
+        # set leaves the delegated packages to the gate's shards.  The
+        # published ``provider_delegate`` key carries the delegated list --
+        # non-empty exactly when the shards run -- and the coverage table
+        # credits the delegated paths to the shard jobs, not to the app job
+        # that skipped the duplicate.  The workflow keeps the full list on
+        # a push and falls back to it on any failure of this data.
+        fields=("Decision.provider_shards",),
+        keys=("provider_delegate",),
     ),
     Concept(
         term="未判定回退全量",

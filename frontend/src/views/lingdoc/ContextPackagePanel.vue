@@ -29,7 +29,7 @@
 -->
 <script setup lang="ts">
 import { computed, getCurrentInstance, onServerPrefetch, ref, watch } from 'vue'
-import { alignCardStatuses, previewContextPackage, withCard, withoutCard } from '@/api/lingdoc/agentContext'
+import { alignCardStatuses, previewContextPackage, reasonsForEntry, withCard, withoutCard } from '@/api/lingdoc/agentContext'
 import type { ContextCardStatus, ContextCardSummary, ContextFacts, ContextIntent, ContextPackageClient } from '@/api/lingdoc/agentContext'
 
 /** 卡片引用：门面的卡片状态里带着它，这里从门面取形状，不引传输层。 */
@@ -306,17 +306,13 @@ defineExpose({ intent, selectedCards, facts, errorMessage, busy, addCard, remove
               <span class="context-fact-card__id">{{ row.ref.id }}</span>
               <span class="context-fact-card__version">v{{ row.ref.version }}</span>
               <span class="context-fact-card__status" :data-fact-state="row.state" :data-fact-reason="row.state === 'unknown' ? row.reason : undefined">{{ factStatusText(row) }}</span>
+              <span v-if="reasonsForEntry(facts.groups.reasons, 'card', row.ref.id).length" class="context-fact-card__reasons">
+                <span class="context-fact-card__reason-label">选择理由：</span>
+                <span v-for="reason in reasonsForEntry(facts.groups.reasons, 'card', row.ref.id)" :key="`${reason.code}|${reason.id}`" class="context-fact-card__reason" :data-reason-kind="reason.kind" :data-reason-id="reason.id" :data-reason-code="reason.code">{{ reason.text }}</span>
+              </span>
             </li>
           </ul>
           <p v-else class="context-package-panel__empty">服务端这一轮没有带任何证据卡。</p>
-        </section>
-
-        <section class="context-facts__reasons" aria-label="选择理由">
-          <h5>选择理由</h5>
-          <ul v-if="facts.groups.reasons.length" class="context-package-panel__list">
-            <li v-for="(reason, index) in facts.groups.reasons" :key="index" class="context-fact-reason">{{ reason }}</li>
-          </ul>
-          <p v-else class="context-package-panel__empty">服务端没有给出选择理由。</p>
         </section>
 
         <section class="context-facts__sources" aria-label="本轮带的来源">
@@ -326,6 +322,10 @@ defineExpose({ intent, selectedCards, facts, errorMessage, busy, addCard, remove
               <span class="context-fact-source__locator">{{ source.locator || source.source_id }}</span>
               <span class="context-fact-source__revision">资料版本 v{{ source.asset_revision }}</span>
               <span class="context-fact-source__permission">{{ source.model_use_allowed ? '模型使用已许可' : '模型使用未许可' }}</span>
+              <span v-if="reasonsForEntry(facts.groups.reasons, 'source', source.source_id).length" class="context-fact-source__reasons">
+                <span class="context-fact-source__reason-label">选择理由：</span>
+                <span v-for="reason in reasonsForEntry(facts.groups.reasons, 'source', source.source_id)" :key="`${reason.code}|${reason.id}`" class="context-fact-source__reason" :data-reason-kind="reason.kind" :data-reason-id="reason.id" :data-reason-code="reason.code">{{ reason.text }}</span>
+              </span>
             </li>
           </ul>
           <p v-else class="context-package-panel__empty">服务端这一轮没有带任何来源。</p>
@@ -335,6 +335,7 @@ defineExpose({ intent, selectedCards, facts, errorMessage, busy, addCard, remove
           <h5>版本基线</h5>
           <p class="context-fact-baseline">项目版本 v{{ facts.groups.version_baseline.project_version }} · 规范修订 {{ facts.groups.version_baseline.spec_revision }} · 上下文修订 {{ facts.groups.version_baseline.context_revision }}</p>
           <p class="context-fact-baseline">章节版本 {{ facts.groups.version_baseline.chapter_version_id || '未关联' }} · 任务版本 {{ facts.groups.version_baseline.task_version ?? '未关联' }} · 模板 {{ facts.groups.version_baseline.template_id }} v{{ facts.groups.version_baseline.template_version }}</p>
+          <p v-for="reason in reasonsForEntry(facts.groups.reasons, 'task', facts.groups.version_baseline.task_id || '')" :key="`${reason.code}|${reason.id}`" class="context-fact-baseline" :data-reason-kind="reason.kind" :data-reason-id="reason.id" :data-reason-code="reason.code">任务选择理由：{{ reason.text }}</p>
         </section>
 
         <section class="context-facts__authorization" aria-label="授权结论与输出约束">
@@ -379,8 +380,9 @@ defineExpose({ intent, selectedCards, facts, errorMessage, busy, addCard, remove
 .context-package-panel__add-button:focus-visible{outline:3px solid #679ce5;outline-offset:2px}
 .context-fact-card,.context-fact-source{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
 .context-fact-card__id{font-weight:600}
-.context-fact-card__version,.context-fact-source__revision,.context-fact-source__permission{color:#667085;font-size:12px}
-.context-fact-reason,.context-fact-constraint{font-size:13px;line-height:1.6}
+.context-fact-card__version,.context-fact-card__reasons,.context-fact-source__revision,.context-fact-source__permission,.context-fact-source__reasons{color:#667085;font-size:12px}
+.context-fact-card__reason,.context-fact-source__reason{display:block;line-height:1.6}
+.context-fact-constraint{font-size:13px;line-height:1.6}
 .context-fact-baseline{margin:4px 0;font-size:13px;line-height:1.6}
 .context-fact-authorization{margin:4px 0;font-size:13px;line-height:1.6}
 .context-fact-correlation{margin:4px 0;font-size:13px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word}

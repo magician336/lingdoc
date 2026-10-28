@@ -99,6 +99,14 @@ How to add a face
    with a non-zero exit status.
 4. Only then hand the face to an executor.
 
+The ticket's "文件所有权" section is machine-read by
+``scripts/lingdoc_ticket_ownership.py``; write it in the shape that check
+documents (heading optionally followed by a note in parentheses, and one or
+more backtick paths inside list items, each path written out in full -- no
+``{up,down}`` brace shorthand).  A ticket that cannot be parsed is reported
+as **unparsed** (exit 3), not as "no ownership section": the check never
+turns a shape problem into a quiet skip.
+
 When a path permanently moves from one face to another (a face changed a path
 another face owned, and the registry's path-level overlap check forces an
 explicit move), the hand-over is recorded in the ``TRANSFERS`` ledger below:

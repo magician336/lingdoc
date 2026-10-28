@@ -22322,7 +22322,12 @@
                               }
                             ],
                             "selection_reasons": [
-                              "synthetic-selection-reasons"
+                              {
+                                "kind": "card",
+                                "id": "synthetic-card-id",
+                                "code": "user_selected_card",
+                                "text": "synthetic-selection-reasons"
+                              }
                             ],
                             "authorization_state": "synthetic-authorization-state",
                             "output_constraints": [
@@ -22372,7 +22377,12 @@
                             "source_refs": [],
                             "card_refs": [],
                             "selection_reasons": [
-                              "synthetic-selection-reasons"
+                              {
+                                "kind": "card",
+                                "id": "synthetic-card-id",
+                                "code": "user_selected_card",
+                                "text": "synthetic-selection-reasons"
+                              }
                             ],
                             "authorization_state": "synthetic-authorization-state",
                             "output_constraints": [
@@ -22579,7 +22589,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22676,7 +22691,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22737,7 +22757,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22799,7 +22824,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22861,7 +22891,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22922,7 +22957,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -22993,7 +23033,12 @@
                             }
                           ],
                           "selection_reasons": [
-                            "synthetic-selection-reasons"
+                            {
+                              "kind": "card",
+                              "id": "synthetic-card-id",
+                              "code": "user_selected_card",
+                              "text": "synthetic-selection-reasons"
+                            }
                           ],
                           "authorization_state": "synthetic-authorization-state",
                           "output_constraints": [
@@ -26427,7 +26472,12 @@
                           }
                         ],
                         "selection_reasons": [
-                          "synthetic-selection-reasons"
+                          {
+                            "kind": "card",
+                            "id": "synthetic-card-id",
+                            "code": "user_selected_card",
+                            "text": "synthetic-selection-reasons"
+                          }
                         ],
                         "authorization_state": "synthetic-authorization-state",
                         "output_constraints": [
@@ -28360,6 +28410,41 @@
                           "value": "synthetic-value"
                         },
                         "version": 1,
+                        "status": "ACTIVE"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "同一 signal + scope 的规则已存在：保存就地更新该规则（版本递增）或原样返回，不新增第二条；规则的 ACTIVE/DISABLED 状态不由保存改变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeAlertRuleResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "signal": "synthetic-signal",
+                        "severity": "synthetic-severity",
+                        "action": "synthetic-action",
+                        "responsible_id": "synthetic-responsible-id",
+                        "scope": {
+                          "kind": "tenant",
+                          "value": "synthetic-value"
+                        },
+                        "version": 2,
                         "status": "ACTIVE"
                       },
                       "request_id": "synthetic-contract-example",
@@ -34481,6 +34566,17 @@
                       },
                       "request_id": "req-demo"
                     }
+                  },
+                  "condition_change_dismissal_stale": {
+                    "summary": "否决清单与服务端重算不一致（#753）",
+                    "value": {
+                      "error": {
+                        "code": "condition_change_dismissal_stale",
+                        "message": "确认的研究条件疑义清单与当前不一致，请重新查看后再决定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
                   }
                 }
               }
@@ -34509,6 +34605,25 @@
                         "code": "invalid_state",
                         "message": "当前阶段不能执行该动作。",
                         "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "condition_change_confirmation_required": {
+                    "summary": "正文中不再出现已登记的研究条件值（#753）",
+                    "value": {
+                      "error": {
+                        "code": "condition_change_confirmation_required",
+                        "message": "正文中不再出现已登记的研究条件值，疑似研究条件变化：请改走正式变更，或确认仍按措辞提交。",
+                        "retryable": false,
+                        "details": {
+                          "suspected_condition_changes": [
+                            {
+                              "field_id": "research_subject",
+                              "value": "旧研究主题值"
+                            }
+                          ]
+                        }
                       },
                       "request_id": "req-demo"
                     }
@@ -35143,6 +35258,108 @@
           }
         },
         "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/dependency-recommendations": {
+      "post": {
+        "operationId": "recommendDependencyCandidates",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "AI 推荐依赖边候选（冷启动）：服务端收集项目信号调模型产候选，逐条复核后进既有候选队列；模型只建议不建边",
+        "description": "人工触发的推荐动作。服务端收集正文 [[source:]] 引用、CitationUsage、证据卡 scope_chapter_ids、模板字段-章节结构与 RouteNode 声明等信号，调用项目默认生成模型产候选边；每条候选经服务端复核（对象必须真实存在、版本由服务端补齐、action 合法、不与既有边重复）后进入既有 dependency-candidates 队列（Origin=ai），由人工逐条 confirm/modify/reject。模型调用按次计入 lingdoc_model_call_ledger。同一幂等键重放返回原批次，不重复调用模型。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyRecommendationInput"
+              },
+              "example": {
+                "reason": "冷启动建边",
+                "scope": {
+                  "target_kinds": [
+                    "ChapterVersion",
+                    "EvidenceCard"
+                  ],
+                  "reason": "先补章节与证据卡的关联"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "推荐完成：复核通过的候选已写入既有候选批次；被复核拒绝的模型建议带原因记入 dropped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyRecommendationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "机器主体触发（human_decision_required）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "dependency_recommendation_invalid_output：模型返回内容无法解析，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "dependency_recommendation_unavailable：无可用推荐模型或模型调用失败，零写入；人工登记路径不受影响",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "dependency_recommendation_no_valid_candidates：模型建议全部未通过复核，零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
         "x-delivery-phase": "core"
       }
     },
@@ -48675,6 +48892,9 @@
           "failure_code": {
             "type": "string"
           },
+          "failure_detail": {
+            "type": "string"
+          },
           "feedback": {
             "type": "string"
           }
@@ -48814,6 +49034,9 @@
             "type": "string"
           },
           "failure_code": {
+            "type": "string"
+          },
+          "failure_detail": {
             "type": "string"
           },
           "run_mode": {
@@ -49405,6 +49628,44 @@
         "x-go-type": "core.AgentSourceRef",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
+      "SelectionReason": {
+        "type": "object",
+        "description": "为什么某个条目在这一轮上下文里。kind 与 id 指向条目，code 是稳定原因码；text 只供展示，改措辞不改变前三者。",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "card",
+              "source",
+              "task"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "user_selected_task",
+              "user_selected_card",
+              "user_selected_source",
+              "card_dependency"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "code",
+          "text"
+        ],
+        "x-go-type": "core.SelectionReason",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
       "AgentContextPackage": {
         "type": "object",
         "properties": {
@@ -49465,7 +49726,7 @@
           "selection_reasons": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/SelectionReason"
             },
             "nullable": true
           },
@@ -52828,6 +53089,15 @@
             "type": "string",
             "nullable": true,
             "description": "可为null；省略按Go指针零值null解释。必须与当前正式版本/工作副本base一致，否则409。"
+          },
+          "condition_change_dismissal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConditionChangeDismissal"
+              }
+            ],
+            "nullable": true,
+            "description": "可选：携带时表示操作者已看过疑似清单并确认仍按措辞提交。"
           }
         },
         "required": [
@@ -53474,6 +53744,175 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/DependencyCandidateDecisionResult"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ModelProposedDependency": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_kind",
+          "source_id",
+          "target_kind",
+          "target_id",
+          "relation",
+          "action",
+          "evidence",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "source_kind": {
+            "type": "string",
+            "description": "信号清单内的对象类型；模型不得编造对象"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE",
+              "NO_ACTION"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "引用信号包中的具体依据，可追溯"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "DependencyRecommendationDrop": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "proposal",
+          "reason"
+        ],
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/ModelProposedDependency"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "fabricated_object",
+              "invalid_field",
+              "invalid_action",
+              "scope_violation",
+              "duplicate",
+              "edge_already_present",
+              "overflow"
+            ],
+            "description": "复核拒绝原因"
+          }
+        }
+      },
+      "DependencyRecommendationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "默认取传输层 Idempotency-Key；同键重放原批次且不重复调用模型"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DependencyCandidateScope"
+          }
+        }
+      },
+      "DependencyRecommendationModelInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "run_mode": {
+            "type": "string"
+          },
+          "model_run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyRecommendationOutcome": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "batch",
+          "model"
+        ],
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/DependencyCandidateBatch"
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyRecommendationDrop"
+            }
+          },
+          "model": {
+            "$ref": "#/components/schemas/DependencyRecommendationModelInfo"
+          }
+        }
+      },
+      "DependencyRecommendationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyRecommendationOutcome"
           },
           "request_id": {
             "type": "string"
@@ -55612,6 +56051,30 @@
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ConditionChangeDismissal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dismissed_fields",
+          "reason"
+        ],
+        "description": "措辞提交时对疑似研究条件变化的显式否决（#753）：dismissed_fields 必须与服务端重算的疑似字段集合一致，否则 409 condition_change_dismissal_stale；否决放行后写入 chapter.commit.condition_dismissed 审计。",
+        "properties": {
+          "dismissed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "操作者看过并否决的疑似字段 id 清单"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "否决理由（必填，进审计）"
           }
         }
       }

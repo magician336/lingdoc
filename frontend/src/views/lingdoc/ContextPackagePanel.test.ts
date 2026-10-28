@@ -272,7 +272,7 @@ test('面板显示服务端组装的那一份：卡片、理由、来源许可�
   state.pkg = contextPackage({
     card_refs: [{ id: 'card-1', version: 3 }],
     source_refs: [sourceRef('source-a')],
-    selection_reasons: ['用户勾选了证据卡 card-1'],
+    selection_reasons: [{ kind: 'card', id: 'card-1', code: 'user_selected_card', text: '用户勾选了证据卡 card-1' }],
     authorization_state: 'requires_confirmation',
     output_constraints: ['不得编造出处'],
   })
@@ -288,6 +288,56 @@ test('面板显示服务端组装的那一份：卡片、理由、来源许可�
   assert.match(html, /不得编造出处/, '输出约束要显示出来')
   assert.match(html, /项目版本 v7/, '版本基线要显示出来')
   assert.match(html, /上下文修订 4/, '版本基线要显示出来')
+})
+
+test('选择理由按 kind + id 挂接条目：文本里提到别的条目也不会串', async () => {
+  const { client, state } = makeServer()
+  state.pkg = contextPackage({
+    card_refs: [{ id: 'card-1', version: 3 }, { id: 'card-2', version: 1 }],
+    source_refs: [sourceRef('source-a')],
+    selection_reasons: [
+      { kind: 'card', id: 'card-2', code: 'card_dependency', text: 'card-1 的用户勾选带入了这张卡' },
+      { kind: 'card', id: 'card-1', code: 'user_selected_card', text: '用户勾选' },
+      { kind: 'source', id: 'source-a', code: 'card_dependency', text: '卡片依赖的原文' },
+      { kind: 'task', id: 'task-1', code: 'user_selected_task', text: '用户选择的当前调研任务' },
+    ],
+  })
+  state.cards = [evidenceCard('card-1', 3, 'CONFIRMED'), evidenceCard('card-2', 1, 'CONFIRMED')]
+
+  const html = await renderPanel(panelProps({ client }))
+  const row = (attribute: string, id: string) => html.split(`${attribute}="${id}"`)[1].split('</li>')[0]
+
+  assert.match(row('data-fact-card', 'card-1'), /data-reason-id="card-1"/)
+  assert.match(row('data-fact-card', 'card-2'), /data-reason-id="card-2"/)
+  assert.doesNotMatch(row('data-fact-card', 'card-1'), /card-1 的用户勾选带入了这张卡/, '文本里提到 card-1 不等于这条理由属于 card-1')
+  assert.match(row('data-fact-card', 'card-2'), /card-1 的用户勾选带入了这张卡/)
+  assert.match(row('data-fact-source', 'source-a'), /data-reason-id="source-a"/)
+  assert.match(html, /任务选择理由/)
+  assert.match(html, /data-reason-kind="task"/)
+})
+
+test('服务端改理由措辞 ⇒ 仍挂到同一条目，界面显示新措辞', async () => {
+  const { client, state } = makeServer()
+  state.pkg = contextPackage({
+    card_refs: [{ id: 'card-1', version: 3 }],
+    selection_reasons: [{ kind: 'card', id: 'card-1', code: 'user_selected_card', text: '用户选择证据卡；层级=CONFIRMED' }],
+  })
+  state.cards = [evidenceCard('card-1', 3, 'CONFIRMED')]
+
+  const before = await renderPanel(panelProps({ client }))
+  state.pkg = contextPackage({
+    card_refs: [{ id: 'card-1', version: 3 }],
+    selection_reasons: [{ kind: 'card', id: 'card-1', code: 'user_selected_card', text: '这张卡是用户在这一轮勾选的（措辞已改）' }],
+  })
+  const after = await renderPanel(panelProps({ client }))
+
+  assert.match(before, /用户选择证据卡；层级=CONFIRMED/)
+  assert.match(after, /这张卡是用户在这一轮勾选的（措辞已改）/)
+  assert.doesNotMatch(after, /用户选择证据卡；层级=CONFIRMED/)
+  for (const html of [before, after]) {
+    assert.match(html, /data-fact-card="card-1"/)
+    assert.match(html, /data-reason-id="card-1"/, '措辞变了，理由仍挂在这张卡上')
+  }
 })
 
 test('意图里多勾了一张卡、服务端包里没有它 ⇒ 事实区不显示它', async () => {
@@ -388,7 +438,7 @@ test('证据卡清单读不到 ⇒ 卡片状态未知（清单读不到），范
   state.pkg = contextPackage({
     card_refs: [{ id: 'card-1', version: 3 }],
     source_refs: [sourceRef('source-a')],
-    selection_reasons: ['用户勾选了证据卡 card-1'],
+    selection_reasons: [{ kind: 'card', id: 'card-1', code: 'user_selected_card', text: '用户勾选了证据卡 card-1' }],
   })
   state.cardFailure = new Error('证据卡清单读不到')
 
@@ -437,7 +487,7 @@ test('撤权后服务端不再返回受限条目 ⇒ 面板不再显示它', asy
   const { client, state } = makeServer()
   state.pkg = contextPackage({
     source_refs: [sourceRef('source-a')],
-    selection_reasons: ['第一条理由'],
+    selection_reasons: [{ kind: 'source', id: 'source-a', code: 'user_selected_source', text: '第一条理由' }],
   })
 
   const { state: panelState } = openPanel(panelProps({ client }))

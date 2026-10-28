@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -577,7 +578,6 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 		if !ok {
 			return operationResult[RuntimeAlertRule]{}, ErrInvalidState
 		}
-		input.ID = newRuntimeAlertRuleID()
 		input.Status = runtimeAlertRuleActive
 		input.Version = 1
 		if input.Scope.Kind == "" {
@@ -591,6 +591,19 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, p.ID, AuthorizationManage, "")); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
+		// One rule per signal and scope: a save is an upsert on that identity,
+		// not an insert. A repeated save (a new idempotency key, the same form)
+		// therefore converges on the rule that is already armed instead of
+		// arming a second copy (#470). The idempotency key still covers the
+		// retry case, where the client resends the same key and request.
+		existing, recordKey, version, err := findRuntimeAlertRuleByIdentity(store, actor.TenantID, p.ID, input.Signal, input.Scope)
+		switch {
+		case err == nil:
+			return resaveRuntimeAlertRule(tx, actor, store, p, existing, recordKey, version, input)
+		case !errors.Is(err, ErrNotFound):
+			return operationResult[RuntimeAlertRule]{}, err
+		}
+		input.ID = newRuntimeAlertRuleID()
 		if err := store.InsertRuntimeRecord(actor.TenantID, p.ID, "alert_rule", input.ID, 1, input); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
