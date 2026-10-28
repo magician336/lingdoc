@@ -2,6 +2,7 @@ package crossref
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,24 @@ import (
 	"testing"
 	"time"
 )
+
+func TestUpdateDateShapes(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{`{"date-parts":[[2024,3]]}`, "2024-03"},
+		{`{"date-parts":[[2023,4,22]],"date-time":"2023-04-22T00:00:00Z","timestamp":1682121600000}`, "2023-04-22T00:00:00Z"},
+		{`"2022-01-02"`, "2022-01-02"},
+		{`null`, ""},
+	} {
+		var date apiUpdateDate
+		if err := json.Unmarshal([]byte(tc.input), &date); err != nil || string(date) != tc.want {
+			t.Errorf("date %s => %q, %v; want %q", tc.input, date, err, tc.want)
+		}
+	}
+	var date apiUpdateDate
+	if err := json.Unmarshal([]byte(`42`), &date); err == nil {
+		t.Fatal("invalid update date accepted")
+	}
+}
 
 func TestSearchEncodesRequestAndMapsMetadata(t *testing.T) {
 	t.Parallel()
@@ -39,7 +58,7 @@ func TestSearchEncodesRequestAndMapsMetadata(t *testing.T) {
 		if got, want := r.Header.Get("Accept"), "application/json"; got != want {
 			t.Errorf("Accept = %q, want %q", got, want)
 		}
-		if _, err := fmt.Fprint(w, `{"status":"ok","message":{"items":[{"DOI":"10.5555/example.1","title":["A metadata-only title"],"author":[{"given":"Ada","family":"Lovelace","ORCID":"https://orcid.org/0000-0000-0000-0001","affiliation":[{"name":"Example University"}]},{"name":"Consortium"}],"published-online":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678","8765-4321"],"type":"journal-article","URL":"https://doi.org/10.5555/example.1","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/","start":{"date-parts":[[2024,3]]},"content-version":"vor","delay-in-days":0}],"update-to":[{"DOI":"10.5555/example.retraction","type":"retraction","updated":"2025-01-02T03:04:05Z","label":"Retraction","source":"Crossref"}]}]}}`); err != nil {
+		if _, err := fmt.Fprint(w, `{"status":"ok","message":{"items":[{"DOI":"10.5555/example.1","title":["A metadata-only title"],"author":[{"given":"Ada","family":"Lovelace","ORCID":"https://orcid.org/0000-0000-0000-0001","affiliation":[{"name":"Example University"}]},{"name":"Consortium"}],"published-online":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678","8765-4321"],"type":"journal-article","URL":"https://doi.org/10.5555/example.1","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/","start":{"date-parts":[[2024,3]]},"content-version":"vor","delay-in-days":0}],"update-to":[{"DOI":"10.5555/example.retraction","type":"retraction","updated":{"date-parts":[[2025,1,2]],"date-time":"2025-01-02T03:04:05Z","timestamp":1735787045000},"label":"Retraction","source":"Crossref"}]}]}}`); err != nil {
 			t.Errorf("write fixture response: %v", err)
 		}
 	}))
@@ -72,7 +91,7 @@ func TestSearchEncodesRequestAndMapsMetadata(t *testing.T) {
 	if len(work.Licenses) != 1 || work.Licenses[0].URL != "https://creativecommons.org/licenses/by/4.0/" || work.Licenses[0].StartDate != "2024-03" || work.Licenses[0].ContentVersion != "vor" || work.Licenses[0].DelayInDays == nil || *work.Licenses[0].DelayInDays != 0 {
 		t.Fatalf("license metadata not mapped: %+v", work.Licenses)
 	}
-	if !work.HasRetractionNotice() || len(work.UpdateTo) != 1 || work.UpdateTo[0].Type != "retraction" || work.UpdateTo[0].DOI != "10.5555/example.retraction" || work.UpdateTo[0].Label != "Retraction" {
+	if !work.IsRetractionNotice() || len(work.UpdateTo) != 1 || work.UpdateTo[0].Type != "retraction" || work.UpdateTo[0].DOI != "10.5555/example.retraction" || work.UpdateTo[0].Label != "Retraction" || work.UpdateTo[0].Updated != "2025-01-02T03:04:05Z" {
 		t.Fatalf("retraction update-to metadata not preserved: %+v", work.UpdateTo)
 	}
 }
@@ -97,7 +116,7 @@ func TestSearchPreservesMissingFieldsAndDatePrecision(t *testing.T) {
 	if works[0].PublishedDate != "2020" {
 		t.Errorf("year-only PublishedDate = %q, want 2020", works[0].PublishedDate)
 	}
-	if works[1].PublishedDate != "" || works[1].Title != "" || works[1].Journal != "" || works[1].HasRetractionNotice() {
+	if works[1].PublishedDate != "" || works[1].Title != "" || works[1].Journal != "" || works[1].IsRetractionNotice() {
 		t.Errorf("missing source metadata was invented: %+v", works[1])
 	}
 }

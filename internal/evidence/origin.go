@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/infrastructure/chunker"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -50,7 +51,7 @@ type KnowledgeReader interface {
 	// 引擎产出的 markdown、不是文件字节，偏移整体错位，强档会产出**假的 stale**。
 	//
 	// 实现方（接线处）在 KB 与过程覆盖上取 `eff.ChunkingConfig.ResolveParserEngine(fileType)`：
-	// 空串即内置路由（`internal/types/knowledgebase.go:305`），非空即被改派。
+	// 空串与显式 simple 均可由 Go 直读文本；其他引擎须降档。
 	// 判不定时返回 (false, nil)——保守一侧是降档，不是失败，别把它做成错误。
 	UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error)
 }
@@ -86,8 +87,8 @@ type OriginBytesReader interface {
 	OriginBytes(ctx context.Context, knowledgeID string) (data []byte, ok bool, err error)
 }
 
-// NewOriginReader 组装固定实现：手工资料的正文取自 metadata，
-// 纯文本文件直读文件字节，其余一律 ok=false（调用方降弱档）。
+// NewOriginReader 组装固定实现：手工资料的正文取自 metadata；直接读取的
+// 上传文本返回与分块索引一致的 LF 规范化文本。其余一律 ok=false。
 func NewOriginReader(knowledge KnowledgeReader) OriginReader {
 	return &fileOriginReader{knowledge: knowledge}
 }
@@ -181,11 +182,28 @@ func (r *fileOriginReader) fileOrigin(ctx context.Context, row *types.Knowledge)
 	if !ok {
 		return "", false, nil
 	}
-	text, provable := VerbatimOrigin(data)
+	text, provable := UploadedOriginForIndex(data)
 	if !provable {
 		return "", false, nil
 	}
 	return text, true, nil
+}
+
+// UploadedOriginForIndex reconstructs the exact rune-coordinate space used by
+// the built-in uploaded-text ingestion path: line endings are canonicalized
+// to LF before chunking. Callers must still prove the uploaded bytes were read
+// through a direct text parser; this function alone cannot establish that.
+// Quotes returned against this representation use LF, not original file bytes.
+// All other changes performed by ingestion remain fail-closed.
+func UploadedOriginForIndex(data []byte) (string, bool) {
+	if !utf8.Valid(data) {
+		return "", false
+	}
+	text := string(data)
+	if strings.ContainsRune(text, 0) || hasImageRewrite(text) {
+		return "", false
+	}
+	return chunker.NormalizeLineEndings(text), true
 }
 
 // originBytes 取这份资料的源文件字节。
@@ -222,7 +240,7 @@ func (r *fileOriginReader) originBytes(ctx context.Context, row *types.Knowledge
 	return data, true, nil
 }
 
-// VerbatimOrigin 判定这一串文本是不是切分链路真正切的那段文本。
+// VerbatimOrigin 判定文本是否未经换行或其他改写而进入切分链路。
 //
 // 读到文本还不够：切分用的是**改写后**的文本。改写只有三处，都查得到
 // （`knowledge_process.go:3637-3639` 及其上游）：
@@ -238,10 +256,8 @@ func (r *fileOriginReader) originBytes(ctx context.Context, row *types.Knowledge
 // BOM 不在排除之列：U+FEFF 是合法 rune、不是 NUL，上面两步都不会动它，
 // 于是它留在两侧的文本里，偏移一致。
 //
-// 这个判据是**导出的**：材料合格性检查（cmd/lingdoc-material-check）必须
-// 用同一个判据检查它手里的原文文件。判据同源不等于输入同源——输入那一侧
-// 仍然要靠调用方把**原始上传文件**原样交进来（见该命令的 --origin-file
-// 说明）。
+// 手工内容仍沿用此保守判据。上传文本使用 UploadedOriginForIndex 将
+// 可证明的换行变化映射到切分坐标空间，仍需传入原始上传字节。
 func VerbatimOrigin(data []byte) (string, bool) {
 	if !utf8.Valid(data) {
 		return "", false

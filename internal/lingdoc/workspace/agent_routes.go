@@ -101,6 +101,9 @@ func RegisterAgentRoutes(group *gin.RouterGroup, ports AgentRoutePorts) {
 	group.GET("/projects/:projectId/research-runs/:runID", agentRead(func(c *gin.Context, actor Actor) (any, error) {
 		return ports.Research.GetResearchRun(c.Request.Context(), actor, c.Param("projectId"), c.Param("runID"))
 	}))
+	group.POST("/projects/:projectId/research-runs/:runID/feedback", agentWrite(func(c *gin.Context, actor Actor, key string, input core.ResearchRoundFeedbackInput) (json.RawMessage, int, bool, error) {
+		return ports.Research.SaveResearchRoundFeedback(c.Request.Context(), actor, c.Param("projectId"), c.Param("runID"), key, input)
+	}))
 	group.GET("/projects/:projectId/import-candidates", agentRead(func(c *gin.Context, actor Actor) (any, error) {
 		return ports.Imports.ListImportCandidates(c.Request.Context(), actor, c.Param("projectId"))
 	}))
@@ -149,6 +152,15 @@ func RegisterAgentRoutes(group *gin.RouterGroup, ports AgentRoutePorts) {
 	}))
 	group.POST("/projects/:projectId/import-candidates", agentWrite(func(c *gin.Context, actor Actor, key string, input core.CreateImportCandidateInput) (json.RawMessage, int, bool, error) {
 		return ports.Imports.CreateImportCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	}))
+	group.GET("/projects/:projectId/academic-source-associations", agentRead(func(c *gin.Context, actor Actor) (any, error) {
+		return ports.Imports.ListAcademicSourceAssociations(c.Request.Context(), actor, c.Param("projectId"))
+	}))
+	group.POST("/projects/:projectId/academic-source-associations/:associationID/revoke", agentWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
+		return ports.Imports.RevokeAcademicSourceAssociation(c.Request.Context(), actor, c.Param("projectId"), c.Param("associationID"), key, input)
+	}))
+	group.POST("/projects/:projectId/academic-source-associations", agentWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmAcademicSourceAssociationInput) (json.RawMessage, int, bool, error) {
+		return ports.Imports.ConfirmAcademicSourceAssociation(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	}))
 	group.POST("/projects/:projectId/import-candidates/:candidateID/confirm", agentWrite(func(c *gin.Context, actor Actor, key string, input core.ConfirmationInput) (json.RawMessage, int, bool, error) {
 		return ports.Imports.ConfirmImportCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("candidateID"), key, input)

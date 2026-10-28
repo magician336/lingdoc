@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -188,7 +190,21 @@ func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID
 	if overrides != nil && len(overrides.ParserEngineRules) > 0 {
 		chunking.ParserEngineRules = overrides.ParserEngineRules
 	}
-	return chunking.ResolveParserEngine(knowledge.FileType) == "", nil
+	// SimpleFormatReader copies these formats verbatim. Its CSV/JSON and
+	// image branches transform input, so those cannot prove source offsets.
+	// Match the reader's extension normalization; a malformed type must not
+	// become eligible merely because a more permissive resolver trims it.
+	switch strings.ToLower(strings.TrimPrefix(knowledge.FileType, ".")) {
+	case "txt", "text", "md", "markdown":
+	default:
+		return false, nil
+	}
+	// URL parsing uses the URL engine rule instead of the file-type rule.
+	if knowledge.Type == "url" {
+		return false, nil
+	}
+	engine := chunking.ResolveParserEngine(knowledge.FileType)
+	return engine == "" || engine == docparser.SimpleEngineName, nil
 }
 
 // OriginBytes returns the source bytes of a material.

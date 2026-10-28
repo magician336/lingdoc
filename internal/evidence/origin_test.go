@@ -69,6 +69,41 @@ func manualKnowledge(t *testing.T, content string) *types.Knowledge {
 	return row
 }
 
+// Uploaded-text offsets are measured after ingestion normalizes line endings.
+// The cited span crosses a line ending and follows another one, so comparing
+// against raw CRLF bytes or using byte offsets cannot accidentally pass.
+func TestUploadedOriginAlignsMixedLineEndingsWithSourceCoordinates(t *testing.T) {
+	for name, raw := range map[string]string{
+		"crlf":  "前🚀\r\n第二\r\n第三\r\n后",
+		"cr":    "前🚀\r第二\r第三\r后",
+		"mixed": "前🚀\r\n第二\r第三\n后",
+		"lf":    "前🚀\n第二\n第三\n后",
+	} {
+		t.Run(name, func(t *testing.T) {
+			reader := NewOriginReader(&fakeKnowledge{rows: map[string]*types.Knowledge{
+				"k": {ID: "k", FilePath: writeText(t, "doc.txt", raw), FileType: "txt"},
+			}})
+			origin, ok, err := reader.OriginText(context.Background(), "k")
+			if err != nil || !ok || origin != "前🚀\n第二\n第三\n后" {
+				t.Fatalf("indexed origin = %q, available=%v, err=%v", origin, ok, err)
+			}
+			quote := "第二\n第三"
+			start := len([]rune("前🚀\n"))
+			hit := &types.SearchResult{ID: "s", KnowledgeID: "k", Content: quote, StartAt: start, EndAt: start + len([]rune(quote))}
+			resolved, err := NewSourceResolver(reader).Resolve(context.Background(), Asset{ID: "a", ProjectID: "p", KnowledgeID: "k"}, []*types.SearchResult{hit})
+			if err != nil || len(resolved) != 1 || resolved[0].Status != SourceAvailable || resolved[0].QuotedText != quote {
+				t.Fatalf("normalized source not verified: %+v, err=%v", resolved, err)
+			}
+			// A same-length altered quotation must never become verified.
+			hit.Content = "第二\n篡改"
+			resolved, err = NewSourceResolver(reader).Resolve(context.Background(), Asset{ID: "a", ProjectID: "p", KnowledgeID: "k"}, []*types.SearchResult{hit})
+			if err != nil || len(resolved) != 1 || resolved[0].Status != SourceStale {
+				t.Fatalf("modified source was not rejected: %+v, err=%v", resolved, err)
+			}
+		})
+	}
+}
+
 // 手工资料的正文在 metadata 里。它能当强档不是因为「手工写的就是原文」——
 // 那是个假设；而是因为这一段恰好原样通过了切分前的改写。
 // 首尾空白与 CRLF 的情况见 TestOriginDeclinesManualContentThePipelineRewrites。
@@ -171,7 +206,7 @@ func TestOriginDeclinesManualContentThePipelineRewrites(t *testing.T) {
 // 改派出去（`knowledge_process.go:3771`），那时切分吃的是引擎产出的 markdown，
 // 与文件字节、与手工正文都不再逐字相等。问不到、或回答说改派了，都降档。
 func TestOriginDeclinesWhenAnotherEngineParsesTheContent(t *testing.T) {
-	const body = "第一段。\n\n第二段。\n"
+	const body = "第一段。\r\n\r\n第二段。\r\n"
 	ctx := context.Background()
 
 	t.Run("纯文本文件被改派", func(t *testing.T) {
@@ -231,17 +266,15 @@ func TestOriginDeclinesFormatsItCannotRead(t *testing.T) {
 	}
 }
 
-// 声称强档的前提是「文件字节就是切分用的那段文本」。切分前有三处改写
-// （CleanInvalidUTF8 / NormalizeLineEndings / 图片改写），任何一处会动到
-// 这串字节，偏移就错位，硬claim只会产出假的 stale。逐条钉住。
+// 除了可确定重建的换行归一，其余会改变切分输入的处理仍须拒绝。
 func TestOriginDeclinesBytesItCannotProve(t *testing.T) {
 	cases := map[string]string{
-		"CRLF 会被归一成 LF（NormalizeLineEndings）": "第一行\r\n第二行\r\n",
-		"单独的 CR 也会被归一":                        "第一行\r第二行",
-		"NUL 会被丢掉（CleanInvalidUTF8）":          "正文\x00继续",
-		"Markdown 图片引用会被改写成存储地址":              "![图](https://example.com/a.png)\n正文",
-		"HTML img 同上":                         "<img src=\"https://example.com/a.png\">\n正文",
-		"data URI 同上":                         "![](data:image/png;base64,AAAA)\n正文",
+		"CRLF 与 NUL 混合仍拒绝":           "正文\r\n\x00继续",
+		"CRLF 与图片改写混合仍拒绝":            "第一行\r\n![图](https://example.com/a.png)",
+		"NUL 会被丢掉（CleanInvalidUTF8）": "正文\x00继续",
+		"Markdown 图片引用会被改写成存储地址":     "![图](https://example.com/a.png)\n正文",
+		"HTML img 同上":                "<img src=\"https://example.com/a.png\">\n正文",
+		"data URI 同上":                "![](data:image/png;base64,AAAA)\n正文",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

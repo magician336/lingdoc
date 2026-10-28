@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
@@ -91,20 +92,21 @@ type confirmationRow struct {
 }
 
 type candidateRow struct {
-	ID              string `gorm:"primaryKey;size:36"`
-	ProjectID       string `gorm:"index;not null;size:36"`
-	ChapterID       string `gorm:"index;not null;size:36"`
-	RunID           string `gorm:"not null;size:128"`
-	BodyMarkdown    string `gorm:"type:text;not null"`
-	SourceIDsJSON   string `gorm:"type:text;not null"`
-	BasisJSON       string `gorm:"type:text;not null"`
-	Validity        string `gorm:"not null;size:16"`
-	ReviewItemsJSON string `gorm:"type:text;not null"`
-	WritingAction   string `gorm:"column:writing_action;not null;size:64;default:''"`
-	Origin          string `gorm:"column:origin;not null;size:32;default:''"`
-	RunMode         string `gorm:"column:run_mode;not null;size:32;default:''"`
-	ModelID         string `gorm:"column:model_id;not null;size:128;default:''"`
-	CreatedAt       time.Time
+	ID                string `gorm:"primaryKey;size:36"`
+	ProjectID         string `gorm:"index;not null;size:36"`
+	ChapterID         string `gorm:"index;not null;size:36"`
+	RunID             string `gorm:"not null;size:128"`
+	BodyMarkdown      string `gorm:"type:text;not null"`
+	SourceIDsJSON     string `gorm:"type:text;not null"`
+	BasisJSON         string `gorm:"type:text;not null"`
+	Validity          string `gorm:"not null;size:16"`
+	ReviewItemsJSON   string `gorm:"type:text;not null"`
+	ClaimEvidenceJSON string `gorm:"column:claim_evidence_json;type:text;not null;default:'[]'"`
+	WritingAction     string `gorm:"column:writing_action;not null;size:64;default:''"`
+	Origin            string `gorm:"column:origin;not null;size:32;default:''"`
+	RunMode           string `gorm:"column:run_mode;not null;size:32;default:''"`
+	ModelID           string `gorm:"column:model_id;not null;size:128;default:''"`
+	CreatedAt         time.Time
 }
 
 type projectAssetRow struct {
@@ -173,7 +175,7 @@ func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
 	// This helper creates isolated test tables only. Existing T08/native tables
 	// belong to numbered migrations: a partial projection must never rebuild
 	// them or change their tenant constraints, columns, defaults or indexes.
-	for _, model := range []any{&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{}, &confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{}} {
+	for _, model := range []any{&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{}, &confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{}, &core.DraftClaimProvenance{}} {
 		if db.Migrator().HasTable(model) {
 			continue
 		}
@@ -613,6 +615,23 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			if err := advanceAdoptedWorkingCopy(tx, *workingCopy, version); err != nil {
 				return err
 			}
+			if err := core.InvalidateDraftClaimProvenance(tx, in.ProjectID, in.ChapterID, candidate.BodyMarkdown); err != nil {
+				return err
+			}
+			if len(candidate.Claims) > 0 {
+				if err := core.RecordDraftClaimProvenance(tx, in.ProjectID, in.ChapterID, "generation", candidate.ID, candidate.RunID, workingCopy.WorkingCopyRevision+1, 0, candidate.BodyMarkdown, candidate.BodyMarkdown, candidate.BodyMarkdown); err != nil {
+					return err
+				}
+			}
+		}
+		if len(candidate.Claims) > 0 {
+			var revision int64
+			if workingCopy != nil {
+				revision = workingCopy.WorkingCopyRevision + 1
+			}
+			if err := core.RecordChapterClaimProvenance(tx, in.ProjectID, in.ChapterID, newVersionID, candidate.ID, candidate.RunID, candidate.BodyMarkdown, revision); err != nil {
+				return err
+			}
 		}
 
 		current.CurrentVersionID = &newVersionID
@@ -738,15 +757,20 @@ func (s *SQLiteCandidateAdoptionStore) UpsertCandidate(ctx context.Context, cand
 	if err != nil {
 		return err
 	}
+	claims, err := json.Marshal(candidate.Claims)
+	if err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Save(&candidateRow{
 		ID: candidate.ID, ProjectID: candidate.ProjectID, ChapterID: candidate.ChapterID,
 		RunID: candidate.RunID, BodyMarkdown: candidate.BodyMarkdown,
 		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: string(candidate.Validity),
-		ReviewItemsJSON: string(reviews),
-		WritingAction:   string(candidate.WritingAction),
-		Origin:          string(candidate.Origin),
-		RunMode:         string(candidate.RunMode),
-		ModelID:         candidate.ModelID,
+		ReviewItemsJSON:   string(reviews),
+		ClaimEvidenceJSON: string(claims),
+		WritingAction:     string(candidate.WritingAction),
+		Origin:            string(candidate.Origin),
+		RunMode:           string(candidate.RunMode),
+		ModelID:           candidate.ModelID,
 	}).Error
 }
 
@@ -798,6 +822,11 @@ func candidateFromRow(row candidateRow) (Candidate, error) {
 	}
 	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &candidate.ReviewItems); err != nil {
 		return Candidate{}, err
+	}
+	if row.ClaimEvidenceJSON != "" {
+		if err := json.Unmarshal([]byte(row.ClaimEvidenceJSON), &candidate.Claims); err != nil {
+			return Candidate{}, err
+		}
 	}
 	return candidate, nil
 }

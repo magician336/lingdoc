@@ -39,6 +39,7 @@ export interface Candidate {
   basis: CandidateBasis
   validity: CandidateValidity
   review_items: ReviewItem[]
+  claims?: { text: string; references: { card_id: string; card_version: number; anchor_id: string; anchor_version: number; source_id: string; locator: string; selection_start: number; selection_end: number }[] }[]
   /** 候选正文的来源。三值文案由采纳对话框写，不在客户端猜。 */
   origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
   /**

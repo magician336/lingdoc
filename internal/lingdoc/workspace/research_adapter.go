@@ -146,16 +146,18 @@ func (r *ResearchAdapter) SettleResearchModelCall(ctx context.Context, actor cor
 	return r.academicBudgetLedger.SettleModelCall(ctx, actor, projectID, turnID, usage)
 }
 
-func (r *ResearchAdapter) ValidateAcademicResearchResult(ctx context.Context, actor core.Actor, projectID string, result core.ResearchResult) error {
+func (r *ResearchAdapter) ValidateAcademicResearchResult(ctx context.Context, actor core.Actor, projectID string, result core.ResearchResult, projectCatalog core.AcademicSourceCatalog) error {
 	if result.Provider != "crossref" {
 		return nil
 	}
 	if err := r.academicResearchPolicyReady(); err != nil {
 		return err
 	}
-	projectCatalog, err := r.loadAcademicSourceCatalog(ctx, projectID)
-	if err != nil {
-		return err
+	// The caller supplies the project catalog read by the active transaction.
+	// Reopening the shared pool here would deadlock a single-connection SQLite
+	// deployment and would validate against a different transaction snapshot.
+	if projectCatalog.ProjectID != projectID {
+		return core.ErrInvalidState
 	}
 	currentPolicySnapshot := academicCatalogSnapshot(r.globalAcademicCatalog, projectCatalog)
 	if strings.TrimSpace(result.PolicySnapshotVersion) == "" || result.PolicySnapshotVersion != currentPolicySnapshot.Version {
@@ -471,6 +473,10 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 	if err != nil {
 		return nil, err
 	}
+	// A Crossref update-to edge points from the notice to the updated DOI.
+	// Use only notices already present in this response: this does not add
+	// unbudgeted requests, and absence of an edge never proves non-retraction.
+	reportedRetractions := crossrefRetractionTargets(works)
 	now := time.Now().UTC()
 	results := make([]core.ResearchResult, 0, len(works))
 	seen := make(map[string]string, len(works))
@@ -496,15 +502,21 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 				licenseURLs = append(licenseURLs, license.URL)
 			}
 		}
+		retractionReported := reportedRetractions[strings.ToLower(strings.TrimSpace(work.DOI))]
 		evaluation := catalog.EvaluateAt(snapshot, catalog.Work{
 			DOI: work.DOI, SourceType: sourceType, Journal: work.Journal,
 			ISSNs: work.ISSN, VenueIDs: work.ISSN, LicenseURLs: licenseURLs,
-			Retracted: work.HasRetractionNotice(),
+			// update-to describes an update *by* this record and does not prove
+			// this record itself was retracted.
+			Retracted: retractionReported,
 		}, now)
 		retractionStatus := "unknown"
 		status := "metadata_only"
 		level := "discovery_entry"
-		if work.HasRetractionNotice() {
+		if work.IsRetractionNotice() {
+			retractionStatus = "retraction_notice"
+			status = "retraction_notice"
+		} else if retractionReported {
 			retractionStatus = "retracted"
 			status = "retracted"
 		} else if evaluation.Status == catalog.StatusApproved {
@@ -514,6 +526,11 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 		}
 		authors := crossrefAuthors(work.Authors)
 		uncertainty := "Crossref 元数据记录；未获取原文或摘要，不可作为证据。未检出撤稿记录不代表已核实未撤稿。"
+		if retractionStatus == "retraction_notice" {
+			uncertainty = "该记录包含指向其他论文的撤稿更新；它是通知而非被撤稿论文。未获取原文，不可作为证据。"
+		} else if retractionStatus == "retracted" {
+			uncertainty = "本次检索结果中有撤稿通知指向该论文 DOI；请核对原始公告，不能作为资料候选。"
+		}
 		if duplicateStatus == "duplicate" {
 			status = "duplicate"
 			level = "discovery_entry"
@@ -542,6 +559,23 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 		})
 	}
 	return results, nil
+}
+
+func crossrefRetractionTargets(works []crossref.Work) map[string]bool {
+	targets := make(map[string]bool)
+	for _, notice := range works {
+		noticeDOI := strings.TrimSpace(notice.DOI)
+		if noticeDOI == "" {
+			continue
+		}
+		for _, update := range notice.UpdateTo {
+			target := strings.TrimSpace(update.DOI)
+			if target != "" && !strings.EqualFold(target, noticeDOI) && strings.EqualFold(strings.TrimSpace(update.Type), "retraction") {
+				targets[strings.ToLower(target)] = true
+			}
+		}
+	}
+	return targets
 }
 
 func (r *ResearchAdapter) loadAcademicSourceCatalog(ctx context.Context, projectID string) (core.AcademicSourceCatalog, error) {

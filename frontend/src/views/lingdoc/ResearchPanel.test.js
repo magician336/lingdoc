@@ -539,3 +539,42 @@ test('助手轮次的卡片仍可被采纳：按钮在、表单被填好、调�
   assert.equal(f.calls.some(call=>call.method==='saveResearchTask'),false)
   f.close()
 })
+
+test('书目关联仅在人工确认后发送用户看到的资料版本与摘录哈希',async()=>{
+ const sent=[]
+ const f=fixture({api:{confirmAcademicSourceAssociation:(...args)=>{sent.push(args);return Promise.resolve({data:{id:'association-history'}})}}});await tick()
+ f.state.imports.value=[{id:'candidate',title:'合成论文',doi:'10.5555/test',version:3,status:'imported',selection_type:'academic_metadata'}]
+ f.state.source.value={id:'source',asset_id:'asset',asset_revision:2,locator:'第 1 段',quoted_text:'合成原文',quoted_text_hash:'viewed-hash',status:'available'}
+ f.state.associationCandidate.value='candidate'
+ f.state.confirmAcademicAssociation();await tick()
+ assert.equal(sent.length,0)
+ // A later UI update must not silently turn the reviewed version into a new assertion.
+ f.state.source.value.asset_revision=3;f.state.source.value.quoted_text_hash='new-hash'
+ await f.state.executeConfirmation();assert.equal(sent.length,0)
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='已查看上传原文并核对标题与 DOI'
+ await f.state.executeConfirmation()
+ assert.equal(sent.length,1);assert.equal(sent[0][1].expected_version,3);assert.equal(sent[0][1].expected_asset_revision,2);assert.equal(sent[0][1].expected_quoted_text_hash,'viewed-hash');assert.equal(sent[0][1].expected_locator,'第 1 段')
+ f.close()
+})
+
+test('撤销关联要求人工确认并携带当前记录版本',async()=>{
+ const sent=[]
+ const f=fixture({api:{revokeAcademicSourceAssociation:(...args)=>{sent.push(args);return Promise.resolve({data:{id:'association',version:2,status:'revoked'}})}}});await tick()
+ f.state.revokeAcademicAssociation({id:'association',version:1,status:'recorded',review_state:'historical'});await tick()
+ await f.state.executeConfirmation();assert.equal(sent.length,0)
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='撤销之前的人工判断';await f.state.executeConfirmation()
+ assert.equal(sent.length,1);assert.equal(sent[0][1],'association');assert.equal(sent[0][2].expected_version,1);assert.equal(sent[0][2].confirmed,true)
+ f.close()
+})
+
+test('候选卡固定关联判断版本，关联变化时不能悄悄换版',async()=>{
+ const f=fixture();await tick()
+ f.state.anchors.value=[{id:'anchor',version:2,status:'CURRENT',source_id:'source',asset_id:'asset',asset_revision:1,locator:'第一页'}]
+ f.state.associationHistory.value=[{id:'assoc',version:3,status:'recorded',review_state:'historical',source_id:'source',asset_id:'asset',asset_revision:1,doi:'10.5555/synthetic',locator:'第一页'}]
+ Object.assign(f.state.cardForm,{anchors:['anchor'],academicAssociations:[{id:'assoc',version:3}],chapters:['chapter'],scope:'synthetic scope'})
+ const input=f.state.cardInput();assert.equal(input.academic_association_refs[0].id,'assoc');assert.equal(input.academic_association_refs[0].version,3)
+ f.state.associationHistory.value[0].version=4
+ assert.throws(()=>f.state.cardInput(),/书目判断已变化/)
+ f.state.confirmCard({academic_association_refs:[{id:'assoc',version:3}]});assert.match(f.state.error.value,/暂不能确认或用于写作/)
+ f.close()
+})

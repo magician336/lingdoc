@@ -227,6 +227,9 @@ func validateCandidateSelection(candidate Candidate, selected core.EvidenceSelec
 	if err := validateEvidenceSelection(candidate.Basis.EvidenceCardRefs, candidate.SourceIDs, selected); err != nil {
 		return err
 	}
+	if err := validateClaimEvidence(candidate, selected); err != nil {
+		return err
+	}
 	if len(candidate.Basis.EvidenceCardRefs) == 0 && !candidateHasNewBasis(candidate.Basis) {
 		return nil
 	}

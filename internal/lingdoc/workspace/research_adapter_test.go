@@ -188,8 +188,9 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 		{"DOI":"10.1000/example","title":["Approved study"],"author":[{"given":"Ada","family":"Author"}],"published":{"date-parts":[[2024]]},"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","URL":"https://publisher.example/fulltext","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]},
 		{"DOI":"10.1000/example","title":["Approved study duplicate"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]},
 		{"DOI":"10.1000/outside","title":["Outside journal"],"container-title":["Other Journal"],"ISSN":["8765-4321"],"type":"journal-article"},
-		{"DOI":"10.1000/retracted","title":["Retracted paper"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}],"update-to":[{"type":"retraction","DOI":"10.1000/retraction-notice"}]},
-		{"title":["Missing DOI"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article"}
+		{"DOI":"10.1000/retraction-notice","title":["Retraction notice"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}],"update-to":[{"type":"retraction","DOI":"10.1000/retracted-paper","updated":{"date-parts":[[2023,4,22]],"date-time":"2023-04-22T00:00:00Z","timestamp":1682121600000}}]},
+		{"title":["Missing DOI"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article"},
+		{"DOI":"10.1000/RETRACTED-PAPER","title":["Original paper"],"container-title":["Journal of Examples"],"ISSN":["1234-5678"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]}
 	]}}`
 	transport := adapterRoundTripper(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Host != "api.crossref.org" || request.URL.Path != "/works" || request.URL.Query().Get("rows") != "20" {
@@ -211,8 +212,8 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 5 {
-		t.Fatalf("got %d results, want 5: %+v", len(results), results)
+	if len(results) != 6 {
+		t.Fatalf("got %d results, want 6: %+v", len(results), results)
 	}
 	if got := results[0]; got.PolicyStatus != "approved" || got.Level != "background_lead" || got.AcquisitionStatus != "metadata_only" || got.RetractionStatus != "unknown" || got.DOI != "10.1000/example" || got.Author != "Ada Author" || got.PublishedAt != "2024" || got.URL != "" || got.LicenseStatus != "allowed" {
 		t.Fatalf("approved metadata was not represented safely: %+v", got)
@@ -223,11 +224,14 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	if got := results[2]; got.PolicyStatus != "out_of_policy" || got.Level != "discovery_entry" {
 		t.Fatalf("out-of-policy result was not downgraded: %+v", got)
 	}
-	if got := results[3]; got.RetractionStatus != "retracted" || got.Status != "retracted" || got.Level != "discovery_entry" {
-		t.Fatalf("retracted result was not blocked: %+v", got)
+	if got := results[3]; got.RetractionStatus != "retraction_notice" || got.Status != "retraction_notice" || got.Level != "discovery_entry" {
+		t.Fatalf("retraction notice was not marked as discovery-only: %+v", got)
 	}
 	if got := results[4]; got.Status != "missing_identifier" || got.DOI != "" {
 		t.Fatalf("missing DOI was not marked: %+v", got)
+	}
+	if got := results[5]; got.Status != "retracted" || got.RetractionStatus != "retracted" || got.PolicyStatus != "retracted" || got.Level != "discovery_entry" {
+		t.Fatalf("notice target was not marked as a reported retraction: %+v", got)
 	}
 	if identity, err := adapter.ResearchRoundProvider(context.Background(), actor, "project", task); err != nil || identity != core.AcademicCrossrefProviderID {
 		t.Fatalf("Crossref identity: %q %v", identity, err)
@@ -242,7 +246,11 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	if results[0].PolicySnapshotVersion == "" {
 		t.Fatal("Crossref result omitted the policy snapshot used to assess it")
 	}
-	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0]); err != nil {
+	projectCatalog, err = adapter.loadAcademicSourceCatalog(context.Background(), "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0], projectCatalog); err != nil {
 		t.Fatalf("current policy snapshot rejected its result: %v", err)
 	}
 	adapter.globalAcademicCatalog.Rules[0].VenueName += " revised"
@@ -250,7 +258,7 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	if err != nil || updatedVersion == version {
 		t.Fatalf("global policy update did not invalidate research basis: before=%q after=%q err=%v", version, updatedVersion, err)
 	}
-	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0]); !errors.Is(err, core.ErrVersionConflict) {
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", results[0], projectCatalog); !errors.Is(err, core.ErrVersionConflict) {
 		t.Fatalf("result assessed under the old global policy remained valid: %v", err)
 	}
 }
@@ -270,7 +278,7 @@ func TestCrossrefSearchFailsClosedWithoutGlobalCatalogOrProjectBudget(t *testing
 	if _, _, err := adapter.SearchResearch(context.Background(), actor, "project", task, "query"); !errors.Is(err, core.ErrAcademicGlobalCatalogUnavailable) {
 		t.Fatalf("missing global allowlist must fail closed, got %v", err)
 	}
-	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", core.ResearchResult{Provider: "crossref", PolicyStatus: "approved"}); !errors.Is(err, core.ErrAcademicGlobalCatalogUnavailable) {
+	if err := adapter.ValidateAcademicResearchResult(context.Background(), actor, "project", core.ResearchResult{Provider: "crossref", PolicyStatus: "approved"}, core.AcademicSourceCatalog{}); !errors.Is(err, core.ErrAcademicGlobalCatalogUnavailable) {
 		t.Fatalf("stored Crossref result could be promoted without global allowlist: %v", err)
 	}
 	if upstreamCalls != 0 {

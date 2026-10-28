@@ -80,6 +80,7 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 				}
 				next.BaseChapterVersionID = chapter.CurrentVersionID
 				next.BodyMarkdown = chapter.BodyMarkdown
+				next.ClaimProvenance = staleDraftClaimProvenance(result.ClaimProvenance, next.BodyMarkdown)
 				next.SourceIDs = slices.Clone(chapter.SourceIDs)
 				next.CitationUsages = slices.Clone(chapter.CitationUsages)
 				next.ReviewItems = slices.Clone(chapter.ReviewItems)
@@ -165,6 +166,7 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 		next := previous
 		next.WorkingCopyRevision++
 		next.BodyMarkdown = input.BodyMarkdown
+		next.ClaimProvenance = staleDraftClaimProvenance(previous.ClaimProvenance, next.BodyMarkdown)
 		next.SourceIDs = slices.Clone(input.SourceIDs)
 		next.CitationUsages = usages
 		if input.CitationUsages == nil {
@@ -241,6 +243,7 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		next.WorkingCopyRevision++
 		next.SpecRevision = input.ExpectedSpecRevision
 		next.BodyMarkdown = input.BodyMarkdown
+		next.ClaimProvenance = staleDraftClaimProvenance(previous.ClaimProvenance, next.BodyMarkdown)
 		next.SourceIDs = slices.Clone(input.SourceIDs)
 		next.CitationUsages = usages
 		if input.CitationUsages == nil {
@@ -429,12 +432,25 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 		next.WorkingCopyRevision++
 		next.SpecRevision = p.SpecRevision
 		next.BodyMarkdown = version.BodyMarkdown
+		next.ClaimProvenance = staleDraftClaimProvenance(workingCopy.ClaimProvenance, next.BodyMarkdown)
 		next.SourceIDs = slices.Clone(version.SourceIDs)
 		next.CitationUsages = slices.Clone(version.CitationUsages)
 		next.ReviewItems = rebaseReviewItems(version.BodyMarkdown, version.BodyMarkdown, version.ReviewItems, next.WorkingCopyRevision, next.BaseChapterVersionID)
 		next.UpdatedAt = time.Now().UTC()
 		if err := tx.SaveWorkingCopy(workingCopy, next); err != nil {
 			return operationResult[WorkingCopy]{}, err
+		}
+		if restore, ok := tx.(interface {
+			RestoreVersionClaimProvenance(string, string, string, int64, string) error
+		}); ok {
+			if err := restore.RestoreVersionClaimProvenance(projectID, chapterID, version.ID, next.WorkingCopyRevision, next.BodyMarkdown); err != nil {
+				return operationResult[WorkingCopy]{}, err
+			}
+			refreshed, err := tx.WorkingCopy(projectID, chapterID)
+			if err != nil {
+				return operationResult[WorkingCopy]{}, err
+			}
+			next.ClaimProvenance = refreshed.ClaimProvenance
 		}
 		return operationResult[WorkingCopy]{Value: next, Status: operationStatusOK}, nil
 	})

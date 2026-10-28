@@ -6,12 +6,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -63,7 +66,7 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 		t.Fatalf("种入他租户检索来源失败：%v", err)
 	}
 
-	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, stubKBShareService{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
@@ -190,6 +193,12 @@ func TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError(t *testing.T) 
 // in-process, so the test does not claim a live provider or browser acceptance.
 func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 	engine, db, adapter := newResearchProviderFixture(t, true)
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetMaxOpenConns(1)
+	pool.SetMaxIdleConns(1)
 	// Keep the source transport and approved policy synthetic, but exercise the
 	// real quota implementation in the same production Workspace transaction.
 	now := time.Now().UTC()
@@ -225,7 +234,9 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 
 	request := func(method, path, key, body string) *httptest.ResponseRecorder {
 		t.Helper()
-		req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(actorContext("reader"))
+		ctx, cancel := context.WithTimeout(actorContext("reader"), 2*time.Second)
+		defer cancel()
+		req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
 		req.Header.Set("Content-Type", "application/json")
 		if key != "" {
 			req.Header.Set("Idempotency-Key", key)
@@ -310,15 +321,106 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 	}
 
 	var candidate core.ImportCandidate
-	readData(request(http.MethodPost, "/api/projects/project-1/import-candidates", "crossref-candidate",
-		`{`+projectExpectation()+`,"expected_context_revision":0,"run_id":"`+run.ID+`","result_id":"`+run.Results[0].ID+`","purpose":"retain bibliographic metadata for later human review","save_mode":"metadata_only","scope":"personal","model_use_allowed":false,"license":"Crossref metadata only"}`), http.StatusCreated, &candidate)
+	candidateBody := `{` + projectExpectation() + `,"expected_context_revision":0,"run_id":"` + run.ID + `","result_id":"` + run.Results[0].ID + `","purpose":"retain bibliographic metadata for later human review","save_mode":"metadata_only","scope":"personal","model_use_allowed":false,"license":"Crossref metadata only"}`
+	readData(request(http.MethodPost, "/api/projects/project-1/import-candidates", "crossref-candidate", candidateBody), http.StatusCreated, &candidate)
 	if candidate.SelectionType != "academic_metadata" || candidate.DOI != "10.5555/integration.1" || candidate.URL != "" || candidate.Locator != "" || candidate.Status != "awaiting_consent" {
 		t.Fatalf("Crossref result escaped metadata-only candidate boundary: %+v", candidate)
+	}
+	var replay core.ImportCandidate
+	readData(request(http.MethodPost, "/api/projects/project-1/import-candidates", "crossref-candidate", candidateBody), http.StatusCreated, &replay)
+	if replay.ID != candidate.ID {
+		t.Fatalf("idempotent retry returned a different candidate: %q vs %q", replay.ID, candidate.ID)
+	}
+	// A policy change must fail closed even when the project catalog is read
+	// through the active single-connection transaction.
+	oldVenue := adapter.globalAcademicCatalog.Rules[0].VenueName
+	adapter.globalAcademicCatalog.Rules[0].VenueName = oldVenue + " changed"
+	stale := request(http.MethodPost, "/api/projects/project-1/import-candidates/"+candidate.ID+"/confirm", "crossref-stale-confirm",
+		`{`+projectExpectation()+`,"expected_context_revision":0,"expected_version":1,"confirmed":true,"reason":"policy changed"}`)
+	adapter.globalAcademicCatalog.Rules[0].VenueName = oldVenue
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale policy confirmation status = %d, want 409: %s", stale.Code, stale.Body.String())
+	}
+	var candidates []core.ImportCandidate
+	readData(request(http.MethodGet, "/api/projects/project-1/import-candidates", "", ""), http.StatusOK, &candidates)
+	if len(candidates) != 1 || candidates[0].ID != candidate.ID || candidates[0].Status != "awaiting_consent" || candidates[0].Version != 1 {
+		t.Fatalf("stale policy confirmation changed candidate: %+v", candidates)
 	}
 	var confirmed core.ImportCandidate
 	readData(request(http.MethodPost, "/api/projects/project-1/import-candidates/"+candidate.ID+"/confirm", "crossref-confirm",
 		`{`+projectExpectation()+`,"expected_context_revision":0,"expected_version":1,"confirmed":true,"reason":"synthetic human confirmation for metadata retention"}`), http.StatusOK, &confirmed)
 	if confirmed.Status != "imported" || confirmed.Version != 2 || confirmed.URL != "" || confirmed.Locator != "" {
 		t.Fatalf("confirmed metadata candidate crossed its locator/full-text boundary: %+v", confirmed)
+	}
+	// Real SQLite asset/chunk and a local synthetic original; the Crossref
+	// transport and all contents remain synthetic. Human association only.
+	if err := db.Exec(`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, chunking_config TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO knowledge_bases(id,tenant_id,name,chunking_config) VALUES ('kb-assoc',7,'association fixture','{}')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	const original = "A controlled metadata record\nDOI: 10.5555/integration.1\nA synthetic uploaded paper original."
+	path := filepath.Join(t.TempDir(), "paper.txt")
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	processed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status,processed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, "paper-knowledge", 7, "kb-assoc", "file", "Synthetic paper", "txt", len(original), "synthetic-file-hash", path, types.ParseStatusCompleted, processed).Error; err != nil {
+		t.Fatal(err)
+	}
+	asset, err := evidence.NewBindings(db).Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "paper-knowledge", KnowledgeBaseID: "kb-assoc", Title: "Synthetic paper", CreatedBy: "reader", Signal: evidence.KnowledgeSignal{KnowledgeID: "paper-knowledge", ParseStatus: types.ParseStatusCompleted, FileHash: "synthetic-file-hash", FileSize: int64(len(original)), ProcessedAt: processed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO chunks(id,tenant_id,knowledge_id,knowledge_base_id,content,content_revision,chunk_index,start_at,end_at) VALUES (?,?,?,?,?,0,0,0,?)`, "paper-chunk", 7, "paper-knowledge", "kb-assoc", original, len([]rune(original))).Error; err != nil {
+		t.Fatal(err)
+	}
+	sourceView, err := adapter.ReadResearchSource(actorContext("reader"), core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleAdmin}, "project-1", "paper-chunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{` + projectExpectation() + `,"expected_context_revision":0,"expected_version":2,"candidate_id":"` + confirmed.ID + `","source_id":"paper-chunk","expected_asset_revision":` + strconv.Itoa(sourceView.AssetRevision) + `,"expected_quoted_text_hash":"` + sourceView.QuotedTextHash + `","expected_locator":"` + sourceView.Locator + `","confirmed":true,"reason":"Human checked bibliographic details in uploaded original"}`
+	changedView := strings.Replace(body, `"expected_quoted_text_hash":"`+sourceView.QuotedTextHash+`"`, `"expected_quoted_text_hash":"previously-viewed-hash"`, 1)
+	staleView := request(http.MethodPost, "/api/projects/project-1/academic-source-associations", "association-stale-view", changedView)
+	if staleView.Code != http.StatusConflict {
+		t.Fatalf("changed viewed source must fail with version conflict: %d %s", staleView.Code, staleView.Body.String())
+	}
+	var count int64
+	if err := db.Table("lingdoc_g2_objects").Where("project_id = ? AND kind = ?", "project-1", core.AcademicSourceAssociationKind).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("stale source persisted association: %d %v", count, err)
+	}
+	missingConsent := strings.Replace(body, `"confirmed":true`, `"confirmed":false`, 1)
+	denied := request(http.MethodPost, "/api/projects/project-1/academic-source-associations", "association-missing-consent", missingConsent)
+	if denied.Code < 400 || denied.Code >= 500 {
+		t.Fatalf("missing human confirmation must fail closed: %d %s", denied.Code, denied.Body.String())
+	}
+	var association core.AcademicSourceAssociation
+	readData(request(http.MethodPost, "/api/projects/project-1/academic-source-associations", "association-create", body), http.StatusCreated, &association)
+	if association.CandidateRef.ID != confirmed.ID || association.CandidateRef.Version != confirmed.Version || association.DOI != confirmed.DOI || association.AssetID != asset.ID || association.AssetRevision != asset.AssetRevision || association.ConfirmedBy != "reader" {
+		t.Fatalf("association lost provenance: %+v", association)
+	}
+	var replayAssociation core.AcademicSourceAssociation
+	readData(request(http.MethodPost, "/api/projects/project-1/academic-source-associations", "association-create", body), http.StatusCreated, &replayAssociation)
+	if replayAssociation.ID != association.ID {
+		t.Fatal("association replay produced another record")
+	}
+	var associationHistory []core.AcademicSourceAssociationView
+	readData(request(http.MethodGet, "/api/projects/project-1/academic-source-associations", "", ""), http.StatusOK, &associationHistory)
+	if len(associationHistory) != 1 || associationHistory[0].ReviewState != "historical" {
+		t.Fatalf("association history: %+v", associationHistory)
+	}
+	if err := db.Exec(`UPDATE chunks SET content = 'changed' WHERE id = 'paper-chunk'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	staleReplay := request(http.MethodPost, "/api/projects/project-1/academic-source-associations", "association-create", body)
+	if staleReplay.Code < 400 || staleReplay.Code >= 500 {
+		t.Fatalf("changed source replay must fail closed: %d %s", staleReplay.Code, staleReplay.Body.String())
+	}
+	var revoked core.AssociationRevocationReceipt
+	revokeBody := `{` + projectExpectation() + `,"expected_context_revision":0,"expected_version":1,"confirmed":true,"reason":"Withdraw previous human assertion"}`
+	readData(request(http.MethodPost, "/api/projects/project-1/academic-source-associations/"+association.ID+"/revoke", "association-revoke", revokeBody), http.StatusOK, &revoked)
+	if revoked.ID != association.ID || revoked.Status != "revoked" || revoked.Version != 2 {
+		t.Fatalf("revocation receipt: %+v", revoked)
 	}
 }

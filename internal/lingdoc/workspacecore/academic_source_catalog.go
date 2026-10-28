@@ -144,22 +144,22 @@ func academicResearchCatalogVersion(sourceCatalogVersion string, assets []Projec
 // currentAcademicSourceCatalogVersion reads the policy snapshot from the
 // caller's transaction so candidate creation/confirmation cannot rely on a
 // catalog value cached before the transaction began.
-func currentAcademicSourceCatalogVersion(tx Transaction, projectID string) (string, error) {
+func currentAcademicSourceCatalog(tx Transaction, projectID string) (AcademicSourceCatalog, error) {
 	store, err := agentObjectStore(tx)
 	if err != nil {
-		return "", err
+		return AcademicSourceCatalog{}, err
 	}
 	catalog := emptyAcademicSourceCatalog(projectID)
 	rows, err := store.Objects(projectID, AcademicSourceCatalogKind)
 	if err != nil {
-		return "", err
+		return AcademicSourceCatalog{}, err
 	}
 	for _, row := range rows {
 		if row.ID != academicSourceCatalogObjectID {
 			continue
 		}
 		if row.Version < 1 || json.Unmarshal(row.Payload, &catalog) != nil {
-			return "", ErrInvalidState
+			return AcademicSourceCatalog{}, ErrInvalidState
 		}
 		catalog.ProjectID = projectID
 		catalog.Version = row.Version
@@ -168,7 +168,7 @@ func currentAcademicSourceCatalogVersion(tx Transaction, projectID string) (stri
 		catalog.SourceCatalogVersion = AcademicSourceCatalogVersion(catalog.Rules)
 		break
 	}
-	return catalog.SourceCatalogVersion, nil
+	return catalog, nil
 }
 
 func (s *Service) GetAcademicSourceCatalog(ctx context.Context, actor Actor, projectID string) (AcademicSourceCatalog, error) {

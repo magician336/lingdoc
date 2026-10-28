@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,6 +31,7 @@ import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -121,6 +124,80 @@ func seedStorageBackedKnowledge(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// Explicit "simple" is a real Go-native parser choice, not a remote parser.
+// Prove the stored bytes reach the same origin reader used by source anchors;
+// other engines and formats transformed by the simple reader remain weak.
+func TestUploadedOriginRespectsEffectiveSimpleParser(t *testing.T) {
+	cases := []struct {
+		name, fileType, kbConfig, metadata string
+		want                               bool
+	}{
+		{"default-txt", "txt", `{}`, `{}`, true},
+		{"explicit-simple-txt", "txt", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}`, `{}`, true},
+		{"explicit-simple-markdown", "md", `{"parser_engine_rules":[{"file_types":["md"],"engine":"simple"}]}`, `{}`, true},
+		{"explicit-remote-txt", "txt", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"builtin"}]}`, `{}`, false},
+		{"simple-transformed-csv", "csv", `{"parser_engine_rules":[{"file_types":["csv"],"engine":"simple"}]}`, `{}`, false},
+		{"simple-unsupported-pdf", "pdf", `{"parser_engine_rules":[{"file_types":["pdf"],"engine":"simple"}]}`, `{}`, false},
+		{"upload-overrides-kb-with-simple", "txt", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"builtin"}]}`, `{"process_overrides":{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}}`, true},
+		{"upload-overrides-kb-with-remote", "txt", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}`, `{"process_overrides":{"parser_engine_rules":[{"file_types":["txt"],"engine":"builtin"}]}}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, db, _ := seedBoundSource(t)
+			seedStorageBackedKnowledge(t, db)
+			// The shared minimal knowledge fixture predates process overrides.
+			if err := db.Exec("ALTER TABLE knowledges ADD COLUMN metadata TEXT").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("UPDATE knowledge_bases SET chunking_config=? WHERE id=?", tc.kbConfig, "kb-1").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("UPDATE knowledges SET file_type=?, metadata=? WHERE id=?", tc.fileType, tc.metadata, "knowledge-1").Error; err != nil {
+				t.Fatal(err)
+			}
+			storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+			reader := evidence.NewOriginReader(dbKnowledgeReader{db: db, files: KnowledgeFileOriginReader{Service: storage}})
+			origin, available, err := reader.OriginText(context.Background(), "knowledge-1")
+			if err != nil || available != tc.want {
+				t.Fatalf("OriginText available=%v error=%v, want %v", available, err, tc.want)
+			}
+			if available && (origin != sourcePolicyQuote || storage.calls != 1) {
+				t.Fatalf("origin did not read the original storage bytes: calls=%d", storage.calls)
+			}
+			if !available && storage.calls != 0 {
+				t.Fatalf("unsafe parser or file type read original bytes: calls=%d", storage.calls)
+			}
+		})
+	}
+}
+
+func TestOriginConverterRejectsURLAndInvalidOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, metadata string
+	}{
+		{"url", "url", `{}`},
+		{"invalid-overrides", "file", `{"process_overrides":{"parser_engine_rules":"invalid"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, db, _ := seedBoundSource(t)
+			seedStorageBackedKnowledge(t, db)
+			if err := db.Exec("ALTER TABLE knowledges ADD COLUMN metadata TEXT").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("UPDATE knowledge_bases SET chunking_config=? WHERE id=?", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}`, "kb-1").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("UPDATE knowledges SET type=?, metadata=? WHERE id=?", tc.kind, tc.metadata, "knowledge-1").Error; err != nil {
+				t.Fatal(err)
+			}
+			ok, err := (dbKnowledgeReader{db: db}).UsesBuiltinConverter(context.Background(), "knowledge-1")
+			if err != nil || ok {
+				t.Fatalf("UsesBuiltinConverter = %v, %v; want false, nil", ok, err)
+			}
+		})
+	}
+}
+
 // TestResearchAdapterReadsUploadedOriginThroughStoragePort pins the narrowest
 // seam: for an uploaded material whose file path is a storage reference, the
 // origin text must come through the storage port, and the read must count as a
@@ -185,6 +262,9 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	if err := db.Exec("INSERT INTO knowledge_bases(id,tenant_id,name,embedding_model_id,summary_model_id) VALUES(?,?,?,?,?)", "kb-1", 7, "synthetic-kb", "embed-1", "summary-1").Error; err != nil {
 		t.Fatalf("seed knowledge base: %v", err)
 	}
+	if err := db.Exec("UPDATE knowledge_bases SET chunking_config=? WHERE id=?", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}`, "kb-1").Error; err != nil {
+		t.Fatalf("set explicit Go simple parser: %v", err)
+	}
 	// #623 的复现形态：上传的 txt，file_path 是 resource:// 存储引用。
 	if err := db.Exec("UPDATE knowledges SET file_type='txt', file_path='resource://synthetic-storage-object' WHERE id=?", "knowledge-1").Error; err != nil {
 		t.Fatalf("seed storage-backed knowledge: %v", err)
@@ -230,6 +310,73 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	if storage.calls == 0 {
 		t.Fatal("the anchor path never asked the storage port for the origin bytes")
 	}
+
+	// The uploaded file retains CRLF and CR, while the ingestion pipeline
+	// calculates chunk positions in its LF-normalized text. A non-ASCII prefix
+	// ensures the test also distinguishes rune positions from byte offsets.
+	const rawPrefix = "前缀\r\n🚀\r"
+	const indexedPrefix = "前缀\n🚀\n"
+	const rawChunk = "段首\r\n" + sourcePolicyQuote
+	const indexedChunk = "段首\n" + sourcePolicyQuote
+	start := len([]rune(indexedPrefix))
+	if err := db.Exec("UPDATE chunks SET start_at=?, end_at=?, content=?, source_content=? WHERE id=?", start, start+len([]rune(indexedChunk)), indexedChunk, indexedChunk, "source-1").Error; err != nil {
+		t.Fatalf("set normalized chunk positions: %v", err)
+	}
+	storage.data = []byte(rawPrefix + rawChunk)
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	RegisterAgentRoutes(engine.Group("/api"), AgentRoutePorts{Research: projects, Imports: projects, EvidenceCards: projects, Claims: projects, Anchors: projects, AgentSessions: projects, Proposals: projects, Context: projects, ChangeSets: projects})
+	crlfInput := input
+	crlfInput.SelectionStart = 1 // includes a canonicalized newline
+	crlfInput.SelectionEnd = len([]rune(indexedChunk))
+	inputJSON, err := json.Marshal(crlfInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postAnchor := func(key string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/projects/"+p.ID+"/source-anchors", bytes.NewReader(inputJSON)).WithContext(actorContext("reader"))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", key)
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		return rec
+	}
+	created := postAnchor("storage-anchor-crlf")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("HTTP anchor after normalized CRLF prefix: status=%d body=%s", created.Code, created.Body.String())
+	}
+	var envelope struct {
+		Data core.SourceAnchor `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &envelope); err != nil || envelope.Data.Status != "CURRENT" || envelope.Data.SourceID != "source-1" || envelope.Data.QuotedTextHash == "" {
+		t.Fatalf("anchor receipt did not persist the verified source: %+v error=%v", envelope.Data, err)
+	}
+	var before int64
+	if err := db.Table("lingdoc_g2_objects").Where("project_id = ? AND kind = ?", p.ID, core.SourceAnchorKind).Count(&before).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Editing the chunk must not be masked by normalizing its original file.
+	if err := db.Exec("UPDATE chunks SET content_revision=1 WHERE id=?", "source-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	stale := postAnchor("storage-anchor-crlf-stale")
+	if stale.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("edited chunk was not refused: status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	if err := db.Exec("UPDATE chunks SET content_revision=0 WHERE id=?", "source-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	storage.data = []byte(rawPrefix + "段首\r\nmodified synthetic excerpt")
+	modified := postAnchor("storage-anchor-crlf-modified-origin")
+	if modified.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("modified origin was not refused: status=%d body=%s", modified.Code, modified.Body.String())
+	}
+	var after int64
+	if err := db.Table("lingdoc_g2_objects").Where("project_id = ? AND kind = ?", p.ID, core.SourceAnchorKind).Count(&after).Error; err != nil || after != before {
+		t.Fatalf("failed attempts changed saved anchors: before=%d after=%d err=%v", before, after, err)
+	}
+	storage.data = []byte(rawPrefix + rawChunk)
 
 	// 存储读不到时 422 必须保持响亮：降档是「没有原文」，不是「接受锚点」。
 	storage.err = errors.New("storage backend unreachable")

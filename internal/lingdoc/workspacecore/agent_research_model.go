@@ -216,17 +216,35 @@ type ResearchResult struct {
 	Status                string    `json:"status"`
 }
 type ResearchRound struct {
-	Number        int       `json:"number"`
-	Query         string    `json:"query"`
-	DateFrom      string    `json:"date_from,omitempty"`
-	DateTo        string    `json:"date_to,omitempty"`
-	Provider      string    `json:"provider"`
-	RetrievedAt   time.Time `json:"retrieved_at"`
-	ResultIDs     []string  `json:"result_ids"`
-	Status        string    `json:"status"`
-	FailureCode   string    `json:"failure_code,omitempty"`
-	FailureDetail string    `json:"failure_detail,omitempty"`
-	Feedback      string    `json:"feedback,omitempty"`
+	Number        int        `json:"number"`
+	Query         string     `json:"query"`
+	DateFrom      string     `json:"date_from,omitempty"`
+	DateTo        string     `json:"date_to,omitempty"`
+	Provider      string     `json:"provider"`
+	RetrievedAt   time.Time  `json:"retrieved_at"`
+	ResultIDs     []string   `json:"result_ids"`
+	Status        string     `json:"status"`
+	FailureCode   string     `json:"failure_code,omitempty"`
+	FailureDetail string     `json:"failure_detail,omitempty"`
+	Feedback      string     `json:"feedback,omitempty"`
+	FeedbackBy    string     `json:"feedback_by,omitempty"`
+	FeedbackAt    *time.Time `json:"feedback_at,omitempty"`
+}
+
+// ResearchRoundFeedbackInput records one researcher's note for an existing
+// query round. The run's expected version protects concurrent edits.
+type ResearchRoundFeedbackInput struct {
+	VersionExpectation
+	RoundNumber int    `json:"round_number"`
+	Feedback    string `json:"feedback"`
+}
+
+// ResearchRoundFeedbackReceipt intentionally excludes search results and
+// source text; consumers re-read the authorized run after a write.
+type ResearchRoundFeedbackReceipt struct {
+	RunID       string `json:"run_id"`
+	RunVersion  int64  `json:"run_version"`
+	RoundNumber int    `json:"round_number"`
 }
 
 // ResearchUsageLedger snapshots conservative per-run ceilings and usage.
@@ -427,37 +445,39 @@ type EvidenceConfirmation struct {
 	Meaning         string       `json:"meaning"`
 }
 type EvidenceCard struct {
-	ID                     string                `json:"id"`
-	ProjectID              string                `json:"project_id"`
-	Version                int64                 `json:"version"`
-	ClaimRef               *VersionRef           `json:"claim_ref,omitempty"`
-	AnchorRefs             []VersionRef          `json:"anchor_refs"`
-	SourceIDs              []string              `json:"source_ids"`
-	SupportType            string                `json:"support_type"`
-	Scope                  string                `json:"scope"`
-	ScopeChapterIDs        []string              `json:"scope_chapter_ids"`
-	Limitations            string                `json:"limitations"`
-	Gaps                   string                `json:"gaps"`
-	AlternativeExplanation string                `json:"alternative_explanation"`
-	Status                 string                `json:"status"`
-	Basis                  VersionBasis          `json:"basis"`
-	Confirmation           *EvidenceConfirmation `json:"confirmation,omitempty"`
-	InvalidReason          string                `json:"invalid_reason,omitempty"`
-	CreatedBy              string                `json:"created_by"`
-	CreatedAt              time.Time             `json:"created_at"`
+	ID                      string                `json:"id"`
+	ProjectID               string                `json:"project_id"`
+	Version                 int64                 `json:"version"`
+	ClaimRef                *VersionRef           `json:"claim_ref,omitempty"`
+	AnchorRefs              []VersionRef          `json:"anchor_refs"`
+	AcademicAssociationRefs []VersionRef          `json:"academic_association_refs,omitempty"`
+	SourceIDs               []string              `json:"source_ids"`
+	SupportType             string                `json:"support_type"`
+	Scope                   string                `json:"scope"`
+	ScopeChapterIDs         []string              `json:"scope_chapter_ids"`
+	Limitations             string                `json:"limitations"`
+	Gaps                    string                `json:"gaps"`
+	AlternativeExplanation  string                `json:"alternative_explanation"`
+	Status                  string                `json:"status"`
+	Basis                   VersionBasis          `json:"basis"`
+	Confirmation            *EvidenceConfirmation `json:"confirmation,omitempty"`
+	InvalidReason           string                `json:"invalid_reason,omitempty"`
+	CreatedBy               string                `json:"created_by"`
+	CreatedAt               time.Time             `json:"created_at"`
 }
 type SaveEvidenceCardInput struct {
 	VersionExpectation
-	CardID                 string       `json:"card_id,omitempty"`
-	ClaimRef               *VersionRef  `json:"claim_ref,omitempty"`
-	AnchorRefs             []VersionRef `json:"anchor_refs"`
-	SupportType            string       `json:"support_type"`
-	Scope                  string       `json:"scope"`
-	ScopeChapterIDs        []string     `json:"scope_chapter_ids"`
-	Limitations            string       `json:"limitations"`
-	Gaps                   string       `json:"gaps"`
-	AlternativeExplanation string       `json:"alternative_explanation"`
-	Confirmed              bool         `json:"confirmed"`
+	CardID                  string       `json:"card_id,omitempty"`
+	ClaimRef                *VersionRef  `json:"claim_ref,omitempty"`
+	AnchorRefs              []VersionRef `json:"anchor_refs"`
+	AcademicAssociationRefs []VersionRef `json:"academic_association_refs,omitempty"`
+	SupportType             string       `json:"support_type"`
+	Scope                   string       `json:"scope"`
+	ScopeChapterIDs         []string     `json:"scope_chapter_ids"`
+	Limitations             string       `json:"limitations"`
+	Gaps                    string       `json:"gaps"`
+	AlternativeExplanation  string       `json:"alternative_explanation"`
+	Confirmed               bool         `json:"confirmed"`
 }
 type ReviewEvidenceCardInput struct {
 	VersionExpectation
@@ -680,7 +700,7 @@ type ResearchExecutionGate interface {
 	SettleResearchRun(context.Context, Actor, string, string, ResearchUsageLedger) error
 	ReserveResearchModelCall(context.Context, Actor, string, string) error
 	SettleResearchModelCall(context.Context, Actor, string, string, ResearchModelCallUsage) error
-	ValidateAcademicResearchResult(context.Context, Actor, string, ResearchResult) error
+	ValidateAcademicResearchResult(context.Context, Actor, string, ResearchResult, AcademicSourceCatalog) error
 }
 
 // ResearchModelCallUsage settles one model call made by the controlled
@@ -745,6 +765,7 @@ type DependencyFact struct {
 }
 type EvidenceSelection struct {
 	Cards           []EvidenceCard   `json:"cards"`
+	Anchors         []SourceAnchor   `json:"anchors,omitempty"`
 	Sources         []AgentSourceRef `json:"sources"`
 	Pending         []VersionRef     `json:"pending"`
 	ContextRevision int64            `json:"context_revision"`

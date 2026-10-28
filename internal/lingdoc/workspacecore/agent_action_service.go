@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -808,6 +809,60 @@ func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, ru
 	return out, nil
 }
 
+// SaveResearchRoundFeedback records an attributed note without changing the
+// search results. It cannot race the worker's ongoing progress updates.
+func (s *Service) SaveResearchRoundFeedback(ctx context.Context, actor Actor, projectID, runID, key string, input ResearchRoundFeedbackInput) (json.RawMessage, int, bool, error) {
+	feedback := strings.TrimSpace(input.Feedback)
+	if strings.TrimSpace(runID) == "" || input.RoundNumber < 1 || feedback == "" || utf8.RuneCountInString(feedback) > 1000 || input.ExpectedVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	var chapterID string
+	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, _ Project) error {
+		run, _, err := loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, runID)
+		if err == nil {
+			chapterID = run.Basis.ChapterID
+		}
+		return err
+	})
+	if err != nil {
+		return nil, 0, false, err
+	}
+	target := projectID + "/" + runID + "/" + strconv.Itoa(input.RoundNumber)
+	return s.runAgentOperation(ctx, actor, projectID, researchCapabilityForChapter(chapterID), "saveResearchRoundFeedback", target, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
+		run, old, err := loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, runID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !expectationMatches(p, input.VersionExpectation) || run.Version != input.ExpectedVersion || run.Basis.ChapterID != chapterID {
+			return nil, 0, ErrVersionConflict
+		}
+		if run.Status == "running" || run.Status == "paused" {
+			return nil, 0, ErrInvalidState
+		}
+		index := -1
+		for i := range run.Rounds {
+			if run.Rounds[i].Number == input.RoundNumber {
+				if index != -1 {
+					return nil, 0, ErrInvalidState
+				}
+				index = i
+			}
+		}
+		if index < 0 {
+			return nil, 0, ErrNotFound
+		}
+		now := time.Now().UTC()
+		run.Rounds[index].Feedback = feedback
+		run.Rounds[index].FeedbackBy = actor.UserID
+		run.Rounds[index].FeedbackAt = &now
+		run.Version++
+		if err := storeStoredObject(tx, old, projectID, ResearchRunKind, run.ID, run.Version, run); err != nil {
+			return nil, 0, err
+		}
+		return ResearchRoundFeedbackReceipt{RunID: run.ID, RunVersion: run.Version, RoundNumber: input.RoundNumber}, 200, nil
+	})
+}
+
 func researchResultExcluded(result ResearchResult, exclusions []string) bool {
 	if len(exclusions) == 0 {
 		return false
@@ -923,21 +978,27 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 				return nil, 0, ErrNotFound
 			}
 			if academicResult != nil {
+				// A metadata-only result is not proof that any project source is
+				// its original.  Keep those identities separate until a verified
+				// source association exists, even when the source is readable.
+				if input.SourceID != "" || academicResult.SourceID != "" || academicResult.Locator != "" || academicResult.QuotedTextHash != "" {
+					return nil, 0, ErrEvidenceIncomplete
+				}
 				gate, ok := s.agentRuntime.Research.(ResearchExecutionGate)
 				if !ok {
 					return nil, 0, ErrAcademicGlobalCatalogUnavailable
 				}
-				if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, *academicResult); err != nil {
-					return nil, 0, err
-				}
-				if strings.TrimSpace(academicResult.DOI) == "" || strings.TrimSpace(academicResult.Title) == "" || strings.TrimSpace(academicResult.PolicySnapshotVersion) == "" || academicResult.PolicyStatus != "approved" || academicResult.RetractionStatus == "retracted" || academicResult.DuplicateStatus == "duplicate" || academicResult.AcquisitionStatus != "metadata_only" || input.SaveMode != "metadata_only" {
-					return nil, 0, ErrEvidenceIncomplete
-				}
-				currentCatalogVersion, versionErr := currentAcademicSourceCatalogVersion(tx, projectID)
+				currentCatalog, versionErr := currentAcademicSourceCatalog(tx, projectID)
 				if versionErr != nil {
 					return nil, 0, versionErr
 				}
-				if academicResult.CatalogVersion != currentCatalogVersion {
+				if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, *academicResult, currentCatalog); err != nil {
+					return nil, 0, err
+				}
+				if strings.TrimSpace(academicResult.DOI) == "" || strings.TrimSpace(academicResult.Title) == "" || strings.TrimSpace(academicResult.PolicySnapshotVersion) == "" || academicResult.PolicyStatus != "approved" || academicResult.RetractionStatus == "retracted" || academicResult.RetractionStatus == "retraction_notice" || academicResult.DuplicateStatus == "duplicate" || academicResult.AcquisitionStatus != "metadata_only" || input.SaveMode != "metadata_only" {
+					return nil, 0, ErrEvidenceIncomplete
+				}
+				if academicResult.CatalogVersion != currentCatalog.SourceCatalogVersion {
 					return nil, 0, ErrVersionConflict
 				}
 				candidate.SelectionType = "academic_metadata"
@@ -1090,17 +1151,17 @@ func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, proje
 			if !ok {
 				return nil, 0, ErrAcademicGlobalCatalogUnavailable
 			}
-			if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: value.PolicySnapshotVersion}); err != nil {
-				return nil, 0, err
-			}
-			currentCatalogVersion, versionErr := currentAcademicSourceCatalogVersion(tx, projectID)
+			currentCatalog, versionErr := currentAcademicSourceCatalog(tx, projectID)
 			if versionErr != nil {
 				return nil, 0, versionErr
 			}
-			if value.CatalogVersion != currentCatalogVersion {
+			if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: value.PolicySnapshotVersion}, currentCatalog); err != nil {
+				return nil, 0, err
+			}
+			if value.CatalogVersion != currentCatalog.SourceCatalogVersion {
 				return nil, 0, ErrVersionConflict
 			}
-			if value.PolicyStatus != "approved" || value.RetractionStatus == "retracted" || value.DuplicateStatus == "duplicate" || value.AcquisitionStatus != "metadata_only" {
+			if value.PolicyStatus != "approved" || value.RetractionStatus == "retracted" || value.RetractionStatus == "retraction_notice" || value.DuplicateStatus == "duplicate" || value.AcquisitionStatus != "metadata_only" {
 				return nil, 0, ErrEvidenceIncomplete
 			}
 		}
@@ -1452,6 +1513,9 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 	if len(input.AnchorRefs) == 0 || len(input.AnchorRefs) > 20 {
 		return nil, 0, false, ErrEvidenceIncomplete
 	}
+	if len(input.AcademicAssociationRefs) > 20 {
+		return nil, 0, false, ErrInvalidRequest
+	}
 	if input.SupportType != "" && input.SupportType != "supports" && input.SupportType != "refutes" && input.SupportType != "qualifies" && input.SupportType != "background" {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -1491,6 +1555,7 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 		if !expectationMatches(p, input.VersionExpectation) {
 			return nil, 0, ErrVersionConflict
 		}
+		currentAnchors := []SourceAnchor{}
 		for _, ref := range input.AnchorRefs {
 			anchor, _, err := loadStoredObject[SourceAnchor](tx, projectID, SourceAnchorKind, ref.ID)
 			if err != nil {
@@ -1498,6 +1563,35 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 			}
 			if anchor.Version != ref.Version || anchor.Status != "CURRENT" {
 				return nil, 0, ErrVersionConflict
+			}
+			currentAnchors = append(currentAnchors, anchor)
+		}
+		// The association is an explicitly human-recorded historical assertion.
+		// A draft may refer to it only when it belongs to the exact anchored
+		// project source and source revision. Formal use remains fail-closed
+		// until a transaction-safe original-byte proof exists.
+		seenAssociations := map[string]bool{}
+		for _, ref := range input.AcademicAssociationRefs {
+			if ref.ID == "" || ref.Version < 1 || (ref.Kind != "" && ref.Kind != "AcademicSourceAssociation") || seenAssociations[ref.ID] {
+				return nil, 0, ErrInvalidRequest
+			}
+			seenAssociations[ref.ID] = true
+			association, _, err := loadStoredObject[AcademicSourceAssociation](tx, projectID, AcademicSourceAssociationKind, ref.ID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if association.Version != ref.Version || association.Status != "recorded" {
+				return nil, 0, ErrVersionConflict
+			}
+			matched := false
+			for _, anchor := range currentAnchors {
+				if anchor.SourceID == association.SourceID && anchor.AssetID == association.AssetID && anchor.AssetRevision == association.AssetRevision {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return nil, 0, ErrEvidenceIncomplete
 			}
 		}
 		if input.ClaimRef != nil {
@@ -1514,7 +1608,7 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 				return nil, 0, err
 			}
 		}
-		card := EvidenceCard{ID: uuid.NewString(), ProjectID: projectID, Version: 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), SourceIDs: sortedUniqueIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: sortedUniqueIDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: versionBasisFor(p, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
+		card := EvidenceCard{ID: uuid.NewString(), ProjectID: projectID, Version: 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), AcademicAssociationRefs: slices.Clone(input.AcademicAssociationRefs), SourceIDs: sortedUniqueIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: sortedUniqueIDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: versionBasisFor(p, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
 		var old StoredObject
 		if input.CardID != "" {
 			previous, stored, err := loadStoredObject[EvidenceCard](tx, projectID, EvidenceCardKind, input.CardID)
@@ -1523,6 +1617,12 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 			}
 			if previous.Version != input.ExpectedVersion {
 				return nil, 0, ErrVersionConflict
+			}
+			// An old client cannot silently erase academic provenance.
+			for _, prior := range previous.AcademicAssociationRefs {
+				if !slices.Contains(input.AcademicAssociationRefs, prior) {
+					return nil, 0, ErrEvidenceIncomplete
+				}
 			}
 			if err := requireDraftEdit(tx, p, ObjectVersionRef{Kind: "EvidenceCard", ID: previous.ID, Version: strconv.FormatInt(previous.Version, 10)}); err != nil {
 				return nil, 0, err
@@ -1577,6 +1677,13 @@ func (s *Service) loadCheckedEvidenceCard(ctx context.Context, actor Actor, proj
 				return ErrEvidenceIncomplete
 			}
 		} else if formal {
+			return ErrEvidenceIncomplete
+		}
+		// The existing uploaded-file origin interface cannot prove atomically
+		// that the external bytes are the ones the person reviewed. A recorded
+		// association must never be promoted to formal evidence on a DB
+		// metadata fingerprint alone.
+		if formal && len(card.AcademicAssociationRefs) > 0 {
 			return ErrEvidenceIncomplete
 		}
 		if formal && (card.Scope == "" || card.SupportType == "" || len(card.ScopeChapterIDs) == 0) {
@@ -1822,6 +1929,23 @@ func (s *Service) SelectGenerationEvidence(ctx context.Context, actor Actor, pro
 			}
 		}
 		out.Cards = append(out.Cards, card)
+		// Return only anchors explicitly named by the checked card. Their source
+		// association cannot be reconstructed from card.SourceIDs alone.
+		err = s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, _ Project) error {
+			for _, anchorRef := range card.AnchorRefs {
+				anchor, _, e := loadStoredObject[SourceAnchor](tx, projectID, SourceAnchorKind, anchorRef.ID)
+				if e != nil || anchor.Version != anchorRef.Version || !slices.Contains(card.SourceIDs, anchor.SourceID) {
+					return ErrEvidenceIncomplete
+				}
+				if !slices.ContainsFunc(out.Anchors, func(a SourceAnchor) bool { return a.ID == anchor.ID && a.Version == anchor.Version }) {
+					out.Anchors = append(out.Anchors, anchor)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return out, err
+		}
 		for _, id := range card.SourceIDs {
 			source, err := s.readResearchSource(ctx, actor, projectID, chapterID, id)
 			if err != nil {

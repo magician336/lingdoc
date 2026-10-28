@@ -102,15 +102,16 @@ type Basis struct {
 }
 
 type Candidate struct {
-	ID           string       `json:"id"`
-	ProjectID    string       `json:"project_id"`
-	ChapterID    string       `json:"chapter_id"`
-	RunID        string       `json:"run_id"`
-	BodyMarkdown string       `json:"body_markdown"`
-	SourceIDs    []string     `json:"source_ids"`
-	Basis        Basis        `json:"basis"`
-	Validity     Validity     `json:"validity"`
-	ReviewItems  []ReviewItem `json:"review_items"`
+	ID           string          `json:"id"`
+	ProjectID    string          `json:"project_id"`
+	ChapterID    string          `json:"chapter_id"`
+	RunID        string          `json:"run_id"`
+	BodyMarkdown string          `json:"body_markdown"`
+	SourceIDs    []string        `json:"source_ids"`
+	Basis        Basis           `json:"basis"`
+	Validity     Validity        `json:"validity"`
+	ReviewItems  []ReviewItem    `json:"review_items"`
+	Claims       []ClaimEvidence `json:"claims,omitempty"`
 
 	// WritingAction is the writing action that produced this candidate.
 	// The vocabulary belongs to the writingaction package: the action

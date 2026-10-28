@@ -46,7 +46,7 @@ func (w *rewriteWorkspaceStub) SelectGenerationEvidence(_ context.Context, _ cor
 			return w.cardScope
 		}
 		return "仅合成反例"
-	}(), Limitations: "不证明总体效果", SourceIDs: []string{"existing"}}}, Sources: []core.AgentSourceRef{{SourceID: "existing", AssetID: "asset", AssetRevision: 1, Locator: "page/1", QuotedTextHash: "hash", ModelUseAllowed: w.modelAllowed}}}, nil
+	}(), Limitations: "不证明总体效果", SourceIDs: []string{"existing"}, AnchorRefs: []core.VersionRef{{ID: "anchor", Version: 1}}}}, Anchors: []core.SourceAnchor{{ID: "anchor", Version: 1, SourceID: "existing", Locator: "page/1", SelectionEnd: 1, QuotedTextHash: "hash"}}, Sources: []core.AgentSourceRef{{SourceID: "existing", AssetID: "asset", AssetRevision: 1, Locator: "page/1", QuotedTextHash: "hash", ModelUseAllowed: w.modelAllowed}}}, nil
 }
 
 type changingRewriteModelStub struct {

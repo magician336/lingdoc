@@ -61,10 +61,8 @@ type License struct {
 	DelayInDays    *int   `json:"delay_in_days,omitempty"`
 }
 
-// UpdateTo preserves Crossref's update-to record, including the raw update
-// type. A retraction is only indicated when Crossref explicitly supplies a
-// matching update record; an absent record is not evidence that a work is not
-// retracted.
+// UpdateTo describes a work updated by this record. For a retraction notice,
+// DOI is the updated paper, not the notice's own DOI.
 type UpdateTo struct {
 	DOI     string `json:"doi,omitempty"`
 	Type    string `json:"type,omitempty"`
@@ -90,10 +88,9 @@ type Work struct {
 	UpdateTo      []UpdateTo `json:"update_to,omitempty"`
 }
 
-// HasRetractionNotice reports only an explicit retraction update in Crossref's
-// update-to metadata. False means no retraction update was returned, not that
-// the work has been independently verified as unretracted.
-func (w Work) HasRetractionNotice() bool {
+// IsRetractionNotice reports whether this work describes a retraction of
+// another work. It does not establish whether this work itself was retracted.
+func (w Work) IsRetractionNotice() bool {
 	for _, update := range w.UpdateTo {
 		if strings.EqualFold(strings.TrimSpace(update.Type), "retraction") {
 			return true
@@ -277,12 +274,44 @@ type apiLicense struct {
 }
 
 type apiUpdateTo struct {
-	DOI     string `json:"DOI"`
-	Type    string `json:"type"`
-	Updated string `json:"updated"`
-	Label   string `json:"label"`
-	Source  string `json:"source"`
-	Record  string `json:"record"`
+	DOI     string        `json:"DOI"`
+	Type    string        `json:"type"`
+	Updated apiUpdateDate `json:"updated"`
+	Label   string        `json:"label"`
+	Source  string        `json:"source"`
+	Record  string        `json:"record"`
+}
+
+// Crossref represents updated as a date object, not a JSON string. Accept the
+// previous string fixture shape too without fabricating missing date parts.
+type apiUpdateDate string
+
+func (d *apiUpdateDate) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*d = ""
+		return nil
+	}
+	if len(data) > 0 && data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*d = apiUpdateDate(value)
+		return nil
+	}
+	var value struct {
+		DateParts [][]int `json:"date-parts"`
+		DateTime  string  `json:"date-time"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	date := value.DateTime
+	if date == "" {
+		date = formatDate(apiDate{DateParts: value.DateParts})
+	}
+	*d = apiUpdateDate(date)
+	return nil
 }
 
 func normalizeWork(item apiWork) Work {
@@ -314,7 +343,7 @@ func normalizeWork(item apiWork) Work {
 		})
 	}
 	for _, raw := range item.UpdateTo {
-		work.UpdateTo = append(work.UpdateTo, UpdateTo(raw))
+		work.UpdateTo = append(work.UpdateTo, UpdateTo{DOI: raw.DOI, Type: raw.Type, Updated: string(raw.Updated), Label: raw.Label, Source: raw.Source, Record: raw.Record})
 	}
 	return work
 }

@@ -96,7 +96,7 @@ func (s *testSearcher) SettleResearchModelCall(context.Context, Actor, string, s
 	s.modelSettleCalls++
 	return s.modelSettlementErr
 }
-func (*testSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult) error {
+func (*testSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult, _ AcademicSourceCatalog) error {
 	if result.Provider == "crossref" {
 		return nil
 	}
@@ -123,7 +123,7 @@ func (*testAcademicResearchSearcher) SettleResearchRun(context.Context, Actor, s
 	return nil
 }
 
-func (*testAcademicResearchSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult) error {
+func (*testAcademicResearchSearcher) ValidateAcademicResearchResult(_ context.Context, _ Actor, _ string, result ResearchResult, _ AcademicSourceCatalog) error {
 	if result.Provider == "crossref" {
 		return nil
 	}

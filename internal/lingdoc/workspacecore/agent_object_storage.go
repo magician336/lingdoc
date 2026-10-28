@@ -367,6 +367,12 @@ func (t gormTransaction) IsAnchorCurrent(anchor SourceAnchor) (bool, error) {
 	return anchor.ExtractionType == "native_text" || anchor.HumanVerified, nil
 }
 func (t gormTransaction) cardConfirmationCurrent(card EvidenceCard) (bool, error) {
+	// Database-only currentness cannot establish external original bytes for
+	// an academic association. This guards the transaction-time selection
+	// seam as well as the public confirmation path.
+	if len(card.AcademicAssociationRefs) > 0 {
+		return false, nil
+	}
 	if !confirmationTupleCurrent(card) {
 		return false, nil
 	}

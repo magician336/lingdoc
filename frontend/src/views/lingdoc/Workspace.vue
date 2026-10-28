@@ -485,6 +485,13 @@
                   <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
                   <h5>改写候选</h5>
                   <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
+				  <section v-if="rewriteCandidate.claims?.length" aria-label="改写论断证据绑定">
+				    <h4>逐论断证据</h4>
+				    <p class="muted">关联已按已确认的证据卡和原文锚点核对；论断仍需人工判断。采纳后工作副本会记录候选与位置；正文编辑后该记录失效，须重新核验。</p>
+				    <div v-for="(claim, index) in rewriteCandidate.claims" :key="index"><p>{{ claim.text }}</p>
+				      <ul><li v-for="ref in claim.references" :key="`${ref.card_id}:${ref.anchor_id}`">卡 {{ ref.card_id }} v{{ ref.card_version }} · 锚点 {{ ref.anchor_id }} v{{ ref.anchor_version }} · {{ ref.locator }}（{{ ref.selection_start }}–{{ ref.selection_end }}）</li></ul>
+				    </div>
+				  </section>
                   <button v-if="rewriteCandidateStage === 'ready'" type="button" class="ghost" @click="openRewriteCompare">展开宽对照</button>
                   <p v-if="rewriteCandidate.replacement_markdown.trim() === rewriteCandidate.selection.selected_text.trim()" class="muted" role="status">本次候选与原文一致，未产生文字改动。可以保留原文，或明确需要改善的地方后再生成。</p>
                   <p class="muted">候选来源：{{ rewriteCandidate.source_ids.length ? rewriteCandidate.source_ids.join('、') : '无' }}</p>
@@ -543,6 +550,17 @@
           <article v-if="generationCandidate" class="candidate-preview">
             <h4>候选稿预览（不会自动覆盖章节）</h4>
             <pre>{{ generationCandidate.body_markdown }}</pre>
+            <section v-if="generationCandidate.claims?.length" aria-label="论断证据绑定">
+              <h4>逐论断证据</h4>
+              <p class="muted">以下关联由模型声明，并已核对证据卡和原文锚点；论断仍需人工判断。采纳后工作副本会记录候选与位置；正文编辑后该记录失效，须重新核验。</p>
+              <div v-for="(claim, index) in generationCandidate.claims" :key="index">
+                <p>{{ claim.text }}</p>
+                <ul><li v-for="ref in claim.references" :key="`${ref.card_id}:${ref.anchor_id}`">
+                  卡 {{ ref.card_id }} v{{ ref.card_version }} · 锚点 {{ ref.anchor_id }} v{{ ref.anchor_version }} · {{ ref.locator }}（{{ ref.selection_start }}–{{ ref.selection_end }}）
+                  <button type="button" :disabled="busy || contextBusy" @click="showCandidateSource(ref.source_id)">查看原文</button>
+                </li></ul>
+              </div>
+            </section>
             <p>引用 {{ generationCandidate.source_ids.length }} 条来源 · 待核事项 {{ generationCandidate.review_items.length }} 条 · 生成时状态：{{ generationCandidate.validity }}（采纳时仍会复核当前版本）</p>
             <div class="actions">
               <button v-for="(sourceId, index) in generationCandidate.source_ids" :key="sourceId" type="button"
@@ -722,6 +740,15 @@
               工作副本修订 {{ workingCopy.working_copy_revision }} · {{ workingCopyStatusLabel }}
               <span v-if="workingCopy.updated_at">· {{ new Date(workingCopy.updated_at).toLocaleString() }}</span>
             </p>
+			<section v-if="workingCopy?.claim_provenance?.length" aria-label="工作副本证据溯源">
+			  <h4>工作副本证据溯源</h4>
+			  <p class="muted">记录只说明曾采纳的候选及位置；查看原候选时会重新核对当前权限和证据。正文编辑后记录失效，不能自动推断关联。</p>
+			  <ul><li v-for="trace in workingCopy.claim_provenance" :key="trace.id">
+			    {{ bodyChanged || trace.status === 'stale' ? '已失效，需重新生成或核验' : '待重新核验证据' }} · 位置 {{ trace.start_utf16 }}–{{ trace.end_utf16 }}
+			    <button type="button" :disabled="busy" @click="showClaimProvenance(trace)">查看原候选</button>
+			  </li></ul>
+			</section>
+			<p v-if="workingCopy?.claim_provenance_unavailable" class="warning">当前环境尚不可读取证据溯源记录，不能确认工作副本中的证据关联。</p>
 
             <button type="submit" :disabled="busy || workingCopySaving || !chapterChanged">保存工作副本</button>
             <button type="button" @click="commitDraft" :disabled="busy || workingCopySaving || chapterChanged || !workingCopyDiffersFromFormal">
@@ -732,6 +759,11 @@
               <ul>
                 <li v-for="version in chapterVersions" :key="version.id">
                   <span>{{ new Date(version.created_at).toLocaleString() }} · {{ version.id.slice(0, 8) }}<small v-if="version.id === chapter.current_version_id"> · 当前版本</small></span>
+				  <ul v-if="version.claim_provenance?.length"><li v-for="trace in version.claim_provenance" :key="trace.id">
+				    {{ trace.status === 'stale' ? '历史关联已失效' : '历史关联待重新核验' }} · 位置 {{ trace.start_utf16 }}–{{ trace.end_utf16 }}
+				    <button type="button" :disabled="busy" @click="showClaimProvenance(trace)">查看原候选</button>
+				  </li></ul>
+				  <span v-if="version.claim_provenance_unavailable" class="warning">溯源记录不可用</span>
                   <button type="button" :disabled="busy || workingCopySaving" @click="restoreVersion(version)">恢复到工作副本</button>
                 </li>
               </ul>
@@ -2402,6 +2434,15 @@ async function showGenerationCandidate(runId: string) {
     generationCandidate.value = result.data
   } catch (error) { failure(error) }
   finally { generationBusy.value = false }
+}
+
+async function showClaimProvenance(trace: NonNullable<WorkingCopy['claim_provenance']>[number]) {
+  if (!project.value) return
+  if (trace.origin_kind === 'generation' && trace.run_id) { await showGenerationCandidate(trace.run_id); return }
+  if (trace.origin_kind === 'rewrite') {
+    try { const result = await getSelectedRewrite(project.value.id, trace.candidate_id); rewriteCandidate.value = result.data }
+    catch (error) { failure(error) }
+  }
 }
 
 function openAdoption() {

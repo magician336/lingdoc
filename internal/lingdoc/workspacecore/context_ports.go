@@ -126,6 +126,7 @@ type ResearchTaskApplication interface {
 	ControlResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input ControlResearchTaskInput) (json.RawMessage, int, bool, error)
 	RunResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input RunResearchTaskInput) (json.RawMessage, int, bool, error)
 	GetResearchRun(ctx context.Context, actor Actor, projectID, runID string) (ResearchRun, error)
+	SaveResearchRoundFeedback(ctx context.Context, actor Actor, projectID, runID, key string, input ResearchRoundFeedbackInput) (json.RawMessage, int, bool, error)
 	InspectResearchResult(ctx context.Context, actor Actor, projectID, runID, resultID string) (ResearchResult, error)
 	ListResearchRuns(ctx context.Context, actor Actor, projectID string) ([]ResearchRun, error)
 }
@@ -134,6 +135,9 @@ type ResearchTaskApplication interface {
 // 消费方：G2 路由。
 type ImportCandidateApplication interface {
 	CreateImportCandidate(ctx context.Context, actor Actor, projectID, key string, input CreateImportCandidateInput) (json.RawMessage, int, bool, error)
+	ConfirmAcademicSourceAssociation(ctx context.Context, actor Actor, projectID, key string, input ConfirmAcademicSourceAssociationInput) (json.RawMessage, int, bool, error)
+	ListAcademicSourceAssociations(ctx context.Context, actor Actor, projectID string) ([]AcademicSourceAssociationView, error)
+	RevokeAcademicSourceAssociation(ctx context.Context, actor Actor, projectID, associationID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	ConfirmImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	RejectImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input ConfirmationInput) (json.RawMessage, int, bool, error)
 	RefreshImportCandidate(ctx context.Context, actor Actor, projectID, candidateID string) (ImportCandidate, error)

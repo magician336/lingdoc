@@ -198,7 +198,7 @@ const (
 // shape out itself is a second copy of the contract, and two copies drift;
 // the prompt asks for this rendering instead.
 func ResearchProposalTaskShapeText() string {
-	return renderResearchProposalShape(researchProposalTaskFields, researchProposalTaskQueriesRule)
+	return renderResearchProposalShape(researchProposalTaskFields, researchProposalTaskQueriesRule, false)
 }
 
 // ResearchProposalShapeText renders the shape of a research proposal for a
@@ -212,23 +212,33 @@ func ResearchProposalTaskShapeText() string {
 // the plan looks like this, and a gap says what is missing and what would
 // fill it.
 func ResearchProposalShapeText() string {
-	return renderResearchProposalShape(researchProposalFields, researchProposalProposalQueriesRule)
+	return renderResearchProposalShape(researchProposalFields, researchProposalProposalQueriesRule, true)
 }
 
 // renderResearchProposalShape renders the given fields of the shape, with
 // the rules that belong to them.
-func renderResearchProposalShape(fields []string, queriesRule string) string {
+func renderResearchProposalShape(fields []string, queriesRule string, specifyArrayTypes bool) string {
 	rendered := make([]string, 0, len(fields))
 	for _, name := range fields {
 		switch name {
 		case researchProposalQueriesField:
-			rendered = append(rendered, name+queriesRule)
+			if !specifyArrayTypes {
+				rendered = append(rendered, name+queriesRule)
+			} else {
+				rendered = append(rendered, name+"（JSON 字符串数组；"+queriesRule+"）")
+			}
+		case researchProposalExclusionsField:
+			if !specifyArrayTypes {
+				rendered = append(rendered, name)
+			} else {
+				rendered = append(rendered, name+"（JSON 字符串数组；没有时用 []）")
+			}
 		case researchProposalCandidateSourcesField:
-			rendered = append(rendered, name+"（每条含 "+researchProposalCandidateSourceIDField+" 与 "+researchProposalCandidateSourceReasonField+"；"+researchProposalCandidateSourceIDField+" 只能取本轮上下文给出的来源ID）")
+			rendered = append(rendered, name+"（JSON 对象数组；没有时用 []；每条含 "+researchProposalCandidateSourceIDField+" 与 "+researchProposalCandidateSourceReasonField+"；"+researchProposalCandidateSourceIDField+" 只能取本轮上下文给出的来源ID）")
 		case researchProposalReasonsField:
-			rendered = append(rendered, name+"（整份提案为什么这么定：目标为什么是这个目标、范围为什么划到这里）")
+			rendered = append(rendered, name+"（JSON 字符串数组；每项说明整份提案为什么这么定：目标为什么是这个目标、范围为什么划到这里）")
 		case researchProposalGapsField:
-			rendered = append(rendered, name+"（每条含 "+researchProposalGapDescriptionField+"（缺什么）与 "+researchProposalGapExpectedEvidenceField+"（期望补什么）；只有「没有来源」这种空话不算）")
+			rendered = append(rendered, name+"（JSON 对象数组；没有时用 []；每条含 "+researchProposalGapDescriptionField+"（缺什么）与 "+researchProposalGapExpectedEvidenceField+"（期望补什么）；只有「没有来源」这种空话不算）")
 		default:
 			rendered = append(rendered, name)
 		}

@@ -58,7 +58,11 @@ func (m *inheritedRewriteModel) RewriteSelected(_ context.Context, _ Actor, p Se
 	if m.invented {
 		id = "invented"
 	}
-	return SelectedRewriteOutput{ReplacementMarkdown: "revised [[source:" + id + "]]", SourceIDs: []string{id}, RunMode: "mock"}, nil
+	output := SelectedRewriteOutput{ReplacementMarkdown: "revised [[source:" + id + "]]", SourceIDs: []string{id}, RunMode: "mock"}
+	if len(p.EvidenceCardRefs) > 0 {
+		output.Claims = []candidateadoption.ClaimEvidence{{Text: output.ReplacementMarkdown, References: []candidateadoption.ClaimEvidenceReference{{CardID: "card", CardVersion: 2, AnchorID: "anchor", AnchorVersion: 1, SourceID: id}}}}
+	}
+	return output, nil
 }
 func inheritedRewriteFixture(t *testing.T) (*SelectedRewriteService, *inheritedRewriteWorkspace, *inheritedRewriteSources, *inheritedRewriteModel, SelectedRewriteRequest) {
 	t.Helper()

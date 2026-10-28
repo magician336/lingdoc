@@ -12,10 +12,12 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -188,6 +190,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	current.Basis.AssetVersions = []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: 1}}
 	current.Basis.EvidenceCardRefs = []core.VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
 	candidate := candidateadoption.Candidate{ID: "oneconn-candidate", ProjectID: p.ID, ChapterID: "chapter-2", Validity: "fresh", RunID: "synthetic-local-run", BodyMarkdown: "合成候选 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: current.Basis, WritingAction: writingaction.ActionGenerate, Origin: writingaction.OriginGenerated}
+	candidate.Claims = []candidateadoption.ClaimEvidence{{Text: candidate.BodyMarkdown, References: []candidateadoption.ClaimEvidenceReference{{CardID: card.ID, CardVersion: card.Version, AnchorID: anchor.ID, AnchorVersion: anchor.Version, SourceID: anchor.SourceID, Locator: anchor.Locator, SelectionStart: anchor.SelectionStart, SelectionEnd: anchor.SelectionEnd, QuotedTextHash: anchor.QuotedTextHash}}}}
 	require.NoError(t, store.UpsertCandidate(deadline, candidate))
 	// 采纳是一次显式确认：确认载荷要说清采纳的是哪个动作的结果、写到哪里、
 	// 谁确认的、候选是什么来源。夹具里的候选记了动作与来源，确认载荷就得
@@ -397,4 +400,132 @@ func TestCandidateFocusedTableHelperPreservesExistingNativeWorkspaceSchema(t *te
 	require.Error(t, db.Exec("UPDATE lingdoc_projects SET tenant_id=NULL WHERE id=?", "project-1").Error)
 	require.True(t, db.Migrator().HasTable("lingdoc_candidates"))
 	require.True(t, db.Migrator().HasTable("lingdoc_chapter_confirmation_requests"))
+}
+
+func TestCandidateProvenanceSurvivesAdoptionAndStalesOnWorkingCopyEdit(t *testing.T) {
+	f := newCandidateOneConnFixture(t)
+	adopted, err := f.adoption.AcceptCandidate(f.ctx, f.input)
+	require.NoError(t, err)
+	versions, err := f.projects.ListChapterVersions(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	var pinned core.ChapterVersion
+	for _, version := range versions {
+		if version.ID == *adopted.Chapter.CurrentVersionID {
+			pinned = version
+		}
+	}
+	require.Len(t, pinned.ClaimProvenance, 1)
+	require.Equal(t, "needs_revalidation", pinned.ClaimProvenance[0].Status)
+	copy, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Len(t, copy.ClaimProvenance, 1)
+	require.Equal(t, "needs_revalidation", copy.ClaimProvenance[0].Status)
+	require.Equal(t, f.candidate.ID, copy.ClaimProvenance[0].CandidateID)
+	in := core.SaveWorkingCopyInput{ExpectedSpecRevision: copy.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision, BaseChapterVersionID: copy.BaseChapterVersionID, BodyMarkdown: copy.BodyMarkdown + " edited", SourceIDs: copy.SourceIDs, CitationUsages: copy.CitationUsages}
+	_, _, _, err = f.projects.SaveWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "claim-provenance-edit", in)
+	require.NoError(t, err)
+	edited, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Len(t, edited.ClaimProvenance, 1)
+	require.Equal(t, "stale", edited.ClaimProvenance[0].Status)
+	versions, err = f.projects.ListChapterVersions(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	for _, version := range versions {
+		if version.ID == pinned.ID {
+			require.Len(t, version.ClaimProvenance, 1)
+			require.Equal(t, "needs_revalidation", version.ClaimProvenance[0].Status)
+		}
+	}
+	_, _, _, err = f.projects.RestoreWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "claim-provenance-restore", core.RestoreWorkingCopyInput{ChapterVersionID: pinned.ID, ExpectedSpecRevision: edited.SpecRevision, ExpectedWorkingCopyRevision: edited.WorkingCopyRevision, ExpectedChapterVersionID: edited.BaseChapterVersionID})
+	require.NoError(t, err)
+	restored, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Len(t, restored.ClaimProvenance, 2)
+	require.Equal(t, "stale", restored.ClaimProvenance[0].Status)
+	require.Equal(t, "needs_revalidation", restored.ClaimProvenance[1].Status)
+}
+
+type boundRewriteProvenanceModel struct{}
+
+func (*boundRewriteProvenanceModel) RunMode() string { return "mock" }
+func (*boundRewriteProvenanceModel) RewriteSelected(_ context.Context, _ Actor, p SelectedRewritePrompt) (SelectedRewriteOutput, error) {
+	if len(p.EvidenceConstraints) != 1 || len(p.EvidenceConstraints[0].Anchors) != 1 {
+		return SelectedRewriteOutput{}, ErrRewriteSourceDenied
+	}
+	card := p.EvidenceConstraints[0]
+	anchor := card.Anchors[0]
+	body := "改写合成事实 [[source:source-1]]"
+	return SelectedRewriteOutput{ReplacementMarkdown: body, SourceIDs: []string{"source-1"}, RunMode: "mock", Claims: []candidateadoption.ClaimEvidence{{Text: body, References: []candidateadoption.ClaimEvidenceReference{{CardID: card.CardRef.ID, CardVersion: card.CardRef.Version, AnchorID: anchor.ID, AnchorVersion: anchor.Version, SourceID: anchor.SourceID}}}}}, nil
+}
+func TestRewriteProvenanceSurvivesApplyAndStalesOnEdit(t *testing.T) {
+	f := newCandidateOneConnFixture(t)
+	copy, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.NotEmpty(t, copy.BodyMarkdown)
+	service := NewSelectedRewriteService(f.db, f.projects, f.projects, f.runtime, &boundRewriteProvenanceModel{})
+	require.NoError(t, service.store.AutoMigrate(f.ctx))
+	selection := RewriteSelection{StartUTF16: 0, EndUTF16: len(utf16.Encode([]rune(copy.BodyMarkdown))), SelectedText: copy.BodyMarkdown}
+	request := SelectedRewriteRequest{BaseChapterVersionID: copy.BaseChapterVersionID, ExpectedSpecRevision: copy.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision, Selection: selection, Instruction: "合成改写", SourceIDs: []string{}, EvidenceCardRefs: []generation.EvidenceCardRef{{ID: f.card.ID, Version: f.card.Version}}}
+	candidate, err := service.Create(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "rewrite-provenance", request)
+	require.NoError(t, err)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
+	applied, _, err := service.Apply(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, candidate.CandidateID, "rewrite-apply", ApplySelectedRewriteInput{BaseChapterVersionID: copy.BaseChapterVersionID, ExpectedSpecRevision: copy.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision})
+	require.NoError(t, err)
+	require.Len(t, applied.ClaimProvenance, 1)
+	current, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Len(t, current.ClaimProvenance, 1)
+	require.Equal(t, "rewrite", current.ClaimProvenance[0].OriginKind)
+	_, _, _, err = f.projects.CommitWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "rewrite-provenance-commit", core.CommitWorkingCopyInput{ExpectedSpecRevision: current.SpecRevision, ExpectedWorkingCopyRevision: current.WorkingCopyRevision, ExpectedChapterVersionID: current.BaseChapterVersionID})
+	require.NoError(t, err)
+	current, err = f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	versions, err := f.projects.ListChapterVersions(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	var committed core.ChapterVersion
+	for _, version := range versions {
+		if current.BaseChapterVersionID != nil && version.ID == *current.BaseChapterVersionID {
+			committed = version
+		}
+	}
+	require.Len(t, committed.ClaimProvenance, 1)
+	require.Equal(t, "needs_revalidation", committed.ClaimProvenance[0].Status)
+	in := core.SaveWorkingCopyInput{ExpectedSpecRevision: current.SpecRevision, ExpectedWorkingCopyRevision: current.WorkingCopyRevision, BaseChapterVersionID: current.BaseChapterVersionID, BodyMarkdown: current.BodyMarkdown + " 编辑", SourceIDs: current.SourceIDs, CitationUsages: current.CitationUsages}
+	_, _, _, err = f.projects.SaveWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "rewrite-provenance-edit", in)
+	require.NoError(t, err)
+	current, err = f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Equal(t, "stale", current.ClaimProvenance[0].Status)
+	versions, err = f.projects.ListChapterVersions(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	for _, version := range versions {
+		if version.ID == committed.ID {
+			require.Len(t, version.ClaimProvenance, 1)
+			require.Equal(t, "needs_revalidation", version.ClaimProvenance[0].Status)
+		}
+	}
+}
+
+func TestRewriteProvenanceFailureCanRetryWithoutSecondEdit(t *testing.T) {
+	f := newCandidateOneConnFixture(t)
+	copy, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	service := NewSelectedRewriteService(f.db, f.projects, f.projects, f.runtime, &boundRewriteProvenanceModel{})
+	require.NoError(t, service.store.AutoMigrate(f.ctx))
+	request := SelectedRewriteRequest{BaseChapterVersionID: copy.BaseChapterVersionID, ExpectedSpecRevision: copy.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision, Selection: RewriteSelection{EndUTF16: len(utf16.Encode([]rune(copy.BodyMarkdown))), SelectedText: copy.BodyMarkdown}, Instruction: "合成改写", SourceIDs: []string{}, EvidenceCardRefs: []generation.EvidenceCardRef{{ID: f.card.ID, Version: f.card.Version}}}
+	candidate, err := service.Create(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, "rewrite-fault-create", request)
+	require.NoError(t, err)
+	require.NoError(t, f.db.Migrator().DropTable(&core.DraftClaimProvenance{}))
+	input := ApplySelectedRewriteInput{BaseChapterVersionID: copy.BaseChapterVersionID, ExpectedSpecRevision: copy.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision}
+	_, _, err = service.Apply(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, candidate.CandidateID, "rewrite-fault-apply", input)
+	require.ErrorIs(t, err, ErrRewriteUnavailable)
+	after, err := f.projects.GetWorkingCopy(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID)
+	require.NoError(t, err)
+	require.Equal(t, copy.WorkingCopyRevision+1, after.WorkingCopyRevision)
+	require.True(t, after.ClaimProvenanceUnavailable)
+	require.NoError(t, f.db.AutoMigrate(&core.DraftClaimProvenance{}))
+	recovered, _, err := service.Apply(f.ctx, f.actor, f.input.ProjectID, f.input.ChapterID, candidate.CandidateID, "rewrite-fault-apply", input)
+	require.NoError(t, err)
+	require.Equal(t, after.WorkingCopyRevision, recovered.WorkingCopyRevision)
+	require.Len(t, recovered.ClaimProvenance, 1)
 }
