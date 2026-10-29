@@ -408,7 +408,7 @@ func runtimeDemoVersionFixture(t *testing.T) governance.TemplateVersion {
 	return governance.TemplateVersion{TemplateID: def.ID, Version: def.Version, Revision: 1, State: template.RuleSetDraft, Definition: def, RuleSet: governance.RuleSetRef{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, RuleSetSnapshot: set, ContentHash: def.ContentHash, RulesetHash: set.RulesetHash, PolicyHash: policyHash}
 }
 func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testing.T) {
-	r, _, actor, _, ctx := governanceAdapterFixture(t)
+	r, projects, _, actor, _, ctx := governanceAdapterFixtureWithProjects(t)
 	version := runtimeDemoVersionFixture(t)
 	ids := []string{}
 	for _, record := range BuiltinTemplateGovernanceFixtures() {
@@ -428,10 +428,21 @@ func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testi
 	if err := r.Verify(ctx, governanceActor(actor), tampered, ids); err == nil {
 		t.Fatal("fixture accepted unrelated template content")
 	}
-	record := r.fixtures[ids[1]]
-	record.Fixture.Input.Fields["research_goal"] = "now positive"
-	r.fixtures[ids[1]] = record
-	if err := r.Verify(ctx, governanceActor(actor), version, ids); err == nil {
+	// A runtime whose registered review evidence declares an outcome the real
+	// evaluator contradicts must fail the replay. The tampered record enters
+	// through the same deployment seed the builtin set uses, replacing its
+	// own identity.
+	tamperedRecords := BuiltinTemplateGovernanceFixtures()
+	for i := range tamperedRecords {
+		if tamperedRecords[i].Fixture.ID == ids[1] {
+			tamperedRecords[i].Fixture.Input.Fields["research_goal"] = "now positive"
+		}
+	}
+	tamperedRuntime, err := NewTemplateGovernanceRuntime(r.db, projects, nil, nil, WithReviewedTemplateFixtures(tamperedRecords))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tamperedRuntime.Verify(ctx, governanceActor(actor), version, ids); err == nil {
 		t.Fatal("incorrect server fixture expected outcome escaped actual evaluation")
 	}
 }
