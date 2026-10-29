@@ -13,6 +13,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/google/uuid"
 	"maps"
+	"math"
+	"math/big"
 	"reflect"
 	"slices"
 	"strconv"
@@ -1044,6 +1046,17 @@ func editableTemplateDefinition(current lingdoctemplate.Template, input Template
 	return definition, nil
 }
 
+// A legacy sidecar owns the effective RuleSet and its compiled projection.
+// Editing that projection as ordinary template rules would leave the immutable
+// snapshot and delivery checks inconsistent and bypass the reviewed policy.
+func requireUnmodifiedLegacyRuleProjection(copy *ProjectTemplateCopy, proposed []lingdoctemplate.Rule) error {
+	if copy != nil && copy.RuleSetSnapshot != nil && copy.Definition.RuleSetSnapshot == nil &&
+		copy.Definition.RuleSetRef == nil && !reflect.DeepEqual(copy.Definition.Rules, proposed) {
+		return fmt.Errorf("%w: legacy RuleSet rules require a policy-checked override", ErrInvalidRequest)
+	}
+	return nil
+}
+
 func templateFieldDefinitions(template Template) map[string]TemplateField {
 	fields := make(map[string]TemplateField, len(template.RequiredFields))
 	for _, field := range template.Fields {
@@ -1061,12 +1074,42 @@ func templateFieldDefinitions(template Template) map[string]TemplateField {
 }
 
 func compatibleTemplateValue(value string, field TemplateField) bool {
+	if strings.TrimSpace(value) == "" {
+		return !field.Required
+	}
 	switch field.Type {
 	case "", "string", "text":
 		return true
 	case "number", "integer":
-		_, err := strconv.ParseFloat(value, 64)
-		return err == nil
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return false
+		}
+		if field.Type == "number" {
+			return true
+		}
+		if math.Trunc(parsed) != parsed {
+			return false
+		}
+		if parsed == 0 {
+			// ParseFloat can underflow a non-zero literal to zero. Inspect the
+			// validated mantissa before accepting zero as an integer; this also
+			// avoids constructing an enormous rational for a tiny exponent.
+			mantissa := strings.TrimPrefix(strings.TrimPrefix(value, "+"), "-")
+			if strings.HasPrefix(strings.ToLower(mantissa), "0x") {
+				mantissa = mantissa[2:]
+				if at := strings.IndexAny(mantissa, "pP"); at >= 0 {
+					mantissa = mantissa[:at]
+				}
+			} else if at := strings.IndexAny(mantissa, "eE"); at >= 0 {
+				mantissa = mantissa[:at]
+			}
+			return strings.Trim(mantissa, "0._") == ""
+		}
+		// Float64 can round a large fractional value to an integer. Compare
+		// the original validated literal exactly instead of that rounded value.
+		exact, ok := new(big.Rat).SetString(value)
+		return ok && exact.IsInt()
 	case "boolean":
 		_, err := strconv.ParseBool(value)
 		return err == nil
@@ -1079,9 +1122,14 @@ func compatibleTemplateValue(value string, field TemplateField) bool {
 
 func buildTemplateMigrationPreview(p Project, target Template, expectedVersion int64) TemplateMigrationPreview {
 	allowed := templateFieldDefinitions(target)
-	keys := make([]string, 0, len(p.Spec))
+	keys := make([]string, 0, len(p.Spec)+len(p.SpecFields))
 	for key := range p.Spec {
 		keys = append(keys, key)
+	}
+	for key := range p.SpecFields {
+		if _, present := p.Spec[key]; !present {
+			keys = append(keys, key)
+		}
 	}
 	slices.Sort(keys)
 	preview := TemplateMigrationPreview{
@@ -1112,7 +1160,10 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 		if field, ok := allowed[key]; ok {
 			status = "preserved"
 			migrationField.After, migrationField.NewType = field.Label, field.Type
-			if !compatibleTemplateValue(p.Spec[key], field) {
+			if field.Required && strings.TrimSpace(p.Spec[key]) == "" {
+				status = "missing"
+				preview.MissingRequired = append(preview.MissingRequired, key)
+			} else if !compatibleTemplateValue(p.Spec[key], field) {
 				status = "incompatible"
 				preview.Incompatible = append(preview.Incompatible, key)
 				if field.Required {
@@ -1149,16 +1200,27 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 	return preview
 }
 
+// requireResolvedTemplateMigration prevents direct clients from bypassing the
+// same risks shown by migration previews. It must run against the project read
+// within the write transaction, not against a client-supplied preview.
+func requireResolvedTemplateMigration(preview TemplateMigrationPreview) error {
+	if len(preview.MissingRequired) != 0 || len(preview.Orphaned) != 0 || len(preview.Incompatible) != 0 {
+		return fmt.Errorf("%w: template migration contains unresolved field risks", ErrInvalidRequest)
+	}
+	return nil
+}
+
 func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
-	if input.ExpectedProjectVersion < 0 || strings.TrimSpace(input.TemplateID) == "" {
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.ExpectedProjectVersion < 0 || input.TemplateID == "" {
 		return TemplateMigrationPreview{}, ErrInvalidRequest
 	}
-	target, err := s.templates.Get(strings.TrimSpace(input.TemplateID), strings.TrimSpace(input.TemplateVersion))
-	if err != nil {
-		return TemplateMigrationPreview{}, err
+	if input.TemplateID == lingdoctemplate.DemoTemplateID && input.TemplateVersion == "" {
+		input.TemplateVersion = lingdoctemplate.DemoTemplateVersion
 	}
 	var result TemplateMigrationPreview
-	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
@@ -1169,7 +1231,20 @@ func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, pro
 		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
 			return ErrVersionConflict
 		}
-		result = buildTemplateMigrationPreview(p, target, p.ProjectVersion)
+		resolved, _, err := s.resolveTemplateSwitch(ctx, tx, actor, input.TemplateID, input.TemplateVersion, false)
+		if err != nil {
+			return err
+		}
+		copy, err := makeCatalogTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, resolved, TemplateCopyDraft)
+		if err != nil {
+			return err
+		}
+		result = buildTemplateMigrationPreview(p, copy.Definition, p.ProjectVersion)
+		result.TargetCopyVersion = copy.Version
+		result.TargetContentHash, result.TargetRulesetHash = copy.ContentHash, copy.RulesetHash
+		if p.TemplateCopy != nil {
+			result.RulesetChanged = p.TemplateCopy.RulesetHash != copy.RulesetHash
+		}
 		return nil
 	})
 	if err != nil {
@@ -1194,15 +1269,28 @@ func (s *Service) PreviewTemplateCopyEdit(ctx context.Context, actor Actor, proj
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
 			return ErrVersionConflict
 		}
+		if err := requireUnmodifiedLegacyRuleProjection(p.TemplateCopy, input.Rules); err != nil {
+			return err
+		}
 		definition, err := editableTemplateDefinition(p.TemplateCopy.Definition, input)
 		if err != nil {
 			return err
 		}
+		// Preview the effective copy using the same source-policy inheritance as
+		// the write. For legacy sidecars the effective RuleSet hash belongs to
+		// the snapshot, not the compiled Definition.Rules hash.
+		candidate, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
+		if err != nil {
+			return err
+		}
+		if err := inheritRuleSetSourcePolicy(p.TemplateCopy, candidate); err != nil {
+			return err
+		}
 		result = buildTemplateMigrationPreview(p, definition, p.ProjectVersion)
-		result.TargetCopyVersion = p.TemplateCopyVersion + 1
-		result.TargetContentHash, result.TargetRulesetHash = definition.ContentHash, definition.RulesetHash
+		result.TargetCopyVersion = candidate.Version
+		result.TargetContentHash, result.TargetRulesetHash = candidate.ContentHash, candidate.RulesetHash
 		result.SectionChanges = sectionChanges(p.TemplateCopy.Definition.Sections, definition.Sections)
-		result.RulesetChanged = p.TemplateCopy.RulesetHash != definition.RulesetHash
+		result.RulesetChanged = p.TemplateCopy.RulesetHash != candidate.RulesetHash
 		return nil
 	})
 	if err != nil {
@@ -1222,8 +1310,14 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
 			return operationResult[Project]{}, ErrVersionConflict
 		}
+		if err := requireUnmodifiedLegacyRuleProjection(p.TemplateCopy, input.Rules); err != nil {
+			return operationResult[Project]{}, err
+		}
 		definition, err := editableTemplateDefinition(p.TemplateCopy.Definition, input)
 		if err != nil {
+			return operationResult[Project]{}, err
+		}
+		if err := requireResolvedTemplateMigration(buildTemplateMigrationPreview(p, definition, p.ProjectVersion)); err != nil {
 			return operationResult[Project]{}, err
 		}
 		copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
@@ -1323,6 +1417,9 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 				return operationResult[Project]{}, err
 			}
 			if err := inheritRuleSetSourcePolicy(p.TemplateCopy, copy); err != nil {
+				return operationResult[Project]{}, err
+			}
+			if err := requireResolvedTemplateMigration(buildTemplateMigrationPreview(p, copy.Definition, p.ProjectVersion)); err != nil {
 				return operationResult[Project]{}, err
 			}
 			next := p
@@ -1452,25 +1549,47 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 	if input.ExpectedProjectVersion < 1 || input.TemplateID == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	target, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
-	if err != nil {
-		return nil, 0, false, err
+	if input.TemplateID == lingdoctemplate.DemoTemplateID && input.TemplateVersion == "" {
+		input.TemplateVersion = lingdoctemplate.DemoTemplateVersion
 	}
-	targetCopy, err := projectTemplateCopy(actor, projectID, 0, target, TemplateCopyDraft)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	return runOperation(s, ctx, actor, operationInput(operationChangeTemplate, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+	var rejected *TemplateCopyFailure
+	raw, status, replayed, err := runOperation(s, ctx, actor, operationInput(operationChangeTemplate, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+		rejected = nil
 		if p.Status != "draft" {
 			return operationResult[Project]{}, ErrInvalidState
 		}
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return operationResult[Project]{}, ErrVersionConflict
 		}
+		featureTx, err := extendedTransaction(tx)
+		if err != nil {
+			return operationResult[Project]{}, err
+		}
+		resolved, catalogTarget, err := s.resolveTemplateSwitch(ctx, featureTx, actor, input.TemplateID, input.TemplateVersion, true)
+		if err != nil {
+			if s.catalog != nil {
+				rejected = &TemplateCopyFailure{TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, ProjectID: projectID, Cause: err}
+			}
+			return operationResult[Project]{}, err
+		}
+		if catalogTarget {
+			rejected = &TemplateCopyFailure{TemplateID: resolved.Definition.ID, TemplateVersion: resolved.Definition.Version, ProjectID: projectID}
+		}
+		targetCopy, err := makeCatalogTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, resolved, TemplateCopyDraft)
+		if err != nil {
+			return operationResult[Project]{}, err
+		}
+		targetCopy.SourceKind = "fixed"
+		if catalogTarget {
+			targetCopy.SourceKind = "catalog"
+		}
+		target := targetCopy.Definition
 		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
+		if err := requireResolvedTemplateMigration(preview); err != nil {
+			return operationResult[Project]{}, err
+		}
 		next := p
 		next.TemplateID, next.TemplateVersion = target.ID, target.Version
-		targetCopy.Version = p.TemplateCopyVersion + 1
 		next.TemplateCopyVersion, next.TemplateCopy = targetCopy.Version, targetCopy
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
@@ -1481,8 +1600,31 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 				return operationResult[Project]{}, err
 			}
 		}
+		if catalogTarget {
+			recorder, ok := s.catalog.(TemplateSwitchAuditRecorder)
+			if !ok {
+				return operationResult[Project]{}, fmt.Errorf("%w: catalog switch audit adapter is required", ErrInvalidState)
+			}
+			details := TemplateCopyAudit{ProjectID: projectID, CopyID: targetCopy.ID, CopyVersion: targetCopy.Version,
+				TemplateID: targetCopy.SourceTemplateID, TemplateVersion: targetCopy.SourceTemplateVersion,
+				ContentHash: targetCopy.ContentHash, RuleSetHash: targetCopy.RulesetHash,
+				RuleSetID: targetCopy.SourceRuleSetID, RuleSetVersion: targetCopy.SourceRuleSetVersion, SourcePolicyHash: targetCopy.SourcePolicyHash}
+			if err := recorder.RecordTemplateSwitchSuccess(ctx, featureTx, actor, details); err != nil {
+				rejected.AuditPersistenceFailure = true
+				return operationResult[Project]{}, fmt.Errorf("record successful template switch: %w", err)
+			}
+		}
 		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
 	})
+	if err != nil && rejected != nil {
+		rejected.Cause = err
+		if recorder, ok := s.catalog.(TemplateSwitchAuditRecorder); !ok {
+			err = errors.Join(err, fmt.Errorf("catalog switch failure receipt adapter is required: %w", ErrInvalidState))
+		} else if recordErr := recorder.RecordTemplateSwitchFailure(ctx, actor, *rejected); recordErr != nil {
+			err = errors.Join(err, fmt.Errorf("record template switch failure receipt: %w", recordErr))
+		}
+	}
+	return raw, status, replayed, err
 }
 
 // ChangeTemplateResult exposes the changed project without transport fields.
@@ -1579,9 +1721,13 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 			return operationResult[Project]{}, featureErr
 		}
 
-		resolved, err := s.resolveTemplate(ctx, featureTx, actor, input.TemplateID, input.TemplateVersion)
+		// Creating a project also creates a catalog binding. Hold the same
+		// template and RuleSet lifecycle locks used by an existing-project switch.
+		resolved, catalogTarget, err := s.resolveTemplateSwitch(ctx, featureTx, actor, input.TemplateID, input.TemplateVersion, true)
 		if err != nil {
-			copyRejected = &TemplateCopyFailure{TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, Cause: err}
+			if s.catalog != nil {
+				copyRejected = &TemplateCopyFailure{TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, Cause: err}
+			}
 			return operationResult[Project]{}, err
 		}
 		// A missing demo catalog row may legitimately fall back to the fixed
@@ -1595,12 +1741,16 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 			copyRejected = &TemplateCopyFailure{TemplateID: resolved.Definition.ID, TemplateVersion: resolved.Definition.Version, ProjectID: id, Cause: err}
 			return operationResult[Project]{}, err
 		}
+		copy.SourceKind = "fixed"
+		if catalogTarget {
+			copy.SourceKind = "catalog"
+		}
 		template := resolved.Definition
 		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		if err := tx.InsertProject(actor.TenantID, p); err != nil {
 			return operationResult[Project]{}, err
 		}
-		if s.catalog != nil {
+		if catalogTarget {
 			recorder, ok := s.catalog.(TemplateCopyAuditRecorder)
 			if !ok {
 				return operationResult[Project]{}, fmt.Errorf("%w: catalog copy audit adapter is required", ErrInvalidState)
@@ -1682,16 +1832,18 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return operationResult[Project]{}, ErrVersionConflict
 		}
+		// SaveSpec replaces the value map. Omitted existing values must go
+		// through explicit archive/removal; metadata-only legacy keys are kept.
+		for fieldID := range p.Spec {
+			if _, present := input.Fields[fieldID]; !present {
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+		}
 		nextFields := maps.Clone(p.SpecFields)
 		if nextFields == nil {
 			nextFields = map[string]SpecField{}
 		}
 		changedFields := make(map[string]struct{})
-		for key := range nextFields {
-			if _, present := input.Fields[key]; !present {
-				delete(nextFields, key)
-			}
-		}
 		for key, value := range input.Fields {
 			field := nextFields[key]
 			origin, status := field.Origin, field.Status
@@ -1826,6 +1978,9 @@ func validateChangeSetInput(input CreateChangeSetInput) error {
 			if strings.TrimSpace(key) == "" || len(value) > 10000 {
 				return ErrInvalidRequest
 			}
+		}
+		if err := validateArchivedFieldReferences(upgrade.ArchivedRemovals, upgrade.FieldValues); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -2039,9 +2194,14 @@ func templateSpecAfterUpgrade(spec map[string]string, definition lingdoctemplate
 			return nil, fmt.Errorf("%w: template field %q requires an explicit compatible migration", ErrInvalidRequest, key)
 		}
 	}
-	for _, required := range definition.RequiredFields {
-		if strings.TrimSpace(next[required]) == "" {
-			return nil, fmt.Errorf("%w: required template field %q has no value", ErrInvalidRequest, required)
+	fieldIDs := make([]string, 0, len(fields))
+	for id := range fields {
+		fieldIDs = append(fieldIDs, id)
+	}
+	slices.Sort(fieldIDs)
+	for _, id := range fieldIDs {
+		if fields[id].Required && strings.TrimSpace(next[id]) == "" {
+			return nil, fmt.Errorf("%w: required template field %q has no value", ErrInvalidRequest, id)
 		}
 	}
 	return next, nil
@@ -2050,6 +2210,13 @@ func templateSpecAfterUpgrade(spec map[string]string, definition lingdoctemplate
 func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
 	if err := validateChangeSetInput(input); err != nil {
 		return nil, 0, false, err
+	}
+	if input.TemplateUpgrade != nil && len(input.TemplateUpgrade.ArchivedRemovals) > 0 {
+		prepared, err := s.prepareProvenanceOperation(ctx, actor, string(operationCreateChangeSet), projectID, projectID, input)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		ctx = prepared
 	}
 	return runOperation(s, ctx, actor, sourceOperationInput(operationCreateChangeSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[ChangeSetMutationTransaction], s.createAssessedChangeMutation(ctx, actor, projectID, input))
 }
@@ -2329,9 +2496,36 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if err := ValidateSemanticDeltas(featureTx, p, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
+		var archiveRecords []fieldArchiveRecord
+		var archiveBasis lockedArchiveProject
+		if upgrade := change.TemplateUpgrade; upgrade != nil && len(upgrade.ArchivedRemovals) > 0 {
+			var err error
+			archiveBasis, archiveRecords, err = validateActiveArchiveRemovals(ctx, featureTx, actor, p, upgrade.Definition, upgrade.FieldValues, upgrade.ArchivedRemovals)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
+		var restoreRecords []fieldArchiveRecord
+		if upgrade := change.TemplateUpgrade; upgrade != nil && len(upgrade.ArchiveRestores) > 0 {
+			if len(archiveRecords) > 0 || change.ReversesChangeSetID == "" {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			source, err := store.ChangeSet(projectID, change.ReversesChangeSetID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			archiveBasis, restoreRecords, err = validateActiveArchiveRestores(ctx, featureTx, actor, p, source, upgrade.ArchiveRestores)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
 		next := p
 		next.Spec = maps.Clone(p.Spec)
 		next.SpecFields = maps.Clone(p.SpecFields)
+		if len(archiveRecords) > 0 || len(restoreRecords) > 0 {
+			next.Spec = archiveRestoreSpec(archiveBasis.Spec, restoreRecords)
+			next.SpecFields = maps.Clone(archiveBasis.Metadata)
+		}
 		if next.Spec == nil {
 			next.Spec = map[string]string{}
 		}
@@ -2376,6 +2570,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 				metadata.ModifiedAt = time.Now().UTC()
 				next.SpecFields[fieldID] = metadata
 			}
+			for _, record := range archiveRecords {
+				delete(next.Spec, record.FieldID)
+				delete(next.SpecFields, record.FieldID)
+			}
 			copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, upgrade.Definition, TemplateCopyBound)
 			if err != nil {
 				return operationResult[ChangeSet]{}, fmt.Errorf("%w: invalid template upgrade snapshot", ErrInvalidState)
@@ -2403,11 +2601,28 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			metadata.ModifiedProjectVersion = next.ProjectVersion
 			next.SpecFields[fieldID] = metadata
 		}
+		for _, record := range restoreRecords {
+			if record.ValuePresent {
+				next.Spec[record.FieldID] = record.Value
+			} else {
+				delete(next.Spec, record.FieldID)
+			}
+			if record.MetadataPresent {
+				next.SpecFields[record.FieldID] = *record.Metadata
+			} else {
+				delete(next.SpecFields, record.FieldID)
+			}
+		}
 		if err := s.ApplySemanticDeltas(ctx, featureTx, actor, p, &next, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return operationResult[ChangeSet]{}, err
+		}
+		if len(archiveRecords) > 0 {
+			if err := markActiveArchivesRemoved(featureTx, actor, p, next, archiveRecords); err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
 		}
 		targetContext, targetSpec := next.CurrentContextRevision, next.SpecRevision
 		now := time.Now().UTC()
@@ -2465,6 +2680,11 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 	input := struct {
 		SourceChangeSetID string `json:"source_change_set_id"`
 	}{SourceChangeSetID: changeSetID}
+	prepared, err := s.prepareProvenanceOperation(ctx, actor, string(operationReassessChangeSet), projectID+"/"+changeSetID, projectID, input)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	ctx = prepared
 	return runOperation(s, ctx, actor, sourceOperationInput(operationReassessChangeSet, projectID+"/"+changeSetID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		// Every reassessment writes a new proposal and must have transactional audit.
 		if _, ok := tx.(auditTransaction); !ok {
@@ -2521,11 +2741,30 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 			// Do not carry a reviewed migration over edits to its source values.
 			// The caller must inspect the latest project and create a fresh upgrade.
 			for _, field := range upgrade.Preview.Fields {
-				if p.Spec[field.FieldID] != field.Value {
+				if !archiveRestoresField(upgrade.ArchiveRestores, field.FieldID) && p.Spec[field.FieldID] != field.Value {
 					return operationResult[ChangeSet]{}, ErrVersionConflict
 				}
 			}
-			if _, err := templateSpecAfterUpgrade(p.Spec, upgrade.Definition, upgrade.FieldValues); err != nil {
+			if len(upgrade.ArchivedRemovals) > 0 {
+				if _, _, err := validateActiveArchiveRemovals(ctx, tx, actor, p, upgrade.Definition, upgrade.FieldValues, upgrade.ArchivedRemovals); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
+			var restored []fieldArchiveRecord
+			if len(upgrade.ArchiveRestores) > 0 {
+				source, err := store.ChangeSet(projectID, stale.ReversesChangeSetID)
+				if err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				_, restored, err = validateActiveArchiveRestores(ctx, tx, actor, p, source, upgrade.ArchiveRestores)
+				if err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				if _, err := inverseTemplatePolicyBasis(tx, actor, p, stale); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+			}
+			if _, err := templateSpecAfterUpgrade(archiveRestoreSpec(p.Spec, restored), upgrade.Definition, upgrade.FieldValues); err != nil {
 				return operationResult[ChangeSet]{}, ErrInvalidState
 			}
 			chapters, err := tx.Chapters(projectID)
@@ -2539,7 +2778,10 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 				impactChapterIDs = append(impactChapterIDs, chapter.ID)
 			}
 			slices.Sort(impactChapterIDs)
-			upgrade.Preview = buildTemplateMigrationPreview(p, upgrade.Definition, p.ProjectVersion)
+			previewProject := p
+			previewProject.Spec = archiveRestoreSpec(p.Spec, restored)
+			upgrade.Preview = buildTemplateMigrationPreview(previewProject, upgrade.Definition, p.ProjectVersion)
+			redactArchiveRestorePreview(&upgrade.Preview, upgrade.ArchiveRestores)
 			upgrade.Impact = buildTemplateUpgradeImpact(p.TemplateCopy, upgrade.Definition, upgrade.Preview, impactChapterIDs, chapters)
 			templateUpgrade = &upgrade
 		} else {

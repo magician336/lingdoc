@@ -460,7 +460,9 @@ func redactProvenanceProject(p Project, proof *provenanceProof) Project {
 			redactProvenanceRecord(field.Provenance, pin.Verified)
 			field.Value = ""
 			field.Status = "pending_confirmation"
-			p.Spec[key] = ""
+			if _, present := p.Spec[key]; present {
+				p.Spec[key] = ""
+			}
 		}
 		p.SpecFields[key] = field
 	}

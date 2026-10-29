@@ -115,6 +115,8 @@ func TestProjectTemplateCopyRejectsRefOnlyRuleSetBinding(t *testing.T) {
 func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Status = "draft"
+	// Binding a new copy now requires all existing migration risks resolved.
+	repository.project.Spec = map[string]string{"research_subject": "subject", "research_goal": "goal"}
 	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
 	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
 	repository.project.TemplateCopyVersion = 1

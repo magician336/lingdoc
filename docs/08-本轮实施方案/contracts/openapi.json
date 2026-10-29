@@ -3172,7 +3172,7 @@
           "workspace"
         ],
         "summary": "保存研究条件",
-        "description": "草案；必须同时满足配套文档的当前权限、版本、幂等及失败恢复约束。",
+        "description": "草案；必须同时满足配套文档的当前权限、版本、幂等及失败恢复约束。fields 必须包含全部既有研究条件键：省略已有键会被拒绝（invalid_request），已有值只能通过显式的字段归档/移除流程去除。",
         "parameters": [
           {
             "name": "projectId",
@@ -17917,6 +17917,358 @@
           },
           "422": {
             "description": "当前状态不允许绑定"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/template-copy/legacy-rule-overrides": {
+      "put": {
+        "operationId": "applyLegacyProjectRuleOverrides",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "按已审政策覆盖旧版项目副本的规则绑定",
+        "description": "仅限草稿项目的旧版独立规则快照；服务端按当前副本的来源证据和已审政策校验，追加新副本并记录审计。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyRuleOverridesInput"
+              },
+              "example": {
+                "expected_project_version": 2,
+                "expected_template_copy_version": 1,
+                "reason": "项目需要提示",
+                "overrides": [
+                  {
+                    "rule_id": "limit",
+                    "severity": "info"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已追加项目有效规则副本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求或覆盖范围无效"
+          },
+          "404": {
+            "description": "项目不存在或不可访问"
+          },
+          "409": {
+            "description": "项目、副本或幂等版本冲突"
+          },
+          "422": {
+            "description": "当前状态、迁移风险或规则来源不允许覆盖"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/template-copy/field-archives": {
+      "get": {
+        "operationId": "listTemplateFieldArchives",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "查看项目字段归档，撤权来源按当前权限脱敏",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "归档列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldArchiveListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目不存在或不可访问"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "createTemplateFieldArchive",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "为草稿项目的待移除字段保存值及来源快照",
+        "description": "候选模板须移除该字段。归档本身不移除当前值或推进项目版本；来源须对当前成员可见。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFieldArchiveInput"
+              },
+              "example": {
+                "field_id": "legacy_note",
+                "expected_spec_revision": 1,
+                "template_copy": {
+                  "expected_project_version": 2,
+                  "expected_template_copy_version": 1,
+                  "fields": [
+                    {
+                      "field_id": "research_subject",
+                      "label": "研究对象",
+                      "type": "string",
+                      "required": true
+                    }
+                  ],
+                  "sections": [],
+                  "terms": [],
+                  "required_fields": [
+                    "research_subject"
+                  ],
+                  "rules": []
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "归档已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldArchiveReceiptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "目标模板或字段无效"
+          },
+          "403": {
+            "description": "字段来源当前不可访问"
+          },
+          "404": {
+            "description": "项目、字段不存在或不可访问"
+          },
+          "409": {
+            "description": "项目、研究条件或模板版本冲突"
+          },
+          "422": {
+            "description": "项目状态不允许归档"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/template-copy/field-archives/{archiveId}": {
+      "get": {
+        "operationId": "getTemplateFieldArchive",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "查看单项字段归档",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "archiveId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "归档内容，当前来源不可见时脱敏",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldArchiveResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或归档不存在或不可访问"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/template-copy/field-archives/{archiveId}/remove": {
+      "post": {
+        "operationId": "removeArchivedTemplateField",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "成员确认后移除已归档的草稿字段值",
+        "description": "须重新校验来源可见性、归档快照、版本和相同候选模板。只移除当前值与元数据，仍需另行保存模板副本。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "archiveId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveArchivedFieldInput"
+              },
+              "example": {
+                "confirmed": true,
+                "expected_archive_version": 1,
+                "expected_spec_revision": 1,
+                "template_copy": {
+                  "expected_project_version": 2,
+                  "expected_template_copy_version": 1,
+                  "fields": [
+                    {
+                      "field_id": "research_subject",
+                      "label": "研究对象",
+                      "type": "string",
+                      "required": true
+                    }
+                  ],
+                  "sections": [],
+                  "terms": [],
+                  "required_fields": [
+                    "research_subject"
+                  ],
+                  "rules": []
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已移除，历史归档保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldArchiveReceiptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未确认或目标模板无效"
+          },
+          "403": {
+            "description": "需要实际成员本人确认，或字段来源当前不可访问"
+          },
+          "404": {
+            "description": "项目或归档不存在或不可访问"
+          },
+          "409": {
+            "description": "归档、项目、条件或目标定义已变化"
+          },
+          "422": {
+            "description": "项目当前状态不允许移除"
           }
         },
         "x-domain": "template-governance",
@@ -41370,6 +41722,294 @@
         ],
         "additionalProperties": false
       },
+      "ArchivedFieldReference": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "string"
+          },
+          "archive_id": {
+            "type": "string"
+          },
+          "expected_archive_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "field_id",
+          "archive_id",
+          "expected_archive_version"
+        ],
+        "additionalProperties": false
+      },
+      "CreateFieldArchiveInput": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "template_copy": {
+            "$ref": "#/components/schemas/TemplateCopyDefinitionInput"
+          },
+          "expected_context_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "template_upgrade": {
+            "$ref": "#/components/schemas/TemplateUpgradeInput"
+          }
+        },
+        "required": [
+          "field_id",
+          "expected_spec_revision"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "template_copy"
+            ],
+            "not": {
+              "required": [
+                "template_upgrade"
+              ]
+            }
+          },
+          {
+            "required": [
+              "template_upgrade",
+              "expected_context_revision"
+            ]
+          }
+        ]
+      },
+      "RemoveArchivedFieldInput": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "expected_archive_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "template_copy": {
+            "$ref": "#/components/schemas/TemplateCopyDefinitionInput"
+          }
+        },
+        "required": [
+          "confirmed",
+          "expected_archive_version",
+          "expected_spec_revision",
+          "template_copy"
+        ],
+        "additionalProperties": false
+      },
+      "FieldArchiveReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "removed"
+            ]
+          },
+          "archive_version": {
+            "type": "integer"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "spec_revision": {
+            "type": "integer"
+          },
+          "template_copy_version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "archive_version",
+          "project_version",
+          "spec_revision",
+          "template_copy_version"
+        ],
+        "additionalProperties": false
+      },
+      "FieldArchiveView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "field_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "removed"
+            ]
+          },
+          "archive_version": {
+            "type": "integer"
+          },
+          "value_present": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          },
+          "metadata_present": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/SpecField"
+          },
+          "value_redacted": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "spec_revision": {
+            "type": "integer"
+          },
+          "template_copy_version": {
+            "type": "integer"
+          },
+          "target_content_hash": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "context_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "field_id",
+          "status",
+          "archive_version",
+          "value_present",
+          "value",
+          "metadata_present",
+          "value_redacted",
+          "created_by",
+          "created_at",
+          "project_version",
+          "spec_revision",
+          "template_copy_version",
+          "target_content_hash"
+        ],
+        "additionalProperties": false
+      },
+      "FieldArchiveReceiptResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FieldArchiveReceipt"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "FieldArchiveResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FieldArchiveView"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "FieldArchiveListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldArchiveView"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
       "TemplateMigrationField": {
         "type": "object",
         "properties": {
@@ -41533,6 +42173,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RuleBindingOverride"
+            }
+          },
+          "archived_removals": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
             }
           }
         },
@@ -41734,6 +42381,15 @@
           "project_id": {
             "type": "string",
             "minLength": 1
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "catalog"
+            ],
+            "readOnly": true,
+            "description": "Server-owned template source identity. fixed denotes an immutable built-in snapshot; catalog denotes a resolved catalog version. Omitted for historical copies whose source cannot be proven. Catalog recall fails on matching unknown-source copies rather than guessing their origin."
           },
           "source_template_id": {
             "type": "string",
@@ -43082,7 +43738,8 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "description": "研究条件键值全集；省略既有键返回 400，须先走字段归档（template field archive）。"
           },
           "field_metadata": {
             "type": "object",
@@ -44912,6 +45569,43 @@
           "ruleset_version"
         ],
         "additionalProperties": false
+      },
+      "LegacyRuleOverridesInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64"
+          },
+          "expected_template_copy_version": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "overrides": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/GovernedRuleBindingOverride"
+            }
+          }
+        },
+        "required": [
+          "expected_project_version",
+          "expected_template_copy_version",
+          "reason",
+          "overrides"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.LegacyRuleOverridesInput",
+        "x-go-source": "internal/lingdoc/workspacecore/historical_ruleset_overrides.go"
       },
       "RuleDefinition": {
         "type": "object",
@@ -49216,6 +49910,21 @@
           },
           "impact": {
             "$ref": "#/components/schemas/TemplateUpgradeImpact"
+          },
+          "archived_removals": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
+            }
+          },
+          "archive_restores": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ArchivedFieldReference"
+            },
+            "readOnly": true
           }
         },
         "additionalProperties": false,

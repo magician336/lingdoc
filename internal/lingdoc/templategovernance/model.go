@@ -34,6 +34,7 @@ const (
 	ActionRead             Action = "read"
 	ActionCreateProfile    Action = "create_profile"
 	ActionCopy             Action = "copy"
+	ActionSwitch           Action = "switch"
 	ActionSaveDraft        Action = "save_draft"
 	ActionPublish          Action = "publish"
 	ActionWithdraw         Action = "withdraw"
@@ -80,6 +81,9 @@ var (
 	ErrUnauthorized = clienterror.New(clienterror.Form{Status: 403, Code: "template_governance_authorization_unavailable", Message: "目录治理授权不可用。", Retryable: false}, "template_governance_authorization_unavailable")
 	// ErrNotFound is a governed object that does not exist.
 	ErrNotFound = clienterror.New(clienterror.NotFound, "template_governance_not_found")
+	// ErrCatalogVersionAbsent distinguishes an absent row from an authorization
+	// failure that deliberately uses the same outward not-found response.
+	ErrCatalogVersionAbsent = errors.New("template_catalog_version_absent")
 	// ErrInvalidRequest is a governance request whose fields do not follow the
 	// agreed shape.
 	ErrInvalidRequest = clienterror.New(clienterror.InvalidRequest, "template_governance_invalid_request")

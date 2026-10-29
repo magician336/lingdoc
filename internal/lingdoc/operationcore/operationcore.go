@@ -555,11 +555,15 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 // operation names were spelled again. It lives here so that the set of
 // retrying operations has one owner.
 var retryLockedOperations = map[string]bool{
-	"saveSpec":                true,
-	"createProject":           true,
-	"saveTemplateCopy":        true,
-	"bindTemplateCopyRuleSet": true,
-	"reverseChangeSet":        true,
+	"saveSpec":                    true,
+	"createProject":               true,
+	"changeTemplate":              true,
+	"saveTemplateCopy":            true,
+	"bindTemplateCopyRuleSet":     true,
+	"applyLegacyRuleOverrides":    true,
+	"createTemplateFieldArchive":  true,
+	"removeArchivedTemplateField": true,
+	"reverseChangeSet":            true,
 }
 
 // RetryLocks reports whether an operation's write transaction may retry on
