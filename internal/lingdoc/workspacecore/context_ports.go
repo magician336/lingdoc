@@ -58,6 +58,7 @@ type ImpactApplication interface {
 	ActOnImpactTask(ctx context.Context, actor Actor, projectID, taskID, key string, input ImpactTaskActionInput) (json.RawMessage, int, bool, error)
 	SuggestImpactLocations(ctx context.Context, actor Actor, projectID, taskID, key string, input ImpactLocationSuggestionInput) (json.RawMessage, int, bool, error)
 	DecideImpactLocationSuggestion(ctx context.Context, actor Actor, projectID, taskID, suggestionID, key string, input ImpactLocationSuggestionDecisionInput) (json.RawMessage, int, bool, error)
+	AddImpactSelectionReference(ctx context.Context, actor Actor, projectID, taskID, key string, input ImpactSelectionReferenceInput) (json.RawMessage, int, bool, error)
 }
 
 // DependencyApplication 是依赖：项目内的依赖边与 AI 提出的依赖候选。

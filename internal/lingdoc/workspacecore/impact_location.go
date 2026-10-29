@@ -56,6 +56,14 @@ type ImpactLocationHint struct {
 	// current chapter body — recomputed when the chapter advances, so a
 	// stale location is flagged for re-anchoring, never silently expired.
 	Relocate bool `json:"relocate,omitempty"`
+	// SelectionHash (#774 tier B) is the content identity of a manually
+	// anchored selection: the first 16 hex chars of the quote's SHA-256.
+	// Equal hashes mean equal selections; locating still goes through the
+	// verbatim body check.
+	SelectionHash string `json:"selection_hash,omitempty"`
+	// Reason (#774 tier B) records why the responsible person anchored this
+	// passage; tier-A and AI hints carry their reasons elsewhere.
+	Reason string `json:"reason,omitempty"`
 }
 
 // impactLocationValue is one watched string and where the watch came from.
