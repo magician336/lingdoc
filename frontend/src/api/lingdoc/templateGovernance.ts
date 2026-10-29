@@ -219,6 +219,94 @@ export interface ReplayFixtureSummary {
   template_id: string
   template_version: string
 }
+// Immutable evaluation input for one registered replay fixture. Hashes and
+// rule-set references are server-computed pins and are never client fields.
+export interface ReplayEvaluationInput {
+  project_id: string
+  target_version: string
+  fields?: Record<string, string>
+  chapters?: { id: string; version: string; body: string; confirmed: boolean }[]
+  sources?: { id: string; version: string; available: boolean }[]
+  review_items?: { id: string; version: string; decided: boolean }[]
+}
+export type ReplayScene = 'write_check' | 'preflight'
+export type ReplayPolarity = 'positive' | 'negative'
+export type ReplayExpectedStatus = 'PASS' | 'ISSUE' | 'UNKNOWN'
+export interface ReplayFixtureInput {
+  fixture_id: string
+  rule_id: string
+  scene: ReplayScene
+  polarity: ReplayPolarity
+  target_ref: string
+  input: ReplayEvaluationInput
+  expected_status: ReplayExpectedStatus
+  review_reference: string
+}
+export interface RegisteredFixtureSummary {
+  fixture_id: string
+  rule_id: string
+  scene: string
+  polarity: string
+  target_ref: string
+  ruleset: RuleSetRef
+}
+// The (rule × scene × polarity) matrix shared by registration receipts, the
+// coverage readback and publication Verify: one judgment, three spellings.
+export interface ReplayCoverageEntry {
+  rule_id: string
+  scene: string
+  positive_covered: boolean
+  negative_covered: boolean
+  declared_positive_example_refs: string[]
+  declared_negative_example_refs: string[]
+  unsatisfied_declared_example_refs: string[]
+}
+export interface ReplayCoverageMatrix {
+  complete: boolean
+  entries: ReplayCoverageEntry[]
+  unsatisfied_declared_example_refs: string[]
+}
+export interface RegisterReplayFixturesInput {
+  template_id: string
+  version: string
+  fixtures: ReplayFixtureInput[]
+  reason: string
+}
+// The ruleset-projection spelling (Spec #768 D3): one batch for a draft rule
+// set plus the replay base version whose publication projection Verify will
+// replay. The projection itself is server-computed and never a client field.
+export interface RegisterRuleSetFixturesInput {
+  ruleset_id: string
+  ruleset_version: string
+  template_id: string
+  template_version: string
+  fixtures: ReplayFixtureInput[]
+  reason: string
+}
+// Names the replay base version a ruleset projection was computed from.
+export interface ReplayBaseRef { template_id: string; version: string }
+// Both halves are server-computed: the draft rule set whose publication the
+// pinned fixtures unlock, and the replay base the projection was computed from.
+export interface RulesetProjectionRef { ruleset: RuleSetRef; replay_base: ReplayBaseRef }
+export interface RegisterReplayFixturesResult {
+  template_id: string
+  version: string
+  content_hash: string
+  policy_hash: string
+  // Set only on the ruleset-projection spelling; the template path omits it.
+  projection?: RulesetProjectionRef
+  registered: RegisteredFixtureSummary[]
+  coverage: ReplayCoverageMatrix
+}
+export interface ReplayCoverageView extends ReplayCoverageMatrix {
+  template_id: string
+  version: string
+  content_hash: string
+  policy_hash: string
+  // Set only when the readback describes a ruleset projection (ruleset_id and
+  // ruleset_version query parameters); the plain version readback omits it.
+  projection?: RulesetProjectionRef
+}
 const base = '/api/v1/lingdoc/template-catalog'
 const segment = encodeURIComponent
 const headers = (key: string) => ({ headers: { 'Idempotency-Key': key } })
@@ -245,6 +333,19 @@ export const recallTemplateVersion = (input: TemplateGovernanceInput & { migrati
   post<Result<TemplateCatalogVersion>>(`${versionPath(input.template_id, input.version)}/recall`, input, headers(key))
 export const listRuleDefinitions = () => get<Result<RuleDefinition[]>>(`${base}/rule-definitions`)
 export const listReplayFixtures = () => get<Result<ReplayFixtureSummary[]>>(`${base}/replay-fixtures`)
+export const registerReplayFixtures = (input: RegisterReplayFixturesInput, key: string) =>
+  post<Result<RegisterReplayFixturesResult>>(`${versionPath(input.template_id, input.version)}/replay-fixtures`, input, headers(key))
+export const registerRuleSetFixtures = (input: RegisterRuleSetFixturesInput, key: string) =>
+  post<Result<RegisterReplayFixturesResult>>(`${rulePath(input.ruleset_id)}/${segment(input.ruleset_version)}/replay-fixtures`, input, headers(key))
+// Without the paired ruleset query this reads the template version's own pin
+// and stays exactly the two-argument call the contract pins; with ruleset_id
+// and ruleset_version both present it reads the named draft rule set's
+// publication projection over that version. One parameter alone is a 400, so
+// the panel only ever sends the pair.
+export const readReplayCoverage = (templateId: string, version: string, ruleset?: { ruleset_id: string; ruleset_version: string }) =>
+  ruleset?.ruleset_id && ruleset?.ruleset_version
+    ? get<Result<ReplayCoverageView>>(`${versionPath(templateId, version)}/replay-coverage`, { params: { ruleset_id: ruleset.ruleset_id, ruleset_version: ruleset.ruleset_version } })
+    : get<Result<ReplayCoverageView>>(`${versionPath(templateId, version)}/replay-coverage`)
 export const listRuleSetVersions = (id: string) => get<Result<RuleSet[]>>(rulePath(id))
 export const createRuleSetDraft = (draft: RuleSet, reason: string, key: string) =>
   post<Result<RuleSet>>(rulePath(draft.ruleset_id), { draft, reason }, headers(key))

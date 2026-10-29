@@ -264,19 +264,18 @@ func TestCatalogHTTPProductionDatabaseParity(t *testing.T) {
 					input.Version, input.Definition.Version = "2", "2"
 					call(ctx, http.MethodPost, profile+"/versions", "http-v2-draft", input, 200, &draft)
 					// Every template version needs separately reviewed, hash-pinned
-					// replay evidence. Rebind this test runtime's same fixture IDs to
-					// the v2 candidate; the published v1 was already replayed above.
+					// replay evidence. Rebind the builtin fixture IDs to the v2
+					// candidate through the deployment bootstrap option and rebuild
+					// the runtime; the published v1 was already replayed above.
 					versionFixtures := BuiltinTemplateGovernanceFixtures()
 					fixtureIDs := make([]string, 0, len(versionFixtures))
-					runtime.fixtureMu.Lock()
 					for i := range versionFixtures {
 						versionFixtures[i].TemplateVersion = draft.Version
 						versionFixtures[i].TemplateContentHash = draft.ContentHash
 						versionFixtures[i].PolicyHash = draft.PolicyHash
 						fixtureIDs = append(fixtureIDs, versionFixtures[i].Fixture.ID)
-						runtime.fixtures[versionFixtures[i].Fixture.ID] = versionFixtures[i]
 					}
-					runtime.fixtureMu.Unlock()
+					runtime, router = newRuntime(WithReviewedTemplateFixtures(versionFixtures))
 					publish.Version, publish.ExpectedRevision = "2", draft.Revision
 					publish.ReplayFixtureIDs = fixtureIDs
 					versionPath = profile + "/versions/2"

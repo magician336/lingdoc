@@ -5,7 +5,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { compileScript, parse } from '@vue/compiler-sfc'
-import { createSSRApp } from 'vue'
+import { createSSRApp, nextTick } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import ts from 'typescript'
 
@@ -46,6 +46,15 @@ async function fixture(api: Record<string, any> = {}, canManageCatalog = true) {
   onError: (message: string) => events.push(message),
  }))
  return { controller, events, api }
+}
+
+function templateVersion(revision = 1) {
+ return {
+  template_id: 'synthetic-template', version: '1', revision, state: 'draft',
+  definition: { name: 'Synthetic template', fields: [], sections: [], terms: [], required_fields: [] },
+  ruleset: { ruleset_id: 'rules', version: '1' }, binding_policies: [],
+  source_type: 'project_copy', source_refs: [], scope: 'university', curator: 'curator',
+ }
 }
 
 function deferred<T>() {
@@ -113,28 +122,231 @@ test('catalog refresh invalidates a pending profile selection response', async (
  assert.equal(controller.selectedVersionId.value, '')
 })
 
-function templateVersion(revision = 1) {
- return {
-  template_id: 'synthetic-template', version: '1', revision, state: 'draft',
-  definition: { name: 'Synthetic template', fields: [], sections: [], terms: [], required_fields: [] },
-  ruleset: { ruleset_id: 'rules', version: '1' }, binding_policies: [],
-  source_type: 'project_copy', source_refs: [], scope: 'university', curator: 'curator',
- }
+// Draft version selected in the catalog tab: the registration entry and the
+// coverage matrix are manager-only and target exactly this version.
+const draftVersion = { template_id: 'template-demo', version: '3', revision: 4, state: 'draft',
+ definition: { name: 'Draft', fields: [], sections: [] }, ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }
+function selectDraftVersion(controller: any) {
+ controller.versions.value = [draftVersion]
+ controller.selectedVersionId.value = '3'
+}
+const registeredFixtureInput = {
+ fixture_id: 'org-goal-present-3-write_check-negative-1', rule_id: 'goal-present', scene: 'write_check', polarity: 'negative',
+ target_ref: 'field/goal', input: { project_id: 'replay-synthetic', target_version: '1', fields: { goal: '' } },
+ expected_status: 'ISSUE', review_reference: 'review-record-2026-001',
 }
 
-test('template ID filter searches only returned profiles and distinguishes empty, filtered and failed states', async () => {
- const { controller } = await fixture()
- controller.profiles.value = [{ template_id: 'alpha-01' }, { template_id: 'beta-02' }]
- controller.templateIdFilter.value = 'BETA'
- assert.deepEqual(controller.visibleProfiles.value.map((item: any) => item.template_id), ['beta-02'])
- controller.templateIdFilter.value = 'missing'
- assert.match(controller.catalogNotice.value, /筛选下没有模板/)
- controller.catalogError.value = '网络中断'
- assert.match(controller.catalogNotice.value, /读取失败/)
- controller.catalogError.value = ''; controller.templateIdFilter.value = ''; controller.profiles.value = []
- assert.match(controller.catalogNotice.value, /没有模板档案/)
+test('registerFixtures posts one audited batch; the receipt coverage and enriched catalog reach the panel', async () => {
+ const registrationCalls: any[] = []
+ let catalogLoads = 0
+ const receipt = { data: { template_id: 'template-demo', version: '3', content_hash: 'sha:content-3', policy_hash: 'sha:policy-3',
+  registered: [{ fixture_id: registeredFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'negative', target_ref: 'field/goal', ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }],
+  coverage: { complete: false, entries: [{ rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: true,
+   declared_positive_example_refs: ['ex-pos'], declared_negative_example_refs: ['ex-neg'], unsatisfied_declared_example_refs: ['ex-pos'] }], unsatisfied_declared_example_refs: ['ex-pos'] } } }
+ const { controller } = await fixture({
+  registerReplayFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(receipt) },
+  listReplayFixtures: () => { catalogLoads += 1; return Promise.resolve({ data: [{ fixture_id: registeredFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'negative', target_ref: 'field/goal', ruleset: { ruleset_id: 'ruleset-demo', version: '1' }, template_id: 'template-demo', template_version: '3' }] }) },
+ })
+ selectDraftVersion(controller)
+ controller.fixtureRegistration.reason = '补齐 goal-present 反例并核对声明引用'
+ controller.fixtureRegistration.fixturesJSON = JSON.stringify([registeredFixtureInput])
+
+ await controller.registerFixtures()
+
+ assert.equal(registrationCalls.length, 1)
+ // The panel executes inside a VM realm, so compare through JSON to avoid
+ // cross-realm prototype identity while still asserting the exact payload.
+ assert.deepEqual(JSON.parse(JSON.stringify(registrationCalls[0].input)), { template_id: 'template-demo', version: '3', reason: '补齐 goal-present 反例并核对声明引用', fixtures: [registeredFixtureInput] })
+ assert.equal(registrationCalls[0].key, 'synthetic-key')
+ assert.equal(controller.replayCoverage.value.complete, false)
+ assert.deepEqual(controller.replayCoverage.value.unsatisfied_declared_example_refs, ['ex-pos'])
+ assert.match(controller.message.value, /已登记 1 条回放夹具/)
+ assert.match(controller.message.value, /仍有缺口/)
+ // The publish picker reads the same enriched catalog source, publish payload unchanged.
+ assert.equal(catalogLoads, 1)
+ assert.deepEqual(controller.replayFixtures.value.map((item: any) => item.fixture_id), [registeredFixtureInput.fixture_id])
+ assert.equal(controller.busy.value, false)
 })
 
+test('loadReplayCoverage stores the manager-only matrix rows of the selected draft version for display', async () => {
+ const coverageCalls: string[][] = []
+ const view = { data: { template_id: 'template-demo', version: '3', content_hash: 'sha:content-3', policy_hash: 'sha:policy-3', complete: false,
+  entries: [
+   { rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: false, declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] },
+   { rule_id: 'source-fresh', scene: 'preflight', positive_covered: true, negative_covered: true, declared_positive_example_refs: ['ex-1'], declared_negative_example_refs: [], unsatisfied_declared_example_refs: ['ex-1'] },
+  ], unsatisfied_declared_example_refs: ['ex-1'] } }
+ const { controller } = await fixture({ readReplayCoverage: (...args: string[]) => { coverageCalls.push(args); return Promise.resolve(view) } })
+ selectDraftVersion(controller)
+
+ await controller.loadReplayCoverage()
+
+ assert.deepEqual(coverageCalls, [['template-demo', '3']])
+ assert.equal(controller.replayCoverage.value.complete, false)
+ assert.equal(controller.replayCoverage.value.entries[0].negative_covered, false)
+ assert.equal(controller.replayCoverage.value.entries[1].unsatisfied_declared_example_refs.join('、'), 'ex-1')
+ assert.equal(controller.busy.value, false)
+})
+
+test('failed registration presents 422/400 evidence readably and keeps the typed batch for fixing', async () => {
+ const registrationCalls: any[] = []
+ const { controller, events } = await fixture({
+  registerReplayFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.reject(Object.defineProperty({ status: 422,
+   message: '夹具 org-goal-present-3-write_check-negative-1 声明 ISSUE 但实际求值 PASS。',
+   error: { code: 'template_replay_required', message: '须用服务器注册且绑定当前版本的正反例完成回放。', retryable: false }, request_id: 'req-1' }, '$httpStatus', { value: 422 })) },
+ })
+ selectDraftVersion(controller)
+ controller.fixtureRegistration.reason = '登记理由'
+ controller.fixtureRegistration.fixturesJSON = JSON.stringify([registeredFixtureInput])
+
+ await controller.registerFixtures()
+
+ assert.match(controller.errorMessage.value, /回放核验未通过（422）/)
+ assert.match(controller.errorMessage.value, /声明 ISSUE 但实际求值 PASS/)
+ assert.equal(events.at(-1), controller.errorMessage.value)
+
+ // Local 400 boundary: unreadable JSON never reaches the server, input kept.
+ controller.fixtureRegistration.fixturesJSON = '{broken'
+ await controller.registerFixtures()
+ assert.match(controller.errorMessage.value, /不是可解析的 JSON/)
+ assert.equal(controller.fixtureRegistration.fixturesJSON, '{broken')
+ assert.equal(registrationCalls.length, 1)
+})
+
+// Draft rule set selected in the rules tab: the registration entry targets the
+// draft rule set plus its replay base (demo guided path by default). The
+// selection change resets the registration state, so tests flush the watcher
+// before typing a batch.
+const draftRuleSet = { ruleset_id: 'org-rules', version: '2', state: 'draft', ruleset_hash: 'sha:ruleset-2', bindings: [] }
+async function selectDraftRuleSet(controller: any) {
+ controller.ruleSetId.value = 'org-rules'
+ controller.rulesets.value = [draftRuleSet]
+ controller.ruleSetVersion.value = '2'
+ await nextTick()
+}
+const ruleSetFixtureInput = {
+ fixture_id: 'org-rules-2-goal-present-write_check-positive-1', rule_id: 'goal-present', scene: 'write_check', polarity: 'positive',
+ target_ref: 'field/goal', input: { project_id: 'replay-synthetic', target_version: '1', fields: { goal: '已确认研究目标' } },
+ expected_status: 'PASS', review_reference: 'review-record-2026-002',
+}
+function rulesetReceipt(templateId: string, version: string) {
+ return { data: {
+  template_id: templateId, version, content_hash: 'sha:projection-content', policy_hash: 'sha:projection-policy',
+  projection: { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:ruleset-2' }, replay_base: { template_id: templateId, version } },
+  registered: [{ fixture_id: ruleSetFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'positive', target_ref: 'field/goal', ruleset: { ruleset_id: 'org-rules', version: '2' } }],
+  coverage: { complete: false, entries: [{ rule_id: 'goal-present', scene: 'write_check', positive_covered: true, negative_covered: false,
+   declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] }], unsatisfied_declared_example_refs: [] },
+ } }
+}
+
+test('rule set registration posts the draft ruleset over the demo guided base and shows the receipt gaps', async () => {
+ const registrationCalls: any[] = []
+ const { controller } = await fixture({
+  registerRuleSetFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(rulesetReceipt('template-demo', '1')) },
+  listReplayFixtures: () => Promise.resolve({ data: [{ fixture_id: ruleSetFixtureInput.fixture_id, rule_id: 'goal-present', scene: 'write_check', polarity: 'positive', target_ref: 'field/goal', ruleset: { ruleset_id: 'org-rules', version: '2' }, template_id: 'template-demo', template_version: '1' }] }),
+ })
+ await selectDraftRuleSet(controller)
+ // A publish base typed earlier must not survive the registration: the server
+ // pins the fixtures to its own projection over the registered base.
+ controller.replayTemplate.id = 'template-other'; controller.replayTemplate.version = '9'
+ controller.ruleSetRegistration.reason = '为 org-rules/2 登记投影正例'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.equal(registrationCalls.length, 1)
+ assert.deepEqual(JSON.parse(JSON.stringify(registrationCalls[0].input)), {
+  ruleset_id: 'org-rules', ruleset_version: '2', template_id: 'template-demo', template_version: '1',
+  fixtures: [ruleSetFixtureInput], reason: '为 org-rules/2 登记投影正例' })
+ assert.equal(registrationCalls[0].key, 'synthetic-key')
+ assert.equal(controller.ruleSetCoverage.value.complete, false)
+ assert.equal(controller.ruleSetCoverage.value.entries[0].negative_covered, false)
+ assert.equal(controller.ruleSetCoverage.value.projection.replay_base.template_id, 'template-demo')
+ assert.equal(controller.replayTemplate.id, 'template-demo')
+ assert.equal(controller.replayTemplate.version, '1')
+ assert.match(controller.message.value, /已登记 1 条/)
+ assert.match(controller.message.value, /仍有缺口/)
+ assert.match(controller.message.value, /发布底版已同步为 template-demo \/ 1/)
+ assert.deepEqual(controller.replayFixtures.value.map((item: any) => item.fixture_id), [ruleSetFixtureInput.fixture_id])
+ assert.equal(controller.busy.value, false)
+})
+
+test('the replay base select switches registration to a readable catalog draft version', async () => {
+ const registrationCalls: any[] = []
+ const { controller } = await fixture({
+  registerRuleSetFixtures: (input: any, key: string) => { registrationCalls.push({ input, key }); return Promise.resolve(rulesetReceipt('org-template', '7')) },
+  listReplayFixtures: () => Promise.resolve({ data: [] }),
+ })
+ await selectDraftRuleSet(controller)
+ controller.versions.value = [{ template_id: 'org-template', version: '7', revision: 1, state: 'draft',
+  definition: { name: 'Org draft', fields: [], sections: [] }, ruleset: { ruleset_id: 'ruleset-demo', version: '1' } }]
+ controller.ruleSetReplayBase.value = 'org-template|7'
+ controller.ruleSetRegistration.reason = '改用组织草稿底版'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.equal(registrationCalls.length, 1)
+ assert.equal(registrationCalls[0].input.template_id, 'org-template')
+ assert.equal(registrationCalls[0].input.template_version, '7')
+ assert.equal(controller.ruleSetCoverage.value.projection.replay_base.template_id, 'org-template')
+ assert.equal(controller.replayTemplate.id, 'org-template')
+ assert.equal(controller.replayTemplate.version, '7')
+})
+
+test('loadRuleSetCoverage reads the projection matrix through the paired ruleset query', async () => {
+ const coverageCalls: any[][] = []
+ const view = { data: { template_id: 'template-demo', version: '1', content_hash: 'sha:projection-content', policy_hash: 'sha:projection-policy',
+  projection: { ruleset: { ruleset_id: 'org-rules', version: '2', ruleset_hash: 'sha:ruleset-2' }, replay_base: { template_id: 'template-demo', version: '1' } },
+  complete: false,
+  entries: [{ rule_id: 'goal-present', scene: 'preflight', positive_covered: false, negative_covered: false,
+   declared_positive_example_refs: [], declared_negative_example_refs: [], unsatisfied_declared_example_refs: [] }],
+  unsatisfied_declared_example_refs: [] } }
+ const { controller } = await fixture({ readReplayCoverage: (...args: any[]) => { coverageCalls.push(args); return Promise.resolve(view) } })
+ await selectDraftRuleSet(controller)
+
+ await controller.loadRuleSetCoverage()
+
+ // The readback targets the replay base's profile path with both ruleset
+ // parameters; a lone parameter is a server-side 400 the panel never sends.
+ // JSON round-trips the VM-realm query object before the strict compare.
+ assert.deepEqual(coverageCalls.map(call => [call[0], call[1], JSON.parse(JSON.stringify(call[2]))]),
+  [['template-demo', '1', { ruleset_id: 'org-rules', ruleset_version: '2' }]])
+ assert.equal(controller.ruleSetCoverage.value.complete, false)
+ assert.equal(controller.ruleSetCoverage.value.projection.ruleset.ruleset_id, 'org-rules')
+ assert.equal(controller.busy.value, false)
+})
+
+test('rule set registration keeps 422 replay evidence and 409 idempotency conflicts distinct and readable', async () => {
+ let failure: unknown = Object.defineProperty({ status: 422,
+  message: '夹具 org-rules-2-goal-present-write_check-positive-1 声明 PASS 但实际求值 ISSUE。',
+  error: { code: 'template_replay_required', message: '须用服务器注册且绑定当前版本的正反例完成回放。', retryable: false } }, '$httpStatus', { value: 422 })
+ let calls = 0
+ const { controller, events } = await fixture({
+  registerRuleSetFixtures: () => { calls += 1; return Promise.reject(failure) },
+  listReplayFixtures: () => Promise.resolve({ data: [] }),
+ })
+ await selectDraftRuleSet(controller)
+ controller.ruleSetRegistration.reason = '登记理由'
+ controller.ruleSetRegistration.fixturesJSON = JSON.stringify([ruleSetFixtureInput])
+
+ await controller.registerRuleSetFixtureBatch()
+
+ assert.match(controller.errorMessage.value, /回放核验未通过（422）/)
+ assert.match(controller.errorMessage.value, /声明 PASS 但实际求值 ISSUE/)
+ assert.equal(events.at(-1), controller.errorMessage.value)
+ assert.equal(controller.ruleSetRegistration.fixturesJSON, JSON.stringify([ruleSetFixtureInput]))
+
+ // A reused idempotency key over different content stays an idempotency
+ // answer, never mislabeled as a version conflict.
+ failure = Object.defineProperty({ status: 409, message: '同一幂等键对应不同请求。', error: { code: 'idempotency_conflict', message: '同一幂等键对应不同请求。', retryable: false } }, '$httpStatus', { value: 409 })
+ await controller.registerRuleSetFixtureBatch()
+ assert.match(controller.errorMessage.value, /同一幂等键/)
+ assert.doesNotMatch(controller.errorMessage.value, /版本冲突/)
+ assert.equal(calls, 2)
+ assert.equal(controller.busy.value, false)
+})
+
+// Audit-history read model merged from #686 (PR #752): admin-only, epoch-guarded.
 test('ordinary project users never request audit history', async () => {
  let requests = 0
  const { controller } = await fixture({ listTemplateAuditHistory: async () => { requests++; return { data: { events: [] } } } }, false)
@@ -143,7 +355,6 @@ test('ordinary project users never request audit history', async () => {
  assert.equal(requests, 0)
  assert.equal(controller.auditEvents.value.length, 0)
 })
-
 test('audit denial removes previously visible management data and rechecking can restore access', async () => {
  let attempt = 0
  const { controller } = await fixture({ listTemplateAuditHistory: async () => {
@@ -166,9 +377,11 @@ test('audit denial removes previously visible management data and rechecking can
  await controller.loadAudit()
  assert.equal(controller.managerAccess.value, true)
  assert.equal(controller.auditEvents.value.length, 1)
- assert.match(controller.versionError.value, /重新读取版本/)
+// main's revocation leaves the catalog-level notice; a successful recheck
+// restores access and clears the manager notice, while the catalog keeps the
+// stale-state hint until the user re-reads.
+ assert.match(controller.catalogError.value, /权限状态已变化/)
 })
-
 test('late audit response cannot expose a previous profile after selection changes', async () => {
  const pending = deferred<any>()
  const { controller } = await fixture({ listTemplateAuditHistory: () => pending.promise })
@@ -179,167 +392,6 @@ test('late audit response cannot expose a previous profile after selection chang
  await request
  assert.equal(controller.auditEvents.value.length, 0)
 })
-
-test('successful draft write remains successful when version readback fails', async () => {
- const saved = templateVersion(2)
- const { controller } = await fixture({
-  saveTemplateDraft: async () => ({ data: saved }),
-  listTemplateVersions: async () => { throw { status: 503 } },
-  listTemplateAuditHistory: async () => ({ data: { events: [] } }),
-  listTemplateProfiles: async () => ({ data: [{ template_id: 'synthetic-template' }] }),
- })
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
- controller.editTemplate(false)
- controller.templateDraft.value.input.reason = 'approved edit'
- await controller.saveDraft()
- assert.match(controller.message.value, /草稿已保存/)
- assert.match(controller.readbackNotice.value, /操作已成功.*版本读取未完成/)
- assert.equal(controller.errorMessage.value, '')
- assert.equal(controller.templateDraft.value.input.expected_revision, 2)
- assert.ok(controller.versionError.value)
-})
-
-test('version conflict preserves the unsaved draft for comparison', async () => {
- const { controller } = await fixture({ saveTemplateDraft: async () => { throw { status: 409 } } })
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
- controller.editTemplate(false)
- controller.templateDraft.value.input.reason = 'keep this edit'
- await controller.saveDraft()
- assert.match(controller.errorMessage.value, /版本冲突/)
- assert.equal(controller.templateDraft.value.input.reason, 'keep this edit')
- assert.equal(controller.templateDraft.value.input.expected_revision, 1)
-})
-
-
-test('source authorization denial preserves the draft and shows the server explanation', async () => {
- const { controller } = await fixture({ saveTemplateDraft: async () => {
-  throw { status: 403, error: { code: 'source_access_denied', message: '来源已不可用或无当前授权。' } }
- } })
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
- controller.editTemplate(false)
- controller.templateDraft.value.input.reason = 'retain my changes'
- await controller.saveDraft()
- assert.equal(controller.managerAccess.value, true)
- assert.match(controller.errorMessage.value, /来源已不可用/)
- assert.equal(controller.templateDraft.value.input.reason, 'retain my changes')
-})
-
-test('replay and state errors retain the server explanation rather than a generic failure', async () => {
- const { controller } = await fixture()
- await controller.perform(async () => { throw { status: 422, error: { code: 'template_replay_required', message: '须完成服务器注册样例回放。' } } })
- assert.match(controller.errorMessage.value, /样例回放/)
- await controller.perform(async () => { throw { status: 409, error: { code: 'invalid_state', message: '当前版本状态不允许此操作。' } } })
- assert.match(controller.errorMessage.value, /状态不允许/)
-})
-
-
-test('an unavailable historical version is not silently replaced by another', async () => {
- const replacement = { ...templateVersion(), version: '2' }
- const { controller } = await fixture({ listTemplateVersions: async () => ({ data: [replacement] }) })
- controller.profileId.value = 'synthetic-template'; controller.selectedVersionId.value = '1'
- await controller.refreshVersions()
- assert.equal(controller.selectedVersionId.value, '')
- assert.match(controller.versionNotice.value, /历史版本 1 当前不可用/)
- assert.equal(controller.selectedVersion.value, undefined)
-})
-
-
-test('403 revocation invalidates older catalog and profile reads before they return', async () => {
- const pendingProfiles = deferred<any>(), pendingVersions = deferred<any>()
- const { controller } = await fixture({
-  listTemplateProfiles: () => pendingProfiles.promise,
-  listTemplateVersions: () => pendingVersions.promise,
-  listTemplateAuditHistory: async () => { throw { status: 403, error: { code: 'forbidden' } } },
- })
- controller.profileId.value = 'current-profile'
- const catalogRequest = controller.loadCatalog()
- const profileRequest = controller.chooseProfile('draft-profile')
- await controller.loadAudit()
- assert.equal(controller.managerAccess.value, false)
- assert.equal(controller.catalogLoading.value, false)
- pendingProfiles.resolve({ data: [{ template_id: 'private-draft', name: 'Sensitive draft' }] })
- pendingVersions.resolve({ data: [{ ...templateVersion(), template_id: 'draft-profile' }] })
- await Promise.all([catalogRequest, profileRequest])
- assert.equal(controller.profiles.value.length, 0)
- assert.equal(controller.versions.value.length, 0)
- assert.equal(controller.selectedVersionId.value, '')
- assert.equal(controller.catalogLoading.value, false)
- assert.match(controller.errorMessage.value, /权限不足/)
-})
-
-test('403 revocation prevents an older version refresh from restoring draft details', async () => {
- const pendingVersions = deferred<any>()
- const { controller } = await fixture({
-  listTemplateVersions: () => pendingVersions.promise,
-  listTemplateAuditHistory: async () => { throw { status: 403, error: { code: 'forbidden' } } },
- })
- controller.profileId.value = 'synthetic-template'
- const refreshing = controller.refreshVersions()
- await controller.loadAudit()
- pendingVersions.resolve({ data: [templateVersion()] })
- await refreshing
- assert.equal(controller.versions.value.length, 0)
- assert.equal(controller.selectedVersionId.value, '')
- assert.equal(controller.managerAccess.value, false)
-})
-
-
-test('403 from protected rule definitions invalidates all concurrent initialization results', async () => {
- const pendingProfiles = deferred<any>(), pendingDefinitions = deferred<any>(), pendingFixtures = deferred<any>()
- const { controller } = await fixture({
-  listTemplateProfiles: () => pendingProfiles.promise,
-  listRuleSuggestions: async () => ({ data: [] }),
-  listRuleDefinitions: () => pendingDefinitions.promise,
-  listReplayFixtures: () => pendingFixtures.promise,
- })
- const initializing = controller.perform(controller.loadInitialData)
- pendingDefinitions.reject({ status: 403, error: { code: 'forbidden' } })
- await new Promise<void>(resolve => setImmediate(resolve))
- assert.equal(controller.managerAccess.value, false)
- pendingProfiles.resolve({ data: [{ template_id: 'private-draft' }] })
- pendingFixtures.resolve({ data: [{ fixture_id: 'private-fixture' }] })
- await initializing
- assert.equal(controller.profiles.value.length, 0)
- assert.equal(controller.replayFixtures.value.length, 0)
- assert.equal(controller.definitions.value.length, 0)
- assert.match(controller.errorMessage.value, /权限不足/)
-})
-
-test('403 from protected replay fixtures invalidates all concurrent initialization results', async () => {
- const pendingProfiles = deferred<any>(), pendingDefinitions = deferred<any>(), pendingFixtures = deferred<any>()
- const { controller } = await fixture({
-  listTemplateProfiles: () => pendingProfiles.promise,
-  listRuleSuggestions: async () => ({ data: [] }),
-  listRuleDefinitions: () => pendingDefinitions.promise,
-  listReplayFixtures: () => pendingFixtures.promise,
- })
- const initializing = controller.perform(controller.loadInitialData)
- pendingFixtures.reject({ status: 403, error: { code: 'forbidden' } })
- await new Promise<void>(resolve => setImmediate(resolve))
- assert.equal(controller.managerAccess.value, false)
- pendingProfiles.resolve({ data: [{ template_id: 'private-draft' }] })
- pendingDefinitions.resolve({ data: [{ definition_id: 'private-rule' }] })
- await initializing
- assert.equal(controller.profiles.value.length, 0)
- assert.equal(controller.definitions.value.length, 0)
- assert.equal(controller.replayFixtures.value.length, 0)
- assert.match(controller.errorMessage.value, /权限不足/)
-})
-
-test('404 reading a version clears old sensitive details without claiming deletion', async () => {
- const { controller } = await fixture({ listTemplateVersions: async () => { throw { status: 404, error: { code: 'not_found', message: '资源不存在或不可访问。' } } } })
- controller.profileId.value = 'synthetic-template'; controller.profiles.value = [{ template_id: 'synthetic-template' }]
- controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'; controller.editTemplate(false)
- await assert.rejects(controller.refreshVersions())
- assert.equal(controller.profiles.value.length, 0)
- assert.equal(controller.versions.value.length, 0)
- assert.equal(controller.selectedVersionId.value, '')
- assert.equal(controller.managerAccess.value, false)
- assert.equal(Object.keys(controller.draftCache).length, 0)
- assert.match(controller.managerAccessNotice.value, /不存在或当前不可访问/)
- assert.doesNotMatch(controller.managerAccessNotice.value, /已删除/)
-})
-
 test('404 reading audit clears cached sensitive details and remains ambiguous about absence or access', async () => {
  const { controller } = await fixture({ listTemplateAuditHistory: async () => { throw { status: 404, error: { code: 'not_found' } } } })
  controller.profileId.value = 'synthetic-template'; controller.profiles.value = [{ template_id: 'synthetic-template' }]
@@ -350,49 +402,5 @@ test('404 reading audit clears cached sensitive details and remains ambiguous ab
  assert.equal(controller.versions.value.length, 0)
  assert.equal(controller.auditEvents.value.length, 0)
  assert.equal(controller.managerAccess.value, false)
- assert.match(controller.managerAccessNotice.value, /不存在或当前不可访问/)
-})
-
-test('404 also clears previously visible versions for an ordinary project user', async () => {
- const { controller } = await fixture({ listTemplateVersions: async () => { throw { status: 404, error: { code: 'not_found' } } } }, false)
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
- await assert.rejects(controller.refreshVersions())
- assert.equal(controller.versions.value.length, 0)
- assert.equal(controller.selectedVersionId.value, '')
- assert.match(controller.managerAccessNotice.value, /不存在或当前不可访问/)
-})
-
-
-test('ordinary user can recover after 404 by re-reading the visible directory and selected version', async () => {
- let versionReads = 0
- const published = { ...templateVersion(), state: 'published' }
- const { controller } = await fixture({
-  listTemplateProfiles: async () => ({ data: [{ template_id: 'synthetic-template' }] }),
-  listTemplateVersions: async () => {
-   if (++versionReads === 1) throw { status: 404, error: { code: 'not_found' } }
-   return { data: [published] }
-  },
- }, false)
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [published]; controller.selectedVersionId.value = '1'
- await assert.rejects(controller.refreshVersions())
- assert.equal(controller.managerDenied.value, true)
- await controller.retryOrdinaryCatalogAccess()
- assert.equal(controller.managerDenied.value, false)
- assert.equal(controller.managerAccessNotice.value, '')
- assert.equal(controller.versionError.value, '')
- assert.equal(controller.selectedVersion.value.version, '1')
-})
-
-test('ordinary user retry does not claim recovery when version remains inaccessible', async () => {
- const { controller } = await fixture({
-  listTemplateProfiles: async () => ({ data: [{ template_id: 'synthetic-template' }] }),
-  listTemplateVersions: async () => { throw { status: 404, error: { code: 'not_found' } } },
- }, false)
- controller.profileId.value = 'synthetic-template'; controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
- await assert.rejects(controller.refreshVersions())
- await controller.retryOrdinaryCatalogAccess()
- assert.equal(controller.managerDenied.value, true)
- assert.equal(controller.versions.value.length, 0)
- assert.equal(controller.selectedVersion.value, undefined)
  assert.match(controller.managerAccessNotice.value, /不存在或当前不可访问/)
 })

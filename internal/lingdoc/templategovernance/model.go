@@ -39,6 +39,7 @@ const (
 	ActionPublish          Action = "publish"
 	ActionWithdraw         Action = "withdraw"
 	ActionRecall           Action = "recall"
+	ActionRegisterFixture  Action = "register_fixture"
 	ActionSuggest          Action = "suggest"
 	ActionAcceptSuggestion Action = "accept_suggestion"
 	ActionRejectSuggestion Action = "reject_suggestion"
@@ -362,6 +363,10 @@ type Ports struct {
 	Usage      TemplateUsageReader
 	Context    SuggestionContextProvider
 	Model      RuleSuggestionModel
+	// Fixtures is the merged replay fixture store. Fixture registration
+	// fails closed when it is absent; the read paths keep working without it
+	// only because the builtin set is code-defined.
+	Fixtures ReplayFixtureStore
 }
 type Service struct {
 	db    *gorm.DB
