@@ -68,6 +68,13 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 			winners++
 		case result.err != nil:
 			losers++
+		case result.err == nil && result.status == 409 && !result.replay:
+			// The loser may be legitimately stale-marked against the applied
+			// domain truth (a replaced spec source or a changed chapter
+			// version) instead of failing the project CAS: that outcome
+			// carries the STALE change with 409 and no error. Either way the
+			// loser must contribute no tasks — asserted below.
+			losers++
 		default:
 			t.Fatalf("apply %d returned an unaccounted outcome: status=%d replay=%v err=%v", i, result.status, result.replay, result.err)
 		}
