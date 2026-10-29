@@ -55,6 +55,21 @@ export interface TemplateProfile {
   created_by: string
   created_at: string
 }
+export interface TemplateAuditEvent {
+  id: number
+  actor_user_id: string
+  actor_role: string
+  action: string
+  target_type: string
+  target_id: string
+  outcome: string
+  details: unknown
+  created_at: string
+}
+export interface TemplateAuditHistory {
+  events: TemplateAuditEvent[]
+  next_after_id?: number
+}
 export interface BindingPolicy {
  rule_id: string
  may_disable: boolean
@@ -305,6 +320,8 @@ export const listTemplateProfiles = (filter: { scope?: string; state?: string } 
 export const createTemplateProfile = (input: { template_id: string; name: string; reason: string }, key: string) =>
   post<Result<TemplateProfile>>(`${base}/profiles`, input, headers(key))
 export const listTemplateVersions = (id: string) => get<Result<TemplateCatalogVersion[]>>(`${profilePath(id)}/versions`)
+export const listTemplateAuditHistory = (id: string, afterId?: number) =>
+  get<Result<TemplateAuditHistory>>(`${profilePath(id)}/audit-events`, { params: afterId ? { after_id: afterId } : {} })
 export const getTemplateVersion = (id: string, version: string) => get<Result<TemplateCatalogVersion>>(versionPath(id, version))
 export const saveTemplateDraft = (input: SaveTemplateDraftInput, key: string) =>
   post<Result<TemplateCatalogVersion>>(`${profilePath(input.template_id)}/versions`, input, headers(key))

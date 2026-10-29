@@ -35,6 +35,17 @@ func pr150NewTemplateFixture(t *testing.T) *pr150TemplateFixture {
 		t.Fatal(err)
 	}
 	p := asProject(t, raw)
+	// The template editor now refuses unresolved required fields. Seed only the
+	// existing required fields first; custom fields are still added through the
+	// real copy-edit operation below and populated afterwards.
+	raw, _, _, err = s.SaveSpec(ctx, actor, p.ID, "template-field-initial-spec", SaveSpecInput{
+		ExpectedSpecRevision: p.SpecRevision,
+		Fields:               map[string]string{"research_subject": "Synthetic subject", "research_goal": "Synthetic goal"},
+	})
+	if err != nil {
+		t.Fatalf("prepare required fields before editing the template: %v", err)
+	}
+	p = asProject(t, raw)
 	definition := lingdoctemplate.Clone(p.TemplateCopy.Definition)
 	definition.Fields = append(definition.Fields,
 		lingdoctemplate.Field{ID: "methods", Label: "Methods", Type: "text"},

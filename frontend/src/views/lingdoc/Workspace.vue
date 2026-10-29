@@ -158,16 +158,27 @@
             <p class="template-hash">内容摘要：{{ project.template_copy.content_hash }}</p>
             <p class="template-hash">规则集摘要：{{ project.template_copy.ruleset_hash }}</p>
             <p v-if="project.status === 'active'" class="muted">课题已立项；普通保存不可用。模板改动会创建 ChangeSet，列出受影响章节并由 Owner 确认应用。</p>
+            <p v-if="!templateCopyCanEdit" class="warning" role="status">
+              {{ templateCopyEditPermission === 'loading' ? '正在核对模板编辑权限。' : templateCopyEditPermission === 'denied' ? '当前身份没有模板编辑权限；已有输入会保留。' : '无法确认模板编辑权限；已有输入会保留。' }}
+              <button type="button" :disabled="templateCopyEditPermission === 'loading'" @click="refreshTemplateCopyPermissions">重新核对</button>
+            </p>
             <template v-if="templateCopyDraft">
-              <p class="muted">可编辑字段、章节结构与顺序、术语和声明式规则。字段 ID 与类型保持稳定；{{ project.status === 'draft' ? '改动先预览，再保存为新的不可变草稿版本。' : '改动需经过模板升级 ChangeSet，应用后旧版本和章节确认历史仍保留。' }}</p>
-              <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
-                <legend>字段名称</legend>
-                <label v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
-                  <span>{{ field.field_id }} <small>· {{ field.type }}{{ field.required ? ' · 必填' : '' }}</small></span>
-                  <input v-model="field.label" :aria-label="`${field.field_id} 显示名称`" maxlength="120" />
-                </label>
+              <p class="muted">可编辑字段、章节结构与顺序、术语和声明式规则。字段 ID 保持稳定；类型变更需通过迁移预览。{{ project.status === 'draft' ? '改动先预览，再保存为新的不可变草稿版本。' : '改动需经过模板升级 ChangeSet，应用后旧版本和章节确认历史仍保留。' }}</p>
+              <fieldset class="template-editor" :disabled="busy || templateCopyBusy || !templateCopyCanEdit">
+                <legend>项目字段</legend>
+                <div v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
+                  <span>{{ field.field_id }}</span>
+                  <label>字段名称<input v-model="field.label" :aria-label="`${field.field_id} 显示名称`" maxlength="120" /></label>
+                  <label>字段类型<select v-model="field.type" :aria-label="`${field.field_id} 类型`"><option v-for="kind in ['string','text','number','integer','boolean','enum']" :key="kind" :value="kind">{{ kind }}</option></select></label>
+                  <label>显示顺序<input v-model.number="field.order" type="number" min="1" :aria-label="`${field.field_id} 顺序`" /></label>
+                  <label><input type="checkbox" :checked="field.required" :disabled="project.status === 'draft' && !project.template_copy.definition.fields.some(item => item.field_id === field.field_id)" @change="updateTemplateFieldRequired(field.field_id, $event)" /> 必填</label>
+                  <small v-if="project.status === 'draft' && !project.template_copy.definition.fields.some(item => item.field_id === field.field_id)">新字段先作为选填保存；在研究条件填写并保存后，再设为必填。</small>
+                  <label v-if="field.type === 'enum'">选项（用逗号分隔）<input :value="(field.options ?? []).join('、')" :aria-label="`${field.field_id} 选项`" @input="updateTemplateFieldOptions(field.field_id, $event)" /></label>
+                  <button type="button" @click="removeTemplateField(field.field_id)">移除字段 {{ field.label }}</button>
+                </div>
+                <button type="button" @click="addTemplateField">添加字段</button>
               </fieldset>
-                <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
+                <fieldset class="template-editor" :disabled="busy || templateCopyBusy || !templateCopyCanEdit">
                   <legend>章节名称</legend>
                   <label v-for="section in templateCopyDraft.sections" :key="section.section_id" class="template-editor__item">
                     <span>{{ section.section_id }} <small>· {{ section.required ? '必需章节' : '可选章节' }}</small></span>
@@ -177,7 +188,7 @@
                   </label>
                   <button type="button" @click="addTemplateSection">添加章节</button>
                 </fieldset>
-                <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
+                <fieldset class="template-editor" :disabled="busy || templateCopyBusy || !templateCopyCanEdit">
                   <legend>术语表</legend>
                   <label v-for="term in templateCopyDraft.terms" :key="term.term_id" class="template-editor__item">
                     <span>{{ term.term_id }}</span>
@@ -187,7 +198,52 @@
                   </label>
                   <button type="button" @click="addTemplateTerm">添加术语</button>
                 </fieldset>
-                <fieldset v-if="templateCopyDraft.rules.length" class="template-editor" :disabled="busy || templateCopyBusy">
+                <p v-if="templateCopyHasBoundRuleset" class="muted" role="status">当前副本绑定了规则集，规则来源和执行方式由服务端维护。{{ project.status === 'active' ? '已立项项目请通过“正式变更与运行”中的独立规则绑定提交覆盖。' : legacyBindingCopy ? '旧版规则集可按下方已审政策申请项目覆盖。' : '此绑定方式的规则在本页只读。' }}</p>
+                <button v-if="project.status === 'active' && templateCopyHasBoundRuleset" type="button" :disabled="busy || templateCopyBusy" @click="openFullPanel('changes')">打开正式变更与运行</button>
+                <section v-if="legacyOverrideNeedsReview && !legacyBindingCopy" class="warning" aria-label="保留的规则覆盖输入">
+                  <p>当前副本的绑定方式已变化；先前规则覆盖输入已保留，不能直接提交。</p>
+                  <p>规则 {{ legacyRuleId }} · 理由 {{ legacyReason || '未填写' }} · 启用 {{ legacyEnabled || '保持当前' }} · 严重度 {{ legacySeverity || '保持当前' }} · 目标 {{ legacyTargetKind || '保持类型' }} / {{ legacyTargetId || '保持标识' }}</p>
+                  <p>参数输入：<code>{{ JSON.stringify(legacyParameterEdits) }}</code></p>
+                  <button type="button" :disabled="busy || templateCopyBusy" @click="discardLegacyOverride">放弃未保存的规则覆盖</button>
+                </section>
+                <section v-if="legacyBindingCopy" class="template-editor" aria-label="项目规则覆盖">
+                  <h4>项目规则覆盖</h4>
+                  <button v-if="legacyRuleId && (legacyOverrideChanged || legacyReason.trim())" type="button" :disabled="busy || templateCopyBusy" @click="discardLegacyOverride">放弃未保存的规则覆盖</button>
+                  <p v-if="!legacyPolicies.length" class="muted">服务器没有返回可用的覆盖政策；当前规则仅供查看。</p>
+                  <template v-else>
+                    <p>覆盖仅影响新副本版本，来源规则集保持不变。策略摘要：{{ legacyBindingCopy.source_policy_hash }}</p>
+                    <p v-if="templateCopyChanged || specChanged" class="warning">请先保存或放弃模板改动，并保存研究条件，再修改规则覆盖。</p>
+                    <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || templateCopyChanged || specChanged || templateCopyConflict" @click="previewTemplateCopy">检查当前字段风险</button>
+                    <p v-if="!templateCopyPreviewCurrent" class="muted">提交规则覆盖前请先检查当前字段。</p>
+                    <label>规则
+                      <select :value="legacyRuleId" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" @change="selectLegacyRule">
+                        <option value="">选择规则</option><option v-for="policy in legacyPolicies" :key="policy.rule_id" :value="policy.rule_id">{{ policy.rule_id }}</option>
+                      </select>
+                    </label>
+                    <template v-if="legacyCurrentPolicy && legacyCurrentBinding">
+                      <p v-if="legacyOverrideNeedsReview" class="warning">服务器上的规则或政策已变化。现有输入已保留；请重新核对规则后再提交。</p>
+                      <button v-if="legacyOverrideNeedsReview" type="button" @click="resetStaleLegacyOverride">放弃原覆盖输入并重新核对</button>
+                      <p>当前：{{ legacyCurrentBinding.enabled ? '启用' : '停用' }} · {{ legacyCurrentBinding.severity }} · {{ legacyCurrentBinding.target_kind || '无指定类型' }} / {{ legacyCurrentBinding.target_id || '无指定对象' }}</p>
+                      <label>启用状态<select v-model="legacyEnabled" :disabled="busy || templateCopyBusy"><option value="">保持当前</option><option value="true">启用</option><option v-if="legacyCurrentPolicy.may_disable" value="false">停用</option></select></label>
+                      <label>严重度<select v-model="legacySeverity" :disabled="busy || templateCopyBusy"><option value="">保持当前</option><option v-for="item in legacyCurrentPolicy.allowed_severities ?? []" :key="item" :value="item">{{ item }}</option></select></label>
+                      <label>目标类型<select v-model="legacyTargetKind" :disabled="busy || templateCopyBusy"><option value="">保持当前</option><option v-for="item in legacyCurrentPolicy.allowed_target_kinds ?? []" :key="item" :value="item">{{ item }}</option></select></label>
+                      <label>目标标识<select v-model="legacyTargetId" :disabled="busy || templateCopyBusy"><option value="">保持当前</option><option v-for="item in legacyCurrentPolicy.allowed_target_ids ?? []" :key="item" :value="item">{{ item }}</option></select></label>
+                      <div v-for="key in legacyCurrentPolicy.allowed_parameter_keys ?? []" :key="key" class="template-editor__item">
+                        <template v-if="legacyParameterEdits[key]">
+                        <span>参数 {{ key }} · 当前值 {{ JSON.stringify(legacyCurrentBinding.parameters?.[key] ?? null) }}</span>
+                        <select v-model="legacyParameterEdits[key].action" :aria-label="`${key} 参数操作`" :disabled="busy || templateCopyBusy"><option value="keep">保持当前</option><option value="set">设置</option><option v-if="Object.prototype.hasOwnProperty.call(legacyCurrentBinding.parameters ?? {}, key)" value="remove">删除</option></select>
+                        <input v-if="legacyParameterEdits[key].action === 'set'" v-model="legacyParameterEdits[key].value" :aria-label="`${key} 参数值`" :disabled="busy || templateCopyBusy" />
+                        <small v-if="legacyCurrentPolicy.parameter_bounds?.[key]">范围：{{ legacyCurrentPolicy.parameter_bounds[key].minimum ?? '不限' }} 至 {{ legacyCurrentPolicy.parameter_bounds[key].maximum ?? '不限' }}</small>
+                        </template>
+                      </div>
+                      <p class="muted">数字、布尔值保留原有类型；数组或对象请按 JSON 格式填写。服务端仍会验证政策及阻断规则。</p>
+                      <label>覆盖理由<input v-model="legacyReason" :disabled="busy || templateCopyBusy" maxlength="2000" /></label>
+                      <p v-if="legacyOverrideError" class="warning" role="alert">{{ legacyOverrideError }}</p>
+                      <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || templateCopyConflict || templateCopyChanged || specChanged || legacyOverrideNeedsReview || !templateCopyPreviewCurrent || templateCopyPreviewBlocked || !legacyReason.trim() || !legacyOverrideChanged" @click="saveLegacyOverride">保存项目覆盖</button>
+                    </template>
+                  </template>
+                </section>
+                <fieldset v-if="templateCopyDraft.rules.length" class="template-editor" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || templateCopyHasBoundRuleset">
                   <legend>声明式规则</legend>
                   <label v-for="rule in templateCopyDraft.rules" :key="rule.rule_id" class="template-editor__item">
                     <span>{{ rule.rule_id }} <small>· {{ rule.kind }}</small></span>
@@ -208,55 +264,164 @@
                   <button type="button" @click="addTemplateRule('consistency')">添加术语检查</button>
                 </fieldset>
               <label v-if="project.status === 'active'" for="template-upgrade-reason">升级理由</label>
-              <input v-if="project.status === 'active'" id="template-upgrade-reason" v-model="templateUpgradeReason" :disabled="busy || templateCopyBusy" maxlength="2000" placeholder="说明模板调整原因" />
+              <input v-if="project.status === 'active'" id="template-upgrade-reason" v-model="templateUpgradeReason" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" maxlength="2000" placeholder="说明模板调整原因" />
+              <details v-if="project.status === 'active'">
+                <summary>为新增必填字段或不兼容的旧值提供映射</summary>
+                <p class="muted">需要替换时填写目标字段的新值；留空表示沿用现有值。服务端会检查值与目标类型。</p>
+                <label v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
+                  <span>{{ field.label }}（{{ field.field_id }} · {{ field.type }}）</span>
+                  <input v-model="templateUpgradeFieldValues[field.field_id]" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" :aria-label="`${field.field_id} 升级映射值`" />
+                </label>
+              </details>
+              <section v-if="project.status === 'active' && activeArchiveCandidates.length" class="template-editor" aria-label="正式升级中的字段归档">
+                <h4>拟移除字段的旧值</h4>
+                <p>已立项课题的旧值默认保留。若要从研究条件中移除，请先归档并查看，再选择纳入升级；只有 Owner 应用正式变更时才会移除。</p>
+                <button v-for="id in activeArchiveCandidates" :key="id" type="button" :disabled="busy || templateCopyBusy || !!templateFieldArchivePendingId || !templateCopyCanEdit || templateCopyConflict || specChanged || specBasisChanged || pendingChangeSet?.status === 'assessed'" @click="archiveTemplateField(id)">归档正式升级字段 {{ id }}</button>
+                <p v-if="!activeArchiveSelectionsCurrent" class="warning">模板草稿、映射值或项目版本已变化；请移除旧选择，重新归档并核对。</p>
+                <ul v-if="activeArchivedRemovals.length"><li v-for="item in activeArchivedRemovals" :key="item.field_id">{{ item.field_id }} 将在应用时移除（归档 {{ item.archive_id }}） <button type="button" :disabled="busy || templateCopyBusy || pendingChangeSet?.status === 'assessed'" @click="removeActiveArchiveSelection(item.field_id)">取消纳入 {{ item.field_id }}</button></li></ul>
+              </section>
               <div class="actions">
                 <template v-if="project.status === 'draft'">
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未保存改动</button>
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateCopyPreviewCurrent" @click="saveTemplateCopy">保存为新版本</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未保存改动</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged || !templateCopyPreviewCurrent || templateCopyPreviewBlocked || templateCopyConflict" @click="saveTemplateCopy">保存为新版本</button>
                 </template>
                 <template v-else>
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateUpgradeReason.trim() || pendingChangeSet?.status === 'assessed'" @click="createTemplateUpgradeChangeSet">{{ templateCopyBusy ? '处理中…' : '创建模板升级评估' }}</button>
-                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未提交改动</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged || !templateUpgradeReason.trim() || !activeArchiveSelectionsCurrent || pendingChangeSet?.status === 'assessed'" @click="createTemplateUpgradeChangeSet">{{ templateCopyBusy ? '处理中…' : '创建模板升级评估' }}</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未提交改动</button>
                 </template>
               </div>
               <p v-if="templateCopyNotice" class="binding-notice" role="status">{{ templateCopyNotice }}</p>
+              <section v-if="templateCopyConflict" class="warning" aria-label="模板版本冲突" role="status">
+                <p>当前草稿已保留，旧预览不能再用于保存。</p>
+                <button v-if="!templateCopyLatestLoaded" type="button" :disabled="templateCopyBusy" @click="reloadTemplateCopyPreservingDraft">读取最新版本并保留草稿</button>
+                <template v-else>
+                  <p>最新副本发生变化，或服务器信息不足以确认其未变。以下是最新副本与保留草稿的比较；继续后，草稿内容可能覆盖其他人的修改。</p>
+                  <dl v-if="templateCopyConflictOriginal">
+                    <dt>副本身份与版本</dt><dd>原：{{ templateCopyConflictOriginal.id || '未返回' }} / {{ templateCopyConflictOriginal.version }}；最新：{{ project.template_copy.id || '未返回' }} / {{ project.template_copy.version }}</dd>
+                    <dt>来源模板</dt><dd>原：{{ templateCopyConflictOriginal.source_template_id || '未返回' }} / {{ templateCopyConflictOriginal.source_template_version || '未返回' }}；最新：{{ project.template_copy.source_template_id || '未返回' }} / {{ project.template_copy.source_template_version || '未返回' }}</dd>
+                    <dt>内容摘要</dt><dd>原：{{ templateCopyConflictOriginal.content_hash || '未返回' }}；最新：{{ project.template_copy.content_hash || '未返回' }}</dd>
+                    <dt>规则摘要</dt><dd>原：{{ templateCopyConflictOriginal.ruleset_hash || '未返回' }}；最新：{{ project.template_copy.ruleset_hash || '未返回' }}</dd>
+                    <dt>规则集身份与项目覆盖</dt><dd>原：<code>{{ templateBindingSummary(templateCopyConflictOriginal) }}</code><br />最新：<code>{{ templateBindingSummary(project.template_copy) }}</code></dd>
+                  </dl>
+                  <ul><li v-for="change in templateCopyStructureChanges.fields" :key="'field-' + change.id">字段 {{ change.name || change.id }}：{{ change.kind }} {{ (change.details ?? []).join('；') }}</li>
+                    <li v-for="change in templateCopyStructureChanges.sections" :key="'section-' + change.id">章节 {{ change.name || change.id }}：{{ change.kind }} {{ (change.details ?? []).join('；') }}</li></ul>
+                  <div class="template-conflict-comparison">
+                    <section aria-label="最新副本术语和规则">
+                      <h5>最新副本</h5>
+                      <h6>术语</h6>
+                      <ul v-if="project.template_copy.definition.terms?.length"><li v-for="term in project.template_copy.definition.terms" :key="term.term_id">{{ term.term_id }}：{{ term.preferred }}；变体 {{ (term.variants ?? []).join('、') || '无' }}</li></ul>
+                      <p v-else>无术语</p>
+                      <h6>规则</h6>
+                      <ul v-if="project.template_copy.definition.rules?.length"><li v-for="rule in project.template_copy.definition.rules" :key="rule.rule_id">{{ rule.rule_id }} · {{ rule.kind }} · {{ rule.severity }} · {{ rule.evaluator }}：{{ rule.message || '无说明' }}；参数：<code>{{ JSON.stringify(rule.parameters ?? {}) }}</code></li></ul>
+                      <p v-else>无规则</p>
+                    </section>
+                    <section aria-label="保留草稿术语和规则">
+                      <h5>保留草稿</h5>
+                      <h6>术语</h6>
+                      <ul v-if="templateCopyDraft.terms.length"><li v-for="term in templateCopyDraft.terms" :key="term.term_id">{{ term.term_id }}：{{ term.preferred }}；变体 {{ (term.variants ?? []).join('、') || '无' }}</li></ul>
+                      <p v-else>无术语</p>
+                      <h6>规则</h6>
+                      <ul v-if="templateCopyDraft.rules.length"><li v-for="rule in templateCopyDraft.rules" :key="rule.rule_id">{{ rule.rule_id }} · {{ rule.kind }} · {{ rule.severity }} · {{ rule.evaluator }}：{{ rule.message || '无说明' }}；参数：<code>{{ JSON.stringify(rule.parameters ?? {}) }}</code></li></ul>
+                      <p v-else>无规则</p>
+                    </section>
+                  </div>
+                  <button type="button" :disabled="templateCopyBusy || !templateCopyCanEdit" @click="acknowledgeTemplateCopyConflict">已比较，保留草稿并重新预览</button>
+                </template>
+              </section>
               <section v-if="templateCopyPreview" class="template-preview" aria-label="模板改动预览" aria-live="polite">
                 <h4>版本 {{ templateCopyPreview.source_copy_version }} → {{ templateCopyPreview.target_copy_version }} 预览</h4>
-                <p v-if="!templateCopyPreviewCurrent" class="warning" role="status">草稿在预览后又有改动；当前预览已失效，请重新预览后保存。</p>
-                <ul v-if="templateCopyPreview.section_changes.length">
-                  <li v-for="change in templateCopyPreview.section_changes" :key="change.section_id">
-                    章节 {{ change.section_id }}：{{ change.before || '（无）' }} → {{ change.after || '（无）' }}
+                <p v-if="project.status === 'draft' && !templateCopyPreviewCurrent" class="warning" role="status">项目版本或草稿在预览后发生变化；请重新预览后保存。</p>
+                <p v-if="project.status === 'draft' && templateCopyPreviewBlocked" class="warning" role="alert">服务器报告迁移风险或未返回完整结果，保存已暂停。请处理下列问题后重新预览；新字段也可先作为选填保存、填写后再设为必填。</p>
+                <h5>字段结构变化</h5>
+                <ul v-if="templateCopyStructureChanges.fields.length">
+                  <li v-for="change in templateCopyStructureChanges.fields" :key="change.id">
+                    {{ change.name || change.id }}（{{ change.id }}）：{{ change.kind === 'added' ? '新增' : change.kind === 'removed' ? '移除' : '修改' }}
+                    <span v-if="change.kind === 'changed'">：{{ (change.details ?? []).join('；') }}</span>
                   </li>
                 </ul>
-                <p v-else class="muted">章节标题没有变化。</p>
-                <p>字段：{{ templateCopyPreview.fields.length }} 项；规则集{{ templateCopyPreview.ruleset_changed ? '发生变化' : '保持不变' }}。</p>
-                <p v-if="templateCopyPreview.missing_required.length" class="warning">缺少必填项：{{ templateCopyPreview.missing_required.join('、') }}</p>
-                <p v-if="templateCopyPreview.orphaned.length" class="warning">保留的孤立字段：{{ templateCopyPreview.orphaned.join('、') }}</p>
-                <p v-if="templateCopyPreview.incompatible.length" class="warning">类型不兼容：{{ templateCopyPreview.incompatible.join('、') }}</p>
+                <p v-else class="muted">字段名称和顺序没有变化。</p>
+                <h5>章节结构变化</h5>
+                <ul v-if="templateCopyStructureChanges.sections.length">
+                  <li v-for="change in templateCopyStructureChanges.sections" :key="change.id">
+                    {{ change.name || change.id }}（{{ change.id }}）：{{ change.kind === 'added' ? '新增' : change.kind === 'removed' ? '移除' : '修改' }}
+                    <span v-if="change.kind === 'changed'">：{{ (change.details ?? []).join('；') }}</span>
+                  </li>
+                </ul>
+                <p v-else class="muted">章节名称和顺序没有变化。</p>
+                <p>服务器返回字段：{{ templateCopyPreview.fields?.length ?? '未返回' }} 项；规则集{{ templateCopyPreview.ruleset_changed ? '发生变化' : '保持不变' }}。</p>
+                <p v-if="templateCopyPreview.missing_required?.length" class="warning">缺少必填项：{{ templateCopyPreview.missing_required.join('、') }}</p>
+                <p v-if="templateCopyPreview.orphaned?.length" class="warning">保留的孤立字段：{{ templateCopyPreview.orphaned.join('、') }}。旧值不会自动删除；可恢复字段，或先归档、核对并确认移除。
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" @click="restoreOrphanedTemplateFields">恢复已移除字段</button>
+                </p>
+                <div v-if="project.status === 'draft' && templateCopyPreviewCurrent && templateCopyPreview.orphaned?.length" class="template-editor" aria-label="归档待移除字段">
+                  <p>归档前请保存研究条件中的未保存输入。归档后可查看旧值与溯源，确认移除后还需重新预览并保存模板。</p>
+                  <p v-if="specChanged || specBasisChanged" class="warning">请先保存研究条件或核对其服务器版本。</p>
+                  <button v-for="id in templateCopyPreview.orphaned" :key="id" type="button" :disabled="busy || templateCopyBusy || !!templateFieldArchivePendingId || !templateCopyCanEdit || templateCopyConflict || specChanged || specBasisChanged" @click="archiveTemplateField(id)">归档待移除字段 {{ id }}</button>
+                </div>
+                <div v-if="project.status === 'draft' && templateCopyPreviewCurrent && templateUnknownOrphaned.length" class="warning">
+                  <p>下列字段在当前副本中没有定义。可以将其作为选填文字字段重新纳入草稿，保留现有值；保存前请核对字段名称和类型。</p>
+                  <button v-for="id in templateUnknownOrphaned" :key="id" type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" @click="addOrphanedFieldPlaceholder(id)">添加字段 {{ id }} 以保留旧值</button>
+                </div>
+                <p v-if="project.status === 'draft' && templateInvalidOrphaned.length" class="warning">以下旧字段标识不符合当前模板规则，暂不能在本页恢复定义：{{ templateInvalidOrphaned.join('、') }}。原有值不会自动删除。</p>
+                <p v-if="templateCopyPreview.incompatible?.length" class="warning">类型不兼容：{{ templateCopyPreview.incompatible.join('、') }}</p>
+                <div v-if="project.status === 'draft' && templateCopyPreviewCurrent && templateCopyRepairFields.length" class="template-editor" aria-label="修复迁移字段值">
+                  <p>填写缺失或不兼容的值，再保存研究条件并重新预览。此操作也会保存研究条件中已有的未保存输入；模板副本改动仍会保留在本页。</p>
+                  <label v-for="field in templateCopyRepairFields" :key="field.id" class="template-editor__item">
+                    <span>{{ field.label }}（{{ field.id }} · {{ field.type }}）</span>
+                    <input :value="specDraftFields[field.id] ?? ''" :disabled="busy || templateCopyBusy || !templateCopyCanEdit" :aria-label="`${field.id} 迁移修复值`" @input="updateTemplateRepairValue(field.id, $event)" />
+                  </label>
+                  <p v-if="specBasisChanged" class="warning">研究条件的服务器版本已变化。请先到研究条件中比较并确认当前版本。</p>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyCanEdit || !specChanged || specBasisChanged" @click="saveTemplateRepairValues">保存研究条件</button>
+                </div>
                 <p class="template-hash">新内容摘要：{{ templateCopyPreview.target_content_hash }}</p>
                 <p class="template-hash">新规则集摘要：{{ templateCopyPreview.target_ruleset_hash }}</p>
+              </section>
+              <section class="template-editor" aria-label="字段归档">
+                <h4>字段归档</h4>
+                <button type="button" :disabled="busy || templateCopyBusy" @click="loadTemplateFieldArchives">查看字段归档</button>
+                <button v-if="templateFieldArchivePendingId" type="button" :disabled="busy || templateCopyBusy" @click="loadTemplateFieldArchive(templateFieldArchivePendingId)">重新读取已保存的归档</button>
+                <p v-if="templateFieldArchivesLoaded && !templateFieldArchives.length" class="muted">暂无字段归档。</p>
+                <ul v-if="templateFieldArchives.length"><li v-for="archive in templateFieldArchives" :key="archive.id"><button type="button" :disabled="busy || templateCopyBusy" @click="loadTemplateFieldArchive(archive.id)">查看 {{ archive.field_id }} · {{ archive.status === 'removed' ? '已移除' : '已归档' }} · {{ archive.created_at }}</button></li></ul>
+                <div v-if="templateFieldArchive" class="template-field-archive-detail" aria-label="字段归档详情">
+                  <p>字段 {{ templateFieldArchive.field_id }} · {{ templateFieldArchive.status === 'removed' ? '已移除' : '已归档，尚未移除' }} · 归档人 {{ templateFieldArchive.created_by }} · {{ templateFieldArchive.created_at }}</p>
+                  <p v-if="templateFieldArchive.value_redacted" class="warning">当前来源不可访问，旧值和敏感溯源已隐藏；不能据此确认移除。</p>
+                  <template v-else>
+                    <p>旧值：<code>{{ templateFieldArchive.value_present ? templateFieldArchive.value : '（无当前值，仅有元数据）' }}</code></p>
+                    <template v-if="templateFieldArchive.metadata_present && templateFieldArchive.metadata">
+                      <p>记录来源 {{ templateFieldArchive.metadata.origin || '未记录' }} · 状态 {{ templateFieldArchive.metadata.status || '未记录' }} · 修改人 {{ templateFieldArchive.metadata.modified_by || '未记录' }}</p>
+                      <p v-if="templateFieldArchive.metadata.provenance">溯源：{{ templateFieldArchive.metadata.provenance.source_type }} · {{ templateFieldArchive.metadata.provenance.source_id || '无来源标识' }} · {{ templateFieldArchive.metadata.provenance.source_version || '无来源版本' }} · {{ templateFieldArchive.metadata.provenance.locator || '无定位' }}</p>
+                      <details><summary>查看完整字段与溯源记录</summary><code>{{ JSON.stringify(templateFieldArchive.metadata) }}</code></details>
+                    </template>
+                    <p v-else>无字段元数据。</p>
+                  </template>
+                  <p v-if="project.status === 'draft' && templateFieldArchive.status === 'recorded' && !canRemoveArchivedTemplateField" class="muted">确认移除需要当前草稿预览、字段值和归档版本一致；如已变化，请重新预览并归档。</p>
+                  <button v-if="project.status === 'draft' && templateFieldArchive.status === 'recorded'" type="button" :disabled="!canRemoveArchivedTemplateField" @click="removeTemplateFieldAfterArchive">确认移除已归档字段</button>
+                  <p v-if="project.status === 'active' && templateFieldArchive.status === 'recorded'" class="muted">确认纳入后仍需创建评估并由 Owner 应用；服务端会再次核对归档与升级目标。</p>
+                  <button v-if="project.status === 'active' && templateFieldArchive.status === 'recorded'" type="button" :disabled="!canUseActiveFieldArchive" @click="selectActiveFieldArchive">确认纳入正式升级</button>
+                </div>
               </section>
               <section v-if="project.status === 'active' && pendingChangeSet?.template_upgrade" class="change-set-preview" aria-label="待应用的模板升级">
                 <p><strong>模板升级评估 {{ pendingChangeSet.id.slice(0, 8) }}</strong></p>
                 <p>将影响 {{ pendingChangeSet.impacts.length }} 个章节，并使这些章节的旧确认失效。</p>
+                <p v-if="pendingChangeSet.template_upgrade.archived_removals?.length" class="warning">应用时将移除已归档字段：{{ pendingChangeSet.template_upgrade.archived_removals.map(item => item.field_id).join('、') }}；归档与原溯源保留。</p>
                 <template v-if="pendingChangeSet.template_upgrade.impact">
                   <p>字段 {{ pendingChangeSet.template_upgrade.impact.affected_field_ids.length }} 项 · 模板章节 {{ pendingChangeSet.template_upgrade.impact.affected_section_ids.length }} 项 · 规则 {{ pendingChangeSet.template_upgrade.impact.changed_rule_ids.length }} 项有变化。</p>
                   <p>将失效的旧确认：{{ pendingChangeSet.template_upgrade.impact.invalidated_confirmation_chapter_ids.length }} 章；问题处置：{{ pendingChangeSet.template_upgrade.impact.validation_issue_effect }}</p>
                   <p>{{ pendingChangeSet.template_upgrade.impact.delivery_snapshot_effect }}</p>
                   <p v-if="pendingChangeSet.template_upgrade.preview.missing_required.length || pendingChangeSet.template_upgrade.preview.incompatible.length" class="warning">
-                    当前迁移失败：缺少必填 {{ pendingChangeSet.template_upgrade.preview.missing_required.join('、') || '无' }}；类型不兼容 {{ pendingChangeSet.template_upgrade.preview.incompatible.join('、') || '无' }}。
+                    升级前的字段状态：缺少必填 {{ pendingChangeSet.template_upgrade.preview.missing_required.join('、') || '无' }}；旧值类型不兼容 {{ pendingChangeSet.template_upgrade.preview.incompatible.join('、') || '无' }}。服务端已对本次评估提交的映射进行校验。
                   </p>
                 </template>
                 <ul>
                   <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
                 </ul>
                 <div class="change-set-actions">
-                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
-                  <button type="button" :disabled="busy || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="rejectTemplateUpgrade">驳回评估</button>
+                  <button type="button" :disabled="busy || !templateCopyCanApply || !pendingTemplateUpgradeMatches || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
+                  <button type="button" :disabled="busy || !templateCopyCanApply || ownerActionsFrozen" :title="ownerActionsFrozen ? ownerUnavailableReason : ''" @click="rejectTemplateUpgrade">驳回评估</button>
                 </div>
                 <OwnerUnavailableNotice :reason="ownerUnavailableReason" :recovery="ownerRecoveryGuidance" />
-                <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿或理由已变化；请重新创建评估后再应用。</p>
+                <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿、映射值或理由已变化；请重新创建评估后再应用。</p>
               </section>
             </template>
           </template>
@@ -803,6 +968,7 @@ import {
   type ChapterCommitBasis, type SuspectedConditionChange,
 } from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
+import { previewBlocksSave, previewMatchesBasis, templateStructureChanges, type TemplatePreviewBasis } from './templateCopyState'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
 import { listMyProjectInvitations, acceptProjectInvitation, type ProjectInvitation } from '@/api/lingdoc/collaboration'
 import { getEffectivePermission } from '@/api/lingdoc/permissions'
@@ -838,12 +1004,12 @@ import LingDocEditor from './editor/LingDocEditor.vue'
 import { copyMatchesFormal, committedRevision, currentAnchorRange, sortChaptersByTemplate } from './editor/documentState'
 import { plainOf, parseInlineText } from './editor/markdown'
 import {
-  activateProject, applyChangeSet, bindAsset, commitWorkingCopy, confirmChapter, createChangeSet, createProject, getAccessStatus, getProject,
+  activateProject, applyChangeSet, bindAsset, commitWorkingCopy, confirmChapter, createChangeSet, createProject, createTemplateFieldArchive, getAccessStatus, getProject,
   getSource, getSourceContext, getWorkingCopy, getChangeSet, listAssets, listChangeSets, listChapterVersions, listChapters, listProjects,
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite, getCurrentConfirmation, putReviewItemAnchor,
-  previewTemplateCopyEdit, rejectChangeSet, restoreWorkingCopy, retrieveSources, saveProjectMembers, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
+  getTemplateFieldArchive, listTemplateFieldArchives, previewTemplateCopyEdit, rejectChangeSet, removeArchivedTemplateField, restoreWorkingCopy, retrieveSources, saveLegacyRuleOverrides, saveProjectMembers, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
   type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Confirmation, type Project, type ProjectMemberInput, type ReviewDecision,
-  type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateMigrationPreview,
+  type ArchivedTemplateFieldRemoval, type LegacyRuleOverrideInput, type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateFieldArchive, type TemplateMigrationPreview,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
@@ -901,7 +1067,49 @@ const activationOpen=ref(false),activationDialogRef=ref<HTMLElement|null>(null),
 let fullReturnFocus:HTMLElement|null=null
 function closeFullPanel(){if(fullPanelBusy.value)return;if(fullPanelDirty.value&&!window.confirm('此面板有未提交输入。返回文稿会放弃这些输入，是否继续？'))return;fullPanel.value=null;fullPanelDirty.value=false;nextTick(()=>fullReturnFocus?.isConnected&&fullReturnFocus.focus())}
 function openFullPanel(panel:FullPanel){if(!project.value)return;if(fullPanel.value&&fullPanel.value!==panel){closeFullPanel();if(fullPanel.value)return}fullReturnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;if(panel==='review'){const selected=editorRef.value?.selectionToUtf16();commentSelection.value=selected?.ok&&selected.chapterId===chapter.value?.id&&!workingCopyDiffersFromFormal.value&&!chapterChanged.value?{start_utf16:selected.start_utf16,end_utf16:selected.end_utf16,quote_markdown:selected.quote}:undefined}fullPanel.value=panel}
-async function refreshFullWorkflowProject(){const id=project.value?.id,session=editorSessionEpoch;if(!id)return;try{const [result,formal]=await Promise.all([getProject(id),project.value?.status==='active'?listChapters(id):Promise.resolve(null)]);if(project.value?.id!==id||editorSessionEpoch!==session)return;if(result.data.project_version<project.value.project_version)return;project.value=result.data;if(formal){chapters.value=formal.data;const active=formal.data.find(x=>x.id===chapter.value?.id);if(active)chapter.value=active}void loadAccessStatus(id);void loadChapterPermissions(id,result.data.project_version,chapters.value,session)}catch(e){if(project.value?.id===id&&editorSessionEpoch===session)failure(e)}}
+async function refreshFullWorkflowProject() {
+  const id = project.value?.id, session = editorSessionEpoch
+  if (!id) return
+  try {
+    const [result, formal] = await Promise.all([getProject(id), project.value?.status === 'active' ? listChapters(id) : Promise.resolve(null)])
+    if (project.value?.id !== id || editorSessionEpoch !== session || templateCopyBusy.value || result.data.project_version < project.value.project_version) return
+    const previous = project.value.template_copy
+    const latest = result.data.template_copy
+    if (previous && !latest) {
+      templateCopyConflict.value = true
+      templateCopyLatestLoaded.value = false
+      templateCopyPreviewBasis.value = null
+      templateCopyNotice.value = '刷新未返回模板副本，草稿已保留；请读取最新版本后再继续。'
+      return
+    }
+    const copyChanged = stableTemplateCopy(previous) !== stableTemplateCopy(latest)
+    const hasRuleEdits = legacyOverrideChanged.value || !!legacyReason.value.trim()
+    const preserveDraft = templateCopyChanged.value || templateCopyConflict.value || hasRuleEdits
+    const original = previous ? JSON.parse(JSON.stringify(previous)) as NonNullable<Project['template_copy']> : null
+    project.value = result.data
+    if (copyChanged) {
+      if (preserveDraft) {
+        templateCopyConflict.value = true
+        templateCopyLatestLoaded.value = !!original && !!latest
+        templateCopyConflictOriginal.value = templateCopyConflictOriginal.value ?? original
+        templateCopyPreviewBasis.value = null
+        if (hasRuleEdits) legacyOverrideNeedsReview.value = true
+        templateCopyNotice.value = '模板副本已在其他操作中变化；草稿已保留，请比较后再继续。'
+      } else {
+        hydrateTemplateCopyDraft(result.data)
+      }
+    }
+    if (formal) {
+      chapters.value = formal.data
+      const active = formal.data.find(x => x.id === chapter.value?.id)
+      if (active) chapter.value = active
+    }
+    void loadAccessStatus(id)
+    void loadChapterPermissions(id, result.data.project_version, chapters.value, session)
+  } catch (e) {
+    if (project.value?.id === id && editorSessionEpoch === session) failure(e)
+  }
+}
 function removeGenerationEvidence(ref:VersionRef) {
  if (busy.value || generationPending.value || rewriteBusy.value) return
  generationEvidenceRefs.value = generationEvidenceRefs.value.filter(item=>item.id!==ref.id || item.version!==ref.version)
@@ -929,10 +1137,35 @@ onUnmounted(()=>document.removeEventListener('keydown',onFullDialogKey,true))
 const templateCopyDraft = ref<TemplateCopyDefinition | null>(null)
 const templateCopyPreview = ref<TemplateMigrationPreview | null>(null)
 const templateCopyPreviewFingerprint = ref('')
+const templateCopyPreviewBasis = ref<TemplatePreviewBasis | null>(null)
 const templateCopyBusy = ref(false)
 const templateCopyNotice = ref('')
+const templateCopyConflict = ref(false)
+const templateCopyLatestLoaded = ref(false)
+const templateCopyConflictOriginal = ref<NonNullable<Project['template_copy']> | null>(null)
+const templateCopyEditPermission = ref<'loading' | 'allowed' | 'denied' | 'unknown'>('unknown')
+const templateCopyOwnerPermission = ref<'loading' | 'allowed' | 'denied' | 'unknown'>('unknown')
+const templateCopyPermissionKey = ref('')
+const legacyRuleId = ref('')
+const legacyReason = ref('')
+const legacyEnabled = ref('')
+const legacySeverity = ref('')
+const legacyTargetKind = ref('')
+const legacyTargetId = ref('')
+const legacyParameterEdits = ref<Record<string, { action: 'keep' | 'set' | 'remove'; value: string }>>({})
+const legacyOverrideError = ref('')
+const legacyOverrideNeedsReview = ref(false)
+const templateFieldArchives = ref<TemplateFieldArchive[]>([])
+const templateFieldArchivesLoaded = ref(false)
+const templateFieldArchive = ref<TemplateFieldArchive | null>(null)
+const templateFieldArchivePendingId = ref('')
+type ActiveArchiveSelection = ArchivedTemplateFieldRemoval & { fingerprint: string; valuesFingerprint: string; projectVersion: number; specRevision: number; contextRevision: number; copyVersion: number }
+const activeArchiveSelections = ref<Record<string, ActiveArchiveSelection>>({})
+let templateCopyPermissionEpoch = 0
+let templateCopyOperationEpoch = 0
 const templateUpgradeReason = ref('')
-const pendingTemplateUpgrade = ref<{ fingerprint: string; reason: string } | null>(null)
+const templateUpgradeFieldValues = ref<Record<string, string>>({})
+const pendingTemplateUpgrade = ref<{ fingerprint: string; reason: string; valuesFingerprint: string; removalsFingerprint: string } | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
@@ -1106,7 +1339,7 @@ const specBasisChanged=computed(()=>!!project.value&&specEditingRevision.value!=
 function acknowledgeCurrentSpecBasis(){const p=project.value;if(!p||!specBasisChanged.value||busy.value)return;if(!window.confirm("已比较服务器当前条件与自己的输入，保留输入并基于当前版本继续编辑？下一步仍需要保存或正式变更复核。"))return;specEditingRevision.value=p.spec_revision;pendingChangeSet.value=null;pendingDraft.value=null}
 function useManualDraftField(fieldId:string,value:string){if(!project.value||project.value.status!=='draft'||!canManageProjectMembers.value)return;const field=project.value.template_copy?.definition.fields.find(x=>x.field_id===fieldId);if(!field)return;const current=specDraftFields.value[fieldId]||'';if(current&&current!==value&&!window.confirm('用此人工备选替换该字段的可编辑输入？其余输入保留，尚未保存研究条件。'))return;if(fieldId==='research_subject')subject.value=value;else if(fieldId==='research_goal')goal.value=value;else extraSpecDraft.value={...extraSpecDraft.value,[fieldId]:value};specOpen.value=true}
 const additionalSpecFields=computed(()=>project.value?.template_copy?.definition.fields.filter(x=>!['research_subject','research_goal'].includes(x.field_id))??[])
-const specDraftFields=computed(()=>{const p=project.value;if(!p)return {};const ids=new Set(p.template_copy?.definition.fields.map(x=>x.field_id)??['research_subject','research_goal']);const fields={...p.spec,...extraSpecDraft.value};if(ids.has('research_subject'))fields.research_subject=subject.value;if(ids.has('research_goal'))fields.research_goal=goal.value;return fields})
+const specDraftFields=computed(()=>{const p=project.value;if(!p)return {};const ids=new Set(p.template_copy?.definition.fields.map(x=>x.field_id)??['research_subject','research_goal']);const fields={...p.spec,...extraSpecDraft.value};if(ids.has('research_subject')&&(Object.prototype.hasOwnProperty.call(p.spec,'research_subject')||subject.value))fields.research_subject=subject.value;if(ids.has('research_goal')&&(Object.prototype.hasOwnProperty.call(p.spec,'research_goal')||goal.value))fields.research_goal=goal.value;return fields})
 const requiredSpecComplete=computed(()=>!!project.value&&(project.value.template_copy?.definition.required_fields??['research_subject','research_goal']).every(id=>!!specDraftFields.value[id]?.trim()))
 function conditionLabel(id:string){return project.value?.template_copy?.definition.fields.find(x=>x.field_id===id)?.label??id}
 const currentCheckReceipt=ref('')
@@ -1232,6 +1465,8 @@ const editorReady = ref(false)
 const editorLoadError = ref('')
 let editorLoadSequence = 0
 let editorSessionEpoch = 0
+watch(() => [project.value?.id, project.value?.project_version, project.value?.status,
+  auth.currentUserId, auth.effectiveTenantId], () => { void refreshTemplateCopyPermissions() }, { immediate: true, flush: 'sync' })
 let chapterReadSequence = 0
 const selectionContextVersion = ref(0)
 function snapshotOf(copy: WorkingCopy): EditorDocSnapshot {
@@ -1592,11 +1827,205 @@ const templateCopyChanged = computed(() => {
   if (!definition || !templateCopyDraft.value) return false
   return JSON.stringify(templateCopyDraft.value) !== JSON.stringify(editableTemplateCopy(definition))
 })
-const templateCopyPreviewCurrent = computed(() => !!templateCopyPreview.value &&
-  templateCopyPreviewFingerprint.value === templateCopyFingerprint.value)
+const currentTemplateCopyBasis = computed<TemplatePreviewBasis | null>(() => {
+  if (!project.value?.template_copy) return null
+  return { projectId: project.value.id, projectVersion: project.value.project_version,
+    copyVersion: project.value.template_copy.version, fingerprint: templateCopyFingerprint.value }
+})
+const templateCopyPreviewCurrent = computed(() => previewMatchesBasis(
+  templateCopyPreview.value, templateCopyPreviewBasis.value, currentTemplateCopyBasis.value,
+))
+const templateCopyPreviewBlocked = computed(() => previewBlocksSave(templateCopyPreview.value))
+const templateCopyRepairFields = computed(() => {
+  const preview = templateCopyPreview.value, draft = templateCopyDraft.value
+  if (!preview || !draft) return []
+  const missing = Array.isArray(preview.missing_required) ? preview.missing_required : []
+  const incompatible = Array.isArray(preview.incompatible) ? preview.incompatible : []
+  const ids = new Set([...missing, ...incompatible])
+  return [...ids].map(id => {
+    const field = draft.fields.find(item => item.field_id === id)
+    return { id, label: field?.label || id, type: field?.type || 'string' }
+  })
+})
+const templateUnknownOrphaned = computed(() => {
+  const draft = templateCopyDraft.value, original = project.value?.template_copy?.definition
+  if (!draft || !original) return []
+  const orphaned = templateCopyPreview.value?.orphaned
+  return (Array.isArray(orphaned) ? orphaned : []).filter(id =>
+    /^[a-z0-9][a-z0-9._-]{0,79}$/.test(id) &&
+    !original.fields.some(field => field.field_id === id) && !draft.fields.some(field => field.field_id === id))
+})
+const templateInvalidOrphaned = computed(() => {
+  const orphaned = templateCopyPreview.value?.orphaned
+  return (Array.isArray(orphaned) ? orphaned : []).filter(id => !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(id))
+})
+function templateCopyIdentity(): string {
+  const p = project.value
+  return p ? JSON.stringify([p.id, p.project_version, p.status, auth.currentUserId, auth.effectiveTenantId, editorSessionEpoch]) : ''
+}
+const templateCopyCanEdit = computed(() => !!templateCopyIdentity() &&
+  templateCopyPermissionKey.value === templateCopyIdentity() && templateCopyEditPermission.value === 'allowed')
+const templateCopyCanApply = computed(() => templateCopyCanEdit.value && templateCopyOwnerPermission.value === 'allowed')
+async function refreshTemplateCopyPermissions() {
+  const p = project.value
+  const epoch = ++templateCopyPermissionEpoch
+  const key = templateCopyIdentity()
+  templateCopyPermissionKey.value = ''
+  templateCopyEditPermission.value = p ? 'loading' : 'unknown'
+  templateCopyOwnerPermission.value = p?.status === 'active' ? 'loading' : 'unknown'
+  if (!p || !auth.currentUserId || !key || (p.status !== 'draft' && p.status !== 'active')) {
+    templateCopyEditPermission.value = 'unknown'; templateCopyOwnerPermission.value = 'unknown'; return
+  }
+  // These are the capabilities used by the existing project operations.
+  // ops-control is Owner-only in the current server policy; all writes remain
+  // subject to the server's own authorization and human-decision checks.
+  const editCapability = p.status === 'draft' ? 'manage' : 'write'
+  const [edit, owner] = await Promise.allSettled([
+    getEffectivePermission(p.id, editCapability),
+    p.status === 'active' ? getEffectivePermission(p.id, 'ops-control') : Promise.resolve(null),
+  ])
+  if (epoch !== templateCopyPermissionEpoch || key !== templateCopyIdentity()) return
+  const decide = (result: typeof edit, capability: string): 'allowed' | 'denied' | 'unknown' => {
+    if (result.status !== 'fulfilled' || !result.value || result.value.data.project_version !== p.project_version ||
+        result.value.data.capability !== capability || typeof result.value.data.allowed !== 'boolean') return 'unknown'
+    return result.value.data.allowed ? 'allowed' : 'denied'
+  }
+  templateCopyEditPermission.value = decide(edit, editCapability)
+  templateCopyOwnerPermission.value = p.status === 'active' ? decide(owner as typeof edit, 'ops-control') : 'unknown'
+  templateCopyPermissionKey.value = key
+}
+function invalidateTemplateCopyPermission(error: unknown) {
+  const status = (error as { status?: number })?.status
+  if (status !== 403 && status !== 404) return
+  templateCopyPermissionEpoch++
+  templateCopyPermissionKey.value = ''
+  templateCopyEditPermission.value = status === 403 ? 'denied' : 'unknown'
+  templateCopyOwnerPermission.value = 'unknown'
+  templateCopyPreviewBasis.value = null
+  templateCopyNotice.value = '当前权限已变化或无法确认；草稿已保留，请重新核对权限。'
+}
+const templateCopyHasBoundRuleset = computed(() => {
+  const copy = project.value?.template_copy as
+    (NonNullable<Project['template_copy']> & { rule_set_snapshot?: unknown; template_version_ruleset_ref?: unknown }) | undefined
+  const definition = copy?.definition as
+    (NonNullable<Project['template_copy']>['definition'] & { ruleset_snapshot?: unknown; ruleset_ref?: unknown }) | undefined
+  return copy?.rule_set_snapshot != null || copy?.template_version_ruleset_ref != null ||
+    definition?.ruleset_snapshot != null || definition?.ruleset_ref != null
+})
+const legacyBindingCopy = computed(() => {
+  const copy = project.value?.template_copy
+  if (project.value?.status !== 'draft' || !copy?.rule_set_snapshot ||
+      copy.definition.ruleset_snapshot != null || copy.definition.ruleset_ref != null) return null
+  return copy
+})
+const legacyPolicies = computed(() => {
+  const copy = legacyBindingCopy.value
+  if (!copy?.source_policy_hash || !Array.isArray(copy.binding_policies) || !Array.isArray(copy.rule_set_snapshot?.bindings)) return []
+  return copy.binding_policies.filter(policy => copy.rule_set_snapshot!.bindings.some(binding => binding.rule_id === policy.rule_id))
+})
+const legacyCurrentPolicy = computed(() => legacyPolicies.value.find(policy => policy.rule_id === legacyRuleId.value))
+const legacyCurrentBinding = computed(() => legacyBindingCopy.value?.rule_set_snapshot?.bindings.find(binding => binding.rule_id === legacyRuleId.value))
+const legacyOverrideChanged = computed(() => !!(legacyEnabled.value || legacySeverity.value || legacyTargetKind.value || legacyTargetId.value ||
+  Object.values(legacyParameterEdits.value).some(edit => edit.action !== 'keep')))
+const canRemoveArchivedTemplateField = computed(() => {
+  const current = project.value, archive = templateFieldArchive.value, preview = templateCopyPreview.value
+  return !!current && current.status === 'draft' && !!archive && archive.project_id === current.id &&
+    archive.status === 'recorded' && !archive.value_redacted && archive.archive_version > 0 &&
+    archive.project_version === current.project_version && archive.spec_revision === current.spec_revision &&
+    archive.template_copy_version === current.template_copy_version && !!preview?.target_content_hash &&
+    archive.target_content_hash === preview.target_content_hash && (preview.orphaned ?? []).includes(archive.field_id) &&
+    templateCopyPreviewCurrent.value && templateCopyCanEdit.value && !templateCopyConflict.value &&
+    !specChanged.value && !specBasisChanged.value && !busy.value && !templateCopyBusy.value
+})
+const activeArchiveCandidates = computed(() => {
+  const current = project.value, draft = templateCopyDraft.value
+  if (!current || current.status !== 'active' || !draft) return []
+  const retained = new Set([...draft.fields.map(field => field.field_id), ...draft.required_fields])
+  return [...new Set([...Object.keys(current.spec), ...Object.keys(current.spec_fields ?? {})])]
+    .filter(id => !retained.has(id)).sort()
+})
+const activeArchivedRemovals = computed<ArchivedTemplateFieldRemoval[]>(() => Object.values(activeArchiveSelections.value)
+  .map(({ field_id, archive_id, expected_archive_version }) => ({ field_id, archive_id, expected_archive_version }))
+  .sort((left, right) => left.field_id.localeCompare(right.field_id)))
+const activeArchiveRemovalsFingerprint = computed(() => JSON.stringify(activeArchivedRemovals.value))
+const activeArchiveSelectionsCurrent = computed(() => {
+  const current = project.value
+  return !!current && Object.values(activeArchiveSelections.value).every(selection =>
+    selection.fingerprint === templateCopyFingerprint.value && selection.valuesFingerprint === templateUpgradeValuesFingerprint.value &&
+    selection.projectVersion === current.project_version && selection.specRevision === current.spec_revision &&
+    selection.contextRevision === current.current_context_revision && selection.copyVersion === current.template_copy_version &&
+    activeArchiveCandidates.value.includes(selection.field_id))
+})
+const canUseActiveFieldArchive = computed(() => {
+  const current = project.value, archive = templateFieldArchive.value
+  return !!current && current.status === 'active' && !!archive && archive.project_id === current.id &&
+    archive.status === 'recorded' && !archive.value_redacted && archive.archive_version > 0 &&
+    archive.project_version === current.project_version && archive.spec_revision === current.spec_revision &&
+    archive.template_copy_version === current.template_copy_version && activeArchiveCandidates.value.includes(archive.field_id) &&
+    templateCopyCanEdit.value && !templateCopyConflict.value && pendingChangeSet.value?.status !== 'assessed' &&
+    !specChanged.value && !specBasisChanged.value && !busy.value && !templateCopyBusy.value
+})
+watch([() => project.value?.id, () => auth.currentUserId, () => auth.effectiveTenantId], () => {
+  templateFieldArchives.value = []
+  templateFieldArchivesLoaded.value = false
+  templateFieldArchive.value = null
+  templateFieldArchivePendingId.value = ''
+  activeArchiveSelections.value = {}
+}, { flush: 'sync' })
+function resetLegacyRuleEditor() {
+  legacyEnabled.value = ''
+  legacySeverity.value = ''
+  legacyTargetKind.value = ''
+  legacyTargetId.value = ''
+  legacyOverrideError.value = ''
+  legacyParameterEdits.value = Object.fromEntries((legacyCurrentPolicy.value?.allowed_parameter_keys ?? []).map(key => {
+    const value = legacyCurrentBinding.value?.parameters?.[key]
+    return [key, { action: 'keep' as const, value: typeof value === 'string' ? value : JSON.stringify(value ?? null) }]
+  }))
+}
+function selectLegacyRule(event: Event) {
+  const target = event.target as HTMLSelectElement
+  if ((legacyOverrideChanged.value || legacyReason.value.trim()) && target.value !== legacyRuleId.value &&
+      !window.confirm('切换规则会放弃当前规则的覆盖输入，是否继续？')) {
+    target.value = legacyRuleId.value
+    return
+  }
+  if (target.value !== legacyRuleId.value) legacyReason.value = ''
+  legacyRuleId.value = target.value
+  legacyOverrideNeedsReview.value = false
+}
+function resetStaleLegacyOverride() {
+  if (!window.confirm('放弃原规则覆盖输入并按最新政策重新核对？')) return
+  resetLegacyRuleEditor()
+  legacyReason.value = ''
+  legacyOverrideNeedsReview.value = false
+}
+function discardLegacyOverride() {
+  if (!window.confirm('放弃尚未保存的规则覆盖输入？')) return
+  legacyRuleId.value = ''
+  legacyReason.value = ''
+  legacyOverrideNeedsReview.value = false
+  resetLegacyRuleEditor()
+}
+watch(legacyRuleId, resetLegacyRuleEditor, { flush: 'sync' })
+const templateCopyStructureChanges = computed(() => {
+  const original = project.value?.template_copy?.definition
+  return original && templateCopyDraft.value
+    ? templateStructureChanges(editableTemplateCopy(original), templateCopyDraft.value)
+    : { fields: [], sections: [] }
+})
+const templateUpgradeValues = computed(() => {
+  const fieldIds = new Set(templateCopyDraft.value?.fields.map(field => field.field_id) ?? [])
+  return Object.fromEntries(Object.entries(templateUpgradeFieldValues.value)
+    .filter(([id, value]) => fieldIds.has(id) && value.trim() !== '')
+    .sort(([left], [right]) => left.localeCompare(right)))
+})
+const templateUpgradeValuesFingerprint = computed(() => JSON.stringify(templateUpgradeValues.value))
 const pendingTemplateUpgradeMatches = computed(() => !!pendingChangeSet.value?.template_upgrade && !!pendingTemplateUpgrade.value &&
   pendingTemplateUpgrade.value.fingerprint === templateCopyFingerprint.value &&
-  pendingTemplateUpgrade.value.reason === templateUpgradeReason.value.trim())
+  pendingTemplateUpgrade.value.reason === templateUpgradeReason.value.trim() &&
+  pendingTemplateUpgrade.value.valuesFingerprint === templateUpgradeValuesFingerprint.value &&
+  pendingTemplateUpgrade.value.removalsFingerprint === activeArchiveRemovalsFingerprint.value && activeArchiveSelectionsCurrent.value)
 const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
 const pendingDraftMatches = computed(() => {
   if (!pendingDraft.value) return false
@@ -1631,7 +2060,7 @@ const citationUsagesChanged = computed(() => {
 const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value || editorDirtyAny.value || (editorRef.value?.hasUnsaved ?? false))
 const unsavedInputState = computed<UnsavedInputState>(() => ({
   chapterChanged: chapterChanged.value, specChanged: specChanged.value,
-  templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
+  templateChanged: templateCopyChanged.value || legacyOverrideChanged.value || !!legacyReason.value.trim(), saving: workingCopySaving.value || templateCopyBusy.value,
   reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
   editorUnsaved: editorDirtyAny.value || (editorRef.value?.hasUnsaved ?? false) || draftCandidateDirty.value,
   conditionsChanged: conditionsInputsChanged.value,
@@ -1655,6 +2084,61 @@ function updateTermVariants(term: TemplateCopyDefinition['terms'][number], event
   const value = (event.target as HTMLInputElement | null)?.value ?? ''
   term.variants = value.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
 }
+function addTemplateField() {
+  const draft = templateCopyDraft.value
+  if (!draft) return
+  draft.fields.push({ field_id: `field-${crypto.randomUUID()}`, label: '新字段', type: 'string', order: draft.fields.length + 1, required: false })
+}
+function removeTemplateField(id: string) {
+  const draft = templateCopyDraft.value
+  if (!draft) return
+  draft.fields = draft.fields.filter(field => field.field_id !== id)
+  draft.required_fields = draft.required_fields.filter(fieldId => fieldId !== id)
+}
+function updateTemplateFieldRequired(id: string, event: Event) {
+  const draft = templateCopyDraft.value
+  const field = draft?.fields.find(item => item.field_id === id)
+  if (!draft || !field) return
+  field.required = (event.target as HTMLInputElement).checked
+  if (field.required && project.value?.status === 'draft' &&
+      !project.value.template_copy?.definition.fields.some(item => item.field_id === id)) {
+    field.required = false
+    ;(event.target as HTMLInputElement).checked = false
+    templateCopyNotice.value = '新字段先作为选填保存，填写研究条件后再设为必填。'
+    return
+  }
+  const required = new Set(draft.required_fields)
+  if (field.required) required.add(id)
+  else required.delete(id)
+  draft.required_fields = [...required]
+}
+function restoreOrphanedTemplateFields() {
+  const draft = templateCopyDraft.value, original = project.value?.template_copy?.definition
+  if (!templateCopyCanEdit.value || !draft || !original || templateCopyBusy.value) return
+  const orphaned = new Set(templateCopyPreview.value?.orphaned ?? [])
+  let restored = 0
+  for (const field of original.fields) {
+    if (!orphaned.has(field.field_id) || draft.fields.some(item => item.field_id === field.field_id)) continue
+    draft.fields.push(JSON.parse(JSON.stringify(field)))
+    if ((field.required || (original.required_fields ?? []).includes(field.field_id)) && !draft.required_fields.includes(field.field_id))
+      draft.required_fields.push(field.field_id)
+    restored++
+  }
+  templateCopyNotice.value = restored
+    ? '已恢复移除的字段，请重新预览；旧值不会自动删除。'
+    : '当前副本中没有可恢复的字段定义，请核对历史字段后再处理。'
+}
+function addOrphanedFieldPlaceholder(id: string) {
+  const draft = templateCopyDraft.value
+  if (!draft || !templateCopyCanEdit.value || templateCopyBusy.value || !templateCopyPreviewCurrent.value ||
+      !templateUnknownOrphaned.value.includes(id)) return
+  draft.fields.push({ field_id: id, label: id, type: 'string', order: draft.fields.length + 1, required: false })
+  templateCopyNotice.value = '已添加待核对的字段定义，现有值未改动；请检查名称和类型，再重新预览。'
+}
+function updateTemplateFieldOptions(id: string, event: Event) {
+  const field = templateCopyDraft.value?.fields.find(item => item.field_id === id)
+  if (field) field.options = (event.target as HTMLInputElement).value.split(/[、,，]/).map(value => value.trim()).filter(Boolean)
+}
 function addTemplateSection() {
   const draft = templateCopyDraft.value
   if (!draft) return
@@ -1670,6 +2154,7 @@ function updateRuleVariants(rule: TemplateCopyDefinition['rules'][number], event
   rule.parameters.variants = ((event.target as HTMLInputElement)?.value ?? '').split(/[、,，]/).map(item => item.trim()).filter(Boolean)
 }
 function addTemplateRule(kind: 'presence' | 'pattern' | 'consistency') {
+  if (templateCopyHasBoundRuleset.value || !templateCopyCanEdit.value) return
   const parameters: Record<string, unknown> = { target_kind: 'chapter', target_id: 'question' }
   if (kind === 'pattern') parameters.pattern = '.+'
   if (kind === 'consistency') { parameters.preferred = '标准术语'; parameters.variants = ['非标准术语'] }
@@ -1707,6 +2192,16 @@ function hydrateTemplateCopyDraft(item: Project | null) {
   templateCopyDraft.value = item?.template_copy ? editableTemplateCopy(item.template_copy.definition) : null
   templateCopyPreview.value = null
   templateCopyPreviewFingerprint.value = ''
+  templateCopyPreviewBasis.value = null
+  templateCopyConflict.value = false
+  templateCopyLatestLoaded.value = false
+  templateCopyConflictOriginal.value = null
+  templateUpgradeFieldValues.value = {}
+  activeArchiveSelections.value = {}
+  legacyRuleId.value = ''
+  legacyReason.value = ''
+  legacyOverrideNeedsReview.value = false
+  resetLegacyRuleEditor()
   templateCopyNotice.value = ''
 }
 function templateCopyInput(): TemplateCopyEditInput | null {
@@ -1717,99 +2212,531 @@ function templateCopyInput(): TemplateCopyEditInput | null {
     ...JSON.parse(JSON.stringify(templateCopyDraft.value)) as TemplateCopyDefinition,
   }
 }
+type TemplateCopyOperation = { id: string; session: number; epoch: number }
+function startTemplateCopyOperation(id: string): TemplateCopyOperation {
+  const operation = { id, session: editorSessionEpoch, epoch: ++templateCopyOperationEpoch }
+  templateCopyBusy.value = true
+  return operation
+}
+function templateCopyOperationCurrent(operation: TemplateCopyOperation): boolean {
+  return operation.epoch === templateCopyOperationEpoch && operation.session === editorSessionEpoch && project.value?.id === operation.id
+}
+function finishTemplateCopyOperation(operation: TemplateCopyOperation) {
+  if (operation.epoch === templateCopyOperationEpoch && operation.session === editorSessionEpoch && project.value?.id === operation.id) templateCopyBusy.value = false
+}
+function templateCopyFailed(error: unknown, operation: TemplateCopyOperation) {
+  if (!templateCopyOperationCurrent(operation)) return
+  if ([403, 404].includes((error as { status?: number })?.status ?? 0)) {
+    templateFieldArchives.value = []
+    templateFieldArchivesLoaded.value = false
+    templateFieldArchive.value = null
+  }
+  invalidateTemplateCopyPermission(error)
+  if ((error as { status?: number })?.status === 409) {
+    templateCopyPreviewBasis.value = null
+    templateCopyConflict.value = true
+    templateCopyLatestLoaded.value = false
+    templateCopyNotice.value = '版本冲突，草稿已保留。请读取最新版本后再决定如何继续。'
+    attempts.delete('template-copy')
+  }
+  failure(error)
+}
+async function projectAfterTemplateWrite(result: { data: Project; meta?: { refresh_required?: boolean } }, operation: TemplateCopyOperation, label: string): Promise<Project | null> {
+  if (!templateCopyOperationCurrent(operation)) return null
+  if (!result.meta?.refresh_required && result.data.id === operation.id && result.data.template_copy &&
+      completeTemplateCopyIdentity(result.data.template_copy, result.data.template_copy_version)) return result.data
+  try {
+    const latest = (await getProject(operation.id)).data
+    if (!templateCopyOperationCurrent(operation)) return null
+    if (latest.id !== operation.id || latest.project_version < result.data.project_version || !latest.template_copy ||
+        !completeTemplateCopyIdentity(latest.template_copy, latest.template_copy_version)) throw new Error('incomplete or stale project readback')
+    return latest
+  } catch (error) {
+    if (!templateCopyOperationCurrent(operation)) return null
+    invalidateTemplateCopyPermission(error)
+    templateCopyConflict.value = true
+    templateCopyLatestLoaded.value = false
+    templateCopyPreviewBasis.value = null
+    templateCopyNotice.value = `${label}已保存，但重新读取失败；输入已保留，请读取最新版本。`
+    return null
+  }
+}
 async function previewTemplateCopy() {
-  if (!project.value || !templateCopyChanged.value || templateCopyBusy.value) return
+  if (!project.value || !templateCopyCanEdit.value || templateCopyConflict.value || templateCopyBusy.value) return
   const input = templateCopyInput()
   if (!input) return
-  templateCopyBusy.value = true
+  const requested: TemplatePreviewBasis = { projectId: project.value.id, projectVersion: input.expected_project_version,
+    copyVersion: input.expected_template_copy_version, fingerprint: templateCopyFingerprint.value }
+  const operation = startTemplateCopyOperation(requested.projectId)
   templateCopyNotice.value = ''
   errorMessage.value = ''
   try {
-    const result = await previewTemplateCopyEdit(project.value.id, input)
+    const result = await previewTemplateCopyEdit(requested.projectId, input)
+    if (!templateCopyOperationCurrent(operation)) return
     templateCopyPreview.value = result.data
-    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
-  } catch (error) { failure(error) }
-  finally { templateCopyBusy.value = false }
+    templateCopyPreviewFingerprint.value = requested.fingerprint
+    templateCopyPreviewBasis.value = requested
+    if (!templateCopyPreviewCurrent.value) templateCopyNotice.value = '项目或草稿已变化，请重新预览。'
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
+}
+async function loadTemplateFieldArchives() {
+  const current = project.value
+  if (!current || busy.value || templateCopyBusy.value) return
+  const operation = startTemplateCopyOperation(current.id)
+  templateFieldArchive.value = null
+  try {
+    const result = await listTemplateFieldArchives(current.id)
+    if (!templateCopyOperationCurrent(operation)) return
+    if (!Array.isArray(result.data?.items) || result.data.items.some(item => item.project_id !== current.id)) throw new Error('invalid archive list')
+    templateFieldArchives.value = result.data.items
+    templateFieldArchivesLoaded.value = true
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
+}
+async function loadTemplateFieldArchive(id: string) {
+  const current = project.value
+  if (!current || !id || busy.value || templateCopyBusy.value) return
+  const operation = startTemplateCopyOperation(current.id)
+  templateFieldArchive.value = null
+  try {
+    const result = await getTemplateFieldArchive(current.id, id)
+    if (!templateCopyOperationCurrent(operation)) return
+    if (result.data?.id !== id || result.data.project_id !== current.id) throw new Error('invalid archive readback')
+    templateFieldArchive.value = result.data
+    templateFieldArchivePendingId.value = ''
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
+}
+async function archiveTemplateField(id: string) {
+  const current = project.value, definition = templateCopyInput()
+  if (!current || !['draft', 'active'].includes(current.status) || !definition || !templateCopyCanEdit.value || templateCopyConflict.value ||
+      (current.status === 'draft' ? (!templateCopyPreviewCurrent.value || !(templateCopyPreview.value?.orphaned ?? []).includes(id)) : (!activeArchiveCandidates.value.includes(id) || pendingChangeSet.value?.status === 'assessed')) ||
+      specChanged.value || specBasisChanged.value || !!templateFieldArchivePendingId.value || busy.value || templateCopyBusy.value) return
+  const input = { field_id: id, expected_spec_revision: current.spec_revision, ...(current.status === 'active' ? { expected_context_revision: current.current_context_revision, template_upgrade: { ...definition, field_values: { ...templateUpgradeValues.value } } } : { template_copy: definition }) }
+  const attempt = `template-field-archive:${current.id}:${id}`
+  const operation = startTemplateCopyOperation(current.id)
+  templateCopyNotice.value = ''
+  try {
+    const result = await createTemplateFieldArchive(current.id, input, operationKey(attempt, input))
+    if (!templateCopyOperationCurrent(operation)) return
+    attempts.delete(attempt)
+    if (!result.data?.id) {
+      templateCopyNotice.value = '归档请求已返回，但回执不完整；请查看字段归档并核对，避免重复提交。'
+      return
+    }
+    templateFieldArchivePendingId.value = result.data.id
+    templateFieldArchive.value = null
+    try {
+      const detail = (await getTemplateFieldArchive(current.id, result.data.id)).data
+      if (!templateCopyOperationCurrent(operation)) return
+      if (detail?.id !== result.data.id || detail.project_id !== current.id || detail.field_id !== id) throw new Error('invalid archive readback')
+      templateFieldArchive.value = detail
+      if (templateFieldArchivesLoaded.value) templateFieldArchives.value = [detail, ...templateFieldArchives.value.filter(item => item.id !== detail.id)]
+      templateFieldArchivePendingId.value = ''
+      templateCopyNotice.value = '字段归档已保存并读取；请核对旧值和溯源后决定是否确认移除。'
+    } catch (error) {
+      if (!templateCopyOperationCurrent(operation)) return
+      invalidateTemplateCopyPermission(error)
+      templateFieldArchivesLoaded.value = false
+      templateCopyNotice.value = '字段归档已保存，但读取详情失败；请重新读取归档后再确认。'
+    }
+  } catch (error) {
+    if ((error as { status?: number })?.status === 409) attempts.delete(attempt)
+    templateCopyFailed(error, operation)
+  } finally { finishTemplateCopyOperation(operation) }
+}
+function selectActiveFieldArchive() {
+  const current = project.value, archive = templateFieldArchive.value
+  if (!current || !archive || current.template_copy_version == null || !canUseActiveFieldArchive.value) return
+  if (!window.confirm(`确认已查看字段 ${archive.field_id} 的旧值和溯源，将其纳入正式升级？应用评估后才移除。`)) return
+  activeArchiveSelections.value = { ...activeArchiveSelections.value, [archive.field_id]: {
+    field_id: archive.field_id, archive_id: archive.id, expected_archive_version: archive.archive_version,
+    fingerprint: templateCopyFingerprint.value, valuesFingerprint: templateUpgradeValuesFingerprint.value,
+    projectVersion: current.project_version, specRevision: current.spec_revision,
+    contextRevision: current.current_context_revision, copyVersion: current.template_copy_version,
+  } }
+}
+function removeActiveArchiveSelection(id: string) {
+  if (pendingChangeSet.value?.status === 'assessed' || busy.value || templateCopyBusy.value) return
+  const next = { ...activeArchiveSelections.value }
+  delete next[id]
+  activeArchiveSelections.value = next
+}
+async function removeTemplateFieldAfterArchive() {
+  const current = project.value, archive = templateFieldArchive.value, definition = templateCopyInput()
+  if (!current || !archive || !definition || !canRemoveArchivedTemplateField.value) return
+  if (!window.confirm(`确认已核对字段 ${archive.field_id} 的归档，移除当前研究条件中的该字段？模板仍需重新预览并保存。`)) return
+  const input = { confirmed: true as const, expected_archive_version: archive.archive_version,
+    expected_spec_revision: current.spec_revision, template_copy: definition }
+  const attempt = `template-field-remove:${current.id}:${archive.id}`
+  const originalCopy = current.template_copy ? JSON.parse(JSON.stringify(current.template_copy)) as NonNullable<Project['template_copy']> : null
+  const operation = startTemplateCopyOperation(current.id)
+  busy.value = true
+  templateCopyNotice.value = ''
+  try {
+    const receipt = (await removeArchivedTemplateField(current.id, archive.id, input, operationKey(attempt, input))).data
+    if (!templateCopyOperationCurrent(operation)) return
+    attempts.delete(attempt)
+    templateCopyPreviewBasis.value = null
+    if (!receipt || receipt.id !== archive.id || receipt.status !== 'removed') {
+      templateCopyConflict.value = true
+      templateCopyLatestLoaded.value = false
+      templateCopyNotice.value = '移除请求已返回，但回执不完整；请读取最新项目和归档后再继续。'
+      return
+    }
+    templateFieldArchive.value = { ...archive, status: 'removed', archive_version: receipt.archive_version }
+    templateFieldArchives.value = templateFieldArchives.value.map(item => item.id === archive.id ? { ...item, status: 'removed', archive_version: receipt.archive_version } : item)
+    let latest: Project
+    try {
+      latest = (await getProject(current.id)).data
+      if (!templateCopyOperationCurrent(operation)) return
+      if (!latest || latest.id !== current.id || !latest.template_copy || !originalCopy ||
+          latest.project_version !== receipt.project_version || latest.spec_revision !== receipt.spec_revision ||
+          latest.template_copy_version !== receipt.template_copy_version ||
+          stableTemplateCopy(latest.template_copy) !== stableTemplateCopy(originalCopy) ||
+          Object.prototype.hasOwnProperty.call(latest.spec, archive.field_id) ||
+          Object.prototype.hasOwnProperty.call(latest.spec_fields ?? {}, archive.field_id)) throw new Error('stale project readback')
+    } catch (error) {
+      if (!templateCopyOperationCurrent(operation)) return
+      invalidateTemplateCopyPermission(error)
+      templateCopyConflict.value = true
+      templateCopyLatestLoaded.value = false
+      templateCopyNotice.value = '字段已移除，但项目重新读取失败或已变化；模板草稿已保留，请读取最新版本。'
+      return
+    }
+    project.value = latest
+    projects.value = projects.value.map(item => item.id === latest.id ? latest : item)
+    if (archive.field_id === 'research_subject') subject.value = ''
+    else if (archive.field_id === 'research_goal') goal.value = ''
+    const fields = { ...extraSpecDraft.value }
+    delete fields[archive.field_id]
+    extraSpecDraft.value = fields
+    specEditingRevision.value = latest.spec_revision
+    templateCopyNotice.value = '字段已从当前研究条件移除，归档仍可查看；模板草稿已保留，请重新预览并保存。'
+  } catch (error) {
+    if ((error as { status?: number })?.status === 409) attempts.delete(attempt)
+    templateCopyFailed(error, operation)
+  } finally {
+    if (templateCopyOperationCurrent(operation)) busy.value = false
+    finishTemplateCopyOperation(operation)
+  }
+}
+async function saveLegacyOverride() {
+  const current = project.value, policy = legacyCurrentPolicy.value, binding = legacyCurrentBinding.value
+  if (!current || !legacyBindingCopy.value || !policy || !binding || !templateCopyCanEdit.value || templateCopyConflict.value ||
+      typeof current.template_copy_version !== 'number' || current.template_copy_version !== legacyBindingCopy.value.version ||
+      templateCopyChanged.value || specChanged.value || !templateCopyPreviewCurrent.value || templateCopyPreviewBlocked.value ||
+      legacyOverrideNeedsReview.value || !legacyReason.value.trim() || !legacyOverrideChanged.value || busy.value || templateCopyBusy.value) return
+  const override: LegacyRuleOverrideInput['overrides'][number] = { rule_id: binding.rule_id }
+  if (legacyEnabled.value) override.enabled = legacyEnabled.value === 'true'
+  if (legacySeverity.value) override.severity = legacySeverity.value
+  if (legacyTargetKind.value) override.target_kind = legacyTargetKind.value
+  if (legacyTargetId.value) override.target_id = legacyTargetId.value
+  const parameters: Record<string, unknown> = {}, removed: string[] = []
+  try {
+    for (const key of policy.allowed_parameter_keys ?? []) {
+      const edit = legacyParameterEdits.value[key]
+      if (!edit || edit.action === 'keep') continue
+      if (edit.action === 'remove') { removed.push(key); continue }
+      const old = binding.parameters?.[key]
+      if (typeof old === 'string') parameters[key] = edit.value
+      else if (typeof old === 'number') {
+        if (!edit.value.trim() || !Number.isFinite(Number(edit.value))) throw new Error(`参数 ${key} 需要数字`)
+        parameters[key] = Number(edit.value)
+      } else if (typeof old === 'boolean') {
+        if (!['true', 'false'].includes(edit.value.trim())) throw new Error(`参数 ${key} 需要 true 或 false`)
+        parameters[key] = edit.value.trim() === 'true'
+      } else {
+        try { parameters[key] = JSON.parse(edit.value) }
+        catch { throw new Error(`参数 ${key} 需要有效的 JSON 值`) }
+      }
+    }
+  } catch (error) {
+    legacyOverrideError.value = error instanceof Error ? error.message : '参数格式无效'
+    return
+  }
+  if (Object.keys(parameters).length) override.parameters = parameters
+  if (removed.length) override.remove_parameter_keys = removed
+  const input: LegacyRuleOverrideInput = { expected_project_version: current.project_version,
+    expected_template_copy_version: current.template_copy_version, reason: legacyReason.value.trim(), overrides: [override] }
+  const operation = startTemplateCopyOperation(current.id)
+  legacyOverrideError.value = ''
+  templateCopyNotice.value = ''
+  errorMessage.value = ''
+  try {
+    const result = await saveLegacyRuleOverrides(current.id, input, operationKey('legacy-rule-override', input))
+    attempts.delete('legacy-rule-override')
+    const latest = await projectAfterTemplateWrite(result, operation, '规则覆盖')
+    if (!latest) return
+    if (latest.id !== operation.id || latest.project_version < project.value!.project_version) {
+      templateCopyConflict.value = true
+      templateCopyPreviewBasis.value = null
+      templateCopyNotice.value = '规则覆盖已保存，但项目版本已变化；请读取最新版本。'
+      return
+    }
+    project.value = latest
+    projects.value = projects.value.map(item => item.id === latest.id ? latest : item)
+    hydrateTemplateCopyDraft(latest)
+    templateCopyNotice.value = `规则覆盖已保存；当前副本为第 ${latest.template_copy_version} 版。`
+  } catch (error) {
+    templateCopyFailed(error, operation)
+  } finally {
+    finishTemplateCopyOperation(operation)
+  }
+}
+function updateTemplateRepairValue(id: string, event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  const currentFields = project.value?.template_copy?.definition.fields ?? []
+  if (id === 'research_subject' && currentFields.some(field => field.field_id === id)) subject.value = value
+  else if (id === 'research_goal' && currentFields.some(field => field.field_id === id)) goal.value = value
+  else extraSpecDraft.value = { ...extraSpecDraft.value, [id]: value }
+}
+async function saveTemplateRepairValues() {
+  const current = project.value
+  if (!current || current.status !== 'draft' || !templateCopyCanEdit.value || !templateCopyPreviewCurrent.value ||
+      templateCopyConflict.value || !templateCopyRepairFields.value.length || !specChanged.value || specBasisChanged.value || busy.value || templateCopyBusy.value) return
+  const originalCopy = current.template_copy ? JSON.parse(JSON.stringify(current.template_copy)) as NonNullable<Project['template_copy']> : null
+  const originalFingerprint = stableTemplateCopy(originalCopy)
+  const expected = specEditingRevision.value ?? current.spec_revision
+  const fields = { ...specDraftFields.value }
+  const attempt = `template-repair:${current.id}`
+  const operation = startTemplateCopyOperation(current.id)
+  busy.value = true
+  templateCopyNotice.value = ''
+  errorMessage.value = ''
+  try {
+    const result = await saveSpec(current.id, expected, fields, operationKey(attempt, { expected_spec_revision: expected, fields }))
+    attempts.delete(attempt)
+    const latest = await projectAfterTemplateWrite(result, operation, '研究条件')
+    if (!latest) return
+    if (latest.id !== operation.id || latest.project_version < project.value!.project_version) {
+      templateCopyConflict.value = true
+      templateCopyPreviewBasis.value = null
+      templateCopyNotice.value = '研究条件已保存，但项目版本已变化。模板草稿已保留，请读取最新版本。'
+      return
+    }
+    const specChangedAfterWrite = stableTemplateCopy(latest.spec) !== stableTemplateCopy(fields)
+    const copyChanged = !originalCopy || !latest.template_copy ||
+      !completeTemplateCopyIdentity(originalCopy, current.template_copy_version) ||
+      !completeTemplateCopyIdentity(latest.template_copy, latest.template_copy_version) ||
+      stableTemplateCopy(latest.template_copy) !== originalFingerprint
+    project.value = latest
+    projects.value = projects.value.map(item => item.id === latest.id ? latest : item)
+    specEditingRevision.value = specChangedAfterWrite ? expected : latest.spec_revision
+    templateCopyPreviewBasis.value = null
+    if (copyChanged) {
+      templateCopyConflict.value = true
+      templateCopyLatestLoaded.value = true
+      templateCopyConflictOriginal.value = originalCopy
+      templateCopyNotice.value = '研究条件已保存，但模板副本同时发生变化；已保留草稿，请比较后再继续。'
+    } else if (specChangedAfterWrite) {
+      templateCopyNotice.value = '研究条件已保存，但服务器条件随后发生变化；请在研究条件中比较后再继续。'
+    } else {
+      templateCopyNotice.value = '研究条件已保存；模板草稿仍未保存，请重新预览。'
+    }
+  } catch (error) {
+    if ((error as { status?: number })?.status === 409) attempts.delete(attempt)
+    templateCopyFailed(error, operation)
+  } finally {
+    if (templateCopyOperationCurrent(operation)) busy.value = false
+    finishTemplateCopyOperation(operation)
+  }
 }
 function discardTemplateCopyDraft() {
   hydrateTemplateCopyDraft(project.value)
 }
 async function saveTemplateCopy() {
-  if (!project.value || !templateCopyChanged.value || !templateCopyPreviewCurrent.value || templateCopyBusy.value) return
+  if (!project.value || project.value.status !== 'draft' || !templateCopyCanEdit.value || templateCopyConflict.value ||
+      !templateCopyChanged.value || !templateCopyPreviewCurrent.value || templateCopyPreviewBlocked.value || templateCopyBusy.value) return
   const input = templateCopyInput()
   if (!input) return
-  templateCopyBusy.value = true
+  const operation = startTemplateCopyOperation(project.value.id)
   templateCopyNotice.value = ''
   errorMessage.value = ''
   try {
-    const result = await saveTemplateCopyEdit(project.value.id, input, operationKey('template-copy', input))
+    const result = await saveTemplateCopyEdit(operation.id, input, operationKey('template-copy', input))
     attempts.delete('template-copy')
-    project.value = result.data
-    projects.value = projects.value.map(item => item.id === result.data.id ? result.data : item)
-    hydrateTemplateCopyDraft(result.data)
-    templateCopyNotice.value = `已保存为第 ${result.data.template_copy_version} 版；旧版本仍保留。`
-  } catch (error) { failure(error) }
-  finally { templateCopyBusy.value = false }
+    const latest = await projectAfterTemplateWrite(result, operation, '模板')
+    if (!latest) return
+    if (latest.id !== operation.id || latest.project_version < project.value!.project_version) {
+      templateCopyConflict.value = true
+      templateCopyPreviewBasis.value = null
+      templateCopyNotice.value = '模板已保存，但项目版本已变化。草稿已保留，请重新读取。'
+      return
+    }
+    project.value = latest
+    projects.value = projects.value.map(item => item.id === latest.id ? latest : item)
+    hydrateTemplateCopyDraft(latest)
+    templateCopyNotice.value = `模板已保存；当前为第 ${latest.template_copy_version} 版，旧版本仍保留。`
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
+}
+function stableTemplateCopy(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical)
+    if (item && typeof item === 'object')
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]))
+    return item
+  }
+  return JSON.stringify(canonical(value)) ?? ''
+}
+function completeTemplateCopyIdentity(copy: NonNullable<Project['template_copy']>, projectVersion: number | undefined): boolean {
+  return typeof copy.id === 'string' && copy.id.length > 0 &&
+    Number.isInteger(copy.version) && copy.version > 0 && copy.version === projectVersion &&
+    typeof copy.source_template_id === 'string' && copy.source_template_id.length > 0 &&
+    typeof copy.source_template_version === 'string' && copy.source_template_version.length > 0 &&
+    typeof copy.content_hash === 'string' && copy.content_hash.length > 0 &&
+    typeof copy.ruleset_hash === 'string' && copy.ruleset_hash.length > 0
+}
+function templateBindingSummary(copy: NonNullable<Project['template_copy']>): string {
+  // Include only values the server actually supplied; a missing key is not
+  // evidence that a binding or a policy does not exist.
+  const select = (source: object, keys: string[]): Record<string, unknown> => {
+    const record = source as Record<string, unknown>
+    return Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined)
+      .map(key => [key, record[key]]))
+  }
+  const copyBinding = select(copy, [
+    'rule_set_snapshot', 'template_version_ruleset_ref', 'binding_policies', 'source_policy_hash',
+    'source_ruleset_id', 'source_ruleset_version', 'source_ruleset_hash',
+  ])
+  const definitionBinding = select(copy.definition, [
+    'ruleset_ref', 'ruleset_snapshot', 'ruleset_binding_overrides', 'binding_policies',
+  ])
+  const returned: Record<string, unknown> = {}
+  if (Object.keys(copyBinding).length) returned.project_copy = copyBinding
+  if (Object.keys(definitionBinding).length) returned.definition = definitionBinding
+  return Object.keys(returned).length ? JSON.stringify(returned) : '服务器未返回规则集绑定信息'
+}
+async function reloadTemplateCopyPreservingDraft() {
+  if (!project.value || !templateCopyConflict.value || templateCopyBusy.value) return
+  // Capture the complete server copy before the read, including immutable version,
+  // provenance, hashes, ruleset identity, policy, and any future returned fields.
+  const original = project.value.template_copy ? JSON.parse(JSON.stringify(project.value.template_copy)) as NonNullable<Project['template_copy']> : null
+  const originalFingerprint = stableTemplateCopy(original)
+  const originalCopyVersion = project.value.template_copy_version
+  const operation = startTemplateCopyOperation(project.value.id)
+  templateCopyNotice.value = ''
+  try {
+    const result = await getProject(operation.id)
+    if (!templateCopyOperationCurrent(operation)) return
+    const latest = result.data
+    if (latest.id !== operation.id || !latest.template_copy || !original || latest.project_version < project.value!.project_version) {
+      templateCopyNotice.value = '没有读到可确认的最新模板；草稿已保留，请重试。'
+      return
+    }
+    if (stableTemplateCopy(project.value!.template_copy) !== originalFingerprint) {
+      templateCopyNotice.value = '读取期间当前副本再次变化，草稿已保留；请重新读取。'
+      return
+    }
+    // Missing identity or hash is not evidence of equality. In that case the
+    // user must compare explicitly instead of automatically rebasing the draft.
+    const copyChanged = !completeTemplateCopyIdentity(original, originalCopyVersion) ||
+      !completeTemplateCopyIdentity(latest.template_copy, latest.template_copy_version) ||
+      originalFingerprint !== stableTemplateCopy(latest.template_copy)
+    templateCopyConflictOriginal.value = copyChanged ? original : null
+    // Preserve the form itself; only the server baseline and versions change.
+    project.value = latest
+    projects.value = projects.value.map(item => item.id === latest.id ? latest : item)
+    templateCopyPreview.value = null
+    templateCopyPreviewFingerprint.value = ''
+    templateCopyPreviewBasis.value = null
+    templateCopyLatestLoaded.value = copyChanged
+    templateCopyConflict.value = copyChanged
+    templateCopyNotice.value = copyChanged
+      ? '已读取最新副本并保留草稿；请比较差异后决定是否继续。'
+      : '已读取最新版本并保留草稿；请重新预览。'
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
+}
+function acknowledgeTemplateCopyConflict() {
+  if (!templateCopyCanEdit.value || !templateCopyConflict.value || !templateCopyLatestLoaded.value || templateCopyBusy.value) return
+  if (!window.confirm('已核对最新副本和保留草稿？继续将以最新版本为基础，草稿可能覆盖其他人的模板修改。')) return
+  templateCopyConflict.value = false
+  templateCopyLatestLoaded.value = false
+  templateCopyConflictOriginal.value = null
+  templateCopyNotice.value = '已保留草稿；请重新预览并核对差异后再保存。'
 }
 async function createTemplateUpgradeChangeSet() {
-  if (!project.value || project.value.status !== 'active' || !templateCopyChanged.value || !templateUpgradeReason.value.trim() || templateCopyBusy.value || pendingChangeSet.value?.status === 'assessed') return
+  if (!project.value || project.value.status !== 'active' || !templateCopyCanEdit.value || templateCopyConflict.value ||
+      !templateCopyChanged.value || !activeArchiveSelectionsCurrent.value || !templateUpgradeReason.value.trim() || templateCopyBusy.value || pendingChangeSet.value?.status === 'assessed') return
   const definition = templateCopyInput()
   if (!definition) return
-  templateCopyBusy.value = true
+  const projectId = project.value.id
+  const requestedFingerprint = templateCopyFingerprint.value
+  const requestedReason = templateUpgradeReason.value.trim()
+  const requestedValues = { ...templateUpgradeValues.value }
+  const valuesFingerprint = JSON.stringify(requestedValues)
+  const operation = startTemplateCopyOperation(projectId)
   templateCopyNotice.value = ''
   errorMessage.value = ''
   const input = {
     expected_context_revision: project.value.current_context_revision,
     fields: {},
     affected_chapter_ids: [],
-    reason: templateUpgradeReason.value.trim(),
-    template_upgrade: { ...definition, field_values: {} },
+    reason: requestedReason,
+    template_upgrade: { ...definition, field_values: requestedValues, archived_removals: activeArchivedRemovals.value },
   }
   try {
-    const result = await createChangeSet(project.value.id, input, operationKey(`template-upgrade:${project.value.id}`, input))
+    const result = await createChangeSet(projectId, input, operationKey(`template-upgrade:${projectId}`, input))
+    attempts.delete(`template-upgrade:${projectId}`)
+    if (!templateCopyOperationCurrent(operation)) return
     pendingChangeSet.value = normalizeChangeSet(result.data)
-    pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: templateUpgradeReason.value.trim() }
+    pendingTemplateUpgrade.value = { fingerprint: requestedFingerprint, reason: requestedReason, valuesFingerprint, removalsFingerprint: JSON.stringify(input.template_upgrade.archived_removals) }
     templateCopyPreview.value = result.data.template_upgrade?.preview ?? null
-    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+    templateCopyPreviewFingerprint.value = requestedFingerprint
+    templateCopyPreviewBasis.value = { projectId, projectVersion: definition.expected_project_version, copyVersion: definition.expected_template_copy_version, fingerprint: requestedFingerprint }
     templateCopyNotice.value = '已生成升级评估；当前模板未变更，需由 Owner 应用后才会生效。'
-  } catch (error) { failure(error) }
-  finally { templateCopyBusy.value = false }
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation) }
 }
 async function applyTemplateUpgrade() {
-  if (!project.value || busy.value || !pendingChangeSet.value?.template_upgrade || !pendingTemplateUpgradeMatches.value) return
-  busy.value = true
-  errorMessage.value = ''
+  if (!project.value || busy.value || templateCopyBusy.value || !templateCopyCanApply.value || !pendingChangeSet.value?.template_upgrade || !pendingTemplateUpgradeMatches.value) return
   const id = project.value.id
   const changeSetId = pendingChangeSet.value.id
+  const operation = startTemplateCopyOperation(id)
+  busy.value = true
+  errorMessage.value = ''
   const applyKey = operationKey(`change-set-apply:${id}:${changeSetId}`, { change_set_id: changeSetId })
   try {
     const applied = await applyChangeSet(id, changeSetId, applyKey)
     attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    if (!templateCopyOperationCurrent(operation)) return
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
-    await selectProject(id, { force: true, skipConfirm: true })
+    // The write is complete; allow the explicit reload to proceed.
+    finishTemplateCopyOperation(operation)
+    const refreshed = await selectProject(id, { force: true, skipConfirm: true })
+    if (project.value?.id !== id) return
     lastChangeSet.value = applied.data
-    templateCopyNotice.value = `模板升级已应用为第 ${project.value?.template_copy_version ?? ''} 版；受影响章节需重新确认。`
-  } catch (error) { failure(error) }
-  finally { busy.value = false }
+    if (!refreshed) templateCopyNotice.value = '模板升级已应用，但项目重新读取未完成；请重试读取以确认新版本。'
+    else templateCopyNotice.value = `模板升级已应用为第 ${project.value.template_copy_version} 版；受影响章节需重新确认。`
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation); if (operation.session === editorSessionEpoch) busy.value = false }
 }
 async function rejectTemplateUpgrade() {
-  if (!project.value || busy.value || !pendingChangeSet.value?.template_upgrade) return
-  busy.value = true
-  errorMessage.value = ''
+  if (!project.value || busy.value || templateCopyBusy.value || !templateCopyCanApply.value || !pendingChangeSet.value?.template_upgrade) return
   const id = project.value.id
   const changeSetId = pendingChangeSet.value.id
+  const operation = startTemplateCopyOperation(id)
+  busy.value = true
+  errorMessage.value = ''
   const rejectKey = operationKey(`change-set-reject:${id}:${changeSetId}`, { change_set_id: changeSetId })
   try {
     const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
     attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    if (!templateCopyOperationCurrent(operation)) return
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
     templateUpgradeReason.value = ''
-    await selectProject(id, { force: true, skipConfirm: true })
+    finishTemplateCopyOperation(operation)
+    const refreshed = await selectProject(id, { force: true, skipConfirm: true })
+    if (project.value?.id !== id) return
     lastChangeSet.value = rejected.data
-  } catch (error) { failure(error) }
-  finally { busy.value = false }
+    templateCopyNotice.value = refreshed ? '已驳回模板升级评估。' : '评估已驳回，但项目重新读取未完成；请重试读取。'
+  } catch (error) { templateCopyFailed(error, operation) }
+  finally { finishTemplateCopyOperation(operation); if (operation.session === editorSessionEpoch) busy.value = false }
 }
 function citationUsageDraft(sourceId: string): CitationUsage {
   return citationUsageDrafts.value[sourceId] ??= { source_id: sourceId, purpose: '', limitation: '' }
@@ -1944,7 +2871,7 @@ function navigationInputsSnapshot(): string {
   return JSON.stringify({
     projectId: project.value?.id, subject: subject.value, goal: goal.value,extraSpec:extraSpecDraft.value,draftCandidateInputs:draftCandidatePanelRef.value?.inputsSnapshot??'',
     conditions: conditionsChangeSnapshot(project.value?.id ?? '', changeReason.value, selectedImpactChapterIds.value),
-    template: templateCopyDraft.value, templateReason: templateUpgradeReason.value,
+    template: templateCopyDraft.value, templateReason: templateUpgradeReason.value, templateValues: templateUpgradeFieldValues.value,
     reviews: reviewDrafts.value, citations: citationUsageDrafts.value, pendingCitations: pendingCitationUsages.value,
     chapters: chapters.value.map(item => [item.id, editorRef.value?.currentMarkdown(item.id) ?? editorDocs.value[item.id]?.markdown ?? item.body_markdown]),
   })
@@ -1964,13 +2891,17 @@ interface ProjectSelectionOptions {
   handledConditions?: ConditionsChangeDraft | null
 }
 async function selectProject(id: string, { force = false, skipConfirm = false, handledConditions = null }: ProjectSelectionOptions = {}) {
-  if (projectSwitchCommitting.value) return
+  if (projectSwitchCommitting.value) return false
+  if (templateCopyBusy.value) {
+    templateCopyNotice.value = '模板操作正在进行，请等待完成后再切换或重新读取。'
+    return false
+  }
   const message = force || project.value?.id === id
     ? '重新读取会丢弃当前未保存的输入，确定继续吗？'
     : '当前编辑尚未保存，确定切换课题吗？'
-  if(fullPanelBusy.value)return
-  if(fullPanelDirty.value && !skipConfirm && !window.confirm('切换课题将丢弃面板中未提交的输入，是否继续？'))return
-  if (!skipConfirm && navigationInputsAreDirty(handledConditions) && !window.confirm(message)) return
+  if(fullPanelBusy.value)return false
+  if(fullPanelDirty.value && !skipConfirm && !window.confirm('切换课题将丢弃面板中未提交的输入，是否继续？'))return false
+  if (!skipConfirm && navigationInputsAreDirty(handledConditions) && !window.confirm(message)) return false
   const sequence = ++projectReadSequence
   const beforeRead = navigationInputsSnapshot()
   const oldProjectId = project.value?.id
@@ -1993,9 +2924,14 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
       copies[item.id] = copy
     }
     const versions = nextChapter ? (await listChapterVersions(id, nextChapter.id)).data.items : []
-    if (sequence !== projectReadSequence) return
+    if (sequence !== projectReadSequence) return false
+    // A write may have begun while these reads were in flight.
+    if (templateCopyBusy.value) {
+      templateCopyNotice.value = '模板操作正在进行，已保留当前课题；完成后可重新切换。'
+      return false
+    }
     if (navigationInputsSnapshot() !== beforeRead && navigationInputsAreDirty(handledConditions) &&
-        !window.confirm('读取期间有新的输入，继续会丢弃这些未保存内容。确定继续吗？')) return
+        !window.confirm('读取期间有新的输入，继续会丢弃这些未保存内容。确定继续吗？')) return false
     // A save from an older spec/base cannot safely be installed with this target snapshot.
     if (oldProjectId === id && nextChapters.some(item => {
       const old = editorDocs.value[item.id]?.copy, staged = copies[item.id]!
@@ -2056,9 +2992,11 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
       templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
       templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
       templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+      templateCopyPreviewBasis.value = { projectId: id, projectVersion: result.data.project_version, copyVersion: result.data.template_copy?.version ?? 0, fingerprint: templateCopyFingerprint.value }
       templateUpgradeReason.value = assessedTemplateUpgrade.reason
+      templateUpgradeFieldValues.value = { ...(assessedTemplateUpgrade.template_upgrade.field_values ?? {}) }
       pendingChangeSet.value = assessedTemplateUpgrade
-      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
+      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason, valuesFingerprint: templateUpgradeValuesFingerprint.value, removalsFingerprint: activeArchiveRemovalsFingerprint.value }
     }
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)
@@ -2088,11 +3026,12 @@ async function selectProject(id: string, { force = false, skipConfirm = false, h
     ownsCommit = false
     sessionStorage.setItem(lastProjectStorageKey(),id)
     if (chapter.value) await loadSavedRewriteCandidate(id, chapter.value.id)
-    if (sequence !== projectReadSequence) return
+    if (sequence !== projectReadSequence) return false
     await loadGenerationCandidates(chapter.value?.id)
-    if (sequence !== projectReadSequence) return
+    if (sequence !== projectReadSequence) return false
     await resumeGeneration()
-  } catch (error) { if (sequence === projectReadSequence) failure(error) }
+    return true
+  } catch (error) { if (sequence === projectReadSequence) failure(error); return false }
   finally { if (ownsCommit) { projectSwitchCommitting.value = false; busy.value = false; templateCopyBusy.value = false } }
 }
 
@@ -2925,8 +3864,11 @@ onMounted(() => {
   void loadInvitationInbox();void loadPublishedTemplates()
   void (async()=>{await loadProjects();const id=sessionStorage.getItem(lastProjectStorageKey());if(id)await selectProject(id)})()
 })
-watch([()=>auth.currentUserId,()=>auth.effectiveTenantId],()=>{editorSessionEpoch++;projectReadSequence++;chapterReadSequence++;permissionEpoch++;invitationEpoch++;catalogEpoch++;lastPermissionIdentity='';project.value=null;projects.value=[];chapter.value=null;chapters.value=[];assets.value=[];sources.value=[];editorDocs.value={};editorDirtyAny.value=false;editorReady.value=false;workingCopy.value=null;bodyDraft.value='';subject.value='';goal.value='';extraSpecDraft.value={};specEditingRevision.value=null;reviewDrafts.value={};savedReviewDrafts.value={};citationUsageDrafts.value={};pendingCitationUsages.value={};generationCandidates.value=[];generationCandidate.value=null;generationRun.value=null;rewriteCandidate.value=null;chapterWritePermissions.value={};chapterConfirmPermissions.value={};myInvitations.value=[];publishedTemplates.value=[];sourceContext.value=null;currentConfirmation.value=null;if(generationTimer)clearTimeout(generationTimer);if(workingCopyTimer)clearTimeout(workingCopyTimer);void loadInvitationInbox();void loadPublishedTemplates();void loadProjects()})
-onBeforeRouteLeave(() => canLeaveWorkspace(unsavedInputs.value, message => window.confirm(message)))
+watch([()=>auth.currentUserId,()=>auth.effectiveTenantId],()=>{editorSessionEpoch++;projectReadSequence++;chapterReadSequence++;permissionEpoch++;templateCopyOperationEpoch++;templateCopyPermissionEpoch++;templateCopyBusy.value=false;busy.value=false;legacyRuleId.value='';legacyReason.value='';legacyOverrideNeedsReview.value=false;legacyOverrideError.value='';legacyParameterEdits.value={};templateCopyDraft.value=null;templateCopyPreview.value=null;templateCopyPreviewBasis.value=null;templateCopyConflict.value=false;templateCopyLatestLoaded.value=false;templateCopyConflictOriginal.value=null;invitationEpoch++;catalogEpoch++;lastPermissionIdentity='';project.value=null;projects.value=[];chapter.value=null;chapters.value=[];assets.value=[];sources.value=[];editorDocs.value={};editorDirtyAny.value=false;editorReady.value=false;workingCopy.value=null;bodyDraft.value='';subject.value='';goal.value='';extraSpecDraft.value={};specEditingRevision.value=null;reviewDrafts.value={};savedReviewDrafts.value={};citationUsageDrafts.value={};pendingCitationUsages.value={};generationCandidates.value=[];generationCandidate.value=null;generationRun.value=null;rewriteCandidate.value=null;chapterWritePermissions.value={};chapterConfirmPermissions.value={};myInvitations.value=[];publishedTemplates.value=[];sourceContext.value=null;currentConfirmation.value=null;if(generationTimer)clearTimeout(generationTimer);if(workingCopyTimer)clearTimeout(workingCopyTimer);void loadInvitationInbox();void loadPublishedTemplates();void loadProjects()})
+onBeforeRouteLeave(() => {
+  if (templateCopyBusy.value) { templateCopyNotice.value = '模板操作正在进行，请等待完成后再离开。'; return false }
+  return canLeaveWorkspace(unsavedInputs.value, message => window.confirm(message))
+})
 onUnmounted(() => {
   removeUnloadGuard?.()
   if (generationTimer) clearTimeout(generationTimer)
@@ -2951,6 +3893,9 @@ p { margin: 6px 0; } .muted { color: #6b7670; font-size: 13px; } .warning { colo
 .template-editor { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
 .template-editor__item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 2fr); align-items: center; gap: 12px; font-weight: 400; }
 .template-editor__item small { color: #6b7670; font-weight: 400; }
+.template-field-archive-detail { display: grid; gap: 6px; overflow-wrap: anywhere; }
+.template-field-archive-detail p { margin: 0; }
+.template-field-archive-detail code { white-space: pre-wrap; }
 .template-preview { margin-top: 14px; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; background: #fff; }
 .template-preview h4 { margin: 0 0 8px; }
 .template-preview ul { padding-left: 20px; }

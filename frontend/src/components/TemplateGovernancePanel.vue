@@ -3,10 +3,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { Chapter, Source } from '@/api/lingdoc/workspace'
 import {
  acceptRuleSuggestion, createRuleSetDraft, createTemplateProfile, getRuleSuggestion, governRuleSet,
- listReplayFixtures, listRuleDefinitions, listRuleSetVersions, listRuleSuggestions, listTemplateProfiles, listTemplateVersions,
+ listReplayFixtures, listRuleDefinitions, listRuleSetVersions, listRuleSuggestions, listTemplateAuditHistory, listTemplateProfiles, listTemplateVersions,
  publishTemplateVersion, readReplayCoverage, recallTemplateVersion, registerReplayFixtures, registerRuleSetFixtures, rejectRuleSuggestion, requestRuleSuggestion, saveTemplateDraft,
  withdrawTemplateVersion, type GovernanceProject, type ReplayCoverageView, type ReplayFixtureSummary, type RuleBinding, type RuleDefinition, type RuleSet,
- type RuleSuggestionRun, type SaveTemplateDraftInput, type TemplateCatalogVersion, type TemplateProfile,
+ type RuleSuggestionRun, type SaveTemplateDraftInput, type TemplateAuditEvent, type TemplateCatalogVersion, type TemplateProfile,
 } from '@/api/lingdoc/templateGovernance'
 import { newIdempotencyKey } from '@/api/lingdoc/candidateAdoption'
 import { catalogNoticeForView } from '@/views/lingdoc/firstPassEntryState'
@@ -22,6 +22,11 @@ const profiles = ref<TemplateProfile[]>([]), versions = ref<TemplateCatalogVersi
 const catalogLoading = ref(false), catalogError = ref('')
 const catalogNotice = computed(() => catalogNoticeForView(catalogLoading.value, catalogError.value, profiles.value.length, '当前筛选下没有模板。'))
 const profileId = ref(''), selectedVersionId = ref('')
+const auditEvents = ref<TemplateAuditEvent[]>([]), auditNextId = ref<number | undefined>()
+const auditLoading = ref(false), auditError = ref('')
+const auditRequestEpoch = ref(0)
+const managerDenied = ref(false), managerAccessNotice = ref('')
+const managerAccess = computed(() => props.canManageCatalog && !managerDenied.value)
 const definitions = ref<RuleDefinition[]>([]), rulesets = ref<RuleSet[]>([])
 const ruleSetId = ref(''), ruleSetVersion = ref('')
 const runs = ref<RuleSuggestionRun[]>([]), selectedRunId = ref('')
@@ -127,8 +132,11 @@ async function loadCatalog() {
   }
  } catch (error: unknown) {
   if (epoch === catalogAccessEpoch && requestEpoch === catalogRequestEpoch) {
-   profiles.value = []; versions.value = []; profileId.value = ''; selectedVersionId.value = ''
-   catalogError.value = governanceOperationError(error)
+   if (permissionDenied(error) || resourceUnavailable(error)) revokeManagerView(resourceUnavailable(error))
+   else {
+    profiles.value = []; versions.value = []; profileId.value = ''; selectedVersionId.value = ''
+    catalogError.value = governanceOperationError(error)
+   }
   }
  } finally {
   if (epoch === catalogAccessEpoch && requestEpoch === catalogRequestEpoch) catalogLoading.value = false
@@ -146,6 +154,7 @@ async function chooseProfile(id: string) {
  const response = await listTemplateVersions(id)
  if (epoch !== catalogAccessEpoch || selectionEpoch !== profileSelectionEpoch) return
  profileId.value = id; versions.value = response.data; selectedVersionId.value = response.data[0]?.version || ''
+ if (props.canManageCatalog) await loadAudit()
  draftKey.value = ''; governance.reason = ''; governance.fixtures = ''; governance.migration_advice = ''
  fixtureRegistration.reason = ''; fixtureRegistration.fixturesJSON = ''; replayCoverage.value = null
  if (selectedVersion.value) { replayTemplate.id = selectedVersion.value.template_id; replayTemplate.version = selectedVersion.value.version }
@@ -218,6 +227,74 @@ async function saveDraft() {
  message.value = `服务返回：${stateLabel(response.data.state)}，修订 ${response.data.revision}。`; emit('refresh')
  })
 }
+function operationError(error: unknown) {
+ if (error && typeof error === 'object') {
+  const payload = error as Record<string, unknown>
+  const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+  if (permissionDenied(error)) return '权限不足或权限已发生变化，请重新读取并联系管理员。'
+  if (nested?.code === 'version_conflict' || payload.code === 'version_conflict') return governanceOperationError(error)
+  const serverMessage = typeof nested?.message === 'string' ? nested.message : payload.message
+  if (typeof serverMessage === 'string' && serverMessage.trim()) return serverMessage
+ }
+ return governanceOperationError(error)
+}
+function permissionDenied(error: unknown) {
+ if (!error || typeof error !== 'object') return false
+ const payload = error as Record<string, unknown>
+ const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+ if (nested?.code === 'source_access_denied' || nested?.code === 'human_decision_required') return false
+ return payload.$httpStatus === 403 || payload.status === 403 || nested?.code === 'permission_denied'
+}
+function resourceUnavailable(error: unknown) {
+ if (!error || typeof error !== 'object') return false
+ const payload = error as Record<string, unknown>
+ const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+ return payload.$httpStatus === 404 || payload.status === 404 || nested?.code === 'not_found'
+}
+function revokeManagerView(unavailable = false) {
+ managerAccessNotice.value = unavailable
+  ? '模板资源不存在或当前不可访问，已清除原有目录和版本数据。请重新读取目录。'
+  : '服务器拒绝了当前访问，已清除原有目录和版本数据。'
+ // Invalidate every in-flight catalog/profile/version read before hiding data.
+ // Late responses from the former access scope must never restore draft data.
+ managerDenied.value = true; catalogAccessEpoch++; catalogRequestEpoch++; profileSelectionEpoch++; auditRequestEpoch.value++
+ catalogLoading.value = false; catalogError.value = unavailable ? '模板资源不存在或当前不可访问。' : '权限状态已变化。'
+ auditEvents.value = []; auditNextId.value = undefined; auditLoading.value = false
+ profiles.value = []; versions.value = []; selectedVersionId.value = ''
+ if (tab.value === 'rules') tab.value = 'catalog'
+ if (stateFilter.value === 'draft') stateFilter.value = ''
+}
+function clearAudit() {
+ auditRequestEpoch.value++
+ auditEvents.value = []; auditNextId.value = undefined; auditLoading.value = false; auditError.value = ''
+}
+async function loadAudit(append = false) {
+ const id = profileId.value, epoch = catalogAccessEpoch
+ if (!props.canManageCatalog || !id) { clearAudit(); return }
+ const afterId = append ? auditNextId.value : undefined
+ if (append && !afterId) return
+ const requestEpoch = ++auditRequestEpoch.value
+ auditLoading.value = true; auditError.value = ''
+ if (!append) { auditEvents.value = []; auditNextId.value = undefined }
+ try {
+  const response = await listTemplateAuditHistory(id, afterId)
+  if (epoch !== catalogAccessEpoch || requestEpoch !== auditRequestEpoch.value || !props.canManageCatalog || profileId.value !== id) return
+  auditEvents.value = append ? [...auditEvents.value, ...response.data.events] : response.data.events
+  managerDenied.value = false; managerAccessNotice.value = ''
+  auditNextId.value = response.data.next_after_id
+ } catch (error: unknown) {
+  const current = epoch === catalogAccessEpoch && requestEpoch === auditRequestEpoch.value && props.canManageCatalog && profileId.value === id
+  if (!current) return
+  auditEvents.value = []; auditNextId.value = undefined
+  const message = operationError(error)
+  // Revoke bumps the epochs; the message was computed for THIS request and
+  // must survive the revocation that the failure itself justifies.
+  if (permissionDenied(error) || resourceUnavailable(error)) revokeManagerView(resourceUnavailable(error))
+  auditError.value = message
+ } finally {
+  if (epoch === catalogAccessEpoch && requestEpoch === auditRequestEpoch.value) auditLoading.value = false
+ }
+}
 async function governTemplate(action: 'publish' | 'withdraw' | 'recall') {
  const version = selectedVersion.value
  if (!version) return
@@ -232,6 +309,7 @@ async function governTemplate(action: 'publish' | 'withdraw' | 'recall') {
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
  await refreshVersions()
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ await loadAudit()
  message.value = `服务返回：${stateLabel(response.data.state)}。`; emit('refresh')
  })
 }
@@ -457,6 +535,15 @@ onMounted(() => perform(async () => {
       <details><summary>核对哈希与来源材料</summary><p class="hash">内容：{{ selectedVersion.content_hash }}<br />规则集：{{ selectedVersion.ruleset_hash }}<br />覆盖政策：{{ selectedVersion.policy_hash || '服务器未返回政策哈希' }}</p><ul v-if="selectedVersion.binding_policies?.length"><li v-for="policy in selectedVersion.binding_policies" :key="policy.rule_id">{{ policy.rule_id }} · {{ policy.may_disable ? '允许停用' : '不可停用' }} · 严重度范围 {{ (policy.allowed_severities || []).join('、') || '不可调整' }}</li></ul><ul v-if="canManageCatalog"><li v-for="source in selectedVersion.source_refs" :key="source.source_id">{{ source.source_id }} @ {{ source.source_version }}</li></ul><p v-else class="subtle">来源材料标识仅供模板管理员核对；适用范围和版本哈希仍可查看。</p></details>
       <p class="subtle">来源类型不代表官方认证。已发布版本供新项目复制；当前项目继续保留自己的副本。</p>
       <div v-if="selectedVersion.recall" class="notice error"><strong>召回原因：{{ selectedVersion.recall.reason }}</strong><p>{{ selectedVersion.recall.migration_advice }}</p><details v-if="canManageCatalog && selectedVersion.recall.affected_project_ids.length" class="recall-projects"><summary>受影响课题 {{ selectedVersion.recall.affected_project_ids.length }} 个 · 展开查看编号</summary><ul><li v-for="projectId in selectedVersion.recall.affected_project_ids" :key="projectId" class="hash">{{ projectId }}</li></ul></details><p v-else>请核对当前课题的模板副本；其他课题的影响范围由模板管理员审计。</p></div>
+      <section v-if="canManageCatalog" class="card" aria-label="模板审计记录">
+       <h3>模板审计记录</h3>
+       <p class="subtle">仅模板管理员可查看。记录来自服务端，按时间倒序显示。</p>
+       <p v-if="auditLoading" role="status">正在读取审计记录…</p>
+       <div v-else-if="auditError" class="notice error" role="alert">审计记录读取失败：{{ auditError }} <button type="button" @click="loadAudit()">重试读取审计</button></div>
+       <p v-else-if="!auditEvents.length" class="subtle">当前没有可见审计记录。</p>
+       <ol v-if="auditEvents.length"><li v-for="event in auditEvents" :key="event.id"><strong>{{ event.action }}</strong> · {{ event.outcome }} · {{ event.created_at }}<br />操作者 {{ event.actor_user_id }}（租户角色 {{ event.actor_role }}） · 目标 {{ event.target_id }}<details><summary>服务端记录详情</summary><pre class="code-input">{{ JSON.stringify(event.details, null, 2) }}</pre></details></li></ol>
+       <button v-if="auditNextId && !auditLoading && !auditError" type="button" @click="loadAudit(true)">读取更早记录</button>
+      </section>
       <details v-if="canManageCatalog && selectedVersion.state === 'draft'"><summary>回放夹具登记与覆盖矩阵（管理员 · 版本 {{ selectedVersion.version }}）</summary><div class="stack">
        <p class="subtle">登记即试放：服务器以与发布核验相同的求值器真实执行每条夹具，声明结果与实际不符、未命中声明目标时整批拒绝并返回证据。规则集引用、内容与政策摘要由服务器计算固定，无需填写；夹具只增不改，重存草稿（内容摘要变化）后旧样例自然失活。</p>
        <label>治理理由（必填，进入审计回执）<textarea v-model="fixtureRegistration.reason" /></label>

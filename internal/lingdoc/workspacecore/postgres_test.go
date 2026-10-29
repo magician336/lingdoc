@@ -81,8 +81,20 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err != nil || !replay || string(second) != string(created) {
 		t.Fatalf("replay: %v %v", replay, err)
 	}
+	// Binding appends a template copy and requires all mandatory fields to be
+	// populated. Keep the stale-spec CAS check before binding and use the
+	// project version returned by the successful save for the binding request.
+	spec := SaveSpecInput{ExpectedSpecRevision: createdProject.SpecRevision, Fields: map[string]string{"research_subject": "synthetic", "research_goal": "persistence"}}
+	savedRaw, code, replay, err := s.SaveSpec(ctx, actor, id, "pg-spec-key", spec)
+	if err != nil || code != 200 || replay {
+		t.Fatalf("save spec: code=%d replay=%v err=%v", code, replay, err)
+	}
+	savedProject := asProject(t, savedRaw)
+	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-stale-key", spec); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("CAS: %v", err)
+	}
 	boundRaw, code, replay, err := s.BindTemplateCopyRuleSet(ctx, actor, id, "pg-bind-ruleset-key", BindTemplateCopyRuleSetInput{
-		ExpectedProjectVersion: createdProject.ProjectVersion, ExpectedTemplateCopyVersion: createdProject.TemplateCopyVersion,
+		ExpectedProjectVersion: savedProject.ProjectVersion, ExpectedTemplateCopyVersion: savedProject.TemplateCopyVersion,
 		RuleSetID: reader.set.ID, RuleSetVersion: reader.set.Version,
 	})
 	if err != nil || code != 200 || replay {
@@ -91,13 +103,6 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	boundProject := asProject(t, boundRaw)
 	if boundProject.TemplateCopy == nil || boundProject.TemplateCopy.Definition.RuleSetSnapshot == nil || boundProject.TemplateCopy.Definition.RuleSetSnapshot.RulesetHash != reader.set.RulesetHash {
 		t.Fatalf("PostgreSQL binding response lost the published snapshot: %+v", boundProject.TemplateCopy)
-	}
-	spec := SaveSpecInput{Fields: map[string]string{"research_subject": "synthetic", "research_goal": "persistence"}}
-	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-spec-key", spec); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-stale-key", spec); !errors.Is(err, ErrVersionConflict) {
-		t.Fatalf("CAS: %v", err)
 	}
 	projectAfterSpec, err := s.GetProject(ctx, actor, id)
 	if err != nil {
@@ -110,7 +115,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err != nil || len(chapters) != 2 {
 		t.Fatalf("chapters: %v %v", chapters, err)
 	}
-	chapterInput := SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "durable text", SourceIDs: []string{}}
+	chapterInput := SaveChapterInput{ExpectedSpecRevision: projectAfterSpec.SpecRevision, BodyMarkdown: "durable text", SourceIDs: []string{}}
 	if _, _, _, err := s.SaveChapter(ctx, actor, id, chapters[0].ID, "pg-chapter-key", chapterInput); err != nil {
 		t.Fatal(err)
 	}

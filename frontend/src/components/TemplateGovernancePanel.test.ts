@@ -19,7 +19,7 @@ const compiled = ts.transpileModule(compileScript(descriptor, { id: 'governance-
 
 // Execute the real SFC handlers. SSR does not run onMounted HTTP loading;
 // this fixture proves error-event propagation, not browser or server behavior.
-async function fixture(api: Record<string, any> = {}) {
+async function fixture(api: Record<string, any> = {}, canManageCatalog = true) {
  const exports: any = {}
  runInNewContext(compiled, {
   exports,
@@ -42,10 +42,19 @@ async function fixture(api: Record<string, any> = {}) {
  }
  await renderToString(createSSRApp(component, {
   project: { id: 'synthetic-project', name: 'Synthetic', project_version: 1, spec_revision: 0, members: [], spec: {}, template_id: 'template-demo', template_version: '1' },
-  chapters: [], sources: [], canManageCatalog: true,
+  chapters: [], sources: [], canManageCatalog,
   onError: (message: string) => events.push(message),
  }))
  return { controller, events, api }
+}
+
+function templateVersion(revision = 1) {
+ return {
+  template_id: 'synthetic-template', version: '1', revision, state: 'draft',
+  definition: { name: 'Synthetic template', fields: [], sections: [], terms: [], required_fields: [] },
+  ruleset: { ruleset_id: 'rules', version: '1' }, binding_policies: [],
+  source_type: 'project_copy', source_refs: [], scope: 'university', curator: 'curator',
+ }
 }
 
 function deferred<T>() {
@@ -335,4 +344,63 @@ test('rule set registration keeps 422 replay evidence and 409 idempotency confli
  assert.doesNotMatch(controller.errorMessage.value, /版本冲突/)
  assert.equal(calls, 2)
  assert.equal(controller.busy.value, false)
+})
+
+// Audit-history read model merged from #686 (PR #752): admin-only, epoch-guarded.
+test('ordinary project users never request audit history', async () => {
+ let requests = 0
+ const { controller } = await fixture({ listTemplateAuditHistory: async () => { requests++; return { data: { events: [] } } } }, false)
+ controller.profileId.value = 'synthetic-template'
+ await controller.loadAudit()
+ assert.equal(requests, 0)
+ assert.equal(controller.auditEvents.value.length, 0)
+})
+test('audit denial removes previously visible management data and rechecking can restore access', async () => {
+ let attempt = 0
+ const { controller } = await fixture({ listTemplateAuditHistory: async () => {
+  attempt++
+  if (attempt === 2) throw { status: 403 }
+  return { data: { events: [{ id: attempt, action: 'publish' }], next_after_id: 12 } }
+ } })
+ controller.profileId.value = 'synthetic-template'
+ controller.profiles.value = [{ template_id: 'sensitive-draft' }]
+ controller.versions.value = [templateVersion()]
+ await controller.loadAudit()
+ assert.equal(controller.auditEvents.value.length, 1)
+ assert.equal(controller.auditNextId.value, 12)
+ await controller.loadAudit(true)
+ assert.equal(controller.auditEvents.value.length, 0)
+ assert.equal(controller.profiles.value.length, 0)
+ assert.equal(controller.versions.value.length, 0)
+ assert.equal(controller.managerAccess.value, false)
+ assert.match(controller.auditError.value, /权限不足/)
+ await controller.loadAudit()
+ assert.equal(controller.managerAccess.value, true)
+ assert.equal(controller.auditEvents.value.length, 1)
+// main's revocation leaves the catalog-level notice; a successful recheck
+// restores access and clears the manager notice, while the catalog keeps the
+// stale-state hint until the user re-reads.
+ assert.match(controller.catalogError.value, /权限状态已变化/)
+})
+test('late audit response cannot expose a previous profile after selection changes', async () => {
+ const pending = deferred<any>()
+ const { controller } = await fixture({ listTemplateAuditHistory: () => pending.promise })
+ controller.profileId.value = 'profile-a'
+ const request = controller.loadAudit()
+ controller.profileId.value = 'profile-b'
+ pending.resolve({ data: { events: [{ id: 1, action: 'old-profile' }] } })
+ await request
+ assert.equal(controller.auditEvents.value.length, 0)
+})
+test('404 reading audit clears cached sensitive details and remains ambiguous about absence or access', async () => {
+ const { controller } = await fixture({ listTemplateAuditHistory: async () => { throw { status: 404, error: { code: 'not_found' } } } })
+ controller.profileId.value = 'synthetic-template'; controller.profiles.value = [{ template_id: 'synthetic-template' }]
+ controller.versions.value = [templateVersion()]; controller.selectedVersionId.value = '1'
+ controller.auditEvents.value = [{ id: 1, action: 'private' }]
+ await controller.loadAudit()
+ assert.equal(controller.profiles.value.length, 0)
+ assert.equal(controller.versions.value.length, 0)
+ assert.equal(controller.auditEvents.value.length, 0)
+ assert.equal(controller.managerAccess.value, false)
+ assert.match(controller.managerAccessNotice.value, /不存在或当前不可访问/)
 })

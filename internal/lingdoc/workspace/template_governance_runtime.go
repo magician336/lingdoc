@@ -161,6 +161,8 @@ var (
 	_ core.ImpactRuleChecker               = (*TemplateGovernanceRuntime)(nil)
 	_ core.TemplateCatalogResolver         = (*TemplateGovernanceRuntime)(nil)
 	_ core.TemplateCopyAuditRecorder       = (*TemplateGovernanceRuntime)(nil)
+	_ core.TemplateCatalogSwitchResolver   = (*TemplateGovernanceRuntime)(nil)
+	_ core.TemplateSwitchAuditRecorder     = (*TemplateGovernanceRuntime)(nil)
 )
 
 func governanceCallerContext(ctx context.Context, actor core.Actor) context.Context {
@@ -328,6 +330,59 @@ func (r *TemplateGovernanceRuntime) RecordCopyFailure(ctx context.Context, actor
 		AuditPersistenceFailure: failure.AuditPersistenceFailure,
 	})
 }
+
+func (r *TemplateGovernanceRuntime) RecordTemplateSwitchSuccess(ctx context.Context, tx core.Transaction, actor core.Actor, details core.TemplateCopyAudit) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	db, err := core.TransactionDatabase(tx)
+	if err != nil {
+		return err
+	}
+	return r.service.RecordSwitchSuccess(ctx, db, governanceActor(actor), details.ProjectID, details.CopyID,
+		details.CopyVersion, details.TemplateID, details.TemplateVersion, details.ContentHash,
+		details.RuleSetHash, details.RuleSetID, details.RuleSetVersion, details.SourcePolicyHash)
+}
+
+func (r *TemplateGovernanceRuntime) RecordTemplateSwitchFailure(ctx context.Context, actor core.Actor, failure core.TemplateCopyFailure) error {
+	if r == nil || r.service == nil {
+		return governance.ErrUnavailable
+	}
+	cause := failure.Cause
+	if errors.Is(cause, core.ErrInvalidRequest) {
+		cause = errors.Join(governance.ErrInvalidRequest, cause)
+	} else if errors.Is(cause, core.ErrVersionConflict) {
+		cause = errors.Join(governance.ErrVersionConflict, cause)
+	} else if errors.Is(cause, core.ErrInvalidState) {
+		cause = errors.Join(governance.ErrInvalidState, cause)
+	}
+	return r.service.RecordSwitchFailure(ctx, governanceActor(actor), governance.CopyFailure{
+		TemplateID: failure.TemplateID, TemplateVersion: failure.TemplateVersion,
+		ProjectID: failure.ProjectID, Cause: cause, AuditPersistenceFailure: failure.AuditPersistenceFailure,
+	})
+}
+
+func (r *TemplateGovernanceRuntime) ResolveTemplateSwitch(ctx context.Context, tx core.Transaction, actor core.Actor, id, version string, forUpdate bool) (core.CatalogTemplateDefinition, error) {
+	if r == nil || r.service == nil {
+		return core.CatalogTemplateDefinition{}, governance.ErrUnavailable
+	}
+	db, err := core.TransactionDatabase(tx)
+	if err != nil {
+		return core.CatalogTemplateDefinition{}, err
+	}
+	v, err := r.service.ResolveForSwitch(ctx, db, governanceActor(actor), id, version, forUpdate)
+	if err != nil {
+		if errors.Is(err, governance.ErrInvalidState) {
+			return core.CatalogTemplateDefinition{}, fmt.Errorf("%w: %w", core.ErrInvalidState, err)
+		}
+		return core.CatalogTemplateDefinition{}, err
+	}
+	snapshot := v.RuleSetSnapshot
+	return core.CatalogTemplateDefinition{Definition: template.Clone(v.Definition), RuleSetSnapshot: &snapshot,
+		SourceRuleSetID: v.RuleSet.ID, SourceRuleSetVersion: v.RuleSet.Version, SourceRuleSetHash: v.RuleSet.Hash,
+		BindingPolicies: v.BindingPolicies, SourcePolicyHash: v.PolicyHash}, nil
+}
+
 func (r *TemplateGovernanceRuntime) Resolve(ctx context.Context, tx core.Transaction, actor core.Actor, id, version string) (core.CatalogTemplateDefinition, error) {
 	db, err := core.TransactionDatabase(tx)
 	if err != nil {
@@ -349,7 +404,33 @@ func (r *TemplateGovernanceRuntime) AffectedProjects(ctx context.Context, tx *go
 	}
 	ids := []string{}
 	err := tx.Table("lingdoc_projects p").Distinct("p.id").Joins("JOIN lingdoc_project_template_copies c ON c.project_id=p.id AND c.version=p.template_copy_version").Where("p.tenant_id=? AND p.discarded_at IS NULL AND c.source_template_id=? AND c.source_template_version=?", actor.TenantID, id, version).Order("p.id").Pluck("p.id", &ids).Error
-	return ids, err
+	if err != nil {
+		return nil, err
+	}
+	catalogIDs := []string{}
+	for _, projectID := range ids {
+		var record struct{ PayloadJSON string }
+		err := tx.Table("lingdoc_g5_records r").Select("r.payload_json").Joins("JOIN lingdoc_project_template_copies c ON c.project_id=r.project_id AND c.id=r.id").Joins("JOIN lingdoc_projects p ON p.id=c.project_id AND p.template_copy_version=c.version").Where("r.project_id=? AND r.kind=?", projectID, "template_binding").Take(&record).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		var binding struct {
+			SourceKind string `json:"source_kind"`
+		}
+		if err == nil {
+			if err := json.Unmarshal([]byte(record.PayloadJSON), &binding); err != nil {
+				return nil, err
+			}
+		}
+		switch binding.SourceKind {
+		case "fixed":
+		case "catalog":
+			catalogIDs = append(catalogIDs, projectID)
+		default:
+			return nil, fmt.Errorf("%w: template source identity is unknown for project %s", governance.ErrInvalidState, projectID)
+		}
+	}
+	return catalogIDs, nil
 }
 
 // Template-source IDs are chunk IDs. Catalog metadata can cite any project the
