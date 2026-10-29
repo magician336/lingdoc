@@ -15,6 +15,9 @@ import (
 // stays refused.
 func TestReadDeliveryBindingTreatsSourceIdentityOnlyAsNoBinding(t *testing.T) {
 	store := newCandidateAdoptionStore(t)
+	// The g5 records table's production schema comes from the migrations
+	// (000037_lingdoc_full_workflow); the copy below is the focused fixture's
+	// aligned subset, matching the candidate fixture convention.
 	require.NoError(t, store.db.Exec("CREATE TABLE IF NOT EXISTS lingdoc_g5_records (project_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY (project_id, kind, id))").Error)
 	seed := func(payload string) {
 		t.Helper()

@@ -92,6 +92,10 @@ func (w *testWorkspace) useRepository(repository core.Repository) {
 func TestG5InvitationIdempotencyVersionAndAuditRecovery(t *testing.T) {
 	w, owner, member, p := firstPassMemberFixture(t)
 	ctx := context.Background()
+	// CreateProject persists the template_binding sidecar (source-kind
+	// persistence), so the rollback invariant is a DELTA of zero g5 rows over
+	// the invitation, not an absolute zero.
+	g5Before := authReviewCount(t, w, "lingdoc_g5_records", "project_id=?", p.ID)
 	input := core.InviteMemberInput{ExpectedProjectVersion: p.ProjectVersion, Reason: "synthetic transaction",
 		Assignment: core.Member{UserID: member.UserID, GovernanceRole: "admin", FunctionRoles: []string{"author"},
 			FunctionScopes: map[string][]string{"author": {}}}}
@@ -103,14 +107,11 @@ func TestG5InvitationIdempotencyVersionAndAuditRecovery(t *testing.T) {
 	if after.ProjectVersion != p.ProjectVersion || len(after.Members) != len(p.Members) {
 		t.Fatal("failed invitation changed version or membership")
 	}
-	for _, table := range []string{"lingdoc_g5_records", "lingdoc_operations"} {
-		query := "project_id=?"
-		if table == "lingdoc_operations" {
-			query = "target=? AND key='invite-atomic'"
-		}
-		if n := authReviewCount(t, w, table, query, p.ID); n != 0 {
-			t.Fatalf("failed invitation left %s rows: %d", table, n)
-		}
+	if n := authReviewCount(t, w, "lingdoc_g5_records", "project_id=?", p.ID); n != g5Before {
+		t.Fatalf("failed invitation changed g5 rows: before=%d after=%d", g5Before, n)
+	}
+	if n := authReviewCount(t, w, "lingdoc_operations", "target=? AND key='invite-atomic'", p.ID); n != 0 {
+		t.Fatalf("failed invitation left operations rows: %d", n)
 	}
 	if err := w.db.Exec("DROP TRIGGER fail_lingdoc_audit_member_invite").Error; err != nil {
 		t.Fatal(err)

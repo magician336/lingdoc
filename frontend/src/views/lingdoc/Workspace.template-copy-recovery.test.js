@@ -798,7 +798,7 @@ test('successful upgrade followed by failed project reload is not reported as a 
     h.bindings.templateCopyDraft.value.fields[0].label = '升级后字段'
     h.bindings.templateUpgradeReason.value = '修改字段'
     h.bindings.pendingChangeSet.value = { id: 'change-1', status: 'assessed', impacts: [], template_upgrade: {} }
-    h.bindings.pendingTemplateUpgrade.value = { fingerprint: JSON.stringify(h.bindings.templateCopyDraft.value), reason: '修改字段', valuesFingerprint: '{}' }
+    h.bindings.pendingTemplateUpgrade.value = { fingerprint: JSON.stringify(h.bindings.templateCopyDraft.value), reason: '修改字段', valuesFingerprint: '{}', removalsFingerprint: h.bindings.activeArchiveRemovalsFingerprint.value }
     assert.equal(h.bindings.templateCopyCanApply.value, true)
     assert.equal(h.bindings.pendingTemplateUpgradeMatches.value, true)
     await h.bindings.applyTemplateUpgrade()
