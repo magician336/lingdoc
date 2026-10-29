@@ -80,7 +80,7 @@ func TestSuggestImpactLocationsVerifiesQuotesAndDropsHallucinations(t *testing.T
 		t.Fatalf("tier-A hints vanished: %+v", stored)
 	}
 	// A replayed key must not cost a second model call.
-	raw, status, replay, err = svc.SuggestImpactLocations(context.Background(), actor, project.ID, task.ID, "impact-location-suggest-c2", ImpactLocationSuggestionInput{
+	_, status, replay, err = svc.SuggestImpactLocations(context.Background(), actor, project.ID, task.ID, "impact-location-suggest-c2", ImpactLocationSuggestionInput{
 		ExpectedVersion: stored.Version, Reason: "AI 句级定位",
 	})
 	if err != nil || status != 200 || !replay {

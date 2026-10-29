@@ -39219,6 +39219,17 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
           }
         ],
         "responses": {
@@ -39427,6 +39438,17 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
           }
         ],
         "responses": {
