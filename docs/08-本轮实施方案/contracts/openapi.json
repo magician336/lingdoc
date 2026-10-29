@@ -17327,24 +17327,24 @@
     "/template-catalog/profiles/{templateId}/versions/{version}/replay-fixtures": {
       "post": {
         "parameters": [
-         {
-          "name": "templateId",
-          "in": "path",
-          "required": true,
-          "schema": {
-           "type": "string",
-           "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+          {
+            "name": "templateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
           }
-         },
-         {
-          "name": "version",
-          "in": "path",
-          "required": true,
-          "schema": {
-           "type": "string",
-           "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
-          }
-         }
         ],
         "operationId": "registerReplayFixtures",
         "tags": [
@@ -17356,44 +17356,44 @@
           "required": true,
           "content": {
             "application/json": {
-                            "example": {
-            "template_id": "grant-template",
-            "version": "1",
-            "fixtures": [
-              {
-                "fixture_id": "goal-write_check-positive",
-                "rule_id": "goal-present",
-                "scene": "write_check",
-                "polarity": "positive",
-                "target_ref": "field/research_goal",
-                "input": {
-                  "project_id": "server-demo-fixture",
-                  "target_version": "1",
-                  "fields": {
-                    "research_goal": "固定复核目标"
+              "example": {
+                "template_id": "grant-template",
+                "version": "1",
+                "fixtures": [
+                  {
+                    "fixture_id": "goal-write_check-positive",
+                    "rule_id": "goal-present",
+                    "scene": "write_check",
+                    "polarity": "positive",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {
+                        "research_goal": "固定复核目标"
+                      }
+                    },
+                    "expected_status": "PASS",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  },
+                  {
+                    "fixture_id": "goal-preflight-negative",
+                    "rule_id": "goal-present",
+                    "scene": "preflight",
+                    "polarity": "negative",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {}
+                    },
+                    "expected_status": "ISSUE",
+                    "review_reference": "repository:templategovernance-demo-v1"
                   }
-                },
-                "expected_status": "PASS",
-                "review_reference": "repository:templategovernance-demo-v1"
+                ],
+                "reason": "登记经过复核的正反例，绑定当前草稿版本"
               },
-              {
-                "fixture_id": "goal-preflight-negative",
-                "rule_id": "goal-present",
-                "scene": "preflight",
-                "polarity": "negative",
-                "target_ref": "field/research_goal",
-                "input": {
-                  "project_id": "server-demo-fixture",
-                  "target_version": "1",
-                  "fields": {}
-                },
-                "expected_status": "ISSUE",
-                "review_reference": "repository:templategovernance-demo-v1"
-              }
-            ],
-            "reason": "登记经过复核的正反例，绑定当前草稿版本"
-              },
-"schema": {
+              "schema": {
                 "$ref": "#/components/schemas/RegisterReplayFixturesInput"
               }
             }
@@ -39979,46 +39979,46 @@
           "required": true,
           "content": {
             "application/json": {
-                            "example": {
-            "ruleset_id": "ruleset-demo",
-            "ruleset_version": "1",
-            "template_id": "template-demo",
-            "template_version": "1",
-            "fixtures": [
-              {
-                "fixture_id": "goal-write_check-positive",
-                "rule_id": "goal-present",
-                "scene": "write_check",
-                "polarity": "positive",
-                "target_ref": "field/research_goal",
-                "input": {
-                  "project_id": "server-demo-fixture",
-                  "target_version": "1",
-                  "fields": {
-                    "research_goal": "固定复核目标"
+              "example": {
+                "ruleset_id": "ruleset-demo",
+                "ruleset_version": "1",
+                "template_id": "template-demo",
+                "template_version": "1",
+                "fixtures": [
+                  {
+                    "fixture_id": "goal-write_check-positive",
+                    "rule_id": "goal-present",
+                    "scene": "write_check",
+                    "polarity": "positive",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {
+                        "research_goal": "固定复核目标"
+                      }
+                    },
+                    "expected_status": "PASS",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  },
+                  {
+                    "fixture_id": "goal-preflight-negative",
+                    "rule_id": "goal-present",
+                    "scene": "preflight",
+                    "polarity": "negative",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {}
+                    },
+                    "expected_status": "ISSUE",
+                    "review_reference": "repository:templategovernance-demo-v1"
                   }
-                },
-                "expected_status": "PASS",
-                "review_reference": "repository:templategovernance-demo-v1"
+                ],
+                "reason": "规则集发布投影的正反例登记"
               },
-              {
-                "fixture_id": "goal-preflight-negative",
-                "rule_id": "goal-present",
-                "scene": "preflight",
-                "polarity": "negative",
-                "target_ref": "field/research_goal",
-                "input": {
-                  "project_id": "server-demo-fixture",
-                  "target_version": "1",
-                  "fields": {}
-                },
-                "expected_status": "ISSUE",
-                "review_reference": "repository:templategovernance-demo-v1"
-              }
-            ],
-            "reason": "规则集发布投影的正反例登记"
-              },
-"schema": {
+              "schema": {
                 "$ref": "#/components/schemas/RegisterRuleSetFixturesInput"
               }
             }
@@ -40169,6 +40169,458 @@
           }
         },
         "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/impact-tasks/{taskId}/location-suggestions": {
+      "post": {
+        "operationId": "suggestImpactLocations",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "对影响任务发起 AI 句级定位(用户拉触发)",
+        "description": "服务端把本次变更(旧值→新值)与受影响章节全文交给真实模型，建议需要人工复核的句子；每条建议的 quote 由服务端逐字验证，找不到的原文丢弃并计数上报(dropped)。建议进入任务为 pending 状态，采纳后才成为定位附件；定位是附件不是判定，不改变任务的状态机、严重度或阻断语义。AI 建议不保证完整。模型调用走真实 provider 并在模型调用台账留一行。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImpactLocationSuggestionInput"
+              },
+              "example": {
+                "expected_version": 3,
+                "reason": "样本表述疑似受本次变更影响，请 AI 帮忙定位到句。"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务流转后的当前状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactTaskResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "project_id": "synthetic-project-id",
+                        "change_set_id": "synthetic-change-set-id",
+                        "target": {
+                          "kind": "ChapterVersion",
+                          "id": "synthetic-id",
+                          "version": "1"
+                        },
+                        "target_revision": 1,
+                        "action": "REVALIDATE_EVIDENCE",
+                        "severity": "blocking",
+                        "responsibility_domain": "synthetic-responsibility-domain",
+                        "status": "OPEN",
+                        "causes": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "source": {
+                              "kind": "ChapterVersion",
+                              "id": "synthetic-id",
+                              "version": "1"
+                            },
+                            "reason": "本人核对合成范围后明确提交此操作"
+                          }
+                        ],
+                        "version": 1,
+                        "closure_evidence": [
+                          {
+                            "kind": "ChapterVersion",
+                            "id": "synthetic-id",
+                            "version": "1"
+                          }
+                        ],
+                        "created_at": "2026-10-18T00:00:00Z",
+                        "updated_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少项目写权限、需要人工确认，或该任务依据的资料授权已不可用（错误码 impact_task_source_unavailable）。资料授权失效时任务状态保持不变，不会被转成 STALE——见 stale_reason 说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任务版本落后于服务端当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前任务状态不允许该动作，或闭环证据不是当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "runtime_paused: matching native runtime scope is paused when full-runtime policy is enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 128,
+        "x-lingdoc-service": "ActOnImpactTask",
+        "x-lingdoc-go-response": "ImpactTask",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
+    },
+    "/projects/{projectId}/impact-tasks/{taskId}/location-suggestions/{suggestionId}/decision": {
+      "post": {
+        "operationId": "decideImpactLocationSuggestion",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "人工采纳或驳回一条句级定位建议",
+        "description": "采纳把已验证的建议转成任务定位附件(source=ai_sentence)；被章节演进复验标记 relocate 的建议不可采纳，须先重新定位。权限与任务处置一致：manage 或当前责任人。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImpactLocationSuggestionDecisionInput"
+              },
+              "example": {
+                "expected_version": 4,
+                "decision": "adopt",
+                "reason": "该句确实需要复核，采纳为任务定位。"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "suggestionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务流转后的当前状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactTaskResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "project_id": "synthetic-project-id",
+                        "change_set_id": "synthetic-change-set-id",
+                        "target": {
+                          "kind": "ChapterVersion",
+                          "id": "synthetic-id",
+                          "version": "1"
+                        },
+                        "target_revision": 1,
+                        "action": "REVALIDATE_EVIDENCE",
+                        "severity": "blocking",
+                        "responsibility_domain": "synthetic-responsibility-domain",
+                        "status": "OPEN",
+                        "causes": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "source": {
+                              "kind": "ChapterVersion",
+                              "id": "synthetic-id",
+                              "version": "1"
+                            },
+                            "reason": "本人核对合成范围后明确提交此操作"
+                          }
+                        ],
+                        "version": 1,
+                        "closure_evidence": [
+                          {
+                            "kind": "ChapterVersion",
+                            "id": "synthetic-id",
+                            "version": "1"
+                          }
+                        ],
+                        "created_at": "2026-10-18T00:00:00Z",
+                        "updated_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少项目写权限、需要人工确认，或该任务依据的资料授权已不可用（错误码 impact_task_source_unavailable）。资料授权失效时任务状态保持不变，不会被转成 STALE——见 stale_reason 说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任务版本落后于服务端当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前任务状态不允许该动作，或闭环证据不是当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "runtime_paused: matching native runtime scope is paused when full-runtime policy is enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 128,
+        "x-lingdoc-service": "ActOnImpactTask",
+        "x-lingdoc-go-response": "ImpactTask",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
     }
   },
@@ -40416,20 +40868,20 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "id",
-          "project_id",
-          "change_set_id",
-          "target",
-          "target_revision",
           "action",
-          "severity",
-          "responsibility_domain",
-          "status",
           "causes",
-          "version",
+          "change_set_id",
           "closure_evidence",
           "created_at",
-          "updated_at"
+          "id",
+          "project_id",
+          "responsibility_domain",
+          "severity",
+          "status",
+          "target",
+          "target_revision",
+          "updated_at",
+          "version"
         ],
         "properties": {
           "id": {
@@ -40536,6 +40988,124 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "location_hints": {
+            "type": "array",
+            "description": "#774 档 A:正文位置引用(登记值/旧值/AI 采纳句的逐字出现处)。附件而非判定,不参与状态机与阻断。relocate=true 表示该值已不在当前正文,待重新定位。",
+            "items": {
+              "type": "object",
+              "required": [
+                "source",
+                "field_key",
+                "value",
+                "paragraph_index",
+                "start_offset",
+                "end_offset",
+                "excerpt"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "change_old_value",
+                    "registered_spec_value",
+                    "ai_sentence"
+                  ]
+                },
+                "field_key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "paragraph_index": {
+                  "type": "integer"
+                },
+                "start_offset": {
+                  "type": "integer"
+                },
+                "end_offset": {
+                  "type": "integer"
+                },
+                "excerpt": {
+                  "type": "string"
+                },
+                "relocate": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "location_suggestions": {
+            "type": "array",
+            "description": "#774 档 C:AI 句级定位建议(服务端已逐字验证 quote)。pending 待人工采纳/驳回,采纳后转为 location_hints;不保证完整,不是判定。",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "quote",
+                "paragraph_index",
+                "start_offset",
+                "end_offset",
+                "excerpt",
+                "impact_reason",
+                "confidence",
+                "status",
+                "model_run_id",
+                "created_at"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "paragraph_index": {
+                  "type": "integer"
+                },
+                "start_offset": {
+                  "type": "integer"
+                },
+                "end_offset": {
+                  "type": "integer"
+                },
+                "excerpt": {
+                  "type": "string"
+                },
+                "impact_reason": {
+                  "type": "string"
+                },
+                "suggested_action": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "adopted",
+                    "rejected"
+                  ]
+                },
+                "relocate": {
+                  "type": "boolean"
+                },
+                "model_run_id": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "suggestion_batch_key": {
+            "type": "string",
+            "description": "最近一次 AI 句级定位的幂等键;同键重放不产生第二次模型调用。"
           }
         },
         "x-go-type": "core.ImpactTask",
@@ -57279,6 +57849,60 @@
           },
           "replay_base": {
             "$ref": "#/components/schemas/ReplayBaseRef"
+          }
+        }
+      },
+      "ImpactLocationSuggestionInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "reason"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "本轮建议的幂等键；缺省取传输层 Idempotency-Key。重放同键直接返回原任务，不会产生第二次模型调用。"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "调用方读取到的任务版本；任务已被他人推进时拒绝(409)。"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "发起本轮 AI 句级定位的说明。"
+          }
+        }
+      },
+      "ImpactLocationSuggestionDecisionInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "adopt",
+              "reject"
+            ],
+            "description": "采纳把该建议转成任务定位附件(source=ai_sentence)；驳回仅记录状态。"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
           }
         }
       }

@@ -108,6 +108,10 @@ func NewLingDocWorkspaceHandler(
 	// and generation runs write to.
 	projectService.SetDependencyRecommendationModel(workspace.NewHostDependencyRecommendationModel(models,
 		workspace.WithRecommendationLedger(runtime.ModelCallLedger())))
+	// The AI sentence-location suggester (#774 tier C) shares the same
+	// registry and the same ledger instance: one row per call.
+	projectService.SetImpactLocationSuggestionModel(workspace.NewHostImpactLocationSuggestionModel(models,
+		workspace.WithImpactLocationLedger(runtime.ModelCallLedger())))
 	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
 	if err != nil {
 		return LingDocWorkspace{}, err

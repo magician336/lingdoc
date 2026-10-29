@@ -46,6 +46,9 @@ const (
 	// ModelCallLedgerSourceDependencyRecommendationRun is one dependency-edge
 	// recommendation run (#751).
 	ModelCallLedgerSourceDependencyRecommendationRun = "dependency_recommendation_run"
+	// ModelCallLedgerSourceImpactLocationSuggestionRun is one AI
+	// sentence-location suggestion run on an impact task (#774 tier C).
+	ModelCallLedgerSourceImpactLocationSuggestionRun = "impact_location_suggestion_run"
 )
 
 // The status of a ledger row: did the provider answer, or not.

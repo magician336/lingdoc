@@ -220,6 +220,10 @@ type Service struct {
 	// nil in the default composition: the recommender fails closed and the
 	// manual registration form is unaffected.
 	recommendationModel DependencyRecommendationModel
+	// impactLocationModel is the AI sentence-location suggester (#774 tier
+	// C). It is nil in the default composition: the trigger fails closed and
+	// the tier-A hints and all manual work are unaffected.
+	impactLocationModel ImpactLocationSuggestionModel
 	runtimeRecovery     RuntimeRecoveryChecker
 	// impactTasks and businessAudit are the narrow writer ports of the
 	// change-set apply transaction. They are nil in the default composition,
@@ -3715,6 +3719,14 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		next.ReviewItems = rebaseReviewItems(old.BodyMarkdown, input.BodyMarkdown, old.ReviewItems, workingCopy.WorkingCopyRevision+1, &id)
 		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
 			return operationResult[Chapter]{}, err
+		}
+		// #774 tier C: the chapter advanced, so every location hint and
+		// suggestion aimed at it is re-verified against the new body; a miss
+		// is flagged for relocation instead of rotting silently.
+		if store, ok := tx.(impactTransaction); ok {
+			if _, err := revalidateImpactLocations(store, projectID, chapterID, input.BodyMarkdown); err != nil {
+				return operationResult[Chapter]{}, err
+			}
 		}
 		nextCopy := workingCopy
 		nextCopy.BaseChapterVersionID = &id

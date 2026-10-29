@@ -52,11 +52,13 @@ var narrowPortMethods = map[string][]string{
 	"ImpactApplication": {
 		"AcknowledgeImpactPreflight",
 		"ActOnImpactTask",
+		"DecideImpactLocationSuggestion",
 		"GetImpactAssessment",
 		"ListContextRevisions",
 		"ListImpactTasks",
 		"ListRouteNodes",
 		"ReadImpactComputationReceipt",
+		"SuggestImpactLocations",
 	},
 	"DependencyApplication": {
 		"CreateDependencyEdge",

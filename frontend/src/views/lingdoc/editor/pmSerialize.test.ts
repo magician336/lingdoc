@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { Node as PMNodeType } from '@tiptap/pm/model'
 import { SourceRef, RawBlock, ChapterTitle } from './nodes'
 import { chaptersToDocJson, docJsonToChapters } from './docJson'
-import { chapterMaps, savedMarkdownOf, pmRangeToUtf16, semanticText } from './pmSerialize'
+import { chapterMaps, savedMarkdownOf, pmRangeToUtf16, semanticText, findNearestOccurrence } from './pmSerialize'
 
 const schema = getSchema([StarterKit.configure({ heading: { levels: [2, 3, 4] } }), SourceRef, RawBlock, ChapterTitle])
 
@@ -97,4 +97,17 @@ test('第二章（第二章标题之后）映射独立正确', () => {
   const r = pmRangeToUtf16(doc, 'c2', from, from + 3)
   assert.equal(r.ok, true)
   if (r.ok) assert.equal(r.quote, '目标句')
+})
+
+test('#774 档 A：findNearestOccurrence 取离参考偏移最近的出现处，缺失即拒绝', () => {
+  const markdown = '甲段。旧研究值在首处；旧研究值又在次处。'
+  const first = markdown.indexOf('旧研究值')
+  const second = markdown.indexOf('旧研究值', first + 1)
+  assert.ok(first > 0 && second > first)
+  assert.deepEqual(findNearestOccurrence(markdown, '旧研究值', 0), { start: first, end: first + 4 })
+  assert.deepEqual(findNearestOccurrence(markdown, '旧研究值', markdown.length - 1), { start: second, end: second + 4 })
+  // 服务端参考偏移落在两次出现之间时，取更近的一侧。
+  assert.deepEqual(findNearestOccurrence(markdown, '旧研究值', second - 1), { start: second, end: second + 4 })
+  assert.equal(findNearestOccurrence(markdown, '已不存在的研究值', 3), null)
+  assert.equal(findNearestOccurrence(markdown, '', 3), null)
 })

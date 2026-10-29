@@ -674,6 +674,12 @@ func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, tenantID u
 			return err
 		}
 	}
+	// #774 tier A: chapter tasks carry literal positions of the watched
+	// values (the change's old values and the registered spec values) so the
+	// owner can jump to the sentence instead of rereading the chapter. The
+	// same chapter reached by several tasks is located once.
+	hintValues := impactLocationValues(change, p.Spec)
+	hintCache := map[string][]ImpactLocationHint{}
 	for _, impact := range assessment.Impacts {
 		if impact.Certainty != "definite" || impact.Action == ImpactActionNoAction {
 			// NO_ACTION is an auditable resolution in the preview, not a
@@ -711,6 +717,18 @@ func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, tenantID u
 			task.Status = "STALE"
 			task.StaleReason = reason
 			task.StaleAt = now
+		}
+		if impact.Target.Kind == "ChapterVersion" && len(hintValues) > 0 {
+			chapter, e := tx.Chapter(p.ID, impact.Target.ID)
+			if e != nil {
+				return e
+			}
+			hints, located := hintCache[impact.Target.ID]
+			if !located {
+				hints = locateImpactPositions(chapter.BodyMarkdown, hintValues)
+				hintCache[impact.Target.ID] = hints
+			}
+			task.LocationHints = hints
 		}
 		if err := writeImpactTask(writer, tx, tenantID, store, task); err != nil {
 			return err

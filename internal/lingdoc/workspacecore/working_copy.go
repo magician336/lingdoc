@@ -342,6 +342,14 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 		if err := tx.AppendChapter(chapter, nextChapter, p.SpecRevision); err != nil {
 			return operationResult[CommittedChapterVersion]{}, err
 		}
+		// #774 tier C: the chapter advanced, so every location hint and
+		// suggestion aimed at it is re-verified against the new body; a miss
+		// is flagged for relocation instead of rotting silently.
+		if store, ok := tx.(impactTransaction); ok {
+			if _, err := revalidateImpactLocations(store, projectID, chapterID, nextChapter.BodyMarkdown); err != nil {
+				return operationResult[CommittedChapterVersion]{}, err
+			}
+		}
 		nextCopy := workingCopy
 		nextCopy.BaseChapterVersionID = &id
 		nextCopy.WorkingCopyRevision++
