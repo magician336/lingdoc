@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -366,10 +368,14 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	processed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status,processed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, "paper-knowledge", 7, "kb-assoc", "file", "Synthetic paper", "txt", len(original), "synthetic-file-hash", path, types.ParseStatusCompleted, processed).Error; err != nil {
+	fileDigest := md5.Sum([]byte(original))
+	uploadHash := hex.EncodeToString(fileDigest[:])
+	if err := db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status,processed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, "paper-knowledge", 7, "kb-assoc", "file", "Synthetic paper", "txt", len(original), uploadHash, path, types.ParseStatusCompleted, processed).Error; err != nil {
 		t.Fatal(err)
 	}
-	asset, err := evidence.NewBindings(db).Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "paper-knowledge", KnowledgeBaseID: "kb-assoc", Title: "Synthetic paper", CreatedBy: "reader", Signal: evidence.KnowledgeSignal{KnowledgeID: "paper-knowledge", ParseStatus: types.ParseStatusCompleted, FileHash: "synthetic-file-hash", FileSize: int64(len(original)), ProcessedAt: processed}})
+	bindings := evidence.NewBindings(db)
+	bindings.SetKnowledgeSignalReader(dbKnowledgeReader{db: db})
+	asset, err := bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "paper-knowledge", KnowledgeBaseID: "kb-assoc", Title: "Synthetic paper", CreatedBy: "reader", Signal: evidence.KnowledgeSignal{KnowledgeID: "paper-knowledge", ParseStatus: types.ParseStatusCompleted, FileHash: uploadHash, FileSize: int64(len(original)), ProcessedAt: processed}})
 	if err != nil {
 		t.Fatal(err)
 	}

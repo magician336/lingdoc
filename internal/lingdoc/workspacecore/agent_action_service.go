@@ -1811,7 +1811,14 @@ func (s *Service) ListEvidenceCards(ctx context.Context, actor Actor, projectID 
 	}
 	for i, card := range out {
 		if _, err := s.loadCheckedEvidenceCard(ctx, actor, projectID, card.ID, card.Status == "CONFIRMED"); err != nil {
-			out[i].Status = "NEEDS_REVIEW"
+			// Preserve explicit negative dispositions even if the underlying
+			// source is no longer visible. A read-time check must not turn a
+			// rejected or superseded card into a reviewable candidate.
+			switch card.Status {
+			case "INSUFFICIENT", "SUPERSEDED", "STALE":
+			default:
+				out[i].Status = "NEEDS_REVIEW"
+			}
 			out[i].InvalidReason = "来源、主张、定位或权限需要复核"
 			out[i].Limitations = ""
 			out[i].Gaps = ""

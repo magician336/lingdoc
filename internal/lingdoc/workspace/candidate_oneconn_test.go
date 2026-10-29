@@ -138,23 +138,27 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	originPath := filepath.Join(t.TempDir(), "actual-origin.txt")
 	require.NoError(t, os.WriteFile(originPath, []byte(sourcePolicyQuote), 0600))
 	require.NoError(t, db.Exec("UPDATE knowledges SET file_type='txt',file_path=? WHERE id=?", originPath, "knowledge-1").Error)
+	setFixtureUploadHash(t, db, []byte(sourcePolicyQuote))
 	require.NoError(t, db.Exec("UPDATE chunks SET source_content=content WHERE id=?", "source-1").Error)
 	seedDeliveryBoundTemplateCopy(t, db, "actual-copy")
 	// A second, genuinely bound asset is deliberately excluded from generation.
 	require.NoError(t, db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status) VALUES(?,?,?,?,?,?,?,?,?,?)`, "unused-knowledge", 7, "kb-1", "file", "Unused synthetic", "txt", 0, "unused-hash", "", "completed").Error)
 	shares := candidateOneConnShares{}
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, shares, nil, delivery.NewFixedTemplateReader())
+	require.NoError(t, runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID))
+	currentAsset, err := runtime.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	require.NoError(t, err)
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewResearchAdapter(db, projects, runtime, shares, nil, nil)
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter})
-	_, err := runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
+	_, err = runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
 	require.NoError(t, err)
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)
-	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "合成软件流程验证", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "合成人工许可fixture", ContextRevision: 1}
+	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: int64(currentAsset.AssetRevision), PolicyVersion: 1, Scope: "project", Purpose: "合成软件流程验证", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "合成人工许可fixture", ContextRevision: 1}
 	policyJSON, err := json.Marshal(policy)
 	require.NoError(t, err)
 	require.NoError(t, core.NewTransactionAdapter(db).(core.ObjectStore).InsertObject(core.StoredObject{ProjectID: "project-1", Kind: core.AssetPolicyKind, ID: assetID, Version: 1, Payload: policyJSON}))
@@ -187,7 +191,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 	current, err := store.GenerationContext(deadline, p.ID, "chapter-2")
 	require.NoError(t, err)
-	current.Basis.AssetVersions = []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: 1}}
+	current.Basis.AssetVersions = []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: currentAsset.AssetRevision}}
 	current.Basis.EvidenceCardRefs = []core.VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
 	candidate := candidateadoption.Candidate{ID: "oneconn-candidate", ProjectID: p.ID, ChapterID: "chapter-2", Validity: "fresh", RunID: "synthetic-local-run", BodyMarkdown: "合成候选 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: current.Basis, WritingAction: writingaction.ActionGenerate, Origin: writingaction.OriginGenerated}
 	candidate.Claims = []candidateadoption.ClaimEvidence{{Text: candidate.BodyMarkdown, References: []candidateadoption.ClaimEvidenceReference{{CardID: card.ID, CardVersion: card.Version, AnchorID: anchor.ID, AnchorVersion: anchor.Version, SourceID: anchor.SourceID, Locator: anchor.Locator, SelectionStart: anchor.SelectionStart, SelectionEnd: anchor.SelectionEnd, QuotedTextHash: anchor.QuotedTextHash}}}}
@@ -267,7 +271,7 @@ func TestCandidateActualOneConnectionProofRejectsChangedNativeFactsAndIdentity(t
 				case "content":
 					require.NoError(t, tx.Exec("UPDATE chunks SET content='changed' WHERE id=?", "source-1").Error)
 				case "asset_revision":
-					require.NoError(t, tx.Exec("UPDATE lingdoc_project_assets SET asset_revision=2 WHERE id=?", f.candidate.Basis.AssetVersions[0].AssetID).Error)
+					require.NoError(t, tx.Exec("UPDATE lingdoc_project_assets SET asset_revision=asset_revision+1 WHERE id=?", f.candidate.Basis.AssetVersions[0].AssetID).Error)
 				case "model_consent":
 					var policy core.ProjectAssetPolicy
 					var row struct{ PayloadJSON string }

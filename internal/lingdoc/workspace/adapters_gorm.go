@@ -164,7 +164,9 @@ func (r dbKnowledgeReader) CurrentKnowledgeSignal(ctx context.Context, knowledge
 		FileSize:    knowledge.FileSize,
 		ProcessedAt: valueTime(knowledge.ProcessedAt),
 	}
-	if knowledge.IsManual() {
+	if knowledge.IsManual() || r.files == nil {
+		// Legacy file references can be local paths. The snapshot reader
+		// validates the upload hash and parser before using that fallback.
 		reader := evidence.NewOriginReader(r).(evidence.OriginSnapshotReader)
 		if _, data, available, readErr := reader.OriginSnapshot(ctx, knowledgeID); readErr == nil && available {
 			digest := sha256.Sum256(data)
