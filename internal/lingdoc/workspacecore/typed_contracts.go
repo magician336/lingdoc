@@ -281,6 +281,7 @@ const (
 	operationActOnImpactTask                operationName = "actOnImpactTask"
 	operationSuggestImpactLocations         operationName = "suggestImpactLocations"
 	operationDecideImpactLocationSuggestion operationName = "decideImpactLocationSuggestion"
+	operationAddImpactSelectionReference    operationName = "addImpactSelectionReference"
 	operationStabilizeRevision              operationName = "stabilizeRevision"
 	operationCreateChangeDraft              operationName = "createChangeDraft"
 	operationAssessChangeSet                operationName = "assessChangeSet"

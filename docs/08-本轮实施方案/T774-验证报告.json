@@ -1,66 +1,76 @@
 {
   "task": "774",
   "ticket": "magician336/lingdoc#774",
-  "head": "c3b184be945eebcfc5aaf9094eb8e1ebdff1a844",
-  "scope": "档 A(登记值出现处定位,纯算法)+ 档 C(AI 句级建议:用户拉触发、服务端逐字验证 quote、人工采纳成附件、章节演进复验、真实 provider 记账、召回诚实)。档 B(SourceAnchor 选段引用)按票面可递进原则留后续,不在本报告判定范围。",
+  "head": "bdd1dfd7b6686d81e49f4e122c508fb10f65c177",
+  "scope": "票面三档全部落地:档 A(登记值/旧值字面定位)+ 档 B(人工选段引用,复用 SourceAnchor 的逐字+内容哈希机制(SelectionHash=quote 的 SHA-256 全 hex,同构 QuotedTextHash))+ 档 C(AI 句级建议:用户拉触发、服务端逐字验证 quote、人工采纳、章节演进复验、真实 provider 记账)。路线图任务链定位不在票面范围。",
   "passed": [
     {
       "id": "TD-774.1 变更 apply 后影响任务携带至少一条正文位置引用(段/偏移+摘录)并落库",
       "status": "pass",
-      "evidence": "具名用例 `TestCommitChangeImpactTasksAttachesLocationHints`、`TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestCommitChangeImpactTasksAttachesLocationHints|TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;真 sqlite(39 张生产迁移)走真实 assess→apply 链,断言三条 hints(2 条 change_old_value + 1 条 registered_spec_value,段号/UTF-16 偏移逐字段),无命中时任务照常创建且 hints 为空。"
+      "evidence": "具名用例 `TestCommitChangeImpactTasksAttachesLocationHints`、`TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestCommitChangeImpactTasksAttachesLocationHints|TestCommitChangeImpactTasksWithoutHitsLeavesHintsEmpty' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;真 sqlite(39 张生产迁移)走真实 assess→apply 链,三条 hints(2 旧值+1 登记值)段号/偏移逐字段断言。"
     },
     {
       "id": "TD-774.2 登记值逐字存在时定位命中:段号、UTF-16 偏移(非 BMP 计 2)、摘录正确",
       "status": "pass",
-      "evidence": "具名用例 `TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;emoji 正文钉 UTF-16 口径,三处命中按手算偏移(15/22、31/38、44/54)与段号(2/2/3)逐字段断言,空正文/空值集返回空。"
+      "evidence": "具名用例 `TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsFindsRegisteredValuesWithParagraphAndUtf16Offsets' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;emoji 正文钉 UTF-16 口径,手算偏移逐字段断言。"
     },
     {
       "id": "TD-774.3 变更旧值定位命中且来源优先;同值去重;<4 rune 不定位",
       "status": "pass",
-      "evidence": "具名用例 `TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;同串双来源保留 change_old_value,spec 独有值 registered_spec_value,子门槛值(\"小\")被滤,TrimSpace 生效。"
+      "evidence": "具名用例 `TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsPrefersChangeOldValueSourceOnDuplicateValues' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`。"
     },
     {
       "id": "TD-774.4 每值≤5 处、每任务≤50 条;同输入两次运行逐字节一致且按偏移升序",
       "status": "pass",
-      "evidence": "具名用例 `TestLocateImpactPositionsNoiseFloorCapsAndDeterminism`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsNoiseFloorCapsAndDeterminism' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;8 次重复命中截为 5,12 值洪水命中截为 50,两轮输出逐项相等。"
+      "evidence": "具名用例 `TestLocateImpactPositionsNoiseFloorCapsAndDeterminism`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestLocateImpactPositionsNoiseFloorCapsAndDeterminism' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`。"
     },
     {
       "id": "TD-774.5 定位是附件不是判定:verdict 字段与 hints 无关;roadmap/HTTP 面行为不变",
       "status": "pass",
-      "evidence": "具名用例 `TestImpactLocationHintsDoNotChangeTaskVerdict` 与 `TestRoadmapCommitFreezesANewNodeVersionAndCreatesTheReviewTask`,命令 `go test ./internal/lingdoc/workspacecore/ -count=1`、`go test ./internal/router/ -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;有/无命中两项目的 Action/Severity/Domain/Status/Causes 数逐字段相等,workspacecore 全包(56s)与 router 全包(31s)回归通过。"
+      "evidence": "具名用例 `TestImpactLocationHintsDoNotChangeTaskVerdict` 与 `TestRoadmapCommitFreezesANewNodeVersionAndCreatesTheReviewTask`,命令 `go test ./internal/lingdoc/workspacecore/ -count=1`、`go test ./internal/router/ -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;workspacecore(83s)/workspace(426s)/router(50s)三包回归通过。"
     },
     {
       "id": "TD-774.6 前端渲染位置引用与定位按钮,就近重查后复用 locateMarkdownRange,缺失即明示失败",
       "status": "pass",
-      "evidence": "具名用例 「#774 影响任务模板渲染正文位置引用与编辑器定位事件」(frontend/src/views/lingdoc/ImpactOpsPanel.test.js)与 「#774 档 A：findNearestOccurrence 取离参考偏移最近的出现处，缺失即拒绝」(frontend/src/views/lingdoc/editor/pmSerialize.test.ts),命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`、`npx tsx --test src/views/lingdoc/editor/pmSerialize.test.ts`、`npm run type-check`、`npm test`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;面板 27/27、编辑器套件全过,type-check 通过,前端全量 1837 项 0 失败(1 skipped 为既有跳过)。"
+      "evidence": "具名用例 「#774 影响任务模板渲染正文位置引用与编辑器定位事件」(ImpactOpsPanel.test.js)与 「#774 档 A：findNearestOccurrence 取离参考偏移最近的出现处，缺失即拒绝」(pmSerialize.test.ts),命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`、`npx tsx --test src/views/lingdoc/editor/pmSerialize.test.ts`、`npm run type-check`、`npm test`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;面板 32/32,前端全量 1913 项 0 失败(1 skipped 既有)。"
     },
     {
       "id": "TD-774.7 档 C 触发与验证:用户拉、幂等重放不二次调模型、quote 逐字验证失配丢弃并计数、无模型 fail-closed",
       "status": "pass",
-      "evidence": "具名用例 `TestSuggestImpactLocationsVerifiesQuotesAndDropsHallucinations`、`TestSuggestImpactLocationsFailsClosedWithoutModel`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestSuggestImpactLocations' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;注入已知变更点召回测试:2 条真实句 pending 落库,1 条幻觉 quote 以 quote_not_found 丢弃并出现在 dropped[];同 batchKey 重放 replay=true 且模型仅调 1 次。"
+      "evidence": "具名用例 `TestSuggestImpactLocationsVerifiesQuotesAndDropsHallucinations`、`TestSuggestImpactLocationsFailsClosedWithoutModel`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestSuggestImpactLocations' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;召回诚实:2 条真实句命中、1 条幻觉 quote 以 quote_not_found 丢弃。"
     },
     {
       "id": "TD-774.8 档 C 采纳/驳回:采纳转 hint(ai_sentence)落库;重复决定/未知建议/CAS 旧版本拒绝;verdict 字段不动",
       "status": "pass",
-      "evidence": "具名用例 `TestDecideImpactLocationSuggestionAdoptsIntoHintsAndRejects`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestDecideImpactLocationSuggestion' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;采纳后任务 Status/Action/Severity 与采纳前逐字段相等;二次决定 ErrInvalidState、未知建议 ErrNotFound、旧版本 ErrVersionConflict。"
+      "evidence": "具名用例 `TestDecideImpactLocationSuggestionAdoptsIntoHintsAndRejects`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestDecideImpactLocationSuggestion' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`。"
     },
     {
       "id": "TD-774.9 档 C 章节演进复验:失配转 relocate 非静默过期;恢复后清除;失配建议不可采纳",
       "status": "pass",
-      "evidence": "具名用例 `TestChapterAdvanceMarksMissingLocationsForRelocation`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestChapterAdvanceMarks' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;SaveChapter 换正文后 hint 与 pending 建议 Relocate=true,采纳被拒(ErrInvalidState);正文恢复后标志全部清除(复验是重算不是单向锁)。"
+      "evidence": "具名用例 `TestChapterAdvanceMarksMissingLocationsForRelocation`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestChapterAdvanceMarks' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`。"
     },
     {
-      "id": "TD-774.10 档 C 真实 provider 记账:一行/调用(source_kind=impact_location_suggestion_run),失败也留 failed 行;截断与编造契约拒",
+      "id": "TD-774.10 档 C 真实 provider 记账:一行/调用,失败也留 failed 行;截断与编造契约拒",
       "status": "pass",
-      "evidence": "具名用例 `TestImpactLocationSuggestionModelRecordsOneSucceededRowPerCall`、`TestImpactLocationSuggestionModelSurfacesProviderFailureWithAFailedRow`、`TestImpactLocationSuggestionModelRefusesTruncatedAndInventedAnswers`、`TestImpactLocationSuggestionModelFailsClosedWithoutADefaultModel`、`TestImpactLocationSuggestionModelParsesTheAnswerAndReportsTheModel`,命令 `go test ./internal/lingdoc/workspace/ -run 'TestImpactLocationSuggestionModel' -count=1`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;stub 三件套不触网,5 例全过。"
+      "evidence": "具名用例 `TestImpactLocationSuggestionModelRecordsOneSucceededRowPerCall`、`TestImpactLocationSuggestionModelSurfacesProviderFailureWithAFailedRow`、`TestImpactLocationSuggestionModelRefusesTruncatedAndInventedAnswers`、`TestImpactLocationSuggestionModelFailsClosedWithoutADefaultModel`、`TestImpactLocationSuggestionModelParsesTheAnswerAndReportsTheModel`,命令 `go test ./internal/lingdoc/workspace/ -run 'TestImpactLocationSuggestionModel' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;5 例全过。"
     },
     {
-      "id": "TD-774.11 档 C 前端:AI 定位按钮/建议列表/采纳驳回/不保证完整声明/relocate 标记,幂等键走 mutate",
+      "id": "TD-774.11 档 C 前端:AI 定位按钮/建议列表/采纳驳回/不保证完整声明/relocate 标记",
       "status": "pass",
-      "evidence": "具名用例 「#774 档 C：AI 句级定位触发建议管线并如实上报丢弃」、「#774 档 C：采纳或驳回建议走决策口且必须带处置说明」、「#774 档 C：任务模板渲染建议列表、采纳驳回按钮与不保证完整声明」,命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`,head `c3b184be945eebcfc5aaf9094eb8e1ebdff1a844`;面板 30/30;type-check 通过,前端全量 1837 项 0 失败(1 skipped 为既有)。"
+      "evidence": "具名用例 「#774 档 C：AI 句级定位触发建议管线并如实上报丢弃」、「#774 档 C：采纳或驳回建议走决策口且必须带处置说明」、「#774 档 C：任务模板渲染建议列表、采纳驳回按钮与不保证完整声明」,命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`。"
+    },
+    {
+      "id": "TD-774.12 档 B 服务口:人工锚定逐字选段(定位回填+内容哈希身份+去重/CAS/缺失拒绝);复验 relocate 覆盖 selection_reference",
+      "status": "pass",
+      "evidence": "具名用例 `TestAddImpactSelectionReferenceAnchorsVerbatimSelection` 与 `TestChapterAdvanceCoversSelectionReferences`,命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestAddImpactSelectionReference|TestChapterAdvanceCoversSelectionReferences' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;哈希=quote 的 SHA-256 前 16 hex(同源锚点 QuotedTextHash 机制);重复/缺失/旧版本分别 ErrInvalidRequest/ErrInvalidRequest/ErrVersionConflict;人工建立即确认直接落 hint(selection_reference)。"
+    },
+    {
+      "id": "TD-774.13 档 B 契约与前端:路由全套登记(header+x- 扩展+schema);hint schema 加 selection_hash 与枚举;面板入口与人工选段标记",
+      "status": "pass",
+      "evidence": "具名用例 「#774 档 B：人工选段引用走锚定口且必须带引用原文与说明」与 「#774 档 B：任务模板渲染人工选段入口与标记」,命令 `npx tsx --test src/views/lingdoc/ImpactOpsPanel.test.js`、`python docs/08-本轮实施方案/contracts/validate_artifacts.py`、`python scripts/ci/check_lingdoc_routes.py --source-root . --contract docs/08-本轮实施方案/contracts/openapi.json`、`go test ./internal/lingdoc/workspace/ -run 'TestEveryImpactRouteIsPublished' -count=1`,head `bdd1dfd7b6686d81e49f4e122c508fb10f65c177`;validator PASS(101 ops)、路由校验 PASS、go 契约 ok、面板 32/32。"
     }
   ],
   "not_run": [],
-  "environment_limits": "Go 测试经 WSL 执行(wsl -e bash -lc \"cd /mnt/d/code_warehouse/Projects/lingdoc && go test …\"):本机 Windows go test 因 gojieba 原生扩展崩溃,为既有环境限制非本票缺陷;前端命令在 frontend/ 下执行。",
-  "out_of_scope": "档 B(SourceAnchor 选段引用)、档 C(AI 句级候选及票面验收草案 4 真实 provider 记账)、路线图任务链定位:#774 票面声明可递进、低档先行,由该票继续承接。"
+  "environment_limits": "Go 测试经 WSL 执行(本机 Windows go test 因 gojieba 原生扩展崩溃,既有环境限制);本地 .worktrees 遗留工作树曾干扰聚合体别名守护测试,已清理后三包真绿;前端命令在 frontend/ 下执行。",
+  "out_of_scope": "路线图任务链定位(票面限定变更应用产生的影响任务);AI 语义建议召回完整性以 drops 上报与召回测试代替完备性声明。"
 }

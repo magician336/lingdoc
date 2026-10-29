@@ -144,6 +144,9 @@ func RegisterImpactRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 	r.POST("/impact-tasks/:taskId/location-suggestions/:suggestionId/decision", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.ImpactLocationSuggestionDecisionInput) (json.RawMessage, int, bool, error) {
 		return ports.Impact.DecideImpactLocationSuggestion(c.Request.Context(), a, c.Param("projectId"), c.Param("taskId"), c.Param("suggestionId"), k, i)
 	}))
+	r.POST("/impact-tasks/:taskId/selection-references", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.ImpactSelectionReferenceInput) (json.RawMessage, int, bool, error) {
+		return ports.Impact.AddImpactSelectionReference(c.Request.Context(), a, c.Param("projectId"), c.Param("taskId"), k, i)
+	}))
 	r.GET("/runtime/controls", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RuntimeControl, error) {
 		return ports.Runtime.ListRuntimeControls(c.Request.Context(), a, c.Param("projectId"))
 	}))

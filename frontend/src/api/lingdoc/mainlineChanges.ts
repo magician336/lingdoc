@@ -41,13 +41,15 @@ export type ImpactTaskSeverity = 'blocking' | 'warning' | 'info'
 // #774 档 A：正文位置引用是任务的附件而非判定。start_offset/end_offset 是服务端
 // 对章节正文口径的 UTF-16 偏移，只作参考——客户端定位时以 value 原文就近重查。
 // relocate=该值已不在当前正文，章节演进复验后标记，待重新定位而非静默过期。
-export interface ImpactLocationHint { source: 'change_old_value' | 'registered_spec_value' | 'ai_sentence'; field_key: string; value: string; paragraph_index: number; start_offset: number; end_offset: number; excerpt: string; relocate?: boolean }
+export interface ImpactLocationHint { source: 'change_old_value' | 'registered_spec_value' | 'ai_sentence' | 'selection_reference'; field_key: string; value: string; paragraph_index: number; start_offset: number; end_offset: number; excerpt: string; relocate?: boolean; selection_hash?: string }
 // #774 档 C：AI 句级建议。服务端已逐字验证 quote 存在于正文；采纳后才成为
 // location_hint；relocate=true 的建议不可采纳。建议不是判定，不改变阻断语义。
 export interface ImpactLocationSuggestion { id: string; quote: string; paragraph_index: number; start_offset: number; end_offset: number; excerpt: string; impact_reason: string; suggested_action?: string; confidence: number; status: 'pending' | 'adopted' | 'rejected'; relocate?: boolean; model_run_id: string; created_at: string }
 export interface ImpactLocationSuggestionInput { idempotency_key?: string; expected_version: number; reason: string }
 export interface ImpactLocationSuggestionDecisionInput { expected_version: number; decision: 'adopt' | 'reject'; reason: string }
 export interface ImpactLocationSuggestionOutcome { task: ImpactTask; suggestions: ImpactLocationSuggestion[]; dropped?: Array<{ quote: string; reason: string }>; model: { model_id?: string; run_mode?: string; model_run_id?: string } }
+// #774 档 B:人工选段引用——责任人把章节内一段逐字原文锚定到任务;服务端定位并按内容哈希建身份,人工建立即确认。
+export interface ImpactSelectionReferenceInput { expected_version: number; quote: string; reason: string }
 export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: ImpactTaskSeverity; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; location_hints?: ImpactLocationHint[]; location_suggestions?: ImpactLocationSuggestion[]; suggestion_batch_key?: string; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
 // An object state records what the assessment concluded about one object
 // version: whether its confirmation survived, which source versions back it,
@@ -94,6 +96,7 @@ export const listContextRevisions = (id: string) => get<Result<ContextRevisionRe
 export const listDependencies = (id: string) => get<Result<DependencyEdge[]>>(`${base(id)}/dependencies`)
 export const suggestImpactLocations = (id: string, taskId: string, input: ImpactLocationSuggestionInput, key: string) => post<Result<ImpactLocationSuggestionOutcome>>(`${base(id)}/impact-tasks/${segment(taskId)}/location-suggestions`, input, headers(key))
 export const decideImpactLocationSuggestion = (id: string, taskId: string, suggestionId: string, input: ImpactLocationSuggestionDecisionInput, key: string) => post<Result<ImpactLocationSuggestionOutcome>>(`${base(id)}/impact-tasks/${segment(taskId)}/location-suggestions/${segment(suggestionId)}/decision`, input, headers(key))
+export const addImpactSelectionReference = (id: string, taskId: string, input: ImpactSelectionReferenceInput, key: string) => post<Result<ImpactTask>>(`${base(id)}/impact-tasks/${segment(taskId)}/selection-references`, input, headers(key))
 export const createDependency = (id: string, input: DependencyEdgeInput, key: string) => post<Result<DependencyEdge>>(`${base(id)}/dependencies`, input, headers(key))
 export const decideDependency = (id: string, edgeId: string, input: DependencyDecisionInput, key: string) => post<Result<DependencyEdge>>(`${base(id)}/dependencies/${segment(edgeId)}/decision`, input, headers(key))
 export const listImpactTasks = (id: string) => get<Result<ImpactTask[]>>(`${base(id)}/impact-tasks`)
