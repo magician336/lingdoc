@@ -40025,7 +40025,19 @@
               }
             }
           }
-        }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 128,
+        "x-lingdoc-service": "ActOnImpactTask",
+        "x-lingdoc-go-response": "ImpactTask",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
     },
     "/projects/{projectId}/impact-tasks/{taskId}/location-suggestions/{suggestionId}/decision": {
@@ -40244,7 +40256,19 @@
               }
             }
           }
-        }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 128,
+        "x-lingdoc-service": "ActOnImpactTask",
+        "x-lingdoc-go-response": "ImpactTask",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
     }
   },
