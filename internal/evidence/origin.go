@@ -2,6 +2,8 @@ package evidence
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -135,8 +137,8 @@ func (r *fileOriginReader) OriginText(ctx context.Context, knowledgeID string) (
 }
 
 // OriginSnapshot returns parser-aligned text and the exact raw bytes that
-// produced it, from a single storage read. Manual records and transformed
-// formats deliberately do not provide a verifiable original-byte snapshot.
+// produced it, from a single storage read. Uploaded files additionally have
+// to match the hash recorded at upload; URL hashes do not describe bytes.
 func (r *fileOriginReader) OriginSnapshot(ctx context.Context, knowledgeID string) (string, []byte, bool, error) {
 	if knowledgeID == "" {
 		return "", nil, false, nil
@@ -146,6 +148,13 @@ func (r *fileOriginReader) OriginSnapshot(ctx context.Context, knowledgeID strin
 		return "", nil, false, err
 	}
 	if row.IsManual() {
+		text, ok, err := manualOrigin(row)
+		if err != nil || !ok || len(text) > maxOriginBytes {
+			return "", nil, false, err
+		}
+		return text, []byte(text), true, nil
+	}
+	if row.Type != "file" {
 		return "", nil, false, nil
 	}
 	if _, ok := directReadExtensions[normalizeExtension(row.FileType)]; !ok {
@@ -158,6 +167,13 @@ func (r *fileOriginReader) OriginSnapshot(ctx context.Context, knowledgeID strin
 	raw, ok, err := r.originBytes(ctx, row)
 	if err != nil || !ok {
 		return "", nil, false, err
+	}
+	// FileHash is the complete upload's MD5, recorded before the file was
+	// stored. It is an integrity signal, not a collision-resistant signature.
+	// Missing or non-upload hashes cannot establish indexed-byte identity.
+	sum := md5.Sum(raw)
+	if !strings.EqualFold(row.FileHash, hex.EncodeToString(sum[:])) {
+		return "", nil, false, nil
 	}
 	text, ok := UploadedOriginForIndex(raw)
 	if !ok {

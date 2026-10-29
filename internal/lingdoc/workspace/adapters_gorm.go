@@ -164,7 +164,13 @@ func (r dbKnowledgeReader) CurrentKnowledgeSignal(ctx context.Context, knowledge
 		FileSize:    knowledge.FileSize,
 		ProcessedAt: valueTime(knowledge.ProcessedAt),
 	}
-	if r.files != nil {
+	if knowledge.IsManual() {
+		reader := evidence.NewOriginReader(r).(evidence.OriginSnapshotReader)
+		if _, data, available, readErr := reader.OriginSnapshot(ctx, knowledgeID); readErr == nil && available {
+			digest := sha256.Sum256(data)
+			signal.OriginalContentSHA256 = hex.EncodeToString(digest[:])
+		}
+	} else if r.files != nil {
 		if data, available, readErr := r.files.OriginBytes(ctx, knowledgeID); readErr == nil && available {
 			digest := sha256.Sum256(data)
 			signal.OriginalContentSHA256 = hex.EncodeToString(digest[:])

@@ -3,6 +3,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
@@ -178,8 +180,10 @@ func TestOriginTextIsProvenAgainstTheStoredBytes(t *testing.T) {
 
 func TestOriginSnapshotUsesOneReadForTextAndRawBytes(t *testing.T) {
 	storage := &storageStub{data: []byte("first\r\nsecond\r")}
+	sum := md5.Sum(storage.data)
 	reader := evidence.NewOriginReader(&storageBackedKnowledge{
 		filePath: "resource://handle-1",
+		fileHash: hex.EncodeToString(sum[:]),
 		files:    KnowledgeFileOriginReader{Service: storage},
 	})
 	snapshotReader, ok := reader.(evidence.OriginSnapshotReader)
@@ -203,11 +207,12 @@ func TestOriginSnapshotUsesOneReadForTextAndRawBytes(t *testing.T) {
 // Its bytes come from the storage side.
 type storageBackedKnowledge struct {
 	filePath string
+	fileHash string
 	files    KnowledgeFileOriginReader
 }
 
 func (k *storageBackedKnowledge) KnowledgeForOrigin(_ context.Context, _ string) (*types.Knowledge, error) {
-	return &types.Knowledge{ID: "k-1", FilePath: k.filePath, FileType: "md"}, nil
+	return &types.Knowledge{ID: "k-1", Type: "file", FileHash: k.fileHash, FilePath: k.filePath, FileType: "md"}, nil
 }
 
 func (k *storageBackedKnowledge) UsesBuiltinConverter(_ context.Context, _ string) (bool, error) {

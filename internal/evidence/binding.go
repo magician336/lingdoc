@@ -171,6 +171,10 @@ func (b *Bindings) RefreshAsset(ctx context.Context, projectID, assetID string) 
 	}
 	if !present {
 		signal = KnowledgeSignal{KnowledgeID: asset.KnowledgeID, ParseStatus: types.ParseStatusDeleting}
+	} else if signal.OriginalContentSHA256 == "" {
+		// A temporarily unreadable origin is not evidence of a new content
+		// revision. Each research read still checks the current bytes separately.
+		signal.OriginalContentSHA256 = asset.OriginalContentSHA256
 	}
 	_, err = b.ObserveAsset(ctx, projectID, assetID, signal)
 	return err

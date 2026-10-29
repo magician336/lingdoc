@@ -76,6 +76,7 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+	setFixtureUploadHash(t, db, storage.data)
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
 	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
 		t.Fatalf("establish original-byte revision baseline: %v", err)

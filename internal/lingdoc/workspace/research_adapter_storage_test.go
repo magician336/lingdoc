@@ -15,6 +15,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -221,9 +222,11 @@ func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 	configureDirectTextStorageKnowledge(t, db)
 
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote + "\nfirst suffix")}
+	setFixtureUploadHash(t, db, storage.data)
+	currentAsset := refreshFixtureStorageAsset(t, db, assetID, storage)
 	sources := &adapterStorageSourcesStub{
-		assets: []evidence.Asset{{ID: assetID, KnowledgeID: "knowledge-1", AssetRevision: 1, ProcessingState: evidence.AssetStateReady, OriginalContentSHA256: sha256Hex(storage.data)}},
-		source: evidence.Source{ID: "source-1", AssetID: assetID, AssetRevision: 1, Status: evidence.SourceAvailable, QuotedText: sourcePolicyQuote},
+		assets: []evidence.Asset{currentAsset},
+		source: evidence.Source{ID: "source-1", AssetID: assetID, AssetRevision: currentAsset.AssetRevision, Status: evidence.SourceAvailable, QuotedText: sourcePolicyQuote},
 	}
 	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil)
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
@@ -265,6 +268,29 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// An upload's FileHash is set by the ingestion path before storage.
+func setFixtureUploadHash(t *testing.T, db *gorm.DB, data []byte) {
+	t.Helper()
+	sum := md5.Sum(data)
+	if err := db.Exec("UPDATE knowledges SET type='file', file_hash=? WHERE id=?", hex.EncodeToString(sum[:]), "knowledge-1").Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func refreshFixtureStorageAsset(t *testing.T, db *gorm.DB, assetID string, storage *adapterStorageStub) evidence.Asset {
+	t.Helper()
+	bindings := evidence.NewBindings(db)
+	bindings.SetKnowledgeSignalReader(dbKnowledgeReader{db: db, files: KnowledgeFileOriginReader{Service: storage}})
+	if err := bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return asset
+}
+
 func TestConnectOriginFilesRefreshesStoredRevisionWithFullByteDigest(t *testing.T) {
 	_, db, assetID := seedBoundSource(t)
 	seedStorageBackedKnowledge(t, db)
@@ -274,7 +300,7 @@ func TestConnectOriginFilesRefreshesStoredRevisionWithFullByteDigest(t *testing.
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, nil)
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
 
-	signal, present, err := runtime.bindings.signals.CurrentKnowledgeSignal(context.Background(), "knowledge-1")
+	signal, present, err := (dbKnowledgeReader{db: db, files: KnowledgeFileOriginReader{Service: storage}}).CurrentKnowledgeSignal(context.Background(), "knowledge-1")
 	if err != nil || !present {
 		t.Fatalf("CurrentKnowledgeSignal present=%v err=%v", present, err)
 	}
@@ -332,7 +358,16 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+	const rawPrefix = "前缀\r\n🚀\r"
+	const indexedPrefix = "前缀\n🚀\n"
+	const rawChunk = "段首\r\n" + sourcePolicyQuote
+	const indexedChunk = "段首\n" + sourcePolicyQuote
+	quoteStart := len([]rune(indexedPrefix + "段首\n"))
+	if err := db.Exec("UPDATE chunks SET start_at=?, end_at=? WHERE id=?", quoteStart, quoteStart+len([]rune(sourcePolicyQuote)), "source-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	storage := &adapterStorageStub{data: []byte(rawPrefix + rawChunk)}
+	setFixtureUploadHash(t, db, storage.data)
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
 	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
 		t.Fatalf("establish original-byte revision baseline: %v", err)
@@ -374,10 +409,6 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	// The uploaded file retains CRLF and CR, while the ingestion pipeline
 	// calculates chunk positions in its LF-normalized text. A non-ASCII prefix
 	// ensures the test also distinguishes rune positions from byte offsets.
-	const rawPrefix = "前缀\r\n🚀\r"
-	const indexedPrefix = "前缀\n🚀\n"
-	const rawChunk = "段首\r\n" + sourcePolicyQuote
-	const indexedChunk = "段首\n" + sourcePolicyQuote
 	start := len([]rune(indexedPrefix))
 	if err := db.Exec("UPDATE chunks SET start_at=?, end_at=?, content=?, source_content=? WHERE id=?", start, start+len([]rune(indexedChunk)), indexedChunk, indexedChunk, "source-1").Error; err != nil {
 		t.Fatalf("set normalized chunk positions: %v", err)

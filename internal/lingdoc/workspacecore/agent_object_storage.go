@@ -240,7 +240,18 @@ func (t gormTransaction) AssetTruth(p Project, id string) (assetTruth, error) {
 	if knowledge.ProcessedAt != nil {
 		processed = *knowledge.ProcessedAt
 	}
-	out.Fingerprint = evidence.FingerprintOf(evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: processed}).Digest
+	// The revision may include the storage-backed digest captured by the
+	// authorized source gateway. Recompute with that persisted value: this
+	// transaction has no storage port and must not silently fall back to v1.
+	var metadata struct {
+		OriginalContentSHA256 string `json:"original_content_sha256"`
+	}
+	if out.Revision.Metadata != "" {
+		if err := json.Unmarshal([]byte(out.Revision.Metadata), &metadata); err != nil {
+			return out, ErrVersionConflict
+		}
+	}
+	out.Fingerprint = evidence.FingerprintOf(evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: processed, OriginalContentSHA256: metadata.OriginalContentSHA256}).Digest
 	if out.Fingerprint != out.Revision.ContentHash {
 		return out, ErrVersionConflict
 	}

@@ -2,6 +2,8 @@ package evidence
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -67,6 +69,34 @@ func manualKnowledge(t *testing.T, content string) *types.Knowledge {
 		t.Fatalf("写手工资料元数据: %v", err)
 	}
 	return row
+}
+
+func TestOriginSnapshotManualReconstructsSafeText(t *testing.T) {
+	reader := NewOriginReader(&fakeKnowledge{rows: map[string]*types.Knowledge{"k": manualKnowledge(t, "  手工内容  ")}}).(OriginSnapshotReader)
+	text, raw, ok, err := reader.OriginSnapshot(context.Background(), "k")
+	if err != nil || !ok || text != "手工内容" || string(raw) != text {
+		t.Fatalf("manual snapshot text=%q raw=%q ok=%v err=%v", text, raw, ok, err)
+	}
+}
+
+func TestOriginSnapshotRequiresUploadHashAndFileType(t *testing.T) {
+	data := []byte("synthetic upload")
+	sum := md5.Sum(data)
+	row := &types.Knowledge{ID: "k", Type: "file", FileType: "txt", FilePath: writeText(t, "doc.txt", string(data)), FileHash: hex.EncodeToString(sum[:])}
+	reader := NewOriginReader(&fakeKnowledge{rows: map[string]*types.Knowledge{"k": row}}).(OriginSnapshotReader)
+	check := func(want bool) {
+		t.Helper()
+		_, _, ok, err := reader.OriginSnapshot(context.Background(), "k")
+		if err != nil || ok != want {
+			t.Fatalf("snapshot ok=%v err=%v, want %v", ok, err, want)
+		}
+	}
+	check(true)
+	row.FileHash = ""
+	check(false)
+	row.FileHash = hex.EncodeToString(sum[:])
+	row.Type = "url" // URL hashes identify the URL, not file contents.
+	check(false)
 }
 
 // Uploaded-text offsets are measured after ingestion normalizes line endings.
