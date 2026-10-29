@@ -231,6 +231,7 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 		return core.ResearchSource{}, core.ErrSourceUnavailable
 	}
 	stable := false
+	verifiedPDFPage := 0
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
 		originReader := r.originReader()
 		snapshotReader, supportsSnapshot := originReader.(evidence.OriginSnapshotReader)
@@ -269,12 +270,25 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 				}
 			}
 		}
+		if !stable {
+			page, verified, proofErr := r.pdfSourcePage(ctx, asset, chunk, source)
+			if proofErr != nil {
+				return core.ResearchSource{}, proofErr
+			}
+			if verified {
+				stable, verifiedPDFPage = true, page
+			}
+		}
 	}
 	allowed, err := r.modelUseAllowed(ctx, actor, projectID, asset.ID, asset.KnowledgeID)
 	if err != nil {
 		return core.ResearchSource{}, err
 	}
-	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: source.Locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed}, nil
+	locator := source.Locator
+	if verifiedPDFPage > 0 {
+		locator = fmt.Sprintf("%s · 第 %d 页（PDF 原生文本提取）", asset.Title, verifiedPDFPage)
+	}
+	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed, VerifiedPDFPage: verifiedPDFPage}, nil
 }
 
 // originReader 组装本适配器的原文读取器，构造与 SourceRuntime.origins() 同款：
@@ -427,7 +441,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 				if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
 					level = "candidate_evidence"
 				}
-				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
+				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: current.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 			}
 		}
 	}

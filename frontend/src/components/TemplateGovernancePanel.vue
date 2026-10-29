@@ -3,14 +3,14 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { Chapter, Source } from '@/api/lingdoc/workspace'
 import {
  acceptRuleSuggestion, createRuleSetDraft, createTemplateProfile, getRuleSuggestion, governRuleSet,
- listReplayFixtures, listRuleDefinitions, listRuleSetVersions, listRuleSuggestions, listTemplateProfiles, listTemplateVersions,
- publishTemplateVersion, recallTemplateVersion, rejectRuleSuggestion, requestRuleSuggestion, saveTemplateDraft,
- withdrawTemplateVersion, type GovernanceProject, type ReplayFixtureSummary, type RuleBinding, type RuleDefinition, type RuleSet,
- type RuleSuggestionRun, type SaveTemplateDraftInput, type TemplateCatalogVersion, type TemplateProfile,
+ listReplayFixtures, listRuleDefinitions, listRuleSetVersions, listRuleSuggestions, listTemplateAuditHistory, listTemplateProfiles, listTemplateVersions,
+ publishTemplateVersion, readReplayCoverage, recallTemplateVersion, registerReplayFixtures, registerRuleSetFixtures, rejectRuleSuggestion, requestRuleSuggestion, saveTemplateDraft,
+ withdrawTemplateVersion, type GovernanceProject, type ReplayCoverageView, type ReplayFixtureSummary, type RuleBinding, type RuleDefinition, type RuleSet,
+ type RuleSuggestionRun, type SaveTemplateDraftInput, type TemplateAuditEvent, type TemplateCatalogVersion, type TemplateProfile,
 } from '@/api/lingdoc/templateGovernance'
 import { newIdempotencyKey } from '@/api/lingdoc/candidateAdoption'
 import { catalogNoticeForView } from '@/views/lingdoc/firstPassEntryState'
-import { catalogMatchesProject, cloneDraftInput, fixturesForReplayTarget, governanceOperationError, mutationAttempt, parseSourceRefs, projectBasis, projectRuleSet, runModeLabel,
+import { catalogMatchesProject, cloneDraftInput, coverageViewFromReceipt, demoReplayBase, fixturesForReplayTarget, governanceOperationError, mutationAttempt, parseFixtureBatch, parseReplayBaseChoice, parseSourceRefs, projectBasis, projectRuleSet, projectionSummary, replayBaseChoiceValue, replayCoverageRows, runModeLabel,
  splitIds, stateLabel, suggestionBindings, type MutationAttempt, type ReplayTarget } from './templateGovernanceState'
 import TemplateGovernanceFixturePicker from './TemplateGovernanceFixturePicker.vue'
 
@@ -22,11 +22,28 @@ const profiles = ref<TemplateProfile[]>([]), versions = ref<TemplateCatalogVersi
 const catalogLoading = ref(false), catalogError = ref('')
 const catalogNotice = computed(() => catalogNoticeForView(catalogLoading.value, catalogError.value, profiles.value.length, '当前筛选下没有模板。'))
 const profileId = ref(''), selectedVersionId = ref('')
+const auditEvents = ref<TemplateAuditEvent[]>([]), auditNextId = ref<number | undefined>()
+const auditLoading = ref(false), auditError = ref('')
+const auditRequestEpoch = ref(0)
+const managerDenied = ref(false), managerAccessNotice = ref('')
+const managerAccess = computed(() => props.canManageCatalog && !managerDenied.value)
 const definitions = ref<RuleDefinition[]>([]), rulesets = ref<RuleSet[]>([])
 const ruleSetId = ref(''), ruleSetVersion = ref('')
 const runs = ref<RuleSuggestionRun[]>([]), selectedRunId = ref('')
 const scopeFilter = ref(''), stateFilter = ref('')
 const replayFixtures = ref<ReplayFixtureSummary[]>([]), fixtureCatalogError = ref('')
+// Manager-only fixture registration state for the selected draft version: the
+// batch JSON stays untouched on failure so the curator can fix and resubmit;
+// append-only registration means "fix" is a new batch, never an edit.
+const fixtureRegistration = reactive({ reason: '', fixturesJSON: '' })
+const replayCoverage = ref<ReplayCoverageView | null>(null)
+// Manager ruleset-projection registration state (Spec #768 D12): a draft rule
+// set plus the replay base whose publication projection the server pins. The
+// demo base is the guided default; the typed JSON stays untouched on failure
+// so the curator can fix and resubmit the same batch.
+const ruleSetRegistration = reactive({ reason: '', fixturesJSON: '' })
+const ruleSetReplayBase = ref(replayBaseChoiceValue(demoReplayBase))
+const ruleSetCoverage = ref<ReplayCoverageView | null>(null)
 const fixtureTarget = computed<ReplayTarget | undefined>(() => {
  if (tab.value === 'rules') {
   const id = replayTemplate.id.trim(), version = replayTemplate.version.trim()
@@ -115,8 +132,11 @@ async function loadCatalog() {
   }
  } catch (error: unknown) {
   if (epoch === catalogAccessEpoch && requestEpoch === catalogRequestEpoch) {
-   profiles.value = []; versions.value = []; profileId.value = ''; selectedVersionId.value = ''
-   catalogError.value = governanceOperationError(error)
+   if (permissionDenied(error) || resourceUnavailable(error)) revokeManagerView(resourceUnavailable(error))
+   else {
+    profiles.value = []; versions.value = []; profileId.value = ''; selectedVersionId.value = ''
+    catalogError.value = governanceOperationError(error)
+   }
   }
  } finally {
   if (epoch === catalogAccessEpoch && requestEpoch === catalogRequestEpoch) catalogLoading.value = false
@@ -134,7 +154,9 @@ async function chooseProfile(id: string) {
  const response = await listTemplateVersions(id)
  if (epoch !== catalogAccessEpoch || selectionEpoch !== profileSelectionEpoch) return
  profileId.value = id; versions.value = response.data; selectedVersionId.value = response.data[0]?.version || ''
+ if (props.canManageCatalog) await loadAudit()
  draftKey.value = ''; governance.reason = ''; governance.fixtures = ''; governance.migration_advice = ''
+ fixtureRegistration.reason = ''; fixtureRegistration.fixturesJSON = ''; replayCoverage.value = null
  if (selectedVersion.value) { replayTemplate.id = selectedVersion.value.template_id; replayTemplate.version = selectedVersion.value.version }
  const setId = selectedVersion.value?.ruleset.ruleset_id
  if (setId && props.canManageCatalog) {
@@ -148,6 +170,7 @@ function chooseVersion(id: string) {
  selectedVersionId.value = id; draftKey.value = ''
  if (selectedVersion.value) { replayTemplate.id = selectedVersion.value.template_id; replayTemplate.version = selectedVersion.value.version }
  governance.reason = ''; governance.fixtures = ''; governance.migration_advice = ''
+ fixtureRegistration.reason = ''; fixtureRegistration.fixturesJSON = ''; replayCoverage.value = null
 }
 async function createProfile() {
  await perform(async () => {
@@ -204,6 +227,74 @@ async function saveDraft() {
  message.value = `服务返回：${stateLabel(response.data.state)}，修订 ${response.data.revision}。`; emit('refresh')
  })
 }
+function operationError(error: unknown) {
+ if (error && typeof error === 'object') {
+  const payload = error as Record<string, unknown>
+  const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+  if (permissionDenied(error)) return '权限不足或权限已发生变化，请重新读取并联系管理员。'
+  if (nested?.code === 'version_conflict' || payload.code === 'version_conflict') return governanceOperationError(error)
+  const serverMessage = typeof nested?.message === 'string' ? nested.message : payload.message
+  if (typeof serverMessage === 'string' && serverMessage.trim()) return serverMessage
+ }
+ return governanceOperationError(error)
+}
+function permissionDenied(error: unknown) {
+ if (!error || typeof error !== 'object') return false
+ const payload = error as Record<string, unknown>
+ const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+ if (nested?.code === 'source_access_denied' || nested?.code === 'human_decision_required') return false
+ return payload.$httpStatus === 403 || payload.status === 403 || nested?.code === 'permission_denied'
+}
+function resourceUnavailable(error: unknown) {
+ if (!error || typeof error !== 'object') return false
+ const payload = error as Record<string, unknown>
+ const nested = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined
+ return payload.$httpStatus === 404 || payload.status === 404 || nested?.code === 'not_found'
+}
+function revokeManagerView(unavailable = false) {
+ managerAccessNotice.value = unavailable
+  ? '模板资源不存在或当前不可访问，已清除原有目录和版本数据。请重新读取目录。'
+  : '服务器拒绝了当前访问，已清除原有目录和版本数据。'
+ // Invalidate every in-flight catalog/profile/version read before hiding data.
+ // Late responses from the former access scope must never restore draft data.
+ managerDenied.value = true; catalogAccessEpoch++; catalogRequestEpoch++; profileSelectionEpoch++; auditRequestEpoch.value++
+ catalogLoading.value = false; catalogError.value = unavailable ? '模板资源不存在或当前不可访问。' : '权限状态已变化。'
+ auditEvents.value = []; auditNextId.value = undefined; auditLoading.value = false
+ profiles.value = []; versions.value = []; selectedVersionId.value = ''
+ if (tab.value === 'rules') tab.value = 'catalog'
+ if (stateFilter.value === 'draft') stateFilter.value = ''
+}
+function clearAudit() {
+ auditRequestEpoch.value++
+ auditEvents.value = []; auditNextId.value = undefined; auditLoading.value = false; auditError.value = ''
+}
+async function loadAudit(append = false) {
+ const id = profileId.value, epoch = catalogAccessEpoch
+ if (!props.canManageCatalog || !id) { clearAudit(); return }
+ const afterId = append ? auditNextId.value : undefined
+ if (append && !afterId) return
+ const requestEpoch = ++auditRequestEpoch.value
+ auditLoading.value = true; auditError.value = ''
+ if (!append) { auditEvents.value = []; auditNextId.value = undefined }
+ try {
+  const response = await listTemplateAuditHistory(id, afterId)
+  if (epoch !== catalogAccessEpoch || requestEpoch !== auditRequestEpoch.value || !props.canManageCatalog || profileId.value !== id) return
+  auditEvents.value = append ? [...auditEvents.value, ...response.data.events] : response.data.events
+  managerDenied.value = false; managerAccessNotice.value = ''
+  auditNextId.value = response.data.next_after_id
+ } catch (error: unknown) {
+  const current = epoch === catalogAccessEpoch && requestEpoch === auditRequestEpoch.value && props.canManageCatalog && profileId.value === id
+  if (!current) return
+  auditEvents.value = []; auditNextId.value = undefined
+  const message = operationError(error)
+  // Revoke bumps the epochs; the message was computed for THIS request and
+  // must survive the revocation that the failure itself justifies.
+  if (permissionDenied(error) || resourceUnavailable(error)) revokeManagerView(resourceUnavailable(error))
+  auditError.value = message
+ } finally {
+  if (epoch === catalogAccessEpoch && requestEpoch === auditRequestEpoch.value) auditLoading.value = false
+ }
+}
 async function governTemplate(action: 'publish' | 'withdraw' | 'recall') {
  const version = selectedVersion.value
  if (!version) return
@@ -218,7 +309,38 @@ async function governTemplate(action: 'publish' | 'withdraw' | 'recall') {
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
  await refreshVersions()
  if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ await loadAudit()
  message.value = `服务返回：${stateLabel(response.data.state)}。`; emit('refresh')
+ })
+}
+// Manager registration entry for the selected draft version: one audited batch
+// (review_reference and governance reason required server-side), trial-replayed
+// with the same evaluator publication Verify uses. The receipt carries the
+// server-fixed pins and the shared coverage matrix, so the curator sees the
+// remaining gaps immediately; the fixture catalog is then re-read so the
+// publish picker below gains the new server-registered IDs without a reload.
+async function registerFixtures() {
+ const version = selectedVersion.value
+ if (!version || version.state !== 'draft') return
+ await perform(async () => {
+ const epoch = catalogAccessEpoch
+ const input = { template_id: version.template_id, version: version.version, fixtures: parseFixtureBatch(fixtureRegistration.fixturesJSON), reason: fixtureRegistration.reason.trim() }
+ const response = await registerReplayFixtures(input, key(`register-fixtures/${version.template_id}/${version.version}`, input))
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ replayCoverage.value = coverageViewFromReceipt(response.data)
+ try { replayFixtures.value = (await listReplayFixtures()).data } catch (error: unknown) { fixtureCatalogError.value = error instanceof Error ? error.message : '样例目录不可用' }
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ message.value = `已登记 ${response.data.registered.length} 条回放夹具；覆盖矩阵${response.data.coverage.complete ? '已完整' : '仍有缺口，发布前请补齐'}。`; emit('refresh')
+ })
+}
+async function loadReplayCoverage() {
+ const version = selectedVersion.value
+ if (!version) return
+ await perform(async () => {
+ const epoch = catalogAccessEpoch
+ const result = await readReplayCoverage(version.template_id, version.version)
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ replayCoverage.value = result.data
  })
 }
 function bindingEditor(binding: RuleBinding): BindingEditor {
@@ -270,6 +392,45 @@ async function governRule(action: 'publish' | 'withdraw' | 'recall') {
  rulesets.value = (await listRuleSetVersions(set.ruleset_id)).data; message.value = `服务返回：${stateLabel(response.data.state)}。`; emit('refresh')
  })
 }
+// Manager registration entry for a draft rule set (Spec #768 D3/D12): the
+// server resolves the replay target with the rule set publication's own
+// projection function over the selected base (demo guided path by default),
+// trial-replays every fixture with the same evaluator publication Verify uses,
+// and answers with the server-fixed projection pins plus the shared coverage
+// matrix. The publish form's replay base is then synced to the registered
+// base so publication replays exactly the evidence pinned here; the fixture
+// catalog is re-read so the publish picker gains the new IDs without a reload.
+async function registerRuleSetFixtureBatch() {
+ const set = selectedRuleSet.value
+ if (!set || set.state !== 'draft') return
+ await perform(async () => {
+ const epoch = catalogAccessEpoch
+ const base = parseReplayBaseChoice(ruleSetReplayBase.value)
+ const input = { ruleset_id: set.ruleset_id, ruleset_version: set.version, template_id: base.template_id, template_version: base.template_version,
+  fixtures: parseFixtureBatch(ruleSetRegistration.fixturesJSON), reason: ruleSetRegistration.reason.trim() }
+ const response = await registerRuleSetFixtures(input, key(`register-rule-set-fixtures/${set.ruleset_id}/${set.version}`, input))
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ ruleSetCoverage.value = coverageViewFromReceipt(response.data)
+ replayTemplate.id = response.data.template_id; replayTemplate.version = response.data.version
+ try { replayFixtures.value = (await listReplayFixtures()).data } catch (error: unknown) { fixtureCatalogError.value = error instanceof Error ? error.message : '样例目录不可用' }
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ message.value = `已登记 ${response.data.registered.length} 条规则集投影夹具；覆盖矩阵${response.data.coverage.complete ? '已完整' : '仍有缺口，发布前请补齐'}。发布底版已同步为 ${response.data.template_id} / ${response.data.version}。`; emit('refresh')
+ })
+}
+// The projection readback targets the selected base version's profile path
+// with the paired ruleset query; one parameter alone is a server-side 400, so
+// the panel only ever sends the pair.
+async function loadRuleSetCoverage() {
+ const set = selectedRuleSet.value
+ if (!set) return
+ await perform(async () => {
+ const epoch = catalogAccessEpoch
+ const base = parseReplayBaseChoice(ruleSetReplayBase.value)
+ const result = await readReplayCoverage(base.template_id, base.template_version, { ruleset_id: set.ruleset_id, ruleset_version: set.version })
+ if (epoch !== catalogAccessEpoch) throw new Error(staleCatalogOperationMessage)
+ ruleSetCoverage.value = result.data
+ })
+}
 async function loadSuggestions() { const projectId=props.project.id; const result=await listRuleSuggestions(projectId); if (props.project.id===projectId) runs.value=result.data }
 async function requestSuggestion() {
  const version = selectedVersion.value
@@ -319,6 +480,9 @@ watch([() => props.project.id, () => props.canManageCatalog], ([, canManage]) =>
  if (tab.value === 'rules') tab.value = 'catalog'
  if (stateFilter.value === 'draft') stateFilter.value = ''
  profiles.value = []; versions.value = []; profileId.value = ''; selectedVersionId.value = ''
+ fixtureRegistration.reason = ''; fixtureRegistration.fixturesJSON = ''; replayCoverage.value = null
+ ruleSetRegistration.reason = ''; ruleSetRegistration.fixturesJSON = ''; ruleSetCoverage.value = null
+ ruleSetReplayBase.value = replayBaseChoiceValue(demoReplayBase)
  if (!canManage) {
   definitions.value = []; rulesets.value = []; replayFixtures.value = []; ruleDraft.value = null; retainedRuleDrafts.splice(0)
   for (const key of Object.keys(draftCache)) delete draftCache[key]
@@ -327,6 +491,12 @@ watch([() => props.project.id, () => props.canManageCatalog], ([, canManage]) =>
  void loadCatalog()
 })
 watch([selectedVersionId, targetKind], () => { targetId.value = '' })
+// A different ruleset draft is a different registration target: stale typed
+// batches and projection coverage must not carry over between drafts.
+watch([ruleSetId, ruleSetVersion], () => {
+ ruleSetRegistration.reason = ''; ruleSetRegistration.fixturesJSON = ''
+ ruleSetCoverage.value = null; ruleSetReplayBase.value = replayBaseChoiceValue(demoReplayBase)
+})
 onMounted(() => perform(async () => {
  const epoch = catalogAccessEpoch
  const fixtureLoad = props.canManageCatalog ? listReplayFixtures().then(result => { if (epoch === catalogAccessEpoch && props.canManageCatalog) replayFixtures.value = result.data }).catch((error: unknown) => { if (epoch === catalogAccessEpoch && props.canManageCatalog) fixtureCatalogError.value = error instanceof Error ? error.message : '样例目录不可用' }) : Promise.resolve()
@@ -365,6 +535,29 @@ onMounted(() => perform(async () => {
       <details><summary>核对哈希与来源材料</summary><p class="hash">内容：{{ selectedVersion.content_hash }}<br />规则集：{{ selectedVersion.ruleset_hash }}<br />覆盖政策：{{ selectedVersion.policy_hash || '服务器未返回政策哈希' }}</p><ul v-if="selectedVersion.binding_policies?.length"><li v-for="policy in selectedVersion.binding_policies" :key="policy.rule_id">{{ policy.rule_id }} · {{ policy.may_disable ? '允许停用' : '不可停用' }} · 严重度范围 {{ (policy.allowed_severities || []).join('、') || '不可调整' }}</li></ul><ul v-if="canManageCatalog"><li v-for="source in selectedVersion.source_refs" :key="source.source_id">{{ source.source_id }} @ {{ source.source_version }}</li></ul><p v-else class="subtle">来源材料标识仅供模板管理员核对；适用范围和版本哈希仍可查看。</p></details>
       <p class="subtle">来源类型不代表官方认证。已发布版本供新项目复制；当前项目继续保留自己的副本。</p>
       <div v-if="selectedVersion.recall" class="notice error"><strong>召回原因：{{ selectedVersion.recall.reason }}</strong><p>{{ selectedVersion.recall.migration_advice }}</p><details v-if="canManageCatalog && selectedVersion.recall.affected_project_ids.length" class="recall-projects"><summary>受影响课题 {{ selectedVersion.recall.affected_project_ids.length }} 个 · 展开查看编号</summary><ul><li v-for="projectId in selectedVersion.recall.affected_project_ids" :key="projectId" class="hash">{{ projectId }}</li></ul></details><p v-else>请核对当前课题的模板副本；其他课题的影响范围由模板管理员审计。</p></div>
+      <section v-if="canManageCatalog" class="card" aria-label="模板审计记录">
+       <h3>模板审计记录</h3>
+       <p class="subtle">仅模板管理员可查看。记录来自服务端，按时间倒序显示。</p>
+       <p v-if="auditLoading" role="status">正在读取审计记录…</p>
+       <div v-else-if="auditError" class="notice error" role="alert">审计记录读取失败：{{ auditError }} <button type="button" @click="loadAudit()">重试读取审计</button></div>
+       <p v-else-if="!auditEvents.length" class="subtle">当前没有可见审计记录。</p>
+       <ol v-if="auditEvents.length"><li v-for="event in auditEvents" :key="event.id"><strong>{{ event.action }}</strong> · {{ event.outcome }} · {{ event.created_at }}<br />操作者 {{ event.actor_user_id }}（租户角色 {{ event.actor_role }}） · 目标 {{ event.target_id }}<details><summary>服务端记录详情</summary><pre class="code-input">{{ JSON.stringify(event.details, null, 2) }}</pre></details></li></ol>
+       <button v-if="auditNextId && !auditLoading && !auditError" type="button" @click="loadAudit(true)">读取更早记录</button>
+      </section>
+      <details v-if="canManageCatalog && selectedVersion.state === 'draft'"><summary>回放夹具登记与覆盖矩阵（管理员 · 版本 {{ selectedVersion.version }}）</summary><div class="stack">
+       <p class="subtle">登记即试放：服务器以与发布核验相同的求值器真实执行每条夹具，声明结果与实际不符、未命中声明目标时整批拒绝并返回证据。规则集引用、内容与政策摘要由服务器计算固定，无需填写；夹具只增不改，重存草稿（内容摘要变化）后旧样例自然失活。</p>
+       <label>治理理由（必填，进入审计回执）<textarea v-model="fixtureRegistration.reason" /></label>
+       <label>夹具批量登记（JSON 数组，每条必填 fixture_id / rule_id / scene（write_check、preflight）/ polarity（positive、negative）/ target_ref / input / expected_status（PASS、ISSUE、UNKNOWN）/ review_reference）<textarea v-model="fixtureRegistration.fixturesJSON" class="code-input" rows="8" spellcheck="false" placeholder='[{"fixture_id":"org-goal-present-write_check-positive-1","rule_id":"goal-present","scene":"write_check","polarity":"positive","target_ref":"field/goal","input":{"project_id":"replay-synthetic","target_version":"1","fields":{"goal":"已确认研究目标"}},"expected_status":"PASS","review_reference":"review-record-2026-001"}]' /></label>
+       <div class="actions"><button :disabled="busy || !fixtureRegistration.reason.trim() || !fixtureRegistration.fixturesJSON.trim()" @click="registerFixtures">登记回放夹具</button><button :disabled="busy" @click="loadReplayCoverage">读取覆盖矩阵</button><span v-if="replayCoverage" class="badge">{{ replayCoverage.complete ? '覆盖完整' : '覆盖有缺口' }}</span></div>
+       <template v-if="replayCoverage">
+        <p class="hash">版本 pin（服务器计算）：内容 {{ replayCoverage.content_hash }} · 政策 {{ replayCoverage.policy_hash }}</p>
+        <ul v-if="replayCoverage.entries.length" class="coverage-matrix"><li v-for="row in replayCoverageRows(replayCoverage)" :key="row.key" :class="{ gap: row.missing }">{{ row.text }}</li></ul>
+        <p v-else class="subtle">该版本没有启用绑定 × 触发场景组合需要覆盖。</p>
+        <p v-if="!replayCoverage.complete && replayCoverage.unsatisfied_declared_example_refs.length" class="notice error">发布核验仍会拒绝：绑定声明的正反例引用未出现在已登记夹具中——{{ replayCoverage.unsatisfied_declared_example_refs.join('、') }}</p>
+        <p v-else-if="!replayCoverage.complete" class="notice">覆盖矩阵仍有缺口：每个启用绑定 × 触发场景都需要正反例各一条，补齐后才能通过发布核验。</p>
+        <p v-else class="subtle">覆盖矩阵完整；发布时仍需在下方选择这些服务器注册的样例 ID。</p>
+       </template>
+      </div></details>
       <details v-if="canManageCatalog && ['draft', 'published'].includes(selectedVersion.state)"><summary>发布与撤回操作</summary><div class="stack"><label>治理理由<textarea v-model="governance.reason" /></label><template v-if="selectedVersion.state === 'draft'"><details><summary>真实回放样例（服务器注册 · 当前目标 {{ fixtureTarget?.template_id || '未选择' }} / {{ fixtureTarget?.template_version || '—' }}）</summary><TemplateGovernanceFixturePicker v-model="governance.fixtures" :fixtures="targetFixtures" :disabled="busy" :catalog-error="fixtureCatalogError" /></details><label>已保存的真实回放样例 ID<textarea v-model="governance.fixtures" placeholder="空格或换行分隔；服务端将实际执行正反例" /></label><button :disabled="busy || !governance.reason.trim() || !splitIds(governance.fixtures).length" @click="governTemplate('publish')">核验回放并发布</button></template><template v-else><button :disabled="busy || !governance.reason.trim()" @click="governTemplate('withdraw')">撤回新项目复制权限</button><label>迁移建议<textarea v-model="governance.migration_advice" /></label><button :disabled="busy || !governance.reason.trim() || !governance.migration_advice.trim()" @click="governTemplate('recall')">记录召回与影响范围</button></template></div></details>
      </section>
      <div v-if="Object.keys(draftCache).length" class="actions"><span class="subtle">保留的编辑：</span><button v-for="(draft, id) in draftCache" :key="id" @click="draftKey = String(id)">{{ draft.input.template_id }} / {{ draft.input.version || '新版本待命名' }}{{ fingerprint(draft) !== draft.initial ? ' · 未保存' : '' }}</button></div>
@@ -384,7 +577,22 @@ onMounted(() => perform(async () => {
 
   <div v-else-if="tab === 'rules'" class="stack">
    <div class="actions"><label>规则集 ID<input v-model="ruleSetId" /></label><button :disabled="busy || !ruleSetId.trim()" @click="loadRuleSets">读取版本</button><label>版本<select v-model="ruleSetVersion"><option v-for="set in rulesets" :key="set.version" :value="set.version">{{ set.version }} · {{ stateLabel(set.state) }}</option></select></label><button :disabled="busy" @click="editRuleSet">准备新规则草稿</button></div>
-   <section v-if="selectedRuleSet" class="card"><h3>{{ selectedRuleSet.ruleset_id }} / {{ selectedRuleSet.version }} <span class="badge">{{ stateLabel(selectedRuleSet.state) }}</span></h3><p>{{ selectedRuleSet.bindings.length }} 条绑定；旧版本的结果与快照继续保留。</p><details><summary>绑定与版本哈希</summary><p class="hash">{{ selectedRuleSet.ruleset_hash || '尚未发布，服务端将在发布时计算哈希' }}</p><ul><li v-for="binding in selectedRuleSet.bindings" :key="binding.rule_id">{{ binding.rule_id }} · {{ binding.target_kind || '全局检查' }} {{ binding.target_id }} · {{ binding.enabled ? '启用' : '停用' }} · {{ binding.severity }}</li></ul></details><div class="stack"><label>治理理由<textarea v-model="governance.reason" /></label><template v-if="selectedRuleSet.state === 'draft'"><div class="form-row"><label>回放模板 ID<input v-model="replayTemplate.id" /></label><label>精确模板版本<input v-model="replayTemplate.version" /></label></div><p class="subtle">第一次发布可选择项目当前的已知内置模板；样例必须由服务器注册并绑定当前规则、模板和政策哈希。</p><details><summary>真实回放样例（服务器注册 · 当前目标 {{ fixtureTarget?.template_id || '未填写' }} / {{ fixtureTarget?.template_version || '—' }}）</summary><TemplateGovernanceFixturePicker v-model="governance.fixtures" :fixtures="targetFixtures" :disabled="busy" :catalog-error="fixtureCatalogError" /></details><label>真实回放样例 ID<textarea v-model="governance.fixtures" /></label><button :disabled="busy || !governance.reason.trim() || !splitIds(governance.fixtures).length || !replayTemplate.id.trim() || !replayTemplate.version.trim()" @click="governRule('publish')">核验并发布规则版本</button></template><div v-else-if="selectedRuleSet.state === 'published'" class="actions"><button :disabled="busy || !governance.reason.trim()" @click="governRule('withdraw')">撤回新绑定</button><button :disabled="busy || !governance.reason.trim()" @click="governRule('recall')">记录召回</button></div></div></section>
+   <section v-if="selectedRuleSet" class="card"><h3>{{ selectedRuleSet.ruleset_id }} / {{ selectedRuleSet.version }} <span class="badge">{{ stateLabel(selectedRuleSet.state) }}</span></h3><p>{{ selectedRuleSet.bindings.length }} 条绑定；旧版本的结果与快照继续保留。</p><details><summary>绑定与版本哈希</summary><p class="hash">{{ selectedRuleSet.ruleset_hash || '尚未发布，服务端将在发布时计算哈希' }}</p><ul><li v-for="binding in selectedRuleSet.bindings" :key="binding.rule_id">{{ binding.rule_id }} · {{ binding.target_kind || '全局检查' }} {{ binding.target_id }} · {{ binding.enabled ? '启用' : '停用' }} · {{ binding.severity }}</li></ul></details><div class="stack"><label>治理理由<textarea v-model="governance.reason" /></label><template v-if="selectedRuleSet.state === 'draft'"><div class="form-row"><label>回放模板 ID<input v-model="replayTemplate.id" /></label><label>精确模板版本<input v-model="replayTemplate.version" /></label></div><p class="subtle">第一次发布可选择项目当前的已知内置模板；样例必须由服务器注册并绑定当前规则、模板和政策哈希。</p><details><summary>真实回放样例（服务器注册 · 当前目标 {{ fixtureTarget?.template_id || '未填写' }} / {{ fixtureTarget?.template_version || '—' }}）</summary><TemplateGovernanceFixturePicker v-model="governance.fixtures" :fixtures="targetFixtures" :disabled="busy" :catalog-error="fixtureCatalogError" /></details><label>真实回放样例 ID<textarea v-model="governance.fixtures" /></label><button :disabled="busy || !governance.reason.trim() || !splitIds(governance.fixtures).length || !replayTemplate.id.trim() || !replayTemplate.version.trim()" @click="governRule('publish')">核验并发布规则版本</button><details class="ruleset-fixture-registration"><summary>回放夹具登记与投影覆盖（管理员）</summary><div class="stack">
+        <p class="subtle">发布前先为该草稿规则集登记回放夹具：服务器用与发布相同的投影函数，把所选底版模板重绑本规则集并计算将被回放的版本 pin，再以同一求值器逐条试放，声明与实际不符整批拒绝并返回证据。投影 pin 由服务器计算，无需填写；复核依据（每条夹具的 review_reference）与治理理由必填。引导路径默认内置演示底版 template-demo / 1；也可先在模板目录读取其他有读权限的模板版本，再在此选择。</p>
+        <label>回放底版<select v-model="ruleSetReplayBase"><option :value="replayBaseChoiceValue(demoReplayBase)">内置演示模板 template-demo / 1（引导底版）</option><option v-for="version in versions" :key="`${version.template_id}|${version.version}`" :value="`${version.template_id}|${version.version}`">{{ version.template_id }} / {{ version.version }} · {{ stateLabel(version.state) }}</option></select></label>
+        <label>治理理由（必填，进入审计回执）<textarea v-model="ruleSetRegistration.reason" /></label>
+        <label>夹具批量登记（JSON 数组，每条必填 fixture_id / rule_id（须为本草稿启用的绑定）/ scene（write_check、preflight）/ polarity（positive、negative）/ target_ref / input / expected_status（PASS、ISSUE、UNKNOWN）/ review_reference）<textarea v-model="ruleSetRegistration.fixturesJSON" class="code-input" rows="8" spellcheck="false" placeholder='[{"fixture_id":"org-rules-2-goal-present-write_check-positive-1","rule_id":"goal-present","scene":"write_check","polarity":"positive","target_ref":"field/goal","input":{"project_id":"replay-synthetic","target_version":"1","fields":{"goal":"已确认研究目标"}},"expected_status":"PASS","review_reference":"review-record-2026-002"}]' /></label>
+        <div class="actions"><button :disabled="busy || !ruleSetRegistration.reason.trim() || !ruleSetRegistration.fixturesJSON.trim()" @click="registerRuleSetFixtureBatch">登记规则集投影夹具</button><button :disabled="busy" @click="loadRuleSetCoverage">读取投影覆盖矩阵</button><span v-if="ruleSetCoverage" class="badge">{{ ruleSetCoverage.complete ? '覆盖完整' : '覆盖有缺口' }}</span></div>
+        <template v-if="ruleSetCoverage">
+         <p class="hash">投影 pin（服务器计算）：内容 {{ ruleSetCoverage.content_hash }} · 政策 {{ ruleSetCoverage.policy_hash }}</p>
+         <p v-if="ruleSetCoverage.projection" class="subtle">{{ projectionSummary(ruleSetCoverage.projection) }}</p>
+         <ul v-if="ruleSetCoverage.entries.length" class="coverage-matrix"><li v-for="row in replayCoverageRows(ruleSetCoverage)" :key="row.key" :class="{ gap: row.missing }">{{ row.text }}</li></ul>
+         <p v-else class="subtle">该投影没有启用绑定 × 触发场景组合需要覆盖。</p>
+         <p v-if="!ruleSetCoverage.complete && ruleSetCoverage.unsatisfied_declared_example_refs.length" class="notice error">发布核验仍会拒绝：绑定声明的正反例引用未出现在已登记夹具中——{{ ruleSetCoverage.unsatisfied_declared_example_refs.join('、') }}</p>
+         <p v-else-if="!ruleSetCoverage.complete" class="notice">覆盖矩阵仍有缺口：每个启用绑定 × 触发场景都需要正反例各一条，补齐后才能通过发布核验。</p>
+         <p v-else class="subtle">覆盖矩阵完整；发布时在上方选择这些服务器注册的样例 ID，并以登记时同步的底版核验发布。</p>
+        </template>
+       </div></details></template><div v-else-if="selectedRuleSet.state === 'published'" class="actions"><button :disabled="busy || !governance.reason.trim()" @click="governRule('withdraw')">撤回新绑定</button><button :disabled="busy || !governance.reason.trim()" @click="governRule('recall')">记录召回</button></div></div></section>
    <details v-if="retainedRuleDrafts.length"><summary>保留的规则编辑</summary><button v-for="(draft,index) in retainedRuleDrafts" :key="index" type="button" @click="resumeRuleDraft(draft)">{{ draft.ruleset_id || '待命名规则集' }} / {{ draft.version || '新版本' }}</button></details>
    <form v-if="ruleDraft" class="card stack" @submit.prevent="saveRuleSet"><h3>规则草稿</h3><div class="form-row"><label>规则集 ID<input v-model="ruleDraft.ruleset_id" required /></label><label>新版本号<input v-model="ruleDraft.version" required /></label></div>
     <fieldset v-for="(editor, index) in ruleDraft.bindings" :key="index"><legend>规则 {{ index + 1 }}</legend><div class="form-row"><label>稳定标识<input v-model="editor.binding.rule_id" required /></label><label>已注册类型<select v-model="editor.binding.definition_id" @change="changeDefinition(editor)"><option v-for="definition in definitions" :key="definition.definition_id" :value="definition.definition_id">{{ definition.definition_id }} / {{ definition.definition_version }}</option></select></label><label>负责人<input v-model="editor.binding.owner" required /></label><label class="checkbox"><input v-model="editor.binding.enabled" type="checkbox" />启用</label></div><div class="form-row"><label>目标类型<input v-model="editor.binding.target_kind" placeholder="全局检查留空" /></label><label>目标标识<input v-model="editor.binding.target_id" /></label><label>严重度<select v-model="editor.binding.severity"><option value="info">提示</option><option value="warning">警告</option><option value="blocking">阻断（需人工评审）</option></select></label></div><label>解释文本<input v-model="editor.binding.message" /></label><details><summary>声明式参数与真实正反例</summary><div class="stack"><label>参数<textarea v-model="editor.params" class="code-input" /></label><label>正例引用 ID<input v-model="editor.positive" /></label><label>反例引用 ID<input v-model="editor.negative" /></label></div></details><button type="button" @click="ruleDraft.bindings.splice(index, 1)">移除此草稿规则</button></fieldset>
@@ -422,6 +630,7 @@ textarea { min-height: 75px; resize: vertical; }.checkbox { display: flex; align
 .card { border: 1px solid #dde5eb; border-radius: 12px; padding: 20px; margin-bottom: 20px; }fieldset { border: 1px solid #e2e8ed; padding: 14px; border-radius: 8px; display: grid; gap: 12px; }legend { color: #425269; font-size: 13px; padding: 0 6px; }
 .badge { display: inline-block; font-size: 12px; color: #4b6c5c; background: #edf5ef; padding: 4px 8px; border-radius: 5px; margin-left: 10px; }
 .notice { background: #f0f6f2; border: 1px solid #d2e3d7; padding: 12px 15px; border-radius: 8px; font-size: 13px; line-height: 1.7; margin-bottom: 16px; }.error { background: #fff6f0; border-color: #ecd3c1; color: #8a4c2a; }
+.coverage-matrix { font-size: 13px; color: #24374f; margin: 0 0 12px; padding-left: 18px; display: grid; gap: 6px; }.coverage-matrix .gap { color: #8a4c2a; }
 dl { display: grid; grid-template-columns: 130px 1fr; font-size: 13px; gap: 10px; }dt { color: #6b7b8e; }dd { margin: 0; overflow-wrap: anywhere; }details { margin: 10px 0; }summary { cursor: pointer; font-size: 13px; color: #496579; margin-bottom: 12px; }
 .hash, .code-input { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }.proposal { border-left: 3px solid #a9c0b2; padding: 10px 14px; background: #f8faf9; }
 @media (max-width: 850px) { .catalog-layout, .suggestion-layout { grid-template-columns: 1fr; }.catalog-list { border-right: 0; border-bottom: 1px solid #e6ebef; padding: 0 0 18px; }.interaction-boundary { border: 0; margin: 0; padding: 0; min-width: 0; display: block; }.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -96,6 +97,12 @@ type OriginSnapshotReader interface {
 	OriginSnapshot(ctx context.Context, knowledgeID string) (text string, raw []byte, ok bool, err error)
 }
 
+// PDFOriginReader provides the bounded original PDF bytes. A caller must also
+// verify a persisted page proof from ingestion before claiming a PDF locator.
+type PDFOriginReader interface {
+	PDFOriginBytes(ctx context.Context, knowledgeID string) ([]byte, bool, error)
+}
+
 // NewOriginReader 组装固定实现：手工资料的正文取自 metadata；直接读取的
 // 上传文本返回与分块索引一致的 LF 规范化文本。其余一律 ok=false。
 func NewOriginReader(knowledge KnowledgeReader) OriginReader {
@@ -104,6 +111,28 @@ func NewOriginReader(knowledge KnowledgeReader) OriginReader {
 
 type fileOriginReader struct {
 	knowledge KnowledgeReader
+}
+
+func (r *fileOriginReader) PDFOriginBytes(ctx context.Context, knowledgeID string) ([]byte, bool, error) {
+	if knowledgeID == "" {
+		return nil, false, nil
+	}
+	row, err := r.knowledge.KnowledgeForOrigin(ctx, knowledgeID)
+	if err != nil || row == nil {
+		return nil, false, err
+	}
+	if row.Type != "file" || normalizeExtension(row.FileType) != "pdf" {
+		return nil, false, nil
+	}
+	raw, ok, err := r.originBytes(ctx, row)
+	if err != nil || !ok || !bytes.HasPrefix(raw, []byte("%PDF-")) {
+		return nil, false, err
+	}
+	sum := md5.Sum(raw)
+	if !strings.EqualFold(row.FileHash, hex.EncodeToString(sum[:])) {
+		return nil, false, nil
+	}
+	return raw, true, nil
 }
 
 func (r *fileOriginReader) OriginKnowledgePresent(ctx context.Context, knowledgeID string) (bool, error) {

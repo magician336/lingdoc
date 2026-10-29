@@ -7,6 +7,7 @@ package templategovernance
 // production calls it (precedent: workspacecore.AuditEventRowColumns).
 func RowShapesForSchemaGuard() map[string]any {
 	return map[string]any{
+		"fixtureRow":    &fixtureRow{},
 		"operationRow":  &operationRow{},
 		"profileRow":    &profileRow{},
 		"suggestionRow": &suggestionRow{},

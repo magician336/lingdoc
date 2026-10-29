@@ -13,9 +13,9 @@ import (
 func checkClaimEvidenceMigration(t *testing.T, db *sql.DB, chain string) {
 	t.Helper()
 	root := sqliteRepoRoot(t)
-	up, err := os.ReadFile(filepath.Join(root, "migrations", chain, map[string]string{"sqlite": "000059_lingdoc_candidate_claim_evidence.up.sql", "versioned": "000138_lingdoc_candidate_claim_evidence.up.sql"}[chain]))
+	up, err := os.ReadFile(filepath.Join(root, "migrations", chain, map[string]string{"sqlite": "000060_lingdoc_candidate_claim_evidence.up.sql", "versioned": "000139_lingdoc_candidate_claim_evidence.up.sql"}[chain]))
 	require.NoError(t, err)
-	down, err := os.ReadFile(filepath.Join(root, "migrations", chain, map[string]string{"sqlite": "000059_lingdoc_candidate_claim_evidence.down.sql", "versioned": "000138_lingdoc_candidate_claim_evidence.down.sql"}[chain]))
+	down, err := os.ReadFile(filepath.Join(root, "migrations", chain, map[string]string{"sqlite": "000060_lingdoc_candidate_claim_evidence.down.sql", "versioned": "000139_lingdoc_candidate_claim_evidence.down.sql"}[chain]))
 	require.NoError(t, err)
 	_, err = db.Exec(`CREATE TABLE lingdoc_candidates(id TEXT PRIMARY KEY, body_markdown TEXT NOT NULL)`)
 	require.NoError(t, err)

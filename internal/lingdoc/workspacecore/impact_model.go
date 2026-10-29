@@ -84,21 +84,32 @@ type ImpactAssessment struct {
 	AssessedAt          time.Time           `json:"assessed_at"`
 }
 type ImpactTask struct {
-	ID                   string             `json:"id"`
-	ProjectID            string             `json:"project_id"`
-	ChangeSetID          string             `json:"change_set_id"`
-	Target               ObjectVersionRef   `json:"target"`
-	TargetRevision       int64              `json:"target_revision"`
-	Action               string             `json:"action"`
-	Severity             string             `json:"severity"`
-	ResponsibilityDomain string             `json:"responsibility_domain"`
-	AssigneeID           string             `json:"assignee_id,omitempty"`
-	Status               string             `json:"status"`
-	Causes               []ImpactCause      `json:"causes"`
-	Version              int64              `json:"version"`
-	Disposition          string             `json:"disposition,omitempty"`
-	HumanDecision        string             `json:"human_decision,omitempty"`
-	ClosureEvidence      []ObjectVersionRef `json:"closure_evidence"`
+	ID                   string           `json:"id"`
+	ProjectID            string           `json:"project_id"`
+	ChangeSetID          string           `json:"change_set_id"`
+	Target               ObjectVersionRef `json:"target"`
+	TargetRevision       int64            `json:"target_revision"`
+	Action               string           `json:"action"`
+	Severity             string           `json:"severity"`
+	ResponsibilityDomain string           `json:"responsibility_domain"`
+	AssigneeID           string           `json:"assignee_id,omitempty"`
+	Status               string           `json:"status"`
+	Causes               []ImpactCause    `json:"causes"`
+	// LocationHints (#774 tier A) points at where the watched values literally
+	// occur in the target chapter body. It is an attachment for the human
+	// pass, never an input to any verdict the task carries.
+	LocationHints []ImpactLocationHint `json:"location_hints,omitempty"`
+	// LocationSuggestions (#774 tier C) holds AI-proposed sentence locations
+	// that passed the server's verbatim quote check and wait for a human
+	// decision. Adoption appends a hint; nothing here blocks anything.
+	LocationSuggestions []ImpactLocationSuggestion `json:"location_suggestions,omitempty"`
+	// SuggestionBatchKey is the idempotency key of the last suggestion run on
+	// this task; a replayed key returns the task without a second model call.
+	SuggestionBatchKey string             `json:"suggestion_batch_key,omitempty"`
+	Version            int64              `json:"version"`
+	Disposition        string             `json:"disposition,omitempty"`
+	HumanDecision      string             `json:"human_decision,omitempty"`
+	ClosureEvidence    []ObjectVersionRef `json:"closure_evidence"`
 	// StaleReason explains why a task became STALE. STALE is terminal but is
 	// not closure: the basis the task was raised against no longer exists, so
 	// the task cannot be completed and must not satisfy the release gate.

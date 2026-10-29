@@ -17,7 +17,9 @@ self-sufficient using pypdfium2 + the Go-side OCR that already exists.
 """
 
 import base64
+import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -1604,6 +1606,25 @@ class PDFParser(BaseParser):
             "vector_figure_count": vector_figure_count,
             "image_source_type": "scanned_pdf" if scanned_indices else "pdf_text_layer",
         }
+
+        # The Go indexer can only bind page coordinates when these exact
+        # extracted text blocks survive all later transformations. Do not
+        # supply page proofs for images, OCR, or reconstructed figure refs.
+        if not scanned_indices and not images and "\r" not in content_text:
+            spans = []
+            offset = 0
+            for page_index, text in enumerate(texts):
+                page_text = text.strip()
+                if not page_text:
+                    continue
+                if spans:
+                    offset += 2  # the exact "\n\n" used in assembly above
+                end = offset + len(page_text)
+                spans.append({"page": page_index + 1, "start": offset, "end": end})
+                offset = end
+            if spans and offset == len(content_text):
+                metadata["lingdoc_pdf_pages_v1"] = json.dumps(spans, separators=(",", ":"))
+                metadata["lingdoc_pdf_text_sha256"] = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
 
         logger.info(
             "PDFParser: %s -> %d pages (%d scanned, %d text), "

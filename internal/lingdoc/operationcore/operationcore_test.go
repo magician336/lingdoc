@@ -152,7 +152,7 @@ func TestReplayPayloadDecodeErrorIsRecognisedThroughWrapping(t *testing.T) {
 // The operations whose write transaction may retry on lock contention have one
 // owner.
 func TestRetryLocksNamesTheRetryingOperations(t *testing.T) {
-	for _, op := range []string{"saveSpec", "createProject", "saveTemplateCopy", "bindTemplateCopyRuleSet", "reverseChangeSet"} {
+	for _, op := range []string{"saveSpec", "createProject", "changeTemplate", "saveTemplateCopy", "bindTemplateCopyRuleSet", "applyLegacyRuleOverrides", "createTemplateFieldArchive", "removeArchivedTemplateField", "reverseChangeSet"} {
 		if !RetryLocks(op) {
 			t.Fatalf("operation %q retries on lock contention", op)
 		}

@@ -51,6 +51,7 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 
 	var wg sync.WaitGroup
 	results := make([]struct {
+		body   json.RawMessage
 		status int
 		replay bool
 		err    error
@@ -59,22 +60,32 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 		wg.Add(1)
 		go func(index int, change ChangeSet) {
 			defer wg.Done()
-			_, status, replay, err := svc.ApplyChangeSet(ctx, actor, p.ID, change.ID, "race-apply-"+change.ID)
+			body, status, replay, err := svc.ApplyChangeSet(ctx, actor, p.ID, change.ID, "race-apply-"+change.ID)
 			results[index] = struct {
+				body   json.RawMessage
 				status int
 				replay bool
 				err    error
-			}{status: status, replay: replay, err: err}
+			}{body: body, status: status, replay: replay, err: err}
 		}(i, change)
 	}
 	wg.Wait()
 
 	winners, losers := 0, 0
+	winningChangeID := ""
+	changes := []ChangeSet{first, second}
 	for i, result := range results {
 		switch {
 		case result.err == nil && result.status == 200 && !result.replay:
 			winners++
-		case result.status == 409 && !result.replay && result.err == nil:
+			winningChangeID = changes[i].ID
+		case result.err == nil && result.status == 409 && !result.replay:
+			// A stale proposal is an answered conflict with no Go error. Verify
+			// that this specific response describes the losing proposal.
+			var stale ChangeSet
+			if err := json.Unmarshal(result.body, &stale); err != nil || stale.ID != changes[i].ID || stale.Status != ChangeSetStatusStale {
+				t.Fatalf("apply %d returned a non-stale conflict: body=%s err=%v", i, result.body, err)
+			}
 			losers++
 		case !result.replay && (result.status == 0 || result.status == 409) && errors.Is(result.err, ErrVersionConflict):
 			losers++
@@ -107,6 +118,9 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 	}
 	for _, task := range tasks {
 		if task.ChangeSetID == first.ID || task.ChangeSetID == second.ID {
+			if task.ChangeSetID != winningChangeID {
+				t.Fatalf("losing proposal produced impact task %s: change=%s winner=%s", task.ID, task.ChangeSetID, winningChangeID)
+			}
 			continue
 		}
 		t.Fatalf("impact task %s belongs to neither concurrent proposal: change=%s", task.ID, task.ChangeSetID)
@@ -128,20 +142,18 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 		t.Fatalf("neither proposal produced impact tasks: %+v", tasks)
 	}
 
-	// The loser must be left intact and unapplied. It is deliberately NOT
-	// required to be marked stale: the concurrent path loses the race inside
-	// runOperation's consistency recheck (service_facade.go:793), which rolls
-	// the whole transaction back — so the stale write the sequential path would
-	// have made never lands. Demanding "stale" here would be asserting a write
-	// that correctly does not happen. What matters is that it neither applied
-	// nor contributed tasks.
-	for _, change := range []ChangeSet{first, second} {
+	// A loser can either commit a stale answer or be rejected by a concurrent
+	// consistency check that rolls back its transaction. It must never apply.
+	for _, change := range changes {
 		stored, err := svc.GetChangeSet(ctx, actor, p.ID, change.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.Status == "applied" {
-			continue // the winner
+		if change.ID == winningChangeID {
+			if stored.Status != ChangeSetStatusApplied {
+				t.Fatalf("winning proposal ended in %q, want applied", stored.Status)
+			}
+			continue
 		}
 		if stored.Status != "assessed" && stored.Status != "stale" {
 			t.Fatalf("the losing proposal ended in %q, want assessed or stale", stored.Status)

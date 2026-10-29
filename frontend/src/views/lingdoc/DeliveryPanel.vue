@@ -52,6 +52,9 @@ const snapshots = ref<ReleaseSnapshot[]>([])
 const artifacts = ref<ExportArtifact[]>([])
 const historyTruncated = ref(false)
 const artifactTruncated = ref(false)
+const historyLoading = ref(false)
+const historyLoaded = ref(false)
+const historyError = ref(false)
 
 /**
  * 每个快照的当前性，**只**来自 getRelease 的读取结果。
@@ -68,15 +71,56 @@ const refreshingProject = ref(false)
 let refreshSequence = 0
 const busy = computed(() => pending.value !== '' || refreshingProject.value)
 const errorMessage = ref('')
+const operationNotice = ref('')
+const checkNotice = ref('')
+const templateCheckNotice = ref('')
+
+// Bind asynchronous reads to the inputs displayed by this panel. A project
+// version normally advances when these change; keeping the explicit pins also
+// handles a refreshed template, chapter, or membership arriving separately.
+function deliveryBasis(): string {
+  const project = props.project
+  return JSON.stringify([
+    accessSequence, project.id, project.project_version, project.template_id, project.template_version,
+    project.template_copy_version, project.template_copy?.content_hash, project.template_copy?.ruleset_hash,
+    project.members, props.chapters.map(chapter => [chapter.id, chapter.current_version_id, chapter.confirmation_valid]),
+  ])
+}
+
+let accessSequence = 0
+let operationSequence = 0
+let historySequence = 0
+let currencySequence = 0
+const currencyRequests = new Map<string, number>()
+
+function frozenTemplateReference(snapshot: ReleaseSnapshot): string {
+  const input = snapshot.frozen_input as typeof snapshot.frozen_input & {
+    template?: { id?: string; version?: string }
+    template_copy_version?: number
+    template_copy_content_hash?: string
+  }
+  const definition = input.template?.id && input.template.version
+    ? input.template.id + ' / ' + input.template.version : '服务端未提供模板版本'
+  return definition + (input.template_copy_version ? ' · 项目副本第 ' + input.template_copy_version + ' 版' : '') +
+    (input.template_copy_content_hash ? ' · 内容摘要 ' + input.template_copy_content_hash : '')
+}
+
+// The service may return an immutable RuleSet reference in addition to its
+// effective hash. Older or legacy results need not have that optional field.
+function ruleSetReference(value: unknown): string {
+  const ref = (value as { ruleset_ref?: { ruleset_id?: string; version?: string; ruleset_hash?: string } } | null)?.ruleset_ref
+  if (!ref?.ruleset_id || !ref.version) return '服务端未提供规则集版本'
+  return `${ref.ruleset_id} / ${ref.version}${ref.ruleset_hash ? ` · 来源摘要 ${ref.ruleset_hash}` : ''}`
+}
 
 /** 冻结：同一个待冻结状态重试时复用同一个键，成功之后下一次冻结是一个新动作。 */
-const freezeAttempt = ref<{ signature: string; key: string } | null>(null)
+const freezeAttempts = new Map<string, string>()
 const dispositionActions = ref<Record<string, ValidationIssueDisposition['action']>>({})
 const dispositionReasons = ref<Record<string, string>>({})
-const dispositionAttempts = new Map<string, { signature: string; key: string }>()
+const dispositionAttempts = new Map<string, string>()
 
 /** 导出：每个快照各自一条。键在成功后清掉，所以「再导一份」是新动作而不是重放。 */
-const exportAttempts = new Map<string, { signature: string; key: string }>()
+const exportAttempts = new Map<string, string>()
 
 function toRow(artifact: ExportArtifact): ArtifactRow {
   const view = viewOf(artifact)
@@ -123,8 +167,39 @@ const groups = computed<DeliveryGroup[]>(() => {
 })
 
 function fail(error: unknown, fallback: string) {
-  const item = error as { message?: string }
-  errorMessage.value = item?.message || fallback
+  const item = error as { message?: string; status?: number; $httpStatus?: number }
+  const status = item?.$httpStatus ?? item?.status
+  if (status === 401 || status === 403 || status === 404) {
+    accessSequence++
+    // A prior result or currency read cannot be carried across a denial.
+    historySequence++
+    currencySequence++
+    checks.value = null
+    templateChecks.value = null
+    historyLoading.value = false
+    historyLoaded.value = false
+    historyError.value = true
+    currencyReads.value = {}
+    snapshots.value = []
+    artifacts.value = []
+    errorMessage.value = status === 401
+      ? '登录状态已失效，请重新登录后重试。'
+      : status === 404
+        ? '课题或交付资源不存在，或当前账号无法访问。请重新读取课题和交付历史。'
+        : '当前账号无权读取或执行此操作。请核对课题与资料权限后重试。'
+    return
+  }
+  errorMessage.value = item?.message ? fallback + '（' + item.message + '）' : fallback
+}
+
+// Access denials are scoped to the project, not to the content version. An
+// older request can still reveal that the current session lost access.
+function handleAccessDenial(error: unknown, projectId: string): boolean {
+  const item = error as { status?: number; $httpStatus?: number }
+  const status = item?.$httpStatus ?? item?.status
+  if (projectId !== props.project.id || ![401, 403, 404].includes(status ?? 0)) return false
+  fail(error, '')
+  return true
 }
 
 /**
@@ -138,8 +213,8 @@ watch(() => props.project.id, () => {
 })
 
 function recoverVersionConflict(error: unknown): boolean {
-  const item = error as { status?: number; error?: { code?: string } }
-  if (item?.status !== 409 || item?.error?.code !== 'version_conflict') return false
+  const item = error as { status?: number; $httpStatus?: number; code?: string; error?: { code?: string } }
+  if ((item?.status !== 409 && item?.$httpStatus !== 409) || (item?.error?.code !== 'version_conflict' && item?.code !== 'version_conflict')) return false
   const projectId = props.project.id
   const sequence = ++refreshSequence
   refreshingProject.value = true
@@ -154,21 +229,18 @@ function recoverVersionConflict(error: unknown): boolean {
   return true
 }
 
-function freezeKey(expected: number): string {
-  const signature = JSON.stringify({ project_version: expected })
-  if (freezeAttempt.value?.signature === signature) return freezeAttempt.value.key
+// Keep unresolved attempts per project and input across project switches. A
+// response can be lost after the server commits, so returning to the project
+// must retry the same operation with the same idempotency key.
+function keyForAttempt(attempts: Map<string, string>, signature: string): string {
+  const old = attempts.get(signature)
+  if (old) return old
   const key = newDeliveryKey()
-  freezeAttempt.value = { signature, key }
+  attempts.set(signature, key)
   return key
 }
-
-function exportKey(snapshotId: string, signature: unknown): string {
-  const serialized = JSON.stringify(signature)
-  const old = exportAttempts.get(snapshotId)
-  if (old?.signature === serialized) return old.key
-  const key = newDeliveryKey()
-  exportAttempts.set(snapshotId, { signature: serialized, key })
-  return key
+function finishAttempt(attempts: Map<string, string>, signature: string, key: string) {
+  if (attempts.get(signature) === key) attempts.delete(signature)
 }
 
 /**
@@ -176,49 +248,70 @@ function exportKey(snapshotId: string, signature: unknown): string {
  * 而沿用上一次的「当前内容」正是它点名要避免的事——用户会以为一份已经过期的文件还代表
  * 着工作区。
  */
-async function refreshCurrency(snapshotId: string) {
+async function refreshCurrency(snapshotId: string, basis = deliveryBasis(), sequence = currencySequence): Promise<boolean> {
   const projectId = props.project.id
+  const request = (currencyRequests.get(snapshotId) ?? 0) + 1
+  currencyRequests.set(snapshotId, request)
+  const current = () => projectId === props.project.id && basis === deliveryBasis() &&
+    sequence === currencySequence && currencyRequests.get(snapshotId) === request
   try {
     const result = await getRelease(projectId, snapshotId)
-    // 读取期间用户可能已经换了项目；这一条属于上一个项目，不能写进当前界面。
-    if (projectId !== props.project.id) return
+    if (!current()) return false
     currencyReads.value[snapshotId] = result.data
+    return true
   } catch (error) {
-    if (projectId !== props.project.id) return
+    if (handleAccessDenial(error, projectId)) return false
+    if (!current()) return false
     currencyReads.value[snapshotId] = undefined
+    historyError.value = true
     fail(error, '无法读取交付快照的当前状态。')
+    return false
   }
 }
 
 /** 重拉两份历史，并把界面上会展示的每一个快照的当前性重新读一遍。 */
-async function reload() {
+async function reload(basis: string, sequence: number): Promise<boolean> {
   const projectId = props.project.id
+  const currencyEpoch = ++currencySequence
+  // A previously current snapshot is unknown until this refresh completes.
+  currencyReads.value = {}
   const [releases, exports] = await Promise.all([
     listReleases(projectId),
     listExports(projectId),
   ])
-  // 同一条守卫：慢的那次读取不能把上一个项目的历史盖到新项目上。
-  if (projectId !== props.project.id) return
+  const current = () => projectId === props.project.id && basis === deliveryBasis() && sequence === historySequence
+  if (!current()) return false
+  historyLoaded.value = true
   snapshots.value = releases.data.items
   historyTruncated.value = releases.data.truncated
   artifacts.value = exports.data.items
   artifactTruncated.value = exports.data.truncated
-  // 并集而不是只看快照列表：历史被截断时，产物仍可能指向一份没列出来的快照。
   const ids = [...new Set([
     ...snapshots.value.map((item) => item.id),
     ...artifacts.value.map((item) => item.snapshot_id),
   ])]
-  // 逐条 getRelease 是这个面板主动加的一轮读取（§7 要求按 snapshot_id 读，所以列表里
-  // 那个重算过的 is_current 不被信任）：50 份快照就是 50 次工作区读，一次刷新连同服务端
-  // 那次重算约 100 次。列表面向演示规模，这个量可以接受——换掉的是一份可能已经过期的
-  // 当前性，那正是 §7 要求每次刷新都更新它的原因。
-  await Promise.all(ids.map(refreshCurrency))
+  const results = await Promise.all(ids.map(id => refreshCurrency(id, basis, currencyEpoch)))
+  return current() && results.every(Boolean)
 }
 
-async function load() {
+async function load(): Promise<boolean> {
+  const projectId = props.project.id
+  const basis = deliveryBasis()
+  const sequence = ++historySequence
+  historyLoading.value = true
+  historyError.value = false
   try {
-    await reload()
-  } catch (error) { fail(error, '无法读取交付历史。') }
+    return await reload(basis, sequence)
+  } catch (error) {
+    if (handleAccessDenial(error, projectId)) return false
+    if (basis === deliveryBasis() && sequence === historySequence) {
+      historyError.value = true
+      fail(error, '无法读取交付历史。')
+    }
+    return false
+  } finally {
+    if (sequence === historySequence) historyLoading.value = false
+  }
 }
 
 // 只有用户明确要求重来一次时才清掉上一条报错。自动重读不清：版本冲突刚提示「已重新
@@ -226,59 +319,68 @@ async function load() {
 // 发生——而这个提示正是他唯一能知道发生了什么的地方。
 function refreshHistory() {
   errorMessage.value = ''
-  void load()
+  void load().then(refreshed => {
+    if (refreshed && operationNotice.value) operationNotice.value = '交付历史已刷新，请查看各快照与产物状态。'
+  })
 }
 
 async function runCheck() {
   if (busy.value) return
   const projectId = props.project.id
   const expected = props.project.project_version
+  const basis = deliveryBasis()
+  const operation = ++operationSequence
   pending.value = 'check'
   errorMessage.value = ''
+  checkNotice.value = ''
+  checks.value = null
   try {
     const result = await checkDelivery(projectId, expected)
-    // 等待期间用户可能已经换了项目。这一条结论属于上一个项目，落进当前界面就是把 A 的
-    // 检查结果贴到 B 上（连它带的「项目版本 N」也是 A 的）。另外三处等待都有这道守卫，
-    // 只有检查这一条一直漏着。
-    if (projectId !== props.project.id) return
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
+    if (result.data.project_version !== expected) {
+      checkNotice.value = '服务端返回的检查版本与当前课题不一致，请重新读取课题后再检查。'
+      return
+    }
     checks.value = result.data
-    emit('computedReceipt',result.data.receipt_id??'')
+    emit('computedReceipt', result.data.receipt_id ?? '')
   } catch (error) {
-    if (projectId !== props.project.id) return
+    if (handleAccessDenial(error, projectId)) return
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
     if (!recoverVersionConflict(error)) fail(error, '交付检查失败，请重试。')
-  } finally { pending.value = '' }
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 async function runTemplateCheck() {
   if (busy.value) return
   const projectId = props.project.id
   const expected = props.project.project_version
+  const basis = deliveryBasis()
+  const operation = ++operationSequence
   pending.value = 'template-check'
   errorMessage.value = ''
+  templateCheckNotice.value = ''
+  templateChecks.value = null
   try {
     const result = await checkTemplate(projectId, expected)
-    if (projectId !== props.project.id) return
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
+    if (result.data.project_version !== expected) {
+      templateCheckNotice.value = '服务端返回的模板检查版本与当前课题不一致，请重新读取课题后再检查。'
+      return
+    }
     templateChecks.value = result.data
   } catch (error) {
-    if (projectId !== props.project.id) return
+    if (handleAccessDenial(error, projectId)) return
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
     if (!recoverVersionConflict(error)) fail(error, '模板规则检查失败，请重试。')
-  } finally { pending.value = '' }
-}
-
-function dispositionKey(issueId: string, expected: number, action: string, reason: string): string {
-  const signature = JSON.stringify({ project: props.project.id, issueId, expected, action, reason })
-  const previous = dispositionAttempts.get(issueId)
-  if (previous?.signature === signature) return previous.key
-  const key = newDeliveryKey()
-  dispositionAttempts.set(issueId, { signature, key })
-  return key
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 async function submitDisposition(issue: CheckResult['issues'][number]) {
   if (busy.value || issue.disposition) return
   const projectId = props.project.id
   const expected = props.project.project_version
-  const action = dispositionActions.value[issue.id] || 'dismiss'
+  const basis = deliveryBasis()
+  const action = dispositionActions.value[issue.id] || 'resolve'
   const reason = (dispositionReasons.value[issue.id] || '').trim()
   if (!reason) {
     errorMessage.value = '请填写处置原因。'
@@ -288,42 +390,75 @@ async function submitDisposition(issue: CheckResult['issues'][number]) {
     errorMessage.value = '阻断问题不能豁免。'
     return
   }
-  pending.value = `issue:${issue.id}`
+  const signature = JSON.stringify({ project: projectId, issueId: issue.id, expected, action, reason })
+  const requestKey = keyForAttempt(dispositionAttempts, signature)
+  const operation = ++operationSequence
+  pending.value = 'issue:' + issue.id
   errorMessage.value = ''
+  operationNotice.value = ''
   try {
-    await setIssueDisposition(projectId, issue.id, expected, action, reason,
-      dispositionKey(issue.id, expected, action, reason))
-    dispositionAttempts.delete(issue.id)
-    const refreshed = await checkDelivery(projectId, expected)
-    if (projectId !== props.project.id) return
-    checks.value = refreshed.data
-  } catch (error) {
-    if (projectId !== props.project.id) return
-    if (!recoverVersionConflict(error)) fail(error, '提交问题处置失败；请检查权限和当前版本后重试。')
-  } finally { pending.value = '' }
+    try {
+      await setIssueDisposition(projectId, issue.id, expected, action, reason,
+        requestKey)
+    } catch (error) {
+      if (handleAccessDenial(error, projectId)) return
+      if (operation !== operationSequence || basis !== deliveryBasis()) return
+      if (!recoverVersionConflict(error)) fail(error, '提交问题处置失败；请检查权限和当前版本后重试。')
+      return
+    }
+    if (operation !== operationSequence) return
+    finishAttempt(dispositionAttempts, signature, requestKey)
+    if (operation !== operationSequence || projectId !== props.project.id) return
+    checks.value = null
+    operationNotice.value = '问题处置已记录；请以重新读取的交付检查为准。'
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
+    try {
+      const refreshed = await checkDelivery(projectId, expected)
+      if (operation !== operationSequence || basis !== deliveryBasis()) return
+      if (refreshed.data.project_version !== expected) {
+        checkNotice.value = '问题处置已记录，但检查版本已变化；请重新读取课题并检查。'
+        return
+      }
+      checks.value = refreshed.data
+      checkNotice.value = ''
+    } catch (error) {
+      if (handleAccessDenial(error, projectId)) return
+      if (operation !== operationSequence || basis !== deliveryBasis()) return
+      if (!recoverVersionConflict(error)) fail(error, '问题处置已记录，但检查结果重新读取失败。请再次运行交付检查。')
+    }
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 async function freeze() {
   if (busy.value) return
   const projectId = props.project.id
   const expected = props.project.project_version
+  const basis = deliveryBasis()
+  const signature = JSON.stringify({ project: projectId, project_version: expected })
+  const requestKey = keyForAttempt(freezeAttempts, signature)
+  const operation = ++operationSequence
   pending.value = 'freeze'
   errorMessage.value = ''
+  operationNotice.value = ''
   try {
-    // 返回值不接：重放回来的快照带着**冻结当时**写下的 is_current，拿它渲染当前性正是
-    // §7 点名要避免的事。
-    await prepareRelease(projectId, expected, freezeKey(expected))
-    freezeAttempt.value = null
-  } catch (error) {
-    // 换了项目就什么都不做：这条报错说的是上一个项目，而 recoverVersionConflict 还会
-    // 请上层重读——重读的是当前这个项目，那是一次没有理由的读取。
-    if (projectId !== props.project.id) return
-    if (!recoverVersionConflict(error)) fail(error, '冻结交付快照失败，请重试。')
-    return
-  } finally { pending.value = '' }
-  // 重读放在 try 外面：冻结**已经成了**，这一步失败绝不能报成「冻结失败」——用户会
-  // 再冻一次，而那是另一份快照。这次重读同时满足 §6 对重放的要求：界面先取当前状态。
-  await load()
+    try {
+      await prepareRelease(projectId, expected, requestKey)
+    } catch (error) {
+      if (handleAccessDenial(error, projectId)) return
+      if (operation !== operationSequence || basis !== deliveryBasis()) return
+      if (!recoverVersionConflict(error)) fail(error, '冻结交付快照失败，请重试。')
+      return
+    }
+    if (operation !== operationSequence) return
+    finishAttempt(freezeAttempts, signature, requestKey)
+    if (operation !== operationSequence || projectId !== props.project.id) return
+    operationNotice.value = '已冻结项目版本 ' + expected + ' 的快照，正在读取交付历史。'
+    const refreshed = await load()
+    if (operation !== operationSequence || projectId !== props.project.id) return
+    operationNotice.value = refreshed
+      ? '已冻结项目版本 ' + expected + ' 的快照，交付历史已刷新。'
+      : '已冻结项目版本 ' + expected + ' 的快照，但交付历史尚未确认；请刷新交付历史，不必重复冻结。'
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 async function exportSnapshot(snapshot: ReleaseSnapshot) {
@@ -333,18 +468,32 @@ async function exportSnapshot(snapshot: ReleaseSnapshot) {
     return
   }
   const projectId = props.project.id
-  pending.value = `export:${snapshot.id}`
+  const basis = deliveryBasis()
+  const signature = JSON.stringify({ project: projectId, snapshot: snapshot.id, digest: snapshot.snapshot_digest })
+  const requestKey = keyForAttempt(exportAttempts, signature)
+  const operation = ++operationSequence
+  pending.value = 'export:' + snapshot.id
   errorMessage.value = ''
+  operationNotice.value = ''
   try {
-    await startExport(projectId, snapshot.id, exportKey(snapshot.id, snapshot.snapshot_digest))
-    exportAttempts.delete(snapshot.id)
-  } catch (error) {
-    if (projectId !== props.project.id) return
-    if (!recoverVersionConflict(error)) fail(error, '生成交付文件失败，请重试。')
-    return
-  } finally { pending.value = '' }
-  // 同 freeze：文件已经渲出来了，重读失败不能报成「生成失败」，否则用户会再导一份。
-  await load()
+    try {
+      await startExport(projectId, snapshot.id, requestKey)
+    } catch (error) {
+      if (handleAccessDenial(error, projectId)) return
+      if (operation !== operationSequence || basis !== deliveryBasis()) return
+      if (!recoverVersionConflict(error)) fail(error, '生成交付文件失败，请重试。')
+      return
+    }
+    if (operation !== operationSequence) return
+    finishAttempt(exportAttempts, signature, requestKey)
+    if (operation !== operationSequence || projectId !== props.project.id) return
+    operationNotice.value = '导出请求已完成，正在读取快照 ' + snapshot.id.slice(0, 8) + ' 的交付记录。'
+    const refreshed = await load()
+    if (operation !== operationSequence || projectId !== props.project.id) return
+    operationNotice.value = refreshed
+      ? '导出请求已完成，交付记录已刷新；请查看对应产物的状态。'
+      : '导出请求已完成，但交付记录尚未确认；请刷新交付历史，不必重复导出。'
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 /**
@@ -354,64 +503,84 @@ async function exportSnapshot(snapshot: ReleaseSnapshot) {
  * 产物、再用它的 snapshot_id 去读 getRelease。所以这里认证与取引用都从产物出发，不从
  * 列表里的快照反查。
  */
-async function refreshArtifact(exportId: string): Promise<ExportArtifact> {
-  const result = await getExport(props.project.id, exportId)
+async function refreshArtifact(exportId: string): Promise<ExportArtifact | null> {
+  const projectId = props.project.id
+  const basis = deliveryBasis()
+  const sequence = currencySequence
+  const result = await getExport(projectId, exportId)
+  if (basis !== deliveryBasis() || sequence !== currencySequence) return null
   const fresh = result.data
   const index = artifacts.value.findIndex((item) => item.id === exportId)
   if (index >= 0) artifacts.value[index] = fresh
-  // 不在这里先把当前性抹成未知再读：那样每次下载都会闪一下「当前性未知」再变回来，
-  // 而 refreshCurrency 两条分支都会写这个键，抹与不抹是同一个结果。
-  await refreshCurrency(fresh.snapshot_id)
+  await refreshCurrency(fresh.snapshot_id, basis, sequence)
+  if (basis !== deliveryBasis() || sequence !== currencySequence) return null
   return fresh
 }
 
 async function download(row: ArtifactRow) {
   if (busy.value) return
-  pending.value = `download:${row.id}`
+  const projectId = props.project.id
+  const basis = deliveryBasis()
+  const operation = ++operationSequence
+  pending.value = 'download:' + row.id
   errorMessage.value = ''
   try {
-    // §7：「展示下载入口时」也要更新当前性。所以下载前先重读一次——这条读取失败时标签
-    // 会落回「当前性未知」，但仍然照常把文件下载下来：能不能下载与是不是当前内容，
-    // 是两个问题。
+    // Currentness and download permission are separate: a failed currentness
+    // read leaves the label unknown, while download still rechecks permission.
     const fresh = await refreshArtifact(row.id)
+    if (operation !== operationSequence || !fresh || basis !== deliveryBasis()) return
     const view = viewOf(fresh)
     if (view.kind !== 'downloadable') {
       errorMessage.value = '这份交付文件当前不可下载，状态已刷新。'
       return
     }
-    // 每次都真发一次请求：后端在**下载那一刻**重查授权。所以这里不缓存 Blob。
     const blob = await downloadExport(view.downloadPath)
+    if (operation !== operationSequence || basis !== deliveryBasis()) return
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.style.display = 'none'
     link.href = url
-    link.download = `lingdoc-delivery-${row.snapshotID.slice(0, 8)}.docx`
+    link.download = 'lingdoc-delivery-' + row.snapshotID.slice(0, 8) + '.docx'
     document.body.appendChild(link)
     link.click()
     nextTick(() => {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     })
-  } catch (error) { fail(error, '下载失败，请重试。') }
-  finally { pending.value = '' }
+  } catch (error) {
+    if (handleAccessDenial(error, projectId)) return
+    if (operation === operationSequence && basis === deliveryBasis()) fail(error, '下载失败，请重试。')
+  } finally { if (operation === operationSequence) pending.value = '' }
 }
 
 // 覆盖「页面刷新」「重新打开」（挂载即读）与「本地编辑成功」：保存章节后
 // Workspace.vue 会重新读取项目，project_version 随之变化，旧快照于是自动标成历史。
 watch(
-  () => [props.project.id, props.project.project_version] as const,
+  () => [props.project.id, deliveryBasis()] as const,
   (current, previous) => {
     if (current[0] !== previous?.[0]) {
+      operationSequence++
+      pending.value = ''
       currencyReads.value = {}
-      freezeAttempt.value = null
-      exportAttempts.clear()
-      // 换了项目，上一条报错说的就是别的项目了。注意这只在换项目时清——项目版本变化
-      // 时不清，那正是 recoverVersionConflict 那句提示要活下来的场合。
+      currencyRequests.clear()
+      historyLoaded.value = false
+      historyError.value = false
+      snapshots.value = []
+      artifacts.value = []
+      dispositionActions.value = {}
+      dispositionReasons.value = {}
       errorMessage.value = ''
+      operationNotice.value = ''
+      checkNotice.value = ''
+      templateCheckNotice.value = ''
+    } else if (previous && current[1] !== previous[1]) {
+      if (checks.value || pending.value === 'check') {
+        checkNotice.value = '课题、模板、章节或成员信息已变化，之前的交付检查已过期；请重新检查。'
+      }
+      if (templateChecks.value || pending.value === 'template-check') {
+        templateCheckNotice.value = '课题、模板、章节或成员信息已变化，之前的模板检查已过期；请重新检查。'
+      }
     }
-    // 检查结果记的是它算出来那一刻的项目版本。内容一变（自己刚保存，或协作者改了），
-    // 那份结论就不再是「当前内容的检查结果」——把它留在屏幕上，用户会以为自己刚做的
-    // 改动已经通过了检查。这与快照的当前性是同一件事：结论只在它被算出的那一刻成立。
     checks.value = null
     templateChecks.value = null
     void load()
@@ -423,19 +592,22 @@ watch(
 <template>
   <section class="delivery" aria-labelledby="delivery-title">
     <h3 id="delivery-title">交付</h3>
-    <p class="muted">检查当前内容能否交付，冻结一份不再随编辑变化的快照，再导出成文件。</p>
+    <p class="muted">写作期的 Template Check 帮助发现模板问题，本身不授予导出权限。交付检查供当前修订参考；冻结时服务端会基于冻结输入重新执行 Preflight，只有当前快照的 Preflight 通过后才能生成 DOCX。</p>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
+    <p v-if="operationNotice" role="status" class="delivery__success">{{ operationNotice }}</p>
+    <p v-if="checkNotice" role="status" class="warning">{{ checkNotice }}</p>
+    <p v-if="templateCheckNotice" role="status" class="warning">{{ templateCheckNotice }}</p>
 
     <div class="delivery__actions">
       <button type="button" :disabled="busy" @click="runCheck">
         {{ pending === 'check' ? '检查中…' : '交付检查' }}
       </button>
       <button type="button" :disabled="busy" @click="runTemplateCheck">
-        {{ pending === 'template-check' ? '规则检查中…' : '查看模板规则证据' }}
+        {{ pending === 'template-check' ? '规则检查中…' : '写作期 Template Check' }}
       </button>
       <button type="button" :disabled="busy" @click="freeze">
-        {{ pending === 'freeze' ? '冻结中…' : '冻结当前内容' }}
+        {{ pending === 'freeze' ? '冻结并检查中…' : '冻结当前内容（执行 Preflight）' }}
       </button>
       <button type="button" :disabled="busy" @click="refreshHistory">刷新交付历史</button>
     </div>
@@ -445,14 +617,17 @@ watch(
         当前检查结果：{{ statusLabels[checks.status] }}
         <small>（项目版本 {{ checks.project_version }}）</small>
       </p>
+      <p class="muted">课题模板 {{ project.template_id }} / {{ project.template_version }} · 项目副本第 {{ project.template_copy_version ?? '未提供' }} 版 · {{ ruleSetReference(checks) }} · 有效规则摘要 {{ checks.ruleset_hash || '服务端未提供' }}。该结果对应已读取的项目版本，冻结时会重新检查。</p>
       <p v-if="checks.receipt_id" class="delivery__receipt">当前检查回执：<code>{{checks.receipt_id}}</code><button type="button" @click="emit('reviewChangeReceipt',checks!.receipt_id!)">用此回执处理正式变更</button></p>
       <ul v-if="checks.issues.length" class="delivery__issues">
         <li v-for="issue in checks.issues" :key="issue.id">
           <span class="delivery__target">{{ issueTargetLabel(issue, project.id, chapters) }}</span>
           <em :class="['delivery__severity', { 'delivery__severity--blocking': issue.severity === 'blocking' }]">
-            {{ issue.severity === 'blocking' ? '阻断' : '提示' }}
+            {{ issue.severity === 'blocking' ? '阻断' : issue.severity === 'warning' ? '警告' : '提示' }}
           </em>
           <p>{{ issue.message }}</p>
+          <small>规则 {{ issue.rule_id }} · 目标版本 {{ issue.target_version || '服务端未提供' }} · 规则摘要 {{ issue.ruleset_hash || '服务端未提供' }} · 求值器版本 {{ issue.evaluator_version || '服务端未提供' }}</small>
+          <p class="muted">证据：{{ issue.evidence?.length ? issue.evidence.join('；') : '服务端未提供额外证据' }}</p>
           <p v-if="issue.disposition" class="delivery__disposition">
             已记录「{{ issue.disposition.action }}」：{{ issue.disposition.reason }} · {{ issue.disposition.actor_id }}
           </p>
@@ -477,7 +652,9 @@ watch(
     </section>
 
     <section v-if="templateChecks" class="delivery__result" aria-label="模板规则证据">
-      <p>模板副本版本 {{ templateChecks.template_copy_version ?? '未提供' }} · 规则集 {{ templateChecks.ruleset_hash.slice(0, 12) }} · 结果仅供修订参考，不授予导出权限。</p>
+      <h4>写作期 Template Check：{{ statusLabels[templateChecks.status] }}</h4>
+      <p>项目版本 {{ templateChecks.project_version }} · 来源模板 {{ project.template_id }} / {{ project.template_version }} · 模板副本第 {{ templateChecks.template_copy_version ?? '未提供' }} 版 · {{ ruleSetReference(templateChecks) }}。</p>
+      <p class="muted">模板内容摘要 {{ templateChecks.content_hash || '服务端未提供' }} · 有效规则摘要 {{ templateChecks.ruleset_hash || '服务端未提供' }}。结果仅供修订参考，不授予导出权限。</p>
       <ul v-if="templateChecks.evaluations.length" class="delivery__issues">
         <li v-for="item in templateChecks.evaluations" :key="item.id || `${item.rule_id}:${item.target_ref}:${item.target_version}`">
           <span class="delivery__target">{{ item.rule_id }} · {{ item.target_ref }}（{{ item.target_version }}）</span>
@@ -485,14 +662,16 @@ watch(
             {{ item.status }} · {{ item.severity }}
           </em>
           <p>{{ item.message }}</p>
-          <small>证据：{{ item.evidence.length ? item.evidence.join('；') : '无额外证据' }} · {{ item.evaluator_version }}</small>
+          <small>规则摘要 {{ item.ruleset_hash || '服务端未提供' }} · 求值器版本 {{ item.evaluator_version || '服务端未提供' }}</small>
+          <p class="muted">证据：{{ item.evidence?.length ? item.evidence.join('；') : '服务端未提供额外证据' }}</p>
         </li>
       </ul>
-      <p v-else class="muted">此模板没有配置可执行规则。</p>
+      <p v-else class="muted">本次没有返回可执行规则的求值记录。</p>
     </section>
 
-    <p v-if="!groups.length" class="muted">还没有冻结过交付快照。</p>
-    <template v-else>
+    <p v-if="historyLoading" role="status" class="muted">正在读取交付历史与快照当前性…</p>
+    <p v-if="!historyLoading && historyLoaded && !historyError && !groups.length" class="muted">还没有冻结过交付快照。</p>
+    <template v-if="groups.length">
       <p v-if="historyTruncated" class="muted">只显示最近 {{ snapshots.length }} 份快照，更早的未列出。</p>
       <ul class="delivery__history">
         <li v-for="group in groups" :key="group.snapshotID" class="delivery__snapshot">
@@ -509,16 +688,26 @@ watch(
               摘要 {{ group.snapshot.snapshot_digest.slice(0, 12) }}
             </p>
             <p class="muted">
-              冻结时的交付检查：{{ statusLabels[group.snapshot.check.status] }} ·
+              冻结时的交付检查：{{ statusLabels[group.snapshot.check.status] }} · Preflight ·
               冻结时间 {{ new Date(group.snapshot.created_at).toLocaleString() }}
             </p>
-            <p class="muted">检查结果固定于冻结时；当前检查或后续编辑不会自动更新这份快照。</p>
+            <p class="muted">冻结模板 {{ frozenTemplateReference(group.snapshot) }} · {{ ruleSetReference(group.snapshot.check) }} · 有效规则摘要 {{ group.snapshot.check.ruleset_hash || '服务端未提供' }}</p>
+            <p class="muted">Preflight 固定于冻结输入；后续编辑不会更新这份快照。当前性未知或已过期时，请刷新历史并按需要重新冻结。</p>
             <p v-if="!canExportSnapshot(group.snapshot, currencyReads[group.snapshot.id])" role="note" class="warning">
               该快照已阻断、属于历史版本或当前性尚未确认。请检查并冻结当前内容，再生成 DOCX。
             </p>
-            <p v-if="group.snapshot.check.issues.length" class="warning">
-              这份快照带着 {{ group.snapshot.check.issues.length }} 条检查记录。
-            </p>
+            <details v-if="group.snapshot.check.issues.length">
+              <summary>查看冻结时的 {{ group.snapshot.check.issues.length }} 条 Preflight 记录</summary>
+              <ul class="delivery__issues">
+                <li v-for="issue in group.snapshot.check.issues" :key="issue.id">
+                  <strong>{{ issue.rule_id }} · {{ issueTargetLabel(issue, project.id, chapters) }}</strong>
+                  <em :class="['delivery__severity', { 'delivery__severity--blocking': issue.severity === 'blocking' }]">{{ issue.severity === 'blocking' ? '阻断' : issue.severity === 'warning' ? '警告' : '提示' }}</em>
+                  <p>{{ issue.message }}</p>
+                  <small>目标版本 {{ issue.target_version || '服务端未提供' }} · 规则哈希 {{ issue.ruleset_hash || '服务端未提供' }} · 求值器版本 {{ issue.evaluator_version || '服务端未提供' }}</small>
+                  <p class="muted">证据：{{ issue.evidence?.length ? issue.evidence.join('；') : '服务端未提供额外证据' }}</p>
+                </li>
+              </ul>
+            </details>
 
             <div class="delivery__actions">
               <button type="button" :disabled="busy || !canExportSnapshot(group.snapshot, currencyReads[group.snapshot.id])"

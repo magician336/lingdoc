@@ -58,6 +58,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_template_versions",
 	"lingdoc_rule_suggestion_runs",
 	"lingdoc_template_governance_operations",
+	"lingdoc_template_replay_fixtures",
 	"lingdoc_g5_records",
 	"lingdoc_g2_objects",
 	"lingdoc_g2_object_versions",
@@ -108,7 +109,11 @@ var versionedSQLiteColumns = map[string][]string{
 // must stay visible at the knowledge-row level. 000058 adds the ledger's
 // cost_basis column (#527): the money columns' 0 must read as
 // "not computed" when the profile computed no money, not as "free".
-const expectedSQLiteMigrationVersion = 58
+// 000059 adds the tenant replay fixture table (#769, Spec #768): registered
+// replay fixtures survive restarts as tenant rows next to the builtin set.
+// 000060 adds candidate claim evidence, 000061 adds original chunk digests,
+// and 000062 adds page provenance for PDF chunks.
+const expectedSQLiteMigrationVersion = 62
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

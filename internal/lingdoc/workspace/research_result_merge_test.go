@@ -128,8 +128,8 @@ func TestSearchResearchInterleavesLocalAndCrossrefBeforeRunLimits(t *testing.T) 
 		require.Equal(t, sources.items[i].ID, partial[i].SourceID)
 	}
 
-	require.NoError(t, db.Exec("CREATE TABLE tenants(id INTEGER PRIMARY KEY,web_search_config BLOB,deleted_at DATETIME)").Error)
-	require.NoError(t, db.Exec("INSERT INTO tenants(id,web_search_config) VALUES(?,?)", 7, []byte(`{"max_results":20}`)).Error)
+	applyCreateTablesFromMigration(t, db, "000000_init.up.sql", "tenants")
+	require.NoError(t, db.Exec("INSERT INTO tenants(id,name,business,web_search_config) VALUES(?,?,?,?)", 7, "test", "test", `{"max_results":20}`).Error)
 	adapter.web = balancedWebResults{}
 	webMixed, _, err := adapter.SearchResearch(policyContext(), actor, "project-1", core.ResearchTask{AssetIDs: []string{assetID}, ProviderID: "web"}, "software")
 	require.NoError(t, err)

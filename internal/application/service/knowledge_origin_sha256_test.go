@@ -65,7 +65,7 @@ func TestConvertBindsOnlyBuiltinDirectTextToActualInput(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(&types.Chunk{}))
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000060_chunk_origin_sha256.up.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000061_chunk_origin_sha256.up.sql"))
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(migration)).Error)
 	chunkSvc.chunkRepo = repository.NewChunkRepository(db)

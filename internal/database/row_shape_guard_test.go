@@ -238,6 +238,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("rulesetstore", "ruleSetVersionRow", "lingdoc_rule_sets"),
 
 	// templategovernance —— schema.go
+	registration("templategovernance", "fixtureRow", "lingdoc_template_replay_fixtures"),
 	registration("templategovernance", "operationRow", "lingdoc_template_governance_operations"),
 	registration("templategovernance", "profileRow", "lingdoc_template_profiles"),
 	registration("templategovernance", "suggestionRow", "lingdoc_rule_suggestion_runs"),
@@ -258,6 +259,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("workspacecore", "dependencyCandidateBatchRow", "lingdoc_g3_dependency_candidate_batches"),
 	registration("workspacecore", "dependencyCandidateRow", "lingdoc_g3_dependency_candidates"),
 	registration("workspacecore", "draftCandidateRow", "lingdoc_draft_candidates"),
+	registration("workspacecore", "DraftClaimProvenance", "lingdoc_claim_provenance"),
 	registration("workspacecore", "memberPermissionRow", "lingdoc_member_permissions"),
 	registration("workspacecore", "memberRow", "lingdoc_members"),
 	registration("workspacecore", "modelCallLedgerRow", "lingdoc_model_call_ledger"),

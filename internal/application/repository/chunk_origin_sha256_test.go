@@ -27,7 +27,7 @@ func TestChunkOriginDigestIsCommittedWithChunkOrNeither(t *testing.T) {
 	require.NoError(t, db.Model(&types.Chunk{}).Where("id = ?", chunk.ID).Count(&count).Error)
 	require.Zero(t, count)
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000060_chunk_origin_sha256.up.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000061_chunk_origin_sha256.up.sql"))
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(migration)).Error)
 	require.NoError(t, repo.CreateChunks(context.Background(), []*types.Chunk{chunk}))
@@ -49,7 +49,7 @@ func TestChunkOriginDigestSurvivesSQLiteReopen(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Chunk{}))
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000060_chunk_origin_sha256.up.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000061_chunk_origin_sha256.up.sql"))
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(migration)).Error)
 	chunk := makeChunk("kb", "knowledge", types.ChunkTypeText)
@@ -69,4 +69,36 @@ func TestChunkOriginDigestSurvivesSQLiteReopen(t *testing.T) {
 	require.Equal(t, chunk.OriginInputSHA256, proof.SHA256)
 	require.Equal(t, chunk.TenantID, proof.TenantID)
 	require.Equal(t, chunk.KnowledgeID, proof.KnowledgeID)
+}
+
+func TestPDFPageProofIsAtomicWithChunk(t *testing.T) {
+	db := setupChunkTestDB(t)
+	repo := NewChunkRepository(db)
+	for _, name := range []string{"000061_chunk_origin_sha256.up.sql"} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(string(migration)).Error)
+	}
+	chunk := makeChunk("kb", "knowledge", types.ChunkTypeText)
+	chunk.Content = "Extracted PDF page text"
+	sum := sha256.Sum256([]byte("synthetic PDF bytes"))
+	chunk.OriginInputSHA256 = hex.EncodeToString(sum[:])
+	chunk.PDFPage = 2
+	require.Error(t, repo.CreateChunks(context.Background(), []*types.Chunk{chunk}))
+	var count int64
+	require.NoError(t, db.Model(&types.Chunk{}).Where("id = ?", chunk.ID).Count(&count).Error)
+	require.Zero(t, count)
+	require.NoError(t, db.Model(&types.ChunkOriginSHA256{}).Where("chunk_id = ?", chunk.ID).Count(&count).Error)
+	require.Zero(t, count)
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000062_chunk_pdf_page.up.sql"))
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(string(migration)).Error)
+	require.NoError(t, repo.CreateChunks(context.Background(), []*types.Chunk{chunk}))
+	var page types.ChunkPDFPage
+	require.NoError(t, db.Where("chunk_id = ?", chunk.ID).First(&page).Error)
+	textHash := sha256.Sum256([]byte(chunk.Content))
+	require.Equal(t, 2, page.Page)
+	require.Equal(t, hex.EncodeToString(textHash[:]), page.TextSHA256)
+	require.Equal(t, chunk.TenantID, page.TenantID)
+	require.Equal(t, chunk.KnowledgeID, page.KnowledgeID)
 }

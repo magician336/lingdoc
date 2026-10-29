@@ -1643,6 +1643,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "paths": (
             # ① 从 PF-3 永久移交（3）：#415 要给 AuditEvent 补字段并让行模型与表列一致。
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            # model.go changed by PF-686 (#686 / PR #752) on 2026-10-28:
+            # the template field archive added its record shape and the
+            # fixed/catalog source-kind literals here.  Recorded in the
+            # registry because the overlap check is path-level; PF-7 keeps
+            # the ownership.
             ("internal/lingdoc/workspacecore/service.go", "file"),
             ("internal/lingdoc/membership/fixture_test.go", "file"),
             # ② 无主直接拥有（1）：workspaceAuditSink.Record 的实现所在。
@@ -1813,10 +1818,15 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/ruleset_source_policy_test.go", "file"),
             ("internal/lingdoc/workspacecore/semantic_delta_full_test.go", "file"),
             ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            # service_facade.go changed by PF-686 (#686 / PR #752) on
+            # 2026-10-28: SaveSpec omitted-key refusal, template source-kind
+            # assignment and the integer-compatibility hardening touch this
+            # file.  Borrowed, not transferred; PF-11 keeps the ownership.
             ("internal/lingdoc/workspacecore/tenant_permission_port.go", "file"),
         ),
         "resolves": (),
         "summary": (
+            "2026-10-27 #686 模板页面施工临时借用本面持有的 frontend/src/components/TemplateGovernancePanel.vue 与 TemplateGovernancePanel.test.ts；owner 仍为 PF-13，不移交；PF-686 两侧记录。Workspace.vue 是共享保留集成点。"
             "G4 模板目录与版本治理（Spec #139）的施工面，票面即 PR #248 本身。"
             "**2026-10-27 路径移交**：两份验收证据文档（Spec-139 矩阵与 T139 报告）永久移交给验收簇 PF-696（票 #696，TRANSFERS 有记录）；本面不再持有活证据文件。"
             "**2026-10-23 交面**（本 PR 只做交面）：PR-1（代码、测试、契约产物与验收证据 = PR #248）已于 2026-10-23 合入 main（合并提交 19d9df9c），本面随之登记为 done，"
@@ -2009,6 +2019,31 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "**跨面借用记账**：共享路径图 owner 仍是 PF-7，本面只改内容不夺所有权。"
             "依据票：#696（面）、#695（地图）、#458（判定器 M-0）。"
             "**2026-10-27 由 magician336 认领**，同日交首轮判定与缺口轮。"
+        ),
+    },
+    {
+        "name": "PF-686 模板治理与项目模板页面",
+        "issue": 686,
+        "issues": (139, 140, 142),
+        "status": "claimed",
+        "claimed_by": "Lees-42",
+        "paths": (
+            ("docs/08-本轮实施方案/Spec-686-template-pages-matrix.md", "file"),
+            ("frontend/src/api/lingdoc/templateGovernance.ts", "file"),
+            ("frontend/src/api/lingdoc/templateGovernance.test.ts", "file"),
+            ("frontend/src/views/lingdoc/DeliveryPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/DeliveryPanel.template-flow.test.js", "file"),
+            ("frontend/src/views/lingdoc/Workspace.template-copy-recovery.test.js", "file"),
+            ("frontend/src/views/lingdoc/templateCopyState.ts", "file"),
+            ("frontend/src/views/lingdoc/templateCopyState.test.ts", "file"),
+        ),
+        "resolves": (),
+        "summary": (
+            "#686 模板目录、项目副本及检查交付页面；认领人为 Lees-42。"
+            "临时借用 PF-13 持有的 TemplateGovernancePanel.vue 和 TemplateGovernancePanel.test.ts；"
+            "owner 不变，借用双方均已登记，借用文件不纳入本面 paths。"
+            "Workspace.vue 为保留集成路径，只记录改动事实，不声明归属。"
+            "原补丁与 #717 并行；其后 #717 已合并，续作的服务端跨面改动仍需按当前基线核对。"
         ),
     },
 )

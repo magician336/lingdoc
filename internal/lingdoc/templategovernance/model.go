@@ -34,10 +34,12 @@ const (
 	ActionRead             Action = "read"
 	ActionCreateProfile    Action = "create_profile"
 	ActionCopy             Action = "copy"
+	ActionSwitch           Action = "switch"
 	ActionSaveDraft        Action = "save_draft"
 	ActionPublish          Action = "publish"
 	ActionWithdraw         Action = "withdraw"
 	ActionRecall           Action = "recall"
+	ActionRegisterFixture  Action = "register_fixture"
 	ActionSuggest          Action = "suggest"
 	ActionAcceptSuggestion Action = "accept_suggestion"
 	ActionRejectSuggestion Action = "reject_suggestion"
@@ -79,6 +81,9 @@ var (
 	ErrUnauthorized = clienterror.New(clienterror.Form{Status: 403, Code: "template_governance_authorization_unavailable", Message: "目录治理授权不可用。", Retryable: false}, "template_governance_authorization_unavailable")
 	// ErrNotFound is a governed object that does not exist.
 	ErrNotFound = clienterror.New(clienterror.NotFound, "template_governance_not_found")
+	// ErrCatalogVersionAbsent distinguishes an absent row from an authorization
+	// failure that deliberately uses the same outward not-found response.
+	ErrCatalogVersionAbsent = errors.New("template_catalog_version_absent")
 	// ErrInvalidRequest is a governance request whose fields do not follow the
 	// agreed shape.
 	ErrInvalidRequest = clienterror.New(clienterror.InvalidRequest, "template_governance_invalid_request")
@@ -358,6 +363,10 @@ type Ports struct {
 	Usage      TemplateUsageReader
 	Context    SuggestionContextProvider
 	Model      RuleSuggestionModel
+	// Fixtures is the merged replay fixture store. Fixture registration
+	// fails closed when it is absent; the read paths keep working without it
+	// only because the builtin set is code-defined.
+	Fixtures ReplayFixtureStore
 }
 type Service struct {
 	db    *gorm.DB

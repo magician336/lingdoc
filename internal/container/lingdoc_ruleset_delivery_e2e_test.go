@@ -380,35 +380,43 @@ func runRuleSetDeliveryScenario(t *testing.T, db *gorm.DB, dialect string, reope
 	if project.ID == "" || project.TemplateCopyVersion != 1 || project.ProjectVersion != 1 {
 		t.Fatalf("created project = %+v", project)
 	}
+	// Binding now validates migration safety, so populate the real required
+	// fields through HTTP before exercising the binding and audit paths.
+	var projectAfterSpec workspacecore.Project
+	decode(request(first.router, http.MethodPut, "/projects/"+project.ID+"/spec", `{"expected_spec_revision":0,"fields":{"research_subject":"Synthetic subject","research_goal":"Synthetic goal"}}`, "g4-save-spec-01", http.StatusOK), &projectAfterSpec)
+	if projectAfterSpec.SpecRevision != 1 || projectAfterSpec.ProjectVersion != project.ProjectVersion+1 ||
+		projectAfterSpec.Spec["research_subject"] != "Synthetic subject" || projectAfterSpec.Spec["research_goal"] != "Synthetic goal" {
+		t.Fatalf("required fields not saved before binding: %+v", projectAfterSpec)
+	}
 	bindPath := "/projects/" + project.ID + "/template-copy/rule-set"
-	plainBind := `{"expected_project_version":1,"expected_template_copy_version":1,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[]}`
+	plainBind := fmt.Sprintf(`{"expected_project_version":%d,"expected_template_copy_version":%d,"ruleset_id":%q,"ruleset_version":%q,"overrides":[]}`, projectAfterSpec.ProjectVersion, projectAfterSpec.TemplateCopyVersion, ruleSetID, ruleSetVersion)
 	var firstBound workspacecore.Project
 	decode(request(first.router, http.MethodPut, bindPath, plainBind, "g4-bind-plain-01", http.StatusOK), &firstBound)
-	if firstBound.ProjectVersion != 2 || firstBound.TemplateCopyVersion != 2 {
+	if firstBound.ProjectVersion != projectAfterSpec.ProjectVersion+1 || firstBound.TemplateCopyVersion != projectAfterSpec.TemplateCopyVersion+1 {
 		t.Fatalf("plain bind did not advance project/copy atomically: %+v", firstBound)
 	}
-	if replay := decode(request(first.router, http.MethodPut, bindPath, plainBind, "g4-bind-plain-01", http.StatusOK), &firstBound); !replay.Meta.Replayed || firstBound.ProjectVersion != 2 || firstBound.TemplateCopyVersion != 2 {
+	if replay := decode(request(first.router, http.MethodPut, bindPath, plainBind, "g4-bind-plain-01", http.StatusOK), &firstBound); !replay.Meta.Replayed || firstBound.ProjectVersion != projectAfterSpec.ProjectVersion+1 || firstBound.TemplateCopyVersion != projectAfterSpec.TemplateCopyVersion+1 {
 		t.Fatalf("plain binding retry was not idempotent: meta=%+v project=%+v", replay.Meta, firstBound)
 	}
-	badOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[{"rule_id":"method-length","parameters":{"unreviewed_parameter":7}}]}`
+	badOverride := fmt.Sprintf(`{"expected_project_version":%d,"expected_template_copy_version":%d,"ruleset_id":%q,"ruleset_version":%q,"overrides":[{"rule_id":"method-length","parameters":{"unreviewed_parameter":7}}]}`, firstBound.ProjectVersion, firstBound.TemplateCopyVersion, ruleSetID, ruleSetVersion)
 	request(first.router, http.MethodPut, bindPath, badOverride, "g4-invalid-override", http.StatusBadRequest)
 	var unchanged workspacecore.Project
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &unchanged)
-	if unchanged.ProjectVersion != 2 || unchanged.TemplateCopyVersion != 2 {
+	if unchanged.ProjectVersion != firstBound.ProjectVersion || unchanged.TemplateCopyVersion != firstBound.TemplateCopyVersion {
 		t.Fatalf("rejected override partially updated project: version=%d copy=%d", unchanged.ProjectVersion, unchanged.TemplateCopyVersion)
 	}
-	validOverride := `{"expected_project_version":2,"expected_template_copy_version":2,"ruleset_id":"` + ruleSetID + `","ruleset_version":"` + ruleSetVersion + `","overrides":[{"rule_id":"method-length","parameters":{"minimum":5}}]}`
+	validOverride := fmt.Sprintf(`{"expected_project_version":%d,"expected_template_copy_version":%d,"ruleset_id":%q,"ruleset_version":%q,"overrides":[{"rule_id":"method-length","parameters":{"minimum":5}}]}`, firstBound.ProjectVersion, firstBound.TemplateCopyVersion, ruleSetID, ruleSetVersion)
 	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", true)
 	request(first.router, http.MethodPut, bindPath, validOverride, "g4-bind-override", http.StatusInternalServerError)
 	setRuleSetAuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project_template.override_ruleset", "g4_fail_project_audit", false)
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &unchanged)
-	if unchanged.ProjectVersion != 2 || unchanged.TemplateCopyVersion != 2 {
+	if unchanged.ProjectVersion != firstBound.ProjectVersion || unchanged.TemplateCopyVersion != firstBound.TemplateCopyVersion {
 		t.Fatalf("failed override audit left partial project/copy: version=%d copy=%d", unchanged.ProjectVersion, unchanged.TemplateCopyVersion)
 	}
 	boundResponse := request(first.router, http.MethodPut, bindPath, validOverride, "g4-bind-override", http.StatusOK)
 	var bound workspacecore.Project
 	decode(boundResponse, &bound)
-	if bound.ProjectVersion != 3 || bound.TemplateCopyVersion != 3 || bound.TemplateCopy == nil {
+	if bound.ProjectVersion != firstBound.ProjectVersion+1 || bound.TemplateCopyVersion != firstBound.TemplateCopyVersion+1 || bound.TemplateCopy == nil {
 		t.Fatalf("bound project/copy version not advanced atomically: %+v", bound)
 	}
 	wantRef := &lingdoctemplate.RuleSetReference{ID: published.ID, Version: published.Version, Hash: published.RulesetHash}
@@ -419,22 +427,20 @@ func runRuleSetDeliveryScenario(t *testing.T, db *gorm.DB, dialect string, reope
 	}
 	var replayedProject workspacecore.Project
 	replayed := decode(request(first.router, http.MethodPut, bindPath, validOverride, "g4-bind-override", http.StatusOK), &replayedProject)
-	if !replayed.Meta.Replayed || replayedProject.ProjectVersion != 3 || replayedProject.TemplateCopyVersion != 3 {
+	if !replayed.Meta.Replayed || replayedProject.ProjectVersion != bound.ProjectVersion || replayedProject.TemplateCopyVersion != bound.TemplateCopyVersion {
 		t.Fatalf("binding retry was not idempotent: meta=%+v project=%+v", replayed.Meta, replayedProject)
 	}
 
-	var projectAfterSpec workspacecore.Project
-	decode(request(first.router, http.MethodPut, "/projects/"+project.ID+"/spec", `{"expected_spec_revision":0,"fields":{"research_subject":"Synthetic subject","research_goal":"Synthetic goal"}}`, "g4-save-spec-01", http.StatusOK), &projectAfterSpec)
 	var activationRead struct {
 		ID string `json:"id"`
 	}
-	readBody := fmt.Sprintf(`{"expected_project_version":%d}`, projectAfterSpec.ProjectVersion)
+	readBody := fmt.Sprintf(`{"expected_project_version":%d}`, bound.ProjectVersion)
 	decode(request(first.router, http.MethodPost, "/projects/"+project.ID+"/activation-read", readBody, "", http.StatusCreated), &activationRead)
 	if activationRead.ID == "" {
 		t.Fatal("production activation read did not return a receipt")
 	}
 	var active workspacecore.Project
-	activateBody := fmt.Sprintf(`{"expected_spec_revision":1,"expected_project_version":%d,"reviewed_project_version":%d,"activation_read_id":%q}`, projectAfterSpec.ProjectVersion, projectAfterSpec.ProjectVersion, activationRead.ID)
+	activateBody := fmt.Sprintf(`{"expected_spec_revision":%d,"expected_project_version":%d,"reviewed_project_version":%d,"activation_read_id":%q}`, bound.SpecRevision, bound.ProjectVersion, bound.ProjectVersion, activationRead.ID)
 	decode(request(first.router, http.MethodPost, "/projects/"+project.ID+"/activate", activateBody, "g4-activate-01", http.StatusOK), &active)
 	var chapters []workspacecore.Chapter
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID+"/chapters", "", "", http.StatusOK), &chapters)

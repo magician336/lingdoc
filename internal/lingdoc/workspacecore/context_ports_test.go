@@ -52,11 +52,13 @@ var narrowPortMethods = map[string][]string{
 	"ImpactApplication": {
 		"AcknowledgeImpactPreflight",
 		"ActOnImpactTask",
+		"DecideImpactLocationSuggestion",
 		"GetImpactAssessment",
 		"ListContextRevisions",
 		"ListImpactTasks",
 		"ListRouteNodes",
 		"ReadImpactComputationReceipt",
+		"SuggestImpactLocations",
 	},
 	"DependencyApplication": {
 		"CreateDependencyEdge",
@@ -205,11 +207,18 @@ var narrowPortMethods = map[string][]string{
 		"SaveWorkingCopyResult",
 	},
 	"TemplateApplication": {
+		// A legacy effective snapshot requires its reviewed-policy transaction;
+		// the ordinary template editor cannot safely replace its projection.
+		"ApplyLegacyRuleOverridesResult",
 		"BindTemplateCopyRuleSetResult",
 		"ChangeTemplateResult",
+		"CreateFieldArchiveResult",
+		"GetFieldArchive",
 		"GetTemplateCopy",
+		"ListFieldArchives",
 		"PreviewTemplateCopyEdit",
 		"PreviewTemplateMigration",
+		"RemoveArchivedFieldResult",
 		"SaveTemplateCopyResult",
 	},
 	"ChangeSetApplication": {

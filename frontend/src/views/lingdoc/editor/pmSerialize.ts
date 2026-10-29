@@ -308,3 +308,21 @@ export function markdownRangeToPm(doc: PmNode, chapterId: string, from: number, 
   const a=Math.min(...ranges.map(r=>r.from)),b=Math.max(...ranges.map(r=>r.to))
   return b>a?{from:a,to:b}:null
 }
+
+// #774 档 A：影响任务正文位置引用的就近查找。服务端偏移按其自身正文口径计算，
+// 编辑器正文是规范化序列化结果，二者不可互换——客户端以引用值原文重查全部出现处，
+// 取离参考偏移最近的一次。值已不再逐字存在时返回 null，调用方必须明示失败，
+// 不做任何猜测性定位。
+export function findNearestOccurrence(markdown: string, value: string, reference: number): { start: number; end: number } | null {
+  if (!value) return null
+  let best: { start: number; end: number } | null = null
+  let at = 0
+  while (at <= markdown.length - value.length) {
+    const idx = markdown.indexOf(value, at)
+    if (idx < 0) break
+    const candidate = { start: idx, end: idx + value.length }
+    if (best === null || Math.abs(candidate.start - reference) < Math.abs(best.start - reference)) best = candidate
+    at = idx + value.length
+  }
+  return best
+}

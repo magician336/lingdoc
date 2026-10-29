@@ -15,6 +15,7 @@ func RowShapesForSchemaGuard() map[string]any {
 		"dependencyCandidateBatchRow": &dependencyCandidateBatchRow{},
 		"dependencyCandidateRow":      &dependencyCandidateRow{},
 		"draftCandidateRow":           &draftCandidateRow{},
+		"DraftClaimProvenance":        &DraftClaimProvenance{},
 		"memberPermissionRow":         &memberPermissionRow{},
 		"memberRow":                   &memberRow{},
 		"modelCallLedgerRow":          &modelCallLedgerRow{},

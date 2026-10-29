@@ -273,7 +273,7 @@ func sha256Hex(data []byte) string {
 // parser-input bytes as if they had passed through the ingestion repository.
 func seedFixtureOriginProof(t *testing.T, db *gorm.DB, chunkID, knowledgeID string, tenantID uint64, raw []byte) {
 	t.Helper()
-	applySQLiteMigrations(t, db, "000060_chunk_origin_sha256.up.sql")
+	applySQLiteMigrations(t, db, "000061_chunk_origin_sha256.up.sql")
 	if err := db.Exec("INSERT OR REPLACE INTO chunk_origin_sha256(chunk_id,tenant_id,knowledge_id,sha256) VALUES(?,?,?,?)", chunkID, tenantID, knowledgeID, sha256Hex(raw)).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestUploadedResearchSourceRequiresMatchingIngestedBytes(t *testing.T) {
 	if read() {
 		t.Fatal("legacy source without ingestion proof must be weak")
 	}
-	applySQLiteMigrations(t, db, "000060_chunk_origin_sha256.up.sql")
+	applySQLiteMigrations(t, db, "000061_chunk_origin_sha256.up.sql")
 	proof := types.ChunkOriginSHA256{ChunkID: "source-1", TenantID: 7, KnowledgeID: "knowledge-1", SHA256: sha256Hex([]byte(sourcePolicyQuote + "\ndifferent suffix"))}
 	if err := db.Create(&proof).Error; err != nil {
 		t.Fatal(err)

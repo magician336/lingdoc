@@ -20,13 +20,25 @@ type ReadResult struct {
 	// OriginInputSHA256 is set by the caller from the exact bytes passed to
 	// the reader; parser implementations cannot assert their own provenance.
 	OriginInputSHA256 string `json:"-"`
-	MarkdownContent   string
-	ImageRefs         []ImageRef
-	ImageDirPath      string
-	Metadata          map[string]string
-	Error             string
-	IsAudio           bool   // true when the result contains raw audio data needing ASR transcription
-	AudioData         []byte // raw audio bytes for ASR processing
+	// PDFPageSpans and PDFTextSHA256 are populated by the application only
+	// for an eligible built-in PDF parser response.
+	PDFPageSpans    []PDFPageSpan `json:"-"`
+	PDFTextSHA256   string        `json:"-"`
+	MarkdownContent string
+	ImageRefs       []ImageRef
+	ImageDirPath    string
+	Metadata        map[string]string
+	Error           string
+	IsAudio         bool   // true when the result contains raw audio data needing ASR transcription
+	AudioData       []byte // raw audio bytes for ASR processing
+}
+
+// PDFPageSpan addresses the parser output in Unicode runes, with an inclusive
+// start and exclusive end. Page is the one-based physical PDF page number.
+type PDFPageSpan struct {
+	Page  int `json:"page"`
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 // ImageRef represents an image reference extracted from the document.

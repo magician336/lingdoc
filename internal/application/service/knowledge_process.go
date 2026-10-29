@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/common"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/infrastructure/chunker"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -205,6 +207,8 @@ type ProcessChunksOptions struct {
 	ParentChunks      []types.ParsedParentChunk
 	Metadata          map[string]string
 	OriginInputSHA256 string
+	PDFPageSpans      []types.PDFPageSpan
+	PDFIndexText      string
 }
 
 // finalizeIndexedKnowledgeState makes a document retrievable as soon as chunks
@@ -681,8 +685,15 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	s.beginStage(ctx, knowledge.ID, types.StageChunking, types.JSONMap{
 		"chunks_planned": len(insertChunks),
 	})
+	var pdfIndex []rune
+	if len(options.PDFPageSpans) != 0 {
+		pdfIndex = []rune(options.PDFIndexText)
+	}
 	for _, chunk := range insertChunks {
 		chunk.OriginInputSHA256 = options.OriginInputSHA256
+		if chunk.ChunkType == types.ChunkTypeText && len(pdfIndex) != 0 {
+			chunk.PDFPage = pdfPageForChunk(options.PDFPageSpans, pdfIndex, chunk.StartAt, chunk.EndAt, chunk.Content)
+		}
 	}
 	if err := s.chunkRepo.CreateChunks(ctx, insertChunks); err != nil {
 		knowledge.ParseStatus = types.ParseStatusFailed
@@ -3857,6 +3868,13 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	if convertResult != nil {
 		processOpts.Metadata = convertResult.Metadata
 		processOpts.OriginInputSHA256 = convertResult.OriginInputSHA256
+		if len(convertResult.PDFPageSpans) != 0 {
+			sum := sha256.Sum256([]byte(convertResult.MarkdownContent))
+			if hex.EncodeToString(sum[:]) == convertResult.PDFTextSHA256 {
+				processOpts.PDFPageSpans = convertResult.PDFPageSpans
+				processOpts.PDFIndexText = convertResult.MarkdownContent
+			}
+		}
 	}
 
 	if eff.ChunkingConfig.EnableParentChild {
@@ -4065,6 +4083,16 @@ func (s *knowledgeService) convert(
 		return nil, nil
 	}
 	result.OriginInputSHA256 = originInputSHA256
+	// The bundled DocReader's native PDF parser optionally supplies exact page
+	// spans for its extracted text. Other engines, scans and image rewrites are
+	// deliberately ineligible. Bind these spans to the bytes actually parsed.
+	if !isURL && knowledge.Type == "file" && strings.EqualFold(strings.TrimPrefix(fileType, "."), "pdf") && (parserEngine == "" || parserEngine == "builtin") && len(req.FileContent) <= evidence.MaxOriginBytes && bytes.HasPrefix(req.FileContent, []byte("%PDF-")) {
+		if spans, hash := nativePDFPageSpans(result); len(spans) != 0 {
+			digest := sha256.Sum256(req.FileContent)
+			result.OriginInputSHA256 = hex.EncodeToString(digest[:])
+			result.PDFPageSpans, result.PDFTextSHA256 = spans, hash
+		}
+	}
 	docOutput := types.JSONMap{
 		"text_length":  len(result.MarkdownContent),
 		"images_found": len(result.ImageRefs),

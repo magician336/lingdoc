@@ -32,6 +32,11 @@ func TestIndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t *t
 	if err := db.Exec("UPDATE lingdoc_project_template_copies SET definition_json=?,content_hash=?,ruleset_hash=? WHERE id=?", string(definition), copy.ContentHash, copy.RulesetHash, copy.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	// CreateProject persists the template_binding sidecar (source-kind
+	// persistence); the fixture replaces it with its own historical payload.
+	if err := db.Exec("DELETE FROM lingdoc_g5_records WHERE project_id = ? AND kind = 'template_binding' AND id = ?", p.ID, copy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("INSERT INTO lingdoc_g5_records(project_id,kind,id,version,payload_json) VALUES(?,'template_binding',?,1,?)", p.ID, copy.ID, string(raw)).Error; err != nil {
 		t.Fatal(err)
 	}

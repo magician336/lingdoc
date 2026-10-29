@@ -1,0 +1,85 @@
+{
+  "mode": "acceptance-judgement",
+  "note": "#133 G7 正式章节编辑器、版本与复核的验收证据。按《验收判定口径》v1.1（v1 commit 1f195def6fb984d43876567bfe365222c34b46b5，v1.1 增补 commit fafb6c4073eba124811bb2acd8f708ecde8483bb）判定：验收单位是一个原子可核验要求，US-xx / TD-xx 是定位坐标。本 JSON 是机器可读的那一份，判定矩阵文档是它的人读副本。C6（簇票 #701）首轮判定。",
+  "head": "7946cbebc67c12ae66c3b18798019b01ae05977b",
+  "base": "7946cbeb",
+  "head_note": "判定 head：7946cbebc67c12ae66c3b18798019b01ae05977b（main 合并提交，PR #767 的 merge commit；判定轮零代码补丁，分支与 main 被测代码树逐字一致，判定文档在其后提交）",
+  "base_note": "判定所依据的基线即该 head 本身。本票 23 点全部复用既有具名用例。",
+  "caliber": "v1.1",
+  "acceptance_point_count": 23,
+  "gap_round": {
+    "first_round": "23 点全部有既有用例映射，零代码补丁",
+    "disposition": "四处语义近似按口径 §4.1 记账（US-02 逐字段呈现、US-06 版本 diff UI、US-07 章节退回复用主张复核通路、TD-04 移除/暂停成员与模板规则变化半边），判定 PASS 并在矩阵行备注与 known_limits 写明边界。"
+  },
+  "passed": [
+    {
+      "id": "US-01、US-14、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead$'`、`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestSelectedRewriteContinueRevocationBeforeAdoptionIsDenied|TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts|TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast)$'`（组合子集，ok 2.703s / 1.662s）；`cd frontend && npm test -- src/views/lingdoc/editor/editorScope.test.ts`（编辑器组合 42 pass）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-01、US-14、TD-02 的授权/导出选择面"
+    },
+    {
+      "id": "US-02、US-16、TD-02",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/views/lingdoc/editor/documentState.test.ts src/views/lingdoc/editor/navigation.test.ts`（编辑器组合 42 pass）、`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestChapterConfirmationOfAgreesWithChapterConfirmed|TestChapterConfirmedDistinguishesNoRecordFromAMismatchedOne)$'`（组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-02、US-16、TD-02 的状态呈现面"
+    },
+    {
+      "id": "US-03、US-10、US-18、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestLegacyAdoptionRecoversOnlyUntouchedWorkingCopy|TestLegacyRecoveryCASPreservesInterleavedRecoveryAndEdit)$'`（workspacecore 组合子集，ok 2.703s）；前端具名用例（saveQueue.test.ts，编辑器组合 42 pass）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-03、US-10、US-18、TD-03 的恢复/重试面"
+    },
+    {
+      "id": "US-04",
+      "status": "passed",
+      "evidence": "`cd frontend && npm test -- src/views/lingdoc/editor/saveQueue.test.ts`（编辑器组合 42 pass）；`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestLegacyRecoveryCASPreservesInterleavedRecoveryAndEdit$'`（组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-04"
+    },
+    {
+      "id": "US-05、TD-03",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestSelectedRewriteContinueNeedsAnExplicitAdoptionConfirmation|TestSelectedRewriteContinueRetryWithANewKeyDoesNotWriteTwice)$'`（workspace 组合子集，ok 1.662s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-05、TD-03 的显式采纳与幂等重放面"
+    },
+    {
+      "id": "US-06、US-12、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestFirstPassReviewAndCommentsUseExactImmutableVersion$'`（workspacecore 组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-06、US-12、TD-02 的版本绑定复核面"
+    },
+    {
+      "id": "US-07",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestClaimReviewRecordsDisputeOrRetirement$'`（workspacecore 组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-07（复核退回理由面）"
+    },
+    {
+      "id": "US-08、US-09、TD-04、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestChapterConfirmedAcceptsACompleteMatchingRecord|TestChapterConfirmedRejectsEachIncompleteOrStaleRecord|TestChapterConfirmedRejectsAnEmptyBasis|TestChapterConfirmedAcceptsACurrentRecordBesideAStaleOne|TestClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards)$'`（workspacecore 组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-08、US-09、TD-04 的确认失效面、TD-05 的确认半边"
+    },
+    {
+      "id": "US-11、US-15、TD-03、TD-05",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestChangeSetConcurrentChapterEditBecomesStale|TestActiveProjectRejectsOrdinarySpecSave)$'`（workspacecore 组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-11、US-15、TD-03 的并发/stale 面、TD-05 的冲突半边"
+    },
+    {
+      "id": "US-13",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^TestManualEditPreservesReviewAndCitesSources$'`（workspacecore 组合子集，ok 2.703s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-13"
+    },
+    {
+      "id": "US-17",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspace/ -run '^(TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts|TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast)$'`、`go test -count=1 ./internal/router/ -run '^TestOwnerUnavailableFreezesFormalExport$'`（组合子集，ok 1.662s / 2.187s）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 US-17"
+    },
+    {
+      "id": "TD-01、TD-02",
+      "status": "passed",
+      "evidence": "`go test -count=1 ./internal/lingdoc/workspacecore/ -run '^(TestLegacyAdoptionRecoversOnlyUntouchedWorkingCopy|TestLegacyRecoveryCASPreservesInterleavedRecoveryAndEdit|TestChapterConfirmedAcceptsACompleteMatchingRecord|TestChapterConfirmedRejectsEachIncompleteOrStaleRecord|TestChapterConfirmedRejectsAnEmptyBasis|TestChapterConfirmedDistinguishesNoRecordFromAMismatchedOne|TestChapterConfirmedAcceptsACurrentRecordBesideAStaleOne|TestChapterConfirmationOfAgreesWithChapterConfirmed|TestChangeSetConcurrentChapterEditBecomesStale|TestManualEditPreservesReviewAndCitesSources|TestFirstPassReviewAndCommentsUseExactImmutableVersion|TestClaimReviewRecordsDisputeOrRetirement|TestClaimSemanticDeltaUsesSameTransactionAndInvalidatesCards|TestActiveProjectRejectsOrdinarySpecSave|TestChapterResearchScopeIsPassedToTaskValidationAndSourceRead)$'`（ok 2.703s，15/15 匹配）；`cd frontend && npm test -- src/views/lingdoc/editor/anchor.test.ts src/views/lingdoc/editor/annotation.test.ts src/views/lingdoc/editor/documentState.test.ts src/views/lingdoc/editor/editorScope.test.ts src/views/lingdoc/editor/navigation.test.ts src/views/lingdoc/editor/saveQueue.test.ts src/views/lingdoc/workspaceHistory.test.js src/views/lingdoc/workspaceOwnerFreeze.test.js`（42 pass / 0 fail）；`npm run type-check`（通过）；落证 head `7946cbebc67c12ae66c3b18798019b01ae05977b`；覆盖验收点 TD-01、TD-02 的复用与用户可见行为面"
+    }
+  ],
+  "not_run": [],
+  "known_limits": [
+    "《验收判定口径》v1.1 §4.1：机器只判证据是否齐备、是否绑当前 head、命令是否真跑绿；语义覆盖只能靠用例名与验收点文本的对应关系近似，不能被证明。",
+    "US-02：编辑器顶部状态的逐字段呈现（project/chapter/Context Revision/ChapterVersion/模板版本/保存态）由前端 documentState/navigation 状态机承载，机器无逐字段直测。",
+    "US-06：版本比较的 diff UI 由前端承载，机器证据是复核与评论绑精确不可变版本的 seam 断言。",
+    "US-07：章节退回（return with reason）走主张复核通路（dispute/retirement 记录）语义近似。",
+    "TD-04：移除/暂停成员半边由成员授权链（#128/#129 同源）语义近似；模板/规则变化半边由语义变更失效旧确认近似。",
+    "全部 Go 命令跑在 WSL（本机 Windows 原生 go test 因 gojieba 原生扩展 0xc0000005 崩溃）；-list 核对组合匹配数（15/5），无零匹配假绿。"
+  ]
+}

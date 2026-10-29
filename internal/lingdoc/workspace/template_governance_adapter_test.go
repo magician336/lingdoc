@@ -408,7 +408,7 @@ func runtimeDemoVersionFixture(t *testing.T) governance.TemplateVersion {
 	return governance.TemplateVersion{TemplateID: def.ID, Version: def.Version, Revision: 1, State: template.RuleSetDraft, Definition: def, RuleSet: governance.RuleSetRef{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, RuleSetSnapshot: set, ContentHash: def.ContentHash, RulesetHash: set.RulesetHash, PolicyHash: policyHash}
 }
 func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testing.T) {
-	r, _, actor, _, ctx := governanceAdapterFixture(t)
+	r, projects, _, actor, _, ctx := governanceAdapterFixtureWithProjects(t)
 	version := runtimeDemoVersionFixture(t)
 	ids := []string{}
 	for _, record := range BuiltinTemplateGovernanceFixtures() {
@@ -428,10 +428,21 @@ func TestTemplateGovernanceRuntimeReviewedFixturesExecuteBothPolarities(t *testi
 	if err := r.Verify(ctx, governanceActor(actor), tampered, ids); err == nil {
 		t.Fatal("fixture accepted unrelated template content")
 	}
-	record := r.fixtures[ids[1]]
-	record.Fixture.Input.Fields["research_goal"] = "now positive"
-	r.fixtures[ids[1]] = record
-	if err := r.Verify(ctx, governanceActor(actor), version, ids); err == nil {
+	// A runtime whose registered review evidence declares an outcome the real
+	// evaluator contradicts must fail the replay. The tampered record enters
+	// through the same deployment seed the builtin set uses, replacing its
+	// own identity.
+	tamperedRecords := BuiltinTemplateGovernanceFixtures()
+	for i := range tamperedRecords {
+		if tamperedRecords[i].Fixture.ID == ids[1] {
+			tamperedRecords[i].Fixture.Input.Fields["research_goal"] = "now positive"
+		}
+	}
+	tamperedRuntime, err := NewTemplateGovernanceRuntime(r.db, projects, nil, nil, WithReviewedTemplateFixtures(tamperedRecords))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tamperedRuntime.Verify(ctx, governanceActor(actor), version, ids); err == nil {
 		t.Fatal("incorrect server fixture expected outcome escaped actual evaluation")
 	}
 }
@@ -489,18 +500,30 @@ func TestTemplateGovernanceRuntimeRuleLifecycleCatalogUsageAndRetry(t *testing.T
 		if err != nil {
 			return err
 		}
-		if len(ids) != 1 || ids[0] != p.ID {
+		if len(ids) != 0 {
 			t.Fatalf("actual usage = %v", ids)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// A missing historical identity must not be guessed from ID/version.
+	if err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table("lingdoc_g5_records").Where("project_id=? AND kind=?", p.ID, "template_binding").Update("payload_json", "{}").Error; err != nil {
+			return err
+		}
+		if _, err := r.AffectedProjects(ctx, tx, govActor, saved.TemplateID, saved.Version); !errors.Is(err, governance.ErrInvalidState) {
+			t.Fatalf("unknown source accepted: %v", err)
+		}
+		return errors.New("rollback identity probe")
+	}); err == nil {
+		t.Fatal("probe must roll back")
+	}
 	recalled, err := svc.Recall(ctx, govActor, "recall-demo-template", governance.RecallInput{GovernanceInput: governance.GovernanceInput{TemplateID: saved.TemplateID, Version: saved.Version, ExpectedRevision: saved.Revision, Reason: "retain audit and current copies"}, MigrationAdvice: "human review exact successor"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recalled.Recall == nil || len(recalled.Recall.AffectedProjectIDs) != 1 {
+	if recalled.Recall == nil || len(recalled.Recall.AffectedProjectIDs) != 0 {
 		t.Fatal("actual current usage not recorded")
 	}
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -631,6 +654,21 @@ func TestTemplateGovernanceSuccessfulCatalogCopyAuditsAtomically(t *testing.T) {
 	var created core.Project
 	if err := json.Unmarshal(createdRaw, &created); err != nil || created.TemplateCopy == nil {
 		t.Fatalf("decode successful catalog copy: copy=%+v err=%v", created.TemplateCopy, err)
+	}
+	if created.TemplateCopy.SourceKind != "catalog" {
+		t.Fatalf("catalog identity missing: %+v", created.TemplateCopy)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		ids, err := runtime.AffectedProjects(ctx, tx, governanceActor(actor), published.TemplateID, published.Version)
+		if err != nil {
+			return err
+		}
+		if len(ids) != 1 || ids[0] != created.ID {
+			t.Fatalf("catalog usage must exclude fixed same-ID project: %v", ids)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	var successReceipts []struct{ Outcome, TargetID, Details string }
 	if err := db.Table("audit_logs").Select("outcome,target_id,details").Where("action=? AND target_id=?", "lingdoc.template.copy", published.TemplateID+"/"+published.Version).Find(&successReceipts).Error; err != nil {

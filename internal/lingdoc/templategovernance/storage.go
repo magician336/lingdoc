@@ -263,6 +263,29 @@ func loadVersion(tx *gorm.DB, actor Actor, id, version string) (TemplateVersion,
 	}
 	return decodeVersion(row)
 }
+
+// loadVersionForMutation serializes a project switch and catalog transition
+// on the same version row. SQLite ignores FOR UPDATE, so reserve its writer
+// before reading; PostgreSQL locks the row directly.
+func loadVersionForMutation(tx *gorm.DB, actor Actor, id, version string) (TemplateVersion, error) {
+	if tx.Name() == "sqlite" {
+		lock := tx.Model(&versionRow{}).Where("tenant_id=? AND template_id=? AND version=?", actor.TenantID, id, version).UpdateColumn("state", gorm.Expr("state"))
+		if lock.Error != nil {
+			return TemplateVersion{}, lock.Error
+		}
+		if lock.RowsAffected == 0 {
+			return TemplateVersion{}, ErrNotFound
+		}
+	}
+	var row versionRow
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND template_id=? AND version=?", actor.TenantID, id, version).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return TemplateVersion{}, ErrNotFound
+		}
+		return TemplateVersion{}, err
+	}
+	return decodeVersion(row)
+}
 func decodeVersion(row versionRow) (TemplateVersion, error) {
 	v := TemplateVersion{PolicyHash: row.PolicyHash, TemplateID: row.TemplateID, Version: row.Version, Revision: row.Revision, State: template.RuleSetState(row.State), SourceType: row.SourceType, Scope: row.Scope, Curator: row.Curator, ContentHash: row.ContentHash, RulesetHash: row.RulesetHash, PublishedAt: row.PublishedAt, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 	if err := json.Unmarshal([]byte(row.BindingPoliciesJSON), &v.BindingPolicies); err != nil {

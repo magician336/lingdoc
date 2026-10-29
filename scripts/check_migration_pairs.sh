@@ -35,6 +35,12 @@ for migration_dir in "$root_dir/migrations/versioned" "$root_dir/migrations/sqli
         exit 1
     fi
 
+    duplicate_versions="$(printf '%s\n' "${up_names[@]}" | sed -n 's/^\([0-9]\{6\}\)_.*/\1/p' | LC_ALL=C sort | uniq -d)"
+    if [[ -n "$duplicate_versions" ]]; then
+        printf 'duplicate migration versions in %s: %s\n' "$migration_dir" "$duplicate_versions" >&2
+        exit 1
+    fi
+
     printf 'validated migration pairs: %s (latest %s)\n' \
         "$migration_dir" "${up_names[${#up_names[@]}-1]}"
 done

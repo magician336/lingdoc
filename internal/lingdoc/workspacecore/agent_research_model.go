@@ -498,6 +498,9 @@ type ResearchSource struct {
 	ProcessingState string `json:"processing_state"`
 	StableOriginal  bool   `json:"stable_original"`
 	ModelUseAllowed bool   `json:"model_use_allowed"`
+	// VerifiedPDFPage is internal proof from the source adapter, never a page
+	// number supplied by the caller or reconstructed from a chunk index.
+	VerifiedPDFPage int `json:"-"`
 }
 type AgentSourceRef struct {
 	SourceID        string `json:"source_id"`

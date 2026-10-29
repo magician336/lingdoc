@@ -219,6 +219,84 @@ func (s *Service) RecordCopyFailure(ctx context.Context, actor Actor, failure Co
 	return s.auditCatalogFailureWithDetails(ctx, actor, ActionCopy, failure.TemplateID, failure.TemplateVersion, reason, failure.Cause, extra)
 }
 
+// RecordSwitchSuccess is a receipt for an existing project, distinct from a
+// new-project copy. It commits with the project and the version snapshot.
+func (s *Service) RecordSwitchSuccess(ctx context.Context, tx *gorm.DB, actor Actor, projectID, copyID string, copyVersion int64, templateID, templateVersion, contentHash, rulesetHash, rulesetID, rulesetVersion, sourcePolicyHash string) error {
+	if err := s.ready(actor); err != nil {
+		return err
+	}
+	if tx == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(copyID) == "" || copyVersion < 1 ||
+		!identifier.MatchString(templateID) || !identifier.MatchString(templateVersion) || contentHash == "" {
+		return ErrInvalidRequest
+	}
+	details := map[string]any{
+		"project_id": projectID, "project_template_copy_id": copyID, "copy_version": copyVersion,
+		"content_hash": contentHash, "ruleset_hash": rulesetHash, "ruleset_id": rulesetID,
+		"ruleset_version": rulesetVersion, "source_policy_hash": sourcePolicyHash,
+	}
+	return recordAudit(tx, actor, ActionSwitch, templateID+"/"+templateVersion, "existing project switched to this exact published template version", details)
+}
+
+// RecordSwitchFailure survives rollback of the project transaction.
+func (s *Service) RecordSwitchFailure(ctx context.Context, actor Actor, failure CopyFailure) error {
+	reason := "project template switch rejected"
+	extra := map[string]any{"project_id": failure.ProjectID}
+	if failure.AuditPersistenceFailure {
+		reason = "project template switch rolled back because successful switch audit persistence failed"
+		extra["error_code"] = "audit_persistence_failed"
+	}
+	return s.auditCatalogFailureWithDetails(ctx, actor, ActionSwitch, failure.TemplateID, failure.TemplateVersion, reason, failure.Cause, extra)
+}
+
+// ResolveForSwitch keeps preview read-only and locks both lifecycle versions
+// during writes. Only a proven absent row gets ErrCatalogVersionAbsent;
+// authorization failures must never trigger fixed-demo fallback.
+func (s *Service) ResolveForSwitch(ctx context.Context, tx *gorm.DB, actor Actor, id, version string, forUpdate bool) (TemplateVersion, error) {
+	if err := s.ready(actor); err != nil {
+		return TemplateVersion{}, err
+	}
+	if tx == nil {
+		return TemplateVersion{}, ErrUnavailable
+	}
+	if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, ActionRead, id); err != nil {
+		return TemplateVersion{}, err
+	}
+	var v TemplateVersion
+	var err error
+	if forUpdate {
+		v, err = loadVersionForMutation(tx, actor, id, version)
+	} else {
+		v, err = loadVersion(tx, actor, id, version)
+	}
+	if errors.Is(err, ErrNotFound) {
+		return TemplateVersion{}, errors.Join(ErrNotFound, ErrCatalogVersionAbsent)
+	}
+	if err != nil {
+		return TemplateVersion{}, err
+	}
+	if v.State != template.RuleSetPublished {
+		return TemplateVersion{}, ErrInvalidState
+	}
+	if !forUpdate {
+		_, err = s.bindableRuleSet(ctx, tx, actor, v.RuleSet)
+	} else if s.ports.RuleSets == nil {
+		err = ErrUnauthorized
+	} else {
+		var set template.RuleSet
+		set, err = rulesetstore.NewStore(tx, s.ports.RuleSets).GetVersionForBinding(ctx, tx, actor, v.RuleSet.ID, v.RuleSet.Version)
+		if err == nil {
+			err = template.CanBindRuleSet(set)
+		}
+		if err == nil && v.RuleSet.Hash != "" && v.RuleSet.Hash != set.RulesetHash {
+			err = ErrVersionConflict
+		}
+	}
+	if err != nil {
+		return TemplateVersion{}, err
+	}
+	return v, nil
+}
+
 // ResolveForCopy participates in the caller's project transaction. It verifies
 // current tenant permissions and both publication gates before copying; the
 // caller must persist its project copy and copy audit in that same transaction.
@@ -527,7 +605,9 @@ func (s *Service) transition(ctx context.Context, actor Actor, key string, input
 		if err := s.ports.Authorizer.AuthorizeTemplate(ctx, tx, actor, action, input.TemplateID); err != nil {
 			return err
 		}
-		current, err := loadVersion(tx, actor, input.TemplateID, input.Version)
+		// Lock before the recall impact query. Otherwise a concurrent switch may
+		// commit a new project reference while recall is waiting to update.
+		current, err := loadVersionForMutation(tx, actor, input.TemplateID, input.Version)
 		if err != nil {
 			return err
 		}

@@ -1327,6 +1327,12 @@ func (s *Service) SaveSourceAnchor(ctx context.Context, actor Actor, projectID, 
 	if source.Status != string(evidence.SourceAvailable) || source.ProcessingState != "ready" || !source.StableOriginal {
 		return nil, 0, false, ErrEvidenceIncomplete
 	}
+	if source.VerifiedPDFPage > 0 {
+		if input.Page != 0 && input.Page != source.VerifiedPDFPage || len(input.Coordinates) != 0 || input.ExtractionType != "native_text" {
+			return nil, 0, false, ErrInvalidRequest
+		}
+		input.Page = source.VerifiedPDFPage
+	}
 	text := []rune(source.QuotedText)
 	if input.SelectionStart < 0 || input.SelectionEnd <= input.SelectionStart || input.SelectionEnd > len(text) {
 		return nil, 0, false, ErrInvalidRequest
