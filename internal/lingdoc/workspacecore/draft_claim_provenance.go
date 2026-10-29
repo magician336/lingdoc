@@ -14,6 +14,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ClaimOriginRewrite identifies provenance created by accepting a rewrite candidate.
+const ClaimOriginRewrite = "rewrite"
+
 // DraftClaimProvenance records where a previously verified candidate was
 // inserted. It deliberately contains no source text and does not assert that
 // access to the underlying evidence is still available.

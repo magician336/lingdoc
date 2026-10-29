@@ -834,13 +834,13 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 			if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("lingdoc_working_copies").Select("body_markdown").Where("project_id = ? AND chapter_id = ?", projectID, chapterID).Take(&observed).Error; e != nil {
 				return e
 			}
-			return core.RecordDraftClaimProvenance(tx, projectID, chapterID, "rewrite", row.ID, "", pending.WorkingCopy.ExpectedWorkingCopyRevision+1, row.StartUTF16, pending.WorkingCopy.BodyMarkdown, row.ReplacementMarkdown, observed.BodyMarkdown)
+			return core.RecordDraftClaimProvenance(tx, projectID, chapterID, core.ClaimOriginRewrite, row.ID, "", pending.WorkingCopy.ExpectedWorkingCopyRevision+1, row.StartUTF16, pending.WorkingCopy.BodyMarkdown, row.ReplacementMarkdown, observed.BodyMarkdown)
 		})
 		if err != nil {
 			return core.WorkingCopy{}, false, ErrRewriteUnavailable
 		}
 		var provenance core.DraftClaimProvenance
-		if err = s.store.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND chapter_version_id = '' AND origin_kind = ? AND candidate_id = ? AND working_copy_revision = ?", projectID, chapterID, "rewrite", row.ID, pending.WorkingCopy.ExpectedWorkingCopyRevision+1).Take(&provenance).Error; err != nil {
+		if err = s.store.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND chapter_version_id = '' AND origin_kind = ? AND candidate_id = ? AND working_copy_revision = ?", projectID, chapterID, core.ClaimOriginRewrite, row.ID, pending.WorkingCopy.ExpectedWorkingCopyRevision+1).Take(&provenance).Error; err != nil {
 			return core.WorkingCopy{}, false, ErrRewriteUnavailable
 		}
 		saved.ClaimProvenance = append(saved.ClaimProvenance, provenance)
