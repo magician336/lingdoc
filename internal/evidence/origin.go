@@ -87,6 +87,13 @@ type OriginBytesReader interface {
 	OriginBytes(ctx context.Context, knowledgeID string) (data []byte, ok bool, err error)
 }
 
+// OriginSnapshotReader returns the parser-aligned origin text and the exact
+// raw bytes from the same read. Consumers that bind a digest to quote offsets
+// must use one snapshot to avoid a rewrite between two independent reads.
+type OriginSnapshotReader interface {
+	OriginSnapshot(ctx context.Context, knowledgeID string) (text string, raw []byte, ok bool, err error)
+}
+
 // NewOriginReader 组装固定实现：手工资料的正文取自 metadata；直接读取的
 // 上传文本返回与分块索引一致的 LF 规范化文本。其余一律 ok=false。
 func NewOriginReader(knowledge KnowledgeReader) OriginReader {
@@ -125,6 +132,38 @@ func (r *fileOriginReader) OriginText(ctx context.Context, knowledgeID string) (
 		return manualOrigin(row)
 	}
 	return r.fileOrigin(ctx, row)
+}
+
+// OriginSnapshot returns parser-aligned text and the exact raw bytes that
+// produced it, from a single storage read. Manual records and transformed
+// formats deliberately do not provide a verifiable original-byte snapshot.
+func (r *fileOriginReader) OriginSnapshot(ctx context.Context, knowledgeID string) (string, []byte, bool, error) {
+	if knowledgeID == "" {
+		return "", nil, false, nil
+	}
+	row, err := r.knowledge.KnowledgeForOrigin(ctx, knowledgeID)
+	if err != nil || row == nil {
+		return "", nil, false, err
+	}
+	if row.IsManual() {
+		return "", nil, false, nil
+	}
+	if _, ok := directReadExtensions[normalizeExtension(row.FileType)]; !ok {
+		return "", nil, false, nil
+	}
+	builtin, err := r.knowledge.UsesBuiltinConverter(ctx, row.ID)
+	if err != nil || !builtin {
+		return "", nil, false, err
+	}
+	raw, ok, err := r.originBytes(ctx, row)
+	if err != nil || !ok {
+		return "", nil, false, err
+	}
+	text, ok := UploadedOriginForIndex(raw)
+	if !ok {
+		return "", nil, false, nil
+	}
+	return text, raw, true, nil
 }
 
 // manualOrigin 取手工资料的正文。判据与文件那条同构，但**要多镜像一步**。

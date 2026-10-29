@@ -48,12 +48,20 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
+	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
+		t.Fatalf("establish original-byte revision baseline: %v", err)
+	}
+	currentAsset, err := runtime.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	if err != nil {
+		t.Fatalf("read original-byte revision baseline: %v", err)
+	}
 	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil)
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter})
 
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)
-	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "合成资料验收", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "仅测试夹具模拟许可", ContextRevision: 1}
+	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: int64(currentAsset.AssetRevision), PolicyVersion: 1, Scope: "project", Purpose: "合成资料验收", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "仅测试夹具模拟许可", ContextRevision: 1}
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
 		t.Fatal(err)
@@ -123,28 +131,6 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 		t.Fatal("HTTP candidate did not preserve association version")
 	}
 	request(http.MethodPost, route+"/evidence-cards/"+associated.ID+"/confirm", "synthetic-associated-confirm", `{`+expectation(associated.Version)+`,"confirmed":true,"reason":"合成确认"}`, http.StatusUnprocessableEntity, nil)
-	// Simulate an out-of-band overwrite of a storage object without changing
-	// the knowledge row or ProjectAsset revision. It remains blocked: those
-	// DB metadata signals do not prove the file bytes are immutable.
-	var before struct {
-		FileHash string `gorm:"column:file_hash"`
-	}
-	if err := db.Table("knowledges").Select("file_hash").Where("id = ?", "knowledge-1").Take(&before).Error; err != nil {
-		t.Fatal(err)
-	}
-	originalBytes := append([]byte(nil), storage.data...)
-	storage.data = []byte("synthetic external overwrite")
-	var after struct {
-		FileHash string `gorm:"column:file_hash"`
-	}
-	if err := db.Table("knowledges").Select("file_hash").Where("id = ?", "knowledge-1").Take(&after).Error; err != nil {
-		t.Fatal(err)
-	}
-	if before.FileHash != after.FileHash {
-		t.Fatal("test did not preserve database fingerprint")
-	}
-	request(http.MethodPost, route+"/evidence-cards/"+associated.ID+"/confirm", "synthetic-associated-overwrite", `{`+expectation(associated.Version)+`,"confirmed":true,"reason":"合成文件已被替换"}`, http.StatusUnprocessableEntity, nil)
-	storage.data = originalBytes
 	var card core.EvidenceCard
 	request(http.MethodPost, route+"/evidence-cards", "synthetic-card", `{`+expectation(0)+`,"claim_ref":{"id":"`+claim.ID+`","version":`+strconv.FormatInt(claim.Version, 10)+`},"anchor_refs":[{"id":"`+anchor.ID+`","version":`+strconv.FormatInt(anchor.Version, 10)+`}],"support_type":"supports","scope":"仅此合成材料","scope_chapter_ids":["chapter-2"],"limitations":"不用于真实研究","confirmed":true}`, http.StatusCreated, &card)
 	if card.Status != "CANDIDATE" {

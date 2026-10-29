@@ -176,6 +176,28 @@ func TestOriginTextIsProvenAgainstTheStoredBytes(t *testing.T) {
 	}
 }
 
+func TestOriginSnapshotUsesOneReadForTextAndRawBytes(t *testing.T) {
+	storage := &storageStub{data: []byte("first\r\nsecond\r")}
+	reader := evidence.NewOriginReader(&storageBackedKnowledge{
+		filePath: "resource://handle-1",
+		files:    KnowledgeFileOriginReader{Service: storage},
+	})
+	snapshotReader, ok := reader.(evidence.OriginSnapshotReader)
+	if !ok {
+		t.Fatal("origin reader must expose its atomic source snapshot")
+	}
+	text, raw, readable, err := snapshotReader.OriginSnapshot(context.Background(), "k-1")
+	if err != nil || !readable {
+		t.Fatalf("OriginSnapshot readable=%v err=%v", readable, err)
+	}
+	if text != "first\nsecond\n" || string(raw) != "first\r\nsecond\r" {
+		t.Fatalf("snapshot text=%q raw=%q", text, raw)
+	}
+	if storage.calls != 1 {
+		t.Fatalf("text and raw bytes must come from one storage read, calls=%d", storage.calls)
+	}
+}
+
 // storageBackedKnowledge is a material whose file path is a storage
 // reference, not a filesystem path — the shape an uploaded material has.
 // Its bytes come from the storage side.

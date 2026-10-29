@@ -448,6 +448,9 @@ func (h *SourceRuntime) ConnectOriginFiles(read OriginFileReader) {
 		return
 	}
 	h.originFiles = read
+	if h.bindings != nil {
+		h.bindings.SetKnowledgeSignalReader(dbKnowledgeReader{db: h.db, files: read})
+	}
 }
 
 // rebuiltSource 是一条引用在底座上重建出来的样子，连同它所属资料此刻的标题。

@@ -21,22 +21,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestIssue682QwenIntegratedSyntheticChain links two synthetic search inputs
-// in the same project and SQLite database. The Crossref metadata and project
-// asset are independent synthetic fixtures, with no asserted DOI-to-original
-// relationship. Both external search and HybridSearch hits are synthetic;
-// the Qwen API call is real. Confirmation is a simulated fixture action.
+// TestIssue682QwenIntegratedSyntheticChain links the research proposal,
+// approved search, source verification, confirmation, context assembly, and
+// writing-evidence selection in one synthetic project. It runs offline with a
+// deterministic model stub by default; setting LINGDOC_QWEN_RESEARCH_E2E=1
+// opts into the real Qwen provider. Crossref metadata and the project asset
+// are separate synthetic fixtures with no DOI-to-original relationship.
 func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
-	if os.Getenv("LINGDOC_QWEN_RESEARCH_E2E") != "1" {
-		t.Skip("explicit real Qwen opt-in required")
-	}
-	baseURL, key := strings.TrimSpace(os.Getenv("LINGDOC_QWEN_BASE_URL")), strings.TrimSpace(os.Getenv("LINGDOC_QWEN_API_KEY"))
-	if baseURL == "" || key == "" {
-		t.Fatal("Qwen endpoint and key are required")
-	}
-	client, err := chat.NewRemoteAPIChat(&chat.ChatConfig{Source: types.ModelSourceRemote, BaseURL: baseURL, APIKey: key, ModelName: "qwen3.8-flash", ModelID: "qwen3.8-flash"})
-	if err != nil {
-		t.Fatal("Qwen configuration or URL validation failed")
+	useRealQwen := os.Getenv("LINGDOC_QWEN_RESEARCH_E2E") == "1"
+	registered := qwenApprovedModel()
+	registered.Name = "qwen3.8-flash"
+	baseURL := registered.Parameters.BaseURL
+	var client chat.Chat
+	if useRealQwen {
+		baseURL = strings.TrimSpace(os.Getenv("LINGDOC_QWEN_BASE_URL"))
+		key := strings.TrimSpace(os.Getenv("LINGDOC_QWEN_API_KEY"))
+		if baseURL == "" || key == "" {
+			t.Fatal("Qwen endpoint and key are required when real Qwen is opted in")
+		}
+		var err error
+		client, err = chat.NewRemoteAPIChat(&chat.ChatConfig{Source: types.ModelSourceRemote, BaseURL: baseURL, APIKey: key, ModelName: "qwen3.8-flash", ModelID: "qwen3.8-flash"})
+		if err != nil {
+			t.Fatal("Qwen configuration or URL validation failed")
+		}
+	} else {
+		client = &acceptanceChatStub{response: &types.ChatResponse{
+			Content:      `{"reply":"合成调研计划已生成，待用户修改与确认。","task_card":{"goal":"合成软件材料调研","question_type":"source_discovery","scope":"仅限合成验收项目","exclusions":[],"queries":["software verification","software validation"],"expected_output":"模拟项目资料与书目","candidate_sources":[],"reasons":["两条查询分别覆盖验证与确认概念。"],"gaps":[{"description":"当前没有真实研究者审核","expected_evidence":"由研究者核对来源与结论。"}]}}`,
+			FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 40},
+		}}
 	}
 
 	_, db, assetID := seedBoundSource(t)
@@ -65,6 +77,13 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 	runtime.EnableFullWorkflowPolicy()
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
+	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
+		t.Fatalf("establish original-byte revision baseline: %v", err)
+	}
+	currentAsset, err := runtime.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	if err != nil {
+		t.Fatalf("read original-byte revision baseline: %v", err)
+	}
 	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil)
 	now := time.Now().UTC()
 	policySource := &httpResearchQuotaPolicy{core.ResearchQuotaPolicy{Version: "synthetic-integrated-v1", ApprovedBy: "synthetic-fixture-only", WindowID: "synthetic-integrated", StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour), Limit: core.ResearchQuotaAmount{Searches: 2, Results: 40, ModelCalls: 1}}}
@@ -79,8 +98,6 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 		body := `{"status":"ok","message":{"items":[{"DOI":"10.5555/integration.1","title":["Synthetic bibliographic record"],"author":[{"given":"Ada","family":"Lovelace"}],"published-print":{"date-parts":[[2024,3,9]]},"container-title":["Journal of Integration Tests"],"ISSN":["0378-5955"],"type":"journal-article","license":[{"URL":"https://creativecommons.org/licenses/by/4.0/"}]}]}}`
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}, Timeout: 2 * time.Second}
-	registered := qwenApprovedModel()
-	registered.Name = "qwen3.8-flash"
 	registered.Parameters.BaseURL = baseURL
 	researchRecording := &issue682RecordingChat{inner: client}
 	registry := &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: researchRecording}
@@ -89,7 +106,7 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)
-	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "合成资料验收", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "仅测试夹具模拟许可", ContextRevision: 1}
+	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: int64(currentAsset.AssetRevision), PolicyVersion: 1, Scope: "project", Purpose: "合成资料验收", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "仅测试夹具模拟许可", ContextRevision: 1}
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +216,7 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 	if err != nil || snapshot.Measured.ModelCalls != 1 || snapshot.Measured.Searches != 2 {
 		t.Fatal("synthetic project quota did not account for research Qwen and both searches")
 	}
-	t.Log("same project: Qwen research; synthetic HybridSearch project hit; independent synthetic Crossref metadata; simulated plan and metadata confirmation")
+	t.Log("same project: synthetic model proposal; synthetic HybridSearch and Crossref hits; simulated plan and metadata confirmation")
 	var anchor core.SourceAnchor
 	request(http.MethodPost, route+"/source-anchors", "synthetic-anchor", `{`+expectation(0)+`,"source_id":"source-1","selection_start":0,"selection_end":`+strconv.Itoa(len([]rune(sourcePolicyQuote)))+`,"extraction_type":"native_text","ocr_confidence":1,"human_verified":true,"confirmed":true}`, http.StatusCreated, &anchor)
 	if anchor.ID == "" || anchor.SourceID != projectHit.SourceID || anchor.Locator == "" || storage.calls == 0 {
@@ -231,21 +248,16 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 		t.Fatalf("writing evidence selection failed: %v", err)
 	}
 
-	t.Run("real_qwen_writing_adapter", func(t *testing.T) {
-		if os.Getenv("LINGDOC_QWEN_RESEARCH_E2E") != "1" {
-			t.Skip("real Qwen model call requires explicit opt-in")
+	t.Run("writing_adapter", func(t *testing.T) {
+		writingClient := client
+		if !useRealQwen {
+			writingClient = &acceptanceChatStub{response: &types.ChatResponse{
+				Content:      `{"body_markdown":"合成资料显示软件验证流程需要明确输入、判据与复核步骤 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`,
+				FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 120, CompletionTokens: 50},
+			}}
 		}
-		baseURL, key := strings.TrimSpace(os.Getenv("LINGDOC_QWEN_BASE_URL")), strings.TrimSpace(os.Getenv("LINGDOC_QWEN_API_KEY"))
-		if baseURL == "" || key == "" {
-			t.Fatal("Qwen endpoint and key are required")
-		}
-		client, err := chat.NewRemoteAPIChat(&chat.ChatConfig{Source: types.ModelSourceRemote, BaseURL: baseURL, APIKey: key, ModelName: "qwen3.8-flash", ModelID: "qwen3.8-flash"})
-		if err != nil {
-			t.Fatal("Qwen configuration or URL validation failed")
-		}
-		model := qwenApprovedModel()
-		model.Name, model.Parameters.BaseURL = "qwen3.8-flash", baseURL
-		recording := &issue682RecordingChat{inner: client}
+		model := registered
+		recording := &issue682RecordingChat{inner: writingClient}
 		registry := &acceptanceModelServiceStub{models: []*types.Model{model}, chatModel: recording}
 		writer := generationHostModel{models: registry, templates: delivery.NewFixedTemplateReader(), ledger: core.NewGORMModelCallLedger(db)}
 		ref := generation.EvidenceCardRef{ID: confirmed.ID, Version: confirmed.Version}
@@ -265,11 +277,15 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 		input.Instruction = input.Request.Instruction
 		draft, err := writer.Generate(ctx, input)
 		if err != nil {
-			t.Fatal("Qwen writing adapter failed; see controlled server logs for reason")
+			t.Fatal("writing adapter failed")
 		}
 		if !strings.Contains(recording.input, confirmed.ID) || !strings.Contains(recording.input, s.Locator) || !strings.Contains(recording.input, s.QuotedText) || !strings.Contains(draft.BodyMarkdown, "[[source:source-1]]") || len(draft.Sources) != 1 || draft.Sources[0].ID != "source-1" {
 			t.Fatal("model input or output did not preserve selected synthetic card, locator, and citation")
 		}
-		t.Log("real Qwen writing adapter received a server-selected synthetic card and returned its citation; generation HTTP/job was not exercised")
+		if useRealQwen {
+			t.Log("real Qwen writing adapter received a server-selected synthetic card and returned its citation; generation HTTP/job was not exercised")
+		} else {
+			t.Log("offline synthetic writer received a server-selected confirmed card, locator, and quote")
+		}
 	})
 }

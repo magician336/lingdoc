@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
@@ -155,13 +157,20 @@ func (r dbKnowledgeReader) CurrentKnowledgeSignal(ctx context.Context, knowledge
 	if err != nil {
 		return evidence.KnowledgeSignal{}, false, err
 	}
-	return evidence.KnowledgeSignal{
+	signal := evidence.KnowledgeSignal{
 		KnowledgeID: knowledge.ID,
 		ParseStatus: knowledge.ParseStatus,
 		FileHash:    knowledge.FileHash,
 		FileSize:    knowledge.FileSize,
 		ProcessedAt: valueTime(knowledge.ProcessedAt),
-	}, true, nil
+	}
+	if r.files != nil {
+		if data, available, readErr := r.files.OriginBytes(ctx, knowledgeID); readErr == nil && available {
+			digest := sha256.Sum256(data)
+			signal.OriginalContentSHA256 = hex.EncodeToString(digest[:])
+		}
+	}
+	return signal, true, nil
 }
 
 func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error) {

@@ -232,11 +232,23 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 	}
 	stable := false
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
-		original, available, originErr := r.originReader().OriginText(ctx, asset.KnowledgeID)
+		originReader := r.originReader()
+		snapshotReader, supportsSnapshot := originReader.(evidence.OriginSnapshotReader)
+		var original string
+		var raw []byte
+		var available bool
+		var originErr error
+		if supportsSnapshot {
+			original, raw, available, originErr = snapshotReader.OriginSnapshot(ctx, asset.KnowledgeID)
+		}
 		if originErr != nil {
 			return core.ResearchSource{}, originErr
 		}
-		stable = available && evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
+		if supportsSnapshot && available && asset.OriginalContentSHA256 != "" {
+			digest := sha256.Sum256(raw)
+			stable = hex.EncodeToString(digest[:]) == asset.OriginalContentSHA256 &&
+				evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
+		}
 	}
 	allowed, err := r.modelUseAllowed(ctx, actor, projectID, asset.ID, asset.KnowledgeID)
 	if err != nil {

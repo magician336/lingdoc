@@ -15,6 +15,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -124,6 +126,16 @@ func seedStorageBackedKnowledge(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func configureDirectTextStorageKnowledge(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec("UPDATE knowledges SET file_type='txt', file_path=? WHERE id=?", "resource://synthetic-storage-object", "knowledge-1").Error; err != nil {
+		t.Fatalf("seed storage-backed knowledge path: %v", err)
+	}
+	if err := db.Exec("UPDATE knowledge_bases SET chunking_config=? WHERE id=?", `{"parser_engine_rules":[{"file_types":["txt"],"engine":"simple"}]}`, "kb-1").Error; err != nil {
+		t.Fatalf("configure direct text parser: %v", err)
+	}
+}
+
 // Explicit "simple" is a real Go-native parser choice, not a remote parser.
 // Prove the stored bytes reach the same origin reader used by source anchors;
 // other engines and formats transformed by the simple reader remain weak.
@@ -206,10 +218,11 @@ func TestOriginConverterRejectsURLAndInvalidOverrides(t *testing.T) {
 func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 	_, db, assetID := seedBoundSource(t)
 	seedStorageBackedKnowledge(t, db)
+	configureDirectTextStorageKnowledge(t, db)
 
-	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote + "\nfirst suffix")}
 	sources := &adapterStorageSourcesStub{
-		assets: []evidence.Asset{{ID: assetID, KnowledgeID: "knowledge-1", AssetRevision: 1, ProcessingState: evidence.AssetStateReady}},
+		assets: []evidence.Asset{{ID: assetID, KnowledgeID: "knowledge-1", AssetRevision: 1, ProcessingState: evidence.AssetStateReady, OriginalContentSHA256: sha256Hex(storage.data)}},
 		source: evidence.Source{ID: "source-1", AssetID: assetID, AssetRevision: 1, Status: evidence.SourceAvailable, QuotedText: sourcePolicyQuote},
 	}
 	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil)
@@ -226,6 +239,15 @@ func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 		t.Fatal("the origin read never asked the storage port")
 	}
 
+	storage.data = []byte(sourcePolicyQuote + "\nother suffix")
+	read, err = adapter.ReadResearchSource(policyContext(), actor, "project-1", "source-1")
+	if err != nil {
+		t.Fatalf("read after same-quote rewrite: %v", err)
+	}
+	if read.StableOriginal {
+		t.Fatal("a changed full original must not remain stable just because the quote still matches")
+	}
+
 	// 存储答不出（后端故障、对象丢失）是「没有原文」：降档，不得报成
 	// 逐字证明，也不得把整次读取变成错误。
 	storage.err = errors.New("storage backend unreachable")
@@ -235,6 +257,36 @@ func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 	}
 	if read.StableOriginal {
 		t.Fatal("a material storage cannot answer must not count as a stable original")
+	}
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestConnectOriginFilesRefreshesStoredRevisionWithFullByteDigest(t *testing.T) {
+	_, db, assetID := seedBoundSource(t)
+	seedStorageBackedKnowledge(t, db)
+	configureDirectTextStorageKnowledge(t, db)
+	data := []byte("source with CRLF\r\nexactly preserved")
+	storage := &adapterStorageStub{data: data}
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, nil)
+	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
+
+	signal, present, err := runtime.bindings.signals.CurrentKnowledgeSignal(context.Background(), "knowledge-1")
+	if err != nil || !present {
+		t.Fatalf("CurrentKnowledgeSignal present=%v err=%v", present, err)
+	}
+	if signal.OriginalContentSHA256 != sha256Hex(data) {
+		t.Fatalf("original SHA-256 = %q, want hash of exact raw bytes %q", signal.OriginalContentSHA256, sha256Hex(data))
+	}
+	if err = runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
+		t.Fatalf("RefreshAsset: %v", err)
+	}
+	asset, err := runtime.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	if err != nil || asset.AssetRevision != 2 || asset.OriginalContentSHA256 != sha256Hex(data) {
+		t.Fatalf("refreshed asset = %+v err=%v", asset, err)
 	}
 }
 
@@ -281,12 +333,20 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
+	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
+	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
+		t.Fatalf("establish original-byte revision baseline: %v", err)
+	}
+	currentAsset, err := runtime.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	if err != nil {
+		t.Fatalf("read original-byte revision baseline: %v", err)
+	}
 	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil)
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter})
 
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)
-	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: 1, PolicyVersion: 1, Scope: "project", Purpose: "合成软件流程验证", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "合成人工许可fixture", ContextRevision: 1}
+	policy := core.ProjectAssetPolicy{ID: assetID, ProjectID: "project-1", AssetID: assetID, Version: 1, AssetRevision: int64(currentAsset.AssetRevision), PolicyVersion: 1, Scope: "project", Purpose: "合成软件流程验证", ModelUseAllowed: true, AllowedUserIDs: []string{}, CreatedBy: "reader", GrantedBy: "reader", Reason: "合成人工许可fixture", ContextRevision: 1}
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
 		t.Fatal(err)

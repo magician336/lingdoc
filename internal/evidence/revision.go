@@ -22,6 +22,9 @@ const FingerprintNoContentSignal = "no_content_signal"
 // 这就是那个决定。信号来源与限制见 T09-项目资料与来源.md §3.1。
 type KnowledgeSignal struct {
 	KnowledgeID string
+	// OriginalContentSHA256 is computed from the complete original bytes by the
+	// storage adapter. Empty means the bytes could not be proved in full.
+	OriginalContentSHA256 string
 	// ParseStatus 是底座的解析状态，只影响 processing_state，不参与内容指纹。
 	ParseStatus string
 	// FileHash 是内容指纹，最强信号；外链/手工资料上可能为空。
@@ -36,8 +39,9 @@ type KnowledgeSignal struct {
 //
 // 只给哈希不给依据的话，人工复核时看不出这次指纹是不是在「退化模式」下算的。
 type Fingerprint struct {
-	Digest string
-	Basis  string
+	Digest                string
+	Basis                 string
+	OriginalContentSHA256 string
 }
 
 // FingerprintOf 计算内容/解析定位指纹。
@@ -46,8 +50,12 @@ type Fingerprint struct {
 // UpdatedAt**：前者翻转只是处理进度，后者在任何行更新（含状态翻转）时都会变，
 // 把它们算进来会造出契约没要求的版本递增。
 func FingerprintOf(sig KnowledgeSignal) Fingerprint {
-	parts := make([]string, 0, 3)
-	basis := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
+	basis := make([]string, 0, 4)
+	if sig.OriginalContentSHA256 != "" {
+		parts = append(parts, "original_sha256="+sig.OriginalContentSHA256)
+		basis = append(basis, "original_sha256")
+	}
 
 	if sig.FileHash != "" {
 		parts = append(parts, "file_hash="+sig.FileHash)
@@ -68,10 +76,16 @@ func FingerprintOf(sig KnowledgeSignal) Fingerprint {
 			Basis:  "无可用内容信号（FileHash/FileSize/ProcessedAt 都不可得）：内容变化检测不到",
 		}
 	}
-	// 版本前缀 v1：将来改变信号集合时，旧指纹不会与新指纹相撞。
+	// Keep legacy fingerprints byte-for-byte stable when no full-byte digest
+	// is available. The v2 domain includes that digest when it is available.
+	version := "v1|"
+	if sig.OriginalContentSHA256 != "" {
+		version = "v2|"
+	}
 	return Fingerprint{
-		Digest: hashText("v1|" + strings.Join(parts, "|")),
-		Basis:  strings.Join(basis, "+"),
+		Digest:                hashText(version + strings.Join(parts, "|")),
+		Basis:                 strings.Join(basis, "+"),
+		OriginalContentSHA256: sig.OriginalContentSHA256,
 	}
 }
 
