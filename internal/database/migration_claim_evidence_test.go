@@ -57,7 +57,7 @@ func checkClaimEvidenceMigration(t *testing.T, db *sql.DB, chain string) {
 func TestSQLiteClaimEvidenceMigrationPreservesLegacyAndRefusesLoss(t *testing.T) {
 	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "claim-evidence.db"))
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	db.SetMaxOpenConns(1)
 	checkClaimEvidenceMigration(t, db, "sqlite")
 }

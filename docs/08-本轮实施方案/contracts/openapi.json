@@ -41442,6 +41442,228 @@
         },
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
+    },
+    "/projects/{projectId}/impact-tasks/{taskId}/selection-references": {
+      "post": {
+        "operationId": "addImpactSelectionReference",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "为影响任务人工建立选段引用(#774 档 B)",
+        "description": "责任人把受影响章节内的一段逐字原文锚定到任务：服务端定位选段(段号/UTF-16 偏移/摘录)并按其内容哈希建立身份，作为 location_hints 中来源为 selection_reference 的人工选段引用直接落库——人工建立即确认，无采纳环节。逐字不存在、重复锚定或契约越界一律拒绝。章节演进复验与其他定位一致，失配转\"待重新定位\"。定位是附件不是判定。权限与任务处置一致：manage 或当前责任人。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImpactSelectionReferenceInput"
+              },
+              "example": {
+                "expected_version": 3,
+                "quote": "样本选择也需要复核",
+                "reason": "人工圈定该句需复核"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务流转后的当前状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactTaskResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-id",
+                        "project_id": "synthetic-project-id",
+                        "change_set_id": "synthetic-change-set-id",
+                        "target": {
+                          "kind": "ChapterVersion",
+                          "id": "synthetic-id",
+                          "version": "1"
+                        },
+                        "target_revision": 1,
+                        "action": "REVALIDATE_EVIDENCE",
+                        "severity": "blocking",
+                        "responsibility_domain": "synthetic-responsibility-domain",
+                        "status": "OPEN",
+                        "causes": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "source": {
+                              "kind": "ChapterVersion",
+                              "id": "synthetic-id",
+                              "version": "1"
+                            },
+                            "reason": "本人核对合成范围后明确提交此操作"
+                          }
+                        ],
+                        "version": 1,
+                        "closure_evidence": [
+                          {
+                            "kind": "ChapterVersion",
+                            "id": "synthetic-id",
+                            "version": "1"
+                          }
+                        ],
+                        "created_at": "2026-10-18T00:00:00Z",
+                        "updated_at": "2026-10-18T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少项目写权限、需要人工确认，或该任务依据的资料授权已不可用（错误码 impact_task_source_unavailable）。资料授权失效时任务状态保持不变，不会被转成 STALE——见 stale_reason 说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任务版本落后于服务端当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前任务状态不允许该动作，或闭环证据不是当前版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "runtime_paused: matching native runtime scope is paused when full-runtime policy is enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": 128,
+        "x-lingdoc-service": "ActOnImpactTask",
+        "x-lingdoc-go-response": "ImpactTask",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
     }
   },
   "components": {
@@ -41829,7 +42051,8 @@
                   "enum": [
                     "change_old_value",
                     "registered_spec_value",
-                    "ai_sentence"
+                    "ai_sentence",
+                    "selection_reference"
                   ]
                 },
                 "field_key": {
@@ -41852,6 +42075,10 @@
                 },
                 "relocate": {
                   "type": "boolean"
+                },
+                "selection_hash": {
+                  "type": "string",
+                  "description": "#774 档 B:人工选段引用的内容身份(SHA-256 前 16 hex);相同哈希即相同选段。"
                 }
               }
             }
@@ -59328,6 +59555,34 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 2000
+          }
+        }
+      },
+      "ImpactSelectionReferenceInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "quote",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "调用方读取到的任务版本；任务已被他人推进时拒绝(409)。"
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "章节正文中逐字存在的选段原文(4~200 个字符)。服务端定位并验证；正文找不到即拒绝，不猜测位置。"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "人工圈定该选段的理由。"
           }
         }
       }

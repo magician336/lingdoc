@@ -84,7 +84,11 @@ func TestQwenFakeIPLiveOptIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validated pinned TLS request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close Qwen response: %v", err)
+		}
+	}()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unexpected Qwen root HTTP status %d", resp.StatusCode)
 	}
@@ -182,10 +186,12 @@ func TestQwenDoHChecksEveryReturnedAddress(t *testing.T) {
 				if r.URL.Query().Get("name") != "dashscope.aliyuncs.com" || r.Header.Get("Accept") != "application/dns-json" {
 					t.Error("unexpected DNS query")
 				}
+				body := tc.aaaa
 				if r.URL.Query().Get("type") == "A" {
-					fmt.Fprint(w, tc.a)
-				} else {
-					fmt.Fprint(w, tc.aaaa)
+					body = tc.a
+				}
+				if _, err := fmt.Fprint(w, body); err != nil {
+					t.Errorf("write DNS response: %v", err)
 				}
 			}))
 			defer server.Close()

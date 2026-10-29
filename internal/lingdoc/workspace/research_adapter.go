@@ -596,9 +596,10 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 		}
 		authors := crossrefAuthors(work.Authors)
 		uncertainty := "Crossref 元数据记录；未获取原文或摘要，不可作为证据。未检出撤稿记录不代表已核实未撤稿。"
-		if retractionStatus == "retraction_notice" {
+		switch retractionStatus {
+		case "retraction_notice":
 			uncertainty = "该记录包含指向其他论文的撤稿更新；它是通知而非被撤稿论文。未获取原文，不可作为证据。"
-		} else if retractionStatus == "retracted" {
+		case "retracted":
 			uncertainty = "本次检索结果中有撤稿通知指向该论文 DOI；请核对原始公告，不能作为资料候选。"
 		}
 		if duplicateStatus == "duplicate" {

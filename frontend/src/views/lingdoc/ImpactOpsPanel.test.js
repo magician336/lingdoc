@@ -405,3 +405,31 @@ test('#774 档 C：任务模板渲染建议列表、采纳驳回按钮与不保�
   assert.match(code, /suggestionStatusLabel/)
   assert.match(code, /impact_reason/)
 })
+
+test('#774 档 B：人工选段引用走锚定口且必须带引用原文与说明', async () => {
+  const calls = []
+  const handlers = { addImpactSelectionReference: (...args) => { calls.push(args); return { data: { id: 't1', location_hints: [] } } } }
+  const { state } = setup(false, { handlers })
+  const task = { id: 't1', target: { kind: 'ChapterVersion', id: 'c1' }, version: 4 }
+  state.selectionTaskId.value = 't1'
+  await state.anchorSelection(task)
+  assert.match(state.error.value, /处置说明/)
+  assert.equal(calls.length, 0)
+  state.reason.value = '人工圈定该句'
+  await state.anchorSelection(task)
+  assert.match(state.error.value, /逐字原文/)
+  assert.equal(calls.length, 0)
+  state.selectionQuote.value = '样本选择也需要复核'
+  await state.anchorSelection(task)
+  assert.equal(calls.length, 1)
+  assert.equal(state.selectionTaskId.value, '')
+})
+
+test('#774 档 B：任务模板渲染人工选段入口与标记', () => {
+  const result = sfc.compileTemplate({ id: 'test-impact-ops', filename: filename.pathname, source: parsed.descriptor.template.content, compilerOptions: { bindingMetadata: compiled.bindings } })
+  assert.equal(result.errors.length, 0)
+  const code = result.code
+  assert.match(code, /selection-references|addImpactSelectionReference|anchorSelection/)
+  assert.match(code, /人工选段/)
+  assert.match(code, /selection_hash|selection-form|锚定选段/)
+})

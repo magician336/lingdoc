@@ -146,11 +146,12 @@ func TestResearchRoundFeedbackHTTP(t *testing.T) {
 	close(statuses)
 	wins, conflicts := 0, 0
 	for status := range statuses {
-		if status == 200 {
+		switch status {
+		case 200:
 			wins++
-		} else if status == 409 {
+		case 409:
 			conflicts++
-		} else {
+		default:
 			t.Fatalf("concurrent status=%d", status)
 		}
 	}

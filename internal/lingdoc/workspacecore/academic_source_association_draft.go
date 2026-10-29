@@ -186,12 +186,12 @@ func (s *Service) ConfirmAcademicSourceAssociation(ctx context.Context, actor Ac
 	if input.ExpectedAssetRevision != source.AssetRevision || input.ExpectedQuotedTextHash != source.QuotedTextHash || input.ExpectedLocator != source.Locator {
 		return nil, 0, false, ErrVersionConflict
 	}
-	body, status, replay, err := s.runAgentOperation(ctx, actor, projectID, "evidence-confirm", "confirmAcademicSourceAssociation", projectID+"/"+input.CandidateID, key, input, []string{input.SourceID}, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
+	body, status, replay, err := s.runAgentOperation(ctx, actor, projectID, "evidence-confirm", "confirmAcademicSourceAssociation", projectID+"/"+input.CandidateID, key, input, []string{input.SourceID}, operationcore.HumanGateRequired, func(tx Transaction, _ Project) (any, int, error) {
 		locked, lockErr := s.lockAssociationDecisionRows(ctx, tx, actor, projectID)
 		if lockErr != nil {
 			return nil, 0, lockErr
 		}
-		p = locked
+		p := locked
 		if lockErr = validateAssociationSourceInTransaction(ctx, tx, actor, p, source); lockErr != nil {
 			return nil, 0, lockErr
 		}

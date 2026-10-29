@@ -110,7 +110,9 @@ func queryQwenDoH(ctx context.Context, client *http.Client, u *url.URL, hostname
 			return nil, fmt.Errorf("Qwen HTTPS DNS lookup failed: %w", err)
 		}
 		if response.StatusCode != http.StatusOK {
-			response.Body.Close()
+			if err := response.Body.Close(); err != nil {
+				return nil, fmt.Errorf("Qwen HTTPS DNS returned HTTP %d; closing response: %w", response.StatusCode, err)
+			}
 			return nil, fmt.Errorf("Qwen HTTPS DNS returned HTTP %d", response.StatusCode)
 		}
 		var data struct {
@@ -121,9 +123,12 @@ func queryQwenDoH(ctx context.Context, client *http.Client, u *url.URL, hostname
 			} `json:"Answer"`
 		}
 		err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&data)
-		response.Body.Close()
+		closeErr := response.Body.Close()
 		if err != nil || data.Status == nil || *data.Status != 0 {
 			return nil, errors.New("Qwen HTTPS DNS returned an invalid or unsuccessful response")
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("Qwen HTTPS DNS closing response: %w", closeErr)
 		}
 		for _, answer := range data.Answer {
 			if answer.Type != 1 && answer.Type != 28 {
