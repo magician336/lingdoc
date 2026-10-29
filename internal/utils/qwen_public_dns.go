@@ -47,10 +47,10 @@ func resolveForSSRFWith(ctx context.Context, hostname string, system func(contex
 	// route (or an explicit NO_PROXY entry) for the fallback path.
 	proxy, proxyErr := httpproxy.FromEnvironment().ProxyFunc()(&url.URL{Scheme: "https", Host: hostname})
 	if proxyErr != nil {
-		return nil, fmt.Errorf("Qwen HTTPS DNS proxy configuration: %w", proxyErr)
+		return nil, fmt.Errorf("qwen HTTPS DNS proxy configuration: %w", proxyErr)
 	}
 	if proxy != nil {
-		return nil, errors.New("Qwen HTTPS DNS fallback requires a direct connection; configure NO_PROXY for the Qwen host")
+		return nil, errors.New("qwen HTTPS DNS fallback requires a direct connection; configure NO_PROXY for the Qwen host")
 	}
 	bootstrap := strings.TrimSpace(os.Getenv("LINGDOC_QWEN_DOH_BOOTSTRAP_IP"))
 	return fallback(ctx, hostname, endpoint, bootstrap)
@@ -76,14 +76,14 @@ func allFakeIPs(ips []net.IPAddr) bool {
 func resolveQwenDoH(ctx context.Context, hostname, endpoint, bootstrap string) ([]net.IPAddr, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") || net.ParseIP(u.Hostname()) != nil || isIPLikeHostname(u.Hostname()) {
-		return nil, errors.New("Qwen HTTPS DNS endpoint must be an HTTPS hostname without credentials, query, or nonstandard port")
+		return nil, errors.New("qwen HTTPS DNS endpoint must be an HTTPS hostname without credentials, query, or nonstandard port")
 	}
 	addr := net.ParseIP(bootstrap)
 	if addr == nil {
-		return nil, errors.New("Qwen HTTPS DNS bootstrap must be a public IP")
+		return nil, errors.New("qwen HTTPS DNS bootstrap must be a public IP")
 	}
 	if restricted, _ := isRestrictedIP(addr); restricted {
-		return nil, errors.New("Qwen HTTPS DNS bootstrap must be a public IP")
+		return nil, errors.New("qwen HTTPS DNS bootstrap must be a public IP")
 	}
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	transport := &http.Transport{Proxy: nil, TLSHandshakeTimeout: 5 * time.Second, DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -107,13 +107,13 @@ func queryQwenDoH(ctx context.Context, client *http.Client, u *url.URL, hostname
 		req.Header.Set("Accept", "application/dns-json")
 		response, err := client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Qwen HTTPS DNS lookup failed: %w", err)
+			return nil, fmt.Errorf("qwen HTTPS DNS lookup failed: %w", err)
 		}
 		if response.StatusCode != http.StatusOK {
 			if err := response.Body.Close(); err != nil {
-				return nil, fmt.Errorf("Qwen HTTPS DNS returned HTTP %d; closing response: %w", response.StatusCode, err)
+				return nil, fmt.Errorf("qwen HTTPS DNS returned HTTP %d; closing response: %w", response.StatusCode, err)
 			}
-			return nil, fmt.Errorf("Qwen HTTPS DNS returned HTTP %d", response.StatusCode)
+			return nil, fmt.Errorf("qwen HTTPS DNS returned HTTP %d", response.StatusCode)
 		}
 		var data struct {
 			Status *int `json:"Status"`
@@ -125,10 +125,10 @@ func queryQwenDoH(ctx context.Context, client *http.Client, u *url.URL, hostname
 		err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&data)
 		closeErr := response.Body.Close()
 		if err != nil || data.Status == nil || *data.Status != 0 {
-			return nil, errors.New("Qwen HTTPS DNS returned an invalid or unsuccessful response")
+			return nil, errors.New("qwen HTTPS DNS returned an invalid or unsuccessful response")
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("Qwen HTTPS DNS closing response: %w", closeErr)
+			return nil, fmt.Errorf("qwen HTTPS DNS closing response: %w", closeErr)
 		}
 		for _, answer := range data.Answer {
 			if answer.Type != 1 && answer.Type != 28 {
@@ -136,16 +136,16 @@ func queryQwenDoH(ctx context.Context, client *http.Client, u *url.URL, hostname
 			}
 			ip := net.ParseIP(answer.Data)
 			if ip == nil {
-				return nil, errors.New("Qwen HTTPS DNS returned an invalid IP")
+				return nil, errors.New("qwen HTTPS DNS returned an invalid IP")
 			}
 			if restricted, _ := isRestrictedIP(ip); restricted {
-				return nil, errors.New("Qwen HTTPS DNS returned a restricted IP")
+				return nil, errors.New("qwen HTTPS DNS returned a restricted IP")
 			}
 			out = append(out, net.IPAddr{IP: ip})
 		}
 	}
 	if len(out) == 0 {
-		return nil, errors.New("Qwen HTTPS DNS returned no public IP")
+		return nil, errors.New("qwen HTTPS DNS returned no public IP")
 	}
 	return out, nil
 }

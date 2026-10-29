@@ -128,12 +128,12 @@ func (s *Service) RevokeAcademicSourceAssociation(ctx context.Context, actor Act
 	if strings.TrimSpace(associationID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.runAgentOperation(ctx, actor, projectID, "evidence-confirm", "revokeAcademicSourceAssociation", projectID+"/"+associationID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
+	return s.runAgentOperation(ctx, actor, projectID, "evidence-confirm", "revokeAcademicSourceAssociation", projectID+"/"+associationID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, _ Project) (any, int, error) {
 		locked, err := s.lockAssociationDecisionRows(ctx, tx, actor, projectID)
 		if err != nil {
 			return nil, 0, err
 		}
-		p = locked
+		p := locked
 		a, old, err := loadStoredObject[AcademicSourceAssociation](tx, projectID, AcademicSourceAssociationKind, associationID)
 		if err != nil {
 			return nil, 0, err
