@@ -14,6 +14,8 @@ func TestPDFAnchorUsesVerifiedPageAndRejectsInventedLocation(t *testing.T) {
 	input := SaveSourceAnchorInput{VersionExpectation: f.expectation(0), SourceID: source.SourceID, SelectionEnd: len([]rune(source.QuotedText)), ExtractionType: "native_text", Confirmed: true}
 	for name, change := range map[string]func(*SaveSourceAnchorInput){
 		"wrong page":           func(i *SaveSourceAnchorInput) { i.Page = 2 },
+		"invented section":     func(i *SaveSourceAnchorInput) { i.Section = "Unverified section" },
+		"invented paragraph":   func(i *SaveSourceAnchorInput) { i.Paragraph = 1 },
 		"invented coordinates": func(i *SaveSourceAnchorInput) { i.Coordinates = []float64{1, 2, 3, 4} },
 		"invented OCR":         func(i *SaveSourceAnchorInput) { i.ExtractionType = "ocr" },
 	} {

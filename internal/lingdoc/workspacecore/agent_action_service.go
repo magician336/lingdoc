@@ -1328,7 +1328,7 @@ func (s *Service) SaveSourceAnchor(ctx context.Context, actor Actor, projectID, 
 		return nil, 0, false, ErrEvidenceIncomplete
 	}
 	if source.VerifiedPDFPage > 0 {
-		if input.Page != 0 && input.Page != source.VerifiedPDFPage || len(input.Coordinates) != 0 || input.ExtractionType != "native_text" {
+		if input.Page != 0 && input.Page != source.VerifiedPDFPage || input.Section != "" || input.Paragraph != 0 || len(input.Coordinates) != 0 || input.ExtractionType != "native_text" {
 			return nil, 0, false, ErrInvalidRequest
 		}
 		input.Page = source.VerifiedPDFPage
