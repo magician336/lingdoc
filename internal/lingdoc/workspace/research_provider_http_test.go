@@ -382,6 +382,7 @@ func TestCrossrefResearchWorkflowThroughHTTPAndSQLite(t *testing.T) {
 	if err := db.Exec(`INSERT INTO chunks(id,tenant_id,knowledge_id,knowledge_base_id,content,content_revision,chunk_index,start_at,end_at) VALUES (?,?,?,?,?,0,0,0,?)`, "paper-chunk", 7, "paper-knowledge", "kb-assoc", original, len([]rune(original))).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedFixtureOriginProof(t, db, "paper-chunk", "paper-knowledge", 7, []byte(original))
 	sourceView, err := adapter.ReadResearchSource(actorContext("reader"), core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleAdmin}, "project-1", "paper-chunk")
 	if err != nil {
 		t.Fatal(err)

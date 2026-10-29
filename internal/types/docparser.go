@@ -17,13 +17,16 @@ type ReadRequest struct {
 
 // ReadResult is the transport-agnostic result of document reading.
 type ReadResult struct {
-	MarkdownContent string
-	ImageRefs       []ImageRef
-	ImageDirPath    string
-	Metadata        map[string]string
-	Error           string
-	IsAudio         bool   // true when the result contains raw audio data needing ASR transcription
-	AudioData       []byte // raw audio bytes for ASR processing
+	// OriginInputSHA256 is set by the caller from the exact bytes passed to
+	// the reader; parser implementations cannot assert their own provenance.
+	OriginInputSHA256 string `json:"-"`
+	MarkdownContent   string
+	ImageRefs         []ImageRef
+	ImageDirPath      string
+	Metadata          map[string]string
+	Error             string
+	IsAudio           bool   // true when the result contains raw audio data needing ASR transcription
+	AudioData         []byte // raw audio bytes for ASR processing
 }
 
 // ImageRef represents an image reference extracted from the document.

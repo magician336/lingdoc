@@ -223,6 +223,7 @@ func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote + "\nfirst suffix")}
 	setFixtureUploadHash(t, db, storage.data)
+	seedFixtureOriginProof(t, db, "source-1", "knowledge-1", 7, storage.data)
 	currentAsset := refreshFixtureStorageAsset(t, db, assetID, storage)
 	sources := &adapterStorageSourcesStub{
 		assets: []evidence.Asset{currentAsset},
@@ -266,6 +267,63 @@ func TestResearchAdapterReadsUploadedOriginThroughStoragePort(t *testing.T) {
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// Fixtures insert already-indexed chunks directly; record the corresponding
+// parser-input bytes as if they had passed through the ingestion repository.
+func seedFixtureOriginProof(t *testing.T, db *gorm.DB, chunkID, knowledgeID string, tenantID uint64, raw []byte) {
+	t.Helper()
+	applySQLiteMigrations(t, db, "000060_chunk_origin_sha256.up.sql")
+	if err := db.Exec("INSERT OR REPLACE INTO chunk_origin_sha256(chunk_id,tenant_id,knowledge_id,sha256) VALUES(?,?,?,?)", chunkID, tenantID, knowledgeID, sha256Hex(raw)).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUploadedResearchSourceRequiresMatchingIngestedBytes(t *testing.T) {
+	_, db, assetID := seedBoundSource(t)
+	seedStorageBackedKnowledge(t, db)
+	configureDirectTextStorageKnowledge(t, db)
+	original := []byte(sourcePolicyQuote + "\noriginal suffix")
+	storage := &adapterStorageStub{data: original}
+	setFixtureUploadHash(t, db, original)
+	asset := refreshFixtureStorageAsset(t, db, assetID, storage)
+	sources := &adapterStorageSourcesStub{
+		assets: []evidence.Asset{asset},
+		source: evidence.Source{ID: "source-1", AssetID: assetID, AssetRevision: asset.AssetRevision, Status: evidence.SourceAvailable, QuotedText: sourcePolicyQuote},
+	}
+	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil)
+	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
+	read := func() bool {
+		t.Helper()
+		got, err := adapter.ReadResearchSource(policyContext(), actor, "project-1", "source-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.StableOriginal
+	}
+	if read() {
+		t.Fatal("legacy source without ingestion proof must be weak")
+	}
+	applySQLiteMigrations(t, db, "000060_chunk_origin_sha256.up.sql")
+	proof := types.ChunkOriginSHA256{ChunkID: "source-1", TenantID: 7, KnowledgeID: "knowledge-1", SHA256: sha256Hex([]byte(sourcePolicyQuote + "\ndifferent suffix"))}
+	if err := db.Create(&proof).Error; err != nil {
+		t.Fatal(err)
+	}
+	if read() {
+		t.Fatal("matching quote and revision cannot establish mismatched parsed bytes")
+	}
+	if err := db.Model(&proof).Update("sha256", sha256Hex(original)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !read() {
+		t.Fatal("matching indexed and current raw bytes should establish original")
+	}
+	if err := db.Model(&proof).Update("tenant_id", 8).Error; err != nil {
+		t.Fatal(err)
+	}
+	if read() {
+		t.Fatal("a proof belonging to a different tenant must not authorize a source")
+	}
 }
 
 // An upload's FileHash is set by the ingestion path before storage.
@@ -368,6 +426,7 @@ func TestSaveSourceAnchorAcceptsStorageBackedUploadedMaterial(t *testing.T) {
 	}
 	storage := &adapterStorageStub{data: []byte(rawPrefix + rawChunk)}
 	setFixtureUploadHash(t, db, storage.data)
+	seedFixtureOriginProof(t, db, "source-1", "knowledge-1", 7, storage.data)
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
 	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
 		t.Fatalf("establish original-byte revision baseline: %v", err)

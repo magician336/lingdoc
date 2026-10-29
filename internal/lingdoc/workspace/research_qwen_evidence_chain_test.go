@@ -49,6 +49,7 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 	runtime.EnableFullWorkflowPolicy()
 	storage := &adapterStorageStub{data: []byte(sourcePolicyQuote)}
 	setFixtureUploadHash(t, db, storage.data)
+	seedFixtureOriginProof(t, db, "source-1", "knowledge-1", 7, storage.data)
 	runtime.ConnectOriginFiles(KnowledgeFileOriginReader{Service: storage})
 	if err := runtime.bindings.RefreshAsset(context.Background(), "project-1", assetID); err != nil {
 		t.Fatalf("establish original-byte revision baseline: %v", err)

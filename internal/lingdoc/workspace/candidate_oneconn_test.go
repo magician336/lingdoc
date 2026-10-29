@@ -139,6 +139,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	require.NoError(t, os.WriteFile(originPath, []byte(sourcePolicyQuote), 0600))
 	require.NoError(t, db.Exec("UPDATE knowledges SET file_type='txt',file_path=? WHERE id=?", originPath, "knowledge-1").Error)
 	setFixtureUploadHash(t, db, []byte(sourcePolicyQuote))
+	seedFixtureOriginProof(t, db, "source-1", "knowledge-1", 7, []byte(sourcePolicyQuote))
 	require.NoError(t, db.Exec("UPDATE chunks SET source_content=content WHERE id=?", "source-1").Error)
 	seedDeliveryBoundTemplateCopy(t, db, "actual-copy")
 	// A second, genuinely bound asset is deliberately excluded from generation.

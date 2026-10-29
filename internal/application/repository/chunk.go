@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +67,26 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	// Select("*") ensures zero-value fields (IsEnabled=false, Flags=0) are
 	// explicitly inserted, bypassing GORM's default value behavior.
 	// SeqID=0 is skipped by GORM automatically (autoIncrement tag).
-	return db.Select("*").CreateInBatches(chunks, 100).Error
+	var origins []types.ChunkOriginSHA256
+	for _, chunk := range chunks {
+		if chunk.OriginInputSHA256 == "" {
+			continue
+		}
+		digest, err := hex.DecodeString(chunk.OriginInputSHA256)
+		if err != nil || len(digest) != 32 || chunk.ID == "" || chunk.KnowledgeID == "" || chunk.TenantID == 0 {
+			return errors.New("invalid chunk origin identity")
+		}
+		origins = append(origins, types.ChunkOriginSHA256{ChunkID: chunk.ID, TenantID: chunk.TenantID, KnowledgeID: chunk.KnowledgeID, SHA256: strings.ToLower(chunk.OriginInputSHA256)})
+	}
+	if len(origins) == 0 {
+		return db.Select("*").CreateInBatches(chunks, 100).Error
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("*").CreateInBatches(chunks, 100).Error; err != nil {
+			return err
+		}
+		return tx.CreateInBatches(origins, 100).Error
+	})
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID

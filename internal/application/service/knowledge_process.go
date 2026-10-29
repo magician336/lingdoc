@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -200,8 +202,9 @@ type ProcessChunksOptions struct {
 	// ParentChunks holds parent chunk data when parent-child chunking is enabled.
 	// When set, the chunks passed to processChunks are child chunks, and each
 	// child's ParentIndex references an entry in this slice.
-	ParentChunks []types.ParsedParentChunk
-	Metadata     map[string]string
+	ParentChunks      []types.ParsedParentChunk
+	Metadata          map[string]string
+	OriginInputSHA256 string
 }
 
 // finalizeIndexedKnowledgeState makes a document retrievable as soon as chunks
@@ -678,6 +681,9 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	s.beginStage(ctx, knowledge.ID, types.StageChunking, types.JSONMap{
 		"chunks_planned": len(insertChunks),
 	})
+	for _, chunk := range insertChunks {
+		chunk.OriginInputSHA256 = options.OriginInputSHA256
+	}
 	if err := s.chunkRepo.CreateChunks(ctx, insertChunks); err != nil {
 		knowledge.ParseStatus = types.ParseStatusFailed
 		knowledge.ErrorMessage = err.Error()
@@ -3850,6 +3856,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 
 	if convertResult != nil {
 		processOpts.Metadata = convertResult.Metadata
+		processOpts.OriginInputSHA256 = convertResult.OriginInputSHA256
 	}
 
 	if eff.ChunkingConfig.EnableParentChild {
@@ -4020,6 +4027,16 @@ func (s *knowledgeService) convert(
 		req.FileType = fileType
 	}
 
+	// Only the builtin reader for ordinary uploaded text preserves file bytes
+	// as parser input. Compute before invoking it, from the same snapshot.
+	var originInputSHA256 string
+	if _, ok := reader.(*docparser.SimpleFormatReader); ok && knowledge.Type == "file" && !isURL {
+		switch strings.ToLower(strings.TrimPrefix(fileType, ".")) {
+		case "txt", "text", "md", "markdown":
+			digest := sha256.Sum256(req.FileContent)
+			originInputSHA256 = hex.EncodeToString(digest[:])
+		}
+	}
 	result, err := s.callDocReaderWithTimeout(ctx, reader, req)
 	if err != nil {
 		// Distinguish DocReader timeout (a knowable user-facing
@@ -4047,6 +4064,7 @@ func (s *knowledgeService) convert(
 			werrors.ErrCodeDocReaderParseFailed, result.Error, nil)
 		return nil, nil
 	}
+	result.OriginInputSHA256 = originInputSHA256
 	docOutput := types.JSONMap{
 		"text_length":  len(result.MarkdownContent),
 		"images_found": len(result.ImageRefs),

@@ -248,6 +248,26 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 			digest := sha256.Sum256(raw)
 			stable = hex.EncodeToString(digest[:]) == asset.OriginalContentSHA256 &&
 				evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
+			if stable {
+				var knowledge types.Knowledge
+				if err := r.db.WithContext(ctx).Select("id", "type").Where("id = ? AND tenant_id = ?", chunk.KnowledgeID, chunk.TenantID).First(&knowledge).Error; err != nil {
+					return core.ResearchSource{}, err
+				}
+				if !knowledge.IsManual() {
+					// A revision digest captured at bind time alone cannot prove
+					// what was sent to the parser. Legacy chunks without an
+					// ingestion digest stay weak until they are reprocessed.
+					stable = false
+					if r.db.Migrator().HasTable(&types.ChunkOriginSHA256{}) {
+						var proof types.ChunkOriginSHA256
+						err := r.db.WithContext(ctx).Where("chunk_id = ? AND tenant_id = ? AND knowledge_id = ?", chunk.ID, chunk.TenantID, chunk.KnowledgeID).First(&proof).Error
+						if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+							return core.ResearchSource{}, err
+						}
+						stable = err == nil && proof.SHA256 == hex.EncodeToString(digest[:])
+					}
+				}
+			}
 		}
 	}
 	allowed, err := r.modelUseAllowed(ctx, actor, projectID, asset.ID, asset.KnowledgeID)
@@ -417,7 +437,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			if err != nil {
 				return out, "real", err
 			}
-			out = append(out, results...)
+			out = interleaveResearchResults(out, results)
 			return out, "real", nil
 		}
 		if r.web == nil {
@@ -439,6 +459,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		if err != nil {
 			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
+		external := make([]core.ResearchResult, 0, len(results))
 		for _, result := range results {
 			if result == nil {
 				continue
@@ -451,13 +472,36 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			if result.PublishedAt != nil {
 				date = result.PublishedAt.Format(time.RFC3339)
 			}
-			out = append(out, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
+			external = append(external, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
 		}
+		out = interleaveResearchResults(out, external)
 	}
 	if materialFailure != "" {
 		return out, "real", &core.ResearchSearchError{Material: materialFailure, Partial: len(out) > 0}
 	}
 	return out, "real", nil
+}
+
+// interleaveResearchResults preserves each source's ranking while allowing
+// both to appear before the caller applies the per-round and run budgets.
+// Empty or single-source rounds retain their existing order and result count.
+func interleaveResearchResults(local, external []core.ResearchResult) []core.ResearchResult {
+	if len(local) == 0 {
+		return external
+	}
+	if len(external) == 0 {
+		return local
+	}
+	out := make([]core.ResearchResult, 0, len(local)+len(external))
+	for i := 0; i < len(local) || i < len(external); i++ {
+		if i < len(local) {
+			out = append(out, local[i])
+		}
+		if i < len(external) {
+			out = append(out, external[i])
+		}
+	}
+	return out
 }
 
 func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, query string) ([]core.ResearchResult, error) {

@@ -29,6 +29,7 @@ func TestOriginalIdentityRewriteOutsideQuoteInvalidatesStableOriginal(t *testing
 	sum := sha256.Sum256([]byte(sourcePolicyQuote))
 	storage := &adapterStorageStub{data: before}
 	setFixtureUploadHash(t, db, before)
+	seedFixtureOriginProof(t, db, "source-1", "knowledge-1", 7, before)
 	currentAsset := refreshFixtureStorageAsset(t, db, assetID, storage)
 	sources := &adapterStorageSourcesStub{assets: []evidence.Asset{currentAsset}, source: evidence.Source{ID: "source-1", AssetID: assetID, AssetRevision: currentAsset.AssetRevision, Status: evidence.SourceAvailable, QuotedText: sourcePolicyQuote, QuotedTextHash: hex.EncodeToString(sum[:]), Locator: "synthetic-location"}}
 	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil)

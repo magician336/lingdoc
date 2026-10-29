@@ -128,6 +128,9 @@ type Chunk struct {
 	// SourceContent is the immutable parser output. Legacy rows are lazily
 	// backfilled from Content on the first manual edit.
 	SourceContent string `json:"-"`
+	// OriginInputSHA256 is transient input to the chunk repository. It is
+	// recorded in a separate server-owned table together with the new chunk.
+	OriginInputSHA256 string `json:"-" gorm:"-"`
 	// ContentRevision is incremented for every user edit or rollback.
 	ContentRevision int `json:"content_revision" gorm:"not null;default:0"`
 	// IndexStatus reports whether the current content is reflected in the
@@ -176,6 +179,17 @@ type Chunk struct {
 	// It is persisted so a later content edit can rebuild the same index input.
 	ContextHeader string `json:"-" gorm:"type:text"`
 }
+
+// ChunkOriginSHA256 binds a chunk to the original bytes supplied to its parser.
+// Legacy chunks intentionally have no row: their original bytes are unproven.
+type ChunkOriginSHA256 struct {
+	ChunkID     string `gorm:"column:chunk_id;primaryKey"`
+	TenantID    uint64 `gorm:"column:tenant_id;not null"`
+	KnowledgeID string `gorm:"column:knowledge_id;not null"`
+	SHA256      string `gorm:"column:sha256;not null"`
+}
+
+func (ChunkOriginSHA256) TableName() string { return "chunk_origin_sha256" }
 
 // ChunkRevision is an immutable snapshot of a superseded chunk revision.
 // The current content lives on Chunk; this table stores prior versions.
