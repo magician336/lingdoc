@@ -3,6 +3,7 @@ package templategovernance
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -49,21 +50,26 @@ func (s *Service) ListAuditHistory(ctx context.Context, actor Actor, templateID 
 			"lingdoc.template.create_profile", "lingdoc.template.save_draft",
 			"lingdoc.template.publish", "lingdoc.template.withdraw",
 			"lingdoc.template.recall", "lingdoc.template.copy",
+			// Replay fixture registration is a delivered governance action: its
+			// success and failure receipts must be readable here, not only in
+			// storage tests (Spec #768 D10).
+			"lingdoc.template.register_fixture",
 		}
-		detailsTarget := "json_extract(details, '$.target_ref')"
-		if tx.Name() == "postgres" {
-			// The application table uses JSONB, while legacy/test audit tables
-			// may expose the same serialized details as text. Cast explicitly so
-			// both PostgreSQL shapes read consistently.
-			detailsTarget = "CAST(details AS jsonb) ->> 'target_ref'"
-		}
+		// Ruleset-path registration pins the replay base's version, so its
+		// receipts belong to the base template's history; the details carry
+		// the replay base reference (D10's dual reference) and this filter
+		// matches on it.
+		dialect := tx.Name()
+		detailsTarget := detailsJSONPath(dialect, "target_ref")
+		replayBaseTarget := detailsJSONPath(dialect, "details.replay_base.template_id")
 		prefix := templateID + "/"
 		q := tx.Table("audit_logs").
 			Where("tenant_id=? AND scope_type=? AND action IN ?", actor.TenantID, "lingdoc_template", actions).
-			Where("(scope_id=? OR substr(scope_id,1,?)=? OR target_id=? OR substr(target_id,1,?)=? OR "+detailsTarget+"=? OR substr("+detailsTarget+",1,?)=?)",
+			Where("(scope_id=? OR substr(scope_id,1,?)=? OR target_id=? OR substr(target_id,1,?)=? OR "+detailsTarget+"=? OR substr("+detailsTarget+",1,?)=? OR "+replayBaseTarget+"=?)",
 				templateID, len(prefix), prefix,
 				templateID, len(prefix), prefix,
-				templateID, len(prefix), prefix)
+				templateID, len(prefix), prefix,
+				templateID)
 		if filter.AfterID > 0 {
 			q = q.Where("id < ?", filter.AfterID)
 		}
@@ -85,6 +91,25 @@ func (s *Service) ListAuditHistory(ctx context.Context, actor Actor, templateID 
 		return nil
 	})
 	return page, err
+}
+
+// detailsJSONPath spells the one SQL expression that reads a dot-separated key
+// path out of the audit row's serialized details column, for the caller's
+// dialect (tx.Name()). SQLite answers json_extract; PostgreSQL answers JSONB
+// navigation with the final key as text, and the explicit CAST keeps
+// legacy/test audit tables that expose the same serialized details as text
+// reading consistently. Every details-shape filter in this file goes through
+// here, so the dialect spellings stay single-sourced.
+func detailsJSONPath(dialect, keyPath string) string {
+	if dialect == "postgres" {
+		parts := strings.Split(keyPath, ".")
+		expr := "CAST(details AS jsonb)"
+		for _, part := range parts[:len(parts)-1] {
+			expr += " -> '" + part + "'"
+		}
+		return expr + " ->> '" + parts[len(parts)-1] + "'"
+	}
+	return "json_extract(details, '$." + keyPath + "')"
 }
 
 type auditHistoryRow struct {

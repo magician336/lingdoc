@@ -46,6 +46,18 @@ CREATE TABLE lingdoc_template_governance_operations (
  created_at DATETIME NOT NULL,
  PRIMARY KEY(tenant_id,actor_id,operation,target,idempotency_key)
 );
+CREATE TABLE lingdoc_template_replay_fixtures (
+ tenant_id INTEGER NOT NULL, template_id TEXT NOT NULL, version TEXT NOT NULL,
+ content_hash TEXT NOT NULL, fixture_id TEXT NOT NULL,
+ ruleset_id TEXT NOT NULL, ruleset_version TEXT NOT NULL, ruleset_hash TEXT NOT NULL,
+ policy_hash TEXT NOT NULL, rule_id TEXT NOT NULL, scene TEXT NOT NULL,
+ polarity TEXT NOT NULL CHECK(polarity IN ('positive','negative')),
+ target_ref TEXT NOT NULL, input_json TEXT NOT NULL, expected_status TEXT NOT NULL,
+ reviewed_by TEXT NOT NULL, review_reference TEXT NOT NULL, reviewed_at DATETIME NOT NULL,
+ created_by TEXT NOT NULL, created_at DATETIME NOT NULL,
+ PRIMARY KEY(tenant_id, template_id, version, content_hash, fixture_id)
+);
+CREATE INDEX idx_lingdoc_template_replay_fixtures ON lingdoc_template_replay_fixtures(tenant_id,fixture_id);
 `
 
 const PostgreSQLDDL = `
@@ -90,9 +102,22 @@ CREATE TABLE lingdoc_template_governance_operations (
  basis_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ NOT NULL,
  PRIMARY KEY(tenant_id,actor_id,operation,target,idempotency_key)
 );
+CREATE TABLE lingdoc_template_replay_fixtures (
+ tenant_id BIGINT NOT NULL, template_id VARCHAR(80) NOT NULL, version VARCHAR(64) NOT NULL,
+ content_hash VARCHAR(64) NOT NULL, fixture_id VARCHAR(80) NOT NULL,
+ ruleset_id VARCHAR(80) NOT NULL, ruleset_version VARCHAR(64) NOT NULL, ruleset_hash VARCHAR(64) NOT NULL,
+ policy_hash VARCHAR(64) NOT NULL, rule_id VARCHAR(80) NOT NULL, scene VARCHAR(32) NOT NULL,
+ polarity VARCHAR(16) NOT NULL CHECK(polarity IN ('positive','negative')),
+ target_ref VARCHAR(180) NOT NULL, input_json TEXT NOT NULL, expected_status VARCHAR(16) NOT NULL,
+ reviewed_by VARCHAR(64) NOT NULL, review_reference VARCHAR(255) NOT NULL, reviewed_at TIMESTAMPTZ NOT NULL,
+ created_by VARCHAR(64) NOT NULL, created_at TIMESTAMPTZ NOT NULL,
+ PRIMARY KEY(tenant_id, template_id, version, content_hash, fixture_id)
+);
+CREATE INDEX idx_lingdoc_template_replay_fixtures ON lingdoc_template_replay_fixtures(tenant_id,fixture_id);
 `
 const DropDDL = `
 DROP TABLE lingdoc_template_governance_operations;
+DROP TABLE lingdoc_template_replay_fixtures;
 DROP TABLE lingdoc_rule_suggestion_runs;
 DROP TABLE lingdoc_template_versions;
 DROP TABLE lingdoc_template_profiles;
@@ -173,3 +198,37 @@ type operationRow struct {
 }
 
 func (operationRow) TableName() string { return "lingdoc_template_governance_operations" }
+
+// fixtureRow is one append-only tenant replay fixture. The primary key pins
+// the fixture to the exact version identity (content hash) it was trialed
+// against; a re-saved draft gets a new content hash and the old rows simply
+// stop answering the current pin. There is no update or delete path: "changing"
+// a fixture means registering it again against the current pin.
+//
+// Length declarations use the single `gorm:"size:N"` spelling (the #713
+// lesson: gorm parses Size only from `size:`, never from `type:`), and the
+// numbers match the VARCHAR widths of both migration chains exactly.
+type fixtureRow struct {
+	TenantID        uint64 `gorm:"primaryKey;autoIncrement:false"`
+	TemplateID      string `gorm:"primaryKey;size:80"`
+	Version         string `gorm:"primaryKey;size:64"`
+	ContentHash     string `gorm:"primaryKey;size:64"`
+	FixtureID       string `gorm:"primaryKey;size:80"`
+	RulesetID       string `gorm:"size:80"`
+	RulesetVersion  string `gorm:"size:64"`
+	RulesetHash     string `gorm:"size:64"`
+	PolicyHash      string `gorm:"size:64"`
+	RuleID          string `gorm:"size:80"`
+	Scene           string `gorm:"size:32"`
+	Polarity        string `gorm:"size:16"`
+	TargetRef       string `gorm:"size:180"`
+	InputJSON       string `gorm:"column:input_json"`
+	ExpectedStatus  string `gorm:"size:16"`
+	ReviewedBy      string `gorm:"size:64"`
+	ReviewReference string `gorm:"size:255"`
+	ReviewedAt      time.Time
+	CreatedBy       string `gorm:"size:64"`
+	CreatedAt       time.Time
+}
+
+func (fixtureRow) TableName() string { return "lingdoc_template_replay_fixtures" }

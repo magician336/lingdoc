@@ -17324,6 +17324,422 @@
         "x-delivery-phase": "core"
       }
     },
+    "/template-catalog/profiles/{templateId}/versions/{version}/replay-fixtures": {
+      "post": {
+        "parameters": [
+          {
+            "name": "templateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          }
+        ],
+        "operationId": "registerReplayFixtures",
+        "tags": [
+          "template-governance"
+        ],
+        "summary": "为草稿模板版本成批登记回放夹具（登记即试放）",
+        "description": "目录管理员的治理决定：同一事务内完成授权、形状与语义校验、以发布 Verify 同一求值器真实试放、append-only 批量插入与成功审计；任何一条失败整批零写入并留失败回执。版本 pin（规则集引用/内容摘要/策略摘要）一律由服务器从存储版本计算，客户端声明的哈希不被接受；与内置集精确冲突的 fixture_id 拒绝（内置保留）。幂等沿治理操作表：同键同请求重放同一结果，同键异请求 409 idempotency_conflict。机器主体 403 human_decision_required；非管理者按防枚举 404 并留 permission_denied 回执。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "template_id": "grant-template",
+                "version": "1",
+                "fixtures": [
+                  {
+                    "fixture_id": "goal-write_check-positive",
+                    "rule_id": "goal-present",
+                    "scene": "write_check",
+                    "polarity": "positive",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {
+                        "research_goal": "固定复核目标"
+                      }
+                    },
+                    "expected_status": "PASS",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  },
+                  {
+                    "fixture_id": "goal-preflight-negative",
+                    "rule_id": "goal-present",
+                    "scene": "preflight",
+                    "polarity": "negative",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {}
+                    },
+                    "expected_status": "ISSUE",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  }
+                ],
+                "reason": "登记经过复核的正反例，绑定当前草稿版本"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/RegisterReplayFixturesInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "整批登记成功；回执携带服务器固定 pin、已登记条目与该版本当前覆盖矩阵（与覆盖读回同一共享判定）。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterReplayFixturesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；防枚举语义：目标不存在或调用者无权知晓。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_replay_required": {
+                    "value": {
+                      "error": {
+                        "code": "template_replay_required",
+                        "message": "须用服务器注册且绑定当前版本的正反例完成回放。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_governance_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "template_governance_unavailable",
+                        "message": "目录或规则建议服务尚未配置。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core"
+      }
+    },
+    "/template-catalog/profiles/{templateId}/versions/{version}/replay-coverage": {
+      "get": {
+        "operationId": "readReplayCoverage",
+        "tags": [
+          "template-governance"
+        ],
+        "summary": "读取草稿版本或规则集投影的回放覆盖矩阵（管理者专属）",
+        "description": "只读端点：返回该版本当前 pin 的 (规则×场景×极性) 覆盖矩阵与绑定声明正反例引用满足情况，矩阵即发布 Verify 提取出的共享判定，登记回执与发布判定对同一输入同结论。同时给出 ruleset_id 与 ruleset_version（两者必同时给出）时，矩阵改描述该 draft 规则集经规则集发布同一投影函数在当前版本底版上算出的投影版本——即规则集路径登记所固定的 pin，三方（登记回执/覆盖端点/Verify）同结论。管理者专属：草稿覆盖矩阵是草稿元数据，非管理者按防枚举 404；机器主体 403 human_decision_required。",
+        "responses": {
+          "200": {
+            "description": "该版本当前 pin 的覆盖矩阵；complete=false 表示发布仍会被回放门禁拒绝。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；防枚举语义：目标不存在或调用者无权知晓。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_replay_required": {
+                    "value": {
+                      "error": {
+                        "code": "template_replay_required",
+                        "message": "须用服务器注册且绑定当前版本的正反例完成回放。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_governance_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "template_governance_unavailable",
+                        "message": "目录或规则建议服务尚未配置。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "parameters": [
+          {
+            "name": "templateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "ruleset_id",
+            "in": "query",
+            "required": false,
+            "description": "规则集投影查询：与 ruleset_version 成对给出时读取该 draft 规则集的发布投影覆盖。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "ruleset_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          }
+        ]
+      }
+    },
     "/projects/{projectId}/rule-set-use-audits": {
       "get": {
         "operationId": "listRuleSetUseAudits",
@@ -39179,6 +39595,230 @@
         "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
       }
     },
+    "/template-catalog/rulesets/{rulesetId}/versions/{version}/replay-fixtures": {
+      "post": {
+        "operationId": "registerRuleSetReplayFixtures",
+        "tags": [
+          "template-governance"
+        ],
+        "summary": "为 draft 规则集按回放底版投影登记回放夹具（与模板登记同一操作）",
+        "description": "目录管理员的治理决定，与模板路径登记是同一登记操作的第二个薄拼写（校验/试放/原子插入/幂等/审计只实现一处）：服务器以规则集发布自己的投影函数（ruleReplayVersion，含内置 demo 底版分支）计算将被回放的版本值——回放底版（template_id+version）的定义重绑该 draft 规则集并重算内容摘要——并据此固定 pin，解锁第一个组织规则集的发布（引导路径：内置 demo 模板为底版）。底版草稿重存（内容摘要变化）后旧投影 pin 失活，发布 422 明示对当前 pin 重新登记。登记即以发布 Verify 同一求值器真实试放，声明与实际不符整批拒绝并携带证据；版本 pin（规则集引用/内容摘要/策略摘要）一律由服务器计算；内置集 fixture_id 精确冲突拒绝（400）。机器主体 403 human_decision_required；非管理者按防枚举 404 并留 permission_denied 回执。",
+        "parameters": [
+          {
+            "name": "rulesetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "ruleset_id": "ruleset-demo",
+                "ruleset_version": "1",
+                "template_id": "template-demo",
+                "template_version": "1",
+                "fixtures": [
+                  {
+                    "fixture_id": "goal-write_check-positive",
+                    "rule_id": "goal-present",
+                    "scene": "write_check",
+                    "polarity": "positive",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {
+                        "research_goal": "固定复核目标"
+                      }
+                    },
+                    "expected_status": "PASS",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  },
+                  {
+                    "fixture_id": "goal-preflight-negative",
+                    "rule_id": "goal-present",
+                    "scene": "preflight",
+                    "polarity": "negative",
+                    "target_ref": "field/research_goal",
+                    "input": {
+                      "project_id": "server-demo-fixture",
+                      "target_version": "1",
+                      "fields": {}
+                    },
+                    "expected_status": "ISSUE",
+                    "review_reference": "repository:templategovernance-demo-v1"
+                  }
+                ],
+                "reason": "规则集发布投影的正反例登记"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRuleSetFixturesInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "整批登记成功；回执携带服务器固定 pin、已登记条目与该版本当前覆盖矩阵（与覆盖读回同一共享判定）。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterReplayFixturesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；防枚举语义：目标不存在或调用者无权知晓。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_replay_required": {
+                    "value": {
+                      "error": {
+                        "code": "template_replay_required",
+                        "message": "须用服务器注册且绑定当前版本的正反例完成回放。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "template_governance_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "template_governance_unavailable",
+                        "message": "目录或规则建议服务尚未配置。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/impact-tasks/{taskId}/location-suggestions": {
       "post": {
         "operationId": "suggestImpactLocations",
@@ -39852,20 +40492,20 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "id",
-          "project_id",
-          "change_set_id",
-          "target",
-          "target_revision",
           "action",
-          "severity",
-          "responsibility_domain",
-          "status",
           "causes",
-          "version",
+          "change_set_id",
           "closure_evidence",
           "created_at",
-          "updated_at"
+          "id",
+          "project_id",
+          "responsibility_domain",
+          "severity",
+          "status",
+          "target",
+          "target_revision",
+          "updated_at",
+          "version"
         ],
         "properties": {
           "id": {
@@ -55912,6 +56552,570 @@
             "minLength": 1,
             "maxLength": 2000,
             "description": "否决理由（必填，进审计）"
+          }
+        }
+      },
+      "RegisterReplayFixturesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template_id",
+          "version",
+          "fixtures",
+          "reason"
+        ],
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fixtures": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/ReplayFixtureInput"
+            }
+          }
+        }
+      },
+      "ReplayFixtureInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixture_id",
+          "rule_id",
+          "scene",
+          "polarity",
+          "target_ref",
+          "input",
+          "expected_status",
+          "review_reference"
+        ],
+        "properties": {
+          "fixture_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "稳定标识符词法；与内置集精确冲突即 400。"
+          },
+          "rule_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "必须是版本规则集快照中启用的绑定。"
+          },
+          "scene": {
+            "type": "string",
+            "enum": [
+              "write_check",
+              "preflight"
+            ]
+          },
+          "polarity": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ]
+          },
+          "target_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "description": "声明命中的求值目标，如 field/<targetID>、chapter/<targetID>；model_assisted 规则只会发出恰好一条 unknown 评估。"
+          },
+          "input": {
+            "$ref": "#/components/schemas/ReplayEvaluationInput"
+          },
+          "expected_status": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "ISSUE",
+              "UNKNOWN"
+            ],
+            "description": "computed 系绑定声明 PASS/ISSUE，model_assisted 绑定只能声明 UNKNOWN。"
+          },
+          "review_reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "人工复核依据引用，进入审计回执。"
+          }
+        }
+      },
+      "ReplayEvaluationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "project_id",
+          "target_version"
+        ],
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "target_version": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "body",
+                "confirmed"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "confirmed": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "available"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "review_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "decided"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "decided": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "RegisterReplayFixturesResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RegisterReplayFixturesResult"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "RegisterReplayFixturesResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template_id",
+          "version",
+          "content_hash",
+          "policy_hash",
+          "registered",
+          "coverage"
+        ],
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_hash": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务器从存储版本计算的版本内容摘要（客户端不可申报）。"
+          },
+          "policy_hash": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务器计算的绑定策略摘要。"
+          },
+          "registered": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisteredFixtureSummary"
+            }
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/ReplayCoverageMatrix"
+          },
+          "projection": {
+            "description": "仅规则集路径登记返回：本批夹具解锁的 draft 规则集引用与投影所用回放底版引用。",
+            "$ref": "#/components/schemas/RulesetProjectionRef"
+          }
+        }
+      },
+      "RegisteredFixtureSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixture_id",
+          "rule_id",
+          "scene",
+          "polarity",
+          "target_ref",
+          "ruleset"
+        ],
+        "properties": {
+          "fixture_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scene": {
+            "type": "string",
+            "enum": [
+              "write_check",
+              "preflight"
+            ]
+          },
+          "polarity": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ]
+          },
+          "target_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ruleset": {
+            "type": "object",
+            "required": [
+              "ruleset_id",
+              "version"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "ruleset_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ruleset_hash": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ReplayCoverageMatrix": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "complete",
+          "entries",
+          "unsatisfied_declared_example_refs"
+        ],
+        "properties": {
+          "complete": {
+            "type": "boolean",
+            "description": "false 表示发布 Verify 仍会因覆盖缺口或声明例引用不满足而拒绝。"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplayCoverageEntry"
+            }
+          },
+          "unsatisfied_declared_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "绑定声明且未出现在已判定夹具集合中的正反例引用。"
+          }
+        }
+      },
+      "ReplayCoverageEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rule_id",
+          "scene",
+          "positive_covered",
+          "negative_covered",
+          "declared_positive_example_refs",
+          "declared_negative_example_refs",
+          "unsatisfied_declared_example_refs"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scene": {
+            "type": "string",
+            "enum": [
+              "write_check",
+              "preflight"
+            ]
+          },
+          "positive_covered": {
+            "type": "boolean"
+          },
+          "negative_covered": {
+            "type": "boolean"
+          },
+          "declared_positive_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "declared_negative_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unsatisfied_declared_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReplayCoverageResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReplayCoverageView"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ReplayCoverageView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template_id",
+          "version",
+          "content_hash",
+          "policy_hash",
+          "complete",
+          "entries",
+          "unsatisfied_declared_example_refs"
+        ],
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_hash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policy_hash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplayCoverageEntry"
+            }
+          },
+          "unsatisfied_declared_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "projection": {
+            "description": "仅规则集投影查询返回：矩阵描述的投影（规则集引用与回放底版）。",
+            "$ref": "#/components/schemas/RulesetProjectionRef"
+          }
+        }
+      },
+      "RegisterRuleSetFixturesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ruleset_id",
+          "ruleset_version",
+          "template_id",
+          "template_version",
+          "fixtures",
+          "reason"
+        ],
+        "properties": {
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "draft 规则集标识（与路径一致）。"
+          },
+          "ruleset_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "回放底版模板；内置 demo 底版为 template-demo。"
+          },
+          "template_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fixtures": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/ReplayFixtureInput"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "ReplayBaseRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template_id",
+          "version"
+        ],
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "RulesetProjectionRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ruleset",
+          "replay_base"
+        ],
+        "properties": {
+          "ruleset": {
+            "type": "object",
+            "required": [
+              "ruleset_id",
+              "version"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "ruleset_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ruleset_hash": {
+                "type": "string"
+              }
+            }
+          },
+          "replay_base": {
+            "$ref": "#/components/schemas/ReplayBaseRef"
           }
         }
       },
