@@ -49724,6 +49724,10 @@
             },
             "nullable": true
           },
+          "academic_snapshots": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AcademicEvidenceSnapshot" }
+          },
           "context_revision": {
             "type": "integer",
             "format": "int64"
@@ -49756,6 +49760,44 @@
         ],
         "x-go-type": "core.EvidenceConfirmation",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "AcademicOriginalSnapshotRef": {
+        "type": "object",
+        "properties": {
+          "sha256": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" }
+        },
+        "additionalProperties": false,
+        "required": ["sha256", "size"]
+      },
+      "AcademicSnapshotAssociation": {
+        "type": "object",
+        "properties": {
+          "association_ref": { "$ref": "#/components/schemas/G2VersionRef" },
+          "candidate_ref": { "$ref": "#/components/schemas/G2VersionRef" },
+          "doi": { "type": "string" },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" }
+        },
+        "additionalProperties": false,
+        "required": ["association_ref", "candidate_ref", "doi", "catalog_version", "policy_snapshot_version"]
+      },
+      "AcademicEvidenceSnapshot": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string" },
+          "knowledge_id": { "type": "string" },
+          "asset_id": { "type": "string" },
+          "asset_revision": { "type": "integer" },
+          "locator": { "type": "string" },
+          "page": { "type": "integer" },
+          "raw_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+          "text_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+          "anchor_refs": { "type": "array", "items": { "$ref": "#/components/schemas/G2VersionRef" }, "nullable": true },
+          "associations": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSnapshotAssociation" }, "nullable": true }
+        },
+        "additionalProperties": false,
+        "required": ["source_id", "knowledge_id", "asset_id", "asset_revision", "locator", "raw_ref", "text_ref", "anchor_refs", "associations"]
       },
       "EvidenceCard": {
         "type": "object",
@@ -52176,6 +52218,11 @@
           },
           "quoted_text_hash": {
             "type": "string"
+          },
+          "source_text_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "完整来源分块文本的 SHA-256；旧锚点可能没有此字段。"
           },
           "selection_start": {
             "type": "integer",
@@ -57903,6 +57950,15 @@
           "authorized_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "academic_snapshot": {
+            "type": "object",
+            "properties": {
+              "raw_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+              "text_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" }
+            },
+            "required": ["raw_ref", "text_ref"],
+            "additionalProperties": false
           }
         },
         "required": [

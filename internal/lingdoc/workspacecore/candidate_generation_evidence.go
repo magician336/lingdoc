@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
@@ -110,6 +111,20 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 	if err = s.checkSources(ctx, actor, projectID, usedSourceIDs); err != nil {
 		return ctx, selected, err
 	}
+	if mixedCandidateCards(selected.Cards) {
+		preview, e := s.PrepareCommittedCandidateEvidence(ctx, actor, projectID, chapterID, refs)
+		if e != nil {
+			return ctx, EvidenceSelection{}, e
+		}
+		proof := preview.Value(committedOrdinaryProofKey{}).(committedOrdinaryProof)
+		for _, source := range proof.sources {
+			index := slices.IndexFunc(selected.Sources, func(v AgentSourceRef) bool { return v.SourceID == source.SourceID })
+			if index < 0 || !reflect.DeepEqual(selected.Sources[index], source) {
+				return ctx, EvidenceSelection{}, ErrEvidenceIncomplete
+			}
+		}
+		ctx = preview
+	}
 	allIDs := []string{}
 	for _, source := range selected.Sources {
 		allIDs = append(allIDs, source.SourceID)
@@ -141,7 +156,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 		if e != nil {
 			return e
 		}
-		if e = validateNativeCandidateCards(tx, p, refs); e != nil {
+		if e = s.validateNativeCandidateCards(ctx, tx, actor, p, chapterID, refs, selected); e != nil {
 			return e
 		}
 		digest, ok := tx.(impactComputationSourceTransaction)
@@ -161,6 +176,47 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 	return context.WithValue(ctx, candidateEvidenceProofKey{}, proof), selected, nil
 }
 
+func (s *Service) validateNativeCandidateCards(ctx context.Context, tx Transaction, actor Actor, p Project, chapterID string, refs []VersionRef, selected EvidenceSelection) error {
+	reader, ok := tx.(interface {
+		CurrentEvidenceObject(string, string, string) (ImpactObjectState, error)
+	})
+	if len(refs) > 0 && !ok {
+		return ErrInvalidState
+	}
+	for _, ref := range refs {
+		card, _, err := loadStoredObject[EvidenceCard](tx, p.ID, EvidenceCardKind, ref.ID)
+		if err != nil || card.Version != ref.Version {
+			return ErrEvidenceIncomplete
+		}
+		if len(card.AcademicAssociationRefs) > 0 {
+			index := slices.IndexFunc(selected.Cards, func(item EvidenceCard) bool { return item.ID == ref.ID })
+			if index < 0 || !reflect.DeepEqual(selected.Cards[index], card) || !confirmationTupleCurrent(card) || !slices.Contains(card.Confirmation.ScopeChapterIDs, chapterID) {
+				return ErrEvidenceIncomplete
+			}
+			frozen, err := s.validateAcademicEvidenceSnapshots(ctx, tx, actor, p, card, card.Confirmation.AcademicSnapshots, true)
+			if err != nil || len(frozen) != len(sortedUniqueIDs(card.SourceIDs)) {
+				return ErrEvidenceIncomplete
+			}
+			for _, sourceID := range card.SourceIDs {
+				source, ok := frozen[sourceID]
+				index := slices.IndexFunc(selected.Sources, func(item AgentSourceRef) bool { return item.SourceID == sourceID })
+				if !ok || index < 0 || !reflect.DeepEqual(selected.Sources[index], source) {
+					return ErrEvidenceIncomplete
+				}
+			}
+			continue
+		}
+		current, err := reader.CurrentEvidenceObject(p.ID, "EvidenceCard", ref.ID)
+		if err != nil || !current.Confirmed || current.Ref.Version != fmt.Sprint(ref.Version) {
+			return ErrEvidenceIncomplete
+		}
+	}
+	return nil
+}
+
+// validateNativeCandidateCards is retained for context-free historical
+// provenance reads. Without actor and policy context, academic cards remain
+// unconfirmed here; formal adoption uses the Service method above.
 func validateNativeCandidateCards(tx Transaction, p Project, refs []VersionRef) error {
 	reader, ok := tx.(interface {
 		CurrentEvidenceObject(string, string, string) (ImpactObjectState, error)
@@ -253,28 +309,42 @@ func (s *Service) SelectGenerationEvidenceInTransaction(ctx context.Context, tx 
 		return selected, ErrVersionConflict
 	}
 	if err = json.Unmarshal(proof.selectionJSON, &selected); err != nil {
-		return selected, err
+		return EvidenceSelection{}, err
 	}
-	if err = validateNativeCandidateCards(tx, p, refs); err != nil {
-		return selected, err
+	if slices.ContainsFunc(selected.Cards, func(card EvidenceCard) bool { return len(card.AcademicAssociationRefs) > 0 }) {
+		p, err = s.lockCandidateAcademicEvidence(ctx, tx, actor, projectID, chapterID, selected)
+		if err != nil {
+			return EvidenceSelection{}, err
+		}
+		if p.Status != "active" || proof.basisHash != candidateFormalBasisHash(p) {
+			return EvidenceSelection{}, ErrVersionConflict
+		}
+		if mixedCandidateCards(selected.Cards) {
+			if err = s.lockMixedOrdinarySources(ctx, tx, actor, p, chapterID, selected.Cards, selected.Sources); err != nil {
+				return EvidenceSelection{}, err
+			}
+		}
+	}
+	if err = s.validateNativeCandidateCards(ctx, tx, actor, p, chapterID, refs, selected); err != nil {
+		return EvidenceSelection{}, err
 	}
 	digest, ok := tx.(impactComputationSourceTransaction)
 	if !ok {
-		return selected, ErrInvalidState
+		return EvidenceSelection{}, ErrInvalidState
 	}
 	currentDigest, err := digest.ImpactSourceDigest(projectID, proof.sourceIDs)
 	if err != nil {
-		return selected, err
+		return EvidenceSelection{}, err
 	}
 	if currentDigest != proof.sourceDigest {
-		return selected, ErrVersionConflict
+		return EvidenceSelection{}, ErrVersionConflict
 	}
 	policyDigest, err := candidateNativePolicyDigest(ctx, tx, actor, p, selected.Sources)
 	if err != nil {
-		return selected, err
+		return EvidenceSelection{}, err
 	}
 	if policyDigest != proof.policyDigest {
-		return selected, ErrVersionConflict
+		return EvidenceSelection{}, ErrVersionConflict
 	}
 	return selected, nil
 }

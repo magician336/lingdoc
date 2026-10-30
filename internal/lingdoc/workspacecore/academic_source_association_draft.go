@@ -62,31 +62,40 @@ func validAssociationSource(source ResearchSource, id string) bool {
 // and tenant membership rows. The final authorization must be repeated after
 // these locks: the initial pipeline authorization was an earlier snapshot.
 func (s *Service) lockAssociationDecisionRows(ctx context.Context, tx Transaction, actor Actor, projectID string) (Project, error) {
-	db, err := TransactionDatabase(tx)
-	if err != nil {
-		return Project{}, ErrDependencyUnavailable
-	}
-	var tenant struct{ UserID string }
-	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("tenant_members").Select("user_id").Where("tenant_id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL", actor.TenantID, actor.UserID, "active").Take(&tenant).Error; err != nil {
-		return Project{}, ErrNotFound
-	}
-	var project projectRow
-	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND tenant_id = ?", projectID, actor.TenantID).Take(&project).Error; err != nil {
-		return Project{}, ErrNotFound
-	}
-	var member memberRow
-	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("project_id", "user_id").Where("project_id = ? AND user_id = ?", projectID, actor.UserID).Take(&member).Error; err != nil {
-		return Project{}, ErrNotFound
-	}
-	var permission []memberPermissionRow
-	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND user_id = ?", projectID, actor.UserID).Find(&permission).Error; err != nil {
-		return Project{}, ErrPermissionSchemaUnavailable
+	if err := lockAcademicActorRows(tx, actor, projectID); err != nil {
+		return Project{}, err
 	}
 	request, err := authorizationRequestFromCapability(actor, projectID, "evidence-confirm")
 	if err != nil {
 		return Project{}, err
 	}
 	return s.authorizeProject(ctx, tx, request)
+}
+
+// lockAcademicActorRows serializes project/member state without assuming
+// project-wide confirmation permission; callers reauthorize their actual scope.
+func lockAcademicActorRows(tx Transaction, actor Actor, projectID string) error {
+	db, err := TransactionDatabase(tx)
+	if err != nil {
+		return ErrDependencyUnavailable
+	}
+	var tenant struct{ UserID string }
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("tenant_members").Select("user_id").Where("tenant_id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL", actor.TenantID, actor.UserID, "active").Take(&tenant).Error; err != nil {
+		return ErrNotFound
+	}
+	var project projectRow
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND tenant_id = ?", projectID, actor.TenantID).Take(&project).Error; err != nil {
+		return ErrNotFound
+	}
+	var member memberRow
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("project_id", "user_id").Where("project_id = ? AND user_id = ?", projectID, actor.UserID).Take(&member).Error; err != nil {
+		return ErrNotFound
+	}
+	var permission []memberPermissionRow
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND user_id = ?", projectID, actor.UserID).Find(&permission).Error; err != nil {
+		return ErrPermissionSchemaUnavailable
+	}
+	return nil
 }
 
 func lockAssociationMetadata(tx Transaction, projectID, candidateID string) error {
@@ -209,7 +218,14 @@ func (s *Service) ConfirmAcademicSourceAssociation(ctx context.Context, actor Ac
 		if !expectationMatches(p, input.VersionExpectation) || candidate.Version != input.ExpectedVersion || !versionBasisCurrent(p, candidate.Basis) {
 			return nil, 0, ErrVersionConflict
 		}
-		if candidate.Status != "imported" || candidate.SelectionType != "academic_metadata" || candidate.SaveMode != "metadata_only" || candidate.SourceID != "" || candidate.DOI == "" || candidate.PolicySnapshotVersion == "" || candidate.PolicyStatus != "approved" || candidate.RetractionStatus == "retracted" || candidate.RetractionStatus == "retraction_notice" || candidate.DuplicateStatus == "duplicate" || candidate.AcquisitionStatus != "metadata_only" {
+		if candidate.Status != "imported" || candidate.SelectionType != "academic_metadata" || candidate.SaveMode != "metadata_only" || candidate.SourceID != "" || candidate.DOI == "" || candidate.PolicySnapshotVersion == "" || !academicCandidatePolicyEligible(candidate.PolicyStatus, candidate.RetractionStatus, candidate.DuplicateStatus) || candidate.AcquisitionStatus != "metadata_only" {
+			return nil, 0, ErrEvidenceIncomplete
+		}
+		known, err := knownAcademicRetraction(tx, projectID, candidate.DOI)
+		if err != nil {
+			return nil, 0, err
+		}
+		if known {
 			return nil, 0, ErrEvidenceIncomplete
 		}
 		catalog, err := currentAcademicSourceCatalog(tx, projectID)
@@ -223,7 +239,7 @@ func (s *Service) ConfirmAcademicSourceAssociation(ctx context.Context, actor Ac
 		if !ok {
 			return nil, 0, ErrAcademicGlobalCatalogUnavailable
 		}
-		if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: candidate.PolicySnapshotVersion}, catalog); err != nil {
+		if err := gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: AcademicCrossrefResultProvider, PolicySnapshotVersion: candidate.PolicySnapshotVersion}, catalog); err != nil {
 			return nil, 0, err
 		}
 		association := AcademicSourceAssociation{ID: uuid.NewString(), ProjectID: projectID, Version: 1, CandidateRef: VersionRef{ID: candidate.ID, Version: candidate.Version}, DOI: candidate.DOI, CatalogVersion: candidate.CatalogVersion, PolicySnapshotVersion: candidate.PolicySnapshotVersion, SourceID: source.SourceID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Basis: versionBasisFor(p, Chapter{}), ConfirmedBy: actor.UserID, ConfirmedAt: time.Now().UTC(), Reason: strings.TrimSpace(input.Reason), Status: "recorded"}
@@ -288,7 +304,14 @@ func (s *Service) ConfirmAcademicSourceAssociation(ctx context.Context, actor Ac
 		if e != nil {
 			return e
 		}
-		if candidate.Version != prior.CandidateRef.Version || candidate.Status != "imported" || candidate.DOI != prior.DOI || candidate.CatalogVersion != prior.CatalogVersion || candidate.PolicySnapshotVersion != prior.PolicySnapshotVersion || candidate.PolicyStatus != "approved" || candidate.RetractionStatus == "retracted" || candidate.RetractionStatus == "retraction_notice" || candidate.DuplicateStatus == "duplicate" || candidate.AcquisitionStatus != "metadata_only" {
+		if candidate.Version != prior.CandidateRef.Version || candidate.Status != "imported" || candidate.DOI != prior.DOI || candidate.CatalogVersion != prior.CatalogVersion || candidate.PolicySnapshotVersion != prior.PolicySnapshotVersion || !academicCandidatePolicyEligible(candidate.PolicyStatus, candidate.RetractionStatus, candidate.DuplicateStatus) || candidate.AcquisitionStatus != "metadata_only" {
+			return ErrVersionConflict
+		}
+		known, e := knownAcademicRetraction(tx, projectID, candidate.DOI)
+		if e != nil {
+			return e
+		}
+		if known {
 			return ErrVersionConflict
 		}
 		catalog, e := currentAcademicSourceCatalog(tx, projectID)
@@ -302,7 +325,7 @@ func (s *Service) ConfirmAcademicSourceAssociation(ctx context.Context, actor Ac
 		if !ok {
 			return ErrAcademicGlobalCatalogUnavailable
 		}
-		return gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: prior.PolicySnapshotVersion}, catalog)
+		return gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: AcademicCrossrefResultProvider, PolicySnapshotVersion: prior.PolicySnapshotVersion}, catalog)
 	})
 	if err != nil {
 		return nil, 0, replay, err

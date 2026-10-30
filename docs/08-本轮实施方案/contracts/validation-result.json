@@ -1191,287 +1191,287 @@
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getAgentSpecCandidateProject",
-        "line": 164,
+        "line": 170,
         "body_mode": "none",
         "signature": "GET /projects/{}"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveAgentSpecCandidate",
-        "line": 165,
+        "line": 171,
         "body_mode": "json",
         "signature": "PUT /projects/{}/spec"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchTasks",
-        "line": 167,
+        "line": 173,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-tasks"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getAcademicSourceCatalog",
-        "line": 168,
+        "line": 174,
         "body_mode": "none",
         "signature": "GET /projects/{}/academic-source-catalog"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "updateAcademicSourceCatalog",
-        "line": 169,
+        "line": 175,
         "body_mode": "json",
         "signature": "PUT /projects/{}/academic-source-catalog"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchTask",
-        "line": 171,
+        "line": 177,
         "body_mode": "json",
         "signature": "PUT /projects/{}/research-tasks/{}"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchTask",
-        "line": 172,
+        "line": 178,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "approveResearchTask",
-        "line": 173,
+        "line": 179,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/approve"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "runResearchTask",
-        "line": 174,
+        "line": 180,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/run"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "controlResearchTask",
-        "line": 175,
+        "line": 181,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-tasks/{}/control"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchRuns",
-        "line": 176,
+        "line": 182,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-runs"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getResearchRun",
-        "line": 177,
+        "line": 183,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-runs/{}"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchRoundFeedback",
-        "line": 178,
+        "line": 184,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-runs/{}/feedback"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "inspectResearchResult",
-        "line": 179,
+        "line": 185,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-runs/{}/results/{}/inspect"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listImportCandidates",
-        "line": 180,
+        "line": 186,
         "body_mode": "none",
         "signature": "GET /projects/{}/import-candidates"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createImportCandidate",
-        "line": 181,
+        "line": 187,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listAcademicSourceAssociations",
-        "line": 182,
+        "line": 188,
         "body_mode": "none",
         "signature": "GET /projects/{}/academic-source-associations"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "revokeAcademicSourceAssociation",
-        "line": 183,
+        "line": 189,
         "body_mode": "json",
         "signature": "POST /projects/{}/academic-source-associations/{}/revoke"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmAcademicSourceAssociation",
-        "line": 184,
+        "line": 190,
         "body_mode": "json",
         "signature": "POST /projects/{}/academic-source-associations"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmImportCandidate",
-        "line": 185,
+        "line": 191,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/confirm"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "rejectImportCandidate",
-        "line": 186,
+        "line": 192,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/reject"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "refreshImportCandidate",
-        "line": 187,
+        "line": 193,
         "body_mode": "json",
         "signature": "POST /projects/{}/import-candidates/{}/refresh"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listSourceAnchors",
-        "line": 188,
+        "line": 194,
         "body_mode": "none",
         "signature": "GET /projects/{}/source-anchors"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveSourceAnchor",
-        "line": 189,
+        "line": 195,
         "body_mode": "json",
         "signature": "POST /projects/{}/source-anchors"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listResearchClaims",
-        "line": 190,
+        "line": 196,
         "body_mode": "none",
         "signature": "GET /projects/{}/research-claims"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveResearchClaim",
-        "line": 191,
+        "line": 197,
         "body_mode": "json",
         "signature": "POST /projects/{}/research-claims"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listEvidenceCards",
-        "line": 192,
+        "line": 198,
         "body_mode": "none",
         "signature": "GET /projects/{}/evidence-cards"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "saveEvidenceCard",
-        "line": 193,
+        "line": 199,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmEvidenceCard",
-        "line": 194,
+        "line": 200,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards/{}/confirm"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "reviewEvidenceCard",
-        "line": 195,
+        "line": 201,
         "body_mode": "json",
         "signature": "POST /projects/{}/evidence-cards/{}/review"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listAgentSessions",
-        "line": 196,
+        "line": 202,
         "body_mode": "none",
         "signature": "GET /projects/{}/agents/{}/sessions"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createAgentSession",
-        "line": 197,
+        "line": 203,
         "body_mode": "json",
         "signature": "POST /projects/{}/agents/{}/sessions"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getAgentTurns",
-        "line": 198,
+        "line": 204,
         "body_mode": "none",
         "signature": "GET /projects/{}/agent-sessions/{}/turns"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "sendAgentTurn",
-        "line": 199,
+        "line": 205,
         "body_mode": "json",
         "signature": "POST /projects/{}/agent-sessions/{}/turns"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "previewAgentContext",
-        "line": 200,
+        "line": 206,
         "body_mode": "json",
         "signature": "POST /projects/{}/agent-context"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "listActionProposals",
-        "line": 201,
+        "line": 207,
         "body_mode": "none",
         "signature": "GET /projects/{}/action-proposals"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "createActionProposal",
-        "line": 202,
+        "line": 208,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "confirmActionProposal",
-        "line": 203,
+        "line": 209,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals/{}/confirm"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "rejectActionProposal",
-        "line": 204,
+        "line": 210,
         "body_mode": "json",
         "signature": "POST /projects/{}/action-proposals/{}/reject"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "getProjectAssetPolicy",
-        "line": 214,
+        "line": 220,
         "body_mode": "none",
         "signature": "GET /projects/{}/assets/{}/policy"
       },
       {
         "file": "frontend/src/api/lingdoc/agentApi.ts",
         "function": "proposeProjectAssetPolicy",
-        "line": 215,
+        "line": 221,
         "body_mode": "json",
         "signature": "POST /projects/{}/assets/{}/policy/proposals"
       },
@@ -1751,8 +1751,8 @@
   "paths": 171,
   "operations": 201,
   "core_operations": 198,
-  "schemas": 422,
-  "local_refs": 1936,
+  "schemas": 425,
+  "local_refs": 1945,
   "shape_checks": 1043,
   "scenarios": 37,
   "scenario_example_references": 159,

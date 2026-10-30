@@ -72,7 +72,7 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Resources: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
-	adapter := NewResearchAdapter(db, projects, runtime, nil, nil, nil)
+	adapter := NewResearchAdapter(db, projects, runtime, nil, nil, nil, WithAcademicSourceCatalogReader(projects))
 	// 生产组合根把同一个适配器同时装成 Sources 与 Research；只有 Research
 	// 走的是目录版本这条路径（core.AgentRuntime.Research 的 ResearchCatalog）。
 	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter, Research: adapter})

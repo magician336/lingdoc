@@ -46,6 +46,12 @@ type originalFetcher interface {
 	Fetch(context.Context, string) (string, error)
 }
 
+// AcademicSourceCatalogReader exposes only the authorized project catalog
+// read; candidate confirmation continues to use its transaction snapshot.
+type AcademicSourceCatalogReader interface {
+	GetAcademicSourceCatalog(context.Context, core.Actor, string) (core.AcademicSourceCatalog, error)
+}
+
 // ResearchAdapter delegates retrieval, URL processing, and source checks to
 // the existing WeKnora services. It never creates a second RAG/index pipeline.
 type ResearchAdapter struct {
@@ -59,12 +65,17 @@ type ResearchAdapter struct {
 	fetcher               originalFetcher
 	globalAcademicCatalog catalog.Snapshot
 	academicBudgetLedger  core.ProjectResearchBudgetLedger
+	academicCatalogReader AcademicSourceCatalogReader
 }
 
 type ResearchAdapterOption func(*ResearchAdapter)
 
 func WithResearchBudgetLedger(ledger core.ProjectResearchBudgetLedger) ResearchAdapterOption {
 	return func(adapter *ResearchAdapter) { adapter.academicBudgetLedger = ledger }
+}
+
+func WithAcademicSourceCatalogReader(reader AcademicSourceCatalogReader) ResearchAdapterOption {
+	return func(adapter *ResearchAdapter) { adapter.academicCatalogReader = reader }
 }
 
 func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService, options ...ResearchAdapterOption) *ResearchAdapter {
@@ -147,7 +158,7 @@ func (r *ResearchAdapter) SettleResearchModelCall(ctx context.Context, actor cor
 }
 
 func (r *ResearchAdapter) ValidateAcademicResearchResult(ctx context.Context, actor core.Actor, projectID string, result core.ResearchResult, projectCatalog core.AcademicSourceCatalog) error {
-	if result.Provider != "crossref" {
+	if result.Provider != core.AcademicCrossrefResultProvider {
 		return nil
 	}
 	if err := r.academicResearchPolicyReady(); err != nil {
@@ -525,7 +536,7 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 	if err := r.academicResearchPolicyReady(); err != nil {
 		return nil, err
 	}
-	projectCatalog, err := r.loadAcademicSourceCatalog(ctx, projectID)
+	projectCatalog, err := r.loadAcademicSourceCatalog(ctx, actor, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +635,7 @@ func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, 
 			PolicySnapshotVersion: snapshot.Version,
 			PolicyStatus:          string(evaluation.Status), PolicyRuleID: evaluation.RuleID,
 			RetractionStatus: retractionStatus, DuplicateStatus: duplicateStatus, DuplicateOf: duplicateOf,
-			AcquisitionStatus: "metadata_only", RetrievedAt: now, Provider: "crossref",
+			AcquisitionStatus: "metadata_only", RetrievedAt: now, Provider: core.AcademicCrossrefResultProvider,
 			SourceType: sourceType, QualityNote: "Crossref 只提供书目元数据；目录命中仅表示项目策略允许保留元数据，不代表期刊质量或原文许可。",
 			Uncertainty: uncertainty, Status: status,
 		})
@@ -649,32 +660,17 @@ func crossrefRetractionTargets(works []crossref.Work) map[string]bool {
 	return targets
 }
 
-func (r *ResearchAdapter) loadAcademicSourceCatalog(ctx context.Context, projectID string) (core.AcademicSourceCatalog, error) {
-	if r.db == nil {
+func (r *ResearchAdapter) loadAcademicSourceCatalog(ctx context.Context, actor core.Actor, projectID string) (core.AcademicSourceCatalog, error) {
+	if r.academicCatalogReader == nil {
 		return core.AcademicSourceCatalog{}, core.ErrDependencyUnavailable
 	}
-	out := core.AcademicSourceCatalog{ProjectID: projectID, GlobalVersion: core.AcademicGlobalCatalogVersion, Rules: []core.AcademicSourceRule{}}
-	var row struct {
-		Version     int64
-		PayloadJSON string
-	}
-	err := r.db.WithContext(ctx).Table("lingdoc_g2_objects").
-		Select("version", "payload_json").
-		Where("project_id = ? AND kind = ? AND id = ?", projectID, core.AcademicSourceCatalogKind, "project").Take(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		out.SourceCatalogVersion = core.AcademicSourceCatalogVersion(out.Rules)
-		return out, nil
-	}
+	out, err := r.academicCatalogReader.GetAcademicSourceCatalog(ctx, actor, projectID)
 	if err != nil {
 		return core.AcademicSourceCatalog{}, err
 	}
-	if row.Version < 1 || json.Unmarshal([]byte(row.PayloadJSON), &out) != nil {
+	if out.ProjectID != projectID {
 		return core.AcademicSourceCatalog{}, core.ErrInvalidState
 	}
-	out.ProjectID = projectID
-	out.Version = row.Version
-	out.GlobalVersion = core.AcademicGlobalCatalogVersion
-	out.SourceCatalogVersion = core.AcademicSourceCatalogVersion(out.Rules)
 	return out, nil
 }
 
@@ -728,7 +724,7 @@ func academicWorkDedupKey(work crossref.Work) string {
 }
 
 func (r *ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, result core.ResearchResult) (core.ResearchResult, error) {
-	if task.ProviderID == core.AcademicCrossrefProviderID || result.Provider == "crossref" {
+	if task.ProviderID == core.AcademicCrossrefProviderID || result.Provider == core.AcademicCrossrefResultProvider {
 		return result, core.ErrEvidenceIncomplete
 	}
 	if r.projects == nil || r.fetcher == nil || task.ProviderID == "" || r.db == nil {
@@ -908,12 +904,12 @@ func (r *ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor core
 	providerVersion := ""
 	if task.ProviderID != "" {
 		if task.ProviderID == core.AcademicCrossrefProviderID {
-			academic, err := r.loadAcademicSourceCatalog(ctx, projectID)
+			academic, err := r.loadAcademicSourceCatalog(ctx, actor, projectID)
 			if err != nil {
 				return "", err
 			}
 			policySnapshot := academicCatalogSnapshot(r.globalAcademicCatalog, academic)
-			providerVersion = "academic:crossref|rest-works-v1|" + policySnapshot.Version
+			providerVersion = core.AcademicCrossrefProviderID + "|rest-works-v1|" + policySnapshot.Version
 		} else {
 			if r.db == nil {
 				return "", core.ErrDependencyUnavailable

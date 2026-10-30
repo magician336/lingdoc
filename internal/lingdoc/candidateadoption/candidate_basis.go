@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"gorm.io/gorm"
 )
 
@@ -167,6 +168,39 @@ type TransactionAuthorizer interface {
 }
 type acceptanceReplayProbe interface {
 	CandidateAcceptancePending(context.Context, AcceptCandidateInput) (bool, error)
+}
+
+type committedCandidateEvidencePolicy interface {
+	ValidateCommittedCandidateEvidence(context.Context, *gorm.DB, string, string, string, string, string, string, string, []core.VersionRef) (core.EvidenceSelection, error)
+}
+
+type committedCandidateEvidencePreparer interface {
+	PrepareCommittedCandidateEvidence(context.Context, string, string, string, []core.VersionRef) (context.Context, error)
+}
+
+func (s *CandidateAdoptionService) prepareCommittedEvidence(ctx context.Context, in AcceptCandidateInput, candidate Candidate) (context.Context, error) {
+	preparer, ok := s.Evidence.(committedCandidateEvidencePreparer)
+	if !ok {
+		return ctx, ErrDependencyUnavailable
+	}
+	return preparer.PrepareCommittedCandidateEvidence(ctx, in.ProjectID, in.ChapterID, in.ActorID, candidate.Basis.EvidenceCardRefs)
+}
+
+// This is available only while re-reading an already committed idempotency
+// row; it cannot be used on the normal candidate-writing path.
+func (s *SQLiteCandidateAdoptionStore) validateCommittedEvidenceInTransaction(ctx context.Context, tx *gorm.DB, in AcceptCandidateInput, candidate Candidate, row adoptionIdempotencyRow) error {
+	if in.Confirmation == nil || in.Confirmation.Target != writingaction.TargetFormalVersionWhole || row.ChapterVersionID == nil || len(candidate.Basis.EvidenceCardRefs) == 0 {
+		return ErrSourceAccessDenied
+	}
+	policy, ok := s.evidencePolicy.(committedCandidateEvidencePolicy)
+	if !ok {
+		return ErrDependencyUnavailable
+	}
+	selected, err := policy.ValidateCommittedCandidateEvidence(ctx, tx, in.ProjectID, in.ChapterID, in.ActorID, candidate.ID, in.IdempotencyKey, requestHash(in), *row.ChapterVersionID, candidate.Basis.EvidenceCardRefs)
+	if err != nil {
+		return err
+	}
+	return validateCandidateSelection(candidate, selected)
 }
 
 func (s *SQLiteCandidateAdoptionStore) authorizeCandidateInTransaction(ctx context.Context, tx *gorm.DB, in AcceptCandidateInput) error {

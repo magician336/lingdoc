@@ -421,6 +421,15 @@ func (t gormTransaction) cardConfirmationCurrent(card EvidenceCard) (bool, error
 		if !current {
 			return false, nil
 		}
+		// Formal use also pins the complete source text that was supplied to
+		// the anchor, including any text outside the human-selected span.
+		var chunk types.Chunk
+		if err := t.db.Where("id = ? AND deleted_at IS NULL", anchor.SourceID).First(&chunk).Error; err != nil {
+			return false, storageError(err)
+		}
+		if chunk.ContentRevision != 0 || chunk.SourceContent != "" && chunk.SourceContent != chunk.Content || !anchorMatchesWholeSource(anchor, chunk.Content) {
+			return false, nil
+		}
 		ids = append(ids, anchor.SourceID)
 	}
 	return reflect.DeepEqual(sortedUniqueIDs(ids), sortedUniqueIDs(card.SourceIDs)), nil

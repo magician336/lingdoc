@@ -403,6 +403,7 @@ export interface SelectedRewriteCandidate {
     locator: string
     quoted_text_hash: string
     authorized_at: string
+    academic_snapshot?: { raw_ref: { sha256: string; size: number }; text_ref: { sha256: string; size: number } }
   }>
   review_items: ReviewItem[]
   error_code: string
@@ -452,6 +453,7 @@ export interface ReviewReport {
     locator: string
     quoted_text_hash: string
     authorized_at: string
+    academic_snapshot?: { raw_ref: { sha256: string; size: number }; text_ref: { sha256: string; size: number } }
   }>
   baseline: ReviewBaseline
   /** 报告自身的版本标识：它由报告的内容算出，因此可复算。 */

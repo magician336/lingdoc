@@ -251,6 +251,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	// workspacecore —— agent_object_storage.go / impact_dependency_candidate_store.go /
 	// impact_store.go / membership_lifecycle.go / model.go / model_call_ledger.go /
 	// roadmap_store.go / runtime_control.go
+	registration("workspacecore", "academicOriginalSnapshotRow", "lingdoc_academic_original_snapshots"),
 	registration("workspacecore", "auditEventRow", "lingdoc_project_audits"),
 	registration("workspacecore", "chapterConfirmationRow", "lingdoc_chapter_confirmations"),
 	registration("workspacecore", "chapterRow", "lingdoc_chapters"),

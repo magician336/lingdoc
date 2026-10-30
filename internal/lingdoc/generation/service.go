@@ -259,6 +259,12 @@ type SourceValidator interface {
 	ValidateGenerationSources(context.Context, Actor, string, []Source) error
 }
 
+// EvidenceAwareSourceValidator rechecks the source under the exact persisted
+// evidence selection. Snapshot markers alone never authorize a source.
+type EvidenceAwareSourceValidator interface {
+	ValidateGenerationSourcesWithEvidence(context.Context, Actor, string, string, []EvidenceCardRef, []Source) error
+}
+
 type CurrentnessChecker interface {
 	GenerationInputIsCurrent(context.Context, Actor, string, string, candidateadoption.Basis) (bool, error)
 }
@@ -594,7 +600,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	if err := s.authorizeWrite(ctx, input.Actor, run.ProjectID, run.ChapterID); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
-	if err := s.Sources.ValidateGenerationSources(ctx, input.Actor, run.ProjectID, input.Sources); err != nil {
+	if err := s.validateSources(ctx, input.Actor, run.ProjectID, run.ChapterID, input, input.Sources); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
 	if err := s.validateEvidence(ctx, input.Actor, run.ProjectID, run.ChapterID, input); err != nil {
@@ -689,7 +695,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "missing_source_reference", Message: "生成结果未引用可验证的项目资料。", Retryable: false})
 		return failed, err
 	}
-	if err := s.Sources.ValidateGenerationSources(workCtx, input.Actor, run.ProjectID, used); err != nil {
+	if err := s.validateSources(workCtx, input.Actor, run.ProjectID, run.ChapterID, input, used); err != nil {
 		status := StatusFailed
 		failure := RunError{Code: "source_access_denied", Message: "生成来源已失效或当前不可访问。", Retryable: false}
 		if errors.Is(err, ErrSourceStale) {
@@ -875,7 +881,7 @@ func (s *Service) validateCandidateSources(ctx context.Context, actor Actor, pro
 		}
 		used = append(used, source)
 	}
-	return s.Sources.ValidateGenerationSources(ctx, actor, projectID, used)
+	return s.validateSources(ctx, actor, projectID, candidate.ChapterID, input, used)
 }
 
 // validityForSourceFailure 按失败原因区分两种失效。
@@ -921,7 +927,7 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 		}
 		usedSources = append(usedSources, source)
 	}
-	if err := s.Sources.ValidateGenerationSources(ctx, actor, projectID, usedSources); err != nil {
+	if err := s.validateSources(ctx, actor, projectID, candidate.ChapterID, input, usedSources); err != nil {
 		if errors.Is(err, ErrSourceStale) {
 			candidate.Validity = candidateadoption.ValidityStale
 			return candidate, nil
@@ -1084,6 +1090,23 @@ func validEvidenceCardRefs(refs []EvidenceCardRef) bool {
 	}
 	return true
 }
+func (s *Service) validateSources(ctx context.Context, actor Actor, projectID, chapterID string, input Input, sources []Source) error {
+	if s.Sources == nil {
+		return ErrDependencyUnavailable
+	}
+	if len(input.EvidenceCardRefs) == 0 && len(input.Request.EvidenceCardRefs) == 0 {
+		return s.Sources.ValidateGenerationSources(ctx, actor, projectID, sources)
+	}
+	if !validEvidenceCardRefs(input.EvidenceCardRefs) || !reflect.DeepEqual(input.EvidenceCardRefs, input.Request.EvidenceCardRefs) {
+		return ErrSourceAccessDenied
+	}
+	validator, ok := s.Sources.(EvidenceAwareSourceValidator)
+	if !ok {
+		return ErrDependencyUnavailable
+	}
+	return validator.ValidateGenerationSourcesWithEvidence(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, sources)
+}
+
 func (s *Service) validateEvidence(ctx context.Context, actor Actor, projectID, chapterID string, input Input) error {
 	if len(input.EvidenceCardRefs) == 0 && len(input.Request.EvidenceCardRefs) == 0 {
 		if len(input.EvidenceConstraints) > 0 {

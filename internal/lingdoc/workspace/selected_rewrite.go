@@ -97,12 +97,13 @@ func (r SelectedRewriteRequest) isLegacyPath() bool {
 }
 
 type RewriteSourceSnapshot struct {
-	SourceID       string    `json:"source_id"`
-	AssetID        string    `json:"asset_id"`
-	AssetRevision  int       `json:"asset_revision"`
-	Locator        string    `json:"locator"`
-	QuotedTextHash string    `json:"quoted_text_hash"`
-	AuthorizedAt   time.Time `json:"authorized_at"`
+	SourceID         string                    `json:"source_id"`
+	AssetID          string                    `json:"asset_id"`
+	AssetRevision    int                       `json:"asset_revision"`
+	Locator          string                    `json:"locator"`
+	QuotedTextHash   string                    `json:"quoted_text_hash"`
+	AuthorizedAt     time.Time                 `json:"authorized_at"`
+	AcademicSnapshot *academicSnapshotIdentity `json:"academic_snapshot,omitempty"`
 }
 
 type SelectedRewriteCandidate struct {
@@ -435,11 +436,13 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		input.EvidenceCardRefs = removeRewriteExcludedCards(input.EvidenceCardRefs, input.Context)
 	}
 	var evidenceConstraints []generation.EvidenceConstraint
+	var selectedEvidence core.EvidenceSelection
 	if len(input.EvidenceCardRefs) > 0 {
 		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
+		selectedEvidence = selected
 		evidenceConstraints, selectErr = selectedEvidenceConstraints(selected, input.EvidenceCardRefs)
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
@@ -507,7 +510,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	// 先于取来源——用户剔除一条来源，往往正是因为它已经不可用了。
 	input.SourceIDs = s.removeRewriteExcludedSources(ctx, actor, projectID, input.SourceIDs, input.Context)
 	input.SourceIDs = stringSet(input.SourceIDs)
-	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
+	sources, snapshots, err := s.fetchSourcesWithEvidence(ctx, actor, projectID, input.SourceIDs, selectedEvidence)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
@@ -562,7 +565,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			auditDecision, auditReason = "deny", err.Error()
 			return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 		}
-		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
+		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckRowSources(ctx, actor, projectID, row, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
@@ -611,7 +614,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "invalid_claim_evidence", ""
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
-	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+	if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "source_access_denied", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
 		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
@@ -678,7 +681,7 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	}
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
 	if len(snapshots) > 0 {
-		if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+		if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
 	}
@@ -714,7 +717,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["base_chapter_version_id"] = row.BaseChapterVersionID
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
-	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+	if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteSourceDenied
 	}
 	// 撤权先说、确认后说：一个依据已经没了的候选，说的是「授权没了」，不是

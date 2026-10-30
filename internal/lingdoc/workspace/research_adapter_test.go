@@ -30,6 +30,39 @@ type adapterProjectsStub struct {
 	capability string
 }
 
+type academicCatalogReaderStub struct {
+	catalog core.AcademicSourceCatalog
+	err     error
+	actor   core.Actor
+	project string
+}
+
+func (r *academicCatalogReaderStub) GetAcademicSourceCatalog(_ context.Context, actor core.Actor, project string) (core.AcademicSourceCatalog, error) {
+	r.actor, r.project = actor, project
+	return r.catalog, r.err
+}
+
+func TestAcademicCatalogReaderRequiresAuthorizedProject(t *testing.T) {
+	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
+	adapter := NewResearchAdapter(nil, nil, nil, nil, nil, nil)
+	if _, err := adapter.loadAcademicSourceCatalog(context.Background(), actor, "project"); !errors.Is(err, core.ErrDependencyUnavailable) {
+		t.Fatalf("missing reader should fail closed: %v", err)
+	}
+	reader := &academicCatalogReaderStub{err: core.ErrNotFound}
+	adapter.academicCatalogReader = reader
+	if _, err := adapter.loadAcademicSourceCatalog(context.Background(), actor, "project"); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("reader authorization error must propagate: %v", err)
+	}
+	if reader.actor.UserID != actor.UserID || reader.actor.TenantID != actor.TenantID || reader.project != "project" {
+		t.Fatalf("reader received wrong scope: actor=%+v project=%q", reader.actor, reader.project)
+	}
+	reader.err = nil
+	reader.catalog.ProjectID = "another-project"
+	if _, err := adapter.loadAcademicSourceCatalog(context.Background(), actor, "project"); !errors.Is(err, core.ErrInvalidState) {
+		t.Fatalf("mismatched project should fail closed: %v", err)
+	}
+}
+
 func (p *adapterProjectsStub) Authorize(_ context.Context, _ Actor, _ string, capability string) error {
 	p.capability = capability
 	if p.denied {
@@ -200,7 +233,8 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	})
 	projects := &adapterProjectsStub{}
 	fetch := &adapterFetcherStub{text: "must not be called"}
-	adapter := NewResearchAdapter(db, projects, &adapterSourcesStub{}, nil, nil, nil)
+	reader := &academicCatalogReaderStub{catalog: projectCatalog}
+	adapter := NewResearchAdapter(db, projects, &adapterSourcesStub{}, nil, nil, nil, WithAcademicSourceCatalogReader(reader))
 	adapter.academic = crossref.Client{HTTPClient: &http.Client{Transport: transport}}
 	adapter.fetcher = fetch
 	if err := adapter.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), &syntheticResearchBudgetLedger{}); err != nil {
@@ -246,7 +280,7 @@ func TestCrossrefSearchUsesProjectCatalogAndNeverFetchesOriginal(t *testing.T) {
 	if results[0].PolicySnapshotVersion == "" {
 		t.Fatal("Crossref result omitted the policy snapshot used to assess it")
 	}
-	projectCatalog, err = adapter.loadAcademicSourceCatalog(context.Background(), "project")
+	projectCatalog, err = adapter.loadAcademicSourceCatalog(context.Background(), actor, "project")
 	if err != nil {
 		t.Fatal(err)
 	}

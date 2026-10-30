@@ -68,7 +68,7 @@ export interface ConfirmAcademicSourceAssociationInput extends ConfirmationInput
 }
 export interface SourceAnchor {
   id: string; project_id: string; version: number; source_id: string; asset_id: string; asset_revision: number; locator: string; page?: number; section?: string; paragraph?: number; coordinates?: number[]
-  quoted_text_hash: string; selection_start: number; selection_end: number; extraction_type: 'native_text' | 'ocr' | 'manual_correction'; ocr_confidence: number; human_verified: boolean
+  quoted_text_hash: string; source_text_hash?: string; selection_start: number; selection_end: number; extraction_type: 'native_text' | 'ocr' | 'manual_correction'; ocr_confidence: number; human_verified: boolean
   original_ocr?: string; corrected_text?: string; correction_reason?: string; status: string; basis: VersionBasis; dedup_key: string; created_by: string; created_at: string
 }
 export interface SaveSourceAnchorInput extends VersionExpectation {
@@ -81,10 +81,16 @@ export interface ResearchClaim {
 export interface SaveResearchClaimInput extends VersionExpectation {
   claim_id?: string; text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; reason: string; confirmed: boolean
 }
+export interface AcademicOriginalSnapshotRef { sha256: string; size: number }
+export interface AcademicSnapshotAssociation { association_ref: VersionRef; candidate_ref: VersionRef; doi: string; catalog_version: string; policy_snapshot_version: string }
+export interface AcademicEvidenceSnapshot {
+  source_id: string; knowledge_id: string; asset_id: string; asset_revision: number; locator: string; page?: number
+  raw_ref: AcademicOriginalSnapshotRef; text_ref: AcademicOriginalSnapshotRef; anchor_refs: VersionRef[]; associations: AcademicSnapshotAssociation[]
+}
 export interface EvidenceCard {
   id: string; project_id: string; version: number; claim_ref?: VersionRef; anchor_refs: VersionRef[]; academic_association_refs?: VersionRef[]; source_ids: string[]; support_type: string; scope: string; scope_chapter_ids: string[]
   limitations: string; gaps: string; alternative_explanation: string; status: 'CANDIDATE' | 'CONFIRMED' | 'NEEDS_REVIEW' | 'INSUFFICIENT' | 'STALE' | 'SUPERSEDED'; basis: VersionBasis; invalid_reason?: string; created_by: string; created_at: string
-  confirmation?: { confirmed_by: string; confirmed_at: string; card_version: number; claim_ref: VersionRef; anchor_refs: VersionRef[]; context_revision: number; scope_chapter_ids: string[]; reason: string; meaning: string }
+  confirmation?: { confirmed_by: string; confirmed_at: string; card_version: number; claim_ref: VersionRef; anchor_refs: VersionRef[]; academic_snapshots?: AcademicEvidenceSnapshot[]; context_revision: number; scope_chapter_ids: string[]; reason: string; meaning: string }
 }
 export interface SaveEvidenceCardInput extends VersionExpectation {
   card_id?: string; claim_ref?: VersionRef; anchor_refs: VersionRef[]; academic_association_refs?: VersionRef[]; support_type: string; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean

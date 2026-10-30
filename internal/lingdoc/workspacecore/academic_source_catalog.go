@@ -15,8 +15,11 @@ import (
 )
 
 const (
-	AcademicSourceCatalogKind        = "academic_source_catalog"
-	AcademicCrossrefProviderID       = "academic:crossref"
+	AcademicSourceCatalogKind  = "academic_source_catalog"
+	AcademicCrossrefProviderID = "academic:crossref"
+	// AcademicCrossrefResultProvider is the distinct, persisted result-source
+	// value. It must not be confused with the task routing provider ID.
+	AcademicCrossrefResultProvider   = academiccatalog.MetadataProviderCrossref
 	AcademicGlobalCatalogVersion     = "crossref-metadata-v1"
 	academicSourceCatalogObjectID    = "project"
 	maximumAcademicSourceCatalogRule = 100
@@ -174,29 +177,9 @@ func currentAcademicSourceCatalog(tx Transaction, projectID string) (AcademicSou
 func (s *Service) GetAcademicSourceCatalog(ctx context.Context, actor Actor, projectID string) (AcademicSourceCatalog, error) {
 	out := emptyAcademicSourceCatalog(projectID)
 	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, _ Project) error {
-		store, err := agentObjectStore(tx)
-		if err != nil {
-			return err
-		}
-		rows, err := store.Objects(projectID, AcademicSourceCatalogKind)
-		if err != nil {
-			return err
-		}
-		for _, row := range rows {
-			if row.ID != academicSourceCatalogObjectID {
-				continue
-			}
-			if err = json.Unmarshal(row.Payload, &out); err != nil {
-				return ErrInvalidState
-			}
-			out.ProjectID = projectID
-			out.Version = row.Version
-			out.GlobalVersion = AcademicGlobalCatalogVersion
-			out.Rules = normalizeAcademicSourceRuleOrder(out.Rules)
-			out.SourceCatalogVersion = AcademicSourceCatalogVersion(out.Rules)
-			return nil
-		}
-		return nil
+		var err error
+		out, err = currentAcademicSourceCatalog(tx, projectID)
+		return err
 	})
 	return out, err
 }
@@ -211,6 +194,13 @@ func (s *Service) UpdateAcademicSourceCatalog(ctx context.Context, actor Actor, 
 		return nil, 0, false, err
 	}
 	return s.runAgentOperation(ctx, actor, projectID, "manage", "updateAcademicSourceCatalog", projectID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
+		if err := lockAcademicEvidenceProject(tx, actor, projectID); err != nil {
+			return nil, 0, err
+		}
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
+		if err != nil {
+			return nil, 0, err
+		}
 		if !expectationMatches(p, input.VersionExpectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -239,6 +229,9 @@ func (s *Service) UpdateAcademicSourceCatalog(ctx context.Context, actor Actor, 
 		catalog := AcademicSourceCatalog{ProjectID: projectID, Version: currentVersion + 1, GlobalVersion: AcademicGlobalCatalogVersion, Rules: rules, UpdatedBy: actor.UserID, UpdatedAt: now}
 		catalog.SourceCatalogVersion = AcademicSourceCatalogVersion(catalog.Rules)
 		if err = storeStoredObject(tx, old, projectID, AcademicSourceCatalogKind, academicSourceCatalogObjectID, catalog.Version, catalog); err != nil {
+			return nil, 0, err
+		}
+		if err = invalidateAcademicEvidenceForCatalog(tx, actor, projectID, catalog.SourceCatalogVersion); err != nil {
 			return nil, 0, err
 		}
 		if err = recordAgentAuditEvent(tx, actor, projectID, "g2.academic_catalog.updated", academicSourceCatalogObjectID, "", map[string]any{"catalog_version": catalog.SourceCatalogVersion, "rule_count": len(catalog.Rules)}); err != nil {

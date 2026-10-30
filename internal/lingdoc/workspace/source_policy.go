@@ -605,6 +605,38 @@ func assetVersionsOf(sources []evidence.Source) []candidateadoption.AssetVersion
 
 var _ candidateadoption.CandidateEvidencePolicy = (*candidateAdoptionSourcePolicy)(nil)
 
+func (p *candidateAdoptionSourcePolicy) PrepareCommittedCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.VersionRef) (context.Context, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return ctx, err
+	}
+	port, ok := p.proofPreparer.(interface {
+		PrepareCommittedCandidateEvidence(context.Context, workspacecore.Actor, string, string, []workspacecore.VersionRef) (context.Context, error)
+	})
+	if !ok {
+		return ctx, candidateadoption.ErrDependencyUnavailable
+	}
+	return port.PrepareCommittedCandidateEvidence(checked, actor, projectID, chapterID, refs)
+}
+
+func (p *candidateAdoptionSourcePolicy) ValidateCommittedCandidateEvidence(ctx context.Context, tx *gorm.DB, projectID, chapterID, actorID, candidateID, key, digest, versionID string, refs []workspacecore.VersionRef) (workspacecore.EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return workspacecore.EvidenceSelection{}, err
+	}
+	port, ok := p.proofPreparer.(interface {
+		ValidateCommittedAcademicCandidate(context.Context, workspacecore.Transaction, workspacecore.Actor, string, string, string, string, string, string, []workspacecore.VersionRef) (workspacecore.EvidenceSelection, error)
+	})
+	if !ok || tx == nil {
+		return workspacecore.EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	selected, err := port.ValidateCommittedAcademicCandidate(checked, workspacecore.NewTransactionAdapter(tx), actor, projectID, chapterID, candidateID, key, digest, versionID, refs)
+	if err != nil {
+		return workspacecore.EvidenceSelection{}, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	return selected, nil
+}
+
 func candidateEvidenceActor(ctx context.Context, actorID string) (context.Context, workspacecore.Actor, error) {
 	checked, _, ok := recheckContext(ctx, actorID)
 	if !ok {

@@ -258,6 +258,17 @@ func (s *reviewReportStore) byID(ctx context.Context, tenantID uint64, projectID
 	return row, err
 }
 
+// lookupKey reads only the caller's exact idempotency namespace. A replay
+// must validate this stored row, not a newly resolved set of optional inputs.
+func (s *reviewReportStore) lookupKey(ctx context.Context, actor Actor, projectID, chapterID, key string) (reviewReportRow, bool, error) {
+	var row reviewReportRow
+	err := s.db.WithContext(ctx).Where("tenant_id = ? AND actor_id = ? AND project_id = ? AND chapter_id = ? AND idempotency_key = ?", actor.TenantID, actor.UserID, projectID, chapterID, key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return row, false, nil
+	}
+	return row, err == nil, err
+}
+
 func (s *reviewReportStore) update(ctx context.Context, row reviewReportRow) error {
 	return s.db.WithContext(ctx).Model(&reviewReportRow{}).Where("id = ?", row.ID).Updates(map[string]any{
 		"state": row.State, "authorization_state": row.AuthorizationState, "error_code": row.ErrorCode,
@@ -318,6 +329,24 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 		auditDecision, auditReason = "deny", ErrRewriteConflict.Error()
 		return ReviewReport{}, ErrRewriteConflict
 	}
+	hash, err := reviewRequestHash(input)
+	if err != nil {
+		return ReviewReport{}, err
+	}
+	prior, found, err := s.reviewStore().lookupKey(ctx, actor, projectID, chapterID, key)
+	if err != nil {
+		return ReviewReport{}, err
+	}
+	if found {
+		if prior.RequestHash != hash {
+			return ReviewReport{}, ErrRewriteKeyConflict
+		}
+		if err = s.validateReviewReplay(ctx, actor, projectID, prior); err != nil {
+			auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
+			return ReviewReport{}, ErrReviewNotAuthorized
+		}
+		return reviewReportView(prior)
+	}
 	// 评审对象是工作副本里的一段：整章范围是整份正文，选段范围是用户选中的
 	// 那一段。范围之外的内容不进模型请求。
 	target, err := reviewTarget(copy.BodyMarkdown, plan.Scope, input.Selection)
@@ -346,26 +375,42 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 	}
 	sourceIDs = s.removeRewriteExcludedSources(ctx, actor, projectID, sourceIDs, input.Context)
 	sourceIDs = stringSet(sourceIDs)
-	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, sourceIDs)
-	if err != nil {
-		auditDecision, auditReason = "deny", err.Error()
-		return ReviewReport{}, err
-	}
-	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
-		return ReviewReport{}, err
-	}
 	var constraints []generation.EvidenceConstraint
+	var selectedEvidence core.EvidenceSelection
 	if len(evidenceCards) > 0 {
 		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(evidenceCards))
 		if selectErr != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return ReviewReport{}, ErrRewriteSourceDenied
 		}
+		selectedEvidence = selected
 		constraints, selectErr = selectedEvidenceConstraints(selected, evidenceCards)
 		if selectErr != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return ReviewReport{}, ErrRewriteSourceDenied
 		}
+		academic, selectErr := selectedAcademicSources(selected)
+		if selectErr != nil {
+			return ReviewReport{}, ErrRewriteSourceDenied
+		}
+		for _, source := range selected.Sources {
+			if _, ok := academic[source.SourceID]; ok {
+				sourceIDs = append(sourceIDs, source.SourceID)
+			}
+		}
+		sourceIDs = stringSet(sourceIDs)
+		allowed := stringSet(s.removeRewriteExcludedSources(ctx, actor, projectID, sourceIDs, input.Context))
+		if !slices.Equal(allowed, sourceIDs) {
+			return ReviewReport{}, ErrRewriteSourceDenied
+		}
+	}
+	sources, snapshots, err := s.fetchSourcesWithEvidence(ctx, actor, projectID, sourceIDs, selectedEvidence)
+	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
+		return ReviewReport{}, err
+	}
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+		return ReviewReport{}, err
 	}
 	mode := candidateadoption.RunMode(s.model.RunMode())
 	if !candidateadoption.ValidRunMode(mode) {
@@ -401,16 +446,21 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 		auditDecision, auditReason = "deny", err.Error()
 		return ReviewReport{}, err
 	}
-	// 授权在生成之后可能就没了：应用时要按当前授权复核，所以这里先记下生成
-	// 时的授权状态。
+	// Model output may contain the source itself. Do not persist or return any
+	// findings if the evidence or its authorization changed during the call.
+	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
+		auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
+		return ReviewReport{}, ErrReviewNotAuthorized
+	}
+	if err := s.recheckEvidenceSources(ctx, actor, projectID, chapterID, evidenceCards, snapshots); err != nil {
+		auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
+		return ReviewReport{}, ErrReviewNotAuthorized
+	}
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+		auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
+		return ReviewReport{}, ErrReviewNotAuthorized
+	}
 	authorizationState := candidateadoption.ValidityFresh
-	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
-		authorizationState = candidateadoption.ValidityNotAuthorized
-	}
-	hash, err := reviewRequestHash(input)
-	if err != nil {
-		return ReviewReport{}, err
-	}
 	baseline := ReviewBaseline{
 		WorkingCopyRevision:  copy.WorkingCopyRevision,
 		BaseChapterVersionID: copy.BaseChapterVersionID,
@@ -460,25 +510,37 @@ func (s *SelectedRewriteService) CreateReviewReport(ctx context.Context, actor A
 		AuthorizationState: string(authorizationState), DecisionsJSON: "[]",
 		CreatedAt: s.now(), UpdatedAt: s.now(),
 	}
-	stored, _, err := s.reviewStore().createOrReplay(ctx, row)
+	stored, created, err := s.reviewStore().createOrReplay(ctx, row)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return ReviewReport{}, err
+	}
+	// Even a concurrent insert can make createOrReplay return a different
+	// stored record. Revalidate that exact record before exposing its findings.
+	if err = s.validateReviewReplay(ctx, actor, projectID, stored); err != nil {
+		auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
+		return ReviewReport{}, ErrReviewNotAuthorized
 	}
 	auditDetails["report_id"], auditDetails["run_mode"] = stored.ID, stored.RunMode
 	report, err := reviewReportView(stored)
 	if err != nil {
 		return ReviewReport{}, err
 	}
-	report.DroppedContext = dropped
+	if created {
+		report.DroppedContext = dropped
+	}
 	return report, nil
 }
 
 // GetReviewReport 读回一份评审报告（预览）。
-func (s *SelectedRewriteService) GetReviewReport(ctx context.Context, actor Actor, projectID, reportID string) (ReviewReport, error) {
+func (s *SelectedRewriteService) GetReviewReport(ctx context.Context, actor Actor, projectID, reportID string) (result ReviewReport, err error) {
 	details := map[string]any{"report_id": reportID}
 	defer func() {
-		s.recordAudit(ctx, actor, projectID, "selected_rewrite.review.get", "allow", "", details)
+		decision, reason := "allow", ""
+		if err != nil {
+			decision, reason = "deny", err.Error()
+		}
+		s.recordAudit(ctx, actor, projectID, "selected_rewrite.review.get", decision, reason, details)
 	}()
 	if s == nil || s.workspace == nil || actor.TenantID == 0 {
 		return ReviewReport{}, ErrRewriteUnavailable
@@ -491,7 +553,7 @@ func (s *SelectedRewriteService) GetReviewReport(ctx context.Context, actor Acto
 		return ReviewReport{}, err
 	}
 	// 读报告也要复核授权：一份依赖已经没了授权的报告，读出来就该说清楚。
-	if err := s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)); err != nil {
+	if err := s.validateStoredReviewEvidence(ctx, actor, projectID, row, "read"); err != nil {
 		return ReviewReport{}, ErrReviewNotAuthorized
 	}
 	return reviewReportView(row)
@@ -530,6 +592,21 @@ func (s *SelectedRewriteService) RejectReviewReport(ctx context.Context, actor A
 		auditDecision, auditReason = "deny", err.Error()
 		return ReviewReport{}, err
 	}
+	// Rejection remains possible after access is lost, but its response must
+	// not expose the old findings, source identities or selected text. The
+	// state change has already committed, so an access failure returns a
+	// redacted success receipt rather than falsely claiming the rejection failed.
+	if err := s.validateStoredReviewEvidence(ctx, actor, projectID, row, "write:"+row.ChapterID); err != nil {
+		return ReviewReport{
+			ReportID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+			Findings: []candidateadoption.ReviewItem{}, SourceIDs: []string{}, AuthorizedSources: []RewriteSourceSnapshot{},
+			Baseline:      ReviewBaseline{WorkingCopyRevision: row.WorkingCopyRevision, BaseChapterVersionID: row.BaseChapterVersionID, SpecRevision: row.SpecRevision, BodyHash: row.BodyHash},
+			ReportVersion: row.ReportVersion, AuthorizationState: "", RunMode: candidateadoption.RunMode(row.RunMode),
+			WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin), State: ReviewReportRejected,
+			ReviewDecisions: []candidateadoption.ReviewDecision{}, ErrorCode: "source_access_unverified",
+			Scope: writingaction.Scope(row.Scope), Selection: RewriteSelection{}, CreatedAt: row.CreatedAt,
+		}, nil
+	}
 	return reviewReportView(row)
 }
 
@@ -567,7 +644,7 @@ func (s *SelectedRewriteService) ApplyReviewReport(ctx context.Context, actor Ac
 		return core.WorkingCopy{}, false, ErrReviewNotFound
 	}
 	// 撤权先说：报告依据的授权没了，就说「授权没了」，不是「你的处置填错了」。
-	if err := s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)); err != nil {
+	if err := s.recheckReviewSources(ctx, actor, projectID, row); err != nil {
 		auditDecision, auditReason = "deny", ErrReviewNotAuthorized.Error()
 		return core.WorkingCopy{}, false, ErrReviewNotAuthorized
 	}

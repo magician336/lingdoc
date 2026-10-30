@@ -72,6 +72,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_g3_dependency_candidate_batches",
 	"lingdoc_g3_dependency_candidates",
 	"lingdoc_model_call_ledger",
+	"lingdoc_academic_original_snapshots",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -112,8 +113,8 @@ var versionedSQLiteColumns = map[string][]string{
 // 000059 adds the tenant replay fixture table (#769, Spec #768): registered
 // replay fixtures survive restarts as tenant rows next to the builtin set.
 // 000060 adds candidate claim evidence, 000061 adds original chunk digests,
-// and 000062 adds page provenance for PDF chunks.
-const expectedSQLiteMigrationVersion = 62
+// 000062 adds page provenance for PDF chunks, and 000063 adds bounded academic original snapshots.
+const expectedSQLiteMigrationVersion = 63
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

@@ -39,6 +39,14 @@ function fixture(options={}){
  return {state,props,calls,emitted,affected,close:()=>cleanup.forEach(fn=>fn())}
 }
 function task(){return {id:'task',version:2,goal:'定义与反例',scope:'当前资料',queries:['定义','反例'],exclusions:[],asset_ids:['asset'],status:'draft',basis:{context_revision:4}}}
+test('Crossref results recognize persisted and legacy provider values',async()=>{
+ const f=fixture();await tick()
+ assert.equal(f.state.isCrossrefResult({provider:'crossref'}),true)
+ assert.equal(f.state.isCrossrefResult({provider:'academic:crossref'}),true)
+ assert.equal(f.state.isCrossrefResult({provider:'other'}),false)
+ assert.equal(f.state.isCrossrefResult(null),false)
+ f.close()
+})
 test('实际组件在明确确认前不发批准写入，确认后保留当前版本',async()=>{
  const f=fixture();await tick()
  f.state.approveTask(task());await tick()
@@ -335,7 +343,7 @@ function renderedFixture(options={}){
  const raw=fs.readFileSync(new URL('./ResearchPanel.vue',import.meta.url),'utf8'),parsed=parse(raw)
  assert.equal(parsed.errors.length,0)
  const script=compileScript(parsed.descriptor,{id:'g2-render-test'})
- const template=compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g2-render-test',compilerOptions:{bindingMetadata:script.bindings}})
+ const template=compileTemplate({source:parsed.descriptor.template.content,filename:'ResearchPanel.vue',id:'g2-render-test',compilerOptions:{bindingMetadata:script.bindings,hoistStatic:false}})
  assert.equal(template.errors.length,0)
  const helperSource=fs.readFileSync(new URL('./researchUiState.ts',import.meta.url),'utf8'),helpers={}
  vm.runInNewContext(ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:helpers,URL,crypto:{randomUUID:()=>String(calls.length)}})
@@ -575,6 +583,87 @@ test('候选卡固定关联判断版本，关联变化时不能悄悄换版',asy
  const input=f.state.cardInput();assert.equal(input.academic_association_refs[0].id,'assoc');assert.equal(input.academic_association_refs[0].version,3)
  f.state.associationHistory.value[0].version=4
  assert.throws(()=>f.state.cardInput(),/书目判断已变化/)
- f.state.confirmCard({academic_association_refs:[{id:'assoc',version:3}]});assert.match(f.state.error.value,/暂不能确认或用于写作/)
+ f.close()
+})
+
+const academicEvidenceCard=()=>({id:'card',version:2,status:'CANDIDATE',project_id:'project',academic_association_refs:[{id:'association',version:1}],scope_chapter_ids:['chapter'],anchor_refs:[{id:'anchor',version:1}],source_ids:['source'],basis:{context_revision:4},support_type:'supports',scope:'合成章节',limitations:'待复核',gaps:'',confirmation:null})
+const findButton=(container,label)=>allNodes(container).find(node=>node.type==='button'&&nodeText(node).trim()===label)
+const submitDialog=async(f)=>{
+ const form=allNodes(f.container).find(node=>node.type==='form'&&nodeText(node).includes('人工确认证据适用范围'))
+ assert.ok(form,'确认表单已渲染')
+ await form.props.onSubmit({preventDefault(){}})
+ await tick()
+}
+
+test('关联卡在真实面板确认前不写入，人工确认后提交当前卡片并展示历史快照',async()=>{
+ const sent=[],card=academicEvidenceCard()
+ const confirmed={...card,version:3,status:'CONFIRMED',confirmation:{confirmed_by:'owner',confirmed_at:'2026-10-30T08:00:00Z',meaning:'人工核对',academic_snapshots:[{source_id:'source'}]}}
+ const f=renderedFixture({api:{confirmEvidenceCard:(...args)=>{sent.push(args);return Promise.resolve({data:confirmed})},listEvidenceCards:()=>Promise.resolve({data:[confirmed]})}});await tick()
+ f.state.tab.value='evidence';f.state.cards.value=[card];await tick()
+ const button=findButton(f.container,'人工确认适用范围');assert.ok(button);button.props.onClick();await tick()
+ assert.equal(sent.length,0)
+ assert.match(f.ui(),/原件和当前分块的历史快照/)
+ assert.match(f.ui(),/各不超过 8 MiB/)
+ assert.match(f.ui(),/权限、来源规则与撤稿状态/)
+ await submitDialog(f);assert.equal(sent.length,0)
+ f.state.confirmChecked.value=true;await tick();await submitDialog(f);assert.equal(sent.length,0)
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='已核对原件与范围';await tick()
+ await submitDialog(f)
+ assert.equal(sent.length,1);assert.equal(sent[0][1],'card');assert.equal(sent[0][2].expected_version,2);assert.equal(sent[0][2].confirmed,true)
+ assert.match(f.ui(),/已保存历史快照（1 份来源）/);assert.match(f.ui(),/确认时间 2026-10-30T08:00:00Z/)
+ f.state.cards.value=[{...confirmed,confirmation:{...confirmed.confirmation,academic_snapshots:[]}}];await tick()
+ assert.match(f.ui(),/未记录历史快照，请先要求复核/)
+ assert.equal(findButton(f.container,'选择用于正文').disabled,true)
+ f.close()
+})
+
+test('确认期间卡片变更不写入，服务端拒绝时展示可操作提示',async()=>{
+ const sent=[],card=academicEvidenceCard()
+ const f=renderedFixture({api:{confirmEvidenceCard:(...args)=>{sent.push(args);return Promise.reject({status:422,code:'evidence_incomplete',message:'原始错误'})}}});await tick()
+ f.state.tab.value='evidence';f.state.cards.value=[card];await tick()
+ findButton(f.container,'人工确认适用范围').props.onClick();await tick()
+ f.state.cards.value=[{...card,version:3}]
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='人工核对';await tick();await submitDialog(f)
+ assert.equal(sent.length,0);assert.match(f.ui(),/卡片或权限已变化/)
+ findButton(f.container,'人工确认适用范围').props.onClick();await tick()
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='再次核对';await tick();await submitDialog(f)
+ assert.equal(sent.length,1);assert.equal(sent[0][2].expected_version,3)
+ assert.match(f.ui(),/确认未完成/);assert.match(f.ui(),/原件和分块各不超过 8 MiB/)
+ assert.doesNotMatch(f.ui(),/原始错误/)
+ f.close()
+})
+
+test('已提交但不可读保留原请求和幂等键，恢复前拒绝后仍可手动重放',async()=>{
+ const sent=[],card=academicEvidenceCard()
+ const confirmed={...card,version:3,status:'CONFIRMED',confirmation:{confirmed_by:'owner',confirmed_at:'2026-10-30T08:00:00Z',meaning:'人工核对',academic_snapshots:[{source_id:'source'}]}}
+ let available=false
+ const f=renderedFixture({api:{
+  listEvidenceCards:()=>Promise.resolve({data:available?[confirmed]:[card]}),
+  confirmEvidenceCard:(...args)=>{sent.push(args);if(sent.length===1)return Promise.reject(Object.defineProperty({error:{code:'confirmation_committed_unreadable'}},'$httpStatus',{value:409}));if(sent.length===2)return Promise.reject(Object.defineProperty({error:{code:'source_access_denied'}},'$httpStatus',{value:403}));available=true;return Promise.resolve({data:confirmed})}
+ }});await tick()
+ f.state.tab.value='evidence';f.state.cards.value=[card];await tick()
+ findButton(f.container,'人工确认适用范围').props.onClick();await tick()
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='已核对原件';await tick();await submitDialog(f)
+ assert.equal(sent.length,1);assert.match(f.ui(),/确认已提交，但当前无法读取结果/);assert.doesNotMatch(f.ui(),/卡片、资料或项目版本已变化/)
+ let retry=findButton(f.container,'读取已提交的确认回执');assert.ok(retry);retry.props.onClick();await tick()
+ assert.equal(sent.length,2);assert.ok(findButton(f.container,'读取已提交的确认回执'))
+ retry=findButton(f.container,'读取已提交的确认回执');retry.props.onClick();await tick()
+ assert.equal(sent.length,3);assert.equal(sent[0][3],sent[1][3]);assert.equal(sent[0][3],sent[2][3])
+ assert.deepEqual(sent[0][2],sent[1][2]);assert.deepEqual(sent[0][2],sent[2][2])
+ assert.equal(findButton(f.container,'读取已提交的确认回执'),undefined)
+ assert.match(f.ui(),/已保存历史快照/)
+ f.close()
+})
+
+test('切换项目清除已提交确认的本页恢复请求',async()=>{
+ const card=academicEvidenceCard(),sent=[]
+ const f=renderedFixture({api:{confirmEvidenceCard:(...args)=>{sent.push(args);return Promise.reject(Object.defineProperty({error:{code:'confirmation_committed_unreadable'}},'$httpStatus',{value:409}))}}});await tick()
+ f.state.tab.value='evidence';f.state.cards.value=[card];await tick()
+ findButton(f.container,'人工确认适用范围').props.onClick();await tick()
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='人工核对';await tick();await submitDialog(f)
+ assert.ok(findButton(f.container,'读取已提交的确认回执'))
+ f.props.project={...f.props.project,id:'different-project'};await tick()
+ assert.equal(findButton(f.container,'读取已提交的确认回执'),undefined)
+ await f.state.recoverCardConfirmation();assert.equal(sent.length,1)
  f.close()
 })

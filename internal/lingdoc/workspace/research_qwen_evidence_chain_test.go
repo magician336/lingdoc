@@ -119,7 +119,19 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 	request(http.MethodPost, route+"/research-claims", "synthetic-claim", `{`+expectation(0)+`,"text":"合成资料只用于软件流程验证","scope":"仅此合成材料","reason":"仅测试夹具模拟人工输入","confirmed":true}`, http.StatusOK, &claim)
 	// A simulated human association is stored only to exercise the real
 	// evidence-card HTTP route. It is not a verified academic paper.
-	association := core.AcademicSourceAssociation{ID: "synthetic-association", ProjectID: "project-1", Version: 1, SourceID: anchor.SourceID, AssetID: anchor.AssetID, AssetRevision: anchor.AssetRevision, Status: "recorded"}
+	catalog, err := projects.GetAcademicSourceCatalog(ctx, actor, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := core.ImportCandidate{ID: "synthetic-academic-candidate", ProjectID: "project-1", Version: 1, DOI: "10.5555/synthetic", Status: "imported", CatalogVersion: catalog.SourceCatalogVersion, PolicySnapshotVersion: "synthetic-policy", PolicyStatus: "approved", RetractionStatus: "unknown", DuplicateStatus: "unique", AcquisitionStatus: "metadata_only"}
+	candidatePayload, err := json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = core.NewTransactionAdapter(db).(core.ObjectStore).InsertObject(core.StoredObject{ProjectID: "project-1", Kind: core.ImportCandidateKind, ID: candidate.ID, Version: 1, Payload: candidatePayload}); err != nil {
+		t.Fatal(err)
+	}
+	association := core.AcademicSourceAssociation{ID: "synthetic-association", ProjectID: "project-1", Version: 1, SourceID: anchor.SourceID, AssetID: anchor.AssetID, AssetRevision: anchor.AssetRevision, Status: "recorded", CandidateRef: core.VersionRef{ID: candidate.ID, Version: candidate.Version}, DOI: candidate.DOI, CatalogVersion: candidate.CatalogVersion, PolicySnapshotVersion: candidate.PolicySnapshotVersion}
 	assocPayload, err := json.Marshal(association)
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +167,19 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 	selection, err := projects.SelectGenerationEvidence(ctx, actor, "project-1", "chapter-2", []core.VersionRef{{ID: confirmed.ID, Version: confirmed.Version}}, true)
 	if err != nil || len(selection.Cards) != 1 || len(selection.Sources) != 1 || selection.Sources[0].QuotedTextHash != pack.SourceRefs[0].QuotedTextHash {
 		t.Fatalf("writing evidence selection failed: %v", err)
+	}
+	// Keep the indexed excerpt unchanged while the uploaded original changes.
+	// The old context path could return the stored CONFIRMED card alongside a
+	// source that was still readable but no longer proved its original bytes.
+	original := storage.data
+	storage.data = []byte(sourcePolicyQuote + "\nchanged original")
+	staleRequest := httptest.NewRequest(http.MethodPost, route+"/agent-context", strings.NewReader(contextBody(confirmed))).WithContext(actorContext("reader"))
+	staleRequest.Header.Set("Content-Type", "application/json")
+	staleResponse := httptest.NewRecorder()
+	engine.ServeHTTP(staleResponse, staleRequest)
+	storage.data = original
+	if staleResponse.Code != http.StatusUnprocessableEntity || strings.Contains(staleResponse.Body.String(), sourcePolicyQuote) {
+		t.Fatalf("changed original entered HTTP context: status=%d", staleResponse.Code)
 	}
 
 	t.Run("real_qwen_writing_adapter", func(t *testing.T) {

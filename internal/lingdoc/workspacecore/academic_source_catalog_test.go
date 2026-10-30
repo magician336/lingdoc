@@ -56,6 +56,20 @@ func TestAcademicSourceCatalogIsProjectScopedVersionedAndFailClosed(t *testing.T
 	}
 }
 
+func TestAcademicSourceCatalogReadRejectsMalformedStoredPayload(t *testing.T) {
+	f := newAgentFixture(t, true)
+	ctx := context.Background()
+	err := f.svc.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+		return storeStoredObject(tx, StoredObject{}, f.project.ID, AcademicSourceCatalogKind, academicSourceCatalogObjectID, 1, "not a catalog object")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.GetAcademicSourceCatalog(ctx, f.owner, f.project.ID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("malformed catalog must fail closed: %v", err)
+	}
+}
+
 func TestAcademicSourceCatalogVersionIsOrderIndependentAndRuleSensitive(t *testing.T) {
 	first := []AcademicSourceRule{
 		{ID: "b", SourceType: "journal", VenueName: "B", VenueIDs: []string{"8765-4321", "1234-5678"}, AllowedLicenseURLs: []string{"https://example.org/b", "https://example.org/a"}},

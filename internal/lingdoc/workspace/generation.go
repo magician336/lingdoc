@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,7 +53,7 @@ func NewGenerationApplication(
 	acceptanceBudget, acceptanceConfigErr := loadGenerationAcceptanceBudget()
 	service := generation.NewServiceWithAccessPolicy(
 		accessPolicy, inputs,
-		generationSourceValidator{reviewer: workspace.sourceReviewerForGateway(workspace.generationGateway())},
+		generationSourceValidator{reviewer: workspace.sourceReviewerForGateway(workspace.generationGateway()), selector: workspace.evidenceSelector},
 		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr, ledger: workspace.modelCallLedger}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	service.Evidence = generationEvidenceValidator{selector: workspace.evidenceSelector}
@@ -307,9 +308,33 @@ func generationSourceFromEvidence(source evidence.Source) generation.Source {
 	}
 }
 
-type generationSourceValidator struct{ reviewer sourcepolicy.Reviewer }
+type generationSourceValidator struct {
+	reviewer sourcepolicy.Reviewer
+	selector core.EvidenceSelectionApplication
+}
 
 func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context, actor generation.Actor, projectID string, sources []generation.Source) error {
+	return v.validateGenerationSources(ctx, actor, projectID, sources, nil)
+}
+
+func (v generationSourceValidator) ValidateGenerationSourcesWithEvidence(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, sources []generation.Source) error {
+	selected, err := selectFormalEvidence(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, evidenceCardVersionRefs(refs))
+	if err != nil {
+		return generation.ErrSourceAccessDenied
+	}
+	academic, err := selectedAcademicSources(selected)
+	if err != nil {
+		return generation.ErrSourceAccessDenied
+	}
+	for _, source := range sources {
+		if !slices.ContainsFunc(selected.Sources, func(ref core.AgentSourceRef) bool { return ref.SourceID == source.ID }) {
+			return generation.ErrSourceAccessDenied
+		}
+	}
+	return v.validateGenerationSources(ctx, actor, projectID, sources, academic)
+}
+
+func (v generationSourceValidator) validateGenerationSources(ctx context.Context, actor generation.Actor, projectID string, sources []generation.Source, academic map[string]selectedAcademicSource) error {
 	if v.reviewer == nil || len(sources) == 0 {
 		return generation.ErrSourceAccessDenied
 	}
@@ -342,9 +367,13 @@ func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context
 			current := verdict.Source
 			// The reviewer decides present access. Queued generation must also
 			// retain the exact source snapshot captured before the model call.
-			if captured.ID != current.ID || captured.ProjectID != current.ProjectID ||
-				captured.AssetID != current.AssetID || captured.AssetRevision != current.AssetRevision ||
-				captured.Locator != current.Locator || captured.QuotedText != current.QuotedText || captured.Anchor != current.Anchor {
+			if captured.ID != current.ID || captured.ProjectID != current.ProjectID || captured.AssetID != current.AssetID || captured.AssetRevision != current.AssetRevision {
+				stale = true
+			} else if bound, ok := academic[captured.ID]; ok {
+				if captured.Locator != bound.ref.Locator || captured.QuotedText != bound.ref.QuotedText || researchTextHash(captured.QuotedText) != bound.ref.QuotedTextHash {
+					stale = true
+				}
+			} else if captured.Locator != current.Locator || captured.QuotedText != current.QuotedText || captured.Anchor != current.Anchor {
 				stale = true
 			}
 			continue

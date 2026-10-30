@@ -9,8 +9,17 @@ import (
 
 func seedDraftAssociation(t *testing.T, f agentFixture, id string, source ResearchSource) AcademicSourceAssociation {
 	t.Helper()
-	a := AcademicSourceAssociation{ID: id, ProjectID: f.project.ID, Version: 1, SourceID: source.SourceID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Status: "recorded"}
+	var a AcademicSourceAssociation
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
+		catalog, err := currentAcademicSourceCatalog(tx, f.project.ID)
+		if err != nil {
+			return err
+		}
+		candidate := ImportCandidate{ID: id + "-candidate", ProjectID: f.project.ID, Version: 1, DOI: "10.5555/synthetic", Status: "imported", SelectionType: "academic_metadata", SaveMode: "metadata_only", CatalogVersion: catalog.SourceCatalogVersion, PolicySnapshotVersion: "synthetic-policy", PolicyStatus: "approved", RetractionStatus: "unknown", DuplicateStatus: "unique", AcquisitionStatus: "metadata_only"}
+		if err = storeStoredObject(tx, StoredObject{}, f.project.ID, ImportCandidateKind, candidate.ID, candidate.Version, candidate); err != nil {
+			return err
+		}
+		a = AcademicSourceAssociation{ID: id, ProjectID: f.project.ID, Version: 1, SourceID: source.SourceID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Status: "recorded", CandidateRef: VersionRef{ID: candidate.ID, Version: candidate.Version}, DOI: candidate.DOI, CatalogVersion: candidate.CatalogVersion, PolicySnapshotVersion: candidate.PolicySnapshotVersion}
 		return storeStoredObject(tx, StoredObject{}, f.project.ID, AcademicSourceAssociationKind, id, 1, a)
 	}); err != nil {
 		t.Fatal(err)
@@ -93,5 +102,33 @@ func TestAcademicEvidenceAssociationCannotBeSilentlyRemoved(t *testing.T) {
 	input.AcademicAssociationRefs = nil
 	if _, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "assoc-card-strip", input); !errors.Is(err, ErrEvidenceIncomplete) {
 		t.Fatalf("legacy client erased association: %v", err)
+	}
+}
+
+func TestAcademicAssociationSurvivesRealCardChangeSetAndBlocksFormalUse(t *testing.T) {
+	f := newAgentFixture(t, false)
+	seedNativeEvidence(t, f)
+	anchor := f.anchor(t, "source-1", "association-changeset-anchor")
+	claim := f.claim(t)
+	assoc := seedDraftAssociation(t, f, "association-changeset", f.source.sources["source-1"])
+	input := SaveEvidenceCardInput{VersionExpectation: f.expectation(0), ClaimRef: &VersionRef{ID: claim.ID, Version: claim.Version}, AnchorRefs: []VersionRef{{ID: anchor.ID, Version: anchor.Version}}, AcademicAssociationRefs: []VersionRef{{ID: assoc.ID, Version: assoc.Version}}, SupportType: "supports", Scope: "synthetic", ScopeChapterIDs: []string{f.chapter.ID}, Confirmed: true}
+	raw, _, _, err := f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "association-changeset-card", input)
+	card := decodeAgentJSON[EvidenceCard](t, raw, err)
+	change := semanticDraft(t, f.svc, f.owner, f.project, "association-card-change-draft", r25CardDelta(card, anchor))
+	semanticApply(t, f.svc, f.owner, f.project, change, "association-card-change")
+	updated := r25EvidenceCard(t, f, card.ID)
+	if updated.Version != card.Version+1 || updated.Status != "CANDIDATE" || len(updated.AcademicAssociationRefs) != 1 || updated.AcademicAssociationRefs[0] != input.AcademicAssociationRefs[0] {
+		t.Fatalf("applied change lost academic provenance: %+v", updated)
+	}
+	p, err := f.svc.GetProject(context.Background(), f.owner, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.project = p
+	if _, _, _, err = f.svc.ConfirmEvidenceCard(context.Background(), f.owner, p.ID, updated.ID, "association-card-after-change-confirm", ConfirmationInput{VersionExpectation: f.expectation(updated.Version), Confirmed: true, Reason: "synthetic review"}); !errors.Is(err, ErrEvidenceIncomplete) {
+		t.Fatalf("change set bypassed academic formal guard: %v", err)
+	}
+	if _, err = f.svc.SelectGenerationEvidence(context.Background(), f.owner, p.ID, f.chapter.ID, []VersionRef{{ID: updated.ID, Version: updated.Version}}, true); !errors.Is(err, ErrEvidenceIncomplete) {
+		t.Fatalf("changed association card entered formal generation: %v", err)
 	}
 }

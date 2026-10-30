@@ -126,7 +126,7 @@ func SnapshotChapterClaimProvenance(db *gorm.DB, tx Transaction, projectID, chap
 			default:
 				row.Status = "stale"
 			}
-			if len(refs) == 0 || tx == nil || validateNativeCandidateCards(tx, Project{ID: projectID}, refs) != nil {
+			if len(refs) == 0 || tx == nil || validateProvenanceCardReferences(tx, projectID, refs) != nil {
 				row.Status = "stale"
 			}
 		}
@@ -135,6 +135,53 @@ func SnapshotChapterClaimProvenance(db *gorm.DB, tx Transaction, projectID, chap
 		row.CreatedAt = time.Now().UTC()
 		if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "project_id"}, {Name: "chapter_id"}, {Name: "chapter_version_id"}, {Name: "origin_kind"}, {Name: "candidate_id"}, {Name: "working_copy_revision"}}, DoNothing: true}).Create(&row).Error; err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// This only distinguishes known stale references from unknown authorization.
+// A successful return leaves the row as needs_revalidation, never confirmed.
+// The caller has no actor or policy gate and must not use this as evidence.
+func validateProvenanceCardReferences(tx Transaction, projectID string, refs []VersionRef) error {
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if ref.ID == "" || ref.Version < 1 || ref.Kind != "" && ref.Kind != "EvidenceCard" || seen[ref.ID] {
+			return ErrEvidenceIncomplete
+		}
+		seen[ref.ID] = true
+		card, _, err := loadStoredObject[EvidenceCard](tx, projectID, EvidenceCardKind, ref.ID)
+		if err != nil || card.ProjectID != projectID || card.Version != ref.Version {
+			return ErrEvidenceIncomplete
+		}
+		if len(card.AcademicAssociationRefs) == 0 {
+			if err = validateNativeCandidateCards(tx, Project{ID: projectID}, []VersionRef{ref}); err != nil {
+				return err
+			}
+			continue
+		}
+		if !confirmationTupleCurrent(card) || len(card.Confirmation.AcademicSnapshots) == 0 {
+			return ErrEvidenceIncomplete
+		}
+		claim, _, err := loadStoredObject[ResearchClaim](tx, projectID, ResearchClaimKind, card.ClaimRef.ID)
+		if err != nil || claim.Version != card.ClaimRef.Version || claim.Status == "superseded" {
+			return ErrEvidenceIncomplete
+		}
+		for _, anchorRef := range card.AnchorRefs {
+			anchor, _, e := loadStoredObject[SourceAnchor](tx, projectID, SourceAnchorKind, anchorRef.ID)
+			if e != nil || anchor.Version != anchorRef.Version || anchor.Status != "CURRENT" {
+				return ErrEvidenceIncomplete
+			}
+		}
+		for _, associationRef := range card.AcademicAssociationRefs {
+			association, _, e := loadStoredObject[AcademicSourceAssociation](tx, projectID, AcademicSourceAssociationKind, associationRef.ID)
+			if e != nil || association.Version != associationRef.Version || association.Status != "recorded" {
+				return ErrEvidenceIncomplete
+			}
+			candidate, _, e := loadStoredObject[ImportCandidate](tx, projectID, ImportCandidateKind, association.CandidateRef.ID)
+			if e != nil || candidate.Version != association.CandidateRef.Version || candidate.Status != "imported" {
+				return ErrEvidenceIncomplete
+			}
 		}
 	}
 	return nil

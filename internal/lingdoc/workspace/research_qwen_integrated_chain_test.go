@@ -86,7 +86,7 @@ func TestIssue682QwenIntegratedSyntheticChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read original-byte revision baseline: %v", err)
 	}
-	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil)
+	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil, WithAcademicSourceCatalogReader(projects))
 	now := time.Now().UTC()
 	policySource := &httpResearchQuotaPolicy{core.ResearchQuotaPolicy{Version: "synthetic-integrated-v1", ApprovedBy: "synthetic-fixture-only", WindowID: "synthetic-integrated", StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour), Limit: core.ResearchQuotaAmount{Searches: 2, Results: 40, ModelCalls: 1}}}
 	ledger := core.NewResearchQuotaLedger(projects, policySource)

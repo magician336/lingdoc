@@ -419,7 +419,9 @@ func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Con
 		return nil, err
 	}
 	if err := s.validateEvidenceInTransaction(ctx, tx, in, candidate); err != nil {
-		return nil, err
+		if e := s.validateCommittedEvidenceInTransaction(ctx, tx, in, candidate, row); e != nil {
+			return nil, errors.Join(err, e)
+		}
 	}
 	var chapter Chapter
 	if err := json.Unmarshal([]byte(row.ResponseJSON), &chapter); err != nil {
@@ -459,7 +461,9 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 				return ErrNotFound
 			}
 			if err := s.validateEvidenceInTransaction(ctx, tx, in, persisted); err != nil {
-				return err
+				if e := s.validateCommittedEvidenceInTransaction(ctx, tx, in, persisted, existing); e != nil {
+					return errors.Join(err, e)
+				}
 			}
 			result.Replayed = true
 			return nil

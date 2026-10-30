@@ -379,6 +379,7 @@ type SourceAnchor struct {
 	Paragraph        int          `json:"paragraph,omitempty"`
 	Coordinates      []float64    `json:"coordinates,omitempty"`
 	QuotedTextHash   string       `json:"quoted_text_hash"`
+	SourceTextHash   string       `json:"source_text_hash,omitempty"`
 	SelectionStart   int          `json:"selection_start"`
 	SelectionEnd     int          `json:"selection_end"`
 	ExtractionType   string       `json:"extraction_type"`
@@ -434,15 +435,16 @@ type SaveResearchClaimInput struct {
 	Confirmed   bool   `json:"confirmed"`
 }
 type EvidenceConfirmation struct {
-	ConfirmedBy     string       `json:"confirmed_by"`
-	ConfirmedAt     time.Time    `json:"confirmed_at"`
-	CardVersion     int64        `json:"card_version"`
-	ClaimRef        VersionRef   `json:"claim_ref"`
-	AnchorRefs      []VersionRef `json:"anchor_refs"`
-	ContextRevision int64        `json:"context_revision"`
-	ScopeChapterIDs []string     `json:"scope_chapter_ids"`
-	Reason          string       `json:"reason"`
-	Meaning         string       `json:"meaning"`
+	ConfirmedBy       string                     `json:"confirmed_by"`
+	ConfirmedAt       time.Time                  `json:"confirmed_at"`
+	CardVersion       int64                      `json:"card_version"`
+	ClaimRef          VersionRef                 `json:"claim_ref"`
+	AnchorRefs        []VersionRef               `json:"anchor_refs"`
+	AcademicSnapshots []AcademicEvidenceSnapshot `json:"academic_snapshots,omitempty"`
+	ContextRevision   int64                      `json:"context_revision"`
+	ScopeChapterIDs   []string                   `json:"scope_chapter_ids"`
+	Reason            string                     `json:"reason"`
+	Meaning           string                     `json:"meaning"`
 }
 type EvidenceCard struct {
 	ID                      string                `json:"id"`

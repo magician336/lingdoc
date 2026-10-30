@@ -76,8 +76,19 @@ func (s *Service) ListAcademicSourceAssociations(ctx context.Context, actor Acto
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return err
 			}
-			if err != nil || candidate.Version != a.CandidateRef.Version || candidate.DOI != a.DOI || candidate.PolicyStatus != "approved" || candidate.RetractionStatus == "retracted" || candidate.RetractionStatus == "retraction_notice" || candidate.DuplicateStatus == "duplicate" {
+			if err != nil || candidate.Version != a.CandidateRef.Version || candidate.DOI != a.DOI || !academicCandidatePolicyEligible(candidate.PolicyStatus, candidate.RetractionStatus, candidate.DuplicateStatus) {
 				state = "needs_review"
+			}
+			if strings.TrimSpace(a.DOI) == "" {
+				state = "needs_review"
+			} else {
+				known, checkErr := knownAcademicRetraction(tx, projectID, a.DOI)
+				if checkErr != nil {
+					return checkErr
+				}
+				if known {
+					state = "needs_review"
+				}
 			}
 			catalog, err := currentAcademicSourceCatalog(tx, projectID)
 			gate, ok := s.agentRuntime.Research.(ResearchExecutionGate)
@@ -90,7 +101,7 @@ func (s *Service) ListAcademicSourceAssociations(ctx context.Context, actor Acto
 			if catalog.SourceCatalogVersion != a.CatalogVersion {
 				state = "needs_review"
 			} else {
-				err = gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: "crossref", PolicySnapshotVersion: a.PolicySnapshotVersion}, catalog)
+				err = gate.ValidateAcademicResearchResult(ctx, actor, projectID, ResearchResult{Provider: AcademicCrossrefResultProvider, PolicySnapshotVersion: a.PolicySnapshotVersion}, catalog)
 				if errors.Is(err, ErrVersionConflict) {
 					state = "needs_review"
 				} else if err != nil {
@@ -151,6 +162,11 @@ func (s *Service) RevokeAcademicSourceAssociation(ctx context.Context, actor Act
 		a.RevokedAt = &now
 		a.RevocationReason = strings.TrimSpace(input.Reason)
 		if err = storeStoredObject(tx, old, projectID, AcademicSourceAssociationKind, a.ID, a.Version, a); err != nil {
+			return nil, 0, err
+		}
+		if err = invalidateAcademicEvidenceCards(tx, actor, projectID, "academic_association_revoked", "AcademicSourceAssociation", func(association AcademicSourceAssociation) bool {
+			return association.ID == a.ID
+		}); err != nil {
 			return nil, 0, err
 		}
 		if err = recordAgentAuditEvent(tx, actor, projectID, "g2.academic_source_association.revoke", projectID+"/"+a.ID, a.RevocationReason, map[string]any{"version": a.Version}); err != nil {

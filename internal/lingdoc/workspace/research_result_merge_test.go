@@ -77,7 +77,9 @@ func TestSearchResearchInterleavesLocalAndCrossrefBeforeRunLimits(t *testing.T) 
 	}
 	body, err := json.Marshal(map[string]any{"message": map[string]any{"items": items}})
 	require.NoError(t, err)
-	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil)
+	emptyCatalog := core.AcademicSourceCatalog{ProjectID: "project-1", GlobalVersion: core.AcademicGlobalCatalogVersion, Rules: []core.AcademicSourceRule{}}
+	emptyCatalog.SourceCatalogVersion = core.AcademicSourceCatalogVersion(emptyCatalog.Rules)
+	adapter := NewResearchAdapter(db, &adapterProjectsStub{}, sources, nil, storage, nil, WithAcademicSourceCatalogReader(&academicCatalogReaderStub{catalog: emptyCatalog}))
 	providerFailed := false
 	adapter.academic = crossref.Client{HTTPClient: &http.Client{Transport: adapterRoundTripper(func(*http.Request) (*http.Response, error) {
 		if providerFailed {
