@@ -167,7 +167,7 @@ func testAcademicCandidateAdoptionWithOneConnection(t *testing.T, f academicAdop
 	require.NoError(t, store.UpsertCandidate(ctx, candidate))
 	preparedMixed, _, err := f.projects.PrepareCandidateGenerationEvidence(ctx, f.actor, "project-1", "chapter-2", candidate.Basis.EvidenceCardRefs, candidate.SourceIDs)
 	require.NoError(t, err, "mixed preview must remain current before adoption")
-	if f.db.Dialector.Name() == "postgres" {
+	if f.db.Name() == "postgres" {
 		db.SetMaxOpenConns(2)
 		for _, target := range []struct {
 			query string

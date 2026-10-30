@@ -30,6 +30,7 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 	applyCreateTablesFromMigration(t, db, "000000_init.up.sql", "knowledge_bases")
 	applySQLiteMigrations(t, db, "000033_lingdoc_working_copies.up.sql")
 	applyCreateTablesFromMigration(t, db, "000037_lingdoc_full_workflow.up.sql", "lingdoc_g2_objects", "lingdoc_g2_object_versions")
+	applySQLiteMigrations(t, db, "000063_lingdoc_academic_original_snapshots.up.sql")
 	for _, statement := range []string{
 		"ALTER TABLE chunks ADD COLUMN source_content TEXT NOT NULL DEFAULT ''",
 		"INSERT INTO knowledge_bases(id,tenant_id,name,embedding_model_id,summary_model_id) VALUES('kb-1',7,'synthetic-kb','embed-1','summary-1')",
@@ -59,7 +60,10 @@ func TestIssue682SyntheticAssetEvidenceHTTP(t *testing.T) {
 		t.Fatalf("read original-byte revision baseline: %v", err)
 	}
 	adapter := NewResearchAdapter(db, projects, runtime, shares, storage, nil)
-	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter})
+	if err = adapter.ConfigureAcademicResearchPolicy(syntheticGlobalAcademicCatalog(), &syntheticResearchBudgetLedger{}); err != nil {
+		t.Fatalf("configure synthetic academic policy: %v", err)
+	}
+	projects.ConfigureAgentRuntime(core.AgentRuntime{Sources: adapter, Research: adapter})
 
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)

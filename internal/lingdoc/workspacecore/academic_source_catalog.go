@@ -193,7 +193,7 @@ func (s *Service) UpdateAcademicSourceCatalog(ctx context.Context, actor Actor, 
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.runAgentOperation(ctx, actor, projectID, "manage", "updateAcademicSourceCatalog", projectID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
+	return s.runAgentOperation(ctx, actor, projectID, "manage", "updateAcademicSourceCatalog", projectID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, _ Project) (any, int, error) {
 		if err := lockAcademicEvidenceProject(tx, actor, projectID); err != nil {
 			return nil, 0, err
 		}

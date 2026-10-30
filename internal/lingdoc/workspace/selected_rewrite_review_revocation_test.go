@@ -25,16 +25,17 @@ func TestReviewRejectsModelOutputWhenSourceOrAcademicEvidenceIsRevoked(t *testin
 			request := reviewRequest()
 			selector := &academicSnapshotSelectorStub{selected: snapshotSelectionFixture()}
 			var revoke func()
-			if scenario == "academic retraction" {
+			switch scenario {
+			case "academic retraction":
 				service.selector = selector
 				request.Context = &writingaction.ContextSelection{Include: map[writingaction.ContextItem][]writingaction.ContextEntry{
 					writingaction.ContextCards: {{ID: "card", Version: 2}},
 				}}
 				// A real retraction makes the core selector reject the card.
 				revoke = func() { selector.denied = true }
-			} else if scenario == "project permission revoked" {
+			case "project permission revoked":
 				revoke = func() { workspace.denied = true }
-			} else {
+			default:
 				revoke = func() { sources.denied = true }
 			}
 			service.model = &revokingReviewModel{revoke: revoke}
