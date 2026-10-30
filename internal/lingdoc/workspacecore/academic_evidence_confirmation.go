@@ -15,6 +15,8 @@ import (
 // permission/currentness check prevents disclosure of the recorded response.
 var ErrAcademicConfirmationCommittedUnreadable = clienterror.New(clienterror.Form{Status: 409, Code: "confirmation_committed_unreadable", Message: "确认已提交，但当前无法读取结果；请核对来源和权限，恢复后使用相同请求重试。", Retryable: false}, "lingdoc: confirmation committed but result is not currently readable")
 
+var ErrAcademicCardSaveCommittedUnreadable = clienterror.New(clienterror.Form{Status: 409, Code: "evidence_card_save_committed_unreadable", Message: "证据卡已保存，但当前无法读取结果；请核对来源和权限，恢复后使用相同请求重试。", Retryable: false}, "lingdoc: evidence card save committed but result is not currently readable")
+
 // This recheck is read-only in effect but must permit row locks. PostgreSQL
 // disallows FOR UPDATE in SQL READ ONLY transactions.
 func (s *Service) withAcademicConfirmationAuthority(ctx context.Context, actor Actor, projectID string, chapters []string, read func(Transaction, Project) error) error {

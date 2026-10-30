@@ -178,8 +178,9 @@ func (s *Service) runAgentOperation(ctx context.Context, actor Actor, projectID,
 		},
 		Transaction: func(ctx context.Context, options operationcore.Options, fn func(tx Transaction) error) error {
 			return s.repository.Transaction(ctx, TransactionOptions{
-				ReadOnly:   options.ReadOnly,
-				RetryLocks: options.RetryLocks,
+				ReadOnly:       options.ReadOnly,
+				RetryLocks:     options.RetryLocks,
+				VerifyRollback: !options.ReadOnly && (op == "saveEvidenceCard" || op == "updateAcademicSourceCatalog"),
 			}, fn)
 		},
 		ValidActor: func(actor Actor) bool { return validActor(actor) },
@@ -732,72 +733,108 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 	return body, 200, false, nil
 }
 func (s *Service) persistResearchProgress(ctx context.Context, actor Actor, projectID string, run *ResearchRun) error {
-	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationResearch, run.Basis.ChapterID))
-		if err != nil {
-			return err
+	initial := *run
+	committed := initial
+	request := authorizationRequest(actor, projectID, AuthorizationResearch, initial.Basis.ChapterID)
+	repository, isGORM := s.repository.(*GORMRepository)
+	deferShadow := isGORM && repository.db.Name() == "sqlite"
+	var authObserved bool
+	var authResult error
+	checkAuthority := func(tx Transaction) (Project, error) {
+		if !deferShadow {
+			return s.authorizeProject(ctx, tx, request)
 		}
-		stored, old, err := loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, run.ID)
-		if err != nil {
-			return err
-		}
-		task, taskOld, err := loadStoredObject[ResearchTask](tx, projectID, ResearchTaskKind, run.TaskID)
-		if err != nil {
-			return err
-		}
-		if task.ProviderID == AcademicCrossrefProviderID && len(academicRetractedDOIs(run.Results)) > 0 {
-			if err = lockAcademicEvidenceProject(tx, actor, projectID); err != nil {
-				return err
-			}
-			p, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationResearch, run.Basis.ChapterID))
+		p, err := s.authorizeProjectWithoutShadow(ctx, tx, request)
+		authObserved, authResult = true, err
+		return p, err
+	}
+	_, _, _, err := retryVerifiedSQLiteOperation(ctx, func(attemptCtx context.Context) (json.RawMessage, int, bool, error) {
+		err := s.repository.Transaction(attemptCtx, TransactionOptions{VerifyRollback: true}, func(tx Transaction) error {
+			attempt := initial
+			run := &attempt
+			p, err := checkAuthority(tx)
 			if err != nil {
 				return err
 			}
-			stored, old, err = loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, run.ID)
+			stored, old, err := loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, run.ID)
 			if err != nil {
 				return err
 			}
-			task, taskOld, err = loadStoredObject[ResearchTask](tx, projectID, ResearchTaskKind, run.TaskID)
+			task, taskOld, err := loadStoredObject[ResearchTask](tx, projectID, ResearchTaskKind, run.TaskID)
 			if err != nil {
 				return err
 			}
-		}
-		if stored.Version != run.Version {
-			return ErrVersionConflict
-		}
-		if !versionBasisCurrent(p, run.Basis) || task.LatestRunID != run.ID {
-			run.Status = "stale"
-			run.FailureCode = "stale_basis"
-		}
-		if task.Status == "cancelled" {
-			run.Status = "cancelled"
-		}
-		if task.Paused && run.Status == "running" {
-			run.Status = "paused"
-		}
-		if task.ProviderID == AcademicCrossrefProviderID && run.Status != "stale" && run.Status != "cancelled" {
-			if err = invalidateAcademicEvidenceForRetractions(tx, actor, projectID, run.Results); err != nil {
+			if task.ProviderID == AcademicCrossrefProviderID && len(academicRetractedDOIs(run.Results)) > 0 {
+				if err = lockAcademicEvidenceProject(tx, actor, projectID); err != nil {
+					return err
+				}
+				p, err = checkAuthority(tx)
+				if err != nil {
+					return err
+				}
+				stored, old, err = loadStoredObject[ResearchRun](tx, projectID, ResearchRunKind, run.ID)
+				if err != nil {
+					return err
+				}
+				task, taskOld, err = loadStoredObject[ResearchTask](tx, projectID, ResearchTaskKind, run.TaskID)
+				if err != nil {
+					return err
+				}
+			}
+			if stored.Version != run.Version {
+				return ErrVersionConflict
+			}
+			if !versionBasisCurrent(p, run.Basis) || task.LatestRunID != run.ID {
+				run.Status = "stale"
+				run.FailureCode = "stale_basis"
+			}
+			if task.Status == "cancelled" {
+				run.Status = "cancelled"
+			}
+			if task.Paused && run.Status == "running" {
+				run.Status = "paused"
+			}
+			if task.ProviderID == AcademicCrossrefProviderID && run.Status != "stale" && run.Status != "cancelled" {
+				if err = invalidateAcademicEvidenceForRetractions(tx, actor, projectID, run.Results); err != nil {
+					return err
+				}
+			}
+			run.Version++
+			if run.Status != "running" {
+				now := time.Now().UTC()
+				run.FinishedAt = &now
+			}
+			if err = storeStoredObject(tx, old, projectID, ResearchRunKind, run.ID, run.Version, *run); err != nil {
 				return err
 			}
-		}
-		run.Version++
-		if run.Status != "running" {
-			now := time.Now().UTC()
-			run.FinishedAt = &now
-		}
-		if err = storeStoredObject(tx, old, projectID, ResearchRunKind, run.ID, run.Version, *run); err != nil {
-			return err
-		}
-		if task.LatestRunID == run.ID && run.Status != "running" && run.Status != "paused" {
-			task.Version++
-			task.Status = run.Status
-			task.UpdatedAt = time.Now().UTC()
-			if err = storeStoredObject(tx, taskOld, projectID, ResearchTaskKind, task.ID, task.Version, task); err != nil {
+			if task.LatestRunID == run.ID && run.Status != "running" && run.Status != "paused" {
+				task.Version++
+				task.Status = run.Status
+				task.UpdatedAt = time.Now().UTC()
+				if err = storeStoredObject(tx, taskOld, projectID, ResearchTaskKind, task.ID, task.Version, task); err != nil {
+					return err
+				}
+			}
+			if err = recordAgentAuditEvent(tx, actor, projectID, "g2.research.progress", run.ID, "", map[string]any{"status": run.Status, "rounds": len(run.Rounds)}); err != nil {
 				return err
 			}
-		}
-		return recordAgentAuditEvent(tx, actor, projectID, "g2.research.progress", run.ID, "", map[string]any{"status": run.Status, "rounds": len(run.Rounds)})
+			committed = attempt
+			return nil
+		})
+		return nil, 0, false, err
 	})
+	if authObserved && !isSQLiteLockError(authResult) {
+		if authResult != nil {
+			noteAuthorizationDenial(ctx, request, authResult)
+		}
+		if s.mode == AuthorizationModeLog {
+			_ = s.recordAudit(ctx, actor, projectID, "shadow:"+request.capability(), authResult)
+		}
+	}
+	if err == nil {
+		*run = committed
+	}
+	return err
 }
 func (s *Service) GetResearchRun(ctx context.Context, actor Actor, projectID, runID string) (ResearchRun, error) {
 	var out ResearchRun
@@ -1586,6 +1623,12 @@ func (s *Service) ListResearchClaims(ctx context.Context, actor Actor, projectID
 	return out, err
 }
 func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error) {
+	return s.retryAgentAfterVerifiedRollback(ctx, func(attemptCtx context.Context) (json.RawMessage, int, bool, error) {
+		return s.saveEvidenceCardOnce(attemptCtx, actor, projectID, key, input)
+	})
+}
+
+func (s *Service) saveEvidenceCardOnce(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error) {
 	// The human decision gate is declared to the pipeline, which applies it.
 	// Applying it here as well would run the same check twice.
 	if !input.Confirmed {
@@ -1749,14 +1792,34 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 		}
 		return card, 201, nil
 	})
-	if err != nil || !replay || len(input.AcademicAssociationRefs) == 0 {
+	if err != nil || len(input.AcademicAssociationRefs) == 0 {
 		return body, status, replay, err
 	}
 	var recorded EvidenceCard
 	if err = json.Unmarshal(body, &recorded); err != nil {
-		return nil, 0, true, err
+		return nil, 0, replay, ErrAcademicCardSaveCommittedUnreadable
 	}
-	err = s.readWithCapability(ctx, actor, projectID, "evidence-write", func(tx Transaction, _ Project) error {
+	checked, err := s.loadCheckedEvidenceCardWithCapability(ctx, actor, projectID, recorded.ID, false, "evidence-write")
+	if err != nil || !reflect.DeepEqual(checked, recorded) {
+		return nil, 0, replay, ErrAcademicCardSaveCommittedUnreadable
+	}
+	if err = s.checkSources(ctx, actor, projectID, recorded.SourceIDs); err != nil {
+		return nil, 0, replay, ErrAcademicCardSaveCommittedUnreadable
+	}
+	err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+		request := authorizationRequest(actor, projectID, AuthorizationEvidenceWrite, "")
+		if _, e := s.authorizeProject(ctx, tx, request); e != nil {
+			return e
+		}
+		if e := lockAcademicActorRows(tx, actor, projectID); e != nil {
+			return e
+		}
+		if e := lockAcademicEvidenceProject(tx, actor, projectID); e != nil {
+			return e
+		}
+		if _, e := s.authorizeProject(ctx, tx, request); e != nil {
+			return e
+		}
 		current, _, e := loadStoredObject[EvidenceCard](tx, projectID, EvidenceCardKind, recorded.ID)
 		if e != nil || !reflect.DeepEqual(current, recorded) {
 			return ErrEvidenceIncomplete
@@ -1782,9 +1845,9 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 		return nil
 	})
 	if err != nil {
-		return nil, 0, true, err
+		return nil, 0, replay, ErrAcademicCardSaveCommittedUnreadable
 	}
-	return body, status, true, nil
+	return body, status, replay, nil
 }
 func publishCardDependencies(tx Transaction, actor Actor, p Project, card EvidenceCard) error {
 	// The impact coordinator owns dependency persistence and impact resolution.
@@ -1803,9 +1866,12 @@ func publishCardDependencies(tx Transaction, actor Actor, p Project, card Eviden
 	return nil
 }
 func (s *Service) loadCheckedEvidenceCard(ctx context.Context, actor Actor, projectID, cardID string, formal bool) (EvidenceCard, error) {
+	return s.loadCheckedEvidenceCardWithCapability(ctx, actor, projectID, cardID, formal, "read")
+}
+func (s *Service) loadCheckedEvidenceCardWithCapability(ctx context.Context, actor Actor, projectID, cardID string, formal bool, capability string) (EvidenceCard, error) {
 	var card EvidenceCard
 	anchors := []SourceAnchor{}
-	err := s.readWithCapability(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {
+	err := s.readWithCapability(ctx, actor, projectID, capability, func(tx Transaction, p Project) error {
 		var err error
 		card, _, err = loadStoredObject[EvidenceCard](tx, projectID, EvidenceCardKind, cardID)
 		if err != nil {

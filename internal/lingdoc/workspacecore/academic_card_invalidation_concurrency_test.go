@@ -56,7 +56,8 @@ func TestConcurrentAcademicCardSaveAndInvalidation(t *testing.T) {
 			if invalidateErr != nil {
 				t.Fatalf("invalidation failed: %v (save: %v)", invalidateErr, saveErr)
 			}
-			if saveErr != nil && !errors.Is(saveErr, ErrEvidenceIncomplete) && !errors.Is(saveErr, ErrVersionConflict) {
+			committedUnreadable := errors.Is(saveErr, ErrAcademicCardSaveCommittedUnreadable)
+			if saveErr != nil && !errors.Is(saveErr, ErrEvidenceIncomplete) && !errors.Is(saveErr, ErrVersionConflict) && !committedUnreadable {
 				t.Fatalf("unexpected save failure: %v", saveErr)
 			}
 			var card EvidenceCard
@@ -74,10 +75,10 @@ func TestConcurrentAcademicCardSaveAndInvalidation(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if saveErr == nil && len(rows) != 1 {
+				if (saveErr == nil || committedUnreadable) && len(rows) != 1 {
 					t.Fatalf("successful save left %d cards", len(rows))
 				}
-				if saveErr != nil && len(rows) != 0 {
+				if saveErr != nil && !committedUnreadable && len(rows) != 0 {
 					t.Fatalf("failed save left %d cards", len(rows))
 				}
 				for _, row := range rows {
@@ -85,7 +86,7 @@ func TestConcurrentAcademicCardSaveAndInvalidation(t *testing.T) {
 					if err := json.Unmarshal(row.Payload, &current); err != nil {
 						return err
 					}
-					if current.ID != card.ID || current.Status != "NEEDS_REVIEW" || current.Confirmation != nil {
+					if (!committedUnreadable && current.ID != card.ID) || current.Status != "NEEDS_REVIEW" || current.Confirmation != nil {
 						t.Fatalf("eligible card survived %s: %+v", kind, current)
 					}
 				}

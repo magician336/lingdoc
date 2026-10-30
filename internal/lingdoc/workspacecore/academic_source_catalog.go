@@ -185,6 +185,12 @@ func (s *Service) GetAcademicSourceCatalog(ctx context.Context, actor Actor, pro
 }
 
 func (s *Service) UpdateAcademicSourceCatalog(ctx context.Context, actor Actor, projectID, key string, input UpdateAcademicSourceCatalogInput) (json.RawMessage, int, bool, error) {
+	return s.retryAgentAfterVerifiedRollback(ctx, func(attemptCtx context.Context) (json.RawMessage, int, bool, error) {
+		return s.updateAcademicSourceCatalogOnce(attemptCtx, actor, projectID, key, input)
+	})
+}
+
+func (s *Service) updateAcademicSourceCatalogOnce(ctx context.Context, actor Actor, projectID, key string, input UpdateAcademicSourceCatalogInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedProjectVersion < 1 || input.ExpectedContextRevision < 0 || input.ExpectedVersion < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}

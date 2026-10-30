@@ -1753,7 +1753,7 @@
   "core_operations": 198,
   "schemas": 425,
   "local_refs": 1945,
-  "shape_checks": 1043,
+  "shape_checks": 1044,
   "scenarios": 37,
   "scenario_example_references": 159,
   "continuous_trace_steps": 31,

@@ -351,7 +351,7 @@ function renderedFixture(options={}){
  vm.runInNewContext(ts.transpileModule(affectedSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:affected,URL})
  const require_=id=>{
   if(id==='vue')return {...Vue,onBeforeUnmount:callback=>cleanup.push(callback)}
-  if(id==='@/stores/auth')return {useAuthStore:()=>({currentUserId:props.currentUserId,effectiveTenantId:'fixture-tenant'})}
+  if(id==='@/stores/auth')return {useAuthStore:()=>options.auth||({currentUserId:props.currentUserId,effectiveTenantId:'fixture-tenant'})}
   if(id==='@/api/lingdoc/permissions')return {getEffectivePermission:()=>Promise.resolve({data:{allowed:false,capability:'manage',project_version:props.project.project_version,reason_code:'fixture-denied'}})}
   if(id==='@/api/lingdoc/agentApi')return g2
   if(id==='@/api/lingdoc/workspace')return workspace
@@ -370,7 +370,7 @@ function renderedFixture(options={}){
  const container={children:[]}
  const app=host.createApp({render:()=>Vue.h(wrapped,{...props,onChanged:()=>{},onDirty:()=>{}})})
  app.mount(container)
- return {state,props,calls,emitted,container,ui:()=>nodeText(container),close:()=>app.unmount()}
+ return {state,props,calls,emitted,container,ui:()=>nodeText(container),close:()=>{app.unmount();cleanup.forEach(fn=>fn())}}
 }
 
 test('提案的候选来源与各自理由在面板上分列展示，来源与理由不是一段话',async()=>{
@@ -666,4 +666,90 @@ test('切换项目清除已提交确认的本页恢复请求',async()=>{
  assert.equal(findButton(f.container,'读取已提交的确认回执'),undefined)
  await f.state.recoverCardConfirmation();assert.equal(sent.length,1)
  f.close()
+})
+
+
+function prepareEvidenceSave(f){
+ f.state.tab.value='evidence'
+ f.state.anchors.value=[{id:'anchor-save',version:3,status:'CURRENT',locator:'p. 1',source_id:'source',asset_id:'asset',asset_revision:1}]
+ Object.assign(f.state.cardForm,{anchors:['anchor-save'],chapters:['chapter'],scope:'原始范围',limits:'原始局限'})
+}
+async function confirmEvidenceSave(f){
+ f.state.saveCard();await tick()
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='已核对';await tick()
+ await f.state.executeConfirmation();await tick()
+}
+
+test('保存已提交但不可读时保留原请求及键，权限恢复后手动重放不覆盖新编辑',async()=>{
+ const sent=[]
+ const f=renderedFixture({api:{saveEvidenceCard:(...args)=>{sent.push(args);if(sent.length===1)return Promise.reject(Object.defineProperty({error:{code:'evidence_card_save_committed_unreadable'}},'$httpStatus',{value:409}));if(sent.length===2)return Promise.reject(Object.defineProperty({error:{code:'source_access_denied'}},'$httpStatus',{value:403}));if(sent.length===3)return Promise.resolve({data:{}});return Promise.resolve({data:{id:'saved-card',project_id:'project',version:1}})}}});await tick()
+ prepareEvidenceSave(f);await tick();await confirmEvidenceSave(f)
+ assert.equal(sent.length,1);assert.match(f.ui(),/证据卡已保存，但当前无法读取结果/);assert.ok(findButton(f.container,'读取已保存的证据卡回执'))
+ f.state.cardForm.scope='后续编辑不能覆盖';f.state.saveCard();await tick();assert.equal(sent.length,1)
+ findButton(f.container,'读取已保存的证据卡回执').props.onClick();await tick()
+ assert.equal(sent.length,2);assert.ok(findButton(f.container,'读取已保存的证据卡回执'))
+ f.state.cardForm.scope='恢复期间的新编辑';findButton(f.container,'读取已保存的证据卡回执').props.onClick();await tick()
+ assert.equal(sent.length,3);assert.ok(findButton(f.container,'读取已保存的证据卡回执'));assert.match(f.ui(),/保存回执不完整/)
+ findButton(f.container,'读取已保存的证据卡回执').props.onClick();await tick();assert.equal(sent.length,4)
+ for(const retry of sent.slice(1)){assert.equal(sent[0][2],retry[2]);assert.deepEqual(sent[0][1],retry[1])}
+ assert.equal(f.state.cardForm.scope,'恢复期间的新编辑')
+ assert.equal(findButton(f.container,'读取已保存的证据卡回执'),undefined);f.close()
+})
+
+test('保存回执恢复随项目、用户和租户切换清除，迟到错误不恢复旧请求',async()=>{
+ for(const change of ['project','user','tenant','auth-user']){
+  const sent=[];let rejectPending
+  const auth=Vue.reactive({currentUserId:'owner',effectiveTenantId:'tenant-a'})
+  const f=renderedFixture({auth,api:{saveEvidenceCard:(...args)=>{sent.push(args);return new Promise((_,reject)=>{rejectPending=reject})}}});await tick()
+  prepareEvidenceSave(f);await tick();f.state.saveCard();await tick();f.state.confirmChecked.value=true;f.state.confirmReason.value='已核对';await tick()
+  const operation=f.state.executeConfirmation();await tick();assert.equal(sent.length,1)
+  if(change==='project')f.props.project={...f.props.project,id:'other-project'}
+  else if(change==='user')f.props.currentUserId='other-user'
+  else if(change==='auth-user')auth.currentUserId='other-auth-user'
+  else auth.effectiveTenantId='tenant-b'
+  await tick();rejectPending(Object.defineProperty({error:{code:'evidence_card_save_committed_unreadable'}},'$httpStatus',{value:409}));await operation;await tick()
+  assert.equal(findButton(f.container,'读取已保存的证据卡回执'),undefined);assert.equal(f.state.cardSaveRecovery.value,null);f.close()
+ }
+})
+
+
+test('普通版本冲突不冒称保存成功，也不创建回执恢复入口',async()=>{
+ const sent=[]
+ const f=renderedFixture({api:{saveEvidenceCard:(...args)=>{sent.push(args);return Promise.reject(Object.defineProperty({error:{code:'version_conflict'},message:'版本冲突'},'$httpStatus',{value:409}))}}});await tick()
+ prepareEvidenceSave(f);await tick();await confirmEvidenceSave(f)
+ assert.equal(sent.length,1);assert.match(f.ui(),/版本冲突/);assert.doesNotMatch(f.ui(),/证据卡已保存，但当前无法读取结果/)
+ assert.equal(f.state.cardSaveRecovery.value,null);assert.equal(f.state.cardForm.scope,'原始范围');f.close()
+})
+
+test('恢复请求进行中切换项目、用户或租户不会恢复旧回执',async()=>{
+ for(const change of ['project','user','tenant','auth-user']){
+  let rejectRetry;const sent=[],auth=Vue.reactive({currentUserId:'owner',effectiveTenantId:7})
+  const f=renderedFixture({auth,api:{saveEvidenceCard:(...args)=>{sent.push(args);if(sent.length===1)return Promise.reject(Object.defineProperty({error:{code:'evidence_card_save_committed_unreadable'}},'$httpStatus',{value:409}));return new Promise((_,reject)=>{rejectRetry=reject})}}});await tick()
+  prepareEvidenceSave(f);await tick();await confirmEvidenceSave(f);assert.ok(findButton(f.container,'读取已保存的证据卡回执'))
+  const pending=f.state.recoverCardSave();await tick();assert.equal(sent.length,2)
+  if(change==='project')f.props.project={...f.props.project,id:'other-project'}
+  else if(change==='user')f.props.currentUserId='other-user'
+  else if(change==='auth-user')auth.currentUserId='other-auth-user'
+  else auth.effectiveTenantId=8
+  await tick();rejectRetry(Object.defineProperty({error:{code:'source_access_denied'}},'$httpStatus',{value:403}));await pending;await tick()
+  assert.equal(f.state.cardSaveRecovery.value,null);assert.equal(findButton(f.container,'读取已保存的证据卡回执'),undefined);f.close()
+ }
+})
+
+
+test('关闭面板后清除保存回执恢复请求，迟到响应不能恢复',async()=>{
+ let calls=0,rejectRetry
+ const f=renderedFixture({api:{saveEvidenceCard:()=>{calls++;if(calls===1)return Promise.reject(Object.defineProperty({error:{code:'evidence_card_save_committed_unreadable'}},'$httpStatus',{value:409}));return new Promise((_,reject)=>{rejectRetry=reject})}}});await tick()
+ prepareEvidenceSave(f);await tick();await confirmEvidenceSave(f);assert.ok(f.state.cardSaveRecovery.value)
+ const pending=f.state.recoverCardSave();await tick();f.close();assert.equal(f.state.cardSaveRecovery.value,null)
+ rejectRetry(Object.defineProperty({error:{code:'source_access_denied'}},'$httpStatus',{value:403}));await pending;assert.equal(f.state.cardSaveRecovery.value,null)
+})
+
+
+test('重新读取遭拒时仍保留同一身份的已提交保存请求',async()=>{
+ let denied=false;const sent=[]
+ const f=renderedFixture({api:{listEvidenceCards:()=>denied?Promise.reject(Object.defineProperty({message:'读取被拒'},'$httpStatus',{value:403})):Promise.resolve({data:[]}),saveEvidenceCard:(...args)=>{sent.push(args);if(sent.length===1)return Promise.reject(Object.defineProperty({error:{code:'evidence_card_save_committed_unreadable'}},'$httpStatus',{value:409}));denied=false;return Promise.resolve({data:{id:'saved-card',project_id:'project',version:1}})}}});await tick()
+ prepareEvidenceSave(f);await tick();await confirmEvidenceSave(f);denied=true;await f.state.refresh();await tick()
+ assert.ok(findButton(f.container,'读取已保存的证据卡回执'));await f.state.recoverCardSave();await tick()
+ assert.equal(sent.length,2);assert.equal(sent[0][2],sent[1][2]);assert.deepEqual(sent[0][1],sent[1][1]);assert.equal(f.state.cardSaveRecovery.value,null);f.close()
 })

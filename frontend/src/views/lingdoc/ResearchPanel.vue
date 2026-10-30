@@ -6,6 +6,7 @@
  <p v-if="readonly" class="notice">当前仅可查看，实际操作仍由服务端核对权限和版本。</p><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="message" role="status" class="notice">{{ message }}</p>
  <p v-if="unknown.size" class="notice">有请求尚未取得确定回执。请读取已有结果，暂勿再次执行。</p>
  <p v-if="cardRecovery" class="notice" role="status">证据确认已提交，但当前无法读取结果。恢复权限后可使用原请求读取确认回执；切换账号或关闭页面后本页不再保留该请求。<button v-if="!readonly" type="button" :disabled="busy('confirm-'+cardRecovery.cardID)" @click="recoverCardConfirmation">读取已提交的确认回执</button></p>
+ <p v-if="cardSaveRecovery" class="notice" role="status">证据卡已保存，但当前无法读取结果。恢复权限后可使用原请求和原幂等键读取回执；切换项目、账号或关闭页面后本页不再保留该请求。<button v-if="!readonly" type="button" :disabled="busy('card-save')" @click="recoverCardSave">读取已保存的证据卡回执</button></p>
  <template v-if="tab==='tasks'">
  <form v-if="canResearch" @submit.prevent="saveTask"><h3>{{ taskForm.id?'调整调研任务':'先写一个调研问题' }}</h3><label>要弄清什么<textarea v-model="taskForm.goal" required maxlength="6000" /></label><label>至少两条查询<textarea v-model="taskForm.queries" required placeholder="每行一条；分别查询定义、反例或边界" /></label>
  <div class="grid"><label>项目资料<select v-model="taskForm.assets" multiple><option v-for="asset in assets" :key="asset.id" :value="asset.id" :disabled="asset.processing_state!=='ready'">{{ asset.title }} · {{ label(asset.processing_state) }}</option></select></label><label>联网/学术检索<select v-model="taskForm.provider"><option value="">只查项目资料</option><option value="academic:crossref">Crossref（仅书目信息，不取全文）</option><option v-for="item in providers" :key="item.id" :value="item.id" :disabled="item.id==='academic:crossref'">{{ item.name }}</option></select></label></div>
@@ -41,7 +42,7 @@
  <details v-if="canEvidence&&project.status==='active'" :open="!!claimForm.id"><summary>{{ claimForm.id?'修订主张':'写下要检验的主张' }}</summary><form @submit.prevent="saveClaim"><label>主张<textarea v-model="claimForm.text" required /></label><label>适用范围<input v-model="claimForm.scope" required /></label><label>状态<select v-model="claimForm.status"><option value="active">当前主张</option><option value="disputed">存在争议</option><option value="superseded">已替代</option></select></label><label>解释与边界<textarea v-model="claimForm.explanation" /></label><button>预览并保存主张</button><button type="button" @click="resetClaim">新写主张</button></form></details>
  <article v-for="claim in claims" :key="claim.id"><h3>{{ claim.text }}</h3><p>{{ label(claim.status) }} · v{{ claim.version }} · {{ claim.scope }}</p><p>{{ claim.explanation }}</p><button v-if="canEvidence" @click="editClaim(claim)">修订</button></article>
  <form v-if="canEvidence&&project.status==='active'" @submit.prevent="saveCard"><h3>{{ cardForm.id?'修订证据卡':'将定位关联到主张' }}</h3><label>原文定位<select v-model="cardForm.anchors" multiple required><option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id" :disabled="anchor.status!=='CURRENT'">{{ anchor.locator }} · v{{ anchor.version }}</option></select></label><label>书目人工判断（可选）<select v-model="cardForm.academicAssociations" multiple><option v-for="item in associationHistory" :key="item.id" :value="{id:item.id,version:item.version}" :disabled="item.status!=='recorded'||item.review_state!=='historical'">DOI {{ item.doi }} · {{ item.locator }} · 记录 v{{ item.version }}</option></select></label><p v-if="cardForm.academicAssociations.length" class="notice">保存后仍需人工确认。确认时会保存符合条件的原件与分块历史快照，并重新检查权限和学术来源状态。</p><label>主张<select v-model="cardForm.claim"><option value="">先保存未关联的候选卡</option><option v-for="claim in claims" :key="claim.id" :value="claim.id" :disabled="claim.status!=='active'">{{ claim.text }}</option></select></label>
- <div class="grid"><label>关系<select v-model="cardForm.support"><option value="supports">支持</option><option value="refutes">反驳</option><option value="qualifies">限定条件</option><option value="background">背景资料</option></select></label><label>适用章节<select v-model="cardForm.chapters" multiple required><option v-for="chapter in chapters" :key="chapter.id" :value="chapter.id">{{ chapter.title }}</option></select></label></div><label>适用范围<input v-model="cardForm.scope" required /></label><details open><summary>局限与缺口</summary><label>资料局限<textarea v-model="cardForm.limits" required /></label><label>尚缺证据<textarea v-model="cardForm.gaps" /></label><label>替代解释<textarea v-model="cardForm.alternative" /></label></details><button>预览并保存候选卡</button><button type="button" @click="resetCard">新建另一卡</button></form>
+ <div class="grid"><label>关系<select v-model="cardForm.support"><option value="supports">支持</option><option value="refutes">反驳</option><option value="qualifies">限定条件</option><option value="background">背景资料</option></select></label><label>适用章节<select v-model="cardForm.chapters" multiple required><option v-for="chapter in chapters" :key="chapter.id" :value="chapter.id">{{ chapter.title }}</option></select></label></div><label>适用范围<input v-model="cardForm.scope" required /></label><details open><summary>局限与缺口</summary><label>资料局限<textarea v-model="cardForm.limits" required /></label><label>尚缺证据<textarea v-model="cardForm.gaps" /></label><label>替代解释<textarea v-model="cardForm.alternative" /></label></details><button :disabled="!!cardSaveRecovery||busy('card-save')">预览并保存候选卡</button><button type="button" @click="resetCard">新建另一卡</button></form>
  <label>显示卡片<select v-model="cardFilter"><option value="">全部状态</option><option value="CANDIDATE">待确认</option><option value="CONFIRMED">已人工确认</option><option value="NEEDS_REVIEW">需复核</option><option value="INSUFFICIENT">证据不足</option></select></label>
  <article v-for="card in visibleCards" :key="card.id" :data-card-id="card.id"><h3>{{ supportLabel(card.support_type) }} · {{ claimText(card) }}</h3><p>{{ label(card.status) }} · v{{ card.version }} · 基线 {{ card.basis.context_revision }}</p><p>{{ card.scope }} · {{ card.limitations }}</p><p v-if="card.gaps">缺口：{{ card.gaps }}</p><p v-if="card.academic_association_refs?.length" class="notice">含人工书目判断；确认时会核验并保存原件和分块的历史快照。</p><p v-if="card.invalid_reason" class="error">{{ card.invalid_reason }}</p><p v-if="card.confirmation">{{ card.confirmation.meaning }} · {{ card.confirmation.confirmed_by }} · 确认时间 {{ card.confirmation.confirmed_at||'未记录' }}</p><p v-if="card.confirmation&&card.academic_association_refs?.length" class="notice">{{ card.confirmation.academic_snapshots?.length ? '已保存历史快照（' + card.confirmation.academic_snapshots.length + ' 份来源）；使用时仍会检查权限、来源状态和撤稿情况。' : '未记录历史快照，请先要求复核，再重新核验并确认。' }}</p><details><summary>定位与版本依据</summary><ul><li v-for="ref in card.anchor_refs" :key="ref.id">{{ anchorName(ref.id) }} · v{{ ref.version }} <button @click="openAnchor(ref.id)">打开片段</button></li></ul></details><div class="actions"><button v-if="canEvidence" @click="editCard(card)">修订候选</button><button v-if="canConfirmCard(card)&&card.status!=='CONFIRMED'" :disabled="!!cardRecovery" @click="confirmCard(card)">人工确认适用范围</button><button v-if="canEvidence" @click="reviewCard(card,'INSUFFICIENT')">证据不足</button><button v-if="canEvidence" @click="reviewCard(card,'NEEDS_REVIEW')">要求复核</button><button :disabled="card.status!=='CONFIRMED'||(!!card.academic_association_refs?.length&&!card.confirmation?.academic_snapshots?.length)" :aria-pressed="evidenceSelected(card)" @click="emit('useEvidence',[{id:card.id,version:card.version}])">{{evidenceSelected(card)?'取消正文选择':'选择用于正文'}}</button></div></article>
  </template>
@@ -108,6 +109,7 @@ const feedbackDrafts=reactive<Record<string,string>>({}),feedbackSaved=reactive<
 const feedbackKey=(run:string,round:number)=>`${run}:${round}`
 const epoch=new ResponseEpoch(),keys=new IdempotencyKeyCache(),pending=reactive(new Set<string>()),unknown=reactive(new Set<string>())
 const cardRecovery=ref<{projectID:string;userID:string;cardID:string;input:api.ConfirmationInput;key:string}|null>(null)
+const cardSaveRecovery=ref<{projectID:string;userID:string;tenantID:number|null;authUserID:string;input:api.SaveEvidenceCardInput;key:string}|null>(null)
 let cardRecoveryScope=0
 const unknownTurnIDs=new Map<string,Set<string>>()
 const ownMember=computed(()=>props.project.members.find(member=>member.user_id===props.currentUserId&&(!member.status||member.status==='active')))
@@ -217,14 +219,20 @@ function clearSensitive(){
  academicCatalogReadSequence++;academicCatalog.value=null;academicCatalogDraft.value=[];academicCatalogBasis.value=null;Object.assign(academicRuleForm,{sourceType:'journal',venueName:'',venueIDs:'',licenseURLs:''})
  taskDraftSource.value=null;turnReadSequences.clear()
  tasks.value=[];runs.value=[];anchors.value=[];claims.value=[];cards.value=[];imports.value=[];proposals.value=[];assets.value=[];chapters.value=[];changes.value=[];releases.value=[];providers.value=[];knowledgeBases.value=[]
- source.value=null;cardRecovery.value=null;associationCandidate.value='';associationReceipt.value=null;associationHistory.value=[];selectedRun.value=null;selection.value=null;turns.value=[];sessions.value=[];sessionId.value='';userInput.value='';sourceId.value='';contextPreview.value=null;contextForm.consent=false;contextForm.anchors=[];contextForm.cards=[];contextForm.task='';contextForm.chapter='';importResult.value=null
+ source.value=null;cardRecovery.value=null;cardSaveRecovery.value=null;associationCandidate.value='';associationReceipt.value=null;associationHistory.value=[];selectedRun.value=null;selection.value=null;turns.value=[];sessions.value=[];sessionId.value='';userInput.value='';sourceId.value='';contextPreview.value=null;contextForm.consent=false;contextForm.anchors=[];contextForm.cards=[];contextForm.task='';contextForm.chapter='';importResult.value=null
  for(const key of Object.keys(feedbackDrafts))delete feedbackDrafts[key];for(const key of Object.keys(feedbackSaved))delete feedbackSaved[key]
  changeDraftTurn.value=null;changeDraftChapterIDs.value=[];actionForm.changeDraft='';specCandidate.value=null;specCandidateFresh.value=null;specCandidateAttempt.value=null;specCandidateUnknown.value=false;specManagePermission.value=null
  policyAsset.value='';assetPolicy.value=null;Object.assign(policyForm,{scope:'personal',purpose:'',users:[],model:false});loading.value=false;Object.assign(importForm,{purpose:'',license:'',model:false,kb:''});Object.assign(anchorForm,{id:'',version:0,checked:false,corrected:'',correction:''});Object.assign(actionForm,{target:'',field:'',value:'',knowledge:'',effect:''});resetTask();resetClaim();resetCard()
 }
 function report(cause:unknown){
  const item=cause as {message?:string;status?:number;$httpStatus?:number}
- if([401,403,404].includes(item?.$httpStatus||item?.status||0)){epoch.next();clearTimeout(poll);clearSensitive();keys.clear();confirmingBusy.value=false;cancelConfirmation()}
+ if([401,403,404].includes(item?.$httpStatus||item?.status||0)){
+  const saved=cardSaveRecovery.value
+  epoch.next();clearTimeout(poll);clearSensitive();keys.clear();confirmingBusy.value=false;cancelConfirmation()
+  // A source refusal can clear the panel, but it must not lose a committed
+  // save's replay request while the same project and identity remain active.
+  if(saved&&props.project.id===saved.projectID&&props.currentUserId===saved.userID&&auth.effectiveTenantId===saved.tenantID&&auth.currentUserId===saved.authUserID)cardSaveRecovery.value=saved
+ }
  error.value=item?.message||'操作未取得成功回执，请重新读取当前状态。'
 }
 async function refresh(){
@@ -324,7 +332,44 @@ function cardInput():api.SaveEvidenceCardInput{
  for(const ref of cardForm.academicAssociations){const item=associationHistory.value.find(value=>value.id===ref.id&&value.version===ref.version);if(!item||item.status!=='recorded'||item.review_state!=='historical'||!refs.some(anchor=>anchor.source_id===item.source_id&&anchor.asset_id===item.asset_id&&anchor.asset_revision===item.asset_revision))throw new Error('书目判断已变化或与定位不匹配，请重新核对。')}
  return {...expectation(cardForm.version),card_id:cardForm.id||undefined,anchor_refs:refs.map(anchor=>({id:anchor.id,version:anchor.version})),academic_association_refs:cardForm.academicAssociations.map(ref=>({...ref})),claim_ref:claim?{id:claim.id,version:claim.version}:undefined,support_type:cardForm.support,scope:cardForm.scope,scope_chapter_ids:[...cardForm.chapters],limitations:cardForm.limits,gaps:cardForm.gaps,alternative_explanation:cardForm.alternative,confirmed:true}
 }
-function saveCard(){try{const input=cardInput();requestConfirmation('保存候选证据卡',supportLabel(input.support_type)+'\n范围：'+input.scope+'\n定位：'+input.anchor_refs.map(ref=>anchorName(ref.id)).join('；')+'\n局限：'+input.limitations+'\n保存后仍需人工确认。',async()=>{if(await write('card-save',input,key=>api.saveEvidenceCard(props.project.id,input,key)))resetCard()})}catch(cause){report(cause)}}
+function saveCard(){
+ if(cardSaveRecovery.value)return
+ try{
+  const input=cardInput(),projectID=props.project.id,userID=props.currentUserId,tenantID=auth.effectiveTenantId,authUserID=auth.currentUserId
+  requestConfirmation('保存候选证据卡',supportLabel(input.support_type)+'\n范围：'+input.scope+'\n定位：'+input.anchor_refs.map(ref=>anchorName(ref.id)).join('；')+'\n局限：'+input.limitations+'\n保存后仍需人工确认。',async()=>{
+   if(props.project.id!==projectID||props.currentUserId!==userID||auth.effectiveTenantId!==tenantID||auth.currentUserId!==authUserID){error.value='项目或账号已变化，请重新核对。';return}
+   const token=epoch.capture(),result=await submitCardSave(projectID,input)
+   if(result&&epoch.accepts(token))resetCard()
+  })
+ }catch(cause){report(cause)}
+}
+async function submitCardSave(projectID:string,input:api.SaveEvidenceCardInput,originalKey?:string){
+ const userID=props.currentUserId,tenantID=auth.effectiveTenantId,authUserID=auth.currentUserId,token=epoch.capture();let usedKey=''
+ const result=await write('card-save',input,key=>{usedKey=originalKey||key;return api.saveEvidenceCard(projectID,input,usedKey).then(result=>{
+  const card=result?.data
+  if(!card||typeof card.id!=='string'||!card.id||card.project_id!==projectID||!Number.isInteger(card.version)||card.version<1||(input.card_id&&card.id!==input.card_id))throw new Error('保存回执不完整，请使用原请求重新读取。')
+  return result
+ }).catch(cause=>{
+  if(cardConfirmationCode(cause)==='evidence_card_save_committed_unreadable'&&epoch.accepts(token)&&props.project.id===projectID&&props.currentUserId===userID&&auth.effectiveTenantId===tenantID&&auth.currentUserId===authUserID){
+   cardSaveRecovery.value={projectID,userID,tenantID,authUserID,input:{...input,anchor_refs:input.anchor_refs.map(ref=>({...ref})),academic_association_refs:input.academic_association_refs?.map(ref=>({...ref})),claim_ref:input.claim_ref?{...input.claim_ref}:undefined,scope_chapter_ids:[...input.scope_chapter_ids]},key:usedKey}
+   const problem=cause as {status?:number;$httpStatus?:number}|null
+   throw {...(problem&&typeof problem==='object'?problem:{}),$httpStatus:problem?.$httpStatus,status:problem?.status,message:'证据卡已保存，但当前无法读取结果。恢复权限后请使用原请求和原幂等键读取回执。'}
+  }
+  throw cause
+ })})
+ if(result&&cardSaveRecovery.value?.key===usedKey)cardSaveRecovery.value=null
+ return result
+}
+async function recoverCardSave(){
+ const saved=cardSaveRecovery.value
+ if(!saved||props.readonly||props.project.id!==saved.projectID||props.currentUserId!==saved.userID||auth.effectiveTenantId!==saved.tenantID||auth.currentUserId!==saved.authUserID)return
+ const scope=cardRecoveryScope
+ const result=await submitCardSave(saved.projectID,saved.input,saved.key)
+ // An access refusal clears sensitive state. Keep only the original committed
+ // request for replay while the same project, user and tenant remain active.
+ if(!result&&scope===cardRecoveryScope&&props.project.id===saved.projectID&&props.currentUserId===saved.userID&&auth.effectiveTenantId===saved.tenantID&&auth.currentUserId===saved.authUserID)cardSaveRecovery.value=saved
+}
+
 function cardConfirmationCode(cause:unknown){const item=cause as {code?:string;error?:{code?:string}}|null;return item?.code||item?.error?.code||''}
 function cardConfirmationError(cause:unknown){
  const problem=cause as {status?:number;$httpStatus?:number;code?:string;error?:{code?:string};message?:string}
@@ -567,7 +612,7 @@ async function showEvidenceCard(ref:api.VersionRef){
   target.scrollIntoView?.({behavior:'smooth',block:'center'})
 }
 defineExpose({operationBusy:computed(()=>pending.size>0||confirmingBusy.value),showEvidenceCard})
-onBeforeUnmount(()=>{epoch.next();clearTimeout(poll);keys.clear();clearSensitive();confirmDialog.value?.close()})
+onBeforeUnmount(()=>{cardRecoveryScope++;epoch.next();clearTimeout(poll);keys.clear();clearSensitive();confirmDialog.value?.close()})
 
 async function loadPolicy(){assetPolicy.value=null;const token=epoch.capture(),id=policyAsset.value;if(!id)return;try{const result=await api.getProjectAssetPolicy(props.project.id,id);if(epoch.accepts(token)&&policyAsset.value===id){assetPolicy.value=result.data;Object.assign(policyForm,{scope:result.data.scope,purpose:result.data.purpose,users:[...result.data.allowed_user_ids],model:result.data.model_use_allowed})}}catch(cause){if(epoch.accepts(token))report(cause)}}
 function proposePolicy(){if(!assetPolicy.value)return;const id=assetPolicy.value.asset_id,version=assetPolicy.value.version;const policy={scope:policyForm.scope,purpose:policyForm.purpose,allowed_user_ids:[...policyForm.users],model_use_allowed:policyForm.model};requestConfirmation('起草资料使用变更','资料版本 '+version+'\n范围 '+policy.scope+'\n目的 '+(policy.purpose||'历史未记录')+'\n模型使用 '+(policy.model_use_allowed?'许可':'未许可')+'\n应用后所有定位和关联卡片需要复核。',async reason=>{const input:api.ProjectAssetPolicyProposalInput={...expectation(version),confirmed:true,reason,policy};await write('policy-propose',input,key=>api.proposeProjectAssetPolicy(props.project.id,id,input,key))})}

@@ -23045,11 +23045,24 @@
             }
           },
           "409": {
-            "description": "Current version, idempotency, or operation-outcome conflict",
+            "description": "Version or idempotency conflict; evidence_card_save_committed_unreadable means the save committed but its receipt is currently inaccessible. After access is restored, replay the identical request with the same Idempotency-Key.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "committed_unreadable": {
+                    "summary": "Save committed; current source or permission prevents reading the receipt",
+                    "value": {
+                      "error": {
+                        "code": "evidence_card_save_committed_unreadable",
+                        "message": "证据卡已保存，但当前无法读取结果；请核对来源和权限，恢复后使用相同请求重试。",
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
                 }
               }
             }

@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,10 +21,47 @@ type GORMRepository struct{ db *gorm.DB }
 
 func NewGORMRepository(db *gorm.DB) *GORMRepository { return &GORMRepository{db: db} }
 func (r *GORMRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
+	if options.VerifyRollback && options.RetryLocks {
+		return errors.New("verified rollback cannot be combined with automatic transaction retry")
+	}
 	run := func(ctx context.Context) error {
 		var sqlOptions *sql.TxOptions
 		if options.ReadOnly || options.RepeatableRead {
 			sqlOptions = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: options.ReadOnly}
+		}
+		if options.VerifyRollback && r.db.Name() == "sqlite" {
+			return r.db.WithContext(ctx).Connection(func(connDB *gorm.DB) error {
+				conn, ok := connDB.Statement.ConnPool.(*sql.Conn)
+				if !ok {
+					return errors.New("SQLite verified transaction requires a dedicated connection")
+				}
+				discard := func() { _ = conn.Raw(func(any) error { return driver.ErrBadConn }) }
+				tx := connDB.Begin(sqlOptions)
+				if tx.Error != nil {
+					return tx.Error
+				}
+				finished := false
+				defer func() {
+					if !finished && tx.Rollback().Error != nil {
+						discard()
+					}
+				}()
+				if err := fn(gormTransaction{tx}); err != nil {
+					rollbackErr := tx.Rollback().Error
+					finished = true
+					if rollbackErr != nil {
+						discard()
+						return errors.Join(err, rollbackErr)
+					}
+					return verifiedSQLiteRollback{cause: err}
+				}
+				err := tx.Commit().Error
+				finished = true
+				if err != nil {
+					discard()
+				}
+				return err
+			})
 		}
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fn(gormTransaction{tx}) }, sqlOptions)
 	}
