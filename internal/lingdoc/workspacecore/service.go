@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,10 +21,47 @@ type GORMRepository struct{ db *gorm.DB }
 
 func NewGORMRepository(db *gorm.DB) *GORMRepository { return &GORMRepository{db: db} }
 func (r *GORMRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
+	if options.VerifyRollback && options.RetryLocks {
+		return errors.New("verified rollback cannot be combined with automatic transaction retry")
+	}
 	run := func(ctx context.Context) error {
 		var sqlOptions *sql.TxOptions
 		if options.ReadOnly || options.RepeatableRead {
 			sqlOptions = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: options.ReadOnly}
+		}
+		if options.VerifyRollback && r.db.Name() == "sqlite" {
+			return r.db.WithContext(ctx).Connection(func(connDB *gorm.DB) error {
+				conn, ok := connDB.Statement.ConnPool.(*sql.Conn)
+				if !ok {
+					return errors.New("SQLite verified transaction requires a dedicated connection")
+				}
+				discard := func() { _ = conn.Raw(func(any) error { return driver.ErrBadConn }) }
+				tx := connDB.Begin(sqlOptions)
+				if tx.Error != nil {
+					return tx.Error
+				}
+				finished := false
+				defer func() {
+					if !finished && tx.Rollback().Error != nil {
+						discard()
+					}
+				}()
+				if err := fn(gormTransaction{tx}); err != nil {
+					rollbackErr := tx.Rollback().Error
+					finished = true
+					if rollbackErr != nil {
+						discard()
+						return errors.Join(err, rollbackErr)
+					}
+					return verifiedSQLiteRollback{cause: err}
+				}
+				err := tx.Commit().Error
+				finished = true
+				if err != nil {
+					discard()
+				}
+				return err
+			})
 		}
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fn(gormTransaction{tx}) }, sqlOptions)
 	}
@@ -794,7 +832,22 @@ func (t gormTransaction) ChapterVersion(projectID, chapterID, versionID string) 
 	if err := t.db.Where("id = ? AND project_id = ? AND chapter_id = ?", versionID, projectID, chapterID).First(&row).Error; err != nil {
 		return ChapterVersion{}, storageError(err)
 	}
-	return decodeVersionRow(row)
+	version, err := decodeVersionRow(row)
+	if err != nil {
+		return ChapterVersion{}, err
+	}
+	if err = t.populateChapterClaimProvenance(&version); err != nil {
+		return ChapterVersion{}, err
+	}
+	return version, nil
+}
+
+func (t gormTransaction) populateChapterClaimProvenance(version *ChapterVersion) error {
+	if !t.db.Migrator().HasTable(&DraftClaimProvenance{}) {
+		version.ClaimProvenanceUnavailable = true
+		return nil
+	}
+	return t.db.Where("project_id = ? AND chapter_id = ? AND chapter_version_id = ?", version.ProjectID, version.ChapterID, version.ID).Order("created_at ASC, id ASC").Find(&version.ClaimProvenance).Error
 }
 
 func (t gormTransaction) ChapterVersions(projectID, chapterID string) ([]ChapterVersion, error) {
@@ -806,6 +859,9 @@ func (t gormTransaction) ChapterVersions(projectID, chapterID string) ([]Chapter
 	for _, row := range rows {
 		version, err := decodeVersionRow(row)
 		if err != nil {
+			return nil, err
+		}
+		if err := t.populateChapterClaimProvenance(&version); err != nil {
 			return nil, err
 		}
 		versions = append(versions, version)
@@ -846,7 +902,23 @@ func (t gormTransaction) WorkingCopy(projectID, chapterID string) (WorkingCopy, 
 	if err := t.db.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).First(&row).Error; err != nil {
 		return WorkingCopy{}, storageError(err)
 	}
-	return workingCopyView(row)
+	copy, err := workingCopyView(row)
+	if err != nil {
+		return WorkingCopy{}, err
+	}
+	if !t.db.Migrator().HasTable(&DraftClaimProvenance{}) {
+		copy.ClaimProvenanceUnavailable = true
+		return copy, nil
+	}
+	if err := t.db.Where("project_id = ? AND chapter_id = ? AND chapter_version_id = ''", projectID, chapterID).Order("created_at ASC, id ASC").Find(&copy.ClaimProvenance).Error; err != nil {
+		return WorkingCopy{}, err
+	}
+	for i := range copy.ClaimProvenance {
+		if copy.ClaimProvenance[i].BodyHash != draftClaimBodyHash(copy.BodyMarkdown) {
+			copy.ClaimProvenance[i].Status = "stale"
+		}
+	}
+	return copy, nil
 }
 
 func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
@@ -869,11 +941,17 @@ func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
 	} else {
 		query = query.Where("base_chapter_version_id = ?", *previous.BaseChapterVersionID)
 	}
-	return affected(query.Updates(map[string]any{
+	if err := affected(query.Updates(map[string]any{
 		"base_chapter_version_id": next.BaseChapterVersionID, "spec_revision": next.SpecRevision,
 		"working_copy_revision": next.WorkingCopyRevision, "body_markdown": next.BodyMarkdown,
 		"source_ids_json": string(sources), "citation_usages_json": string(usages), "review_items_json": string(review), "updated_at": next.UpdatedAt,
-	}))
+	})); err != nil {
+		return err
+	}
+	if previous.BodyMarkdown != next.BodyMarkdown {
+		return invalidateDraftClaimProvenance(t.db, previous.ProjectID, previous.ChapterID, next.BodyMarkdown)
+	}
+	return nil
 }
 func (t gormTransaction) Chapters(projectID string) ([]Chapter, error) {
 	var rows []chapterRow
@@ -937,6 +1015,9 @@ func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int6
 	}
 	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), CitationUsagesJSON: string(usages), ReviewItemsJSON: string(review), SpecRevision: specRevision}
 	if err := t.db.Create(&version).Error; err != nil {
+		return err
+	}
+	if err := SnapshotChapterClaimProvenance(t.db, t, next.ProjectID, next.ID, version.ID, next.BodyMarkdown); err != nil {
 		return err
 	}
 	query := t.db.Model(&chapterRow{}).Where("id = ? AND project_id = ?", previous.ID, previous.ProjectID)

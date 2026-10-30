@@ -1698,7 +1698,7 @@ class ProviderShardTests(DecisionFixture):
                 "identical filters would run the same tests twice")
             self.assertEqual(sorted(shards[len(decision.WORKSPACE_SHARD_NAMES)].packages), sorted(
                 f"./internal/lingdoc/{name}/..." for name in
-                ("access", "candidateadoption", "delivery", "demoroute",
+                ("academic", "access", "candidateadoption", "delivery", "demoroute",
                  "docx", "generation", "materiallingest", "membership",
                  "operationcore", "reviewanchor", "rulesetstore",
                  "sourcemarker", "sourcepolicy", "template",

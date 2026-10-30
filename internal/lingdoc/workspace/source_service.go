@@ -354,6 +354,13 @@ func (s *SourceService) RetrieveSources(
 			return nil, err
 		}
 		for _, hit := range hits {
+			// Summaries are derived search aids with no original-text coordinates.
+			// This endpoint returns sources for locating original text, so don't
+			// present a summary as an inaccessible numbered original paragraph.
+			// Unknown and legacy types keep their existing fail-closed resolution.
+			if hit == nil || hit.ChunkType == types.ChunkTypeSummary {
+				continue
+			}
 			asset, ok := assetsByKnowledge[hit.KnowledgeID]
 			if !ok {
 				continue

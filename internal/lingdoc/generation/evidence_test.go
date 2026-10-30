@@ -13,6 +13,76 @@ type testEvidenceValidator struct {
 	calls  int
 }
 
+type legacyOnlyEvidenceSourceValidator struct{}
+
+func (legacyOnlyEvidenceSourceValidator) ValidateGenerationSources(context.Context, Actor, string, []Source) error {
+	return nil
+}
+
+type revokingEvidenceSourceValidator struct {
+	denied bool
+	calls  int
+}
+
+func (v *revokingEvidenceSourceValidator) ValidateGenerationSources(context.Context, Actor, string, []Source) error {
+	return errors.New("evidence path must use evidence-aware source validation")
+}
+
+func (v *revokingEvidenceSourceValidator) ValidateGenerationSourcesWithEvidence(_ context.Context, _ Actor, _, chapter string, refs []EvidenceCardRef, _ []Source) error {
+	v.calls++
+	if v.denied || chapter != "chapter-1" || len(refs) != 1 || refs[0].ID != "card" || refs[0].Version != 2 {
+		return ErrSourceAccessDenied
+	}
+	return nil
+}
+
+type revokeSourceDuringModel struct {
+	validator *revokingEvidenceSourceValidator
+}
+
+func (*revokeSourceDuringModel) RunMode() string { return "mock" }
+func (m *revokeSourceDuringModel) Generate(context.Context, Input) (Draft, error) {
+	m.validator.denied = true
+	return Draft{BodyMarkdown: "候选 [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}, nil
+}
+
+func TestGenerationEvidenceAwareSourceRechecksAfterModel(t *testing.T) {
+	service, repo := evidenceFixture()
+	repo.run = Run{}
+	service.Evidence = &testEvidenceValidator{}
+	sources := &revokingEvidenceSourceValidator{}
+	service.Sources = sources
+	service.Model = &revokeSourceDuringModel{validator: sources}
+	run, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "source-revoked-during-model", evidenceStartRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Execute(context.Background(), run.ID)
+	if err != nil || result.Status != StatusFailed || repo.candidate.ID != "" || sources.calls < 2 {
+		t.Fatalf("revoked evidence source was published: result=%+v calls=%d err=%v", result, sources.calls, err)
+	}
+}
+
+func TestGenerationEvidenceSourceRecheckRequiresBoundPersistedRefs(t *testing.T) {
+	refs := []EvidenceCardRef{{ID: "card", Version: 2}}
+	input := Input{EvidenceCardRefs: refs, Request: Request{EvidenceCardRefs: refs}}
+	service := &Service{Sources: legacyOnlyEvidenceSourceValidator{}}
+	if err := service.validateSources(context.Background(), Actor{}, "project", "chapter", input, nil); !errors.Is(err, ErrDependencyUnavailable) {
+		t.Fatalf("missing evidence-aware validator did not fail closed: %v", err)
+	}
+	service.Sources = testSources{}
+	input.Request.EvidenceCardRefs = []EvidenceCardRef{{ID: "card", Version: 3}}
+	if err := service.validateSources(context.Background(), Actor{}, "project", "chapter", input, nil); !errors.Is(err, ErrSourceAccessDenied) {
+		t.Fatalf("different request and persisted refs were accepted: %v", err)
+	}
+	input.EvidenceCardRefs = nil
+	input.Request.EvidenceCardRefs = nil
+	service.Sources = legacyOnlyEvidenceSourceValidator{}
+	if err := service.validateSources(context.Background(), Actor{}, "project", "chapter", input, nil); err != nil {
+		t.Fatalf("ordinary source path changed: %v", err)
+	}
+}
+
 func (v *testEvidenceValidator) ValidateGenerationEvidence(_ context.Context, _ Actor, _, _ string, refs []EvidenceCardRef, sources []Source) error {
 	v.calls++
 	if v.denied || len(refs) != 1 || refs[0].ID != "card" || refs[0].Version != 2 || len(sources) != 1 {

@@ -1,0 +1,345 @@
+{
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "source_manifest": "docs\\08-本轮实施方案\\acceptance\\evidence\\issue682-pr755-followup-20261027\\skip-followup-status.json",
+  "target_count": 66,
+  "groups": {
+    "docreader": 2,
+    "postgres": 39,
+    "permission": 1,
+    "browser-native": 22,
+    "browser-extension": 1,
+    "crossref": 1
+  },
+  "targets": [
+    {
+      "package": "github.com/Tencent/WeKnora/docreader/client",
+      "test": "TestReadURL",
+      "group": "docreader"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/docreader/client",
+      "test": "TestReadFile",
+      "group": "docreader"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestMemoryConsistencyPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestVectorSearchRanksInPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service",
+      "test": "TestSkillPythonVerifierReportsAnUnreadableScript",
+      "group": "permission"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestReconnectAfterServerRestartKeepsAuthorizationAndPausesTasks",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestRequestsRouteToBrowserOwnerAcrossReplicas",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestRealExtension",
+      "group": "browser-extension"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestNativeDaemonRelay",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestConcurrentCommandsShareAutomaticSessionCreation",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopCancelsActiveCommandAndRejectsFurtherCalls",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestScreenshotUsesNativeTaskAndPreservesCrop",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestProgressReportsNavigationFailureAndFreezesElapsedTime",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSharedDaemonRoutesAndIsolatesUsers",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestConcurrentPairingSharesOneDaemon",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSharedDaemonCrashKeepsAuthorizationAndPausesTasks",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestSlowDaemonStartupDoesNotBlockStatusOrCancelledWaiter",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestLivePreviewBypassesUnfinishedAutomation",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestWindowInterruptResumesSameTask/running=false",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestWindowInterruptResumesSameTask/running=true",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestHumanHelpOutcomeControlsPause",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestIdleRetainsTaskAndCachedPreviewUntilNextCall",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestNavigationDefaultsToDocumentReadyAndPreservesExplicitWait",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestFinishTurnClosesResearchButRetainsHandoffsAndPausedTasks",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopCancelsSessionCreation",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestFailedStopRetainsPausedTaskForRetry",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopTimeoutLeavesTaskPausedAndRejectsResumeWhileStopping",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/browserskill",
+      "test": "TestStopRecoversAfterDaemonAlreadyRemovedSession",
+      "group": "browser-native"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresAgentDownRestoresModelsTenantID",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/container",
+      "test": "TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/container",
+      "test": "TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresFullDownChainReachesNilVersionWithoutResidualTables",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGenerationDigestVersionMigrationGoesUpAndDown",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresLegacyRewriteValidityUpgradeAndRollback",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/database",
+      "test": "TestPostgresRowShapeGuardComparesDeclaredBoolAgainstBooleanColumnsDirectly",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref",
+      "test": "TestLiveCrossrefSearchSmoke",
+      "group": "crossref"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestConcurrentAdoptionOfTheSameCandidateCreatesOneVersion",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestConcurrentAdoptionLeavesTheWorkingCopyUnwritten",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestAdoptionWithRevokedAuthorizationInsideTheTransactionWritesNothing",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestAdoptionWithRevokedAuthorizationAfterCommitSaysCommitted",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+      "test": "TestTheSameIdempotencyKeyAcrossActorsIsTwoOperations",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+      "test": "TestPostgresDownloadRejectsPersistedCorruption",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+      "test": "TestPostgresGenerationFailureBoundaries",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+      "test": "TestPostgresWorkerCrashLeasePersistence",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore",
+      "test": "TestPostgresRuleSetMigrationAndLifecycle",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance",
+      "test": "TestPostgresCatalogSchemaLifecycleAndAuditRollback",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresAuditCategoryColumnRejectsOverLongAction",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresAuditBoundMigrationAddsTheExplicitConstraint",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresDependencyCandidateBatchAndDecision",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPostgresMigrationAndRepositoryContract",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+      "test": "TestRoadmapMigrationGoesUpAndDownOnPostgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestCatalogHTTPProductionDatabaseParity/postgres",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestPostgresRendererFailureUsesRealDOCXValidator",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/types",
+      "test": "TestPostgresJSONColumnCarrierTypes",
+      "group": "postgres"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+      "test": "TestPostgresTemplateCatalogVisibilityUsesProductionMembership",
+      "group": "postgres"
+    }
+  ]
+}

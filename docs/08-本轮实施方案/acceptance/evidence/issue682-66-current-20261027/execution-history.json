@@ -1,0 +1,18 @@
+{
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "resolved_environment_events": [
+    {
+      "phase": "browser-extension",
+      "event": "xvfb-run could not start because xauth was absent",
+      "initial_exit_code": 3,
+      "resolution": "Use installed Xvfb directly with an automatically assigned display and -nolisten tcp; real headed Chromium/extension then passed with race enabled."
+    },
+    {
+      "phase": "postgres",
+      "event": "Four destructive/fault-injection tests skipped because LINGDOC_FAILURE_TEST_DB was unset; strict runner exited 1",
+      "resolution": "Create dedicated lingdoc_fault_pr755_66_20261027 database, invoke production database.RunMigrations (0 to 137, dirty=false), and rerun only those four with matching DB name/DSN. Safety guards unchanged; four actual PASS events."
+    }
+  ],
+  "product_code_changes": [],
+  "docker_shutdown": "Test containers stopped and Docker Desktop stop completed after all targets passed."
+}

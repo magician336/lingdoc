@@ -89,7 +89,8 @@ func (h *SourceRuntime) contextSegments(ctx context.Context, read sourceRead) (b
 
 // contextSegment 为一段邻居作答。
 //
-// verbatim 说的是「这段文字此刻逐字等于原文坐标上的那一段」。拿得到原文（强档）
+// verbatim 说的是「这段文字此刻逐字等于索引坐标上的那一段」。直读上传文本
+// 的换行已统一为 LF，坐标不是原文件字节偏移。拿得到原文（强档）
 // 才可能为 true；拿不到原文时它是 false，但**正文照样给**——段里放的是分块表的
 // 文本，它就是这个系统里落库的那份正文，代价是它无法被原文证明。两种 false 在
 // 界面上的措辞不同，不能混成一句「原文」。

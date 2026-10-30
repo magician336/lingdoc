@@ -42,6 +42,10 @@ func (v testSources) ValidateGenerationSources(context.Context, Actor, string, [
 	return v.err
 }
 
+func (v testSources) ValidateGenerationSourcesWithEvidence(context.Context, Actor, string, string, []EvidenceCardRef, []Source) error {
+	return v.err
+}
+
 type testCurrentness struct {
 	current bool
 	err     error

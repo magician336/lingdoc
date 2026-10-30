@@ -22,6 +22,15 @@ test('实际调研任务路径编码对象编号、保留版本与 Idempotency-K
  assert.equal(calls[0].args[1], input)
  assert.equal(calls[0].args[2].headers['Idempotency-Key'], 'same-key')
 })
+test('查询轮次反馈走编码路径、请求体和幂等键', async () => {
+ const { api, calls } = fixture()
+ const input = { expected_project_version: 7, expected_context_revision: 4, expected_version: 3, round_number: 1, feedback: '补充反例' }
+ await api.saveResearchRoundFeedback('project/1', 'run/1', input, 'same-key')
+ assert.equal(calls[0].method, 'post')
+ assert.equal(calls[0].args[0], '/api/v1/lingdoc/projects/project%2F1/research-runs/run%2F1/feedback')
+ assert.equal(calls[0].args[1], input)
+ assert.equal(calls[0].args[2].headers['Idempotency-Key'], 'same-key')
+})
 test('上下文预览只用 POST body，不把来源或敏感同意放入 URL', async () => {
  const { api, calls } = fixture()
  const input = { source_ids: ['private-source'], card_refs: [], sensitive_context_confirmed: false, expected_context_revision: 9 }

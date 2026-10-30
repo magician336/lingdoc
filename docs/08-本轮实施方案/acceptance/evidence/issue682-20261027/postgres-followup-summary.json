@@ -1,0 +1,238 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "result": {
+    "result": "PASS",
+    "selected_top_level_tests": 39,
+    "packages": [
+      {
+        "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+        "selected_tests": [
+          "TestMemoryConsistencyPostgres",
+          "TestVectorSearchRanksInPostgres"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestMemoryConsistencyPostgres|TestVectorSearchRanksInPostgres)$",
+          "github.com/Tencent/WeKnora/internal/application/service/memory"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/container",
+        "selected_tests": [
+          "TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres",
+          "TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres|TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres)$",
+          "github.com/Tencent/WeKnora/internal/container"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/database",
+        "selected_tests": [
+          "TestPostgresAgentDownRestoresModelsTenantID",
+          "TestPostgresFullDownChainReachesNilVersionWithoutResidualTables",
+          "TestPostgresGenerationDigestVersionMigrationGoesUpAndDown",
+          "TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain",
+          "TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn",
+          "TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything",
+          "TestPostgresLegacyRewriteValidityUpgradeAndRollback",
+          "TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState",
+          "TestPostgresRowShapeGuardComparesDeclaredBoolAgainstBooleanColumnsDirectly",
+          "TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn",
+          "TestPostgresRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn",
+          "TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn",
+          "TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresAgentDownRestoresModelsTenantID|TestPostgresFullDownChainReachesNilVersionWithoutResidualTables|TestPostgresGenerationDigestVersionMigrationGoesUpAndDown|TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain|TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn|TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything|TestPostgresLegacyRewriteValidityUpgradeAndRollback|TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState|TestPostgresRowShapeGuardComparesDeclaredBoolAgainstBooleanColumnsDirectly|TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn|TestPostgresRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn|TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn|TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown)$",
+          "github.com/Tencent/WeKnora/internal/database"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+        "selected_tests": [
+          "TestAdoptionWithRevokedAuthorizationAfterCommitSaysCommitted",
+          "TestAdoptionWithRevokedAuthorizationInsideTheTransactionWritesNothing",
+          "TestConcurrentAdoptionLeavesTheWorkingCopyUnwritten",
+          "TestConcurrentAdoptionOfTheSameCandidateCreatesOneVersion",
+          "TestTheSameIdempotencyKeyAcrossActorsIsTwoOperations"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestAdoptionWithRevokedAuthorizationAfterCommitSaysCommitted|TestAdoptionWithRevokedAuthorizationInsideTheTransactionWritesNothing|TestConcurrentAdoptionLeavesTheWorkingCopyUnwritten|TestConcurrentAdoptionOfTheSameCandidateCreatesOneVersion|TestTheSameIdempotencyKeyAcrossActorsIsTwoOperations)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+        "selected_tests": [
+          "TestPostgresDownloadRejectsPersistedCorruption"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresDownloadRejectsPersistedCorruption)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+        "selected_tests": [
+          "TestPostgresGenerationFailureBoundaries",
+          "TestPostgresWorkerCrashLeasePersistence"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresGenerationFailureBoundaries|TestPostgresWorkerCrashLeasePersistence)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/generation"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore",
+        "selected_tests": [
+          "TestPostgresRuleSetMigrationAndLifecycle"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresRuleSetMigrationAndLifecycle)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance",
+        "selected_tests": [
+          "TestPostgresCatalogSchemaLifecycleAndAuditRollback"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresCatalogSchemaLifecycleAndAuditRollback)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+        "selected_tests": [
+          "TestCatalogHTTPProductionDatabaseParity",
+          "TestPostgresRendererFailureUsesRealDOCXValidator",
+          "TestPostgresTemplateCatalogVisibilityUsesProductionMembership"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestCatalogHTTPProductionDatabaseParity|TestPostgresRendererFailureUsesRealDOCXValidator|TestPostgresTemplateCatalogVisibilityUsesProductionMembership)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+        "selected_tests": [
+          "TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres",
+          "TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory",
+          "TestPostgresAuditBoundMigrationAddsTheExplicitConstraint",
+          "TestPostgresAuditCategoryColumnRejectsOverLongAction",
+          "TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth",
+          "TestPostgresDependencyCandidateBatchAndDecision",
+          "TestPostgresMigrationAndRepositoryContract",
+          "TestRoadmapMigrationGoesUpAndDownOnPostgres"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres|TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory|TestPostgresAuditBoundMigrationAddsTheExplicitConstraint|TestPostgresAuditCategoryColumnRejectsOverLongAction|TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth|TestPostgresDependencyCandidateBatchAndDecision|TestPostgresMigrationAndRepositoryContract|TestRoadmapMigrationGoesUpAndDownOnPostgres)$",
+          "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+        ],
+        "exit_code": 0
+      },
+      {
+        "package": "github.com/Tencent/WeKnora/internal/types",
+        "selected_tests": [
+          "TestPostgresJSONColumnCarrierTypes"
+        ],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-timeout=15m",
+          "-run",
+          "^(TestPostgresJSONColumnCarrierTypes)$",
+          "github.com/Tencent/WeKnora/internal/types"
+        ],
+        "exit_code": 0
+      }
+    ]
+  },
+  "summary": {
+    "source": ".tmp\\go-postgres-followup.jsonl",
+    "last_event": "2026-10-27T10:18:38.608558284Z",
+    "packages": {
+      "pass": 11
+    },
+    "tests_including_subtests": {
+      "pass": 46
+    },
+    "running_packages": [],
+    "failures": [],
+    "non_json_lines": []
+  },
+  "server": "PostgreSQL 17.9; isolated disposable databases; fault database migrated from 0 to 137"
+}

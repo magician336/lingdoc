@@ -1,0 +1,22 @@
+{
+  "code_sha": "8c69d073a4e778feaedf32054c957c929cb9982d",
+  "command": "BROWSERSKILL_TEST_BINARY=/tmp/bsk go test -race -json -count=10 -timeout=10m ./internal/browserskill",
+  "result": "PASS",
+  "summary": {
+    "source": ".tmp\\browserskill-native-fixed.jsonl",
+    "last_event": "2026-10-27T10:43:47.779266815Z",
+    "packages": {
+      "pass": 1
+    },
+    "tests_including_subtests": {
+      "pass": 670,
+      "skip": 10
+    },
+    "running_packages": [],
+    "failures": [],
+    "non_json_lines": []
+  },
+  "original_failure": "TestStopCancelsActiveCommandAndRejectsFurtherCalls failed in all 10 repetitions before the fix",
+  "official_archive_sha256": "a533cbf532fe9848332d72c2b92e92e0d76626765417ca5f374914385731265f",
+  "binary_sha256": "22389a8788ab1ee10186517707e804af5a9b907e0bbe181ca7596199513194c1"
+}

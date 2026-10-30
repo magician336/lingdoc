@@ -7,6 +7,7 @@ package workspacecore
 // production calls it (precedent: AuditEventRowColumns in model.go).
 func RowShapesForSchemaGuard() map[string]any {
 	return map[string]any{
+		"academicOriginalSnapshotRow": &academicOriginalSnapshotRow{},
 		"auditEventRow":               &auditEventRow{},
 		"chapterConfirmationRow":      &chapterConfirmationRow{},
 		"chapterRow":                  &chapterRow{},
@@ -15,6 +16,7 @@ func RowShapesForSchemaGuard() map[string]any {
 		"dependencyCandidateBatchRow": &dependencyCandidateBatchRow{},
 		"dependencyCandidateRow":      &dependencyCandidateRow{},
 		"draftCandidateRow":           &draftCandidateRow{},
+		"DraftClaimProvenance":        &DraftClaimProvenance{},
 		"memberPermissionRow":         &memberPermissionRow{},
 		"memberRow":                   &memberRow{},
 		"modelCallLedgerRow":          &modelCallLedgerRow{},

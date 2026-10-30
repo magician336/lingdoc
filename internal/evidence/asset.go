@@ -15,6 +15,9 @@ type Asset struct {
 	Title           string     `json:"title"`
 	AssetRevision   int        `json:"asset_revision"`
 	ProcessingState AssetState `json:"processing_state"`
+	// OriginalContentSHA256 is private server-side evidence loaded from the
+	// immutable revision metadata; it is intentionally absent from the API.
+	OriginalContentSHA256 string `json:"-"`
 }
 
 // AssetState 对应契约的 processing_state 枚举。

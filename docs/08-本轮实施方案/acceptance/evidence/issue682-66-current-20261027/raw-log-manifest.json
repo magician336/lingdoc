@@ -1,0 +1,161 @@
+{
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "note": "Raw logs remain on D:; no passwords, tokens, env files, binaries or browser profiles committed.",
+  "logs": [
+    {
+      "local_file": "browser-extension-launch-missing-xauth.log",
+      "bytes": 41,
+      "sha256": "e4339d15b89929462a07d4c66978241c0f1b8ff55ac2b577d100530f3e2997a8"
+    },
+    {
+      "local_file": "browser-extension-run.log",
+      "bytes": 149,
+      "sha256": "2e08e1f27aab006623508bc59bcbd8020a75bf43e27cbd5ff1b98d4676a1f364"
+    },
+    {
+      "local_file": "browser-extension.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "browser-extension.jsonl",
+      "bytes": 10364,
+      "sha256": "dc641307f87a3e56bdfd701415296cd7fc274ee00734490eb2020c6de30889f6"
+    },
+    {
+      "local_file": "browser-native-run.log",
+      "bytes": 145,
+      "sha256": "424a1f1fa39777b516e34ae77b80f46de408e42abdfa9fcee01bbcda800b5cf9"
+    },
+    {
+      "local_file": "browser-native.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "browser-native.jsonl",
+      "bytes": 27753,
+      "sha256": "1da0af103496a69d625bec8a858057b864395251805d2beb4560f7179e78e259"
+    },
+    {
+      "local_file": "crossref-run.log",
+      "bytes": 144,
+      "sha256": "18ae3b4ff68d8cbb1ad75f45b598b4156a6a1563b134876ed216c1392596ad06"
+    },
+    {
+      "local_file": "crossref.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "crossref.jsonl",
+      "bytes": 1734,
+      "sha256": "1762ca01247b955f41ff5134127d27084c3df83f7f365d4c8a5a681c5c066a7a"
+    },
+    {
+      "local_file": "docreader-run.log",
+      "bytes": 128,
+      "sha256": "33bc54d23d0752e11ecc160970089afcf7eb62dae103a2cb47d261477d1a4279"
+    },
+    {
+      "local_file": "docreader-server.log",
+      "bytes": 31275,
+      "sha256": "f8a48922d32229c3fc30b6823bfc96dc720f31a5cfbde8c3c7561edb529b028a"
+    },
+    {
+      "local_file": "docreader.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "docreader.jsonl",
+      "bytes": 4470,
+      "sha256": "b9274457318c0739e878fa705a73669a15962f0f4c55018b072a2b3e8e1024de"
+    },
+    {
+      "local_file": "fault-migration.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "fault-migration.log",
+      "bytes": 478,
+      "sha256": "59f5a34e3b39cf816221f8f5ed73e78f294bdea2f6ea3aa82c1a1ff451f40d16"
+    },
+    {
+      "local_file": "fault-schema-version.txt",
+      "bytes": 6,
+      "sha256": "4d24164001e1fa14ebd63c0867ef8a86435192755d5e52237fd914535c4e5bd3"
+    },
+    {
+      "local_file": "permission-build.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "permission-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "local_file": "permission-run.log",
+      "bytes": 142,
+      "sha256": "ef1624a45726b77be91e727e992cab9f97d1a6fce83883cc8fb5f0fcfb2a9f46"
+    },
+    {
+      "local_file": "permission.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "permission.jsonl",
+      "bytes": 1319,
+      "sha256": "3429c35532ab9420e736b588f1b3a3ee21597f32656ca93cc6c89f1e3d1a8a2d"
+    },
+    {
+      "local_file": "postgres-fault-run.log",
+      "bytes": 306,
+      "sha256": "1219f8f3181da280e7e3aa8451d6ba97636545c63a6b589028a2c2a2de31059e"
+    },
+    {
+      "local_file": "postgres-fault.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "postgres-fault.jsonl",
+      "bytes": 8118,
+      "sha256": "3b8d985e31c34b0e272c18344d58b4576a98633d1f3bc85be8db4cacdbc721ac"
+    },
+    {
+      "local_file": "postgres-run.log",
+      "bytes": 897,
+      "sha256": "1421daa7f5209653bbcb0264d24f5589fc8ad7b4918c2837661415355c8eb5c9"
+    },
+    {
+      "local_file": "postgres-server.log",
+      "bytes": 51487,
+      "sha256": "13daf8a6fb1bb8f6a2799d72d07d3b2832c42bc15d54de554e98518aaecc56d1"
+    },
+    {
+      "local_file": "postgres.exit",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "local_file": "postgres.jsonl",
+      "bytes": 419957,
+      "sha256": "3a31061fffcb5fe8183601d4fdc7935f113289bdf049b04723c65b864b6a9d4d"
+    },
+    {
+      "local_file": "xvfb-display.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "xvfb.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

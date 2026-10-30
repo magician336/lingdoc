@@ -56,6 +56,16 @@ func TestFingerprintChangesOnContentAndReparse(t *testing.T) {
 			t.Fatal("ProcessedAt 变了但指纹没变")
 		}
 	})
+	t.Run("完整原文同长覆盖", func(t *testing.T) {
+		before := FingerprintOf(signal(func(s *KnowledgeSignal) { s.OriginalContentSHA256 = "sha256-before" }))
+		after := FingerprintOf(signal(func(s *KnowledgeSignal) { s.OriginalContentSHA256 = "sha256-after" }))
+		if before.Digest == after.Digest || before.Basis == "" || after.Basis == "" {
+			t.Fatal("full original bytes changing must change the asset revision fingerprint")
+		}
+		if before.OriginalContentSHA256 != "sha256-before" {
+			t.Fatalf("fingerprint lost original SHA-256: %+v", before)
+		}
+	})
 	t.Run("同输入同输出", func(t *testing.T) {
 		if again := FingerprintOf(signal(nil)); again.Digest != base.Digest {
 			t.Fatal("同样的观测得出了不同的指纹")

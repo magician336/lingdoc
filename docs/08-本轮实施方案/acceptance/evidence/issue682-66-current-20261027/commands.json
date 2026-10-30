@@ -1,0 +1,384 @@
+{
+  "code_sha": "50249c79a03de66e6660be3aa40b673e44b8cbce",
+  "phases": [
+    {
+      "phase": "postgres",
+      "initial_group_result": "INCOMPLETE_OR_FAIL",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestMemoryConsistencyPostgres|TestVectorSearchRanksInPostgres)$",
+            "github.com/Tencent/WeKnora/internal/application/service/memory"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 34.407
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/container",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres|TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres)$",
+            "github.com/Tencent/WeKnora/internal/container"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 928.065
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/database",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresAgentDownRestoresModelsTenantID|TestPostgresFullDownChainReachesNilVersionWithoutResidualTables|TestPostgresGenerationDigestVersionMigrationGoesUpAndDown|TestPostgresGuardedRowShapesMatchTheVersionedMigrationChain|TestPostgresGuardedTablesCoverEveryVersionedMigrationColumn|TestPostgresLegacyDatabaseUpgradeAndRollbackKeepsEverything|TestPostgresLegacyRewriteValidityUpgradeAndRollback|TestPostgresLegacyRollbackRefusalLeavesNoHalfMigratedState|TestPostgresRowShapeGuardComparesDeclaredBoolAgainstBooleanColumnsDirectly|TestPostgresRowShapeGuardFlagsDeclaredWidthAgainstAMismatchingColumn|TestPostgresRowShapeGuardFlagsNotNullDeclarationAgainstANullableColumn|TestPostgresRowShapeGuardFlagsPointerDeclarationAgainstANotNullColumn|TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown)$",
+            "github.com/Tencent/WeKnora/internal/database"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 45.163
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestAdoptionWithRevokedAuthorizationAfterCommitSaysCommitted|TestAdoptionWithRevokedAuthorizationInsideTheTransactionWritesNothing|TestConcurrentAdoptionLeavesTheWorkingCopyUnwritten|TestConcurrentAdoptionOfTheSameCandidateCreatesOneVersion|TestTheSameIdempotencyKeyAcrossActorsIsTwoOperations)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 17.867
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresDownloadRejectsPersistedCorruption)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 7.897
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresGenerationFailureBoundaries|TestPostgresWorkerCrashLeasePersistence)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/generation"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 8.524
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresRuleSetMigrationAndLifecycle)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 7.295
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresCatalogSchemaLifecycleAndAuditRollback)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 7.049
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestCatalogHTTPProductionDatabaseParity|TestPostgresRendererFailureUsesRealDOCXValidator|TestPostgresTemplateCatalogVisibilityUsesProductionMembership)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 37.689
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestAuditFailurePublishesRuntimeEventAndAlertOnPostgres|TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory|TestPostgresAuditBoundMigrationAddsTheExplicitConstraint|TestPostgresAuditCategoryColumnRejectsOverLongAction|TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth|TestPostgresDependencyCandidateBatchAndDecision|TestPostgresMigrationAndRepositoryContract|TestRoadmapMigrationGoesUpAndDownOnPostgres)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 16.971
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/types",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresJSONColumnCarrierTypes)$",
+            "github.com/Tencent/WeKnora/internal/types"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 9.636
+        }
+      ]
+    },
+    {
+      "phase": "browser-native",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/browserskill",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestConcurrentCommandsShareAutomaticSessionCreation|TestConcurrentPairingSharesOneDaemon|TestFailedStopRetainsPausedTaskForRetry|TestFinishTurnClosesResearchButRetainsHandoffsAndPausedTasks|TestHumanHelpOutcomeControlsPause|TestIdleRetainsTaskAndCachedPreviewUntilNextCall|TestLivePreviewBypassesUnfinishedAutomation|TestNativeDaemonRelay|TestNavigationDefaultsToDocumentReadyAndPreservesExplicitWait|TestProgressReportsNavigationFailureAndFreezesElapsedTime|TestReconnectAfterServerRestartKeepsAuthorizationAndPausesTasks|TestRequestsRouteToBrowserOwnerAcrossReplicas|TestScreenshotUsesNativeTaskAndPreservesCrop|TestSharedDaemonCrashKeepsAuthorizationAndPausesTasks|TestSharedDaemonRoutesAndIsolatesUsers|TestSlowDaemonStartupDoesNotBlockStatusOrCancelledWaiter|TestStopCancelsActiveCommandAndRejectsFurtherCalls|TestStopCancelsSessionCreation|TestStopRecoversAfterDaemonAlreadyRemovedSession|TestStopTimeoutLeavesTaskPausedAndRejectsResumeWhileStopping|TestWindowInterruptResumesSameTask)$",
+            "github.com/Tencent/WeKnora/internal/browserskill"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 8.435
+        }
+      ]
+    },
+    {
+      "phase": "browser-extension",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/browserskill",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestRealExtension)$",
+            "github.com/Tencent/WeKnora/internal/browserskill"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 43.917
+        }
+      ]
+    },
+    {
+      "phase": "docreader",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/docreader/client",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestReadFile|TestReadURL)$",
+            "github.com/Tencent/WeKnora/docreader/client"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 8.049
+        }
+      ]
+    },
+    {
+      "phase": "crossref",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestLiveCrossrefSearchSmoke)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 12.202
+        }
+      ]
+    },
+    {
+      "phase": "permission",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/application/service",
+          "command": [
+            "go",
+            "tool",
+            "test2json",
+            "-t",
+            "-p",
+            "github.com/Tencent/WeKnora/internal/application/service",
+            "/artifacts/pr755-66/permission.test",
+            "-test.v",
+            "-test.run",
+            "^(TestSkillPythonVerifierReportsAnUnreadableScript)$"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 13.539
+        }
+      ]
+    },
+    {
+      "phase": "postgres-fault",
+      "initial_group_result": "PASS",
+      "commands": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresDownloadRejectsPersistedCorruption)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 6.65
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresGenerationFailureBoundaries|TestPostgresWorkerCrashLeasePersistence)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/generation"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 8.204
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-count=1",
+            "-p=1",
+            "-timeout=15m",
+            "-run",
+            "^(TestPostgresRendererFailureUsesRealDOCXValidator)$",
+            "github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+          ],
+          "exit_code": 0,
+          "elapsed_seconds": 13.096
+        }
+      ]
+    }
+  ],
+  "required_postgres_environment": [
+    "LINGDOC_TEST_POSTGRES_DSN",
+    "WEKNORA_MEMORY_TEST_POSTGRES_DSN",
+    "LINGDOC_FAILURE_TEST_DB",
+    "LINGDOC_FAILURE_TEST_DSN"
+  ],
+  "fault_database": {
+    "name": "lingdoc_fault_pr755_66_20261027",
+    "initial_schema_version": 0,
+    "migrated_schema_version": 137,
+    "dirty": false,
+    "migration_owner": "internal/database.RunMigrations",
+    "purpose": "explicitly isolated fault injection only"
+  }
+}

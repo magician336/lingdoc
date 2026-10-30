@@ -240,7 +240,18 @@ func (t gormTransaction) AssetTruth(p Project, id string) (assetTruth, error) {
 	if knowledge.ProcessedAt != nil {
 		processed = *knowledge.ProcessedAt
 	}
-	out.Fingerprint = evidence.FingerprintOf(evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: processed}).Digest
+	// The revision may include the storage-backed digest captured by the
+	// authorized source gateway. Recompute with that persisted value: this
+	// transaction has no storage port and must not silently fall back to v1.
+	var metadata struct {
+		OriginalContentSHA256 string `json:"original_content_sha256"`
+	}
+	if out.Revision.Metadata != "" {
+		if err := json.Unmarshal([]byte(out.Revision.Metadata), &metadata); err != nil {
+			return out, ErrVersionConflict
+		}
+	}
+	out.Fingerprint = evidence.FingerprintOf(evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: processed, OriginalContentSHA256: metadata.OriginalContentSHA256}).Digest
 	if out.Fingerprint != out.Revision.ContentHash {
 		return out, ErrVersionConflict
 	}
@@ -367,6 +378,12 @@ func (t gormTransaction) IsAnchorCurrent(anchor SourceAnchor) (bool, error) {
 	return anchor.ExtractionType == "native_text" || anchor.HumanVerified, nil
 }
 func (t gormTransaction) cardConfirmationCurrent(card EvidenceCard) (bool, error) {
+	// Database-only currentness cannot establish external original bytes for
+	// an academic association. This guards the transaction-time selection
+	// seam as well as the public confirmation path.
+	if len(card.AcademicAssociationRefs) > 0 {
+		return false, nil
+	}
 	if !confirmationTupleCurrent(card) {
 		return false, nil
 	}
@@ -402,6 +419,15 @@ func (t gormTransaction) cardConfirmationCurrent(card EvidenceCard) (bool, error
 			return false, err
 		}
 		if !current {
+			return false, nil
+		}
+		// Formal use also pins the complete source text that was supplied to
+		// the anchor, including any text outside the human-selected span.
+		var chunk types.Chunk
+		if err := t.db.Where("id = ? AND deleted_at IS NULL", anchor.SourceID).First(&chunk).Error; err != nil {
+			return false, storageError(err)
+		}
+		if chunk.ContentRevision != 0 || chunk.SourceContent != "" && chunk.SourceContent != chunk.Content || !anchorMatchesWholeSource(anchor, chunk.Content) {
 			return false, nil
 		}
 		ids = append(ids, anchor.SourceID)

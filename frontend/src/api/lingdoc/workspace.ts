@@ -328,6 +328,8 @@ export interface Chapter {
 }
 
 export interface WorkingCopy {
+  claim_provenance_unavailable?: boolean
+  claim_provenance?: { id: string; origin_kind: 'generation' | 'rewrite'; candidate_id: string; run_id?: string; working_copy_revision: number; start_utf16: number; end_utf16: number; status: 'needs_revalidation' | 'stale'; created_at: string }[]
   citation_usages?: CitationUsage[]
   project_id: string
   chapter_id: string
@@ -341,6 +343,8 @@ export interface WorkingCopy {
 }
 
 export interface ChapterVersion {
+  claim_provenance?: WorkingCopy['claim_provenance']
+  claim_provenance_unavailable?: boolean
   id: string
   project_id: string
   chapter_id: string
@@ -365,6 +369,7 @@ export interface CommittedChapterVersion {
 }
 
 export interface SelectedRewriteCandidate {
+	claims?: { text: string; references: { card_id: string; card_version: number; anchor_id: string; anchor_version: number; source_id: string; locator: string; selection_start: number; selection_end: number }[] }[]
  evidence_card_refs?:Array<{id:string;version:number}>
   candidate_id: string
   project_id: string
@@ -398,6 +403,7 @@ export interface SelectedRewriteCandidate {
     locator: string
     quoted_text_hash: string
     authorized_at: string
+    academic_snapshot?: { raw_ref: { sha256: string; size: number }; text_ref: { sha256: string; size: number } }
   }>
   review_items: ReviewItem[]
   error_code: string
@@ -447,6 +453,7 @@ export interface ReviewReport {
     locator: string
     quoted_text_hash: string
     authorized_at: string
+    academic_snapshot?: { raw_ref: { sha256: string; size: number }; text_ref: { sha256: string; size: number } }
   }>
   baseline: ReviewBaseline
   /** 报告自身的版本标识：它由报告的内容算出，因此可复算。 */

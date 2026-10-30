@@ -10,37 +10,65 @@ export interface VersionBasis {
 }
 export interface ResearchTask {
   id: string; project_id: string; version: number; chapter_id?: string
-  goal: string; question_type: string; scope: string; exclusions: string[]; queries: string[]; asset_ids: string[]; provider_id?: string; expected_output: string
+  goal: string; question_type: string; scope: string; exclusions: string[]; queries: string[]; date_from?: string; date_to?: string; asset_ids: string[]; provider_id?: string; expected_output: string
   status: 'draft' | 'approved' | 'running' | 'completed' | 'failed' | 'cancelled' | 'stale'; paused: boolean; basis: VersionBasis; latest_run_id?: string; approved_by?: string
   created_by: string; created_at: string; updated_at: string
 }
 export interface SaveResearchTaskInput extends VersionExpectation {
   task_id?: string; chapter_id?: string; goal: string; question_type: string; scope: string
-  exclusions: string[]; queries: string[]; asset_ids: string[]; provider_id?: string; expected_output: string
+  exclusions: string[]; queries: string[]; date_from?: string; date_to?: string; asset_ids: string[]; provider_id?: string; expected_output: string
 }
 export type ResearchLevel = 'candidate_evidence' | 'background_lead' | 'discovery_entry' | 'unread_search_summary' | 'AI_GENERATED_CANDIDATE'
 export interface ResearchResult {
   id: string; level: ResearchLevel; source_id?: string; asset_id?: string; asset_revision?: number; locator?: string; quoted_text_hash?: string
-  title: string; url?: string; author?: string; published_at?: string; retrieved_at: string; provider: string; source_type: string; quality_note: string; uncertainty: string; summary?: string; status: string
+  title: string; url?: string; author?: string; published_at?: string; doi?: string; journal?: string; issns?: string[]; license_urls?: string[]; license_status?: string
+  catalog_version?: string; policy_status?: string; policy_rule_id?: string; retraction_status?: string; duplicate_status?: string; duplicate_of?: string; acquisition_status?: string
+  retrieved_at: string; provider: string; source_type: string; quality_note: string; uncertainty: string; summary?: string; status: string
+}
+export interface AcademicSourceRule {
+  id: string; version: number; source_type: 'journal' | 'conference' | 'proceedings'; venue_name: string; venue_ids: string[]
+  allowed_license_urls: string[]; maintainer: string; effective_at?: string
+}
+export interface AcademicSourceCatalog {
+  project_id: string; version: number; global_version: string; source_catalog_version: string; rules: AcademicSourceRule[]; updated_by?: string; updated_at?: string
+}
+export interface UpdateAcademicSourceCatalogInput extends VersionExpectation {
+  // The server stamps the authenticated actor as the maintainer for a catalog
+  // update; callers cannot submit a user-selected maintainer identity.
+  rules: Array<Omit<AcademicSourceRule, 'maintainer'>>
 }
 export interface ResearchRun {
   id: string; project_id: string; version: number; task_id: string; task_version: number; basis: VersionBasis
-  rounds: Array<{ number: number; query: string; provider: string; retrieved_at: string; result_ids: string[]; status: string; failure_code?: string; feedback?: string }>
-  results: ResearchResult[]; status: string; failure_code?: string; run_mode: 'mock' | 'real_api_fake_model' | 'real'; correlation_id: string; created_by: string; started_at: string; finished_at?: string
+  rounds: Array<{ number: number; query: string; date_from?: string; date_to?: string; provider: string; retrieved_at: string; result_ids: string[]; status: string; failure_code?: string; feedback?: string; feedback_by?: string; feedback_at?: string }>
+  results: ResearchResult[]; usage: { policy_version: string; search_limit: number; searches_used: number; result_limit: number; results_used: number; model_call_limit: number; model_calls_used: number }
+  status: string; failure_code?: string; run_mode: 'mock' | 'real_api_fake_model' | 'real'; correlation_id: string; created_by: string; started_at: string; finished_at?: string
 }
 export interface ImportCandidate {
   id: string; project_id: string; version: number; run_id?: string; result_id?: string; source_id?: string; knowledge_id?: string; knowledge_base_id?: string; url?: string; final_url?: string; title: string
+  author?: string; published_at?: string; doi?: string; journal?: string; issns?: string[]; license_urls?: string[]; catalog_version?: string; policy_status?: string; retraction_status?: string; duplicate_status?: string; acquisition_status?: string
   level: ResearchLevel; selection_type: string; conversation_session_id?: string; conversation_turn_ids?: string[]; locator?: string; quoted_text_hash?: string; purpose: string
   save_mode: 'full_text' | 'link_excerpt' | 'metadata_only'; scope: 'personal' | 'project' | 'team'; model_use_allowed: boolean; license: string; status: string; basis: VersionBasis
   asset_id?: string; asset_revision?: number; failure_code?: string; dedup_key: string; created_by: string; created_at: string
 }
+export interface ResearchRoundFeedbackInput extends VersionExpectation { round_number: number; feedback: string }
+export interface ResearchRoundFeedbackReceipt { run_id: string; run_version: number; round_number: number }
 export interface CreateImportCandidateInput extends VersionExpectation {
   run_id?: string; result_id?: string; source_id?: string; url?: string; knowledge_base_id?: string; title: string; purpose: string; save_mode: ImportCandidate['save_mode']; scope: ImportCandidate['scope']
   model_use_allowed: boolean; license: string; conversation_session_id?: string; conversation_turn_ids?: string[]
 }
+export interface AcademicSourceAssociation {
+  id: string; project_id: string; version: number; candidate_ref: VersionRef; doi: string; catalog_version: string; policy_snapshot_version: string
+  source_id: string; asset_id: string; asset_revision: number; locator: string; quoted_text_hash: string; basis: VersionBasis; confirmed_by: string; confirmed_at: string; reason: string
+  status: 'recorded' | 'revoked'; revoked_by?: string; revoked_at?: string; revocation_reason?: string
+}
+export interface AcademicSourceAssociationView extends AcademicSourceAssociation { review_state: 'historical' | 'needs_review' | 'revoked' }
+export interface AssociationRevocationReceipt { id: string; version: number; status: 'revoked' }
+export interface ConfirmAcademicSourceAssociationInput extends ConfirmationInput {
+  candidate_id: string; source_id: string; expected_asset_revision: number; expected_quoted_text_hash: string; expected_locator: string
+}
 export interface SourceAnchor {
   id: string; project_id: string; version: number; source_id: string; asset_id: string; asset_revision: number; locator: string; page?: number; section?: string; paragraph?: number; coordinates?: number[]
-  quoted_text_hash: string; selection_start: number; selection_end: number; extraction_type: 'native_text' | 'ocr' | 'manual_correction'; ocr_confidence: number; human_verified: boolean
+  quoted_text_hash: string; source_text_hash?: string; selection_start: number; selection_end: number; extraction_type: 'native_text' | 'ocr' | 'manual_correction'; ocr_confidence: number; human_verified: boolean
   original_ocr?: string; corrected_text?: string; correction_reason?: string; status: string; basis: VersionBasis; dedup_key: string; created_by: string; created_at: string
 }
 export interface SaveSourceAnchorInput extends VersionExpectation {
@@ -53,13 +81,19 @@ export interface ResearchClaim {
 export interface SaveResearchClaimInput extends VersionExpectation {
   claim_id?: string; text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; reason: string; confirmed: boolean
 }
+export interface AcademicOriginalSnapshotRef { sha256: string; size: number }
+export interface AcademicSnapshotAssociation { association_ref: VersionRef; candidate_ref: VersionRef; doi: string; catalog_version: string; policy_snapshot_version: string }
+export interface AcademicEvidenceSnapshot {
+  source_id: string; knowledge_id: string; asset_id: string; asset_revision: number; locator: string; page?: number
+  raw_ref: AcademicOriginalSnapshotRef; text_ref: AcademicOriginalSnapshotRef; anchor_refs: VersionRef[]; associations: AcademicSnapshotAssociation[]
+}
 export interface EvidenceCard {
-  id: string; project_id: string; version: number; claim_ref?: VersionRef; anchor_refs: VersionRef[]; source_ids: string[]; support_type: string; scope: string; scope_chapter_ids: string[]
+  id: string; project_id: string; version: number; claim_ref?: VersionRef; anchor_refs: VersionRef[]; academic_association_refs?: VersionRef[]; source_ids: string[]; support_type: string; scope: string; scope_chapter_ids: string[]
   limitations: string; gaps: string; alternative_explanation: string; status: 'CANDIDATE' | 'CONFIRMED' | 'NEEDS_REVIEW' | 'INSUFFICIENT' | 'STALE' | 'SUPERSEDED'; basis: VersionBasis; invalid_reason?: string; created_by: string; created_at: string
-  confirmation?: { confirmed_by: string; confirmed_at: string; card_version: number; claim_ref: VersionRef; anchor_refs: VersionRef[]; context_revision: number; scope_chapter_ids: string[]; reason: string; meaning: string }
+  confirmation?: { confirmed_by: string; confirmed_at: string; card_version: number; claim_ref: VersionRef; anchor_refs: VersionRef[]; academic_snapshots?: AcademicEvidenceSnapshot[]; context_revision: number; scope_chapter_ids: string[]; reason: string; meaning: string }
 }
 export interface SaveEvidenceCardInput extends VersionExpectation {
-  card_id?: string; claim_ref?: VersionRef; anchor_refs: VersionRef[]; support_type: string; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean
+  card_id?: string; claim_ref?: VersionRef; anchor_refs: VersionRef[]; academic_association_refs?: VersionRef[]; support_type: string; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean
 }
 export interface AgentSourceRef { source_id: string; asset_id: string; asset_revision: number; quoted_text_hash: string; locator: string; quoted_text?: string; model_use_allowed: boolean }
 // 为什么某个条目在这一轮上下文里。kind 与 id 指向条目，code 是稳定原因码；
@@ -137,6 +171,8 @@ export const getAgentSpecCandidateProject = (p: string) => get<Result<Project>>(
 export const saveAgentSpecCandidate = (p: string, input: SaveAgentSpecCandidateInput, key: string) => put<Result<Project>>(project(p) + '/spec', input, headers(key))
 
 export const listResearchTasks = (p: string) => get<Result<ResearchTask[]>>(project(p) + '/research-tasks')
+export const getAcademicSourceCatalog = (p: string) => get<Result<AcademicSourceCatalog>>(project(p) + '/academic-source-catalog')
+export const updateAcademicSourceCatalog = (p: string, input: UpdateAcademicSourceCatalogInput, key: string) => put<Result<AcademicSourceCatalog>>(project(p) + '/academic-source-catalog', input, headers(key))
 export const saveResearchTask = (p: string, input: SaveResearchTaskInput, key: string) =>
   input.task_id ? put<Result<ResearchTask>>(project(p) + '/research-tasks/' + segment(input.task_id), input, headers(key))
     : post<Result<ResearchTask>>(project(p) + '/research-tasks', input, headers(key))
@@ -145,9 +181,13 @@ export const runResearchTask = (p: string, id: string, input: VersionExpectation
 export const controlResearchTask = (p: string, id: string, input: VersionExpectation & { action: 'pause' | 'resume' | 'cancel'; reason: string }, key: string) => post<Result<ResearchTask>>(project(p) + '/research-tasks/' + segment(id) + '/control', input, headers(key))
 export const listResearchRuns = (p: string) => get<Result<ResearchRun[]>>(project(p) + '/research-runs')
 export const getResearchRun = (p: string, id: string) => get<Result<ResearchRun>>(project(p) + '/research-runs/' + segment(id))
+export const saveResearchRoundFeedback = (p: string, run: string, input: ResearchRoundFeedbackInput, key: string) => post<Result<ResearchRoundFeedbackReceipt>>(project(p) + '/research-runs/' + segment(run) + '/feedback', input, headers(key))
 export const inspectResearchResult = (p: string, run: string, result: string) => post<Result<ResearchResult>>(project(p) + '/research-runs/' + segment(run) + '/results/' + segment(result) + '/inspect', {})
 export const listImportCandidates = (p: string) => get<Result<ImportCandidate[]>>(project(p) + '/import-candidates')
 export const createImportCandidate = (p: string, input: CreateImportCandidateInput, key: string) => post<Result<ImportCandidate>>(project(p) + '/import-candidates', input, headers(key))
+export const listAcademicSourceAssociations = (p: string) => get<Result<AcademicSourceAssociationView[]>>(project(p) + '/academic-source-associations')
+export const revokeAcademicSourceAssociation = (p: string, id: string, input: ConfirmationInput, key: string) => post<Result<AssociationRevocationReceipt>>(project(p) + '/academic-source-associations/' + segment(id) + '/revoke', input, headers(key))
+export const confirmAcademicSourceAssociation = (p: string, input: ConfirmAcademicSourceAssociationInput, key: string) => post<Result<AcademicSourceAssociation>>(project(p) + '/academic-source-associations', input, headers(key))
 export const confirmImportCandidate = (p: string, id: string, input: ConfirmationInput, key: string) => post<Result<ImportCandidate>>(project(p) + '/import-candidates/' + segment(id) + '/confirm', input, longRequest(key))
 export const rejectImportCandidate = (p: string, id: string, input: ConfirmationInput, key: string) => post<Result<ImportCandidate>>(project(p) + '/import-candidates/' + segment(id) + '/reject', input, headers(key))
 export const refreshImportCandidate = (p: string, id: string) => post<Result<ImportCandidate>>(project(p) + '/import-candidates/' + segment(id) + '/refresh', {})

@@ -36,6 +36,7 @@ import (
 type reviewWorkspace struct {
 	copy   WorkingCopy
 	writes []reviewWrite
+	denied bool
 }
 
 // reviewWrite 是一次工作副本写入。
@@ -45,7 +46,12 @@ type reviewWrite struct {
 	items []core.ReviewItem
 }
 
-func (w *reviewWorkspace) Authorize(context.Context, Actor, string, string) error { return nil }
+func (w *reviewWorkspace) Authorize(context.Context, Actor, string, string) error {
+	if w.denied {
+		return core.ErrNotFound
+	}
+	return nil
+}
 
 func (w *reviewWorkspace) GetProject(context.Context, Actor, string) (Project, error) {
 	return Project{ID: "project", Status: "active", SpecRevision: 1}, nil

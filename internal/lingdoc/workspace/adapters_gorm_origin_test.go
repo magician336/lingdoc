@@ -3,6 +3,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
@@ -176,16 +178,41 @@ func TestOriginTextIsProvenAgainstTheStoredBytes(t *testing.T) {
 	}
 }
 
+func TestOriginSnapshotUsesOneReadForTextAndRawBytes(t *testing.T) {
+	storage := &storageStub{data: []byte("first\r\nsecond\r")}
+	sum := md5.Sum(storage.data)
+	reader := evidence.NewOriginReader(&storageBackedKnowledge{
+		filePath: "resource://handle-1",
+		fileHash: hex.EncodeToString(sum[:]),
+		files:    KnowledgeFileOriginReader{Service: storage},
+	})
+	snapshotReader, ok := reader.(evidence.OriginSnapshotReader)
+	if !ok {
+		t.Fatal("origin reader must expose its atomic source snapshot")
+	}
+	text, raw, readable, err := snapshotReader.OriginSnapshot(context.Background(), "k-1")
+	if err != nil || !readable {
+		t.Fatalf("OriginSnapshot readable=%v err=%v", readable, err)
+	}
+	if text != "first\nsecond\n" || string(raw) != "first\r\nsecond\r" {
+		t.Fatalf("snapshot text=%q raw=%q", text, raw)
+	}
+	if storage.calls != 1 {
+		t.Fatalf("text and raw bytes must come from one storage read, calls=%d", storage.calls)
+	}
+}
+
 // storageBackedKnowledge is a material whose file path is a storage
 // reference, not a filesystem path — the shape an uploaded material has.
 // Its bytes come from the storage side.
 type storageBackedKnowledge struct {
 	filePath string
+	fileHash string
 	files    KnowledgeFileOriginReader
 }
 
 func (k *storageBackedKnowledge) KnowledgeForOrigin(_ context.Context, _ string) (*types.Knowledge, error) {
-	return &types.Knowledge{ID: "k-1", FilePath: k.filePath, FileType: "md"}, nil
+	return &types.Knowledge{ID: "k-1", Type: "file", FileHash: k.fileHash, FilePath: k.filePath, FileType: "md"}, nil
 }
 
 func (k *storageBackedKnowledge) UsesBuiltinConverter(_ context.Context, _ string) (bool, error) {

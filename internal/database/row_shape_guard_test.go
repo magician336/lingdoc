@@ -251,6 +251,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	// workspacecore —— agent_object_storage.go / impact_dependency_candidate_store.go /
 	// impact_store.go / membership_lifecycle.go / model.go / model_call_ledger.go /
 	// roadmap_store.go / runtime_control.go
+	registration("workspacecore", "academicOriginalSnapshotRow", "lingdoc_academic_original_snapshots"),
 	registration("workspacecore", "auditEventRow", "lingdoc_project_audits"),
 	registration("workspacecore", "chapterConfirmationRow", "lingdoc_chapter_confirmations"),
 	registration("workspacecore", "chapterRow", "lingdoc_chapters"),
@@ -259,6 +260,7 @@ var guardedRowShapes = []rowShapeRegistration{
 	registration("workspacecore", "dependencyCandidateBatchRow", "lingdoc_g3_dependency_candidate_batches"),
 	registration("workspacecore", "dependencyCandidateRow", "lingdoc_g3_dependency_candidates"),
 	registration("workspacecore", "draftCandidateRow", "lingdoc_draft_candidates"),
+	registration("workspacecore", "DraftClaimProvenance", "lingdoc_claim_provenance"),
 	registration("workspacecore", "memberPermissionRow", "lingdoc_member_permissions"),
 	registration("workspacecore", "memberRow", "lingdoc_members"),
 	registration("workspacecore", "modelCallLedgerRow", "lingdoc_model_call_ledger"),

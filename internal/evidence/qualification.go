@@ -28,11 +28,11 @@ import (
 // cannot drift apart **in their judgement**.
 //
 // That is a statement about the judgement, not about the inputs: the caller
-// still has to hand in the **original uploaded file** as the origin text. A
-// text that differs from it (rewritten line endings, a rewritten image
-// reference, a truncated copy) is rejected by evidence.VerbatimOrigin before
-// the comparison, because the coordinates of a chunk only mean something
-// against the bytes the ingest chain actually split.
+// still has to hand in the **original uploaded file**. For direct text the
+// source reader and checker reconstruct the LF-canonical text that ingestion
+// split; coordinates are runes in that representation, not raw byte offsets.
+// Image rewriting, NUL and invalid UTF-8 remain unprovable. A truncated or
+// otherwise changed copy must fail the actual chunk comparison.
 // ---------------------------------------------------------------------------
 
 // MaterialIssueCode is the machine-readable reason a chunk is not qualified.

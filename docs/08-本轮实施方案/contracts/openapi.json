@@ -20003,6 +20003,154 @@
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
     },
+    "/projects/{projectId}/academic-source-catalog": {
+      "get": {
+        "operationId": "getAcademicSourceCatalog",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "GetAcademicSourceCatalog",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current project academic-source catalog and deterministic version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceCatalogResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-service": "GetAcademicSourceCatalog",
+        "x-lingdoc-go-response": "AcademicSourceCatalog",
+        "description": "Reads project extension rules under current read authorization. The built-in Crossref provider is a metadata source, not an implicit venue-quality allowlist."
+      },
+      "put": {
+        "operationId": "updateAcademicSourceCatalog",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "UpdateAcademicSourceCatalog",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAcademicSourceCatalogInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_context_revision": 1,
+                "expected_version": 0,
+                "rules": [
+                  {
+                    "id": "synthetic-journal-rule",
+                    "source_type": "journal",
+                    "venue_name": "Synthetic Journal",
+                    "venue_ids": ["1234-5678"],
+                    "allowed_license_urls": []
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Append-only project catalog revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceCatalogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed catalog rule or unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Expected project or catalog version is stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-service": "UpdateAcademicSourceCatalog",
+        "x-lingdoc-go-response": "AcademicSourceCatalog",
+        "description": "Requires current project manage capability and exact expected project/catalog versions. Rules are project extensions; they do not grant full-text access or assert venue quality."
+      }
+    },
     "/projects/{projectId}/research-tasks": {
       "get": {
         "operationId": "listResearchTasks",
@@ -20461,9 +20609,18 @@
                               "source_type": "synthetic-source-type",
                               "quality_note": "synthetic-quality-note",
                               "uncertainty": "synthetic-uncertainty",
-                              "status": "pending"
+                              "status": "metadata_only"
                             }
                           ],
+                          "usage": {
+                            "policy_version": "research-run-bounds-v1",
+                            "search_limit": 8,
+                            "searches_used": 1,
+                            "result_limit": 160,
+                            "results_used": 1,
+                            "model_call_limit": 0,
+                            "model_calls_used": 0
+                          },
                           "status": "pending",
                           "run_mode": "real_api_fake_model",
                           "correlation_id": "synthetic-correlation-id",
@@ -20660,9 +20817,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "pending",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -20776,6 +20942,642 @@
           "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
         },
         "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/research-runs/{runID}/feedback": {
+      "post": {
+        "operationId": "saveResearchRoundFeedback",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "SaveResearchRoundFeedback",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "runID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchRoundFeedbackReceiptResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only",
+                    "value": {
+                      "data": {
+                        "run_id": "synthetic-run",
+                        "run_version": 4,
+                        "round_number": 1
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-route-line": 120,
+        "x-lingdoc-service": "SaveResearchRoundFeedback",
+        "x-lingdoc-go-response": "ResearchRoundFeedbackReceipt",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchRoundFeedbackInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_context_revision": 1,
+                "expected_version": 3,
+                "round_number": 1,
+                "feedback": "Synthetic feedback"
+              }
+            }
+          }
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/academic-source-associations": {
+      "post": {
+        "operationId": "confirmAcademicSourceAssociation",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "ConfirmAcademicSourceAssociation",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceAssociationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-route-line": 153,
+        "x-lingdoc-service": "ConfirmAcademicSourceAssociation",
+        "x-lingdoc-go-response": "AcademicSourceAssociation",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "workspacecore/academic_source_association_draft.go:ConfirmAcademicSourceAssociation"
+        },
+        "description": "Records a historical human assertion about the reviewed source version. It grants no rights, does not verify current external bytes, and cannot be used as evidence or writing input.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAcademicSourceAssociationInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_context_revision": 0,
+                "expected_version": 2,
+                "candidate_id": "synthetic-candidate",
+                "source_id": "synthetic-source",
+                "expected_asset_revision": 1,
+                "expected_quoted_text_hash": "synthetic-hash",
+                "expected_locator": "synthetic-location",
+                "confirmed": true,
+                "reason": "synthetic human review"
+              }
+            }
+          }
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      },
+      "get": {
+        "operationId": "listAcademicSourceAssociations",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "ListAcademicSourceAssociations",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcademicSourceAssociationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-route-line": 96,
+        "x-lingdoc-service": "ListAcademicSourceAssociations",
+        "x-lingdoc-go-response": "[]AcademicSourceAssociationView",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "description": "Returns historical assertions only when the current caller can read the source; history is not a current evidence grant.",
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/academic-source-associations/{associationID}/revoke": {
+      "post": {
+        "operationId": "revokeAcademicSourceAssociation",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "RevokeAcademicSourceAssociation",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "associationID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssociationRevocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Current version, idempotency, or operation-outcome conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Current state, evidence or explicit confirmation precondition failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Native persistence/audit failure; no partial business result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required native/model/search dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "agent_routes.go",
+        "x-lingdoc-route-line": 142,
+        "x-lingdoc-service": "RevokeAcademicSourceAssociation",
+        "x-lingdoc-go-response": "AssociationRevocationReceipt",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "workspacecore/academic_source_association_history_draft.go:RevokeAcademicSourceAssociation"
+        },
+        "description": "Withdraws a historical assertion with an explicit human decision; the receipt exposes no source.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/G2ConfirmedInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_context_revision": 1,
+                "confirmed": true,
+                "reason": "本人核对合成范围后明确提交此操作",
+                "expected_version": 1
+              }
+            }
+          }
+        },
         "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
       }
     },
@@ -22243,11 +23045,24 @@
             }
           },
           "409": {
-            "description": "Current version, idempotency, or operation-outcome conflict",
+            "description": "Version or idempotency conflict; evidence_card_save_committed_unreadable means the save committed but its receipt is currently inaccessible. After access is restored, replay the identical request with the same Idempotency-Key.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "committed_unreadable": {
+                    "summary": "Save committed; current source or permission prevents reading the receipt",
+                    "value": {
+                      "error": {
+                        "code": "evidence_card_save_committed_unreadable",
+                        "message": "证据卡已保存，但当前无法读取结果；请核对来源和权限，恢复后使用相同请求重试。",
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
                 }
               }
             }
@@ -24727,9 +25542,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "completed",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -24798,9 +25622,18 @@
                             "source_type": "synthetic-source-type",
                             "quality_note": "synthetic-quality-note",
                             "uncertainty": "synthetic-uncertainty",
-                            "status": "pending"
+                            "status": "metadata_only"
                           }
                         ],
+                        "usage": {
+                          "policy_version": "research-run-bounds-v1",
+                          "search_limit": 8,
+                          "searches_used": 1,
+                          "result_limit": 160,
+                          "results_used": 1,
+                          "model_call_limit": 0,
+                          "model_calls_used": 0
+                        },
                         "status": "running",
                         "run_mode": "real_api_fake_model",
                         "correlation_id": "synthetic-correlation-id",
@@ -26522,7 +27355,7 @@
                         "source_type": "synthetic-source-type",
                         "quality_note": "synthetic-quality-note",
                         "uncertainty": "synthetic-uncertainty",
-                        "status": "pending"
+                        "status": "metadata_only"
                       },
                       "request_id": "synthetic-contract-example",
                       "meta": {
@@ -43263,6 +44096,7 @@
             "type": "string",
             "minLength": 1
           },
+          "claims": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string", "minLength": 1}, "references": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": {"card_id": {"type": "string", "minLength": 1}, "card_version": {"type": "integer", "minimum": 1}, "anchor_id": {"type": "string", "minLength": 1}, "anchor_version": {"type": "integer", "minimum": 1}, "source_id": {"type": "string", "minLength": 1}, "locator": {"type": "string", "minLength": 1}, "selection_start": {"type": "integer", "minimum": 0}, "selection_end": {"type": "integer", "minimum": 1}, "quoted_text_hash": {"type": "string", "minLength": 1}}, "required": ["card_id", "card_version", "anchor_id", "anchor_version", "source_id", "locator", "selection_start", "selection_end", "quoted_text_hash"], "additionalProperties": false}}}, "required": ["text", "references"], "additionalProperties": false}},
           "body_markdown": {
             "type": "string"
           },
@@ -45433,6 +46267,8 @@
         "type": "object",
         "description": "实际可变工作副本，独立于不可变正式章节版本。",
         "properties": {
+          "claim_provenance": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "origin_kind": {"type": "string", "enum": ["generation", "rewrite"]}, "candidate_id": {"type": "string"}, "run_id": {"type": "string"}, "working_copy_revision": {"type": "integer", "minimum": 0}, "start_utf16": {"type": "integer", "minimum": 0}, "end_utf16": {"type": "integer", "minimum": 1}, "status": {"type": "string", "enum": ["needs_revalidation", "stale"]}, "created_at": {"type": "string", "format": "date-time"}}, "required": ["id", "origin_kind", "candidate_id", "working_copy_revision", "start_utf16", "end_utf16", "status", "created_at"], "additionalProperties": false}},
+          "claim_provenance_unavailable": {"type":"boolean"},
           "project_id": {
             "type": "string",
             "minLength": 1
@@ -47393,6 +48229,14 @@
           "scope": {
             "type": "string"
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "exclusions": {
             "type": "array",
             "items": {
@@ -47544,6 +48388,348 @@
         ],
         "x-go-type": "core.ControlResearchTaskInput",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "ConfirmAcademicSourceAssociationInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "candidate_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "expected_asset_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_quoted_text_hash": {
+            "type": "string"
+          },
+          "expected_locator": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expected_project_version",
+          "expected_context_revision",
+          "expected_version",
+          "candidate_id",
+          "source_id",
+          "expected_asset_revision",
+          "expected_quoted_text_hash",
+          "expected_locator",
+          "confirmed",
+          "reason"
+        ],
+        "x-go-type": "core.ConfirmAcademicSourceAssociationInput",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_association_draft.go"
+      },
+      "AcademicSourceAssociation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "candidate_ref": {
+            "$ref": "#/components/schemas/G2VersionRef"
+          },
+          "doi": {
+            "type": "string"
+          },
+          "catalog_version": {
+            "type": "string"
+          },
+          "policy_snapshot_version": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "asset_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "quoted_text_hash": {
+            "type": "string"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/G2Basis"
+          },
+          "confirmed_by": {
+            "type": "string"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "revoked"
+            ]
+          },
+          "revoked_by": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revocation_reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "project_id",
+          "version",
+          "candidate_ref",
+          "doi",
+          "catalog_version",
+          "policy_snapshot_version",
+          "source_id",
+          "asset_id",
+          "asset_revision",
+          "locator",
+          "quoted_text_hash",
+          "basis",
+          "confirmed_by",
+          "confirmed_at",
+          "reason",
+          "status"
+        ],
+        "x-go-type": "core.AcademicSourceAssociation",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_association_draft.go"
+      },
+      "AcademicSourceAssociationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AcademicSourceAssociation"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "AcademicSourceAssociationView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "candidate_ref": {
+            "$ref": "#/components/schemas/G2VersionRef"
+          },
+          "doi": {
+            "type": "string"
+          },
+          "catalog_version": {
+            "type": "string"
+          },
+          "policy_snapshot_version": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "asset_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "quoted_text_hash": {
+            "type": "string"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/G2Basis"
+          },
+          "confirmed_by": {
+            "type": "string"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "revoked"
+            ]
+          },
+          "revoked_by": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revocation_reason": {
+            "type": "string"
+          },
+          "review_state": {
+            "type": "string",
+            "enum": [
+              "historical",
+              "needs_review",
+              "revoked"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "project_id",
+          "version",
+          "candidate_ref",
+          "doi",
+          "catalog_version",
+          "policy_snapshot_version",
+          "source_id",
+          "asset_id",
+          "asset_revision",
+          "locator",
+          "quoted_text_hash",
+          "basis",
+          "confirmed_by",
+          "confirmed_at",
+          "reason",
+          "status",
+          "review_state"
+        ],
+        "x-go-type": "core.AcademicSourceAssociationView",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_association_history_draft.go"
+      },
+      "AcademicSourceAssociationListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcademicSourceAssociationView"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
+      "AssociationRevocationReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "revoked"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "status"
+        ],
+        "x-go-type": "core.AssociationRevocationReceipt",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_association_history_draft.go"
+      },
+      "AssociationRevocationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssociationRevocationReceipt"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
       },
       "CreateImportCandidateInput": {
         "type": "object",
@@ -47824,6 +49010,12 @@
               }
             ],
             "nullable": true
+          },
+          "academic_association_refs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/G2VersionRef" },
+            "maxItems": 20,
+            "description": "Versioned human association recorded for a draft; formal use remains blocked until transaction-safe original-byte verification exists."
           },
           "anchor_refs": {
             "type": "array",
@@ -48383,6 +49575,14 @@
           "scope": {
             "type": "string"
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "exclusions": {
             "type": "array",
             "items": {
@@ -48537,6 +49737,10 @@
             },
             "nullable": true
           },
+          "academic_snapshots": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AcademicEvidenceSnapshot" }
+          },
           "context_revision": {
             "type": "integer",
             "format": "int64"
@@ -48570,6 +49774,44 @@
         "x-go-type": "core.EvidenceConfirmation",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
+      "AcademicOriginalSnapshotRef": {
+        "type": "object",
+        "properties": {
+          "sha256": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" }
+        },
+        "additionalProperties": false,
+        "required": ["sha256", "size"]
+      },
+      "AcademicSnapshotAssociation": {
+        "type": "object",
+        "properties": {
+          "association_ref": { "$ref": "#/components/schemas/G2VersionRef" },
+          "candidate_ref": { "$ref": "#/components/schemas/G2VersionRef" },
+          "doi": { "type": "string" },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" }
+        },
+        "additionalProperties": false,
+        "required": ["association_ref", "candidate_ref", "doi", "catalog_version", "policy_snapshot_version"]
+      },
+      "AcademicEvidenceSnapshot": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string" },
+          "knowledge_id": { "type": "string" },
+          "asset_id": { "type": "string" },
+          "asset_revision": { "type": "integer" },
+          "locator": { "type": "string" },
+          "page": { "type": "integer" },
+          "raw_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+          "text_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+          "anchor_refs": { "type": "array", "items": { "$ref": "#/components/schemas/G2VersionRef" }, "nullable": true },
+          "associations": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSnapshotAssociation" }, "nullable": true }
+        },
+        "additionalProperties": false,
+        "required": ["source_id", "knowledge_id", "asset_id", "asset_revision", "locator", "raw_ref", "text_ref", "anchor_refs", "associations"]
+      },
       "EvidenceCard": {
         "type": "object",
         "properties": {
@@ -48590,6 +49832,12 @@
               }
             ],
             "nullable": true
+          },
+          "academic_association_refs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/G2VersionRef" },
+            "maxItems": 20,
+            "description": "Versioned human association recorded for a draft; formal use remains blocked until transaction-safe original-byte verification exists."
           },
           "anchor_refs": {
             "type": "array",
@@ -50204,6 +51452,14 @@
             },
             "nullable": true
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "asset_ids": {
             "type": "array",
             "items": {
@@ -50299,6 +51555,85 @@
           "meta"
         ]
       },
+      "ResearchRoundFeedbackInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "round_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expected_project_version",
+          "expected_context_revision",
+          "expected_version",
+          "round_number",
+          "feedback"
+        ],
+        "x-go-type": "core.ResearchRoundFeedbackInput",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "ResearchRoundFeedbackReceipt": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "run_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "round_number": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "run_id",
+          "run_version",
+          "round_number"
+        ],
+        "x-go-type": "core.ResearchRoundFeedbackReceipt",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "ResearchRoundFeedbackReceiptResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ResearchRoundFeedbackReceipt"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ]
+      },
       "ResearchRound": {
         "type": "object",
         "properties": {
@@ -50308,6 +51643,14 @@
           },
           "query": {
             "type": "string"
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
           },
           "provider": {
             "type": "string"
@@ -50324,7 +51667,8 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["pending", "completed", "no_results", "failed"]
           },
           "failure_code": {
             "type": "string"
@@ -50334,7 +51678,9 @@
           },
           "feedback": {
             "type": "string"
-          }
+          },
+          "feedback_by": { "type": "string" },
+          "feedback_at": { "type": "string", "format": "date-time" }
         },
         "additionalProperties": false,
         "required": [
@@ -50347,6 +51693,79 @@
         ],
         "x-go-type": "core.ResearchRound",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "AcademicSourceRule": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "source_type": { "type": "string", "enum": ["journal", "conference", "proceedings"] },
+          "venue_name": { "type": "string" },
+          "venue_ids": { "type": "array", "items": { "type": "string" } },
+          "allowed_license_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" } },
+          "maintainer": { "type": "string" },
+          "effective_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["id", "version", "source_type", "venue_name", "venue_ids", "allowed_license_urls", "maintainer", "effective_at"],
+        "x-go-type": "core.AcademicSourceRule",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceRuleInput": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "source_type": { "type": "string", "enum": ["journal", "conference", "proceedings"] },
+          "venue_name": { "type": "string", "minLength": 1 },
+          "venue_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "allowed_license_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" } },
+          "maintainer": { "type": "string" },
+          "effective_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["source_type", "venue_name", "venue_ids"],
+        "x-go-type": "core.AcademicSourceRule",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceCatalog": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string" },
+          "version": { "type": "integer", "format": "int64" },
+          "global_version": { "type": "string" },
+          "source_catalog_version": { "type": "string" },
+          "rules": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSourceRule" } },
+          "updated_by": { "type": "string" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "required": ["project_id", "version", "global_version", "source_catalog_version", "rules"],
+        "x-go-type": "core.AcademicSourceCatalog",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "UpdateAcademicSourceCatalogInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": { "type": "integer", "format": "int64", "minimum": 1 },
+          "expected_context_revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "expected_version": { "type": "integer", "format": "int64", "minimum": 0 },
+          "rules": { "type": "array", "items": { "$ref": "#/components/schemas/AcademicSourceRuleInput" }, "maxItems": 100 }
+        },
+        "additionalProperties": false,
+        "required": ["expected_project_version", "expected_context_revision", "expected_version", "rules"],
+        "x-go-type": "core.UpdateAcademicSourceCatalogInput",
+        "x-go-source": "internal/lingdoc/workspacecore/academic_source_catalog.go"
+      },
+      "AcademicSourceCatalogResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "$ref": "#/components/schemas/AcademicSourceCatalog" },
+          "request_id": { "type": "string" },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        },
+        "additionalProperties": false,
+        "required": ["data", "request_id", "meta"]
       },
       "ResearchResult": {
         "type": "object",
@@ -50392,6 +51811,19 @@
           "published_at": {
             "type": "string"
           },
+          "doi": { "type": "string" },
+          "journal": { "type": "string" },
+          "issns": { "type": "array", "items": { "type": "string" } },
+          "license_urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "license_status": { "type": "string", "enum": ["not_checked", "not_required", "allowed", "missing", "not_allowed"] },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" },
+          "policy_status": { "type": "string", "enum": ["approved", "out_of_policy", "retracted"] },
+          "policy_rule_id": { "type": "string" },
+          "retraction_status": { "type": "string", "enum": ["unknown", "retracted"] },
+          "duplicate_status": { "type": "string", "enum": ["unique", "duplicate"] },
+          "duplicate_of": { "type": "string" },
+          "acquisition_status": { "type": "string", "enum": ["metadata_only"] },
           "retrieved_at": {
             "type": "string",
             "format": "date-time"
@@ -50412,7 +51844,8 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["metadata_only", "out_of_policy", "retracted", "duplicate", "missing_identifier", "missing_title", "unread", "available", "stale", "unavailable", "inspected_original", "restricted"]
           }
         },
         "additionalProperties": false,
@@ -50428,6 +51861,22 @@
           "status"
         ],
         "x-go-type": "core.ResearchResult",
+        "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
+      },
+      "ResearchUsageLedger": {
+        "type": "object",
+        "properties": {
+          "policy_version": { "type": "string" },
+          "search_limit": { "type": "integer", "format": "int32" },
+          "searches_used": { "type": "integer", "format": "int32" },
+          "result_limit": { "type": "integer", "format": "int32" },
+          "results_used": { "type": "integer", "format": "int32" },
+          "model_call_limit": { "type": "integer", "format": "int32" },
+          "model_calls_used": { "type": "integer", "format": "int32" }
+        },
+        "additionalProperties": false,
+        "required": ["policy_version", "search_limit", "searches_used", "result_limit", "results_used", "model_call_limit", "model_calls_used"],
+        "x-go-type": "core.ResearchUsageLedger",
         "x-go-source": "internal/lingdoc/workspacecore/agent_research_model.go"
       },
       "ResearchRun": {
@@ -50467,6 +51916,9 @@
             },
             "nullable": true
           },
+          "usage": {
+            "$ref": "#/components/schemas/ResearchUsageLedger"
+          },
           "status": {
             "type": "string"
           },
@@ -50505,6 +51957,7 @@
           "basis",
           "rounds",
           "results",
+          "usage",
           "status",
           "run_mode",
           "correlation_id",
@@ -50595,6 +52048,22 @@
           "title": {
             "type": "string"
           },
+          "author": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string"
+          },
+          "doi": { "type": "string" },
+          "journal": { "type": "string" },
+          "issns": { "type": "array", "items": { "type": "string" } },
+          "license_urls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "catalog_version": { "type": "string" },
+          "policy_snapshot_version": { "type": "string" },
+          "policy_status": { "type": "string", "enum": ["approved", "out_of_policy", "retracted"] },
+          "retraction_status": { "type": "string", "enum": ["unknown", "retracted"] },
+          "duplicate_status": { "type": "string", "enum": ["unique", "duplicate"] },
+          "acquisition_status": { "type": "string", "enum": ["metadata_only"] },
           "level": {
             "type": "string"
           },
@@ -50762,6 +52231,11 @@
           },
           "quoted_text_hash": {
             "type": "string"
+          },
+          "source_text_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "完整来源分块文本的 SHA-256；旧锚点可能没有此字段。"
           },
           "selection_start": {
             "type": "integer",
@@ -54279,6 +55753,14 @@
           "scope": {
             "type": "string"
           },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
           "exclusions": {
             "type": "array",
             "items": {
@@ -54370,6 +55852,8 @@
             },
             "nullable": true
           },
+          "claim_provenance": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "origin_kind": {"type": "string", "enum": ["generation", "rewrite"]}, "candidate_id": {"type": "string"}, "run_id": {"type": "string"}, "working_copy_revision": {"type": "integer", "minimum": 0}, "start_utf16": {"type": "integer", "minimum": 0}, "end_utf16": {"type": "integer", "minimum": 1}, "status": {"type": "string", "enum": ["needs_revalidation", "stale"]}, "created_at": {"type": "string", "format": "date-time"}}, "required": ["id", "origin_kind", "candidate_id", "working_copy_revision", "start_utf16", "end_utf16", "status", "created_at"], "additionalProperties": false}},
+          "claim_provenance_unavailable": {"type":"boolean"},
           "id": {
             "type": "string"
           },
@@ -56479,6 +57963,15 @@
           "authorized_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "academic_snapshot": {
+            "type": "object",
+            "properties": {
+              "raw_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" },
+              "text_ref": { "$ref": "#/components/schemas/AcademicOriginalSnapshotRef" }
+            },
+            "required": ["raw_ref", "text_ref"],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -56665,6 +58158,7 @@
           "selection": {
             "$ref": "#/components/schemas/RewriteSelection"
           },
+          "claims": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string", "minLength": 1}, "references": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": {"card_id": {"type": "string", "minLength": 1}, "card_version": {"type": "integer", "minimum": 1}, "anchor_id": {"type": "string", "minLength": 1}, "anchor_version": {"type": "integer", "minimum": 1}, "source_id": {"type": "string", "minLength": 1}, "locator": {"type": "string", "minLength": 1}, "selection_start": {"type": "integer", "minimum": 0}, "selection_end": {"type": "integer", "minimum": 1}, "quoted_text_hash": {"type": "string", "minLength": 1}}, "required": ["card_id", "card_version", "anchor_id", "anchor_version", "source_id", "locator", "selection_start", "selection_end", "quoted_text_hash"], "additionalProperties": false}}}, "required": ["text", "references"], "additionalProperties": false}},
           "replacement_markdown": {
             "type": "string"
           },

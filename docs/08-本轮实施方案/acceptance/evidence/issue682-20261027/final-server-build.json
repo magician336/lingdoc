@@ -1,0 +1,5 @@
+{
+  "code_sha": "6cce766b3b9c8ce9a3fbf8c4bf0c6fb26dd51056",
+  "result": "PASS",
+  "command": "go build -p 1 -tags sqlite_fts5 -o /artifacts/issue682-server-delivery ./cmd/server"
+}

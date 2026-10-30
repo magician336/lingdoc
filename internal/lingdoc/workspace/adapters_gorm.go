@@ -2,11 +2,15 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -153,13 +157,28 @@ func (r dbKnowledgeReader) CurrentKnowledgeSignal(ctx context.Context, knowledge
 	if err != nil {
 		return evidence.KnowledgeSignal{}, false, err
 	}
-	return evidence.KnowledgeSignal{
+	signal := evidence.KnowledgeSignal{
 		KnowledgeID: knowledge.ID,
 		ParseStatus: knowledge.ParseStatus,
 		FileHash:    knowledge.FileHash,
 		FileSize:    knowledge.FileSize,
 		ProcessedAt: valueTime(knowledge.ProcessedAt),
-	}, true, nil
+	}
+	if knowledge.IsManual() || r.files == nil {
+		// Legacy file references can be local paths. The snapshot reader
+		// validates the upload hash and parser before using that fallback.
+		reader := evidence.NewOriginReader(r).(evidence.OriginSnapshotReader)
+		if _, data, available, readErr := reader.OriginSnapshot(ctx, knowledgeID); readErr == nil && available {
+			digest := sha256.Sum256(data)
+			signal.OriginalContentSHA256 = hex.EncodeToString(digest[:])
+		}
+	} else if r.files != nil {
+		if data, available, readErr := r.files.OriginBytes(ctx, knowledgeID); readErr == nil && available {
+			digest := sha256.Sum256(data)
+			signal.OriginalContentSHA256 = hex.EncodeToString(digest[:])
+		}
+	}
+	return signal, true, nil
 }
 
 func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error) {
@@ -188,7 +207,21 @@ func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID
 	if overrides != nil && len(overrides.ParserEngineRules) > 0 {
 		chunking.ParserEngineRules = overrides.ParserEngineRules
 	}
-	return chunking.ResolveParserEngine(knowledge.FileType) == "", nil
+	// SimpleFormatReader copies these formats verbatim. Its CSV/JSON and
+	// image branches transform input, so those cannot prove source offsets.
+	// Match the reader's extension normalization; a malformed type must not
+	// become eligible merely because a more permissive resolver trims it.
+	switch strings.ToLower(strings.TrimPrefix(knowledge.FileType, ".")) {
+	case "txt", "text", "md", "markdown":
+	default:
+		return false, nil
+	}
+	// URL parsing uses the URL engine rule instead of the file-type rule.
+	if knowledge.Type == "url" {
+		return false, nil
+	}
+	engine := chunking.ResolveParserEngine(knowledge.FileType)
+	return engine == "" || engine == docparser.SimpleEngineName, nil
 }
 
 // OriginBytes returns the source bytes of a material.

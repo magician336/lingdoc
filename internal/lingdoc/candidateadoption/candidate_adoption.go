@@ -102,15 +102,16 @@ type Basis struct {
 }
 
 type Candidate struct {
-	ID           string       `json:"id"`
-	ProjectID    string       `json:"project_id"`
-	ChapterID    string       `json:"chapter_id"`
-	RunID        string       `json:"run_id"`
-	BodyMarkdown string       `json:"body_markdown"`
-	SourceIDs    []string     `json:"source_ids"`
-	Basis        Basis        `json:"basis"`
-	Validity     Validity     `json:"validity"`
-	ReviewItems  []ReviewItem `json:"review_items"`
+	ID           string          `json:"id"`
+	ProjectID    string          `json:"project_id"`
+	ChapterID    string          `json:"chapter_id"`
+	RunID        string          `json:"run_id"`
+	BodyMarkdown string          `json:"body_markdown"`
+	SourceIDs    []string        `json:"source_ids"`
+	Basis        Basis           `json:"basis"`
+	Validity     Validity        `json:"validity"`
+	ReviewItems  []ReviewItem    `json:"review_items"`
+	Claims       []ClaimEvidence `json:"claims,omitempty"`
 
 	// WritingAction is the writing action that produced this candidate.
 	// The vocabulary belongs to the writingaction package: the action
@@ -371,6 +372,24 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 	}
 	prepared, err := s.prepareCandidateEvidence(ctx, in, candidate)
 	if err != nil {
+		_, supportsCommittedEvidence := s.Evidence.(committedCandidateEvidencePolicy)
+		if pending && supportsCommittedEvidence {
+			committedCtx, e := s.prepareCommittedEvidence(ctx, in, candidate)
+			if e != nil {
+				return AcceptResult{}, e
+			}
+			replay, e := s.Idempotency.ReplayCandidateAcceptance(committedCtx, in)
+			if e == nil && replay != nil {
+				if e = s.authorize(ctx, in.ActorID, in.ProjectID, "write:"+in.ChapterID); e != nil {
+					return AcceptResult{}, e
+				}
+				if e = s.validateSources(ctx, in.ProjectID, in.ActorID, candidate.SourceIDs); e != nil {
+					return AcceptResult{}, e
+				}
+				replay.Replayed = true
+				return *replay, nil
+			}
+		}
 		return AcceptResult{}, err
 	}
 	replay, err := s.Idempotency.ReplayCandidateAcceptance(prepared, in)
@@ -398,7 +417,20 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 		return AcceptResult{}, err
 	}
 	if err = s.recheckCandidateAcceptance(ctx, in, candidate); err != nil {
-		return AcceptResult{}, fmt.Errorf("candidate acceptance committed; current access recheck failed: %w", err)
+		committedCtx, e := s.prepareCommittedEvidence(ctx, in, candidate)
+		if e != nil {
+			return AcceptResult{}, fmt.Errorf("candidate acceptance committed; current access recheck failed: %w", err)
+		}
+		replay, e := s.Idempotency.ReplayCandidateAcceptance(committedCtx, in)
+		if e != nil || replay == nil {
+			return AcceptResult{}, fmt.Errorf("candidate acceptance committed; current access recheck failed: %w", err)
+		}
+		if e = s.authorize(ctx, in.ActorID, in.ProjectID, "write:"+in.ChapterID); e != nil {
+			return AcceptResult{}, e
+		}
+		if e = s.validateSources(ctx, in.ProjectID, in.ActorID, candidate.SourceIDs); e != nil {
+			return AcceptResult{}, e
+		}
 	}
 	return result, nil
 }

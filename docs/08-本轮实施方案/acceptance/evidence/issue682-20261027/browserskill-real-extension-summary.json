@@ -1,0 +1,21 @@
+{
+  "code_sha": "8c69d073a4e778feaedf32054c957c929cb9982d",
+  "result": "PASS",
+  "summary": {
+    "source": ".tmp\\browserskill-real-extension-headed.jsonl",
+    "last_event": "2026-10-27T11:14:15.91981928Z",
+    "packages": {
+      "pass": 1
+    },
+    "tests_including_subtests": {
+      "pass": 1
+    },
+    "running_packages": [],
+    "failures": [],
+    "non_json_lines": []
+  },
+  "browser": "Chromium 140.0.7339.16 / Playwright 1.55.0 / Xvfb",
+  "command": "DISPLAY=:99 BROWSERSKILL_TEST_HEADED=1 sh /artifacts/run-real-extension.sh",
+  "scope": "Actual isolated Chromium extension and pinned native daemon; synthetic local web fixtures, not academic user acceptance",
+  "history": "Headless run timed out at browser preview; headed Xvfb run passed in 31.48s"
+}
