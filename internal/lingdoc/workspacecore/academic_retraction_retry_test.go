@@ -250,9 +250,10 @@ func testAcademicCardSaveRetriesStaleSQLiteSnapshot(t *testing.T, scenario strin
 	allows, denies := 0, 0
 	for _, event := range audit.events {
 		if event.Capability == "shadow:evidence-write" {
-			if event.Decision == "allow" {
+			switch event.Decision {
+			case "allow":
 				allows++
-			} else if event.Decision == "deny" {
+			case "deny":
 				denies++
 			}
 		}
