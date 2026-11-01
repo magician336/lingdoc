@@ -1156,6 +1156,8 @@ func (s *Service) ListImportCandidates(ctx context.Context, actor Actor, project
 		if err != nil {
 			return err
 		}
+		var catalog AcademicSourceCatalog
+		catalogLoaded := false
 		for _, row := range rows {
 			var value ImportCandidate
 			if err = json.Unmarshal(row.Payload, &value); err != nil {
@@ -1163,6 +1165,33 @@ func (s *Service) ListImportCandidates(ctx context.Context, actor Actor, project
 			}
 			if !versionBasisCurrent(p, value.Basis) && value.Status != "imported" {
 				value.Status = "stale"
+			}
+			// Read-time revalidation for academic metadata candidates: a durable
+			// retraction observation or a changed catalog/policy must surface as
+			// an ineligible candidate even when no explicit invalidation ran.
+			if value.SelectionType == "academic_metadata" {
+				known, checkErr := knownAcademicRetraction(tx, projectID, value.DOI)
+				if checkErr != nil {
+					return checkErr
+				}
+				if known {
+					value.RetractionStatus = "retracted"
+				}
+				if value.Status == "imported" {
+					if !catalogLoaded {
+						catalog, err = currentAcademicSourceCatalog(tx, projectID)
+						if err != nil {
+							return err
+						}
+						catalogLoaded = true
+					}
+					if value.CatalogVersion != catalog.SourceCatalogVersion || !academicCandidatePolicyEligible(value.PolicyStatus, value.RetractionStatus, value.DuplicateStatus) {
+						value.Status = "restricted"
+						value.Locator = ""
+						value.QuotedTextHash = ""
+						value.Purpose = ""
+					}
+				}
 			}
 			out = append(out, value)
 		}
