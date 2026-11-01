@@ -24,6 +24,9 @@ func (s *Service) withAcademicConfirmationAuthority(ctx context.Context, actor A
 		if err := lockAcademicActorRows(tx, actor, projectID); err != nil {
 			return err
 		}
+		if err := lockAcademicEvidenceProject(tx, actor, projectID); err != nil {
+			return err
+		}
 		if err := lockAcademicEvidenceChapters(tx, projectID, chapters); err != nil {
 			return err
 		}
