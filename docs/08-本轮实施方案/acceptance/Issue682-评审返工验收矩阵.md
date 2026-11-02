@@ -107,3 +107,30 @@ go test -vet=off -timeout=4m ./internal/lingdoc/workspace -run '^TestPostgresAca
 ```
 
 按项目健康评分协议进行提交前工作树复评：H_L 51.0/100、F_R 52.8/100，置信度 C；CodeGraph 不可用。主要风险为证据权限和不可变性验证分散在确认、上下文、写作、报告和采纳，事务锁顺序与结果语义跨层暴露，以及目录与额度配置仍需测试注入。顺序重放可避免再次调用模型，但并发初始请求仍可能各调用一次；旧报告未持久化的丢弃原因不伪造。分值不代表当前提交的 CI、真人研究者、正式政策或生产迁移已经验收，也不覆盖所有跨项目锁序。
+
+## 7. CHANGES_REQUESTED 评审意见逐条核对（2026-11-02）
+
+评审（`e6dbe7b6`，2026-10-29，状态 CHANGES_REQUESTED）P1/P2/P3 逐条核对当前 head：
+
+| 评审项 | 结论 | 证据 |
+| --- | --- | --- |
+| P1 #1 已确认证据卡缺少失效传播路径 | 已解决 | `academic_evidence_invalidation_test.go`：目录变更 `CONFIRMED→NEEDS_REVIEW`（`InvalidReason=academic_catalog_changed`）、撤稿 `→NEEDS_REVIEW`（`InvalidReason=academic_source_retracted`），写入失败/审计失败回滚；`academic_card_invalidation_concurrency_test.go` 覆盖并发 |
+| P1 #2 Provider 双名 | 已解决 | 生产代码（`agent_action_service.go`、`research_adapter.go`）已收敛为 `AcademicCrossrefProviderID` 与 `AcademicCrossrefResultProvider` 两个语义常量（定义于 `academic_source_catalog.go`），无裸 `"crossref"` 业务字面量；`academic_candidate_policy_test.go` 钉住两常量 |
+| P2 #3 资格谓词重复 | 已解决 | 提取 `academicCandidatePolicyEligible` 于 `academic_candidate_policy.go` |
+| P2 #4 存储层绕行 | 已解决 | `loadAcademicSourceCatalog` 收敛为 `ResearchAdapter` 方法，经 `academicCatalogReader` 端口；`research_adapter_test.go` 覆盖 reader 缺失 fail-closed |
+| P2 #5 Data Clumps | 未解决（后续，不阻塞） | 十字段块仍逐字段复制，建议单独 Issue |
+| P3 长函数 / N+1 / `json.Marshal` 丢弃 | 未解决（不阻塞） | 后续 |
+
+### 本轮补充回归（2026-11-02）
+
+新增 `TestAcademicCardSavePostCommitNativeChange`（`internal/lingdoc/workspacecore/academic_card_save_postcommit_test.go`），补上 `TestAcademicCardSavePostCommitRevocation` 未覆盖的原生 asset/chunk 变更：保存提交后 `AssetRevision` 自增或 `QuotedText` 内容变化，`SaveEvidenceCard` 必须 fail-closed 返回 `ErrAcademicCardSaveCommittedUnreadable`、不泄露结果，恢复源后同键幂等重放、不重复写历史。
+
+- `go test ./internal/lingdoc/workspacecore/ -count=1`：PASS（68.98s，含本新增用例）。
+- Go Race：本机 Windows + zig `lld-link` 缺 TSAN 符号，**NOT RUN**；由 CI 的 workspace `-race` 分片覆盖。
+- PostgreSQL 17 定向复验、真实上传/队列/PDF/Qwen 链、正式研究者验收与生产目录/额度：维持既有的 **NOT RUN / DEFERRED_MANUAL**，不以本机测试扩展为生产验收。
+
+### 仍未闭合（保持 Draft）
+
+- 保存后来源状态的跨事务一致性（见 [save-committed-recovery-matrix](Issue682-save-committed-recovery-matrix.md)）：来源读取与项目/目录/撤稿的最终事务复验非跨系统原子；本测试钉住 fail-closed 行为，但原子窗口未关闭。
+- 正式研究者验收、生产目录与额度策略：DEFERRED_MANUAL（阻塞 Beta 首版，不阻塞代码合并）。
+- 最终 head 的 GitHub CI 与人工复审：待本提交推送后复核。
