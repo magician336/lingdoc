@@ -109,3 +109,66 @@ func TestAcademicCardSavePostCommitRevocation(t *testing.T) {
 		})
 	}
 }
+
+// TestAcademicCardSavePostCommitNativeChange closes the gap left by
+// TestAcademicCardSavePostCommitRevocation: a native asset/chunk change that
+// appears after the card commit (not a permission revocation) must fail the
+// post-commit re-read closed and never disclose a stale result.
+func TestAcademicCardSavePostCommitNativeChange(t *testing.T) {
+	for name, mutate := range map[string]func(agentFixture){
+		"asset revision": func(f agentFixture) {
+			s := f.source.sources["source-1"]
+			s.AssetRevision++
+			f.source.sources["source-1"] = s
+		},
+		"chunk quote": func(f agentFixture) {
+			s := f.source.sources["source-1"]
+			s.QuotedText = "原始文献第9条合成摘录；这是需人工核对的资料。"
+			s.QuotedTextHash = sha256Hex(s.QuotedText)
+			f.source.sources["source-1"] = s
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			f := newAgentFixture(t, false)
+			anchor := f.anchor(t, "source-1", "postcommit-native-anchor")
+			association := seedDraftAssociation(t, f, "postcommit-native-association", f.source.sources["source-1"])
+			input := SaveEvidenceCardInput{VersionExpectation: f.expectation(0), AnchorRefs: []VersionRef{{ID: anchor.ID, Version: anchor.Version}}, AcademicAssociationRefs: []VersionRef{{ID: association.ID, Version: association.Version}}, Confirmed: true}
+			original := f.source.sources["source-1"]
+			reader := &cardSavePostCommitReader{testSourceReader: f.source, f: f}
+			reader.onCommitted = func() error {
+				mutate(f)
+				return nil
+			}
+			f.svc.agentRuntime.Sources = reader
+			body, _, replay, err := f.svc.SaveEvidenceCard(ctx, f.owner, f.project.ID, "postcommit-native", input)
+			if !errors.Is(err, ErrAcademicCardSaveCommittedUnreadable) || replay || len(body) != 0 {
+				t.Fatalf("post-commit native change disclosed result or hid commit: replay=%v body=%s err=%v", replay, body, err)
+			}
+			var rows []struct {
+				ID          string
+				PayloadJSON string
+			}
+			if err = f.svc.testDB().Table("lingdoc_g2_objects").Select("id, payload_json").Where("project_id=? AND kind=?", f.project.ID, EvidenceCardKind).Scan(&rows).Error; err != nil || len(rows) != 1 {
+				t.Fatalf("saved card is not present exactly once: %v %v", rows, err)
+			}
+			var current EvidenceCard
+			if err = json.Unmarshal([]byte(rows[0].PayloadJSON), &current); err != nil {
+				t.Fatal(err)
+			}
+			f.source.sources["source-1"] = original
+			body, _, replay, err = f.svc.SaveEvidenceCard(ctx, f.owner, f.project.ID, "postcommit-native", input)
+			if err != nil || !replay {
+				t.Fatalf("restored retry was not idempotent: replay=%v err=%v", replay, err)
+			}
+			var recovered EvidenceCard
+			if err = json.Unmarshal(body, &recovered); err != nil || recovered.ID != current.ID || recovered.Version != current.Version {
+				t.Fatalf("wrong replay result: %v", err)
+			}
+			var count int64
+			if err = f.svc.testDB().Table("lingdoc_g2_object_versions").Where("project_id=? AND kind=? AND id=?", f.project.ID, EvidenceCardKind, current.ID).Count(&count).Error; err != nil || count != 1 {
+				t.Fatalf("replay duplicated card history: %d %v", count, err)
+			}
+		})
+	}
+}
