@@ -1,0 +1,52 @@
+{
+  "task": "324",
+  "ticket": "magician336/lingdoc#324",
+  "head": "f9ef3c5af11a1c020a4899f65551d525cc3700a8",
+  "scope": "收窄口径的剩余缺陷修复:guarded 检查链的 AuthorizeFrozenProvenance 拿路线感知投影(frozen.Spec)去比记录原始规格的溯源快照,带必需路线节点的项目上必然 403 source_access_denied(PR #336 修了 Build 跳,漏了守卫跳)。修复=两处校验同口径(都用原始规格 SpecSource):DeliveryInput 新增 SpecSource(Build 存、cloneInput 深拷贝、storageInput 落库/读回),AuthorizeFrozenProvenance 改用之(旧快照 nil 回退 Spec=引入前行为);openapi.json 的 FrozenDeliveryInput schema 与 13 处样例同步,digest 按新形状重算。回归:裸 seam(基线+双 apply)、guarded seam(apply 后 checks 200;冻结门禁原因=ErrRevisionNotStable 而非 403)、快照往返保 SpecSource。溯源语义零弱化:守卫仍绑不可变持久化快照+pin 校验,当前项目状态一致性仍由 ValidateProjectProvenanceInTransaction 保证。",
+  "passed": [
+    {
+      "id": "TD-324.1 完成线:变更集应用后 guarded 交付检查 200 且规则问题读得到",
+      "status": "pass",
+      "evidence": "具名用例 TestGuardedDeliveryCheckAfterApplyOnARequiredRouteNodeProjectReadsTheRuleIssues(真实 guarded 生产装配 GuardFullWorkflowRelease+真实变更集 apply):红(修复前) = `source_access_denied` 403 实跑复现;绿(修复后 head f9ef3c5a) = Check 200 且 RouteRouteNodeRequired 为 blocking、TargetID=route-r7。命令 `go test ./internal/lingdoc/workspace/ -run TestGuardedDeliveryCheckAfterApply -count=1`,head f9ef3c5af11a1c020a4899f65551d525cc3700a8。"
+    },
+    {
+      "id": "TD-324.2 #319 语义不回退(已声明但缺失的路线节点仍给 blocking)",
+      "status": "pass",
+      "evidence": "同一 guarded 用例与裸 seam 用例(delivery_route_node_after_apply_test.go)均断言 SeverityBlocking+TargetID=route-r7——求值仍读路线感知投影。命令同上与 `go test ./internal/lingdoc/workspace/ -run TestDeliveryCheckAfterChangeSetApply -count=1`。"
+    },
+    {
+      "id": "TD-324.3 冻结链门禁原因正确(不是来源拒绝)",
+      "status": "pass",
+      "evidence": "guarded 用例断言 apply 后未稳定化时 release.Prepare 返回 core.ErrRevisionNotStable(require.ErrorIs)——修复前该跳是 403 source_access_denied;必需路线节点缺失是持续阻断(#319),该场景到不了稳定化成功,冻结链完成线即门禁原因正确。"
+    },
+    {
+      "id": "TD-324.4 持久化快照往返保 SpecSource(导出复核链的前提)",
+      "status": "pass",
+      "evidence": "具名用例 TestSnapshotStoreRoundTripsTheOriginalSpec(forEachSnapshotStore:memory+sqlite 双 store,sqlite 走生产迁移建表):Prepare→Get 后 SpecSource 与 Spec 两份 map 均完整存活。红:修复前 encodeFrozenInput 的 storageInput 无该字段,读回 nil;绿:storageInput/encode/decode 三处接线后。命令 `go test ./internal/lingdoc/delivery/ -run TestSnapshotStoreRoundTripsTheOriginalSpec -count=1`。"
+    },
+    {
+      "id": "TD-324.5 裸 seam 回归(应用前基线+双 apply 完成线)",
+      "status": "pass",
+      "evidence": "TestDeliveryCheckAfterChangeSetApplyStillReadsTheRuleIssues(真实 HTTP 双 seam:delivery+change-sets):应用前 checks 200(钉 PR #336 语义);两次真实变更集 apply(spec_revision 推进两次,防假绿已单独验证 spec_json 被改写)后 checks 200 且阻断问题可读。"
+    },
+    {
+      "id": "TD-324.6 契约同步:FrozenDeliveryInput schema+13 样例+digest 重算",
+      "status": "pass",
+      "evidence": "openapi.json:FrozenDeliveryInput.properties 在 spec 后插 spec_source(object+additionalProperties string,说明两个值各司其职);13 处响应样例 frozen_input 补 spec_source(=各自身 spec 副本),snapshot_digest 按 canon 序列化重算。机器断言:python3 -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py --source-root . → exit 0,PASS×2(含 digest==sha(frozen) 校验)。契约形状测试 TestDeliveryRoutesAnswerTheShapeTheContractPublished/TestDeliveryListAnswersTheContractShape 绿。"
+    },
+    {
+      "id": "TD-324.7 溯源语义零弱化(双轴评审正面确认)",
+      "status": "pass",
+      "evidence": "Standards 轴核链:守卫侧 AssertFrozenProjectProvenance→PrepareFrozenProjectProvenance 仍要求 ValidateFrozenProvenanceInput 摘要+字段哈希全对上、按 digest 取持久化 g1_snapshot 且 hash-impact 相等、每个 pin ValueHash 一致且 Verified;当前项目状态一致性仍由 Build 跳 ValidateProjectProvenanceInTransaction(provenance_service.go:500-538,项目哈希不等→ErrVersionConflict)保证。改传原始规格是纠偏不是放宽;旧快照 nil→回退 Spec 与引入前行为逐字一致。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "TD-324.8 PR 必需 CI 全绿(合并前门禁)",
+      "status": "not_run",
+      "reason": "等待 PR 的 LingDoc PR gate 与 integration 等必需检查;PR 列出后补记 run URL 与 head,全部绿才转 Ready。"
+    }
+  ],
+  "environment_limits": "本机 python3.14/gofmt 版本与 CI 3.12 不同(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法确认);openapi.json 的样例编辑曾两度引入中间状态(样例未同步 schema 导致 additionalProperties 拒绝;digest 重算 walk 误改 schema 定义),均被 validate_artifacts.py 与 check_schema 当场抓住并修复——校验器是契约编辑的安全网。",
+  "out_of_scope": "台面 expected_project_version 过期导致的 409(评论区明示另一层);验收台路线图链(#318);模板声明(#314);guard 的 withSpecSource variadic 等 main 既有实现。旧持久化快照(无 spec_source)回退到 frozen.Spec:PR #336 前必需路线节点项目根本冻结不了,不存在投影已入库的旧快照,回退实际只覆盖无路线节点的旧数据(投影==原始),安全(评审确认)。"
+}
