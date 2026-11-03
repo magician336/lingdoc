@@ -23,15 +23,14 @@
       "id": "TD-756.3 无测试删减;既有 integration 语义不回退",
       "status": "pass",
       "evidence": "git diff origin/main...HEAD --stat = 3 文件 +120/-0 全部纯新增;scripts/acceptance/ 零改动;closeout PACKAGES、既有 internal/database 演练步与顺序逐行未动(Spec 轴评审逐行核对)。scripts/ci 全量 unittest 的 12 failures + 2 errors 经干净 origin/main 检出对照为预存环境限制(本机 963 失败集合与本 worktree 965(含新增 2 用例)失败集合逐项相同)。"
-    }
-  ],
-  "not_run": [
+    },
     {
       "id": "TD-756.2 收口后 integration 真实运行该测试集(CI 绿记录)",
-      "status": "not_run",
-      "reason": "等待 PR 的 LingDoc Interface Integration job 产生正式 CI 绿记录(本收口的验收记录);PR 列出后在此补记 run URL 与 head。"
+      "status": "pass",
+      "evidence": "PR #782 的 LingDoc Interface Integration job(run 41648576501,job 125960449658,integration 结论 pass 26m27s):新步「Rehearse internal/types PostgreSQL dialect behavior」内日志 `=== RUN TestPostgresJSONColumnCarrierTypes` → `--- PASS: TestPostgresJSONColumnCarrierTypes (0.01s)`。该 run 测的是实现内容齐备的提交 36c23a01;本 JSON 所在 docs 提交对功能零差异(仅本文件)。job 内既有四值口径保持:closeout helpers 段中不能真跑的条目仍如实报 NOT RUN(如 postgres_migration_rollback_roundtrip)。"
     }
   ],
+  "not_run": [],
   "environment_limits": "本机 python3.14 / gofmt 版本与 CI 3.12 不同 ⇒ scripts/ci 全量 unittest 预存 12 failures + 2 errors(与干净 origin/main 检出逐项对照相同,非本票引入);Docker Hub 直连超时,经 docker.m.daocloud.io 镜像拉取 postgres:17;gh 对 api.github.com 间歇超时(单操作重试 ≤3 次)。",
   "out_of_scope": "internal/types/** 加入 integration 门禁路径表(按票面归 #735 分段结构定型后归位,取证报告 §4 登记);两演练步合并为一步、守护测试 DSN 断言按 job 归属强化(评审 Suggestion,登记后续,不阻塞)。"
 }
