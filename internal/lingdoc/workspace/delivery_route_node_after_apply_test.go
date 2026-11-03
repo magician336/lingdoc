@@ -41,7 +41,6 @@ func TestDeliveryCheckAfterChangeSetApplyStillReadsTheRuleIssues(t *testing.T) {
 		deliveryMethodChapter(),
 	)
 	seedRequiredRouteNodeTemplateCopy(t, db)
-	ensureImpactRouteTables(t, db)
 	if err := db.Exec("UPDATE lingdoc_projects SET current_context_revision = ? WHERE id = ?", 1, "project-1").Error; err != nil {
 		t.Fatalf("seed context revision: %v", err)
 	}
@@ -62,6 +61,28 @@ func TestDeliveryCheckAfterChangeSetApplyStillReadsTheRuleIssues(t *testing.T) {
 	checkBody := func() string {
 		return fmt.Sprintf(`{"expected_project_version":%d}`, projectVersion(t))
 	}
+	// applyChangeSet 走真实 HTTP 面创建并应用一次变更集，返回应用后的响应。
+	applyChangeSet := func(t *testing.T, expectedContextRevision int, fields, reason, key string) {
+		t.Helper()
+		body := fmt.Sprintf(`{"expected_context_revision":%d,"fields":%s,"affected_chapter_ids":["chapter-1","chapter-2"],"reason":%q}`,
+			expectedContextRevision, fields, reason)
+		created := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets", body, key+"-create")
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create change set = %d, want 201: %s", created.Code, created.Body.String())
+		}
+		var change struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(created.Body.Bytes(), &change); err != nil {
+			t.Fatalf("decode create response: %v", err)
+		}
+		applied := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets/"+change.Data.ID+"/apply", `{}`, key+"-apply")
+		if applied.Code != http.StatusOK {
+			t.Fatalf("apply change set = %d, want 200: %s", applied.Code, applied.Body.String())
+		}
+	}
 
 	// 基线：应用前 checks 200（PR #336 修好的那条语义，先钉住再往前走）。
 	before := deliveryServe(engine, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", checkBody(), ""))
@@ -70,44 +91,12 @@ func TestDeliveryCheckAfterChangeSetApplyStillReadsTheRuleIssues(t *testing.T) {
 	}
 
 	// 创建并应用一个变更集：改写研究条件字段（spec 与项目状态随之推进）。
-	body := `{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"公开的合成调查样本","new_value":"变更后的研究对象"}},"affected_chapter_ids":["chapter-1","chapter-2"],"reason":"研究对象发生变化"}`
-	create := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets", body, "route-apply-create-1")
-	if create.Code != http.StatusCreated {
-		t.Fatalf("create change set = %d, want 201: %s", create.Code, create.Body.String())
-	}
-	var created struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	applied := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", `{}`, "route-apply-1")
-	if applied.Code != http.StatusOK {
-		t.Fatalf("apply change set = %d, want 200: %s", applied.Code, applied.Body.String())
-	}
+	applyChangeSet(t, 1, `{"research_subject":{"old_value":"公开的合成调查样本","new_value":"变更后的研究对象"}}`, "研究对象发生变化", "route-apply-1")
 
 	// 第二次应用:再改写一个普通研究条件字段,逼近评论区的「多次变更集应用
 	// 改写,规格与项目状态都动过」场景。(路线节点字段本身由路线图供给,变更集
 	// 的模板 Spec 校验不允许直写它——那是设计,不是缺陷。)
-	second := `{"expected_context_revision":2,"fields":{"research_goal":{"old_value":"验证资料到章节的工作流程","new_value":"变更后再次改写的研究目标"}},"affected_chapter_ids":["chapter-1","chapter-2"],"reason":"研究目标再次变化"}`
-	create2 := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets", second, "route-apply-create-2")
-	if create2.Code != http.StatusCreated {
-		t.Fatalf("create second change set = %d, want 201: %s", create2.Code, create2.Body.String())
-	}
-	var created2 struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(create2.Body.Bytes(), &created2); err != nil {
-		t.Fatalf("decode second create response: %v", err)
-	}
-	applied2 := httptestJSON(t, engine, http.MethodPost, "/api/projects/project-1/change-sets/"+created2.Data.ID+"/apply", `{}`, "route-apply-2")
-	if applied2.Code != http.StatusOK {
-		t.Fatalf("apply second change set = %d, want 200: %s", applied2.Code, applied2.Body.String())
-	}
+	applyChangeSet(t, 2, `{"research_goal":{"old_value":"验证资料到章节的工作流程","new_value":"变更后再次改写的研究目标"}}`, "研究目标再次变化", "route-apply-2")
 
 	// 完成线：应用后的交付检查仍返回 200，规则问题读得到。
 	after := deliveryServe(engine, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", checkBody(), ""))

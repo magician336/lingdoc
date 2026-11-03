@@ -152,6 +152,7 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
 	var specProvenance *core.ProjectProvenanceSnapshot
+	var frozenSpecSource map[string]string
 	if b.provenance != nil {
 		projects := b.provenance
 		caller := types.CallerFromContext(checked)
@@ -183,6 +184,10 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, provenanceSpec, proof, false); err != nil {
 			return delivery.DeliveryInput{}, err
 		}
+		// 原始规格要跟着冻结输入走：守卫在求值之后还会拿冻结输入再验一次溯源
+		// （AuthorizeFrozenProvenance），那一次同样只能拿原始规格去对快照。
+		// 不存这一份，守卫那跳就只剩投影可用，必需路线节点必然失配（#324）。
+		frozenSpecSource = cloneStringMap(provenanceSpec)
 		specProvenance = &proof
 	}
 	var template lingdoctemplate.Template
@@ -241,6 +246,7 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		SpecRevision:            input.SpecRevision,
 		ContextRevision:         input.ContextRevision,
 		Spec:                    cloneStringMap(input.Spec),
+		SpecSource:              frozenSpecSource,
 		SpecProvenance:          specProvenance,
 		Template:                template,
 		RuleSetBinding:          binding,
@@ -459,5 +465,12 @@ func (b *DeliveryInputBuilder) AuthorizeFrozenProvenance(ctx context.Context, ac
 	if frozen.SpecProvenance != nil {
 		proof = *frozen.SpecProvenance
 	}
-	return projects.AssertFrozenProjectProvenance(ctx, core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, projectID, frozen.Spec, proof, false)
+	// 溯源校验比对的是**原始规格**（#324）：快照记的是它，投影那份对不上。与
+	// Build 里的 ValidateProjectProvenanceSnapshot 同一口径；旧快照没有 SpecSource
+	// 时回退到 Spec，保持引入本字段前的行为。
+	provenanceSpec := frozen.SpecSource
+	if provenanceSpec == nil {
+		provenanceSpec = frozen.Spec
+	}
+	return projects.AssertFrozenProjectProvenance(ctx, core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, projectID, provenanceSpec, proof, false)
 }

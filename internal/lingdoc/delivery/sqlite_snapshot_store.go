@@ -287,6 +287,7 @@ type storageInput struct {
 	SpecRevision    int                             `json:"spec_revision"`
 	ContextRevision int64                           `json:"context_revision,omitempty"`
 	Spec            map[string]string               `json:"spec"`
+	SpecSource      map[string]string               `json:"spec_source,omitempty"`
 	SpecProvenance  *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
 	Template        Template                        `json:"template"`
 	Chapters        []storageChapter                `json:"chapters"`
@@ -324,7 +325,7 @@ func encodeFrozenInput(input DeliveryInput) (string, error) {
 	stored := storageInput{
 		ProjectID: input.ProjectID, ProjectName: input.ProjectName,
 		ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision, ContextRevision: input.ContextRevision,
-		Spec: input.Spec, SpecProvenance: input.SpecProvenance, Template: input.Template,
+		Spec: input.Spec, SpecSource: input.SpecSource, SpecProvenance: input.SpecProvenance, Template: input.Template,
 		RuleSetSnapshot: input.RuleSetSnapshot, TemplateCopyRulesetHash: input.TemplateCopyRulesetHash, SourceRuleSetID: input.SourceRuleSetID, SourceRuleSetVersion: input.SourceRuleSetVersion, SourceRuleSetHash: input.SourceRuleSetHash, BindingPolicies: input.BindingPolicies, SourcePolicyHash: input.SourcePolicyHash, TemplateCopyID: input.TemplateCopyID, TemplateCopyVersion: input.TemplateCopyVersion, TemplateCopyContentHash: input.TemplateCopyContentHash,
 		Sources: input.Sources, AssetVersions: input.AssetVersions,
 		PolicyAssetIDs: input.PolicyAssetIDs, DeliveryKind: input.DeliveryKind,
@@ -351,7 +352,7 @@ func decodeFrozenInput(raw string) (DeliveryInput, error) {
 	input := DeliveryInput{
 		ProjectID: stored.ProjectID, ProjectName: stored.ProjectName,
 		ProjectVersion: stored.ProjectVersion, SpecRevision: stored.SpecRevision, ContextRevision: stored.ContextRevision,
-		Spec: stored.Spec, SpecProvenance: stored.SpecProvenance, Template: stored.Template,
+		Spec: stored.Spec, SpecSource: stored.SpecSource, SpecProvenance: stored.SpecProvenance, Template: stored.Template,
 		RuleSetSnapshot: stored.RuleSetSnapshot, TemplateCopyRulesetHash: stored.TemplateCopyRulesetHash, SourceRuleSetID: stored.SourceRuleSetID, SourceRuleSetVersion: stored.SourceRuleSetVersion, SourceRuleSetHash: stored.SourceRuleSetHash, BindingPolicies: stored.BindingPolicies, SourcePolicyHash: stored.SourcePolicyHash, TemplateCopyID: stored.TemplateCopyID, TemplateCopyVersion: stored.TemplateCopyVersion, TemplateCopyContentHash: stored.TemplateCopyContentHash,
 		Sources: stored.Sources, AssetVersions: stored.AssetVersions,
 		PolicyAssetIDs: stored.PolicyAssetIDs, DeliveryKind: stored.DeliveryKind,
