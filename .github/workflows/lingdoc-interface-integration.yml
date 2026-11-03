@@ -110,6 +110,15 @@ jobs:
       # evidence whenever the sweep is slow or times out.
       - name: Rehearse PostgreSQL migration upgrades and rollbacks
         run: go test -count=1 -v -run '^TestPostgres' ./internal/database/...
+      # internal/types carries its own TestPostgres* dialect surface: the
+      # JSON column carrier types are measured against the real server
+      # (jsonb decodes to []byte, text to string).  The closeout PACKAGES do
+      # not include internal/types and no other CI job injects the DSN, so
+      # without this step that dialect behavior had no continuous
+      # verification (治理票 #756).  Same placement rule as above: run
+      # before the closeout sweep so a slow sweep cannot eat the evidence.
+      - name: Rehearse internal/types PostgreSQL dialect behavior
+        run: go test -count=1 -v -run '^TestPostgres' ./internal/types/...
       - name: Run backend closeout against isolated PostgreSQL
         run: >-
           python scripts/acceptance/lingdoc_backend_closeout.py
