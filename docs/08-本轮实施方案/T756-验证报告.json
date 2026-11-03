@@ -1,0 +1,36 @@
+{
+  "task": "756",
+  "ticket": "magician336/lingdoc#756",
+  "head": "59685522b5d991f714768f5a0e6a598e09a81ae4",
+  "scope": "治理票独立小改分支:integration 工作流新增 internal/types TestPostgres 演练步(复用既有 postgres:17 服务与 DSN 注入,先于 closeout sweep)+ scripts/ci 守护测试防回退 + 取证报告落 docs/08-本轮实施方案/。不动 closeout PACKAGES、不动门禁路径表(触发面残留登记归 #735)。",
+  "passed": [
+    {
+      "id": "TD-756.1 internal/types TestPostgres 测试清单与依赖取证落 docs/08-本轮实施方案/",
+      "status": "pass",
+      "evidence": "docs/08-本轮实施方案/T756-types-pg方言测试CI收口取证.md §1:清单(恰 1 个 TestPostgresJSONColumnCarrierTypes,json_column_dialect_test.go:112)、依赖(DSN,缺省明示 NOT RUN 后 skip;只读 SELECT 字面量无表依赖)、真空四项证据(closeout PACKAGES 无该包 lingdoc_backend_closeout.py:23;integration 演练步只覆盖 internal/database;全仓 workflows 仅 integration job 注入 DSN;skip 不计 pass 的口径)。"
+    },
+    {
+      "id": "TD-756.a 守护测试防回退(TDD 红→绿)",
+      "status": "pass",
+      "evidence": "scripts/ci/test_lingdoc_types_dialect_rehearsal.py(2 用例,被 lingdoc-review.yml:95 的 discover -p 'test_lingdoc_*.py' 拾取)。红:仅提交守护测试时 `python3 -m unittest scripts.ci.test_lingdoc_types_dialect_rehearsal` → AssertionError(演练命令不在工作流文本中);绿:加入演练步后同命令 OK(2 tests)。复核 head 59685522b5d991f714768f5a0e6a598e09a81ae4 OK。"
+    },
+    {
+      "id": "TD-756.b 收口测试集本地真跑绿 + skip 语义保持(与 CI 演练步等价命令)",
+      "status": "pass",
+      "evidence": "head 59685522:本机 docker postgres:17(daocloud 镜像,本地拉取 Docker Hub 超时的环境替代,非 CI 记录)`LINGDOC_TEST_POSTGRES_DSN='host=localhost port=55432 …' go test -count=1 -v -run '^TestPostgres' ./internal/types/...` → `--- PASS: TestPostgresJSONColumnCarrierTypes`(jsonb→[]uint8, text→string);无 DSN 同命令 → `NOT RUN: LINGDOC_TEST_POSTGRES_DSN is unset` → SKIP(1 处 NOT RUN,口径不破)。"
+    },
+    {
+      "id": "TD-756.3 无测试删减;既有 integration 语义不回退",
+      "status": "pass",
+      "evidence": "git diff origin/main...HEAD --stat = 3 文件 +120/-0 全部纯新增;scripts/acceptance/ 零改动;closeout PACKAGES、既有 internal/database 演练步与顺序逐行未动(Spec 轴评审逐行核对)。scripts/ci 全量 unittest 的 12 failures + 2 errors 经干净 origin/main 检出对照为预存环境限制(本机 963 失败集合与本 worktree 965(含新增 2 用例)失败集合逐项相同)。"
+    },
+    {
+      "id": "TD-756.2 收口后 integration 真实运行该测试集(CI 绿记录)",
+      "status": "pass",
+      "evidence": "PR #782 的 LingDoc Interface Integration job(run 41648576501,job 125960449658,integration 结论 pass 26m27s):新步「Rehearse internal/types PostgreSQL dialect behavior」内日志 `=== RUN TestPostgresJSONColumnCarrierTypes` → `--- PASS: TestPostgresJSONColumnCarrierTypes (0.01s)`。该 run 测的是实现内容齐备的提交 36c23a01;本 JSON 所在 docs 提交对功能零差异(仅本文件)。job 内既有四值口径保持:closeout helpers 段中不能真跑的条目仍如实报 NOT RUN(如 postgres_migration_rollback_roundtrip)。"
+    }
+  ],
+  "not_run": [],
+  "environment_limits": "本机 python3.14 / gofmt 版本与 CI 3.12 不同 ⇒ scripts/ci 全量 unittest 预存 12 failures + 2 errors(与干净 origin/main 检出逐项对照相同,非本票引入);Docker Hub 直连超时,经 docker.m.daocloud.io 镜像拉取 postgres:17;gh 对 api.github.com 间歇超时(单操作重试 ≤3 次)。",
+  "out_of_scope": "internal/types/** 加入 integration 门禁路径表(按票面归 #735 分段结构定型后归位,取证报告 §4 登记);两演练步合并为一步、守护测试 DSN 断言按 job 归属强化(评审 Suggestion,登记后续,不阻塞)。"
+}
