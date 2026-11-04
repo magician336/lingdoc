@@ -80,3 +80,59 @@ func TestG6RollbackReplayDoesNotDuplicateTheInverse(t *testing.T) {
 		t.Fatalf("the replay duplicated the inverse change set: %d found: %+v", inverse, changes)
 	}
 }
+
+// 模板分支:逆向一个**模板升级**变更集时,归档字段的溯源请求必须由
+// runtimeControl 自己的 Prepare 收集(修复引入该 case 之前,合成 mutation 里
+// 的归档字段校验拿不到 proof 请求,回退会以 403 来源拒绝失败——那也是一类
+// "控制没写成,状态却动了"的缺口)。原子性对模板分支同样成立:控制写失败
+// ⇒ 逆提案一并回滚。
+func TestG6RollbackOfATemplateUpgradeFailsAtomicallyToo(t *testing.T) {
+	svc, actor, baseline, after, source, _ := r26TemplateDeltaFixture(t, false)
+	ctx := context.Background()
+
+	_, _, _, writeErr := svc.ControlRuntime(ctx, actor, after.ID, "rollback-template-bad-version", RuntimeControlInput{
+		ExpectedVersion: 7,
+		Scope:           RuntimeScope{Kind: "project", Value: after.ID}, Action: "rollback", Reason: "回退模板升级(控制写将失败)",
+		Rollback: &RuntimeRollbackInput{ChangeSetID: source.ID, TemplateVersion: baseline.TemplateVersion, RulesetHash: baseline.TemplateCopy.RulesetHash},
+	})
+	if !errors.Is(writeErr, ErrVersionConflict) {
+		t.Fatalf("the control write did not fail the way the fixture intended: %v", writeErr)
+	}
+
+	changes, err := svc.ListChangeSets(ctx, actor, after.ID)
+	if err != nil {
+		t.Fatalf("list the change sets: %v", err)
+	}
+	inverse := 0
+	for _, candidate := range changes {
+		if candidate.ReversesChangeSetID == source.ID {
+			inverse++
+		}
+	}
+	if inverse != 0 {
+		t.Fatalf("a failed control write on a template upgrade left %d inverse change set(s) behind", inverse)
+	}
+
+	// 同形状的成功回退也要真的能走通(归档请求齐备,不是靠 403 失败):换一个
+	// 正确的乐观版本号再回退一次(新键,版本从 0 起算),应当成功且逆提案恰有一条。
+	if _, _, _, err := svc.ControlRuntime(ctx, actor, after.ID, "rollback-template-ok", RuntimeControlInput{
+		ExpectedVersion: 0,
+		Scope:           RuntimeScope{Kind: "project", Value: after.ID}, Action: "rollback", Reason: "回退模板升级",
+		Rollback: &RuntimeRollbackInput{ChangeSetID: source.ID, TemplateVersion: baseline.TemplateVersion, RulesetHash: baseline.TemplateCopy.RulesetHash},
+	}); err != nil {
+		t.Fatalf("the rollback of a template upgrade could not run at all: %v", err)
+	}
+	changes, err = svc.ListChangeSets(ctx, actor, after.ID)
+	if err != nil {
+		t.Fatalf("list the change sets again: %v", err)
+	}
+	inverse = 0
+	for _, candidate := range changes {
+		if candidate.ReversesChangeSetID == source.ID {
+			inverse++
+		}
+	}
+	if inverse != 1 {
+		t.Fatalf("the successful rollback did not produce exactly one inverse: %d", inverse)
+	}
+}

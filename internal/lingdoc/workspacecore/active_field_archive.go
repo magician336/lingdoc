@@ -104,7 +104,10 @@ func archiveRestoreSpec(spec map[string]string, records []fieldArchiveRecord) ma
 // Append archived requests before any source IO. Values are never placed in the
 // public inverse ChangeSet; they are read again under the application lock.
 func archiveRestoreProvenanceRequests(tx Transaction, projectID, op, target string, body any) ([]provenanceRequest, error) {
-	if op != string(operationReverseChangeSet) && op != string(operationApplyChangeSet) && op != string(operationReassessChangeSet) {
+	// A rollback that names a source change set runs the inverse inside the
+	// runtime-control operation (#468), so its own preparation has to collect
+	// the same archived-field requests the reverse entry collects.
+	if op != string(operationReverseChangeSet) && op != string(operationApplyChangeSet) && op != string(operationReassessChangeSet) && op != string(operationRuntimeControl) {
 		return nil, nil
 	}
 	store, ok := tx.(changeSetTransaction)
@@ -116,6 +119,14 @@ func archiveRestoreProvenanceRequests(tx Transaction, projectID, op, target stri
 	var err error
 	if input, ok := body.(reverseChangeSetInput); ok && op == string(operationReverseChangeSet) {
 		source, err = store.ChangeSet(projectID, input.SourceChangeSetID)
+		if err == nil && source.TemplateUpgrade != nil && len(source.TemplateUpgrade.ArchivedRemovals) > 0 {
+			refs, err = activeArchiveRestoreReferences(source)
+		}
+	} else if input, ok := body.(RuntimeControlInput); ok && op == string(operationRuntimeControl) {
+		if input.Action != "rollback" || input.Rollback == nil || input.Rollback.ChangeSetID == "" {
+			return nil, nil
+		}
+		source, err = store.ChangeSet(projectID, input.Rollback.ChangeSetID)
 		if err == nil && source.TemplateUpgrade != nil && len(source.TemplateUpgrade.ArchivedRemovals) > 0 {
 			refs, err = activeArchiveRestoreReferences(source)
 		}

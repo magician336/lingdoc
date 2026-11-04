@@ -300,41 +300,26 @@ func runtimeRollbackTargetReadable(target *RuntimeRollbackTarget, p Project) err
 	return nil
 }
 
-// prepareRuntimeRollback runs the part of a rollback that can run **before**
+// prepareRuntimeRollback runs the part of a rollback that must happen **before**
 // the control's own write transaction.
 //
-// The scope and the owner are checked **before** anything else, so that an
-// unauthorized caller cannot make the domain change and only then be
-// refused. The source-side provenance preparation of the inverse
-// (prepareInverseOperationProvenance) also stays in this read-only phase —
-// the same checks the standalone reverse entry runs before its write.
-//
-// The inverse itself used to run here as an operation of its own, which made
-// a failed control write leave the inverse behind (#468). It now runs inside
-// the control's write transaction, through the shared inverse mutation —
-// see inverseChangeMutation for why that does not deadlock.
-func (s *Service) prepareRuntimeRollback(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) error {
-	if err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+// Only the scope and the owner are checked here, and only in a read-only
+// transaction of their own: an unauthorized caller must not be able to make
+// the domain change and only then be refused. Everything else the reverse
+// needs — source access, the template baseline assertions, the archived-field
+// provenance requests — runs inside the control's write transaction, through
+// the shared inverse mutation (inverseChangeMutation). That keeps a failed
+// control write from leaving an inverse behind (#468) without nesting
+// transactions: the shared callbacks never open a transaction of their own,
+// so the SQLite single-connection pool cannot deadlock.
+func (s *Service) prepareRuntimeRollback(ctx context.Context, actor Actor, projectID string, input RuntimeControlInput) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
 			return err
 		}
-		if err := s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope); err != nil {
-			return err
-		}
-		if input.Rollback.ChangeSetID != "" {
-			// The standalone reverse entry runs this same preparation before its
-			// write: source access, template baseline assertions and the frozen
-			// provenance of the source. Running it here keeps that read-side
-			// strength while the write itself moved into the control transaction.
-			_, err = s.prepareInverseOperationProvenance(ctx, actor, string(operationReverseChangeSet), projectID+"/"+input.Rollback.ChangeSetID, projectID, reverseChangeSetInput{SourceChangeSetID: input.Rollback.ChangeSetID})
-			return err
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
+		return s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope)
+	})
 }
 
 func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) (json.RawMessage, int, bool, error) {
@@ -367,7 +352,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		}
 	}
 	if input.Action == "rollback" {
-		if err := s.prepareRuntimeRollback(ctx, actor, projectID, key, input); err != nil {
+		if err := s.prepareRuntimeRollback(ctx, actor, projectID, input); err != nil {
 			return nil, 0, false, err
 		}
 	}
