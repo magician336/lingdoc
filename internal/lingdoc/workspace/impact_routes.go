@@ -80,6 +80,12 @@ func RegisterImpactRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 		return
 	}
 	h := impactRoutesHandler{ports: ports}
+	// 租户级运行事件读面(#469):非课题路径——租户级授权拒绝没有课题可挂,
+	// 事件落在 project_id="" 上,按课题读不到它。读面给租户管理者(与租户范围
+	// 控制记录的处置一致),不影响既有的按课题读端点。
+	group.GET("/runtime/tenant-events", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RuntimeEvent, error) {
+		return ports.Runtime.ListTenantRuntimeEvents(c.Request.Context(), a, c.Query("correlation_id"))
+	}))
 	r := group.Group("/projects/:projectId")
 	// The AI-proposed dependency candidates are registered here so that they
 	// live in the same project-scoped group as the dependency edges they

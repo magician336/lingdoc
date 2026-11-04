@@ -78,6 +78,9 @@ var narrowPortMethods = map[string][]string{
 		"ListRuntimeAlerts",
 		"ListRuntimeControls",
 		"ListRuntimeEvents",
+		// #469 残留②:租户级运行事件读面(按租户读 project_id="" 的事件行;
+		// 既有按课题读不变)。
+		"ListTenantRuntimeEvents",
 		"SaveRuntimeAlertRule",
 	},
 	"TrialApplication": {

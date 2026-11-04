@@ -598,6 +598,44 @@ func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID
 		return operationResult[RuntimeEvent]{Value: event, Status: operationStatusCreated}, nil
 	})
 }
+
+// ListTenantRuntimeEvents 读**租户级**运行事件(project_id="" 的行,#469)。
+//
+// 租户级授权拒绝没有课题可落,事件按租户归属存储;既有的按课题读
+// (ListRuntimeEvents)自然读不到它们,值班在常看的那条路径上因此看不见
+// 租户级拒绝——这个读面补的就是那一环。授权给**租户管理者**,与租户范围
+// 控制记录的处置一致(runtimeControlScopeAllowed 的 tenant 分支);课题级
+// 事件不出现在这里,既有按课题读的语义零变化。
+func (s *Service) ListTenantRuntimeEvents(ctx context.Context, actor Actor, correlationID string) ([]RuntimeEvent, error) {
+	var result []RuntimeEvent
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if err := s.authorizeTenant(ctx, tx, authorizationRequest(actor, "", AuthorizationTenantManage, "")); err != nil {
+			return err
+		}
+		store, ok := tx.(runtimeTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		rows, err := store.ListRuntimeRecords(actor.TenantID, "", "event")
+		if err != nil {
+			return err
+		}
+		result = []RuntimeEvent{}
+		for _, row := range rows {
+			var event RuntimeEvent
+			if err := json.Unmarshal([]byte(row.BodyJSON), &event); err != nil {
+				return err
+			}
+			if correlationID == "" || event.CorrelationID == correlationID {
+				result = append(result, event)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
 func (s *Service) ListRuntimeEvents(ctx context.Context, actor Actor, projectID, correlationID string) ([]RuntimeEvent, error) {
 	var result []RuntimeEvent
 	ctx, emit := s.withRuntimeObservations(ctx)

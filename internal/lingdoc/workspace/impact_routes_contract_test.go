@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // Acceptance: the impact/trial routes and the OpenAPI contract had only been
@@ -326,7 +328,9 @@ func isRoadmapOwnedPath(path string) bool {
 // asserted as **exact equality** in both directions: a predicate that matched
 // part of the family would otherwise read as coverage while leaving the rest
 // unchecked, which is the same silent-skip defect the G6 debt itself was.
-const runtimeOwnedOperationCount = 18
+// #469 added the tenant-level runtime events read (GET /runtime/tenant-events,
+// a non-project-scoped path that carries its own exact count above).
+const runtimeOwnedOperationCount = 19
 
 // isG6OwnedPath tells whether a path belongs to the G6 runtime/trial surface.
 // It accepts the contract form ({projectId}) and the registered gin form
@@ -338,6 +342,7 @@ func isG6OwnedPath(path string) bool {
 	for _, prefix := range []string{
 		"/projects/{projectId}/runtime/", "/projects/:projectId/runtime/",
 		"/projects/{projectId}/trial-", "/projects/:projectId/trial-",
+		"/runtime/tenant-events",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -414,7 +419,10 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	roadmapChecked := 0
 	g6Checked := 0
 	for path, item := range paths {
-		if !strings.HasPrefix(path, "/projects/{projectId}/") {
+		// The tenant-level runtime events read (#469) is not project-scoped but
+		// still belongs to the G6 family: it joins this direction through the
+		// same predicate instead of the project prefix.
+		if !strings.HasPrefix(path, "/projects/{projectId}/") && !isG6OwnedPath(path) {
 			continue
 		}
 		roadmap := isRoadmapOwnedPath(path)
@@ -1033,4 +1041,66 @@ func (s *contractRecommendationStub) Recommend(context.Context, core.Actor, core
 	return core.DependencyRecommendationResult{
 		Proposals: s.proposals, ModelID: "contract-stub", RunMode: "real", ModelRunID: "contract-rec-run",
 	}, nil
+}
+
+// #469 残留②:租户级运行事件读面。同租户未注册用户列项目触发
+// legacyAuthorizeTenant 拒绝,事件落在本租户的 project_id="" 上;租户管理者
+// 经非课题路径 GET /runtime/tenant-events 读出它,非管理者拿到发布的 404。
+// (跨租户探测的拒绝归探测者租户——存在性隐藏语义的自然结果。)
+func TestG6TenantEventsEndpointServesTheTenantLevelDenials(t *testing.T) {
+	doc, compiler := contractDocument(t)
+	f := newRouteContractFixture(t)
+	contractBase := "/runtime/tenant-events"
+	base := "/api" + contractBase
+	send := func(ctx context.Context, method, path string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(method, path, nil).WithContext(ctx)
+		response := httptest.NewRecorder()
+		f.engine.ServeHTTP(response, request)
+		return response
+	}
+	human := func(method, path string) *httptest.ResponseRecorder {
+		return send(actorContext("reader"), method, path)
+	}
+
+	// 事件注入:真实领域路径(服务层直调,不经 HTTP)。
+	stranger := core.Actor{TenantID: 7, UserID: "not-a-tenant-member"}
+	if _, _, err := f.service.ListProjects(context.Background(), stranger); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("a stranger listed the projects: %v", err)
+	}
+
+	// 租户管理者读出恰好一条 permission/deny,响应形状按发布 schema 校验。
+	response := human(http.MethodGet, base)
+	if response.Code != http.StatusOK {
+		t.Fatalf("tenant events status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase, "200", response.Body.Bytes())
+	var listed struct {
+		Data []core.RuntimeEvent `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode tenant events: %v", err)
+	}
+	denied := 0
+	for _, event := range listed.Data {
+		if event.Category == "permission" && event.Status == "deny" {
+			denied++
+			if event.Capability != "read" {
+				t.Fatalf("the denial event does not name the refused capability: %+v", event)
+			}
+		}
+	}
+	if denied != 1 {
+		t.Fatalf("the tenant read did not return exactly one denial event: %+v", listed.Data)
+	}
+
+	// 非租户管理者:发布的 404(存在性隐藏),形状按契约校验。
+	memberContext := context.WithValue(context.Background(), types.UserIDContextKey, "plain-member")
+	memberContext = context.WithValue(memberContext, types.TenantIDContextKey, uint64(7))
+	memberContext = context.WithValue(memberContext, types.TenantRoleContextKey, types.TenantRoleContributor)
+	response = send(memberContext, http.MethodGet, base)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("a plain member read the tenant events: %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase, "404", response.Body.Bytes())
 }
