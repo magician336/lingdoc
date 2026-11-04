@@ -49,11 +49,10 @@ func TestGuardedDeliveryCheckAfterApplyOnARequiredRouteNodeProjectReadsTheRuleIs
 
 	// 应用一个真实变更集改写项目状态（推进 spec_revision / context_revision /
 	// project_version）——评论区收窄口径的时间轴：apply 之后检查仍要可用。
-	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
-	require.NoError(t, err)
 	change := applyChangeForGate(t, f, "guarded-route-apply")
 	require.Equal(t, core.ChangeSetStatusApplied, change.Status)
-	p, err = f.projects.GetProject(f.ctx, f.actor, f.project.ID)
+	// 重新读项目拿 apply 后的 project_version:checks 带的就是它。
+	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
 	require.NoError(t, err)
 
 	checked, err := f.releases.Check(f.ctx, f.actor.UserID, f.project.ID, p.ProjectVersion)
