@@ -162,5 +162,75 @@ func TestG6ApplyRollbackNeedsTheInverseProposalAndAPausedRuntime(t *testing.T) {
 	}); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("a switch outside a paused runtime was accepted: %v", err)
 	}
-	_ = p
+}
+
+// 「ACTIVE 但仍带逆提案」的畸形记录(resume 成功后控制记录保留逆提案 ID)不得
+// 触发领域切换:状态前置核对必须把它挡在应用之前——否则课题真切了配置却被拒
+// 记账,领域变更与控制记录互相矛盾。
+func TestG6ApplyRollbackRefusesAnActiveRuntimeBeforeAnyDomainChange(t *testing.T) {
+	svc, actor, _, after, source := func() (*Service, Actor, Project, Project, ChangeSet) {
+		path := filepath.Join(t.TempDir(), "template-switch-active-refusal.db")
+		s := testStore(t, path)
+		a := Actor{TenantID: 926, UserID: "r26-owner"}
+		baseline := seedActiveImpactProject(t, s, a)
+		definition := lingdoctemplate.Clone(baseline.TemplateCopy.Definition)
+		rules := append([]lingdoctemplate.Rule{}, definition.Rules...)
+		rules = append(rules, lingdoctemplate.Rule{ID: "switch-active-required", Kind: "computed", Severity: lingdoctemplate.SeverityInfo, Evaluator: "required_fields", Parameters: map[string]any{}})
+		raw, status, replayed, err := s.CreateChangeSet(context.Background(), a, baseline.ID, "switch-active-create", CreateChangeSetInput{
+			ExpectedContextRevision: baseline.CurrentContextRevision, Reason: "升级(为了拿一条逆提案)",
+			TemplateUpgrade: &TemplateUpgradeInput{
+				ExpectedProjectVersion: baseline.ProjectVersion, ExpectedTemplateCopyVersion: baseline.TemplateCopyVersion,
+				Fields: definition.Fields, Sections: definition.Sections, Terms: append([]lingdoctemplate.Term{}, definition.Terms...),
+				RequiredFields: definition.RequiredFields, Rules: rules, FieldValues: map[string]string{},
+			},
+		})
+		if err != nil || status != 201 || replayed {
+			t.Fatalf("create source: status=%d replay=%v err=%v", status, replayed, err)
+		}
+		change := pr150DecodeChange(t, raw)
+		raw, status, replayed, err = s.ApplyChangeSet(context.Background(), a, baseline.ID, change.ID, "switch-active-apply")
+		if err != nil || status != 200 || replayed {
+			t.Fatalf("apply source: status=%d replay=%v err=%v", status, replayed, err)
+		}
+		applied := pr150DecodeChange(t, raw)
+		after, err := s.GetProject(context.Background(), a, baseline.ID)
+		if err != nil || after.TemplateCopyVersion != baseline.TemplateCopyVersion+1 {
+			t.Fatalf("source target: %+v err=%v", after, err)
+		}
+		return s, a, baseline, after, applied
+	}()
+	ctx := context.Background()
+	svc.SetRuntimeRecoveryChecker(&acceptingRuntimeRecovery{})
+	svc.SetRuntimeMode("mock")
+
+	// 回退(目标=当前配置,不触发残留①拒绝;只为拿一条带逆提案的控制记录)
+	// → resume 成功(ACTIVE,控制记录保留逆提案 ID)→ 切回被拒。
+	if _, _, _, err := svc.ControlRuntime(ctx, actor, after.ID, "active-refusal-rollback", RuntimeControlInput{
+		Scope: RuntimeScope{Kind: "project", Value: after.ID}, Action: "rollback", Reason: "回退",
+		Rollback: &RuntimeRollbackInput{ChangeSetID: source.ID, TemplateVersion: after.TemplateVersion, RulesetHash: after.TemplateCopy.RulesetHash},
+	}); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if _, _, _, err := svc.ControlRuntime(ctx, actor, after.ID, "active-refusal-resume", RuntimeControlInput{
+		ExpectedVersion: 1, Scope: RuntimeScope{Kind: "project", Value: after.ID}, Action: "resume",
+		Reason: "恢复运行", SnapshotID: "snapshot-1", ExportID: "export-1",
+	}); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if _, _, _, err := svc.ControlRuntime(ctx, actor, after.ID, "active-refusal-switch", RuntimeControlInput{
+		ExpectedVersion: 2, Scope: RuntimeScope{Kind: "project", Value: after.ID}, Action: "apply_rollback",
+		Reason: "对 ACTIVE 运行切回",
+	}); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("a switch on an ACTIVE runtime was accepted: %v", err)
+	}
+	// 领域零变化:拒绝发生在任何领域变更之前(rollback/resume 的控制记账不推进
+	// 课题版本,课题状态应与升级后完全一致)。
+	denied, err := svc.GetProject(ctx, actor, after.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.ProjectVersion != after.ProjectVersion || denied.SpecRevision != after.SpecRevision ||
+		denied.TemplateCopyVersion != after.TemplateCopyVersion {
+		t.Fatalf("the refused switch still changed the project: after=%+v denied=%+v", after, denied)
+	}
 }

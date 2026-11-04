@@ -1,7 +1,7 @@
 {
   "task": "468",
   "ticket": "magician336/lingdoc#468",
-  "head": "62f4b188",
+  "head": "a275f31c(实现)+评审修正提交(先检后动+ACTIVE 拒绝用例)",
   "scope": "残留②(原子性)切片:逆向与控制记录写合成同一个写事务。逆向的领域逻辑从 reverseChangeSetOperation 的 mutation 闭包提取为共享 mutation(inverseChangeMutation,单一事实源),ControlRuntime 的 mutation 在同一事务内调用;写半部本就是不自开事务的共享 callback(createAssessedChangeMutation/createChangeDraftMutation),无嵌套事务,§4.4 顾虑的 SQLite 单连接死锁不触发。归档字段溯源请求的收集并入 runtimeControl 自身的 Prepare(archiveRestoreProvenanceRequests 加 runtimeControl case,操作自备证据)。残留①(切回已验证配置)方向评估完成:两候选均需语义重设计,已请求管理裁定后另立切片——本提交不写 Closes,issue 保持 open+assign。 【切片 2(2026-11-04,管理裁定候选 B)】残留①(切回已验证配置):新增显式动作 apply_rollback——负责人在回退后主动执行,经既有领域入口 ApplyChangeSet 应用回退生成的逆向提案(全量校验照跑);「停止新写入」闸门对携带 runtimeSwitchKey 标记的该调用定向放行;切回后运行仍 PAUSED,恢复仍走既有 resume 复验。RuntimeControl 新增 inverse_change_set_id/rollback_applied;openapi action 枚举+RuntimeControl schema 同步(校验器 PASS)。残留①解除 ⇒ 切片 2 的 PR 写 Closes #468。",
   "passed": [
     {
@@ -88,6 +88,16 @@
       "id": "TD-468b.8 管理裁定落盘",
       "status": "pass",
       "evidence": "issue #468 裁定评论(裁定人 magician336,2026-11-04):候选 B,授权记录与实施设计六点;本切片按裁定实施,无超范围。"
+    },
+    {
+      "id": "TD-468b.10 评审 Required 修正:状态前置核对先于领域应用(先检后动)",
+      "status": "pass",
+      "evidence": "评审指出第一段在核对 PAUSED 前就执行领域应用 ⇒ 「ACTIVE 但带逆提案」的畸形记录会真切配置却被拒记账。修正:前置核对(PAUSED+RollbackTo+InverseChangeSetID)提升进第一段只读事务,应用前完成。新增用例 TestG6ApplyRollbackRefusesAnActiveRuntimeBeforeAnyDomainChange(回退→resume 进入 ACTIVE→切回被拒 ErrInvalidState+课题三版本字段与升级后完全一致=领域零变化)。"
+    },
+    {
+      "id": "TD-468b.11 评审小项闭合",
+      "status": "pass",
+      "evidence": "测试 `_ = p` 死代码删除;「Status!=PAUSED 分支无测试」由 TD-468b.10 的 ACTIVE 用例覆盖;stale 失败专项用例(裁定第 6 点建议)依赖既有 ApplyChangeSet 状态机/基线校验,登记为后续可选项;验证报告 head 更新为本切片提交。Spec 轴结论:通过,裁定六点落实、无绕过点、语义钉子未破。"
     }
   ],
   "not_run": [

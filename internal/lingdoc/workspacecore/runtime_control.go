@@ -387,8 +387,12 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 	// 逆向提案经既有领域入口 ApplyChangeSet **应用掉**——模板基线、字段基线、
 	// 溯源、影响评估全量校验照跑;运行控制侧拿到的是调度权,不是直写权。PAUSED
 	// 的「停止新写入」闸门对本调用放行(runtimeSwitchKey 标记):切回是回退的
-	// 完成步骤,不是新写入。应用成功后课题即带着回退目标配置;记账(第二段,
-	// 下面的 mutation)会核对这一点,核对不上就拒绝记账——不产生假账。
+	// 完成步骤,不是新写入。
+	//
+	// 状态前置核对在应用**之前**(对齐 resume 的先检后动):先应用再核对,会让
+	// 「ACTIVE 但仍带逆提案」的畸形记录真切了配置却被拒记账——领域变更已经发
+	// 生而控制记录拒绝承认。前置核对(运行必须 PAUSED、回退必须带着逆提案)
+	// 把这类畸形记录挡在领域变更之前。
 	if input.Action == "apply_rollback" {
 		var err error
 		checked, err = s.GetProject(ctx, actor, projectID)
@@ -415,7 +419,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		}); err != nil {
 			return nil, 0, false, err
 		}
-		if previous.InverseChangeSetID == "" {
+		if previous.Status != "PAUSED" || previous.RollbackTo == nil || previous.InverseChangeSetID == "" {
 			return nil, 0, false, ErrInvalidState
 		}
 		// 同一调用只应用一次:ledger 以 key+.apply 记账,重试走重放。
