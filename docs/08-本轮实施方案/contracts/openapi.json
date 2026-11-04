@@ -51922,6 +51922,15 @@
           },
           "rollback_to": {
             "$ref": "#/components/schemas/RuntimeRollbackTarget"
+          },
+          "inverse_change_set_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "回退时经领域入口生成的逆向提案;apply_rollback(切回已验证配置)应用它。空=该回退只记录了目标,切回不可用。"
+          },
+          "rollback_applied": {
+            "type": "boolean",
+            "description": "逆提案已应用、课题已带着回退目标配置。它不等于恢复运行:恢复仍要走既有的快照/导出复验。"
           }
         },
         "additionalProperties": false,
@@ -51978,7 +51987,8 @@
             "enum": [
               "pause",
               "resume",
-              "rollback"
+              "rollback",
+              "apply_rollback"
             ]
           },
           "reason": {

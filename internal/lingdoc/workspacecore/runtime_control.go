@@ -19,6 +19,19 @@ import (
 var ErrRuntimePaused = clienterror.New(clienterror.Form{Status: 423, Code: "runtime_paused", Message: "当前范围已暂停，请由负责人核对并恢复。", Retryable: false}, "runtime scope is paused")
 var ErrRuntimeRecoveryRequired = clienterror.New(clienterror.Form{Status: 422, Code: "runtime_recovery_required", Message: "恢复前需要核对当前检查、快照和导出文件。", Retryable: false}, "runtime recovery rechecks are required")
 
+// runtimeSwitchKey marks an ApplyChangeSet call that runs inside the rollback
+// flow as its explicit "switch back to the verified configuration" step (#468,
+// 管理裁定 2026-11-04:候选 B). The pause gate must let this one call through:
+// switching back is not new writing, it is the completion of the rollback the
+// Owner already asked for. Only the apply_rollback branch injects the mark.
+type runtimeSwitchKey struct{}
+
+// WithRuntimeSwitch marks a context so ApplyChangeSet is allowed to run while
+// the runtime scope is paused. The mark is honored only for that operation.
+func WithRuntimeSwitch(ctx context.Context) context.Context {
+	return context.WithValue(ctx, runtimeSwitchKey{}, true)
+}
+
 type RuntimeScope struct {
 	Kind  string `json:"kind"`
 	Value string `json:"value"`
@@ -35,7 +48,14 @@ type RuntimeControl struct {
 	ExportID         string                 `json:"export_id,omitempty"`
 	RecoveryVerified bool                   `json:"recovery_verified"`
 	RollbackTo       *RuntimeRollbackTarget `json:"rollback_to,omitempty"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	// InverseChangeSetID 是回退时经领域入口生成的逆向提案(#468)。它为空表示
+	// 这次回退只记录了目标、没有可应用的逆提案——「切回已验证配置」对这样的
+	// 回退不可用,恢复仍要求先把课题带回目标配置。
+	InverseChangeSetID string `json:"inverse_change_set_id,omitempty"`
+	// RollbackApplied 记录「逆提案已经应用、课题已经带着回退目标配置」这一事实。
+	// 它不等于恢复运行:恢复(resume)仍要过既有的快照/导出复验。
+	RollbackApplied bool      `json:"rollback_applied,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // RuntimeRollbackInput is what a rollback asks for.
@@ -218,8 +238,15 @@ func runtimeScopeMatches(scope RuntimeScope, actor Actor, p Project, mode string
 	}
 	return false
 }
-func RuntimeGate(tx Transaction, actor Actor, p Project, operation, mode string) error {
+func RuntimeGate(ctx context.Context, tx Transaction, actor Actor, p Project, operation, mode string) error {
 	if strings.HasPrefix(operation, "runtime") || strings.HasPrefix(operation, "trial") || operation == "reverseChangeSet" {
+		return nil
+	}
+	// The rollback flow's explicit switch-back step applies the inverse change
+	// set while the scope is still paused (#468). That call is not new
+	// writing: it completes the rollback the Owner already requested, and it
+	// only runs on a context the apply_rollback branch marked itself.
+	if operation == "applyChangeSet" && ctx.Value(runtimeSwitchKey{}) != nil {
 		return nil
 	}
 	store, ok := tx.(runtimeTransaction)
@@ -245,7 +272,7 @@ func (s *Service) CheckRuntimeOperation(ctx context.Context, actor Actor, projec
 		if err != nil {
 			return err
 		}
-		return RuntimeGate(tx, actor, p, operation, effectiveRuntimeMode(s.runtimeMode))
+		return RuntimeGate(ctx, tx, actor, p, operation, effectiveRuntimeMode(s.runtimeMode))
 	})
 }
 
@@ -328,7 +355,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 	}
 	ctx, emit := s.withRuntimeObservations(ctx)
 	defer emit()
-	if input.ExpectedVersion < 0 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"pause", "resume", "rollback"}, input.Action) || !slices.Contains([]string{"tenant", "project", "template_version", "ruleset_hash", "runtime_mode"}, input.Scope.Kind) || input.Scope.Value == "" {
+	if input.ExpectedVersion < 0 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"pause", "resume", "rollback", "apply_rollback"}, input.Action) || !slices.Contains([]string{"tenant", "project", "template_version", "ruleset_hash", "runtime_mode"}, input.Scope.Kind) || input.Scope.Value == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	if input.Action == "rollback" && (input.Rollback == nil || (input.Rollback.ChangeSetID == "" && input.Rollback.TemplateVersion == "" && input.Rollback.RulesetHash == "")) {
@@ -356,6 +383,51 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			return nil, 0, false, err
 		}
 	}
+	// apply_rollback 的第一段(#468 切片 2,管理裁定候选 B):把回退时生成的
+	// 逆向提案经既有领域入口 ApplyChangeSet **应用掉**——模板基线、字段基线、
+	// 溯源、影响评估全量校验照跑;运行控制侧拿到的是调度权,不是直写权。PAUSED
+	// 的「停止新写入」闸门对本调用放行(runtimeSwitchKey 标记):切回是回退的
+	// 完成步骤,不是新写入。应用成功后课题即带着回退目标配置;记账(第二段,
+	// 下面的 mutation)会核对这一点,核对不上就拒绝记账——不产生假账。
+	if input.Action == "apply_rollback" {
+		var err error
+		checked, err = s.GetProject(ctx, actor, projectID)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if err := s.Authorize(ctx, actor, projectID, "manage"); err != nil {
+			return nil, 0, false, err
+		}
+		var previous RuntimeControl
+		recordKey := input.Scope.Kind + "/" + input.Scope.Value
+		if err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+			store, ok := tx.(runtimeTransaction)
+			if !ok {
+				return ErrInvalidState
+			}
+			if _, err := store.ReadRuntimeRecord(actor.TenantID, projectID, "control", recordKey, &previous); err != nil {
+				if errors.Is(err, ErrNotFound) {
+					return ErrInvalidState
+				}
+				return err
+			}
+			return nil
+		}); err != nil {
+			return nil, 0, false, err
+		}
+		if previous.InverseChangeSetID == "" {
+			return nil, 0, false, ErrInvalidState
+		}
+		// 同一调用只应用一次:ledger 以 key+.apply 记账,重试走重放。
+		if _, _, _, err := s.ApplyChangeSet(WithRuntimeSwitch(ctx), actor, projectID, previous.InverseChangeSetID, key+".apply"); err != nil {
+			return nil, 0, false, err
+		}
+		refreshed, err := s.GetProject(ctx, actor, projectID)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		checked = refreshed
+	}
 	return runOperation(s, ctx, actor, operationInput(operationRuntimeControl, projectID+"/"+input.Scope.Kind+"/"+input.Scope.Value, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeControl], error) {
 		if err := s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope); err != nil {
 			return operationResult[RuntimeControl]{}, err
@@ -367,14 +439,16 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		if !ok {
 			return operationResult[RuntimeControl]{}, ErrInvalidState
 		}
-		// 逆向与控制记录写现在**同处一个写事务**(#468):控制写失败 ⇒ 逆向一并
-		// 回滚,不再留下一条没人认领的逆向变更集。逆向走的是与独立入口共用同一段
-		// 领域逻辑的共享 mutation(inverseChangeMutation),不开新事务,因此没有
-		// SQLite 单连接的嵌套写事务死锁;源访问与模板基线的全部校验都在其中照跑。
+		// 逆向与控制记录写现在**同处一个写事务**(#468 切片 1):控制写失败 ⇒
+		// 逆向一并回滚。切片 2:逆提案的 ID 记进控制记录,apply_rollback(切回
+		// 已验证配置)靠它经领域入口应用这份提案。
+		var inverseID string
 		if input.Action == "rollback" && input.Rollback.ChangeSetID != "" {
-			if _, err := s.inverseChangeMutation(ctx, actor, projectID, input.Rollback.ChangeSetID)(tx, p); err != nil {
+			inverse, err := s.inverseChangeMutation(ctx, actor, projectID, input.Rollback.ChangeSetID)(tx, p)
+			if err != nil {
 				return operationResult[RuntimeControl]{}, err
 			}
+			inverseID = inverse.Value.ID
 		}
 		recordKey := input.Scope.Kind + "/" + input.Scope.Value
 		recordProject := projectID
@@ -395,7 +469,10 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		if input.Action == "resume" && (version == 0 || previous.Status != "PAUSED") {
 			return operationResult[RuntimeControl]{}, ErrInvalidState
 		}
-		if input.Action == "resume" {
+		if input.Action == "apply_rollback" && (version == 0 || previous.Status != "PAUSED" || previous.RollbackTo == nil || previous.InverseChangeSetID == "") {
+			return operationResult[RuntimeControl]{}, ErrInvalidState
+		}
+		if input.Action == "resume" || input.Action == "apply_rollback" {
 			if err := runtimeRollbackTargetReadable(previous.RollbackTo, p); err != nil {
 				return operationResult[RuntimeControl]{}, err
 			}
@@ -410,6 +487,8 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			next.SnapshotID = input.SnapshotID
 			next.ExportID = input.ExportID
 			next.RollbackTo = previous.RollbackTo
+			next.InverseChangeSetID = previous.InverseChangeSetID
+			next.RollbackApplied = previous.RollbackApplied
 		}
 		if input.Action == "rollback" {
 			// The rollback stops new writes and records the configuration it
@@ -418,6 +497,14 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			// domain change went through the inverse change set, and this
 			// record is the runtime's own bookkeeping.
 			next.RollbackTo = &RuntimeRollbackTarget{TemplateVersion: input.Rollback.TemplateVersion, RulesetHash: input.Rollback.RulesetHash}
+			next.InverseChangeSetID = inverseID
+		}
+		if input.Action == "apply_rollback" {
+			// 记账「逆提案已应用、课题已带回退目标配置」:切换由负责人显式发起,
+			// 运行仍保持 PAUSED——恢复运行要走既有的 resume 复验。
+			next.RollbackTo = previous.RollbackTo
+			next.InverseChangeSetID = previous.InverseChangeSetID
+			next.RollbackApplied = true
 		}
 		if version == 0 {
 			err = store.InsertRuntimeRecord(actor.TenantID, recordProject, "control", recordKey, 1, next)

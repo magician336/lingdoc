@@ -305,7 +305,7 @@ func runOperationCore(
 			if s.runtimeMode == "" {
 				return nil
 			}
-			return RuntimeGate(tx, actor, p, operation, s.runtimeMode)
+			return RuntimeGate(ctx, tx, actor, p, operation, s.runtimeMode)
 		},
 		AfterWrite: func(ctx context.Context, tx Transaction, p Project, projectID, operation, target string, status int, value any, elapsed time.Duration) error {
 			return s.afterOperationWrite(ctx, tx, actor, p, projectID, operation, target, status, elapsed)
