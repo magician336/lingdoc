@@ -136,3 +136,64 @@ func TestG6RollbackOfATemplateUpgradeFailsAtomicallyToo(t *testing.T) {
 		t.Fatalf("the successful rollback did not produce exactly one inverse: %d", inverse)
 	}
 }
+
+// 归档字段的模板升级:归档引用必须由 runtimeControl 自己的 Prepare 收集为
+// 溯源请求(archiveRestoreProvenanceRequests 的 runtimeControl case,#468)。
+// 本夹具的归档字段是 human 字段(归档记录 MetadataPresent=false),归档字段
+// 校验的 proof 分支在此夹具下不触发——所以这条用例钉的是**归档分支的原子性
+// 与成功路径**(失败向错误形态=乐观冲突而非来源拒绝;成功向带归档引用的
+// 模板逆真的走得通),以及 case 的接线正确性;proof 分支的红向由
+// archiveFieldReadable 的既有溯源测试族覆盖。已知边界:若夹具字段带来源
+// metadata,case 缺失会让失败向变成 403——待有来源派生字段的归档夹具时补红向。
+func TestG6RollbackOfAnArchivedFieldUpgradeFailsAtomicallyToo(t *testing.T) {
+	svc, actor, project, upgrade := activeArchiveFixture(t)
+	ctx := context.Background()
+	created, err := svc.CreateFieldArchiveResult(ctx, actor, project.ID, "rollback-archive-create", activeArchiveInput(project, "research_goal", upgrade))
+	if err != nil || created.Archive.Status != "recorded" {
+		t.Fatalf("archive: %+v err=%v", created, err)
+	}
+	upgrade.ArchivedRemovals = []ArchivedFieldReference{{FieldID: "research_goal", ArchiveID: created.Archive.ID, ExpectedArchiveVersion: 1}}
+	raw, _, _, err := svc.CreateChangeSet(ctx, actor, project.ID, "rollback-archive-change", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "归档并移除研究目标", TemplateUpgrade: &upgrade,
+	})
+	if err != nil {
+		t.Fatalf("assess archive removal: %v", err)
+	}
+	change := decodeAgentJSON[ChangeSet](t, raw, nil)
+	if _, _, _, err := svc.ApplyChangeSet(ctx, actor, project.ID, change.ID, "rollback-archive-apply"); err != nil {
+		t.Fatalf("apply archive removal: %v", err)
+	}
+
+	// 失败向:控制写注定失败。错误必须是乐观版本冲突——若是 403 来源拒绝,
+	// 说明归档请求的收集断了。
+	_, _, _, writeErr := svc.ControlRuntime(ctx, actor, project.ID, "rollback-archive-bad-version", RuntimeControlInput{
+		ExpectedVersion: 9,
+		Scope:           RuntimeScope{Kind: "project", Value: project.ID}, Action: "rollback", Reason: "回退归档升级(控制写将失败)",
+		Rollback: &RuntimeRollbackInput{ChangeSetID: change.ID},
+	})
+	if !errors.Is(writeErr, ErrVersionConflict) {
+		t.Fatalf("the control write did not fail with the version conflict: %v", writeErr)
+	}
+
+	// 成功向:正确的乐观版本号(新键从 0 起算)真的走得通。
+	if _, _, _, err := svc.ControlRuntime(ctx, actor, project.ID, "rollback-archive-ok", RuntimeControlInput{
+		ExpectedVersion: 0,
+		Scope:           RuntimeScope{Kind: "project", Value: project.ID}, Action: "rollback", Reason: "回退归档升级",
+		Rollback: &RuntimeRollbackInput{ChangeSetID: change.ID},
+	}); err != nil {
+		t.Fatalf("the rollback of an archived-field upgrade could not run at all: %v", err)
+	}
+	changes, err := svc.ListChangeSets(ctx, actor, project.ID)
+	if err != nil {
+		t.Fatalf("list the change sets: %v", err)
+	}
+	inverse := 0
+	for _, candidate := range changes {
+		if candidate.ReversesChangeSetID == change.ID {
+			inverse++
+		}
+	}
+	if inverse != 1 {
+		t.Fatalf("the successful rollback did not produce exactly one inverse: %d", inverse)
+	}
+}
