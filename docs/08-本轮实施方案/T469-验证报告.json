@@ -1,7 +1,7 @@
 {
   "task": "469",
   "ticket": "magician336/lingdoc#469",
-  "head": "见 PR head(分支 feat/469-runtime-tenant-events)",
+  "head": "d972329c(实现)+评审修正提交(openapi 元数据/形状与 Satisfy 覆盖)",
   "scope": "残留①(Owner-only 前置条件不在观测内)按票面解除条件的「声明」分支处置:核实方案档 §4.3(L143-146)的覆盖面声明真实存在且与实现一致(holder 机制只装在 authorizeProject/authorizeTenant 两个收敛点上,projectOwner 判定不经过它们),不改代码,验证报告记账。残留②(租户级拒绝事件按课题读不到)按推荐方向实现:新增租户级运行事件读面 GET /runtime/tenant-events(非课题路径)——按租户读 project_id=\"\" 的事件行,授权给租户管理者(与租户范围控制记录的处置一致);既有按课题读端点语义零变化,写入位置与归属不变。契约同步:openapi paths/schemas+x-lingdoc 扩展键,isG6OwnedPath 纳入,runtimeOwnedOperationCount 18→19,窄口决策入册,校验器 PASS。",
   "passed": [
     {
@@ -43,6 +43,21 @@
       "id": "TD-469.8 方案档 §7 残留表同步",
       "status": "pass",
       "evidence": "G6-运行控制后端补齐-20261023.md:残留①行(声明路径解除,含实现复核结论)、残留②行(已解除,读面设计与授权语义)更新;「拒绝事件不带 project revision/细因」的刻意取舍行未动(契约④)。"
+    },
+    {
+      "id": "TD-469.10 双轴评审闭合:openapi 元数据/形状修正",
+      "status": "pass",
+      "evidence": "评审指出:x-lingdoc-service/go-response 复制粘贴错值、route-line 应为整数、human-decision 应为同族对象、缺 runtime-pause-gate、200 schema 应 $ref FullRuntimeEventListResponse 且 403 实际不可达(路由 human=false,服务层 ErrNotFound 实际返回 404)。修正:全部键按同族端点(projects/{projectId}/runtime/events)逐键对齐;响应发布 200/400/403/404(404 为实际形状,HTTP 测试精确断言 404 并按发布 schema 校验);validate_artifacts.py PASS×2。"
+    },
+    {
+      "id": "TD-469.11 TestRuntimeRoutesSatisfyPublishedSchemas 纳入新端点",
+      "status": "pass",
+      "evidence": "新段 TestG6TenantEventsEndpointServesTheTenantLevelDenials(同 fixture/同校验器):真实服务层注入租户级拒绝 → 管理者读出恰一条 permission/deny(响应按发布 schema 校验)→ 非管理者 404(状态+形状精确断言)。"
+    },
+    {
+      "id": "TD-469.12 方案档 #471 历史行括注(18→19)",
+      "status": "pass",
+      "evidence": "G6 双向覆盖清单计数因 #469 新端点由 18 变 19,方案档 #471 行加括注保持事实一致。"
     }
   ],
   "not_run": [

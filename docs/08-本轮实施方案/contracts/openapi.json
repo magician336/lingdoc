@@ -40896,7 +40896,7 @@
     "/runtime/tenant-events": {
       "get": {
         "operationId": "listTenantRuntimeEvents",
-        "summary": "读取租户级运行事件",
+        "summary": "ListTenantRuntimeEvents",
         "description": "租户级授权拒绝等没有课题可挂的运行事件(存储归属 project_id=\"\")按租户读出;授权给租户管理者。按课题读的 /projects/{projectId}/runtime/events 不返回这部分事件(既有语义不变)。",
         "parameters": [
           {
@@ -40915,26 +40915,47 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "data"
-                  ],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/RuntimeEvent"
-                      }
-                    },
-                    "additionalProperties": false
-                  }
+                  "$ref": "#/components/schemas/FullRuntimeEventListResponse"
                 }
               }
             }
           },
           "403": {
-            "description": "非租户管理者(存在性隐藏语义下同样拒绝)",
+            "description": "Current source access denied or human decision required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "synthetic_source_denial": {
+                    "summary": "Actual sendErrorDetails shape with nil details; synthetic identifiers only",
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料当前不可访问，请重新核对范围。",
+                        "details": null,
+                        "retryable": false
+                      },
+                      "request_id": "synthetic-contract-example"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed/unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource absent or currently unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -40944,16 +40965,20 @@
             }
           }
         },
-        "tags": [
-          "workspace"
-        ],
         "x-domain": "workspace",
         "x-delivery-phase": "core",
         "x-lingdoc-route-source": "impact_routes.go",
-        "x-lingdoc-route-line": " RegisterImpactRoutes: group.GET(\"/runtime/tenant-events\", ...) (#469 租户级运行事件读面)",
-        "x-lingdoc-service": "ListRuntimeControls",
-        "x-lingdoc-go-response": "[]RuntimeControl",
-        "x-lingdoc-human-decision": false
+        "tags": [
+          "workspace"
+        ],
+        "x-lingdoc-service": "ListTenantRuntimeEvents",
+        "x-lingdoc-go-response": "[]RuntimeEvent",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method",
+        "x-lingdoc-route-line": 84
       }
     }
   },
