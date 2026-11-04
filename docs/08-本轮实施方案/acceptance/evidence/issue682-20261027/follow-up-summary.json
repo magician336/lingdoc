@@ -1,0 +1,57 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "recovered_initial_skips": 66,
+  "remaining_count": 7,
+  "postgres": {
+    "top_level_tests": 39,
+    "passed_events": 46
+  },
+  "crossref": "PASS: one public metadata record only; not a governed Research Run or full-text verification",
+  "nonroot_permission": "PASS: the unreadable-file test actually ran as UID 65534",
+  "docreader": "PASS: real gRPC service; public example.com URL and a synthetic Markdown file",
+  "browserskill": "PASS: official pinned 0.2.1 native daemon, 10 race repetitions; real extension reported separately",
+  "remaining": [
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestPromptEval",
+      "reason": "eval_test.go:220: set WEKNORA_MEMORY_EVAL_MODEL (plus base URL / API key) to score the prompt",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service/memory",
+      "test": "TestTopicMergeEval",
+      "reason": "topic_eval_test.go:145: set WEKNORA_MEMORY_EVAL_MODEL (plus base URL / API key) to score topic merging",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/application/service",
+      "test": "TestCreateStore_DifferentEndpointSameIndex_Allowed",
+      "reason": "vectorstore_test.go:441: requires mockable TestConnection or repository-only test; track separately",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/models/chat",
+      "test": "TestRemoteAPIChat/DeepSeek_API",
+      "reason": "remote_api_test.go:418: DEEPSEEK_API_KEY environment variable not set",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/models/chat",
+      "test": "TestRemoteAPIChat/Aliyun_DeepSeek",
+      "reason": "remote_api_test.go:418: ALIYUN_API_KEY environment variable not set",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/models/chat",
+      "test": "TestRemoteAPIChat/Aliyun_Qwen3-32b",
+      "reason": "remote_api_test.go:418: ALIYUN_API_KEY environment variable not set",
+      "followup_status": "NOT RUN"
+    },
+    {
+      "package": "github.com/Tencent/WeKnora/internal/models/chat",
+      "test": "TestRemoteAPIChat/Aliyun_Qwen-max",
+      "reason": "remote_api_test.go:418: ALIYUN_API_KEY environment variable not set",
+      "followup_status": "NOT RUN"
+    }
+  ]
+}

@@ -390,15 +390,15 @@ func isSSRFSafeURL(rawURL string) (bool, string) {
 
 	// Perform DNS resolution to check the resolved IP
 	// This prevents DNS rebinding attacks where a domain resolves to internal IPs
-	ips, err := net.LookupIP(hostname)
+	ips, err := resolveForSSRF(context.Background(), hostname)
 	if err != nil {
 		return false, fmt.Sprintf("DNS resolution failed for hostname %s: cannot verify if it resolves to safe IP", hostname)
 	}
 
 	// Check if any resolved IP is restricted
 	for _, resolvedIP := range ips {
-		if restricted, reason := isRestrictedIP(resolvedIP); restricted {
-			return false, fmt.Sprintf("hostname %s resolves to restricted IP %s: %s", hostname, resolvedIP.String(), reason)
+		if restricted, reason := isRestrictedIP(resolvedIP.IP); restricted {
+			return false, fmt.Sprintf("hostname %s resolves to restricted IP %s: %s", hostname, resolvedIP.IP.String(), reason)
 		}
 	}
 
@@ -859,7 +859,7 @@ func SSRFSafeDialContext(ctx context.Context, network, addr string) (net.Conn, e
 	// those exact IPs. Dialing the original hostname here would make the
 	// standard dialer resolve it a second time, leaving a DNS-rebinding window
 	// between validation and connection establishment.
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := resolveForSSRF(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolution failed for %s: %w", host, err)
 	}

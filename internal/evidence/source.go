@@ -60,7 +60,8 @@ type Source struct {
 	Anchor Anchor `json:"-"`
 }
 
-// OriginReader 提供一份资料的解析原文。纯文本资料直接返回内容；
+// OriginReader 提供与分块坐标一致的资料正文。直读上传文本以 LF 规范换行；
+// 这里的字符坐标不是上传文件的字节偏移，跨行引文也以 LF 表示。
 // 需重解析的格式（PDF/DOCX）拿不到原文时返回 ok=false，调用方降为弱档。
 type OriginReader interface {
 	OriginText(ctx context.Context, knowledgeID string) (text string, ok bool, err error)

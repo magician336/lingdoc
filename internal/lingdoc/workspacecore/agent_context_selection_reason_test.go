@@ -17,7 +17,14 @@ func TestBuildAgentContextSelectionReasonsCarryStableEntryKeys(t *testing.T) {
 	f := newAgentFixture(t, false)
 	task := f.task(t)
 	anchor := f.anchor(t, "source-1", "g2-reason-anchor")
-	card := f.card(t, []SourceAnchor{anchor}, nil, "g2-reason-card", "supports")
+	claim := f.claim(t)
+	card := f.card(t, []SourceAnchor{anchor}, &claim, "g2-reason-card", "supports")
+	// Selection reasons describe usable context entries. The fixture must pass
+	// the same explicit confirmation gate as a real evidence card (#682).
+	raw, _, _, err := f.svc.ConfirmEvidenceCard(context.Background(), f.owner, f.project.ID, card.ID, "g2-reason-confirm", ConfirmationInput{
+		VersionExpectation: f.expectation(card.Version), Confirmed: true, Reason: "synthetic fixture: checked quote and scope",
+	})
+	card = decodeAgentJSON[EvidenceCard](t, raw, err)
 
 	current, err := f.svc.GetProject(context.Background(), f.owner, f.project.ID)
 	if err != nil {

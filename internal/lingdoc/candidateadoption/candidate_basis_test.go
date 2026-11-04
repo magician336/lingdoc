@@ -61,12 +61,13 @@ func newBoundCandidateFixture(t *testing.T, refs bool) (*SQLiteCandidateAdoption
 	c := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "正文 [[source:source]]", SourceIDs: []string{"source"}, Validity: "fresh", Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1", ContextRevision: 4, TemplateCopyID: "copy", TemplateCopyVersion: 2, TemplateCopyContentHash: "content-hash", RulesetHash: "effective-rules-hash", AssetVersions: []AssetVersion{{AssetID: "asset", AssetRevision: 1}}}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 	if refs {
 		c.Basis.EvidenceCardRefs = []core.VersionRef{{ID: "card", Version: 3, Kind: "EvidenceCard"}}
+		c.Claims = []ClaimEvidence{{Text: c.BodyMarkdown, References: []ClaimEvidenceReference{{CardID: "card", CardVersion: 3, AnchorID: "anchor", AnchorVersion: 1, SourceID: "source", Locator: "loc", SelectionEnd: 1, QuotedTextHash: "hash"}}}}
 	}
 	seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, c, 1)
 	require.NoError(t, store.DB().Create(&projectAssetRow{ID: "asset", ProjectID: "project", AssetRevision: 1}).Error)
 	require.NoError(t, store.DB().Model(&projectRow{}).Where("id = ?", "project").Updates(map[string]any{"current_context_revision": 4, "template_copy_version": 2, "status": "active"}).Error)
 	require.NoError(t, store.DB().Create(&projectTemplateCopyRow{ID: "copy", ProjectID: "project", Version: 2, ContentHash: "content-hash", RulesetHash: "effective-rules-hash", Status: core.TemplateCopyBound, DefinitionJSON: "{}"}).Error)
-	policy := &candidateEvidenceTestPolicy{selected: core.EvidenceSelection{ContextRevision: 4, Cards: []core.EvidenceCard{{ID: "card", ProjectID: "project", Version: 3, Status: "CONFIRMED", SourceIDs: []string{"source"}, Confirmation: &core.EvidenceConfirmation{CardVersion: 3, ConfirmedBy: "reviewer"}}}, Sources: []core.AgentSourceRef{{SourceID: "source", AssetID: "asset", AssetRevision: 1, ModelUseAllowed: true}}}}
+	policy := &candidateEvidenceTestPolicy{selected: core.EvidenceSelection{ContextRevision: 4, Cards: []core.EvidenceCard{{ID: "card", ProjectID: "project", Version: 3, Status: "CONFIRMED", SourceIDs: []string{"source"}, AnchorRefs: []core.VersionRef{{ID: "anchor", Version: 1}}, Confirmation: &core.EvidenceConfirmation{CardVersion: 3, ConfirmedBy: "reviewer"}}}, Anchors: []core.SourceAnchor{{ID: "anchor", Version: 1, SourceID: "source", Locator: "loc", SelectionEnd: 1, QuotedTextHash: "hash"}}, Sources: []core.AgentSourceRef{{SourceID: "source", AssetID: "asset", AssetRevision: 1, ModelUseAllowed: true}}}}
 	return store, c, AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", ExpectedSpecRevision: 1, IdempotencyKey: "bound-adoption-key", ExpectedWorkingCopyRevision: 0, ExpectedBodyHash: workingCopyBodyHash(""), Confirmation: fixtureConfirmation("actor")}, policy
 }
 

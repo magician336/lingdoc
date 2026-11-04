@@ -18,6 +18,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	webfetch "github.com/Tencent/WeKnora/internal/infrastructure/web_fetch"
+	"github.com/Tencent/WeKnora/internal/lingdoc/academic/catalog"
+	"github.com/Tencent/WeKnora/internal/lingdoc/academic/crossref"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -44,20 +46,135 @@ type originalFetcher interface {
 	Fetch(context.Context, string) (string, error)
 }
 
+// AcademicSourceCatalogReader exposes only the authorized project catalog
+// read; candidate confirmation continues to use its transaction snapshot.
+type AcademicSourceCatalogReader interface {
+	GetAcademicSourceCatalog(context.Context, core.Actor, string) (core.AcademicSourceCatalog, error)
+}
+
 // ResearchAdapter delegates retrieval, URL processing, and source checks to
 // the existing WeKnora services. It never creates a second RAG/index pipeline.
 type ResearchAdapter struct {
-	db        *gorm.DB
-	projects  core.AssetUseAuthorizer
-	sources   SourceApplicationService
-	shares    interfaces.KBShareService
-	knowledge interfaces.KnowledgeService
-	web       interfaces.WebSearchService
-	fetcher   originalFetcher
+	db                    *gorm.DB
+	projects              core.AssetUseAuthorizer
+	sources               SourceApplicationService
+	shares                interfaces.KBShareService
+	knowledge             interfaces.KnowledgeService
+	web                   interfaces.WebSearchService
+	academic              crossref.Client
+	fetcher               originalFetcher
+	globalAcademicCatalog catalog.Snapshot
+	academicBudgetLedger  core.ProjectResearchBudgetLedger
+	academicCatalogReader AcademicSourceCatalogReader
 }
 
-func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *ResearchAdapter {
-	return &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
+type ResearchAdapterOption func(*ResearchAdapter)
+
+func WithResearchBudgetLedger(ledger core.ProjectResearchBudgetLedger) ResearchAdapterOption {
+	return func(adapter *ResearchAdapter) { adapter.academicBudgetLedger = ledger }
+}
+
+func WithAcademicSourceCatalogReader(reader AcademicSourceCatalogReader) ResearchAdapterOption {
+	return func(adapter *ResearchAdapter) { adapter.academicCatalogReader = reader }
+}
+
+func NewResearchAdapter(db *gorm.DB, projects core.AssetUseAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService, options ...ResearchAdapterOption) *ResearchAdapter {
+	adapter := &ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
+	for _, option := range options {
+		option(adapter)
+	}
+	return adapter
+}
+
+// ConfigureAcademicResearchPolicy installs the approved global academic
+// source snapshot and the durable per-project quota ledger. Both are required
+// before Crossref metadata can be queried or retained. The repository has no
+// approved production allowlist or quota policy yet. The composition installs
+// a durable ledger, but its absent policy and the absent catalog fail closed.
+func (r *ResearchAdapter) ConfigureAcademicResearchPolicy(global catalog.Snapshot, budget core.ProjectResearchBudgetLedger) error {
+	if strings.TrimSpace(global.Version) != core.AcademicGlobalCatalogVersion || len(global.Rules) == 0 || budget == nil {
+		return core.ErrInvalidRequest
+	}
+	global.Rules = slices.Clone(global.Rules)
+	seenRuleIDs := make(map[string]struct{}, len(global.Rules))
+	for i := range global.Rules {
+		rule := &global.Rules[i]
+		if strings.TrimSpace(rule.ID) == "" || strings.TrimSpace(rule.Version) == "" || strings.TrimSpace(rule.SourceType) == "" || strings.TrimSpace(rule.Maintainer) == "" || rule.EffectiveAt.IsZero() || strings.TrimSpace(rule.VenueName) == "" && len(rule.VenueIDs) == 0 {
+			return core.ErrInvalidRequest
+		}
+		if _, duplicate := seenRuleIDs[rule.ID]; duplicate {
+			return core.ErrInvalidRequest
+		}
+		seenRuleIDs[rule.ID] = struct{}{}
+		rule.VenueIDs = slices.Clone(rule.VenueIDs)
+		rule.AllowedLicenseURLs = slices.Clone(rule.AllowedLicenseURLs)
+	}
+	r.globalAcademicCatalog = global
+	r.academicBudgetLedger = budget
+	return nil
+}
+
+func (r *ResearchAdapter) academicResearchPolicyReady() error {
+	if strings.TrimSpace(r.globalAcademicCatalog.Version) != core.AcademicGlobalCatalogVersion || len(r.globalAcademicCatalog.Rules) == 0 {
+		return core.ErrAcademicGlobalCatalogUnavailable
+	}
+	if r.academicBudgetLedger == nil {
+		return core.ErrResearchBudgetUnavailable
+	}
+	return nil
+}
+
+func (r *ResearchAdapter) ReserveResearchRun(ctx context.Context, actor core.Actor, projectID, runID string, task core.ResearchTask) error {
+	if task.ProviderID == core.AcademicCrossrefProviderID {
+		if err := r.academicResearchPolicyReady(); err != nil {
+			return err
+		}
+	}
+	if r.academicBudgetLedger == nil {
+		return core.ErrResearchBudgetUnavailable
+	}
+	return r.academicBudgetLedger.Reserve(ctx, actor, projectID, runID, task)
+}
+
+func (r *ResearchAdapter) SettleResearchRun(ctx context.Context, actor core.Actor, projectID, runID string, usage core.ResearchUsageLedger) error {
+	if r.academicBudgetLedger == nil {
+		return core.ErrResearchBudgetUnavailable
+	}
+	return r.academicBudgetLedger.Settle(ctx, actor, projectID, runID, usage)
+}
+
+func (r *ResearchAdapter) ReserveResearchModelCall(ctx context.Context, actor core.Actor, projectID, turnID string) error {
+	if r.academicBudgetLedger == nil {
+		return core.ErrResearchBudgetUnavailable
+	}
+	return r.academicBudgetLedger.ReserveModelCall(ctx, actor, projectID, turnID)
+}
+
+func (r *ResearchAdapter) SettleResearchModelCall(ctx context.Context, actor core.Actor, projectID, turnID string, usage core.ResearchModelCallUsage) error {
+	if r.academicBudgetLedger == nil {
+		return core.ErrResearchBudgetUnavailable
+	}
+	return r.academicBudgetLedger.SettleModelCall(ctx, actor, projectID, turnID, usage)
+}
+
+func (r *ResearchAdapter) ValidateAcademicResearchResult(ctx context.Context, actor core.Actor, projectID string, result core.ResearchResult, projectCatalog core.AcademicSourceCatalog) error {
+	if result.Provider != core.AcademicCrossrefResultProvider {
+		return nil
+	}
+	if err := r.academicResearchPolicyReady(); err != nil {
+		return err
+	}
+	// The caller supplies the project catalog read by the active transaction.
+	// Reopening the shared pool here would deadlock a single-connection SQLite
+	// deployment and would validate against a different transaction snapshot.
+	if projectCatalog.ProjectID != projectID {
+		return core.ErrInvalidState
+	}
+	currentPolicySnapshot := academicCatalogSnapshot(r.globalAcademicCatalog, projectCatalog)
+	if strings.TrimSpace(result.PolicySnapshotVersion) == "" || result.PolicySnapshotVersion != currentPolicySnapshot.Version {
+		return core.ErrVersionConflict
+	}
+	return nil
 }
 func researchCallerContext(ctx context.Context, actor core.Actor) context.Context {
 	caller := types.CallerFromContext(ctx)
@@ -125,18 +242,64 @@ func (r *ResearchAdapter) readResearchSource(ctx context.Context, actor core.Act
 		return core.ResearchSource{}, core.ErrSourceUnavailable
 	}
 	stable := false
+	verifiedPDFPage := 0
 	if expandableChunkType(chunk.ChunkType) && source.Status == evidence.SourceAvailable {
-		original, available, originErr := r.originReader().OriginText(ctx, asset.KnowledgeID)
+		originReader := r.originReader()
+		snapshotReader, supportsSnapshot := originReader.(evidence.OriginSnapshotReader)
+		var original string
+		var raw []byte
+		var available bool
+		var originErr error
+		if supportsSnapshot {
+			original, raw, available, originErr = snapshotReader.OriginSnapshot(ctx, asset.KnowledgeID)
+		}
 		if originErr != nil {
 			return core.ResearchSource{}, originErr
 		}
-		stable = available && evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
+		if supportsSnapshot && available && asset.OriginalContentSHA256 != "" {
+			digest := sha256.Sum256(raw)
+			stable = hex.EncodeToString(digest[:]) == asset.OriginalContentSHA256 &&
+				evidence.VerbatimAt(original, chunk.StartAt, chunk.EndAt, source.QuotedText)
+			if stable {
+				var knowledge types.Knowledge
+				if err := r.db.WithContext(ctx).Select("id", "type").Where("id = ? AND tenant_id = ?", chunk.KnowledgeID, chunk.TenantID).First(&knowledge).Error; err != nil {
+					return core.ResearchSource{}, err
+				}
+				if !knowledge.IsManual() {
+					// A revision digest captured at bind time alone cannot prove
+					// what was sent to the parser. Legacy chunks without an
+					// ingestion digest stay weak until they are reprocessed.
+					stable = false
+					if r.db.Migrator().HasTable(&types.ChunkOriginSHA256{}) {
+						var proof types.ChunkOriginSHA256
+						err := r.db.WithContext(ctx).Where("chunk_id = ? AND tenant_id = ? AND knowledge_id = ?", chunk.ID, chunk.TenantID, chunk.KnowledgeID).First(&proof).Error
+						if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+							return core.ResearchSource{}, err
+						}
+						stable = err == nil && proof.SHA256 == hex.EncodeToString(digest[:])
+					}
+				}
+			}
+		}
+		if !stable {
+			page, verified, proofErr := r.pdfSourcePage(ctx, asset, chunk, source)
+			if proofErr != nil {
+				return core.ResearchSource{}, proofErr
+			}
+			if verified {
+				stable, verifiedPDFPage = true, page
+			}
+		}
 	}
 	allowed, err := r.modelUseAllowed(ctx, actor, projectID, asset.ID, asset.KnowledgeID)
 	if err != nil {
 		return core.ResearchSource{}, err
 	}
-	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: source.Locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed}, nil
+	locator := source.Locator
+	if verifiedPDFPage > 0 {
+		locator = fmt.Sprintf("%s · 第 %d 页（PDF 原生文本提取）", asset.Title, verifiedPDFPage)
+	}
+	return core.ResearchSource{SourceID: source.ID, AssetID: asset.ID, AssetRevision: asset.AssetRevision, KnowledgeID: asset.KnowledgeID, Title: asset.Title, Locator: locator, QuotedText: source.QuotedText, QuotedTextHash: source.QuotedTextHash, Status: string(source.Status), ProcessingState: string(asset.ProcessingState), StableOriginal: stable, ModelUseAllowed: allowed, VerifiedPDFPage: verifiedPDFPage}, nil
 }
 
 // originReader 组装本适配器的原文读取器，构造与 SourceRuntime.origins() 同款：
@@ -289,11 +452,19 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 				if current.StableOriginal && current.Status == string(evidence.SourceAvailable) {
 					level = "candidate_evidence"
 				}
-				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
+				out = append(out, core.ResearchResult{ID: researchTextHash(source.ID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.QuotedTextHash), Level: level, SourceID: source.ID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: current.Locator, QuotedTextHash: source.QuotedTextHash, Title: current.Title, RetrievedAt: time.Now().UTC(), Provider: "weknora_hybrid", SourceType: "project_asset", QualityNote: "检索命中；需用户打开原文核对，层级不表示学术正确", Uncertainty: "作者、发表日期和适用性未自动核实", Status: string(source.Status)})
 			}
 		}
 	}
 	if task.ProviderID != "" {
+		if task.ProviderID == core.AcademicCrossrefProviderID {
+			results, err := r.searchCrossref(ctx, actor, projectID, task, query)
+			if err != nil {
+				return out, "real", err
+			}
+			out = interleaveResearchResults(out, results)
+			return out, "real", nil
+		}
 		if r.web == nil {
 			return out, "real", core.ErrDependencyUnavailable
 		}
@@ -313,6 +484,7 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 		if err != nil {
 			return out, "real", &core.ResearchSearchError{Material: materialFailure, Provider: core.ResearchFailureDetail(err)}
 		}
+		external := make([]core.ResearchResult, 0, len(results))
 		for _, result := range results {
 			if result == nil {
 				continue
@@ -325,15 +497,236 @@ func (r *ResearchAdapter) SearchResearch(ctx context.Context, actor core.Actor, 
 			if result.PublishedAt != nil {
 				date = result.PublishedAt.Format(time.RFC3339)
 			}
-			out = append(out, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
+			external = append(external, core.ResearchResult{ID: researchTextHash(strings.TrimRight(result.URL, "/")), Level: "unread_search_summary", Title: result.Title, URL: result.URL, PublishedAt: date, RetrievedAt: time.Now().UTC(), Provider: result.Source, SourceType: "web_search_summary", Summary: result.Snippet, QualityNote: "搜索引擎摘要，尚未读取原始页面", Uncertainty: "作者、原文和定位均待核对；搜索摘要不能作证据", Status: "unread"})
 		}
+		out = interleaveResearchResults(out, external)
 	}
 	if materialFailure != "" {
 		return out, "real", &core.ResearchSearchError{Material: materialFailure, Partial: len(out) > 0}
 	}
 	return out, "real", nil
 }
+
+// interleaveResearchResults preserves each source's ranking while allowing
+// both to appear before the caller applies the per-round and run budgets.
+// Empty or single-source rounds retain their existing order and result count.
+func interleaveResearchResults(local, external []core.ResearchResult) []core.ResearchResult {
+	if len(local) == 0 {
+		return external
+	}
+	if len(external) == 0 {
+		return local
+	}
+	out := make([]core.ResearchResult, 0, len(local)+len(external))
+	for i := 0; i < len(local) || i < len(external); i++ {
+		if i < len(local) {
+			out = append(out, local[i])
+		}
+		if i < len(external) {
+			out = append(out, external[i])
+		}
+	}
+	return out
+}
+
+func (r *ResearchAdapter) searchCrossref(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, query string) ([]core.ResearchResult, error) {
+	if r.db == nil {
+		return nil, core.ErrDependencyUnavailable
+	}
+	if err := r.academicResearchPolicyReady(); err != nil {
+		return nil, err
+	}
+	projectCatalog, err := r.loadAcademicSourceCatalog(ctx, actor, projectID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := academicCatalogSnapshot(r.globalAcademicCatalog, projectCatalog)
+	if task.Basis.SourceCatalogVersion != "" {
+		currentCatalogVersion, versionErr := r.ResearchCatalogVersion(ctx, actor, projectID, task)
+		if versionErr != nil {
+			return nil, versionErr
+		}
+		if currentCatalogVersion != task.Basis.SourceCatalogVersion {
+			return nil, core.ErrVersionConflict
+		}
+	}
+	works, err := r.academic.SearchWithDateRange(ctx, query, 20, task.DateFrom, task.DateTo)
+	if err != nil {
+		return nil, err
+	}
+	// A Crossref update-to edge points from the notice to the updated DOI.
+	// Use only notices already present in this response: this does not add
+	// unbudgeted requests, and absence of an edge never proves non-retraction.
+	reportedRetractions := crossrefRetractionTargets(works)
+	now := time.Now().UTC()
+	results := make([]core.ResearchResult, 0, len(works))
+	seen := make(map[string]string, len(works))
+	for index, work := range works {
+		key := academicWorkDedupKey(work)
+		if key == "" {
+			continue
+		}
+		id := researchTextHash("crossref|" + key)
+		duplicateOf := ""
+		duplicateStatus := "unique"
+		if firstID, exists := seen[key]; exists {
+			duplicateStatus = "duplicate"
+			duplicateOf = firstID
+			id = researchTextHash("crossref-duplicate|" + key + "|" + strconv.Itoa(index))
+		} else {
+			seen[key] = id
+		}
+		sourceType := crossrefSourceType(work.Type)
+		licenseURLs := make([]string, 0, len(work.Licenses))
+		for _, license := range work.Licenses {
+			if strings.TrimSpace(license.URL) != "" {
+				licenseURLs = append(licenseURLs, license.URL)
+			}
+		}
+		retractionReported := reportedRetractions[strings.ToLower(strings.TrimSpace(work.DOI))]
+		evaluation := catalog.EvaluateAt(snapshot, catalog.Work{
+			DOI: work.DOI, SourceType: sourceType, Journal: work.Journal,
+			ISSNs: work.ISSN, VenueIDs: work.ISSN, LicenseURLs: licenseURLs,
+			// update-to describes an update *by* this record and does not prove
+			// this record itself was retracted.
+			Retracted: retractionReported,
+		}, now)
+		retractionStatus := "unknown"
+		status := "metadata_only"
+		level := "discovery_entry"
+		if work.IsRetractionNotice() {
+			retractionStatus = "retraction_notice"
+			status = "retraction_notice"
+		} else if retractionReported {
+			retractionStatus = "retracted"
+			status = "retracted"
+		} else if evaluation.Status == catalog.StatusApproved {
+			level = "background_lead"
+		} else {
+			status = "out_of_policy"
+		}
+		authors := crossrefAuthors(work.Authors)
+		uncertainty := "Crossref 元数据记录；未获取原文或摘要，不可作为证据。未检出撤稿记录不代表已核实未撤稿。"
+		switch retractionStatus {
+		case "retraction_notice":
+			uncertainty = "该记录包含指向其他论文的撤稿更新；它是通知而非被撤稿论文。未获取原文，不可作为证据。"
+		case "retracted":
+			uncertainty = "本次检索结果中有撤稿通知指向该论文 DOI；请核对原始公告，不能作为资料候选。"
+		}
+		if duplicateStatus == "duplicate" {
+			status = "duplicate"
+			level = "discovery_entry"
+		}
+		if strings.TrimSpace(work.DOI) == "" {
+			status = "missing_identifier"
+			level = "discovery_entry"
+			uncertainty = "Crossref 记录缺少 DOI，无法稳定追溯；已阻止作为资料候选。"
+		}
+		if strings.TrimSpace(work.Title) == "" {
+			status = "missing_title"
+			level = "discovery_entry"
+			uncertainty = "Crossref 记录缺少标题，不能作为资料候选。"
+		}
+		results = append(results, core.ResearchResult{
+			ID: id, Level: level, Title: work.Title, Author: authors,
+			PublishedAt: work.PublishedDate, DOI: work.DOI, Journal: work.Journal,
+			ISSNs: slices.Clone(work.ISSN), LicenseURLs: licenseURLs,
+			LicenseStatus: string(evaluation.LicenseStatus), CatalogVersion: projectCatalog.SourceCatalogVersion,
+			PolicySnapshotVersion: snapshot.Version,
+			PolicyStatus:          string(evaluation.Status), PolicyRuleID: evaluation.RuleID,
+			RetractionStatus: retractionStatus, DuplicateStatus: duplicateStatus, DuplicateOf: duplicateOf,
+			AcquisitionStatus: "metadata_only", RetrievedAt: now, Provider: core.AcademicCrossrefResultProvider,
+			SourceType: sourceType, QualityNote: "Crossref 只提供书目元数据；目录命中仅表示项目策略允许保留元数据，不代表期刊质量或原文许可。",
+			Uncertainty: uncertainty, Status: status,
+		})
+	}
+	return results, nil
+}
+
+func crossrefRetractionTargets(works []crossref.Work) map[string]bool {
+	targets := make(map[string]bool)
+	for _, notice := range works {
+		noticeDOI := strings.TrimSpace(notice.DOI)
+		if noticeDOI == "" {
+			continue
+		}
+		for _, update := range notice.UpdateTo {
+			target := strings.TrimSpace(update.DOI)
+			if target != "" && !strings.EqualFold(target, noticeDOI) && strings.EqualFold(strings.TrimSpace(update.Type), "retraction") {
+				targets[strings.ToLower(target)] = true
+			}
+		}
+	}
+	return targets
+}
+
+func (r *ResearchAdapter) loadAcademicSourceCatalog(ctx context.Context, actor core.Actor, projectID string) (core.AcademicSourceCatalog, error) {
+	if r.academicCatalogReader == nil {
+		return core.AcademicSourceCatalog{}, core.ErrDependencyUnavailable
+	}
+	out, err := r.academicCatalogReader.GetAcademicSourceCatalog(ctx, actor, projectID)
+	if err != nil {
+		return core.AcademicSourceCatalog{}, err
+	}
+	if out.ProjectID != projectID {
+		return core.AcademicSourceCatalog{}, core.ErrInvalidState
+	}
+	return out, nil
+}
+
+func academicCatalogSnapshot(globalCatalog catalog.Snapshot, sourceCatalog core.AcademicSourceCatalog) catalog.Snapshot {
+	rules := make([]catalog.Rule, 0, len(sourceCatalog.Rules))
+	for _, rule := range sourceCatalog.Rules {
+		rules = append(rules, catalog.Rule{
+			ID: rule.ID, Version: strconv.FormatInt(rule.Version, 10), SourceType: rule.SourceType,
+			VenueName: rule.VenueName, VenueIDs: slices.Clone(rule.VenueIDs),
+			AllowedLicenseURLs: slices.Clone(rule.AllowedLicenseURLs), Maintainer: rule.Maintainer,
+			EffectiveAt: rule.EffectiveAt,
+		})
+	}
+	return catalog.Combine(globalCatalog, rules)
+}
+
+func crossrefSourceType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "journal-article":
+		return "journal"
+	case "proceedings-article":
+		return "proceedings"
+	default:
+		return "other"
+	}
+}
+
+func crossrefAuthors(authors []crossref.Author) string {
+	names := make([]string, 0, len(authors))
+	for _, author := range authors {
+		name := strings.TrimSpace(author.Name)
+		if name == "" {
+			name = strings.TrimSpace(strings.TrimSpace(author.Given) + " " + strings.TrimSpace(author.Family))
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, "; ")
+}
+
+func academicWorkDedupKey(work crossref.Work) string {
+	if doi := strings.ToLower(strings.TrimSpace(work.DOI)); doi != "" {
+		return "doi:" + doi
+	}
+	parts := []string{strings.ToLower(strings.Join(strings.Fields(work.Title), " ")), strings.ToLower(strings.Join(strings.Fields(work.Journal), " ")), work.PublishedDate, strings.ToLower(strings.Join(strings.Fields(crossrefAuthors(work.Authors)), " "))}
+	if parts[0] == "" {
+		return ""
+	}
+	return "metadata:" + strings.Join(parts, "|")
+}
+
 func (r *ResearchAdapter) InspectResearchOriginal(ctx context.Context, actor core.Actor, projectID string, task core.ResearchTask, result core.ResearchResult) (core.ResearchResult, error) {
+	if task.ProviderID == core.AcademicCrossrefProviderID || result.Provider == core.AcademicCrossrefResultProvider {
+		return result, core.ErrEvidenceIncomplete
+	}
 	if r.projects == nil || r.fetcher == nil || task.ProviderID == "" || r.db == nil {
 		return result, core.ErrDependencyUnavailable
 	}
@@ -510,40 +903,49 @@ func (r *ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor core
 	}
 	providerVersion := ""
 	if task.ProviderID != "" {
-		if r.db == nil {
-			return "", core.ErrDependencyUnavailable
-		}
-		var provider struct {
-			ID        string
-			Provider  string
-			UpdatedAt time.Time
-		}
-		if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider", "updated_at").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&provider).Error; err != nil {
-			// 查不到行有两种成因：provider 根本不存在，或它属于别的租户（查询
-			// 已按 tenant_id 过滤）。两者对调用方是同一件事，所以给同一个对外
-			// 形态，不泄露他租户的目录。
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", ErrResearchProviderInvalid
+		if task.ProviderID == core.AcademicCrossrefProviderID {
+			academic, err := r.loadAcademicSourceCatalog(ctx, actor, projectID)
+			if err != nil {
+				return "", err
 			}
-			return "", err
-		}
-		providerVersion = provider.ID + "|" + provider.Provider + "|" + provider.UpdatedAt.UTC().Format(time.RFC3339Nano)
-		var tenant types.Tenant
-		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
-			// 租户配置行缺失同样不是调用方的错：检索策略读不出来，能力不可用。
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			policySnapshot := academicCatalogSnapshot(r.globalAcademicCatalog, academic)
+			providerVersion = core.AcademicCrossrefProviderID + "|rest-works-v1|" + policySnapshot.Version
+		} else {
+			if r.db == nil {
 				return "", core.ErrDependencyUnavailable
 			}
-			return "", err
+			var provider struct {
+				ID        string
+				Provider  string
+				UpdatedAt time.Time
+			}
+			if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider", "updated_at").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&provider).Error; err != nil {
+				// 查不到行有两种成因：provider 根本不存在，或它属于别的租户（查询
+				// 已按 tenant_id 过滤）。两者对调用方是同一件事，所以给同一个对外
+				// 形态，不泄露他租户的目录。
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", ErrResearchProviderInvalid
+				}
+				return "", err
+			}
+			providerVersion = provider.ID + "|" + provider.Provider + "|" + provider.UpdatedAt.UTC().Format(time.RFC3339Nano)
+			var tenant types.Tenant
+			if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
+				// 租户配置行缺失同样不是调用方的错：检索策略读不出来，能力不可用。
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", core.ErrDependencyUnavailable
+				}
+				return "", err
+			}
+			config := types.EffectiveWebSearchConfig(tenant.WebSearchConfig)
+			// Hash policy fields only; credentials never enter audit or version strings.
+			policy, _ := json.Marshal(struct {
+				MaxResults  int
+				IncludeDate bool
+				Blacklist   []string
+			}{config.MaxResults, config.IncludeDate, config.Blacklist})
+			providerVersion += "|" + string(policy)
 		}
-		config := types.EffectiveWebSearchConfig(tenant.WebSearchConfig)
-		// Hash policy fields only; credentials never enter audit or version strings.
-		policy, _ := json.Marshal(struct {
-			MaxResults  int
-			IncludeDate bool
-			Blacklist   []string
-		}{config.MaxResults, config.IncludeDate, config.Blacklist})
-		providerVersion += "|" + string(policy)
 	}
 	raw, _ := json.Marshal(struct {
 		Assets   []core.ProjectAssetVersion
@@ -626,14 +1028,18 @@ func (r *ResearchAdapter) ResearchRoundProvider(ctx context.Context, actor core.
 		providers = append(providers, "weknora_hybrid")
 	}
 	if task.ProviderID != "" {
-		if r.db == nil || r.web == nil {
-			return "", core.ErrDependencyUnavailable
+		if task.ProviderID == core.AcademicCrossrefProviderID {
+			providers = append(providers, core.AcademicCrossrefProviderID)
+		} else {
+			if r.db == nil || r.web == nil {
+				return "", core.ErrDependencyUnavailable
+			}
+			var row struct{ ID, Provider string }
+			if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&row).Error; err != nil {
+				return "", err
+			}
+			providers = append(providers, "web_search:"+row.ID+":"+row.Provider)
 		}
-		var row struct{ ID, Provider string }
-		if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&row).Error; err != nil {
-			return "", err
-		}
-		providers = append(providers, "web_search:"+row.ID+":"+row.Provider)
 	}
 	if len(providers) == 0 {
 		return "", core.ErrInvalidRequest

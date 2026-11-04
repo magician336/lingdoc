@@ -32,9 +32,10 @@ func NewSelectedRewriteHostModel(models interfaces.ModelService) SelectedRewrite
 // 纯文本。文本数组是旧形状——它逼着服务端再猜一次「这一条待核事项长什么样」，
 // 而候选层的待核事项只有一种类型（开发计划 A39 / §3.4）。
 type selectedRewritePayload struct {
-	ReplacementMarkdown string                         `json:"replacement_markdown"`
-	SourceIDs           []string                       `json:"source_ids"`
-	ReviewItems         []candidateadoption.ReviewItem `json:"review_items"`
+	ReplacementMarkdown string                            `json:"replacement_markdown"`
+	SourceIDs           []string                          `json:"source_ids"`
+	ReviewItems         []candidateadoption.ReviewItem    `json:"review_items"`
+	Claims              []candidateadoption.ClaimEvidence `json:"claims,omitempty"`
 }
 
 func (selectedRewriteHostModel) RunMode() string { return "real" }
@@ -104,6 +105,9 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 	messages := []chat.Message{
 		{Role: "system", Content: selectedRewriteSystemMessage(prompt.Produce)},
 		{Role: "user", Content: string(input)},
+	}
+	if len(cards) > 0 && prompt.Produce != string(writingaction.ProduceFindings) {
+		messages[0].Content += " 使用证据卡时，额外输出 claims 数组：按论断顺序逐段输出 text 与 references；全部 text 原样拼接必须等于 replacement_markdown，每段必须含其来源标记。每条 references 仅含 card_id、card_version、anchor_id、anchor_version、source_id，必须明确选择该卡 anchors，不得按同源猜测。每张所选卡均须被实际使用。"
 	}
 	options := &chat.ChatOptions{Temperature: 0.2, MaxCompletionTokens: 2048, Format: json.RawMessage(`{"type":"json_object"}`)}
 	var reservation *generationAcceptanceReservation
@@ -190,7 +194,7 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 		return SelectedRewriteOutput{}, ErrRewriteInvalidRequest
 	}
 	return SelectedRewriteOutput{ReplacementMarkdown: payload.ReplacementMarkdown, SourceIDs: payload.SourceIDs,
-		ReviewItems: payload.ReviewItems, RunMode: mode}, nil
+		ReviewItems: payload.ReviewItems, Claims: payload.Claims, RunMode: mode}, nil
 }
 
 func rewriteRunMode(models []*types.Model, modelID string) string {

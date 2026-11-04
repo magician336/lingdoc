@@ -155,7 +155,7 @@ WORKSPACE_SHARD_COUNT = len(WORKSPACE_SHARD_NAMES)
 _FAMILY_SHARDS_PLAN: tuple[tuple[str, tuple[str, ...]], ...] = (
     *((name, (WORKSPACE_FAMILY,)) for name in WORKSPACE_SHARD_NAMES),
     ("lingdoc-core", (
-        "access", "candidateadoption", "delivery", "demoroute", "docx",
+        "academic", "access", "candidateadoption", "delivery", "demoroute", "docx",
         "generation", "materiallingest", "membership", "operationcore",
         "reviewanchor", "rulesetstore", "sourcemarker", "sourcepolicy",
         "template", "templategovernance", "workspacecore", "writingaction",

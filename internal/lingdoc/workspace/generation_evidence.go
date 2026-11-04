@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -91,11 +92,23 @@ func (r *generationInputResolver) resolveFormalEvidence(ctx context.Context, act
 	if err != nil {
 		return nil, nil, err
 	}
+	academic, err := selectedAcademicSources(selected)
+	if err != nil {
+		return nil, nil, generation.ErrSourceAccessDenied
+	}
 	ids := []string{}
 	sources := []generation.Source{}
 	for _, ref := range selected.Sources {
 		source, err := r.sources.GetSource(ctx, generationWorkspaceActor(ctx, actor), projectID, ref.SourceID)
-		if err != nil || source.AssetID != ref.AssetID || source.AssetRevision != ref.AssetRevision || source.QuotedTextHash != ref.QuotedTextHash || source.Status != evidence.SourceAvailable {
+		if err != nil || source.ProjectID != projectID || source.AssetID != ref.AssetID || source.AssetRevision != ref.AssetRevision || source.Status != evidence.SourceAvailable {
+			return nil, nil, generation.ErrSourceAccessDenied
+		}
+		if bound, ok := academic[ref.SourceID]; ok {
+			source, err = overlayAcademicSource(projectID, source, bound)
+			if err != nil {
+				return nil, nil, generation.ErrSourceAccessDenied
+			}
+		} else if source.QuotedTextHash != ref.QuotedTextHash {
 			return nil, nil, generation.ErrSourceAccessDenied
 		}
 		sources = append(sources, generationSourceFromEvidence(source))
@@ -178,6 +191,10 @@ func (s *SelectedRewriteService) checkEvidenceRefs(ctx context.Context, actor Ac
 	if err != nil {
 		return ErrRewriteSourceDenied
 	}
+	academic, err := selectedAcademicSources(selected)
+	if err != nil {
+		return ErrRewriteSourceDenied
+	}
 	for _, snapshot := range snapshots {
 		index := slices.IndexFunc(selected.Sources, func(ref core.AgentSourceRef) bool { return ref.SourceID == snapshot.SourceID })
 		if index < 0 {
@@ -185,6 +202,14 @@ func (s *SelectedRewriteService) checkEvidenceRefs(ctx context.Context, actor Ac
 		}
 		current := selected.Sources[index]
 		if current.AssetID != snapshot.AssetID || current.AssetRevision != snapshot.AssetRevision || current.Locator != snapshot.Locator || current.QuotedTextHash != snapshot.QuotedTextHash {
+			return ErrRewriteSourceDenied
+		}
+		var expected *academicSnapshotIdentity
+		if item, ok := academic[snapshot.SourceID]; ok {
+			identity := item.identity
+			expected = &identity
+		}
+		if !snapshotSourceIdentityEqual(snapshot.AcademicSnapshot, expected) {
 			return ErrRewriteSourceDenied
 		}
 	}
@@ -197,6 +222,22 @@ func (s *SelectedRewriteService) checkRowEvidence(ctx context.Context, actor Act
 	}
 	if err := s.checkRowEvidenceConstraints(ctx, actor, projectID, row, refs); err != nil {
 		return err
+	}
+	if row.Validity == string(candidateadoption.ValidityFresh) {
+		var claims []candidateadoption.ClaimEvidence
+		if row.ClaimEvidenceJSON != "" && json.Unmarshal([]byte(row.ClaimEvidenceJSON), &claims) != nil {
+			return ErrRewriteStale
+		}
+		if len(refs) > 0 || len(claims) > 0 {
+			constraints, e := decodeRewriteEvidenceConstraints(row.EvidenceConstraintsJSON)
+			if e != nil {
+				return ErrRewriteStale
+			}
+			resolved, e := resolveRewriteClaims(row.ReplacementMarkdown, claims, refs, constraints, mustDecodeIDs(row.SourceIDsJSON))
+			if e != nil || !reflect.DeepEqual(resolved, claims) {
+				return ErrRewriteStale
+			}
+		}
 	}
 	if err := s.checkRowTemplate(ctx, actor, projectID, row); err != nil {
 		return err
@@ -323,7 +364,18 @@ func selectedEvidenceConstraints(selected core.EvidenceSelection, refs []generat
 				return nil, generation.ErrSourceAccessDenied
 			}
 		}
-		constraints = append(constraints, generation.EvidenceConstraint{CardRef: ref, SupportType: card.SupportType, Scope: card.Scope, Limitations: card.Limitations, SourceIDs: append([]string(nil), ids...)})
+		constraint := generation.EvidenceConstraint{CardRef: ref, SupportType: card.SupportType, Scope: card.Scope, Limitations: card.Limitations, SourceIDs: append([]string(nil), ids...)}
+		for _, anchorRef := range card.AnchorRefs {
+			index := slices.IndexFunc(selected.Anchors, func(anchor core.SourceAnchor) bool {
+				return anchor.ID == anchorRef.ID && anchor.Version == anchorRef.Version
+			})
+			if index < 0 {
+				continue
+			}
+			anchor := selected.Anchors[index]
+			constraint.Anchors = append(constraint.Anchors, generation.EvidenceAnchor{ID: anchor.ID, Version: anchor.Version, SourceID: anchor.SourceID, Locator: anchor.Locator, SelectionStart: anchor.SelectionStart, SelectionEnd: anchor.SelectionEnd, QuotedTextHash: anchor.QuotedTextHash})
+		}
+		constraints = append(constraints, constraint)
 	}
 	return constraints, nil
 }

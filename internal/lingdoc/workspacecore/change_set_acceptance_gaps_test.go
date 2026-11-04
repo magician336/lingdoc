@@ -22,6 +22,14 @@ import (
 // missing entirely — the loser must not leave an ImpactTask behind.
 func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 	svc, actor, p := extendedImpactStore(t)
+	// Match the production SQLite pool: concurrent service calls share one
+	// connection, so the losing request reaches the version check instead of
+	// failing an unsupported concurrent read-to-write transaction upgrade.
+	sqlDB, err := svc.testDB().DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	chapter := extendedChapter(t, svc, actor, p)
 	ctx := context.Background()
 
@@ -79,14 +87,7 @@ func TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks(t *testing.T) {
 				t.Fatalf("apply %d returned a non-stale conflict: body=%s err=%v", i, result.body, err)
 			}
 			losers++
-		case result.err != nil:
-			losers++
-		case result.err == nil && result.status == 409 && !result.replay:
-			// The loser may be legitimately stale-marked against the applied
-			// domain truth (a replaced spec source or a changed chapter
-			// version) instead of failing the project CAS: that outcome
-			// carries the STALE change with 409 and no error. Either way the
-			// loser must contribute no tasks — asserted below.
+		case !result.replay && (result.status == 0 || result.status == 409) && errors.Is(result.err, ErrVersionConflict):
 			losers++
 		default:
 			t.Fatalf("apply %d returned an unaccounted outcome: status=%d replay=%v err=%v", i, result.status, result.replay, result.err)

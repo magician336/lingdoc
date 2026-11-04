@@ -1,0 +1,20 @@
+{
+  "run": {
+    "usage": {
+      "policy_version": "research-run-bounds-v1",
+      "search_limit": 8,
+      "searches_used": 0,
+      "result_limit": 160,
+      "results_used": 0,
+      "model_call_limit": 0,
+      "model_calls_used": 0
+    },
+    "id": "0be04030-7aac-4824-a708-dd938ce0d406",
+    "failure_code": "academic_global_catalog_unavailable",
+    "correlation_id": "2cd2cd54-8098-4a9c-8882-28b645bc3d46",
+    "status": "failed"
+  },
+  "result": "PASS",
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "scope": "Current backend, fresh simulated approval and new ResearchRun; no production policy or model"
+}

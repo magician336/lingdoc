@@ -34,10 +34,10 @@ func TestModelEvidencePayloadRejectsUnselectedAndUnprovidedSource(t *testing.T) 
 
 func TestActualModelAdaptersTransmitOnlySelectedCardContract(t *testing.T) {
 	ref := generation.EvidenceCardRef{ID: "selected-card", Version: 2}
-	cards := []generation.EvidenceConstraint{{CardRef: ref, SupportType: "refutes", Scope: "仅限合成场景", Limitations: "不能外推", SourceIDs: []string{"source-1"}}}
+	cards := []generation.EvidenceConstraint{{CardRef: ref, SupportType: "refutes", Scope: "仅限合成场景", Limitations: "不能外推", SourceIDs: []string{"source-1"}, Anchors: []generation.EvidenceAnchor{{ID: "anchor", Version: 1, SourceID: "source-1", Locator: "page 1", SelectionEnd: 1, QuotedTextHash: "hash"}}}}
 	for _, kind := range []string{"generation", "rewrite"} {
 		t.Run(kind, func(t *testing.T) {
-			result := `{"body_markdown":"合成正文 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`
+			result := `{"body_markdown":"合成正文 [[source:source-1]]","source_ids":["source-1"],"review_items":[],"claims":[{"text":"合成正文 [[source:source-1]]","references":[{"card_id":"selected-card","card_version":2,"anchor_id":"anchor","anchor_version":1,"source_id":"source-1"}]}]}`
 			if kind == "rewrite" {
 				result = `{"replacement_markdown":"合成改写 [[source:source-1]]","source_ids":["source-1"],"review_items":[]}`
 			}
@@ -47,8 +47,10 @@ func TestActualModelAdaptersTransmitOnlySelectedCardContract(t *testing.T) {
 				input := acceptanceGenerationInput()
 				input.EvidenceCardRefs = []generation.EvidenceCardRef{ref}
 				input.EvidenceConstraints = cards
-				_, err := (generationHostModel{models: service, templates: core.ContractDemoTemplate{}}).Generate(context.Background(), input)
+				draft, err := (generationHostModel{models: service, templates: core.ContractDemoTemplate{}}).Generate(context.Background(), input)
 				require.NoError(t, err)
+				require.Len(t, draft.Claims, 1)
+				require.Equal(t, "anchor", draft.Claims[0].References[0].AnchorID)
 			} else {
 				prompt := SelectedRewritePrompt{Instruction: "只改选段", EvidenceCardRefs: []generation.EvidenceCardRef{ref}, EvidenceConstraints: cards, Sources: []evidence.Source{{ID: "source-1", QuotedText: "已许可的合成来源片段"}}}
 				_, err := (selectedRewriteHostModel{models: service}).RewriteSelected(context.Background(), Actor{TenantID: 1, UserID: "synthetic"}, prompt)
@@ -65,7 +67,7 @@ func TestActualModelAdaptersTransmitOnlySelectedCardContract(t *testing.T) {
 			require.NotContains(t, payload, "claims")
 			var fields []map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal(payload["evidence_cards"], &fields))
-			require.ElementsMatch(t, []string{"card_ref", "support_type", "scope", "limitations", "source_ids"}, keysOfEvidencePayload(fields[0]))
+			require.ElementsMatch(t, []string{"card_ref", "support_type", "scope", "limitations", "source_ids", "anchors"}, keysOfEvidencePayload(fields[0]))
 		})
 	}
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -422,23 +424,38 @@ func TestCreateStore_DuplicateCheck_EnvStore_DifferentIndex_Allowed(t *testing.T
 }
 
 func TestCreateStore_DifferentEndpointSameIndex_Allowed(t *testing.T) {
-	// Historical note — this test used Postgres + UseDefaultConnection so the
-	// connectivity test step would short-circuit (testPostgresConnection
-	// returns nil on use_default_connection), letting the duplicate-check
-	// logic run against a pure in-memory mock. Once Postgres/SQLite were
-	// dropped from validEngineTypes (DB stores must be a network-reachable
-	// engine), no engine remaining in the allow list has an equivalent
-	// "no network needed" fast path: every other engine's connection probe
-	// dials a real endpoint, which a unit-test environment cannot
-	// reasonably provide without spinning up a real backend.
-	//
-	// The underlying invariant (same endpoint + different index name is
-	// allowed) is still indirectly exercised by the live ParadeDB/Qdrant
-	// flows in CI integration and by manual E2E tests. A proper unit-test
-	// substitute requires either an injectable TestConnection mock or a
-	// dedicated repository-only test that exercises ExistsByEndpointAndIndex
-	// without going through the service-level CreateStore pipeline.
-	t.Skip("requires mockable TestConnection or repository-only test; track separately")
+	// Use real connection probes against two local HTTP fixtures and the real
+	// SQLite repository. A constant-false mock would not detect a regression
+	// that accidentally drops the endpoint from the uniqueness predicate.
+	first, second := newFakeESServer(t), newFakeESServer(t)
+	db, err := gorm.Open(sqlitedrv.Open(filepath.Join(t.TempDir(), "stores.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.VectorStore{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	repo := repository.NewVectorStoreRepository(db)
+	svc := NewVectorStoreService(repo, nil, nil, nil, nil)
+	store := func(name, endpoint string) *types.VectorStore {
+		return &types.VectorStore{
+			TenantID: 1, Name: name, EngineType: types.ElasticsearchRetrieverEngineType,
+			ConnectionConfig: types.ConnectionConfig{Addr: endpoint},
+			IndexConfig:      types.IndexConfig{IndexName: "shared-index"},
+		}
+	}
+	require.NoError(t, svc.CreateStore(context.Background(), store("first", first.URL)))
+	require.NoError(t, svc.CreateStore(context.Background(), store("second", second.URL)))
+	rows, err := repo.List(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	// The converse must still reject the same endpoint AND index.
+	err = svc.CreateStore(context.Background(), store("duplicate", first.URL))
+	var appErr *errors.AppError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, errors.ErrConflict, appErr.Code)
+	rows, err = repo.List(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "the rejected duplicate must not leave a row")
 }
 
 // ---------------------------------------------------------------------------

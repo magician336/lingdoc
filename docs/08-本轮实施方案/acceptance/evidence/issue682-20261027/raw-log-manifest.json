@@ -1,0 +1,136 @@
+{
+  "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+  "location": "D-drive worktree .tmp; raw logs are local and not uploaded",
+  "logs": [
+    {
+      "path": ".tmp/go-test-final-linux.jsonl",
+      "sha256": "80910f4996bdd63764bcdd53b3a7797ff9740f9ff1eb48dc29d307129b495529",
+      "bytes": 18319059
+    },
+    {
+      "path": ".tmp/go-race-concurrent-10.log",
+      "sha256": "3424ff5fcfead45eff156b2e0378ec3c3c9929c5657500f390c73eaf48ea0873",
+      "bytes": 71
+    },
+    {
+      "path": ".tmp/go-catalog-owner-fix.log",
+      "sha256": "d8479869c8b7ee9319c50c6ff3ac6a12ab8e405c740dc1aec1767607457e6aea",
+      "bytes": 145
+    },
+    {
+      "path": ".tmp/go-concurrent-apply-50.log",
+      "sha256": "e89cf465978d45c499ddbf1f4821ff5eee343adf0b43b4380c0ddffdc209cdec",
+      "bytes": 71
+    },
+    {
+      "path": ".tmp/frontend-tests-current.log",
+      "sha256": "dc8207d25c5c9eb528bd44e747df99bc38e22291f754f5ec3ce7d5d8ac4dbb34",
+      "bytes": 2040
+    },
+    {
+      "path": ".tmp/frontend-build-current.log",
+      "sha256": "b1bf6e8ef29c72a753486734bde8e2a28ad77622feefdc59b9caf32d532c24b9",
+      "bytes": 20359
+    },
+    {
+      "path": ".tmp/contract-validation-current.log",
+      "sha256": "04719e24dc7a23478efccaa4599736d55b6a14503e223608755b6242bc09cc31",
+      "bytes": 49502
+    },
+    {
+      "path": ".tmp/browser-backend.log",
+      "sha256": "fbdddb345a12825f1ed31228fe0e9b41c24997e3894396b0b3856db042d966a4",
+      "bytes": 821778
+    },
+    {
+      "path": ".tmp/browser-restart-readback.json",
+      "sha256": "008a53a2474f6552959ceac34ee602994fbb32ce7c06c8ee8d5ff5ff7db3708c",
+      "bytes": 1302
+    },
+    {
+      "path": ".tmp/go-postgres-followup.jsonl",
+      "sha256": "33747d0c12404ea5390a753c40e7afc3508d3a8a80d421ecd5afde31e768a1da",
+      "bytes": 419915
+    },
+    {
+      "path": ".tmp/pg-fault-migration.log",
+      "sha256": "d51b518eabce03d9e51ca1a7a69b3dd3eae61dd0453e92aca75b1a9461433058",
+      "bytes": 482
+    },
+    {
+      "path": ".tmp/crossref-live-smoke.log",
+      "sha256": "8a3d8e3da612be4262396528ed7adae4c413fa8502f824ce50a492cf1834f2b1",
+      "bytes": 256
+    },
+    {
+      "path": ".tmp/python-unreadable-nonroot.log",
+      "sha256": "14f6878160ef738c8e391a58589b4594333d40167416892791b0a497624de11a",
+      "bytes": 134
+    },
+    {
+      "path": ".tmp/docreader-live.log",
+      "sha256": "d8754afa1ea14186f460f879f9d1433f1ce4cd68d1111349aa9f33208aae8fa5",
+      "bytes": 1185
+    },
+    {
+      "path": ".tmp/browserskill-native-followup.jsonl",
+      "sha256": "3223b5e62ee7e5dd1b815cc65ea9fff587d5f7dd8ddc1ad3dd3cf4d1ecf467ac",
+      "bytes": 60004
+    },
+    {
+      "path": ".tmp/browserskill-native-repeat.jsonl",
+      "sha256": "bf0be78cb51438ce87189d7ebbad3c15e5ce302317b34adfb1ffdfc0a75d5a0d",
+      "bytes": 594639
+    },
+    {
+      "path": ".tmp/browserskill-native-fixed.jsonl",
+      "sha256": "5fd38cbb3f2a42e20d514455ad199fe4d4bce25a01ed5240aa758c981f7084e7",
+      "bytes": 590874
+    },
+    {
+      "path": ".tmp/go-test-latest-linux.jsonl",
+      "sha256": "2d554324078f64e0b3ca0927af01e173bf7bceece79508173d446d4922db73d7",
+      "bytes": 18319622
+    },
+    {
+      "path": ".tmp/go-test-delivery-linux.jsonl",
+      "sha256": "2070e7ef2e40e5732c50c613139bdc0c2de8c80e90ea39ce82871bac1daf8af9",
+      "bytes": 18320855
+    },
+    {
+      "path": ".tmp/browserskill-real-extension-headed.jsonl",
+      "sha256": "ad87356012e961779dd082dec2e579421d768e71b720b6b53e849d8c432ee03d",
+      "bytes": 10362
+    },
+    {
+      "path": ".tmp/golangci-lint-current.log",
+      "sha256": "6fcc2cd28c75ea16b2d0bbbad273ea4ed9cc269ec96b1433e50490164a85d7f1",
+      "bytes": 137
+    },
+    {
+      "path": ".tmp/crossref-lint-followup.log",
+      "sha256": "339c96299174b747d30481d8d861425bde77d714d7f3988ad7ecb8a5578e28b6",
+      "bytes": 74
+    },
+    {
+      "path": ".tmp/issue682-server-delivery-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".tmp/product-screenshot-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".tmp/product-screenshot-result.json",
+      "sha256": "1b4791d6026c93f46e91102a4c2a89b4a690d6b8ab2951d87bb4610bbce725a1",
+      "bytes": 192
+    },
+    {
+      "path": ".tmp/issue682-fail-closed-browser.png",
+      "sha256": "9f8f8c586191e260a16b1a1951543bff3040ff782532dcbab41775f068935060",
+      "bytes": 110740
+    }
+  ]
+}

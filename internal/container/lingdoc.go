@@ -94,7 +94,12 @@ func NewLingDocWorkspaceHandler(
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)
 	projectService.SetRuntimeMode("real")
-	research := workspace.NewResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
+	// The durable quota ledger shares Workspace's authorized project transaction.
+	// Approved limits/window definitions have not been supplied: a nil policy
+	// source keeps retrieval/model calls blocked rather than granting demo quota.
+	researchBudget := workspacecore.NewResearchQuotaLedger(projectService, nil)
+	research := workspace.NewResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch,
+		workspace.WithResearchBudgetLedger(researchBudget), workspace.WithAcademicSourceCatalogReader(projectService))
 	// The model-call ledger is what tells a real sample from a demo one, so the
 	// composition root installs it: without it the calls leave no trace and
 	// 「this run was a real model」 is unanswerable (55-Spec 决策 1 / 决策 4).

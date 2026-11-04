@@ -126,8 +126,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		knowledgeID = flags.String("knowledge-id", "", "knowledge id of the material")
 		projectID   = flags.String("project-id", "", "project the material is bound to")
 		originFile  = flags.String("origin-file", "", "the ORIGINAL uploaded file of the material; "+
-			"its bytes are what the ingest chain split, so any copy with rewritten line endings "+
-			"or a rewritten image reference is refused")
+			"line endings are normalized to the indexed LF representation; "+
+			"rewritten image references cannot be verified")
 		stage = flags.String("stage", "full", "which half of the gate to judge: "+
 			"\"content\" (the chunk content against the origin slice; runs before the project exists) "+
 			"or \"full\" (both halves; needs --project-id and refuses to run without it)")
@@ -157,17 +157,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "material check cannot run: cannot read the origin file: %v\n", err)
 		return 2
 	}
-	// The origin text must be the bytes the ingest chain actually split.
-	// The product side judges that with evidence.VerbatimOrigin (the same
-	// judge the source re-check uses); a file that fails it is not the
-	// original — rewritten line endings, a rewritten image reference or a
-	// truncated copy would make every coordinate compare against the wrong
-	// bytes, and the verdict would be a false pass.
-	origin, verbatim := evidence.VerbatimOrigin(originBytes)
+	// Use the uploaded file and the same LF-canonical coordinate space used
+	// by ingestion and the product's uploaded-text source re-check. Other
+	// transformations remain unsafe and are rejected before comparison.
+	origin, verbatim := evidence.UploadedOriginForIndex(originBytes)
 	if !verbatim {
 		_, _ = fmt.Fprintf(stderr,
 			"material check cannot run: the origin file %s is not the text the ingest chain split "+
-				"(it contains rewritten line endings, a rewritten image reference, a NUL byte or invalid UTF-8); "+
+				"(it contains a rewritten image reference, a NUL byte or invalid UTF-8); "+
 				"pass the ORIGINAL uploaded file\n", *originFile)
 		return 2
 	}

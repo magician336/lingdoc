@@ -35,6 +35,10 @@ func (m *Manager) stopTask(ctx context.Context, s Scope, session string, d *devi
 
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
+	// The daemon can acknowledge cancellation before the extension's terminal
+	// response has drained. Its pre-execution busy rejection is safe to retry;
+	// other failures must retain the paused task for an explicit retry.
+	drainUntil := time.Now().Add(2 * time.Second)
 	for {
 		d.mu.Lock()
 		if d.tasks[session] != t {
@@ -58,6 +62,14 @@ func (m *Manager) stopTask(ctx context.Context, s Scope, session string, d *devi
 				return errors.New("browser is disconnected; retry ending after reconnection")
 			}
 			result, err := rpc(ctx, d, "session.stop", map[string]any{"session_id": id, "all": false})
+			if sessionCommandDraining(err) && time.Now().Before(drainUntil) {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-tick.C:
+					continue
+				}
+			}
 			if err != nil && !sessionGone(err) && !sessionAlreadyStopped(err) {
 				return err
 			}
@@ -81,6 +93,12 @@ func (m *Manager) stopTask(ctx context.Context, s Scope, session string, d *devi
 		delete(d.tasks, session)
 		return nil
 	}
+}
+
+func sessionCommandDraining(err error) bool {
+	var rpcErr *RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == "timeout" &&
+		rpcErr.Message == "session already has an unfinished command"
 }
 
 func sessionAlreadyStopped(err error) bool {

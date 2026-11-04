@@ -1,0 +1,9 @@
+{
+  "code_sha": "6cce766b3b9c8ce9a3fbf8c4bf0c6fb26dd51056",
+  "result": "PASS",
+  "tool": "golangci-lint 2.12.2",
+  "base": "db45c9ff2f73e4b994d1ae7218ba872c779ad7c6",
+  "command": "golangci-lint run --timeout=10m --concurrency=2 --new-from-patch=/artifacts/issue682-lint.patch",
+  "patch_sha256": "ff917bc3f47fc696e6aa8cbb2a21e8494b781231fbb96779eac86265e377e171",
+  "result_detail": "0 new issues; pre-existing malformed nolint directive warning retained"
+}

@@ -36,8 +36,24 @@ func modelEvidencePayload(refs []generation.EvidenceCardRef, constraints []gener
 				return nil, generation.ErrSourceAccessDenied
 			}
 		}
+		anchorIDs := map[string]bool{}
+		for _, anchor := range card.Anchors {
+			if anchor.ID == "" || anchor.Version < 1 || anchorIDs[anchor.ID] || !sources[anchor.SourceID] || !containsEvidenceSource(card.SourceIDs, anchor.SourceID) || anchor.Locator == "" || anchor.QuotedTextHash == "" || anchor.SelectionStart < 0 || anchor.SelectionEnd <= anchor.SelectionStart {
+				return nil, generation.ErrSourceAccessDenied
+			}
+			anchorIDs[anchor.ID] = true
+		}
 		seen[card.CardRef.ID] = true
-		out = append(out, generation.EvidenceConstraint{CardRef: card.CardRef, SupportType: card.SupportType, Scope: card.Scope, Limitations: card.Limitations, SourceIDs: append([]string(nil), card.SourceIDs...)})
+		out = append(out, generation.EvidenceConstraint{CardRef: card.CardRef, SupportType: card.SupportType, Scope: card.Scope, Limitations: card.Limitations, SourceIDs: append([]string(nil), card.SourceIDs...), Anchors: append([]generation.EvidenceAnchor(nil), card.Anchors...)})
 	}
 	return out, nil
+}
+
+func containsEvidenceSource(ids []string, id string) bool {
+	for _, value := range ids {
+		if value == id {
+			return true
+		}
+	}
+	return false
 }

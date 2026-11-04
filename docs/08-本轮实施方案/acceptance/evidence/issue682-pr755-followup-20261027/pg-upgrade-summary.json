@@ -1,0 +1,12 @@
+{
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "exit_code": 0,
+  "packages": {
+    "pass": 1
+  },
+  "tests_including_subtests": {
+    "pass": 1
+  },
+  "failures": [],
+  "skipped": []
+}

@@ -1,0 +1,43 @@
+{
+  "result": "PASS",
+  "restart_readback_equal": true,
+  "readback": {
+    "code_sha": "3b3459bc7fc958056d910b59746a9f10eb57d9c1",
+    "project_id": "804054b4-c226-4af3-ba7d-325771c66f5f",
+    "task": {
+      "id": "f7eaf7fa-98e4-40cd-b8a6-9915698696fb",
+      "version": 5,
+      "status": "failed",
+      "queries": [
+        "科研申报 文献筛选 方法边界",
+        "科研申报 文献筛选 不适用情形"
+      ],
+      "date_from": "2019-01-01",
+      "date_to": "2026-10-27",
+      "exclusions": [
+        "综述",
+        "已撤稿"
+      ],
+      "provider_id": "academic:crossref"
+    },
+    "run": {
+      "id": "1f3eaac5-f815-4b78-b65d-7981e388b4a2",
+      "version": 2,
+      "status": "failed",
+      "failure_code": "academic_global_catalog_unavailable",
+      "correlation_id": "39607223-28b8-40bf-9f17-6038a54578b2",
+      "source_catalog_version": "f7e08b72573631c580d28bda6e0393e80767cec15e159b96aebb8e79c6971024",
+      "usage": {
+        "policy_version": "research-run-bounds-v1",
+        "search_limit": 8,
+        "searches_used": 0,
+        "result_limit": 160,
+        "results_used": 0,
+        "model_call_limit": 0,
+        "model_calls_used": 0
+      },
+      "results_count": 0,
+      "rounds_count": 0
+    }
+  }
+}

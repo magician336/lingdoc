@@ -305,6 +305,9 @@ services:
       - SYSTEM_AES_KEY=${SYSTEM_AES_KEY:-}
       - SYSTEM_SIGNING_KEY=${SYSTEM_SIGNING_KEY:-}
       - SSRF_WHITELIST=${SSRF_WHITELIST:-}
+      # Optional explicit DNS-over-HTTPS fallback for Qwen fake-IP environments.
+      - LINGDOC_QWEN_DOH_URL=${LINGDOC_QWEN_DOH_URL:-}
+      - LINGDOC_QWEN_DOH_BOOTSTRAP_IP=${LINGDOC_QWEN_DOH_BOOTSTRAP_IP:-}
       # 保留原始 URL 的图片域名白名单（逗号分隔，不替换为 provider://）
       - IMAGE_HOST_KEEP_URL=${IMAGE_HOST_KEEP_URL:-}
       # Always allow the optional searxng sidecar, bundled vector stores, and

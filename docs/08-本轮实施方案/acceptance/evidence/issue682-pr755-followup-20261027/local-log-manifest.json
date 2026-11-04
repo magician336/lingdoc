@@ -1,0 +1,271 @@
+{
+  "code_sha": "6bfce6e405033a9a49de49cfc9b488e3213479f9",
+  "note": "Raw logs remain local; hashes do not imply PASS. Credentials/env/keys/tokens are not committed.",
+  "files": [
+    {
+      "local_file": "pr755-card-context-regression.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-card-context-regression.jsonl",
+      "bytes": 19736,
+      "sha256": "d807cb54932a5fac2320bab010c0a3608eea40114c59f2d45c8893a8327e6e2a"
+    },
+    {
+      "local_file": "pr755-ci-before.log",
+      "bytes": 1933,
+      "sha256": "66fd0226daadfa49c2e1a8cbb94736eab5c1d83363fab4e1ea27ee6f97455622"
+    },
+    {
+      "local_file": "pr755-ci-linux-followup-setup.log",
+      "bytes": 275,
+      "sha256": "9bdd1fa889acb62799dffb73a3ac3f851e076ab4ade836e9713ac70cac6204b0"
+    },
+    {
+      "local_file": "pr755-ci-linux-followup.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-ci-linux-followup.log",
+      "bytes": 84916,
+      "sha256": "6855fc01d80ca10e5384d2674e3d2b65a73b194bad4a62340655e02e4c8ab31a"
+    },
+    {
+      "local_file": "pr755-ci-linux-setup.log",
+      "bytes": 656,
+      "sha256": "ffcc888a37d11d3c0e2868709ff9d874dc8d7da2483db4f188adb733bd71923b"
+    },
+    {
+      "local_file": "pr755-ci-linux.exit",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "local_file": "pr755-ci-linux.log",
+      "bytes": 85906,
+      "sha256": "660463fa1eadbba9e007fb9935e6ba5c7103ac38c1b45bd08921517742b6c4db"
+    },
+    {
+      "local_file": "pr755-ci-scope-after.exit",
+      "bytes": 3,
+      "sha256": "f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04"
+    },
+    {
+      "local_file": "pr755-ci-scope-after.log",
+      "bytes": 278822,
+      "sha256": "ec4d889455966bcc338c2942461d2bc5486e1d3f134c500acff108beac502bcd"
+    },
+    {
+      "local_file": "pr755-ci-target-after.log",
+      "bytes": 103,
+      "sha256": "223e06d17dfb6c32bd67ca7c62b915cb03e0a1189bad193f723662e346b75b55"
+    },
+    {
+      "local_file": "pr755-final-baseline-followup.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-baseline-followup.log",
+      "bytes": 8595,
+      "sha256": "b01646bd89419afee8db2dcee287c51b0fda77e9dfb94aa3c56400508133c98d"
+    },
+    {
+      "local_file": "pr755-final-browser-backend.log",
+      "bytes": 272483,
+      "sha256": "a748da70a334c08b9b1703de91b17833caa3024ca3090ce60e39e57a3a026ebc"
+    },
+    {
+      "local_file": "pr755-final-browser-readback.exit",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "local_file": "pr755-final-browser-readback.log",
+      "bytes": 1392,
+      "sha256": "cab0cc7f842f2bdb4bdff3364a366971de0c0d0edbccb5196b6e4a0e796213b8"
+    },
+    {
+      "local_file": "pr755-final-browser.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-browser.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "local_file": "pr755-final-contract-corrected.exit",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "local_file": "pr755-final-contract-corrected.log",
+      "bytes": 49503,
+      "sha256": "820868f3e26df9937fb52445230c3cead920c50d883b01701e6afb1f4140d487"
+    },
+    {
+      "local_file": "pr755-final-contract.exit",
+      "bytes": 3,
+      "sha256": "df4e26a04a444901b95afef44e4a96cfae34690fff2ad2c66389c70079cdff2b"
+    },
+    {
+      "local_file": "pr755-final-contract.log",
+      "bytes": 232,
+      "sha256": "c78adde7be530ef66281f39a00b9c137d361992fbd8731dfe3bafea9bc2e8519"
+    },
+    {
+      "local_file": "pr755-final-fresh-run.exit",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "local_file": "pr755-final-fresh-run.log",
+      "bytes": 650,
+      "sha256": "8848e43ec9523da3c9aef8d312b84312d1421a1c3d8439f55e4a961e4cd12b4d"
+    },
+    {
+      "local_file": "pr755-final-frontend-build.exit",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "local_file": "pr755-final-frontend-build.log",
+      "bytes": 20359,
+      "sha256": "74f0e671b0489f5c51035813839d9e01c13bcbaaee7e0f0e0730ab23d783065d"
+    },
+    {
+      "local_file": "pr755-final-frontend.exit",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "local_file": "pr755-final-frontend.log",
+      "bytes": 2067,
+      "sha256": "6bb8abb483d3de371d41e5231d44dbf329a889b7685845e8596173a6c3097393"
+    },
+    {
+      "local_file": "pr755-final-go.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-go.jsonl",
+      "bytes": 18365332,
+      "sha256": "187d58972887d49d1816024f9835cfecf2bdc49fdc23b0cac23ff4ab1c19b094"
+    },
+    {
+      "local_file": "pr755-final-lint.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-lint.log",
+      "bytes": 137,
+      "sha256": "6fcc2cd28c75ea16b2d0bbbad273ea4ed9cc269ec96b1433e50490164a85d7f1"
+    },
+    {
+      "local_file": "pr755-final-pg-upgrade.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-pg-upgrade.jsonl",
+      "bytes": 1632,
+      "sha256": "0e813560d6e951891f25d2f84b6040878ada845acbba35ad792b458c409b3ace"
+    },
+    {
+      "local_file": "pr755-final-quota-race.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-quota-race.jsonl",
+      "bytes": 99156,
+      "sha256": "8d946d265748d633405173b3fcb5036f5fea334934554bf32dc284b3e0d9cdc8"
+    },
+    {
+      "local_file": "pr755-final-quota-seams.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-quota-seams.jsonl",
+      "bytes": 4082,
+      "sha256": "cde37205abda6a370ee359df73d9a7ddc004e328070326119e9043bd5d5d4f69"
+    },
+    {
+      "local_file": "pr755-final-scope.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-scope.log",
+      "bytes": 84916,
+      "sha256": "dbf4a5893e91d19acbd4ff9b95f4758c523e421ed20be53b50880774fb41c239"
+    },
+    {
+      "local_file": "pr755-final-server-build.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-final-server-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "local_file": "pr755-interrupted-go.jsonl",
+      "bytes": 11333547,
+      "sha256": "777aefd65cd8b7257be637d3f2bb2961a1e7c0643bac3fb8f7f3f5bd985e8e86"
+    },
+    {
+      "local_file": "pr755-interrupted-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "local_file": "pr755-quota-focused.exit",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "local_file": "pr755-quota-focused.jsonl",
+      "bytes": 9327,
+      "sha256": "1999cf57b77c9f91208d11050a6e6b515a47bf974581dffc7ab751ae762b4833"
+    },
+    {
+      "local_file": "pr755-quota-integration.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-quota-integration.jsonl",
+      "bytes": 12913,
+      "sha256": "3e878357563ac628ecf5e4e31986efe8412d904bb9fcb8054134fef2f2847738"
+    },
+    {
+      "local_file": "pr755-quota-model-turn.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-quota-model-turn.jsonl",
+      "bytes": 1988,
+      "sha256": "09edf0d7a99135d504a497f1b119b9bc0c6b8ea88c7f08378131280b8b7fb067"
+    },
+    {
+      "local_file": "pr755-quota-race.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "local_file": "pr755-quota-race.jsonl",
+      "bytes": 70147,
+      "sha256": "713b3aeec560eb934f76be99c9f2c291ed0a2e9abb2c61e23fd8c2a39142214c"
+    }
+  ]
+}

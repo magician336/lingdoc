@@ -112,6 +112,64 @@ func TestBindCreatesRevisionOneAndRepeatsIdempotently(t *testing.T) {
 	}
 }
 
+func TestOriginalContentSHA256PersistsAndRefreshAdvancesRevision(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	initial := signal(func(s *KnowledgeSignal) { s.OriginalContentSHA256 = "sha256-original-a" })
+	asset, err := store.Bind(ctx, bindInput("p-sha", "k-sha", func(in *BindInput) { in.Signal = initial }))
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	loaded, err := store.CurrentAsset(ctx, "p-sha", asset.ID)
+	if err != nil || loaded.OriginalContentSHA256 != "sha256-original-a" {
+		t.Fatalf("current asset SHA = %q, err=%v", loaded.OriginalContentSHA256, err)
+	}
+	revisions, err := store.Revisions(ctx, asset.ID)
+	if err != nil || len(revisions) != 1 || !strings.Contains(revisions[0].Metadata, "sha256-original-a") {
+		t.Fatalf("revision metadata did not persist original SHA: revisions=%+v err=%v", revisions, err)
+	}
+
+	current := &mutableKnowledgeSignal{signal: initial, present: true}
+	store.SetKnowledgeSignalReader(current)
+	current.signal.OriginalContentSHA256 = "sha256-original-b"
+	if err = store.RefreshAsset(ctx, "p-sha", asset.ID); err != nil {
+		t.Fatalf("RefreshAsset after same-size rewrite: %v", err)
+	}
+	loaded, err = store.CurrentAsset(ctx, "p-sha", asset.ID)
+	if err != nil || loaded.AssetRevision != 2 || loaded.OriginalContentSHA256 != "sha256-original-b" {
+		t.Fatalf("refreshed asset = %+v err=%v, want revision 2 and new SHA", loaded, err)
+	}
+
+	var databases []struct {
+		Name string
+		File string
+	}
+	if err = store.db.Raw("PRAGMA database_list").Scan(&databases).Error; err != nil || len(databases) == 0 || databases[0].File == "" {
+		t.Fatalf("read SQLite database path: databases=%+v err=%v", databases, err)
+	}
+	path := databases[0].File
+	sqlDB, err := store.db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopenedDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatalf("reopen SQLite store: %v", err)
+	}
+	reopenedSQLDB, err := reopenedDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopenedSQLDB.Close() })
+	restarted, err := NewBindings(reopenedDB).CurrentAsset(ctx, "p-sha", asset.ID)
+	if err != nil || restarted.AssetRevision != 2 || restarted.OriginalContentSHA256 != "sha256-original-b" {
+		t.Fatalf("reopened asset = %+v err=%v; digest and revision must survive DB restart", restarted, err)
+	}
+}
+
 func TestBoundAssetsIsScopedToProject(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

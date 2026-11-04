@@ -171,6 +171,10 @@ func (b *Bindings) RefreshAsset(ctx context.Context, projectID, assetID string) 
 	}
 	if !present {
 		signal = KnowledgeSignal{KnowledgeID: asset.KnowledgeID, ParseStatus: types.ParseStatusDeleting}
+	} else if signal.OriginalContentSHA256 == "" {
+		// A temporarily unreadable origin is not evidence of a new content
+		// revision. Each research read still checks the current bytes separately.
+		signal.OriginalContentSHA256 = asset.OriginalContentSHA256
 	}
 	_, err = b.ObserveAsset(ctx, projectID, assetID, signal)
 	return err
@@ -220,6 +224,7 @@ func (b *Bindings) Bind(ctx context.Context, in BindInput) (Asset, error) {
 	if in.ProjectID == "" || in.KnowledgeID == "" {
 		return Asset{}, ErrInvalidBinding
 	}
+	in = b.withCurrentSignal(ctx, in)
 
 	existing, err := b.findBinding(ctx, in.ProjectID, in.KnowledgeID)
 	switch {
@@ -301,6 +306,7 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 	if len(key) < 8 || len(key) > 128 || userID == "" {
 		return Asset{}, false, ErrInvalidBinding
 	}
+	in = b.withCurrentSignal(ctx, in)
 	body, err := json.Marshal(struct {
 		KnowledgeID string `json:"knowledge_id"`
 	}{KnowledgeID: strings.TrimSpace(in.KnowledgeID)})
@@ -353,6 +359,19 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 		return Asset{}, false, err
 	}
 	return result, replay, err
+}
+
+// withCurrentSignal refreshes the binding baseline from the authoritative
+// storage-backed reader. An unavailable digest remains empty and therefore
+// cannot be used to claim a verified original later.
+func (b *Bindings) withCurrentSignal(ctx context.Context, in BindInput) BindInput {
+	if b.signals == nil {
+		return in
+	}
+	if current, present, err := b.signals.CurrentKnowledgeSignal(ctx, in.KnowledgeID); err == nil && present {
+		in.Signal = current
+	}
+	return in
 }
 
 // findOperationRow reads the operation record that owns one idempotency
@@ -610,14 +629,21 @@ func assetWithCurrentRevisionTx(tx *gorm.DB, row ProjectAsset) (Asset, error) {
 	if revision.KnowledgeID != "" {
 		asset.KnowledgeID = revision.KnowledgeID
 	}
+	var metadata struct {
+		OriginalContentSHA256 string `json:"original_content_sha256"`
+	}
+	if revision.Metadata != "" && json.Unmarshal([]byte(revision.Metadata), &metadata) == nil {
+		asset.OriginalContentSHA256 = metadata.OriginalContentSHA256
+	}
 	return asset, nil
 }
 
 // metadataFor 记下这次指纹的依据，人工核对时不必反推。
 func metadataFor(fp Fingerprint) string {
 	raw, err := json.Marshal(struct {
-		Basis string `json:"basis"`
-	}{Basis: fp.Basis})
+		Basis                 string `json:"basis"`
+		OriginalContentSHA256 string `json:"original_content_sha256,omitempty"`
+	}{Basis: fp.Basis, OriginalContentSHA256: fp.OriginalContentSHA256})
 	if err != nil {
 		// 依据只是审计信息，序列化失败不该挡住绑定本身。
 		return ""

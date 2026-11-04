@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +68,40 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	// Select("*") ensures zero-value fields (IsEnabled=false, Flags=0) are
 	// explicitly inserted, bypassing GORM's default value behavior.
 	// SeqID=0 is skipped by GORM automatically (autoIncrement tag).
-	return db.Select("*").CreateInBatches(chunks, 100).Error
+	var origins []types.ChunkOriginSHA256
+	var pdfPages []types.ChunkPDFPage
+	for _, chunk := range chunks {
+		if chunk.PDFPage != 0 {
+			if chunk.PDFPage < 1 || chunk.OriginInputSHA256 == "" || chunk.ChunkType != types.ChunkTypeText || chunk.Content == "" {
+				return errors.New("invalid PDF page identity")
+			}
+			sum := sha256.Sum256([]byte(chunk.Content))
+			pdfPages = append(pdfPages, types.ChunkPDFPage{ChunkID: chunk.ID, TenantID: chunk.TenantID, KnowledgeID: chunk.KnowledgeID, Page: chunk.PDFPage, TextSHA256: hex.EncodeToString(sum[:])})
+		}
+		if chunk.OriginInputSHA256 == "" {
+			continue
+		}
+		digest, err := hex.DecodeString(chunk.OriginInputSHA256)
+		if err != nil || len(digest) != 32 || chunk.ID == "" || chunk.KnowledgeID == "" || chunk.TenantID == 0 {
+			return errors.New("invalid chunk origin identity")
+		}
+		origins = append(origins, types.ChunkOriginSHA256{ChunkID: chunk.ID, TenantID: chunk.TenantID, KnowledgeID: chunk.KnowledgeID, SHA256: strings.ToLower(chunk.OriginInputSHA256)})
+	}
+	if len(origins) == 0 {
+		return db.Select("*").CreateInBatches(chunks, 100).Error
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("*").CreateInBatches(chunks, 100).Error; err != nil {
+			return err
+		}
+		if err := tx.CreateInBatches(origins, 100).Error; err != nil {
+			return err
+		}
+		if len(pdfPages) != 0 {
+			return tx.CreateInBatches(pdfPages, 100).Error
+		}
+		return nil
+	})
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID

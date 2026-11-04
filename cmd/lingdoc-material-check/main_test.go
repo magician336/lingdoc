@@ -142,6 +142,28 @@ func TestTheFullStagePassesWhenBothHalvesAreQualified(t *testing.T) {
 	}
 }
 
+func TestUploadedCRLFMaterialCheckUsesIndexedRuneOffsets(t *testing.T) {
+	// Chunk offsets address the normalized ingestion text, not raw CRLF bytes.
+	chunks := []chunkPayload{{ID: "c1", StartAt: 0, EndAt: 3, Content: "甲\n乙"}, {ID: "c2", StartAt: 2, EndAt: 5, Content: "乙\n丙"}}
+	sources := map[string]sourcePayload{}
+	for _, chunk := range chunks {
+		sources[chunk.ID] = sourcePayload{ID: chunk.ID, QuotedText: chunk.Content, Status: "available"}
+	}
+	server := httptest.NewServer((&fakeServer{chunks: chunks, sources: sources}).handler(t))
+	defer server.Close()
+	code, stdout, stderr := runGate(t, []string{"--base-url", server.URL, "--knowledge-id", "k-1", "--project-id", "p-1", "--origin-file", writeOrigin(t, "甲\r\n乙\r丙"), "--token-file", writeToken(t), "--stage", "full"})
+	if code != 0 {
+		t.Fatalf("valid normalized upload must pass: code=%d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	// Canonicalizing newlines must not hide a changed chunk or its overlap.
+	chunks[1].Content = "乙\n丁"
+	sources["c2"] = sourcePayload{ID: "c2", QuotedText: chunks[1].Content, Status: "available"}
+	code, stdout, stderr = runGate(t, []string{"--base-url", server.URL, "--knowledge-id", "k-1", "--project-id", "p-1", "--origin-file", writeOrigin(t, "甲\r\n乙\r丙"), "--token-file", writeToken(t), "--stage", "full"})
+	if code != 1 || !strings.Contains(stdout, "content_not_verbatim") {
+		t.Fatalf("changed text must fail closed: code=%d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+}
+
 func TestTheFullStageRefusesToRunWithoutTheProject(t *testing.T) {
 	// The quoted-text half reads the sources of a BOUND material. Without
 	// the project the stage cannot run, and a stage that could not run is
@@ -211,8 +233,8 @@ func TestAnUnqualifiedMaterialIsRefusedWithAReason(t *testing.T) {
 }
 
 func TestAnOriginFileThatIsNotTheOriginalIsRefusedBeforeAnythingIsJudged(t *testing.T) {
-	// The product side refuses an origin text with rewritten line endings,
-	// a rewritten image reference, a NUL byte or invalid UTF-8. The gate
+	// The product side refuses a rewritten image reference, a NUL byte or
+	// invalid UTF-8. The gate
 	// uses the SAME judge, so a copy that is not the original cannot be
 	// judged against the chunks: it would be compared against the wrong
 	// bytes and could report a false pass.
@@ -221,9 +243,8 @@ func TestAnOriginFileThatIsNotTheOriginalIsRefusedBeforeAnythingIsJudged(t *test
 	defer server.Close()
 
 	for name, content := range map[string]string{
-		"rewritten line endings": "01234567\r\n89ab",
-		"a rewritten image":      "01234567 ![x](resource://y) 89ab",
-		"a NUL byte":             "01234567\x0089ab",
+		"a rewritten image": "01234567 ![x](resource://y) 89ab",
+		"a NUL byte":        "01234567\x0089ab",
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, _, stderr := runGate(t, []string{

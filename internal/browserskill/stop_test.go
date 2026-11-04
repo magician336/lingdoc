@@ -2,12 +2,26 @@ package browserskill
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestSessionCommandDrainingRejectsUnknownOutcomes(t *testing.T) {
+	const message = "session already has an unfinished command"
+	require.True(t, sessionCommandDraining(&RPCError{Code: "timeout", Message: message}))
+	for _, err := range []error{
+		nil,
+		errors.New(message),
+		&RPCError{Code: "timeout", Message: "response timed out after execution"},
+		&RPCError{Code: "internal", Message: message},
+	} {
+		require.False(t, sessionCommandDraining(err), "unknown or executed outcomes must not be retried")
+	}
+}
 
 func TestStopCancelsSessionCreation(t *testing.T) {
 	m, ctx := sharedTestManager(t)

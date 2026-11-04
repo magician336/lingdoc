@@ -146,6 +146,9 @@ func noteAuthorizationDenial(ctx context.Context, request AuthorizationRequest, 
 	if err == nil {
 		return
 	}
+	if bufferAgentAttempt(ctx, request, err, false) {
+		return
+	}
 	holder, ok := RuntimeObservationHolderFromContext(ctx)
 	if !ok {
 		return

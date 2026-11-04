@@ -281,9 +281,11 @@ test('面板显示服务端组装的那一份：卡片、理由、来源许可�
   const html = await renderPanel(panelProps({ client }))
 
   assert.match(html, /card-1/, '服务端带的卡片要显示出来')
+  assert.match(html, /v3/, '卡片版本要和服务端返回的引用版本一致')
   assert.match(html, /已人工确认/, '卡片状态要显示出来')
   assert.match(html, /用户勾选了证据卡 card-1/, '选择理由按服务端原文显示')
   assert.match(html, /模型使用已许可/, '逐来源的模型使用许可要显示出来')
+  assert.match(html, /合成原文 source-a/, '来源定位要在上下文预览中显示')
   assert.match(html, /requires_confirmation/, '授权结论按服务端原值显示')
   assert.match(html, /不得编造出处/, '输出约束要显示出来')
   assert.match(html, /项目版本 v7/, '版本基线要显示出来')

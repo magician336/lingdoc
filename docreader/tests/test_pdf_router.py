@@ -1,4 +1,6 @@
 import io
+import hashlib
+import json
 import unittest
 
 from PIL import Image
@@ -34,6 +36,32 @@ def _make_image_only_pdf(num_pages: int = 2) -> bytes:
     pages = (pages * ((num_pages // 2) + 1))[:num_pages]
     pages[0].save(buf, format="PDF", save_all=True, append_images=pages[1:])
     return buf.getvalue()
+
+
+def _make_native_pdf() -> bytes:
+    """Minimal PDF with text on pages one and three and a blank page two."""
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Count 3 /Kids [3 0 R 4 0 R 5 0 R] >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 7 0 R >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 8 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for text in (b"First page with searchable native text.", b"Third page with different native text."):
+        stream = b"BT /F1 12 Tf 72 720 Td (" + text + b") Tj ET"
+        objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, obj in enumerate(objects, 1):
+        offsets.append(len(pdf))
+        pdf.extend(b"%d 0 obj\n" % number + obj + b"\nendobj\n")
+    xref = len(pdf)
+    pdf.extend(b"xref\n0 %d\n0000000000 65535 f \n" % len(offsets))
+    for offset in offsets[1:]:
+        pdf.extend(b"%010d 00000 n \n" % offset)
+    pdf.extend(b"trailer << /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(offsets), xref))
+    return bytes(pdf)
 
 
 class ClassifyPageTest(unittest.TestCase):
@@ -403,6 +431,15 @@ class ScanEnglishDictLayoutTest(unittest.TestCase):
 
 
 class PDFRouterIntegrationTest(unittest.TestCase):
+    def test_native_pdf_proves_physical_pages_and_exact_extracted_text(self):
+        doc = PDFParser(file_name="native.pdf", file_type="pdf").parse_into_text(_make_native_pdf())
+        spans = json.loads(doc.metadata["lingdoc_pdf_pages_v1"])
+        self.assertEqual([span["page"] for span in spans], [1, 3])
+        self.assertEqual(doc.metadata["page_count"], 3)
+        self.assertEqual(doc.metadata["lingdoc_pdf_text_sha256"], hashlib.sha256(doc.content.encode("utf-8")).hexdigest())
+        self.assertIn("First page", doc.content[spans[0]["start"]:spans[0]["end"]])
+        self.assertIn("Third page", doc.content[spans[1]["start"]:spans[1]["end"]])
+
     def test_image_only_pdf_routes_to_scanned(self):
         pdf_bytes = _make_image_only_pdf(2)
         doc = PDFParser(file_name="imgonly.pdf", file_type="pdf").parse_into_text(
@@ -412,6 +449,7 @@ class PDFRouterIntegrationTest(unittest.TestCase):
         self.assertEqual(doc.metadata["image_source_type"], "scanned_pdf")
         self.assertEqual(doc.metadata["page_count"], 2)
         self.assertEqual(doc.metadata["scanned_page_count"], 2)
+        self.assertNotIn("lingdoc_pdf_pages_v1", doc.metadata)
         self.assertEqual(len(doc.images), 2)
         self.assertIn("images/imgonly_page_1.jpg", doc.images)
         self.assertIn("![imgonly_page_1.jpg](images/imgonly_page_1.jpg)", doc.content)

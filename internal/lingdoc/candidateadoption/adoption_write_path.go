@@ -26,6 +26,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
@@ -387,6 +388,14 @@ func (s *SQLiteCandidateAdoptionStore) acceptIntoWorkingCopy(
 	next.UpdatedAt = time.Now().UTC()
 	if err := writeWorkingCopy(tx, *workingCopy, next); err != nil {
 		return err
+	}
+	if err := core.InvalidateDraftClaimProvenance(tx, in.ProjectID, in.ChapterID, newBody); err != nil {
+		return err
+	}
+	if len(candidate.Claims) > 0 {
+		if err := core.RecordDraftClaimProvenance(tx, in.ProjectID, in.ChapterID, "generation", candidate.ID, candidate.RunID, nextRevision, offset, newBody, candidate.BodyMarkdown, newBody); err != nil {
+			return err
+		}
 	}
 	// 正式版本一个字不动：章节指针、章节版本行数、项目版本都保持原样。
 	result.Chapter = current

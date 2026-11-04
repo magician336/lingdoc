@@ -22,30 +22,33 @@ import (
 // under which condition. Changing a declaration now fails this test until the
 // change is acknowledged here.
 var declaredGates = map[string]string{
-	"saveResearchTask":       "NotRequired",
-	"approveResearchTask":    "Required",
-	"controlResearchTask":    "NotRequired",
-	"runResearchTask":        "NotRequired",
-	"createImportCandidate":  "NotRequired",
-	"confirmImportCandidate": "Required",
-	"rejectImportCandidate":  "Required",
-	"saveSourceAnchor":       "Required",
-	"saveResearchClaim":      "Required",
-	"saveEvidenceCard":       "Required",
-	"confirmEvidenceCard":    "Required",
-	"reviewEvidenceCard":     "Required",
-	"invalidateEvidence":     "NotRequired",
-	"createAgentSession":     "NotRequired",
-	"sendAgentTurn":          "conditional",
-	"createActionProposal":   "NotRequired",
-	"confirmActionProposal":  "Required",
-	"rejectActionProposal":   "Required",
+	"saveResearchTask":                 "NotRequired",
+	"approveResearchTask":              "Required",
+	"controlResearchTask":              "NotRequired",
+	"runResearchTask":                  "NotRequired",
+	"saveResearchRoundFeedback":        "NotRequired",
+	"createImportCandidate":            "NotRequired",
+	"confirmImportCandidate":           "Required",
+	"confirmAcademicSourceAssociation": "Required",
+	"revokeAcademicSourceAssociation":  "Required",
+	"rejectImportCandidate":            "Required",
+	"saveSourceAnchor":                 "Required",
+	"saveResearchClaim":                "Required",
+	"saveEvidenceCard":                 "Required",
+	"confirmEvidenceCard":              "Required",
+	"reviewEvidenceCard":               "Required",
+	"invalidateEvidence":               "NotRequired",
+	"createAgentSession":               "NotRequired",
+	"sendAgentTurn":                    "conditional",
+	"createActionProposal":             "NotRequired",
+	"confirmActionProposal":            "Required",
+	"rejectActionProposal":             "Required",
 }
 
 // researchGateCallSites is the number of runAgentOperation call sites in the
 // research domain. A new operation changes it, and it has to come with a
 // decision about its gate.
-const researchGateCallSites = 19
+const researchGateCallSites = 22
 
 // The research domain must declare the gate at every call site, and the
 // declaration must be the one the baseline enforced.
@@ -59,7 +62,7 @@ func TestTheResearchDomainDeclaresTheGateItUsedToEnforce(t *testing.T) {
 	found := map[string]string{}
 	sites := 0
 
-	for _, name := range []string{"agent_action_service.go", "action_proposal_replay.go"} {
+	for _, name := range []string{"agent_action_service.go", "action_proposal_replay.go", "academic_source_association_draft.go", "academic_source_association_history_draft.go"} {
 		path := filepath.Join(directory, name)
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if err != nil {

@@ -62,7 +62,7 @@ func TestGenerationHostKeepsBoundTemplateEvidenceAndAuthenticatedContext(t *test
 			input.TemplateDefinition = &core.Template{ID: "project-copy", Version: "7", Sections: []core.Section{{ID: "project-only-section", Title: "项目副本专属章节"}}}
 			input.Workspace.Chapter.SectionID = "project-only-section"
 			ref := generation.EvidenceCardRef{ID: "selected-card", Version: 2}
-			cards := []generation.EvidenceConstraint{{CardRef: ref, SupportType: "refutes", Scope: "合成范围", Limitations: "不能外推", SourceIDs: []string{"source-1"}}}
+			cards := []generation.EvidenceConstraint{{CardRef: ref, SupportType: "refutes", Scope: "合成范围", Limitations: "不能外推", SourceIDs: []string{"source-1"}, Anchors: []generation.EvidenceAnchor{{ID: "anchor", Version: 1, SourceID: "source-1", Locator: "page 1", SelectionEnd: 1, QuotedTextHash: "hash"}}}}
 			input.EvidenceCardRefs, input.EvidenceConstraints = []generation.EvidenceCardRef{ref}, cards
 			caller := types.Caller{TenantID: input.Actor.TenantID, UserID: input.Actor.UserID, Role: types.TenantRoleContributor}
 			principal := types.Principal{Type: types.PrincipalAPITenant, ID: "key-44"}
@@ -89,7 +89,7 @@ func TestGenerationHostKeepsBoundTemplateEvidenceAndAuthenticatedContext(t *test
 			if calls != 3 {
 				t.Fatalf("context checks=%d want=3", calls)
 			}
-			if len(model.messages) != 2 || !strings.HasSuffix(model.messages[0].Content, evidenceModelInstructions) {
+			if len(model.messages) != 2 || !strings.Contains(model.messages[0].Content, evidenceModelInstructions) {
 				t.Fatal("generation omitted the evidence-card instructions")
 			}
 			var payload struct {

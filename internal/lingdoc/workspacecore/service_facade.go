@@ -32,6 +32,9 @@ type Repository interface {
 }
 type TransactionOptions struct {
 	ReadOnly, RetryLocks bool
+	// VerifyRollback marks only callback errors whose SQLite transaction was
+	// successfully rolled back. Commit and rollback failures remain unmarked.
+	VerifyRollback bool
 	// RepeatableRead keeps a writable consistent snapshot so authorization audits
 	// can commit atomically with the decision; it is not a read-only transaction.
 	RepeatableRead bool
@@ -379,7 +382,9 @@ func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, request A
 		noteAuthorizationDenial(ctx, request, err)
 	}
 	if s.mode == AuthorizationModeLog {
-		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
+		if !bufferAgentAttempt(ctx, request, err, true) {
+			_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
+		}
 	}
 	return err
 }
@@ -395,7 +400,9 @@ func (s *Service) authorizeProject(ctx context.Context, tx Transaction, request 
 		noteAuthorizationDenial(ctx, request, err)
 	}
 	if s.mode == AuthorizationModeLog {
-		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
+		if !bufferAgentAttempt(ctx, request, err, true) {
+			_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
+		}
 	}
 	return project, err
 }

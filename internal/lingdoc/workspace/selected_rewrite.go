@@ -97,19 +97,21 @@ func (r SelectedRewriteRequest) isLegacyPath() bool {
 }
 
 type RewriteSourceSnapshot struct {
-	SourceID       string    `json:"source_id"`
-	AssetID        string    `json:"asset_id"`
-	AssetRevision  int       `json:"asset_revision"`
-	Locator        string    `json:"locator"`
-	QuotedTextHash string    `json:"quoted_text_hash"`
-	AuthorizedAt   time.Time `json:"authorized_at"`
+	SourceID         string                    `json:"source_id"`
+	AssetID          string                    `json:"asset_id"`
+	AssetRevision    int                       `json:"asset_revision"`
+	Locator          string                    `json:"locator"`
+	QuotedTextHash   string                    `json:"quoted_text_hash"`
+	AuthorizedAt     time.Time                 `json:"authorized_at"`
+	AcademicSnapshot *academicSnapshotIdentity `json:"academic_snapshot,omitempty"`
 }
 
 type SelectedRewriteCandidate struct {
-	EvidenceCardRefs []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
-	CandidateID      string                       `json:"candidate_id"`
-	ProjectID        string                       `json:"project_id"`
-	ChapterID        string                       `json:"chapter_id"`
+	EvidenceCardRefs []generation.EvidenceCardRef      `json:"evidence_card_refs,omitempty"`
+	Claims           []candidateadoption.ClaimEvidence `json:"claims,omitempty"`
+	CandidateID      string                            `json:"candidate_id"`
+	ProjectID        string                            `json:"project_id"`
+	ChapterID        string                            `json:"chapter_id"`
 	// Validity 是这个候选还能不能被采纳。
 	//
 	// 它是**候选层的那个枚举**：选段候选与生成候选用同一份词表、同一组取值，
@@ -173,10 +175,11 @@ type SelectedRewritePrompt struct {
 }
 
 type SelectedRewriteOutput struct {
-	ReplacementMarkdown string                         `json:"replacement_markdown"`
-	SourceIDs           []string                       `json:"source_ids"`
-	ReviewItems         []candidateadoption.ReviewItem `json:"review_items"`
-	RunMode             string                         `json:"-"`
+	ReplacementMarkdown string                            `json:"replacement_markdown"`
+	SourceIDs           []string                          `json:"source_ids"`
+	ReviewItems         []candidateadoption.ReviewItem    `json:"review_items"`
+	Claims              []candidateadoption.ClaimEvidence `json:"claims,omitempty"`
+	RunMode             string                            `json:"-"`
 }
 
 type SelectedRewriteModel interface {
@@ -218,6 +221,7 @@ type ApplySelectedRewriteInput struct {
 }
 
 type selectedRewriteRow struct {
+	ClaimEvidenceJSON       string `gorm:"column:claim_evidence_json;not null;type:text;default:'[]'"`
 	EvidenceConstraintsJSON string `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
 	TemplateBasisJSON       string `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
 	EvidenceCardRefsJSON    string `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
@@ -326,6 +330,7 @@ func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewri
 		"validity": row.Validity, "run_mode": row.RunMode, "replacement_markdown": row.ReplacementMarkdown,
 		"source_ids_json": row.SourceIDsJSON, "authorized_sources_json": row.AuthorizedSourcesJSON,
 		"review_items_json": row.ReviewItemsJSON, "error_code": row.ErrorCode, "applied_key": row.AppliedKey,
+		"claim_evidence_json":   row.ClaimEvidenceJSON,
 		"applied_response_json": row.AppliedResponseJSON, "apply_pending_key": row.ApplyPendingKey,
 		"apply_pending_input_json": row.ApplyPendingInputJSON, "updated_at": row.UpdatedAt,
 	}).Error
@@ -431,11 +436,13 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		input.EvidenceCardRefs = removeRewriteExcludedCards(input.EvidenceCardRefs, input.Context)
 	}
 	var evidenceConstraints []generation.EvidenceConstraint
+	var selectedEvidence core.EvidenceSelection
 	if len(input.EvidenceCardRefs) > 0 {
 		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
+		selectedEvidence = selected
 		evidenceConstraints, selectErr = selectedEvidenceConstraints(selected, input.EvidenceCardRefs)
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
@@ -503,7 +510,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	// 先于取来源——用户剔除一条来源，往往正是因为它已经不可用了。
 	input.SourceIDs = s.removeRewriteExcludedSources(ctx, actor, projectID, input.SourceIDs, input.Context)
 	input.SourceIDs = stringSet(input.SourceIDs)
-	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
+	sources, snapshots, err := s.fetchSourcesWithEvidence(ctx, actor, projectID, input.SourceIDs, selectedEvidence)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
@@ -558,7 +565,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			auditDecision, auditReason = "deny", err.Error()
 			return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 		}
-		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
+		if row.Validity == string(candidateadoption.ValidityFresh) && s.recheckRowSources(ctx, actor, projectID, row, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
@@ -602,7 +609,12 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
-	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+	output.Claims, err = resolveRewriteClaims(output.ReplacementMarkdown, output.Claims, input.EvidenceCardRefs, evidenceConstraints, output.SourceIDs)
+	if err != nil {
+		row.Validity, row.ErrorCode, row.ReplacementMarkdown = "", "invalid_claim_evidence", ""
+		return s.updateCandidate(context.WithoutCancel(ctx), row)
+	}
+	if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 		row.Validity, row.ErrorCode, row.ReplacementMarkdown = string(candidateadoption.ValidityNotAuthorized), "source_access_denied", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
 		auditDetails["validity"], auditDetails["run_mode"] = row.Validity, row.RunMode
@@ -669,7 +681,7 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	}
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
 	if len(snapshots) > 0 {
-		if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+		if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
 	}
@@ -705,7 +717,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	details["run_mode"], details["validity"] = row.RunMode, row.Validity
 	details["base_chapter_version_id"] = row.BaseChapterVersionID
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
-	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
+	if err := s.recheckRowSources(ctx, actor, projectID, row, snapshots); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteSourceDenied
 	}
 	// 撤权先说、确认后说：一个依据已经没了的候选，说的是「授权没了」，不是
@@ -819,6 +831,23 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 		return core.WorkingCopy{}, false, selectedRewriteContextError(err)
 	}
 	saved := result.WorkingCopy
+	if row.ClaimEvidenceJSON != "" && row.ClaimEvidenceJSON != "[]" && row.ClaimEvidenceJSON != "null" {
+		var observed struct{ BodyMarkdown string }
+		err = s.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("lingdoc_working_copies").Select("body_markdown").Where("project_id = ? AND chapter_id = ?", projectID, chapterID).Take(&observed).Error; e != nil {
+				return e
+			}
+			return core.RecordDraftClaimProvenance(tx, projectID, chapterID, core.ClaimOriginRewrite, row.ID, "", pending.WorkingCopy.ExpectedWorkingCopyRevision+1, row.StartUTF16, pending.WorkingCopy.BodyMarkdown, row.ReplacementMarkdown, observed.BodyMarkdown)
+		})
+		if err != nil {
+			return core.WorkingCopy{}, false, ErrRewriteUnavailable
+		}
+		var provenance core.DraftClaimProvenance
+		if err = s.store.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND chapter_version_id = '' AND origin_kind = ? AND candidate_id = ? AND working_copy_revision = ?", projectID, chapterID, core.ClaimOriginRewrite, row.ID, pending.WorkingCopy.ExpectedWorkingCopyRevision+1).Take(&provenance).Error; err != nil {
+			return core.WorkingCopy{}, false, ErrRewriteUnavailable
+		}
+		saved.ClaimProvenance = append(saved.ClaimProvenance, provenance)
+	}
 	raw, err := json.Marshal(saved)
 	if err != nil {
 		return core.WorkingCopy{}, false, err
@@ -891,6 +920,12 @@ func validateRewriteAdoptionConfirmation(row selectedRewriteRow,
 }
 
 func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, error) {
+	var claims []candidateadoption.ClaimEvidence
+	if row.ClaimEvidenceJSON != "" {
+		if err := json.Unmarshal([]byte(row.ClaimEvidenceJSON), &claims); err != nil {
+			return SelectedRewriteCandidate{}, err
+		}
+	}
 	var sourceIDs []string
 	var snapshots []RewriteSourceSnapshot
 	var reviewItems []candidateadoption.ReviewItem
@@ -922,7 +957,7 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 			return SelectedRewriteCandidate{}, err
 		}
 	}
-	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, Claims: claims, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
 		Validity: candidateadoption.Validity(row.Validity), ApplyPending: applyPending(row), RunMode: row.RunMode,
 		BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision:         row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
@@ -1096,7 +1131,7 @@ func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, ke
 		// 改写是模型产出：候选正文的来源是 AI 生成。
 		origin = string(writingaction.OriginGenerated)
 	}
-	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
+	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID, ClaimEvidenceJSON: "[]",
 		ProjectID: projectID, ChapterID: chapterID, IdempotencyKey: key, RequestHash: hash,
 		Validity: "", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
 		SpecRevision: input.ExpectedSpecRevision, WorkingCopyRevision: input.ExpectedWorkingCopyRevision,
@@ -1141,6 +1176,11 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 	if err != nil {
 		return err
 	}
+	claims, err := json.Marshal(output.Claims)
+	if err != nil {
+		return err
+	}
+	row.ClaimEvidenceJSON = string(claims)
 	row.ReplacementMarkdown, row.SourceIDsJSON, row.AuthorizedSourcesJSON, row.ReviewItemsJSON = output.ReplacementMarkdown, string(idsJSON), string(snapshotsJSON), string(review)
 	row.Validity, row.RunMode, row.ErrorCode = string(candidateadoption.ValidityFresh), candidateadoption.RunMode(output.RunMode), ""
 	return nil

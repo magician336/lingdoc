@@ -1,0 +1,17 @@
+2026/10/27 10:23:08.128591 client_test.go:16: INFO: Initializing DocReader client tests
+=== RUN   TestReadURL
+[DocReader] 2026/10/27 10:23:08.129064 INFO: Creating new DocReader client connecting to localhost:50051
+[DocReader] 2026/10/27 10:23:08.132910 INFO: Successfully connected to DocReader service in 3.836128ms
+2026/10/27 10:23:25.569319 client_test.go:49: INFO: Read(URL) completed in 17.269864063s
+2026/10/27 10:23:25.569392 client_test.go:60: INFO: content_len=1319, images=0
+[DocReader] 2026/10/27 10:23:25.569415 INFO: Closing DocReader client connection
+--- PASS: TestReadURL (17.44s)
+=== RUN   TestReadFile
+[DocReader] 2026/10/27 10:23:25.570664 INFO: Creating new DocReader client connecting to localhost:50051
+[DocReader] 2026/10/27 10:23:25.570896 INFO: Successfully connected to DocReader service in 213.812µs
+2026/10/27 10:23:25.672578 client_test.go:81: INFO: Read(file) completed in 3.643667ms
+2026/10/27 10:23:25.672652 client_test.go:94: INFO: content_len=730, images=0
+[DocReader] 2026/10/27 10:23:25.672673 INFO: Closing DocReader client connection
+--- PASS: TestReadFile (0.10s)
+PASS
+ok  	github.com/Tencent/WeKnora/docreader/client	17.562s

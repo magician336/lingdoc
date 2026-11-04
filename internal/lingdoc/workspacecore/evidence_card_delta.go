@@ -245,7 +245,9 @@ func (s *Service) applyEvidenceCardDelta(ctx context.Context, tx Transaction, ac
 		}
 		sourceIDs = append(sourceIDs, anchor.SourceID)
 	}
-	card := EvidenceCard{ID: old.ID, ProjectID: before.ID, Version: old.Version + 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), SourceIDs: sortedImpactSourceIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: sortedUniqueIDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: versionBasisFor(next, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
+	// A semantic edit cannot silently remove previously recorded academic provenance.
+	// A stale or mismatched association remains attached and fails closed on use.
+	card := EvidenceCard{ID: old.ID, ProjectID: before.ID, Version: old.Version + 1, ClaimRef: input.ClaimRef, AnchorRefs: slices.Clone(input.AnchorRefs), AcademicAssociationRefs: slices.Clone(old.AcademicAssociationRefs), SourceIDs: sortedImpactSourceIDs(sourceIDs), SupportType: input.SupportType, Scope: input.Scope, ScopeChapterIDs: sortedUniqueIDs(input.ScopeChapterIDs), Limitations: input.Limitations, Gaps: input.Gaps, AlternativeExplanation: input.AlternativeExplanation, Status: "CANDIDATE", Basis: versionBasisFor(next, Chapter{}), CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
 	if err := storeStoredObject(tx, stored, before.ID, EvidenceCardKind, card.ID, card.Version, card); err != nil {
 		return err
 	}
