@@ -40,13 +40,12 @@
       "evidence": "Standards 轴核链:守卫侧 AssertFrozenProjectProvenance→PrepareFrozenProjectProvenance 仍要求 ValidateFrozenProvenanceInput 摘要+字段哈希全对上、按 digest 取持久化 g1_snapshot 且 hash-impact 相等、每个 pin ValueHash 一致且 Verified;当前项目状态一致性仍由 Build 跳 ValidateProjectProvenanceInTransaction(provenance_service.go:500-538,项目哈希不等→ErrVersionConflict)保证。改传原始规格是纠偏不是放宽;旧快照 nil→回退 Spec 与引入前行为逐字一致。"
     }
   ],
-  "not_run": [
-    {
-      "id": "TD-324.8 PR 必需 CI 全绿(合并前门禁)",
-      "status": "not_run",
-      "reason": "等待 PR 的 LingDoc PR gate 与 integration 等必需检查;PR 列出后补记 run URL 与 head,全部绿才转 Ready。"
-    }
-  ],
+  "not_run": [],
+  "ci_green": {
+    "id": "TD-324.8 PR 必需 CI 全绿(合并前门禁)",
+    "status": "pass",
+    "evidence": "PR #783:head 7f2d2bb3 上 26 项 check-run 全部 success/skipped、零失败(含 LingDoc PR gate、integration run 41775969901、5 个 provider shard)。lint 首轮在 6b2914d4 失败(ineffassign:测试变量重赋值未用),已修(7f2d2bb3,仅测试文件 2 行)。功能内容(实现+守护测试)与 6b2914d4 无差异;本 JSON 所在 docs 提交对功能零差异。"
+  },
   "environment_limits": "本机 python3.14/gofmt 版本与 CI 3.12 不同(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法确认);openapi.json 的样例编辑曾两度引入中间状态(样例未同步 schema 导致 additionalProperties 拒绝;digest 重算 walk 误改 schema 定义),均被 validate_artifacts.py 与 check_schema 当场抓住并修复——校验器是契约编辑的安全网。",
   "out_of_scope": "台面 expected_project_version 过期导致的 409(评论区明示另一层);验收台路线图链(#318);模板声明(#314);guard 的 withSpecSource variadic 等 main 既有实现。旧持久化快照(无 spec_source)回退到 frozen.Spec:PR #336 前必需路线节点项目根本冻结不了,不存在投影已入库的旧快照,回退实际只覆盖无路线节点的旧数据(投影==原始),安全(评审确认)。"
 }
