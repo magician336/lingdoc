@@ -1,0 +1,58 @@
+{
+  "task": "468",
+  "ticket": "magician336/lingdoc#468",
+  "head": "62f4b188",
+  "scope": "残留②(原子性)切片:逆向与控制记录写合成同一个写事务。逆向的领域逻辑从 reverseChangeSetOperation 的 mutation 闭包提取为共享 mutation(inverseChangeMutation,单一事实源),ControlRuntime 的 mutation 在同一事务内调用;写半部本就是不自开事务的共享 callback(createAssessedChangeMutation/createChangeDraftMutation),无嵌套事务,§4.4 顾虑的 SQLite 单连接死锁不触发。归档字段溯源请求的收集并入 runtimeControl 自身的 Prepare(archiveRestoreProvenanceRequests 加 runtimeControl case,操作自备证据)。残留①(切回已验证配置)方向评估完成:两候选均需语义重设计,已请求管理裁定后另立切片——本提交不写 Closes,issue 保持 open+assign。",
+  "passed": [
+    {
+      "id": "TD-468.1 残留②原子性:控制写失败 ⇒ 逆向一并回滚(普通字段)",
+      "status": "pass",
+      "evidence": "具名用例 TestG6RollbackThatFailsToWriteTheControlLeavesNoInverseBehind:红(main 6b70a8ea 前实测)= 控制写失败(ExpectedVersion 冲突)后 ReversesChangeSetID 计数=1(残留 assessed 逆提案);绿(head 62f4b188)= 计数 0 且错误为预期的 ErrVersionConflict。命令 `go test ./internal/lingdoc/workspacecore/ -run TestG6RollbackThatFailsToWriteTheControlLeavesNoInverseBehind -count=1`。"
+    },
+    {
+      "id": "TD-468.2 模板升级分支的原子性与走通",
+      "status": "pass",
+      "evidence": "TestG6RollbackOfATemplateUpgradeFailsAtomicallyToo(r26TemplateDeltaFixture,真实模板升级源):失败向错误形态=乐观冲突而非 403;成功向逆提案恰一条。同事务下模板基线断言(inverseTemplateBaseline/inverseTemplateFieldValues/validateInverseTemplateRevision)在 mutation 内照跑。"
+    },
+    {
+      "id": "TD-468.3 归档字段分支:接线正确性+原子性",
+      "status": "pass",
+      "evidence": "TestG6RollbackOfAnArchivedFieldUpgradeFailsAtomicallyToo(activeArchiveFixture):失败向=ErrVersionConflict(非 403,钉 archiveRestoreProvenanceRequests 的 runtimeControl case 接线);成功向=逆提案恰一条。覆盖边界如实注释:夹具归档字段是 human 字段(MetadataPresent=false),archiveFieldReadable 的 proof 分支红向由既有溯源测试族覆盖,待来源派生夹具补红向(已登记)。"
+    },
+    {
+      "id": "TD-468.4 重放语义:同 key 重试不复制逆向(契约①)",
+      "status": "pass",
+      "evidence": "TestG6RollbackReplayDoesNotDuplicateTheInverse:首次成功后同 key 再发 → replayed=true、200、响应逐字节一致、ReversesChangeSetID 计数仍 1。单笔 ledger 记录下 found 即重放(operationcore.go:497-500),写事务回滚时 ledger 一并消失,重试从头(含逆向)——语义等效且强于原两笔结构。"
+    },
+    {
+      "id": "TD-468.5 既有回退语义零回退(契约③)",
+      "status": "pass",
+      "evidence": "runtime_rollback_test.go 既有用例零改动全绿:TestG6RollbackGoesThroughTheDomainEntryAndKeepsTheHistory(PAUSED+RollbackTo+逆提案恰一+模板/章节历史/审计不动)、TestG6RollbackRequiresATarget、TestG6RollbackRefusesACrossScopeAndAnOutsider(不落记录)、TestG6ResumeRefusesARollbackTargetTheProjectNoLongerCarries(残留①现状语义保持,未擅自改动)、TestG6ResumeAfterARollbackNeedsTheRechecks。命令 `go test ./internal/lingdoc/workspacecore/ -run 'TestG6Rollback|TestG6Resume' -count=1`,8 用例全绿。"
+    },
+    {
+      "id": "TD-468.6 四条不可变契约逐条(双轴评审正面确认+复核确认)",
+      "status": "pass",
+      "evidence": "①重放语义:成立且更强(见 TD-468.4)。②逆向走既有领域逻辑:共享 mutation 单一事实源,独立入口保留不变(提取为纯搬运,复核逐行对照);校验链完整(inverseSourceAccess/模板基线/validateInverseTemplateRevision/createAssessedChangeMutation 内部校验/controlledInverseKey 闸门)。③三件既有语义:见 TD-468.5。④无直写绕过:RequireHumanDecision+AuthorizationManage+scope 双段+字段基线冲突检查全在;评审复核确认『校验语义成立』。"
+    },
+    {
+      "id": "TD-468.7 残留①方向评估与裁定请求(多切片合规处理)",
+      "status": "pass",
+      "evidence": "issue 评论(领取卡)声明残留①经评估需语义重设计并请求管理裁定;方案档 §7 残留①行更新为方向评估结论(两候选的现实代价与拒绝理由);本提交不写 Closes、issue 保持 open+assign;lineage 分叉与 Prepare 侧断言时机差异如实登记于方案档同一行。"
+    },
+    {
+      "id": "TD-468.8 评审两轮的 Blocker/Required 全部闭合",
+      "status": "pass",
+      "evidence": "第一轮:嵌套只读事务死锁(Prepare 链外的顺序调用被复核确认移除,prepareRuntimeRollback 单一只读事务仅 scope/owner)、归档请求缺口(archiveRestoreProvenanceRequests runtimeControl case,body 类型链已核实命中)、key 参数清理、T468 引用落地(本文件)。第二轮:方案档三项登记逐条对照代码属实;测试注释撤回失实声明;G6 全族+vet 干净;『同等强度』措辞与 52 行注释字面差异已按复核意见在方案档登记覆盖。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "TD-468.9 PR 必需 CI 全绿(合并前门禁)",
+      "status": "not_run",
+      "reason": "等待 PR 必需检查;PR 列出后补记 run URL 与 head,全绿才合并。"
+    }
+  ],
+  "ci_green": "",
+  "environment_limits": "本机 python3.14/gofmt 版本与 CI 3.12 不同(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法);归档夹具的 proof 分支红向需来源派生字段的夹具,当前以 human 字段夹具覆盖接线与原子性(边界已登记)。",
+  "out_of_scope": "残留①(切回已验证配置)——方向评估完成,语义重设计待管理裁定后另立切片;lineage 祖先记账在合并路径不产生(防护由 ReversesChangeSetID+活跃逆向锁兜底,已登记);独立入口 reverseChangeSet 的对外行为零变化(纯提取)。"
+}
