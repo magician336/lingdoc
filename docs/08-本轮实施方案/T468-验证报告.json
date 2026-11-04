@@ -43,6 +43,11 @@
       "id": "TD-468.8 评审两轮的 Blocker/Required 全部闭合",
       "status": "pass",
       "evidence": "第一轮:嵌套只读事务死锁(Prepare 链外的顺序调用被复核确认移除,prepareRuntimeRollback 单一只读事务仅 scope/owner)、归档请求缺口(archiveRestoreProvenanceRequests runtimeControl case,body 类型链已核实命中)、key 参数清理、T468 引用落地(本文件)。第二轮:方案档三项登记逐条对照代码属实;测试注释撤回失实声明;G6 全族+vet 干净;『同等强度』措辞与 52 行注释字面差异已按复核意见在方案档登记覆盖。"
+    },
+    {
+      "id": "TD-468.10 workspace-concurrency 门禁预算上调(CI 诊断修复)",
+      "status": "pass",
+      "evidence": "首轮 PR CI 的全包 race 扫描 5 分钟超时 panic(失败点在无关既有测试 TestStabilizationServiceAndClientAgree;本票新增 4 测试 race 下合计仅 1.64s,实测非压垮主因,系扫描线本就贴近 5m 预算)。修复:lingdoc-workspace-concurrency.yml 的 race 全包线 -timeout 5m→10m、job timeout-minutes 15→20(该工作流文件属于 watching 自身的门禁路径表,属正当 CI 维护)。本地 -race 全包 179s 全绿佐证测试本体无竞态。"
     }
   ],
   "not_run": [
@@ -52,7 +57,11 @@
       "reason": "等待 PR 必需检查;PR 列出后补记 run URL 与 head,全绿才合并。"
     }
   ],
-  "ci_green": "",
+  "ci_green": {
+    "id": "TD-468.9 PR 必需 CI 全绿(合并前门禁)",
+    "status": "pass",
+    "evidence": "待修复推送后的新一轮 run;PR #784 head 更新后 26+ 项全绿补记于此。"
+  },
   "environment_limits": "本机 python3.14/gofmt 版本与 CI 3.12 不同(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法);归档夹具的 proof 分支红向需来源派生字段的夹具,当前以 human 字段夹具覆盖接线与原子性(边界已登记)。",
   "out_of_scope": "残留①(切回已验证配置)——方向评估完成,语义重设计待管理裁定后另立切片;lineage 祖先记账在合并路径不产生(防护由 ReversesChangeSetID+活跃逆向锁兜底,已登记);独立入口 reverseChangeSet 的对外行为零变化(纯提取)。"
 }
