@@ -41,7 +41,19 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 		return nil, 0, false, err
 	}
 	ctx = prepared
-	return runOperation(s, ctx, actor, sourceOperationInput(operationReverseChangeSet, projectID+"/"+changeID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), reverseChangeSetSources), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationReverseChangeSet, projectID+"/"+changeID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), reverseChangeSetSources), mutationPort[Transaction], s.inverseChangeMutation(ctx, actor, projectID, changeID))
+}
+
+// inverseChangeMutation 规划并创建一条逆向变更集,运行在**调用方已有**的写事务上。
+//
+// 它是逆向的唯一领域逻辑(单一事实源):独立入口 reverseChangeSetOperation 与
+// 运行控制的回退(#468)都用它。回退把逆向与控制记录写合成同一个事务——两个
+// 前提由调用方满足:① RequireHumanDecision 与范围/授权校验已经跑过;② 源侧的
+// 溯源准备(prepareInverseOperationProvenance)已在只读阶段完成。全部写路径都
+// 走共享 callback(createAssessedChangeMutation / createChangeDraftMutation),
+// 不开新事务,因此不触发 SQLite 单连接的嵌套写事务死锁。
+func (s *Service) inverseChangeMutation(ctx context.Context, actor Actor, projectID, changeID string) func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
+	return func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		source, err := inverseSourceAccess(tx, p, actor, changeID)
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
@@ -123,7 +135,7 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 			return operationResult[ChangeSet]{}, err
 		}
 		return s.createAssessedChangeMutation(mutationCtx, actor, projectID, create)(changeTx, p)
-	})
+	}
 }
 
 func inverseTemplateBaseline(tx Transaction, actor Actor, projectID string, source ChangeSet) (ContextRevisionRecord, ProjectTemplateCopy, error) {

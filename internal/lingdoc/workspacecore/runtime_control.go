@@ -300,35 +300,26 @@ func runtimeRollbackTargetReadable(target *RuntimeRollbackTarget, p Project) err
 	return nil
 }
 
-// prepareRuntimeRollback runs the part of a rollback that cannot live inside
-// the control's own transaction.
+// prepareRuntimeRollback runs the part of a rollback that must happen **before**
+// the control's own write transaction.
 //
-// The inverse change set goes through the existing domain entry point
-// (ReverseChangeSet), so no revision pointer, template pointer or published
-// file is written by hand. It is an operation with a transaction of its own,
-// which is why it cannot run inside the control write: SQLite uses a single
-// pooled connection and a nested write transaction would deadlock.
-//
-// The scope and the owner are checked **before** the inverse runs, so that an
-// unauthorized caller cannot make the domain change and only then be
-// refused.
-func (s *Service) prepareRuntimeRollback(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) error {
-	if err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+// Only the scope and the owner are checked here, and only in a read-only
+// transaction of their own: an unauthorized caller must not be able to make
+// the domain change and only then be refused. Everything else the reverse
+// needs — source access, the template baseline assertions, the archived-field
+// provenance requests — runs inside the control's write transaction, through
+// the shared inverse mutation (inverseChangeMutation). That keeps a failed
+// control write from leaving an inverse behind (#468) without nesting
+// transactions: the shared callbacks never open a transaction of their own,
+// so the SQLite single-connection pool cannot deadlock.
+func (s *Service) prepareRuntimeRollback(ctx context.Context, actor Actor, projectID string, input RuntimeControlInput) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
 			return err
 		}
 		return s.runtimeControlScopeAllowed(ctx, tx, actor, p, projectID, input.Scope)
-	}); err != nil {
-		return err
-	}
-	if input.Rollback.ChangeSetID == "" {
-		return nil
-	}
-	if _, _, _, err := s.ReverseChangeSet(ctx, actor, projectID, input.Rollback.ChangeSetID, key+".reverse"); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) (json.RawMessage, int, bool, error) {
@@ -361,7 +352,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		}
 	}
 	if input.Action == "rollback" {
-		if err := s.prepareRuntimeRollback(ctx, actor, projectID, key, input); err != nil {
+		if err := s.prepareRuntimeRollback(ctx, actor, projectID, input); err != nil {
 			return nil, 0, false, err
 		}
 	}
@@ -375,6 +366,15 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
 			return operationResult[RuntimeControl]{}, ErrInvalidState
+		}
+		// 逆向与控制记录写现在**同处一个写事务**(#468):控制写失败 ⇒ 逆向一并
+		// 回滚,不再留下一条没人认领的逆向变更集。逆向走的是与独立入口共用同一段
+		// 领域逻辑的共享 mutation(inverseChangeMutation),不开新事务,因此没有
+		// SQLite 单连接的嵌套写事务死锁;源访问与模板基线的全部校验都在其中照跑。
+		if input.Action == "rollback" && input.Rollback.ChangeSetID != "" {
+			if _, err := s.inverseChangeMutation(ctx, actor, projectID, input.Rollback.ChangeSetID)(tx, p); err != nil {
+				return operationResult[RuntimeControl]{}, err
+			}
 		}
 		recordKey := input.Scope.Kind + "/" + input.Scope.Value
 		recordProject := projectID
