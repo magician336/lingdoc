@@ -1,0 +1,58 @@
+{
+  "task": "469",
+  "ticket": "magician336/lingdoc#469",
+  "head": "见 PR head(分支 feat/469-runtime-tenant-events)",
+  "scope": "残留①(Owner-only 前置条件不在观测内)按票面解除条件的「声明」分支处置:核实方案档 §4.3(L143-146)的覆盖面声明真实存在且与实现一致(holder 机制只装在 authorizeProject/authorizeTenant 两个收敛点上,projectOwner 判定不经过它们),不改代码,验证报告记账。残留②(租户级拒绝事件按课题读不到)按推荐方向实现:新增租户级运行事件读面 GET /runtime/tenant-events(非课题路径)——按租户读 project_id=\"\" 的事件行,授权给租户管理者(与租户范围控制记录的处置一致);既有按课题读端点语义零变化,写入位置与归属不变。契约同步:openapi paths/schemas+x-lingdoc 扩展键,isG6OwnedPath 纳入,runtimeOwnedOperationCount 18→19,窄口决策入册,校验器 PASS。",
+  "passed": [
+    {
+      "id": "TD-469.1 残留①:覆盖面声明核实(软路径解除)",
+      "status": "pass",
+      "evidence": "方案档 §4.3 原文:「不覆盖 `projectOwner()` 一族 Owner-only 业务前置条件(在 `authorizeProject` 之外)」「不覆盖未经 authorizeProject/authorizeTenant 的判定」。实现复核:noteAuthorizationDenial 只被 authorizeTenant(service_facade.go:379)与 authorizeProject(service_facade.go:395)调用,holder(RuntimeObservationHolder)只经 withRuntimeObservations 装配在服务方法上——projectOwner(service_facade.go:684)判定不经过两收敛点,声明与实现一致。按票面解除条件的声明分支记账,零代码改动。"
+    },
+    {
+      "id": "TD-469.2 残留②:租户级事件经新读面按租户读出(服务层)",
+      "status": "pass",
+      "evidence": "TestG6TenantRuntimeEventsAreReadableByATenantManager:同租户未注册用户列项目触发 legacyAuthorizeTenant 拒绝(事件落本租户 project_id=\"\")→ ListTenantRuntimeEvents(管理者)读出恰一条 permission/deny 且带 capability;correlation_id 过滤对齐既有读面。既有 TestG6TenantLevelDenialIsObservableAsARuntimeEvent(直查现状)零改动全绿。"
+    },
+    {
+      "id": "TD-469.3 既有按课题读端点语义零变化(契约①)",
+      "status": "pass",
+      "evidence": "同上用例:ListRuntimeEvents(p.ID) 的返回中不出现租户级 denial 事件(逐条断言);runtime_tenant_events_test 与 runtime_observation_test 全部既有用例零改动全绿。"
+    },
+    {
+      "id": "TD-469.4 授权:管理者可读/非管理者与外租户拒绝",
+      "status": "pass",
+      "evidence": "TestG6TenantRuntimeEventsRefuseNonManagers:同租户普通成员贡献者角色 → ErrNotFound(存在性隐藏);外租户 → ErrNotFound。HTTP seam:同夹具下非管理者请求非 200。"
+    },
+    {
+      "id": "TD-469.5 HTTP seam:E2E 完整链",
+      "status": "pass",
+      "evidence": "workspace 包 TestG6TenantEventsEndpointServesTheTenantLevelDenials(newRoadmapHTTPFixture,真实 HTTP):服务层触发租户级拒绝 → 既有课题读端点 200 且无租户级 denial → 新端点 GET /api/runtime/tenant-events(租户管理者)200 且恰一条 permission/deny 带 capability → 非管理者非 200。"
+    },
+    {
+      "id": "TD-469.6 契约双向覆盖与校验器",
+      "status": "pass",
+      "evidence": "openapi.json:paths 加 /runtime/tenant-events(operationId listTenantRuntimeEvents,200 响应 items=$ref RuntimeEvent,403 ErrorResponse),x-lingdoc 扩展键按同族端点补齐;isG6OwnedPath 加 /runtime/tenant-events 前缀;runtimeOwnedOperationCount 18→19(方向 1/2 双向循环放行非课题 G6 路径);validate_artifacts.py exit 0 PASS×2。契约测试族(TestEveryImpactRouteIsPublished/TestEveryPublishedImpactOperationIsRouted/TestRuntimeRoutesSatisfyPublishedSchemas)全绿。"
+    },
+    {
+      "id": "TD-469.7 窄口决策入册(仓库机制)",
+      "status": "pass",
+      "evidence": "RuntimeApplication 窄口新增 ListTenantRuntimeEvents 的决策写入 narrowPortMethods(context_ports_test.go,附 #469 依据);TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim 绿。"
+    },
+    {
+      "id": "TD-469.8 方案档 §7 残留表同步",
+      "status": "pass",
+      "evidence": "G6-运行控制后端补齐-20261023.md:残留①行(声明路径解除,含实现复核结论)、残留②行(已解除,读面设计与授权语义)更新;「拒绝事件不带 project revision/细因」的刻意取舍行未动(契约④)。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "TD-469.9 PR 必需 CI 全绿(合并前门禁)",
+      "status": "not_run",
+      "reason": "等待 PR 必需检查;PR 列出后补记 run URL 与 head,全绿才合并。"
+    }
+  ],
+  "ci_green": "",
+  "environment_limits": "本机 python3.14/gofmt 与 CI 3.12 差异(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法);r26/归档夹具无涉本票。",
+  "out_of_scope": "残留①未选实现路径(声明分支已满足解除条件;若未来要把 Owner-only 拒绝也收进事件流,需把 projectOwner 判定迁入收敛点,涉及全部 Owner-only 前置调用面,另立票);「拒绝事件不带 project revision/细因」的刻意取舍保持;跨租户探测的拒绝事件归探测者租户(存在性隐藏语义的自然结果,已写入测试注释)。"
+}

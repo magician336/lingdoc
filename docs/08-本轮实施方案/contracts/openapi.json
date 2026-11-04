@@ -40892,6 +40892,69 @@
         },
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
+    },
+    "/runtime/tenant-events": {
+      "get": {
+        "operationId": "listTenantRuntimeEvents",
+        "summary": "读取租户级运行事件",
+        "description": "租户级授权拒绝等没有课题可挂的运行事件(存储归属 project_id=\"\")按租户读出;授权给租户管理者。按课题读的 /projects/{projectId}/runtime/events 不返回这部分事件(既有语义不变)。",
+        "parameters": [
+          {
+            "name": "correlation_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "按关联 ID 过滤"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "租户级运行事件列表(可能为空)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuntimeEvent"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "非租户管理者(存在性隐藏语义下同样拒绝)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspace"
+        ],
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "impact_routes.go",
+        "x-lingdoc-route-line": " RegisterImpactRoutes: group.GET(\"/runtime/tenant-events\", ...) (#469 租户级运行事件读面)",
+        "x-lingdoc-service": "ListRuntimeControls",
+        "x-lingdoc-go-response": "[]RuntimeControl",
+        "x-lingdoc-human-decision": false
+      }
     }
   },
   "components": {

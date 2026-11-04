@@ -79,6 +79,9 @@ type RuntimeApplication interface {
 	ListRuntimeControls(ctx context.Context, actor Actor, projectID string) ([]RuntimeControl, error)
 	ControlRuntime(ctx context.Context, actor Actor, projectID, key string, input RuntimeControlInput) (json.RawMessage, int, bool, error)
 	ListRuntimeEvents(ctx context.Context, actor Actor, projectID, correlationID string) ([]RuntimeEvent, error)
+	// ListTenantRuntimeEvents 读**租户级**运行事件(project_id="" 的行,#469)。
+	// 授权给租户管理者,与租户范围控制记录的处置一致。
+	ListTenantRuntimeEvents(ctx context.Context, actor Actor, correlationID string) ([]RuntimeEvent, error)
 	GetRuntimeMetrics(ctx context.Context, actor Actor, projectID string) (RuntimeMetrics, error)
 	ListRuntimeAlerts(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlert, error)
 	SaveRuntimeAlertRule(ctx context.Context, actor Actor, projectID, key string, input RuntimeAlertRule) (json.RawMessage, int, bool, error)

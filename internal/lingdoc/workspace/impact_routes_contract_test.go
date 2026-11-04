@@ -326,7 +326,9 @@ func isRoadmapOwnedPath(path string) bool {
 // asserted as **exact equality** in both directions: a predicate that matched
 // part of the family would otherwise read as coverage while leaving the rest
 // unchecked, which is the same silent-skip defect the G6 debt itself was.
-const runtimeOwnedOperationCount = 18
+// #469 added the tenant-level runtime events read (GET /runtime/tenant-events,
+// a non-project-scoped path that carries its own exact count above).
+const runtimeOwnedOperationCount = 19
 
 // isG6OwnedPath tells whether a path belongs to the G6 runtime/trial surface.
 // It accepts the contract form ({projectId}) and the registered gin form
@@ -338,6 +340,7 @@ func isG6OwnedPath(path string) bool {
 	for _, prefix := range []string{
 		"/projects/{projectId}/runtime/", "/projects/:projectId/runtime/",
 		"/projects/{projectId}/trial-", "/projects/:projectId/trial-",
+		"/runtime/tenant-events",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -414,7 +417,10 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	roadmapChecked := 0
 	g6Checked := 0
 	for path, item := range paths {
-		if !strings.HasPrefix(path, "/projects/{projectId}/") {
+		// The tenant-level runtime events read (#469) is not project-scoped but
+		// still belongs to the G6 family: it joins this direction through the
+		// same predicate instead of the project prefix.
+		if !strings.HasPrefix(path, "/projects/{projectId}/") && !isG6OwnedPath(path) {
 			continue
 		}
 		roadmap := isRoadmapOwnedPath(path)
