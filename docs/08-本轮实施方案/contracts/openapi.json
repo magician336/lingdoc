@@ -9954,237 +9954,7 @@
                                 "research_subject": "公开的合成调查样本",
                                 "research_goal": "验证资料到章节的工作流程"
                               },
-                              "template": {
-                                "id": "template-demo",
-                                "name": "演示模板：研究问题与研究方案",
-                                "version": "1",
-                                "is_demo": true,
-                                "source": "lingdoc_builtin",
-                                "scope": "internal-demo",
-                                "sections": [
-                                  {
-                                    "section_id": "question",
-                                    "order": 1,
-                                    "title": "研究问题",
-                                    "required": true
-                                  },
-                                  {
-                                    "section_id": "method",
-                                    "order": 2,
-                                    "title": "研究方案",
-                                    "required": true
-                                  }
-                                ],
-                                "fields": [
-                                  {
-                                    "field_id": "research_subject",
-                                    "label": "研究对象",
-                                    "type": "string",
-                                    "order": 1,
-                                    "required": true
-                                  },
-                                  {
-                                    "field_id": "research_goal",
-                                    "label": "研究目标",
-                                    "type": "string",
-                                    "order": 2,
-                                    "required": true
-                                  }
-                                ],
-                                "required_fields": [
-                                  "research_subject",
-                                  "research_goal"
-                                ],
-                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                                "rules": [
-                                  {
-                                    "rule_id": "required-fields",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "required_fields",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "chapter-nonempty",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "nonempty_chapter",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "chapter-confirmed",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "confirmed_chapter",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "review-items-decided",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "review_items_decided",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "source-available",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "source_available",
-                                    "parameters": {}
-                                  }
-                                ]
-                              },
-                              "chapters": [
-                                {
-                                  "chapter_id": "ch-question",
-                                  "chapter_version_id": "cv-question-2",
-                                  "title": "研究问题",
-                                  "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
-                                  "source_ids": [
-                                    "s-demo"
-                                  ],
-                                  "citation_usages": [
-                                    {
-                                      "source_id": "s-demo",
-                                      "purpose": "支持流程说明",
-                                      "limitation": "仅作演示"
-                                    }
-                                  ],
-                                  "review_items": [
-                                    {
-                                      "id": "review-1",
-                                      "statement": "100条合成记录不能证明真实研究结论。",
-                                      "origin_candidate_id": "candidate-demo"
-                                    }
-                                  ],
-                                  "confirmation": {
-                                    "id": "confirm-question",
-                                    "chapter_id": "ch-question",
-                                    "chapter_version_id": "cv-question-2",
-                                    "spec_revision": 1,
-                                    "asset_versions": [
-                                      {
-                                        "asset_id": "a-demo",
-                                        "asset_revision": 1
-                                      }
-                                    ],
-                                    "template_version": "1",
-                                    "actor_user_id": "u-owner",
-                                    "created_at": "2026-09-21T08:00:00Z",
-                                    "review_decisions": [
-                                      {
-                                        "review_item_id": "review-1",
-                                        "disposition": "retained_warning",
-                                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
-                                      }
-                                    ]
-                                  }
-                                },
-                                {
-                                  "chapter_id": "ch-method",
-                                  "chapter_version_id": "cv-method-1",
-                                  "title": "研究方案",
-                                  "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
-                                  "source_ids": [],
-                                  "review_items": [],
-                                  "confirmation": {
-                                    "id": "confirm-method",
-                                    "chapter_id": "ch-method",
-                                    "chapter_version_id": "cv-method-1",
-                                    "spec_revision": 1,
-                                    "asset_versions": [],
-                                    "template_version": "1",
-                                    "actor_user_id": "u-owner",
-                                    "created_at": "2026-09-21T08:00:00Z",
-                                    "review_decisions": []
-                                  }
-                                }
-                              ],
-                              "sources": [
-                                {
-                                  "id": "s-demo",
-                                  "project_id": "p-demo",
-                                  "asset_id": "a-demo",
-                                  "asset_revision": 1,
-                                  "locator": "测试段落 1",
-                                  "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
-                                  "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
-                                  "display_title": "合成测试材料（不是真实研究证据）"
-                                }
-                              ],
-                              "asset_versions": [
-                                {
-                                  "asset_id": "a-demo",
-                                  "asset_revision": 1
-                                }
-                              ],
-                              "policy_asset_ids": [
-                                "a-demo"
-                              ],
-                              "delivery_kind": "internal_demo",
-                              "spec_provenance": {
-                                "project_id": "p-demo",
-                                "spec_revision": 1,
-                                "context_revision": 0,
-                                "template_copy_version": 0,
-                                "fields": [
-                                  {
-                                    "field_key": "research_goal",
-                                    "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
-                                  },
-                                  {
-                                    "field_key": "research_subject",
-                                    "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
-                                  }
-                                ],
-                                "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
-                              }
-                            },
-                            "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
-                            "check": {
-                              "project_version": 8,
-                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                              "status": "passed",
-                              "issues": [
-                                {
-                                  "id": "warning-review-1",
-                                  "rule_id": "review-items-decided",
-                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                                  "severity": "warning",
-                                  "target_id": "ch-question",
-                                  "target_version": "cv-question-2",
-                                  "evidence": [],
-                                  "evaluator_version": "lingdoc-rules/1",
-                                  "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
-                                }
-                              ]
-                            },
-                            "is_current": true,
-                            "created_at": "2026-09-21T08:00:00Z"
-                          }
-                        ],
-                        "truncated": false
-                      },
-                      "request_id": "req-demo",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  },
-                  "historical": {
-                    "value": {
-                      "data": {
-                        "items": [
-                          {
-                            "id": "snapshot-demo",
-                            "project_id": "p-demo",
-                            "frozen_input": {
-                              "project_id": "p-demo",
-                              "project_name": "合成资料演示项目",
-                              "project_version": 8,
-                              "spec_revision": 1,
-                              "spec": {
+                              "spec_source": {
                                 "research_subject": "公开的合成调查样本",
                                 "research_goal": "验证资料到章节的工作流程"
                               },
@@ -10374,7 +10144,245 @@
                                 "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                               }
                             },
-                            "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
+                            "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
+                            "check": {
+                              "project_version": 8,
+                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                              "status": "passed",
+                              "issues": [
+                                {
+                                  "id": "warning-review-1",
+                                  "rule_id": "review-items-decided",
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "severity": "warning",
+                                  "target_id": "ch-question",
+                                  "target_version": "cv-question-2",
+                                  "evidence": [],
+                                  "evaluator_version": "lingdoc-rules/1",
+                                  "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                }
+                              ]
+                            },
+                            "is_current": true,
+                            "created_at": "2026-09-21T08:00:00Z"
+                          }
+                        ],
+                        "truncated": false
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "historical": {
+                    "value": {
+                      "data": {
+                        "items": [
+                          {
+                            "id": "snapshot-demo",
+                            "project_id": "p-demo",
+                            "frozen_input": {
+                              "project_id": "p-demo",
+                              "project_name": "合成资料演示项目",
+                              "project_version": 8,
+                              "spec_revision": 1,
+                              "spec": {
+                                "research_subject": "公开的合成调查样本",
+                                "research_goal": "验证资料到章节的工作流程"
+                              },
+                              "spec_source": {
+                                "research_subject": "公开的合成调查样本",
+                                "research_goal": "验证资料到章节的工作流程"
+                              },
+                              "template": {
+                                "id": "template-demo",
+                                "name": "演示模板：研究问题与研究方案",
+                                "version": "1",
+                                "is_demo": true,
+                                "source": "lingdoc_builtin",
+                                "scope": "internal-demo",
+                                "sections": [
+                                  {
+                                    "section_id": "question",
+                                    "order": 1,
+                                    "title": "研究问题",
+                                    "required": true
+                                  },
+                                  {
+                                    "section_id": "method",
+                                    "order": 2,
+                                    "title": "研究方案",
+                                    "required": true
+                                  }
+                                ],
+                                "fields": [
+                                  {
+                                    "field_id": "research_subject",
+                                    "label": "研究对象",
+                                    "type": "string",
+                                    "order": 1,
+                                    "required": true
+                                  },
+                                  {
+                                    "field_id": "research_goal",
+                                    "label": "研究目标",
+                                    "type": "string",
+                                    "order": 2,
+                                    "required": true
+                                  }
+                                ],
+                                "required_fields": [
+                                  "research_subject",
+                                  "research_goal"
+                                ],
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "rules": [
+                                  {
+                                    "rule_id": "required-fields",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "required_fields",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "chapter-nonempty",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "nonempty_chapter",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "chapter-confirmed",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "confirmed_chapter",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "review-items-decided",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "review_items_decided",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "source-available",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "source_available",
+                                    "parameters": {}
+                                  }
+                                ]
+                              },
+                              "chapters": [
+                                {
+                                  "chapter_id": "ch-question",
+                                  "chapter_version_id": "cv-question-2",
+                                  "title": "研究问题",
+                                  "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                  "source_ids": [
+                                    "s-demo"
+                                  ],
+                                  "citation_usages": [
+                                    {
+                                      "source_id": "s-demo",
+                                      "purpose": "支持流程说明",
+                                      "limitation": "仅作演示"
+                                    }
+                                  ],
+                                  "review_items": [
+                                    {
+                                      "id": "review-1",
+                                      "statement": "100条合成记录不能证明真实研究结论。",
+                                      "origin_candidate_id": "candidate-demo"
+                                    }
+                                  ],
+                                  "confirmation": {
+                                    "id": "confirm-question",
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "spec_revision": 1,
+                                    "asset_versions": [
+                                      {
+                                        "asset_id": "a-demo",
+                                        "asset_revision": 1
+                                      }
+                                    ],
+                                    "template_version": "1",
+                                    "actor_user_id": "u-owner",
+                                    "created_at": "2026-09-21T08:00:00Z",
+                                    "review_decisions": [
+                                      {
+                                        "review_item_id": "review-1",
+                                        "disposition": "retained_warning",
+                                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "chapter_id": "ch-method",
+                                  "chapter_version_id": "cv-method-1",
+                                  "title": "研究方案",
+                                  "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                  "source_ids": [],
+                                  "review_items": [],
+                                  "confirmation": {
+                                    "id": "confirm-method",
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "spec_revision": 1,
+                                    "asset_versions": [],
+                                    "template_version": "1",
+                                    "actor_user_id": "u-owner",
+                                    "created_at": "2026-09-21T08:00:00Z",
+                                    "review_decisions": []
+                                  }
+                                }
+                              ],
+                              "sources": [
+                                {
+                                  "id": "s-demo",
+                                  "project_id": "p-demo",
+                                  "asset_id": "a-demo",
+                                  "asset_revision": 1,
+                                  "locator": "测试段落 1",
+                                  "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                  "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                  "display_title": "合成测试材料（不是真实研究证据）"
+                                }
+                              ],
+                              "asset_versions": [
+                                {
+                                  "asset_id": "a-demo",
+                                  "asset_revision": 1
+                                }
+                              ],
+                              "policy_asset_ids": [
+                                "a-demo"
+                              ],
+                              "delivery_kind": "internal_demo",
+                              "spec_provenance": {
+                                "project_id": "p-demo",
+                                "spec_revision": 1,
+                                "context_revision": 0,
+                                "template_copy_version": 0,
+                                "fields": [
+                                  {
+                                    "field_key": "research_goal",
+                                    "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
+                                  },
+                                  {
+                                    "field_key": "research_subject",
+                                    "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
+                                  }
+                                ],
+                                "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
+                              }
+                            },
+                            "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
                             "check": {
                               "project_version": 8,
                               "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -10419,6 +10427,10 @@
                               "project_version": 5,
                               "spec_revision": 1,
                               "spec": {
+                                "research_subject": "公开的合成调查样本",
+                                "research_goal": "验证资料到章节的工作流程"
+                              },
+                              "spec_source": {
                                 "research_subject": "公开的合成调查样本",
                                 "research_goal": "验证资料到章节的工作流程"
                               },
@@ -10575,7 +10587,7 @@
                                 "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                               }
                             },
-                            "snapshot_digest": "3d29d74c6c979fc6c683f539c2ece15c28e1c400c620e006791257fb05d325d5",
+                            "snapshot_digest": "f60170a28d84ddfa3eddb3e3ae16eaa925531700a1bc270e9e65eff3434631e6",
                             "check": {
                               "project_version": 5,
                               "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -10634,223 +10646,7 @@
                                 "research_subject": "公开的合成调查样本",
                                 "research_goal": "验证资料到章节的工作流程"
                               },
-                              "template": {
-                                "id": "template-demo",
-                                "name": "演示模板：研究问题与研究方案",
-                                "version": "1",
-                                "is_demo": true,
-                                "source": "lingdoc_builtin",
-                                "scope": "internal-demo",
-                                "sections": [
-                                  {
-                                    "section_id": "question",
-                                    "order": 1,
-                                    "title": "研究问题",
-                                    "required": true
-                                  },
-                                  {
-                                    "section_id": "method",
-                                    "order": 2,
-                                    "title": "研究方案",
-                                    "required": true
-                                  }
-                                ],
-                                "fields": [
-                                  {
-                                    "field_id": "research_subject",
-                                    "label": "研究对象",
-                                    "type": "string",
-                                    "order": 1,
-                                    "required": true
-                                  },
-                                  {
-                                    "field_id": "research_goal",
-                                    "label": "研究目标",
-                                    "type": "string",
-                                    "order": 2,
-                                    "required": true
-                                  }
-                                ],
-                                "required_fields": [
-                                  "research_subject",
-                                  "research_goal"
-                                ],
-                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                                "rules": [
-                                  {
-                                    "rule_id": "required-fields",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "required_fields",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "chapter-nonempty",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "nonempty_chapter",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "chapter-confirmed",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "confirmed_chapter",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "review-items-decided",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "review_items_decided",
-                                    "parameters": {}
-                                  },
-                                  {
-                                    "rule_id": "source-available",
-                                    "kind": "computed",
-                                    "severity": "blocking",
-                                    "evaluator": "source_available",
-                                    "parameters": {}
-                                  }
-                                ]
-                              },
-                              "chapters": [
-                                {
-                                  "chapter_id": "ch-question",
-                                  "chapter_version_id": "cv-question-2",
-                                  "title": "研究问题",
-                                  "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
-                                  "source_ids": [
-                                    "s-demo"
-                                  ],
-                                  "citation_usages": [
-                                    {
-                                      "source_id": "s-demo",
-                                      "purpose": "支持流程说明",
-                                      "limitation": "仅作演示"
-                                    }
-                                  ],
-                                  "review_items": [
-                                    {
-                                      "id": "review-1",
-                                      "statement": "100条合成记录不能证明真实研究结论。",
-                                      "origin_candidate_id": "candidate-demo"
-                                    }
-                                  ],
-                                  "confirmation": {
-                                    "id": "confirm-question",
-                                    "chapter_id": "ch-question",
-                                    "chapter_version_id": "cv-question-2",
-                                    "spec_revision": 1,
-                                    "asset_versions": [
-                                      {
-                                        "asset_id": "a-demo",
-                                        "asset_revision": 1
-                                      }
-                                    ],
-                                    "template_version": "1",
-                                    "actor_user_id": "u-owner",
-                                    "created_at": "2026-09-21T08:00:00Z",
-                                    "review_decisions": [
-                                      {
-                                        "review_item_id": "review-1",
-                                        "disposition": "retained_warning",
-                                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
-                                      }
-                                    ]
-                                  }
-                                },
-                                {
-                                  "chapter_id": "ch-method",
-                                  "chapter_version_id": "cv-method-1",
-                                  "title": "研究方案",
-                                  "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
-                                  "source_ids": [],
-                                  "review_items": [],
-                                  "confirmation": {
-                                    "id": "confirm-method",
-                                    "chapter_id": "ch-method",
-                                    "chapter_version_id": "cv-method-1",
-                                    "spec_revision": 1,
-                                    "asset_versions": [],
-                                    "template_version": "1",
-                                    "actor_user_id": "u-owner",
-                                    "created_at": "2026-09-21T08:00:00Z",
-                                    "review_decisions": []
-                                  }
-                                }
-                              ],
-                              "sources": [
-                                {
-                                  "id": "s-demo",
-                                  "project_id": "p-demo",
-                                  "asset_id": "a-demo",
-                                  "asset_revision": 1,
-                                  "locator": "测试段落 1",
-                                  "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
-                                  "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
-                                  "display_title": "合成测试材料（不是真实研究证据）"
-                                }
-                              ],
-                              "asset_versions": [
-                                {
-                                  "asset_id": "a-demo",
-                                  "asset_revision": 1
-                                }
-                              ],
-                              "policy_asset_ids": [
-                                "a-demo"
-                              ],
-                              "delivery_kind": "internal_demo",
-                              "spec_provenance": {
-                                "project_id": "p-demo",
-                                "spec_revision": 1,
-                                "context_revision": 0,
-                                "template_copy_version": 0,
-                                "fields": [
-                                  {
-                                    "field_key": "research_goal",
-                                    "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
-                                  },
-                                  {
-                                    "field_key": "research_subject",
-                                    "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
-                                  }
-                                ],
-                                "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
-                              }
-                            },
-                            "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
-                            "check": {
-                              "project_version": 8,
-                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                              "status": "passed",
-                              "issues": [
-                                {
-                                  "id": "warning-review-1",
-                                  "rule_id": "review-items-decided",
-                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                                  "severity": "warning",
-                                  "target_id": "ch-question",
-                                  "target_version": "cv-question-2",
-                                  "evidence": [],
-                                  "evaluator_version": "lingdoc-rules/1",
-                                  "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
-                                }
-                              ]
-                            },
-                            "is_current": true,
-                            "created_at": "2026-09-21T08:00:00Z"
-                          },
-                          {
-                            "id": "snapshot-demo",
-                            "project_id": "p-demo",
-                            "frozen_input": {
-                              "project_id": "p-demo",
-                              "project_name": "合成资料演示项目",
-                              "project_version": 8,
-                              "spec_revision": 1,
-                              "spec": {
+                              "spec_source": {
                                 "research_subject": "公开的合成调查样本",
                                 "research_goal": "验证资料到章节的工作流程"
                               },
@@ -11040,7 +10836,231 @@
                                 "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                               }
                             },
-                            "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
+                            "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
+                            "check": {
+                              "project_version": 8,
+                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                              "status": "passed",
+                              "issues": [
+                                {
+                                  "id": "warning-review-1",
+                                  "rule_id": "review-items-decided",
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "severity": "warning",
+                                  "target_id": "ch-question",
+                                  "target_version": "cv-question-2",
+                                  "evidence": [],
+                                  "evaluator_version": "lingdoc-rules/1",
+                                  "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                }
+                              ]
+                            },
+                            "is_current": true,
+                            "created_at": "2026-09-21T08:00:00Z"
+                          },
+                          {
+                            "id": "snapshot-demo",
+                            "project_id": "p-demo",
+                            "frozen_input": {
+                              "project_id": "p-demo",
+                              "project_name": "合成资料演示项目",
+                              "project_version": 8,
+                              "spec_revision": 1,
+                              "spec": {
+                                "research_subject": "公开的合成调查样本",
+                                "research_goal": "验证资料到章节的工作流程"
+                              },
+                              "spec_source": {
+                                "research_subject": "公开的合成调查样本",
+                                "research_goal": "验证资料到章节的工作流程"
+                              },
+                              "template": {
+                                "id": "template-demo",
+                                "name": "演示模板：研究问题与研究方案",
+                                "version": "1",
+                                "is_demo": true,
+                                "source": "lingdoc_builtin",
+                                "scope": "internal-demo",
+                                "sections": [
+                                  {
+                                    "section_id": "question",
+                                    "order": 1,
+                                    "title": "研究问题",
+                                    "required": true
+                                  },
+                                  {
+                                    "section_id": "method",
+                                    "order": 2,
+                                    "title": "研究方案",
+                                    "required": true
+                                  }
+                                ],
+                                "fields": [
+                                  {
+                                    "field_id": "research_subject",
+                                    "label": "研究对象",
+                                    "type": "string",
+                                    "order": 1,
+                                    "required": true
+                                  },
+                                  {
+                                    "field_id": "research_goal",
+                                    "label": "研究目标",
+                                    "type": "string",
+                                    "order": 2,
+                                    "required": true
+                                  }
+                                ],
+                                "required_fields": [
+                                  "research_subject",
+                                  "research_goal"
+                                ],
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "rules": [
+                                  {
+                                    "rule_id": "required-fields",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "required_fields",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "chapter-nonempty",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "nonempty_chapter",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "chapter-confirmed",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "confirmed_chapter",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "review-items-decided",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "review_items_decided",
+                                    "parameters": {}
+                                  },
+                                  {
+                                    "rule_id": "source-available",
+                                    "kind": "computed",
+                                    "severity": "blocking",
+                                    "evaluator": "source_available",
+                                    "parameters": {}
+                                  }
+                                ]
+                              },
+                              "chapters": [
+                                {
+                                  "chapter_id": "ch-question",
+                                  "chapter_version_id": "cv-question-2",
+                                  "title": "研究问题",
+                                  "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                  "source_ids": [
+                                    "s-demo"
+                                  ],
+                                  "citation_usages": [
+                                    {
+                                      "source_id": "s-demo",
+                                      "purpose": "支持流程说明",
+                                      "limitation": "仅作演示"
+                                    }
+                                  ],
+                                  "review_items": [
+                                    {
+                                      "id": "review-1",
+                                      "statement": "100条合成记录不能证明真实研究结论。",
+                                      "origin_candidate_id": "candidate-demo"
+                                    }
+                                  ],
+                                  "confirmation": {
+                                    "id": "confirm-question",
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "spec_revision": 1,
+                                    "asset_versions": [
+                                      {
+                                        "asset_id": "a-demo",
+                                        "asset_revision": 1
+                                      }
+                                    ],
+                                    "template_version": "1",
+                                    "actor_user_id": "u-owner",
+                                    "created_at": "2026-09-21T08:00:00Z",
+                                    "review_decisions": [
+                                      {
+                                        "review_item_id": "review-1",
+                                        "disposition": "retained_warning",
+                                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "chapter_id": "ch-method",
+                                  "chapter_version_id": "cv-method-1",
+                                  "title": "研究方案",
+                                  "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                  "source_ids": [],
+                                  "review_items": [],
+                                  "confirmation": {
+                                    "id": "confirm-method",
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "spec_revision": 1,
+                                    "asset_versions": [],
+                                    "template_version": "1",
+                                    "actor_user_id": "u-owner",
+                                    "created_at": "2026-09-21T08:00:00Z",
+                                    "review_decisions": []
+                                  }
+                                }
+                              ],
+                              "sources": [
+                                {
+                                  "id": "s-demo",
+                                  "project_id": "p-demo",
+                                  "asset_id": "a-demo",
+                                  "asset_revision": 1,
+                                  "locator": "测试段落 1",
+                                  "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                  "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                  "display_title": "合成测试材料（不是真实研究证据）"
+                                }
+                              ],
+                              "asset_versions": [
+                                {
+                                  "asset_id": "a-demo",
+                                  "asset_revision": 1
+                                }
+                              ],
+                              "policy_asset_ids": [
+                                "a-demo"
+                              ],
+                              "delivery_kind": "internal_demo",
+                              "spec_provenance": {
+                                "project_id": "p-demo",
+                                "spec_revision": 1,
+                                "context_revision": 0,
+                                "template_copy_version": 0,
+                                "fields": [
+                                  {
+                                    "field_key": "research_goal",
+                                    "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
+                                  },
+                                  {
+                                    "field_key": "research_subject",
+                                    "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
+                                  }
+                                ],
+                                "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
+                              }
+                            },
+                            "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
                             "check": {
                               "project_version": 8,
                               "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -11387,6 +11407,10 @@
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
+                          "spec_source": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
                           "template": {
                             "id": "template-demo",
                             "name": "演示模板：研究问题与研究方案",
@@ -11573,7 +11597,7 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
+                        "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -11613,6 +11637,10 @@
                           "project_version": 5,
                           "spec_revision": 1,
                           "spec": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "spec_source": {
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
@@ -11769,7 +11797,7 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "3d29d74c6c979fc6c683f539c2ece15c28e1c400c620e006791257fb05d325d5",
+                        "snapshot_digest": "f60170a28d84ddfa3eddb3e3ae16eaa925531700a1bc270e9e65eff3434631e6",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -11820,6 +11848,10 @@
                           "project_version": 3,
                           "spec_revision": 1,
                           "spec": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "spec_source": {
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
@@ -11943,7 +11975,7 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "de649301945cbcdf42cafbbb566defcd465e98c41f9eed634d479836310d257c",
+                        "snapshot_digest": "f7f4a899237d900a23a43b3b93c1b60623ae02668f79bc13dc801981d08c7334",
                         "check": {
                           "project_version": 3,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -11994,6 +12026,10 @@
                           "project_version": 5,
                           "spec_revision": 1,
                           "spec": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "spec_source": {
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
@@ -12150,7 +12186,7 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "3d29d74c6c979fc6c683f539c2ece15c28e1c400c620e006791257fb05d325d5",
+                        "snapshot_digest": "f60170a28d84ddfa3eddb3e3ae16eaa925531700a1bc270e9e65eff3434631e6",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -12201,6 +12237,10 @@
                           "project_version": 8,
                           "spec_revision": 1,
                           "spec": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "spec_source": {
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
@@ -12390,7 +12430,7 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
+                        "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -12757,232 +12797,7 @@
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
-                          "template": {
-                            "id": "template-demo",
-                            "name": "演示模板：研究问题与研究方案",
-                            "version": "1",
-                            "is_demo": true,
-                            "source": "lingdoc_builtin",
-                            "scope": "internal-demo",
-                            "sections": [
-                              {
-                                "section_id": "question",
-                                "order": 1,
-                                "title": "研究问题",
-                                "required": true
-                              },
-                              {
-                                "section_id": "method",
-                                "order": 2,
-                                "title": "研究方案",
-                                "required": true
-                              }
-                            ],
-                            "fields": [
-                              {
-                                "field_id": "research_subject",
-                                "label": "研究对象",
-                                "type": "string",
-                                "order": 1,
-                                "required": true
-                              },
-                              {
-                                "field_id": "research_goal",
-                                "label": "研究目标",
-                                "type": "string",
-                                "order": 2,
-                                "required": true
-                              }
-                            ],
-                            "required_fields": [
-                              "research_subject",
-                              "research_goal"
-                            ],
-                            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                            "rules": [
-                              {
-                                "rule_id": "required-fields",
-                                "kind": "computed",
-                                "severity": "blocking",
-                                "evaluator": "required_fields",
-                                "parameters": {}
-                              },
-                              {
-                                "rule_id": "chapter-nonempty",
-                                "kind": "computed",
-                                "severity": "blocking",
-                                "evaluator": "nonempty_chapter",
-                                "parameters": {}
-                              },
-                              {
-                                "rule_id": "chapter-confirmed",
-                                "kind": "computed",
-                                "severity": "blocking",
-                                "evaluator": "confirmed_chapter",
-                                "parameters": {}
-                              },
-                              {
-                                "rule_id": "review-items-decided",
-                                "kind": "computed",
-                                "severity": "blocking",
-                                "evaluator": "review_items_decided",
-                                "parameters": {}
-                              },
-                              {
-                                "rule_id": "source-available",
-                                "kind": "computed",
-                                "severity": "blocking",
-                                "evaluator": "source_available",
-                                "parameters": {}
-                              }
-                            ]
-                          },
-                          "chapters": [
-                            {
-                              "chapter_id": "ch-question",
-                              "chapter_version_id": "cv-question-2",
-                              "title": "研究问题",
-                              "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
-                              "source_ids": [
-                                "s-demo"
-                              ],
-                              "citation_usages": [
-                                {
-                                  "source_id": "s-demo",
-                                  "purpose": "支持流程说明",
-                                  "limitation": "仅作演示"
-                                }
-                              ],
-                              "review_items": [
-                                {
-                                  "id": "review-1",
-                                  "statement": "100条合成记录不能证明真实研究结论。",
-                                  "origin_candidate_id": "candidate-demo"
-                                }
-                              ],
-                              "confirmation": {
-                                "id": "confirm-question",
-                                "chapter_id": "ch-question",
-                                "chapter_version_id": "cv-question-2",
-                                "spec_revision": 1,
-                                "asset_versions": [
-                                  {
-                                    "asset_id": "a-demo",
-                                    "asset_revision": 1
-                                  }
-                                ],
-                                "template_version": "1",
-                                "actor_user_id": "u-owner",
-                                "created_at": "2026-09-21T08:00:00Z",
-                                "review_decisions": [
-                                  {
-                                    "review_item_id": "review-1",
-                                    "disposition": "retained_warning",
-                                    "reason": "仅作内部演示，保留该项并随文件明确列出。"
-                                  }
-                                ]
-                              }
-                            },
-                            {
-                              "chapter_id": "ch-method",
-                              "chapter_version_id": "cv-method-1",
-                              "title": "研究方案",
-                              "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
-                              "source_ids": [],
-                              "review_items": [],
-                              "confirmation": {
-                                "id": "confirm-method",
-                                "chapter_id": "ch-method",
-                                "chapter_version_id": "cv-method-1",
-                                "spec_revision": 1,
-                                "asset_versions": [],
-                                "template_version": "1",
-                                "actor_user_id": "u-owner",
-                                "created_at": "2026-09-21T08:00:00Z",
-                                "review_decisions": []
-                              }
-                            }
-                          ],
-                          "sources": [
-                            {
-                              "id": "s-demo",
-                              "project_id": "p-demo",
-                              "asset_id": "a-demo",
-                              "asset_revision": 1,
-                              "locator": "测试段落 1",
-                              "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
-                              "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
-                              "display_title": "合成测试材料（不是真实研究证据）"
-                            }
-                          ],
-                          "asset_versions": [
-                            {
-                              "asset_id": "a-demo",
-                              "asset_revision": 1
-                            }
-                          ],
-                          "policy_asset_ids": [
-                            "a-demo"
-                          ],
-                          "delivery_kind": "internal_demo",
-                          "spec_provenance": {
-                            "project_id": "p-demo",
-                            "spec_revision": 1,
-                            "context_revision": 0,
-                            "template_copy_version": 0,
-                            "fields": [
-                              {
-                                "field_key": "research_goal",
-                                "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
-                              },
-                              {
-                                "field_key": "research_subject",
-                                "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
-                              }
-                            ],
-                            "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
-                          }
-                        },
-                        "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
-                        "check": {
-                          "project_version": 8,
-                          "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                          "status": "passed",
-                          "issues": [
-                            {
-                              "id": "warning-review-1",
-                              "rule_id": "review-items-decided",
-                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-                              "severity": "warning",
-                              "target_id": "ch-question",
-                              "target_version": "cv-question-2",
-                              "evidence": [],
-                              "evaluator_version": "lingdoc-rules/1",
-                              "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
-                            }
-                          ]
-                        },
-                        "is_current": true,
-                        "created_at": "2026-09-21T08:00:00Z"
-                      },
-                      "request_id": "req-demo",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  },
-                  "historical": {
-                    "value": {
-                      "data": {
-                        "id": "snapshot-demo",
-                        "project_id": "p-demo",
-                        "frozen_input": {
-                          "project_id": "p-demo",
-                          "project_name": "合成资料演示项目",
-                          "project_version": 8,
-                          "spec_revision": 1,
-                          "spec": {
+                          "spec_source": {
                             "research_subject": "公开的合成调查样本",
                             "research_goal": "验证资料到章节的工作流程"
                           },
@@ -13172,7 +12987,240 @@
                             "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
                           }
                         },
-                        "snapshot_digest": "8e7355a3d7b80f8106d55d9bbb78ac7fbd30022856a45326b625bc1c39c57f7e",
+                        "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
+                        "check": {
+                          "project_version": 8,
+                          "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                          "status": "passed",
+                          "issues": [
+                            {
+                              "id": "warning-review-1",
+                              "rule_id": "review-items-decided",
+                              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                              "severity": "warning",
+                              "target_id": "ch-question",
+                              "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
+                              "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                            }
+                          ]
+                        },
+                        "is_current": true,
+                        "created_at": "2026-09-21T08:00:00Z"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "historical": {
+                    "value": {
+                      "data": {
+                        "id": "snapshot-demo",
+                        "project_id": "p-demo",
+                        "frozen_input": {
+                          "project_id": "p-demo",
+                          "project_name": "合成资料演示项目",
+                          "project_version": 8,
+                          "spec_revision": 1,
+                          "spec": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "spec_source": {
+                            "research_subject": "公开的合成调查样本",
+                            "research_goal": "验证资料到章节的工作流程"
+                          },
+                          "template": {
+                            "id": "template-demo",
+                            "name": "演示模板：研究问题与研究方案",
+                            "version": "1",
+                            "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
+                            "sections": [
+                              {
+                                "section_id": "question",
+                                "order": 1,
+                                "title": "研究问题",
+                                "required": true
+                              },
+                              {
+                                "section_id": "method",
+                                "order": 2,
+                                "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                            "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
+                                "required": true
+                              }
+                            ],
+                            "required_fields": [
+                              "research_subject",
+                              "research_goal"
+                            ],
+                            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                            "rules": [
+                              {
+                                "rule_id": "required-fields",
+                                "kind": "computed",
+                                "severity": "blocking",
+                                "evaluator": "required_fields",
+                                "parameters": {}
+                              },
+                              {
+                                "rule_id": "chapter-nonempty",
+                                "kind": "computed",
+                                "severity": "blocking",
+                                "evaluator": "nonempty_chapter",
+                                "parameters": {}
+                              },
+                              {
+                                "rule_id": "chapter-confirmed",
+                                "kind": "computed",
+                                "severity": "blocking",
+                                "evaluator": "confirmed_chapter",
+                                "parameters": {}
+                              },
+                              {
+                                "rule_id": "review-items-decided",
+                                "kind": "computed",
+                                "severity": "blocking",
+                                "evaluator": "review_items_decided",
+                                "parameters": {}
+                              },
+                              {
+                                "rule_id": "source-available",
+                                "kind": "computed",
+                                "severity": "blocking",
+                                "evaluator": "source_available",
+                                "parameters": {}
+                              }
+                            ]
+                          },
+                          "chapters": [
+                            {
+                              "chapter_id": "ch-question",
+                              "chapter_version_id": "cv-question-2",
+                              "title": "研究问题",
+                              "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                              "source_ids": [
+                                "s-demo"
+                              ],
+                              "citation_usages": [
+                                {
+                                  "source_id": "s-demo",
+                                  "purpose": "支持流程说明",
+                                  "limitation": "仅作演示"
+                                }
+                              ],
+                              "review_items": [
+                                {
+                                  "id": "review-1",
+                                  "statement": "100条合成记录不能证明真实研究结论。",
+                                  "origin_candidate_id": "candidate-demo"
+                                }
+                              ],
+                              "confirmation": {
+                                "id": "confirm-question",
+                                "chapter_id": "ch-question",
+                                "chapter_version_id": "cv-question-2",
+                                "spec_revision": 1,
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "template_version": "1",
+                                "actor_user_id": "u-owner",
+                                "created_at": "2026-09-21T08:00:00Z",
+                                "review_decisions": [
+                                  {
+                                    "review_item_id": "review-1",
+                                    "disposition": "retained_warning",
+                                    "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "chapter_id": "ch-method",
+                              "chapter_version_id": "cv-method-1",
+                              "title": "研究方案",
+                              "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                              "source_ids": [],
+                              "review_items": [],
+                              "confirmation": {
+                                "id": "confirm-method",
+                                "chapter_id": "ch-method",
+                                "chapter_version_id": "cv-method-1",
+                                "spec_revision": 1,
+                                "asset_versions": [],
+                                "template_version": "1",
+                                "actor_user_id": "u-owner",
+                                "created_at": "2026-09-21T08:00:00Z",
+                                "review_decisions": []
+                              }
+                            }
+                          ],
+                          "sources": [
+                            {
+                              "id": "s-demo",
+                              "project_id": "p-demo",
+                              "asset_id": "a-demo",
+                              "asset_revision": 1,
+                              "locator": "测试段落 1",
+                              "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                              "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                              "display_title": "合成测试材料（不是真实研究证据）"
+                            }
+                          ],
+                          "asset_versions": [
+                            {
+                              "asset_id": "a-demo",
+                              "asset_revision": 1
+                            }
+                          ],
+                          "policy_asset_ids": [
+                            "a-demo"
+                          ],
+                          "delivery_kind": "internal_demo",
+                          "spec_provenance": {
+                            "project_id": "p-demo",
+                            "spec_revision": 1,
+                            "context_revision": 0,
+                            "template_copy_version": 0,
+                            "fields": [
+                              {
+                                "field_key": "research_goal",
+                                "value_hash": "815b998b231f664f5c456472ab87763becf024c71226e3889bc824a11648c63b"
+                              },
+                              {
+                                "field_key": "research_subject",
+                                "value_hash": "60461bec4bcdd867ca7be6bebe480134c9a086e163319851a8af560c67ffe9e6"
+                              }
+                            ],
+                            "digest": "240b9fc018dafe1d19552eef2f947b502f55e805b87888c6c702e7ef3844fbae"
+                          }
+                        },
+                        "snapshot_digest": "38e9cfde567db96710c8815be8b1d71a9e39e728778fb995ba4fa4dc61329ff5",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -45163,6 +45211,13 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "spec_source": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "原始规格：路线感知投影之前、库里存的那份。溯源快照记的是它，溯源校验只能拿它去比；spec 那份是投影，求值专用（#324）。"
           },
           "template": {
             "$ref": "#/components/schemas/Template"

@@ -42,14 +42,19 @@ type DeliveryInput struct {
 	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
 	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
 
-	ProjectID       string                          `json:"project_id"`
-	ProjectName     string                          `json:"project_name"`
-	ProjectVersion  int                             `json:"project_version"`
-	SpecRevision    int                             `json:"spec_revision"`
-	ContextRevision int64                           `json:"context_revision,omitempty"`
-	Spec            map[string]string               `json:"spec"`
-	SpecProvenance  *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
-	Template        Template                        `json:"template"`
+	ProjectID       string            `json:"project_id"`
+	ProjectName     string            `json:"project_name"`
+	ProjectVersion  int               `json:"project_version"`
+	SpecRevision    int               `json:"spec_revision"`
+	ContextRevision int64             `json:"context_revision,omitempty"`
+	Spec            map[string]string `json:"spec"`
+	// SpecSource 是**原始规格**：路线感知投影之前、库里存的那一份。溯源快照记的
+	// 就是它，所以溯源校验（Build 与守卫的 AuthorizeFrozenProvenance 两处）都只能
+	// 拿它去比；Spec 那份是投影，求值专用（#319/#324）。缺省（旧快照）时溯源校验
+	// 回退到 Spec，与引入本字段前的行为一致。
+	SpecSource     map[string]string               `json:"spec_source,omitempty"`
+	SpecProvenance *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
+	Template       Template                        `json:"template"`
 	// RuleSetBinding is verified application evidence; durable template data reconstructs it on readback.
 	RuleSetBinding          *lingdoctemplate.VerifiedRuleSetBinding `json:"-"`
 	TemplateCopyID          string                                  `json:"template_copy_id,omitempty"`
@@ -818,6 +823,13 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	copy.Spec = map[string]string{}
 	for key, value := range input.Spec {
 		copy.Spec[key] = value
+	}
+	if input.SpecSource != nil {
+		source := map[string]string{}
+		for key, value := range input.SpecSource {
+			source[key] = value
+		}
+		copy.SpecSource = source
 	}
 	if input.SpecProvenance != nil {
 		provenance := *input.SpecProvenance
