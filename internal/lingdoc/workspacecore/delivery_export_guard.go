@@ -54,7 +54,7 @@ func (s *Service) AuthorizeDeliveryExportInTransaction(ctx context.Context, tx T
 	if err := ownerDecisionInTransaction(tx, p, actor); err != nil {
 		return err
 	}
-	if err := RuntimeGate(tx, actor, p, "export_start", effectiveRuntimeMode(s.runtimeMode)); err != nil {
+	if err := RuntimeGate(ctx, tx, actor, p, "export_start", effectiveRuntimeMode(s.runtimeMode)); err != nil {
 		return err
 	}
 	db, err := TransactionDatabase(tx)

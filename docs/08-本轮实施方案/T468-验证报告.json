@@ -1,8 +1,8 @@
 {
   "task": "468",
   "ticket": "magician336/lingdoc#468",
-  "head": "62f4b188",
-  "scope": "残留②(原子性)切片:逆向与控制记录写合成同一个写事务。逆向的领域逻辑从 reverseChangeSetOperation 的 mutation 闭包提取为共享 mutation(inverseChangeMutation,单一事实源),ControlRuntime 的 mutation 在同一事务内调用;写半部本就是不自开事务的共享 callback(createAssessedChangeMutation/createChangeDraftMutation),无嵌套事务,§4.4 顾虑的 SQLite 单连接死锁不触发。归档字段溯源请求的收集并入 runtimeControl 自身的 Prepare(archiveRestoreProvenanceRequests 加 runtimeControl case,操作自备证据)。残留①(切回已验证配置)方向评估完成:两候选均需语义重设计,已请求管理裁定后另立切片——本提交不写 Closes,issue 保持 open+assign。",
+  "head": "a275f31c(实现)+评审修正提交(先检后动+ACTIVE 拒绝用例)",
+  "scope": "残留②(原子性)切片:逆向与控制记录写合成同一个写事务。逆向的领域逻辑从 reverseChangeSetOperation 的 mutation 闭包提取为共享 mutation(inverseChangeMutation,单一事实源),ControlRuntime 的 mutation 在同一事务内调用;写半部本就是不自开事务的共享 callback(createAssessedChangeMutation/createChangeDraftMutation),无嵌套事务,§4.4 顾虑的 SQLite 单连接死锁不触发。归档字段溯源请求的收集并入 runtimeControl 自身的 Prepare(archiveRestoreProvenanceRequests 加 runtimeControl case,操作自备证据)。残留①(切回已验证配置)方向评估完成:两候选均需语义重设计,已请求管理裁定后另立切片——本提交不写 Closes,issue 保持 open+assign。 【切片 2(2026-11-04,管理裁定候选 B)】残留①(切回已验证配置):新增显式动作 apply_rollback——负责人在回退后主动执行,经既有领域入口 ApplyChangeSet 应用回退生成的逆向提案(全量校验照跑);「停止新写入」闸门对携带 runtimeSwitchKey 标记的该调用定向放行;切回后运行仍 PAUSED,恢复仍走既有 resume 复验。RuntimeControl 新增 inverse_change_set_id/rollback_applied;openapi action 枚举+RuntimeControl schema 同步(校验器 PASS)。残留①解除 ⇒ 切片 2 的 PR 写 Closes #468。",
   "passed": [
     {
       "id": "TD-468.1 残留②原子性:控制写失败 ⇒ 逆向一并回滚(普通字段)",
@@ -48,11 +48,61 @@
       "id": "TD-468.10 workspace-concurrency 门禁预算上调(CI 诊断修复)",
       "status": "pass",
       "evidence": "首轮 PR CI 的全包 race 扫描 5 分钟超时 panic(失败点在无关既有测试 TestStabilizationServiceAndClientAgree;本票新增 4 测试 race 下合计仅 1.64s,实测非压垮主因,系扫描线本就贴近 5m 预算)。修复:lingdoc-workspace-concurrency.yml 的 race 全包线 -timeout 5m→10m、job timeout-minutes 15→20(该工作流文件属于 watching 自身的门禁路径表,属正当 CI 维护)。本地 -race 全包 179s 全绿佐证测试本体无竞态。"
+    },
+    {
+      "id": "TD-468b.1 完成线:E2E 完整链(回退→恢复拒→切回→恢复成功)",
+      "status": "pass",
+      "evidence": "具名用例 TestG6SwitchBackToTheVerifiedConfigThenResumeSucceeds(r26 模板升级夹具改造:升级追加一条 info 级规则使 RulesetHash 真实变化=残留①的触发形状;服务端校验『项目自定义规则不能 blocking』顺带被钉住):① rollback 生成逆提案且控制记录记 inverse_change_set_id;② 切回前 resume 被拒(ErrRuntimeRecoveryRequired,残留①现状);③ apply_rollback 成功、rollback_applied=true、Status 保持 PAUSED、课题规则摘要回到基线值(新副本承载旧内容,副本版本只增不减=领域正确行为);④ resume 复验照跑后 ACTIVE。命令 `go test ./internal/lingdoc/workspacecore/ -run TestG6SwitchBack -count=1`。"
+    },
+    {
+      "id": "TD-468b.2 切回前置:无逆提案/无控制记录 ⇒ ErrInvalidState",
+      "status": "pass",
+      "evidence": "TestG6ApplyRollbackNeedsTheInverseProposalAndAPausedRuntime:只记录目标的回退(无 ChangeSetID ⇒ 无逆提案)切回 → ErrInvalidState;无控制记录(未回退过)切回 → ErrInvalidState(裸 NotFound 收敛)。"
+    },
+    {
+      "id": "TD-468b.3 闸门豁免的真红验证(定向放行被真实测到)",
+      "status": "pass",
+      "evidence": "红验证实测:临时禁用 RuntimeGate 的 runtimeSwitchKey 豁免 ⇒ apply_rollback 失败于 `runtime scope is paused`(423,PAUSED 闸门拒绝);恢复豁免 ⇒ 绿。测试夹具显式 svc.SetRuntimeMode(\"mock\") 启用闸门(不启用则豁免测不到——第一版红验证曾因此测了个寂寞,已修)。"
+    },
+    {
+      "id": "TD-468b.4 既有语义零回退(G6 全族 11 用例)",
+      "status": "pass",
+      "evidence": "TestG6RollbackGoesThroughTheDomainEntryAndKeepsTheHistory(rollback 不切课题状态,零改动)、切片 1 三条原子性用例(零改动)、TestG6ResumeRefusesARollbackTargetTheProjectNoLongerCarries(假字符串目标的拒绝语义保持)等 G6 全族全绿:`go test ./internal/lingdoc/workspacecore/ -run 'TestG6SwitchBack|TestG6ApplyRollbackNeeds|TestG6Rollback|TestG6Resume' -count=1`。"
+    },
+    {
+      "id": "TD-468b.5 四条不可变契约逐条",
+      "status": "pass",
+      "evidence": "① ledger 重放:apply 用 key+.apply、记账用 key,各自幂等重放;② 切回经 ApplyChangeSet 领域入口(调度权非直写权),无自写路径;③ rollback 三件语义:TD-468b.4 零改动;④ 无绕过领域校验的写路径(全量校验照跑)。"
+    },
+    {
+      "id": "TD-468b.6 契约同步",
+      "status": "pass",
+      "evidence": "openapi.json:RuntimeControlInput.action 枚举加 apply_rollback;RuntimeControl.properties 加 inverse_change_set_id/rollback_applied(附语义说明)。python3 -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py --source-root . → exit 0,PASS×2。"
+    },
+    {
+      "id": "TD-468b.7 方案档同步(§4.4 ⚠️ 条款+§7 残留①行)",
+      "status": "pass",
+      "evidence": "G6-运行控制后端补齐-20261023.md:§4.4 的 ⚠️ 历史披露保持真实并追加「▶ 已由 #468 切片 2 补齐」段(设计要点+已知边界);§7 残留①行更新为已解除(裁定依据、两轮评审风险的规避说明、两段式边界)。"
+    },
+    {
+      "id": "TD-468b.8 管理裁定落盘",
+      "status": "pass",
+      "evidence": "issue #468 裁定评论(裁定人 magician336,2026-11-04):候选 B,授权记录与实施设计六点;本切片按裁定实施,无超范围。"
+    },
+    {
+      "id": "TD-468b.10 评审 Required 修正:状态前置核对先于领域应用(先检后动)",
+      "status": "pass",
+      "evidence": "评审指出第一段在核对 PAUSED 前就执行领域应用 ⇒ 「ACTIVE 但带逆提案」的畸形记录会真切配置却被拒记账。修正:前置核对(PAUSED+RollbackTo+InverseChangeSetID)提升进第一段只读事务,应用前完成。新增用例 TestG6ApplyRollbackRefusesAnActiveRuntimeBeforeAnyDomainChange(回退→resume 进入 ACTIVE→切回被拒 ErrInvalidState+课题三版本字段与升级后完全一致=领域零变化)。"
+    },
+    {
+      "id": "TD-468b.11 评审小项闭合",
+      "status": "pass",
+      "evidence": "测试 `_ = p` 死代码删除;「Status!=PAUSED 分支无测试」由 TD-468b.10 的 ACTIVE 用例覆盖;stale 失败专项用例(裁定第 6 点建议)依赖既有 ApplyChangeSet 状态机/基线校验,登记为后续可选项;验证报告 head 更新为本切片提交。Spec 轴结论:通过,裁定六点落实、无绕过点、语义钉子未破。"
     }
   ],
   "not_run": [
     {
-      "id": "TD-468.9 PR 必需 CI 全绿(合并前门禁)",
+      "id": "TD-468b.9 PR 必需 CI 全绿(合并前门禁)",
       "status": "not_run",
       "reason": "等待 PR 必需检查;PR 列出后补记 run URL 与 head,全绿才合并。"
     }
@@ -63,5 +113,5 @@
     "evidence": "待修复推送后的新一轮 run;PR #784 head 更新后 26+ 项全绿补记于此。"
   },
   "environment_limits": "本机 python3.14/gofmt 版本与 CI 3.12 不同(scripts/ci 预存 1 个 gofmt 环境性失败,干净 main 对照法);归档夹具的 proof 分支红向需来源派生字段的夹具,当前以 human 字段夹具覆盖接线与原子性(边界已登记)。",
-  "out_of_scope": "残留①(切回已验证配置)——方向评估完成,语义重设计待管理裁定后另立切片;lineage 祖先记账在合并路径不产生(防护由 ReversesChangeSetID+活跃逆向锁兜底,已登记);独立入口 reverseChangeSet 的对外行为零变化(纯提取)。"
+  "out_of_scope": "残留①(切回已验证配置)——方向评估完成,语义重设计待管理裁定后另立切片;lineage 祖先记账在合并路径不产生(防护由 ReversesChangeSetID+活跃逆向锁兜底,已登记);独立入口 reverseChangeSet 的对外行为零变化(纯提取)。 【切片 2 界定】「模板版本字符串推进」的升级形态不存在(TemplateUpgradeInput 不携带 Version,服务端既定行为)——切回的真实差异形状是规则摘要/副本内容(本切片采用);台面 expected_project_version(409 层)不在本票。"
 }
