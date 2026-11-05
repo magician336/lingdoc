@@ -1,0 +1,189 @@
+{
+  "baselineId": "LD-V1-20261103-R1",
+  "kind": "fictional-design-fixture",
+  "persistent": false,
+  "project": {
+    "id": "P01",
+    "title": "社区老年人数字公共服务使用障碍研究",
+    "disclaimer": "虚构科研申报演示，不对应实际基金规则"
+  },
+  "document": {
+    "id": "D01",
+    "revision": 12,
+    "sections": [
+      {
+        "id": "SAMPLE",
+        "title": "样本选择",
+        "text": "计划进入四个社区开展问卷与访谈，据此了解全市老年人使用数字公共服务的情况。"
+      },
+      {
+        "id": "SCHEDULE",
+        "title": "进度安排",
+        "text": "首月完成四个社区的联系与招募，随后开展问卷与访谈。"
+      },
+      {
+        "id": "METHOD",
+        "title": "访谈方法",
+        "text": "采用半结构访谈，围绕服务接触、使用障碍与支持需求开展交流。"
+      }
+    ]
+  },
+  "sourceVersions": [
+    {
+      "sourceId": "CONTACT",
+      "versionId": "CONTACT-v1",
+      "version": 1,
+      "title": "社区联系记录",
+      "paragraphs": [
+        {
+          "id": "P1",
+          "text": "四个社区表示愿意在本期协助研究团队开展联系与招募。"
+        }
+      ]
+    },
+    {
+      "sourceId": "CONTACT",
+      "versionId": "CONTACT-v2",
+      "version": 2,
+      "title": "社区联系记录",
+      "paragraphs": [
+        {
+          "id": "P1",
+          "text": "其中两个社区本期不能配合，目前可进入的场地由四个社区变为两个社区。"
+        }
+      ]
+    }
+  ],
+  "researchSnapshots": [
+    {
+      "id": "RS1",
+      "confirmedBy": "demo-user",
+      "scope": "拟进入四个社区",
+      "evidence": [
+        {
+          "sourceVersionId": "CONTACT-v1",
+          "paragraphId": "P1"
+        }
+      ]
+    }
+  ],
+  "comments": [
+    {
+      "id": "C01",
+      "documentId": "D01",
+      "baseRevision": 12,
+      "sectionId": "SAMPLE",
+      "text": "说明社区选择标准，不要据此概括全市情况。",
+      "anchor": {
+        "kind": "fixture-section",
+        "status": "not-native-bound",
+        "excerpt": "据此了解全市老年人使用数字公共服务的情况"
+      },
+      "decision": null,
+      "progress": "awaiting_decision"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "DEP1",
+      "from": "CONTACT-v1",
+      "to": "SAMPLE",
+      "reason": "样本场地范围依据联系记录"
+    },
+    {
+      "id": "DEP2",
+      "from": "CONTACT-v1",
+      "to": "SCHEDULE",
+      "reason": "招募安排依赖可进入场地"
+    },
+    {
+      "id": "DEP3",
+      "from": "CONTACT-v1",
+      "to": "FIG01",
+      "reason": "路线图包含四社区招募节点"
+    }
+  ],
+  "figure": {
+    "id": "FIG01",
+    "integration": "experiment_pending",
+    "nodes": [
+      {
+        "id": "N1",
+        "text": "四社区联系与招募"
+      },
+      {
+        "id": "N2",
+        "text": "问卷与半结构访谈"
+      },
+      {
+        "id": "N3",
+        "text": "整理障碍与支持需求"
+      }
+    ],
+    "edges": [
+      [
+        "N1",
+        "N2"
+      ],
+      [
+        "N2",
+        "N3"
+      ]
+    ]
+  },
+  "change": {
+    "id": "CH01",
+    "fromVersionId": "CONTACT-v1",
+    "toVersionId": "CONTACT-v2",
+    "summary": "可进入场地由四个社区变为两个社区"
+  },
+  "reviewTasks": [
+    {
+      "id": "R1",
+      "changeId": "CH01",
+      "target": "SAMPLE",
+      "dependencyId": "DEP1",
+      "reason": "检查样本范围与适用边界",
+      "decision": null,
+      "progress": "awaiting_decision"
+    },
+    {
+      "id": "R2",
+      "changeId": "CH01",
+      "target": "SCHEDULE",
+      "dependencyId": "DEP2",
+      "reason": "检查原招募和进度安排",
+      "decision": null,
+      "progress": "awaiting_decision"
+    },
+    {
+      "id": "R3",
+      "changeId": "CH01",
+      "target": "FIG01",
+      "dependencyId": "DEP3",
+      "reason": "四社区图节点可能需要调整",
+      "decision": null,
+      "progress": "awaiting_decision"
+    }
+  ],
+  "coverageNote": {
+    "target": "METHOD",
+    "status": "no_direct_dependency_found",
+    "text": "显式关系未发现访谈方法直接受影响，仍由用户判断，不预设已完成。"
+  },
+  "steps": [
+    "打开初稿",
+    "处理C01并保存",
+    "确认CONTACT-v2变化",
+    "检查R1 R2 R3",
+    "用户决定保留访谈方法并说明理由",
+    "保存重开并导出"
+  ],
+  "constraints": [
+    "不得自动把样本量减半",
+    "不得自动改写正文或图表",
+    "fixture-section不能传给原生定位",
+    "未持久化不能宣称已保存",
+    "决定修改不等于处理完成"
+  ]
+}

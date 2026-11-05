@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checks": [
+    "ordinary New has no project save binding",
+    "ordinary document accepts native editing",
+    "native Ctrl+S downloads an ordinary DOCX",
+    "ordinary save does not call project DS or Go",
+    "downloaded ordinary DOCX reopens with original text",
+    "opening an ordinary DOCX does not force project membership"
+  ],
+  "scope": "ordinary native new/open/save without project save calls",
+  "errors": []
+}

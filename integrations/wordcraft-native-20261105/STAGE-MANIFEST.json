@@ -1,0 +1,10 @@
+{
+  "stage": "LD-WORDCRAFT-STAGE-V1-20261105",
+  "sourceCommit": "7825a4ccdebad574d542a7f682b59689b5387b36",
+  "testedProductCommit": "3d2487bc66ddeb98fdbdebe4aef1e6731d3d2c9b",
+  "importedSourceTree": "1d0c8884e72ea613c13ca8832f2d33f45c8aa3cd",
+  "magicianBase": "1c47473f469bbb224f5d05fa9e3a11e5091118a6",
+  "wasmSha256": "7bf6d4fc9ce8266c77683c37d7a4be22cb2a7e65ff8a2e30d595b3e8d46516cb",
+  "changesAfterImport": "stage documentation only; no product source changes",
+  "originalManifest": "SOURCE-MANIFEST.json describes the historical initial import, not this stage"
+}

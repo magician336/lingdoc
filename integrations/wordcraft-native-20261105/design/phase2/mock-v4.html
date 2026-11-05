@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LingDoc 二期 · 布局级交互稿 v4（mock）</title>
+<style>
+:root{
+  --brand:#0064e6; --brand-700:#0756b8; --brand-50:#e8f0fc; --brand-100:#d8e5f9;
+  --n0:#ffffff; --n50:#f6f7f5; --n100:#eff1ee; --n200:#e3e7e3; --n300:#cbd2cc;
+  --n500:#8a938e; --n700:#5a625d; --n900:#1f2321;
+  --ok:#2e8b57; --warn:#b07a2a; --danger:#c44b3f; --info:#3e6fa8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;background:var(--n100);color:var(--n900);overflow:hidden;height:100vh}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.banner{position:fixed;top:0;left:0;right:0;z-index:99;background:#102030;color:#cfe2ff;font-size:11.5px;padding:5px 14px;display:flex;gap:14px;align-items:center}
+.banner b{color:#fff}.banner span{opacity:.75}
+.stage{position:absolute;inset:26px 0 0 0}
+.ide{position:absolute;inset:0;display:grid;grid-template-rows:42px 30px 70px 1fr 28px}
+
+/* 顶栏 / 页签 / 功能区 */
+.titlebar{display:flex;align-items:center;gap:10px;background:var(--n50);border-bottom:1px solid var(--n200);padding:0 12px;font-size:12px;color:var(--n700)}
+.qat{display:flex;gap:2px}
+.qat span{width:26px;height:24px;display:grid;place-items:center;border-radius:4px;color:var(--n700);cursor:default}
+.qat span:hover{background:var(--brand-50);color:var(--brand)}
+.titlebar .doc b{font-weight:600;color:var(--n900)}
+.tabs{display:flex;align-items:flex-end;gap:2px;background:var(--n50);padding:0 12px;font-size:12.5px}
+.tabs span{padding:5px 13px;color:var(--n700);position:relative;cursor:default}
+.tabs span.on{color:var(--brand);font-weight:600}
+.tabs span.on:after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--brand);border-radius:2px}
+.ribbon{display:flex;background:var(--n0);border-bottom:1px solid var(--n200);padding:6px 12px 2px;align-items:stretch}
+.rgroup{display:flex;gap:2px;padding:0 12px;border-right:1px solid var(--n200)}
+.rgroup:last-child{border-right:0}
+.rbtn{width:46px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 2px;border-radius:5px;font-size:10px;color:var(--n700);cursor:default;transition:background .12s}
+.rbtn:hover{background:var(--brand-50);color:var(--brand)}
+.rbtn .ic{width:20px;height:20px;display:grid;place-items:center}
+
+/* 主体：activity bar + 侧栏 + 中心 + AI */
+.work{display:grid;grid-template-columns:48px auto minmax(0,1fr) auto;min-height:0}
+
+/* Activity Bar（VS Code 式） */
+.abar{background:var(--n50);border-right:1px solid var(--n200);display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:2px}
+.abar button{width:40px;height:40px;border-radius:8px;display:grid;place-items:center;color:var(--n500);position:relative;transition:color .12s,background .12s}
+.abar button:hover{color:var(--n900);background:var(--n100)}
+.abar button.on{color:var(--brand)}
+.abar button.on:before{content:"";position:absolute;left:-5px;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--brand)}
+.abar button .badge{position:absolute;top:5px;right:5px;min-width:14px;height:14px;border-radius:7px;background:var(--brand);color:#fff;font-size:8.5px;font-weight:700;display:grid;place-items:center}
+.abar .sp{flex:1}
+.abar svg{width:19px;height:19px}
+
+/* 文件资源管理器 */
+.explorer{width:224px;background:var(--n50);border-right:1px solid var(--n200);display:flex;flex-direction:column;min-height:0;transition:width .18s ease}
+.explorer.off{width:0;border-right:0;overflow:hidden}
+.exp-head{padding:10px 12px 6px;font-size:10.5px;letter-spacing:.1em;color:var(--n500);font-weight:600}
+.exp-body{flex:1;overflow:auto;padding:0 6px}
+.folder{font-size:11px;font-weight:600;color:var(--n700);padding:7px 8px 5px;display:flex;align-items:center;gap:5px}
+.folder .arr{font-size:8px;color:var(--n500)}
+.folder .cnt{margin-left:auto;font-weight:400;color:var(--n500)}
+.file{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:5px 8px 5px 22px;border-radius:6px;font-size:12.5px;color:var(--n900);transition:background .12s}
+.file:hover{background:var(--n100)}
+.file.on{background:var(--brand-50)}
+.file .ver{margin-left:auto;font-size:9px;color:var(--n500)}
+.file .ro{color:var(--n500);font-size:9px;border:1px solid var(--n300);border-radius:3px;padding:0 3px;margin-left:auto}
+.ficon{position:relative;display:inline-block;width:15px;height:18px;border:1.2px solid;border-radius:2px;background:#fff;flex:none}
+.ficon:after{content:"";position:absolute;top:-1.2px;right:-1.2px;width:5px;height:5px;background:#fff;border-left:1.2px solid;border-bottom:1.2px solid;border-color:inherit}
+.ficon i{position:absolute;left:0;right:0;bottom:1px;font-style:normal;font-size:5.5px;font-weight:700;text-align:center}
+.ficon.pdf{border-color:#c4483c;color:#c4483c}
+.ficon.docx{border-color:#2b579a;color:#2b579a}
+.ficon.txt{border-color:#8a938e;color:#8a938e}
+.exp-foot{border-top:1px solid var(--n200);padding:8px 10px}
+.import-btn{width:100%;border:1px dashed var(--n300);border-radius:7px;padding:7px;font-size:11.5px;color:var(--n700)}
+.import-btn:hover{border-color:var(--brand);color:var(--brand)}
+
+/* 中心：文档标签条 + 画布 */
+.center{display:flex;flex-direction:column;min-width:0;min-height:0}
+.doctabs{display:flex;align-items:flex-end;background:var(--n100);border-bottom:1px solid var(--n200);padding:4px 8px 0;gap:2px}
+.dtab{display:flex;align-items:center;gap:7px;padding:6px 10px 7px;font-size:12px;color:var(--n700);border-radius:7px 7px 0 0;position:relative;cursor:default}
+.doctabs .dtab:hover{background:var(--n200)}
+.dtab.on{background:var(--n0);color:var(--n900);box-shadow:0 -1px 4px rgba(31,35,33,.05)}
+.dtab.on:before{content:"";position:absolute;top:0;left:8px;right:8px;height:2px;background:var(--brand);border-radius:2px}
+.dtab .x{color:var(--n500);font-size:11px;padding:0 2px;border-radius:3px}
+.dtab .x:hover{background:var(--n100);color:var(--danger)}
+.dtab .ro-lock{font-size:9px;color:var(--n500)}
+.dtab .mod{width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.doctabs .tail{margin-left:auto;color:var(--n500);padding:5px 8px;border-radius:5px;font-size:12px}
+.doctabs .tail:hover{background:var(--n200);color:var(--n900)}
+.canvas{flex:1;background:var(--n100);overflow:auto;display:flex;justify-content:center;padding:24px 20px 60px;min-height:0}
+.paper{background:var(--n0);width:min(700px,100%);min-height:820px;border:1px solid var(--n200);box-shadow:0 2px 14px rgba(31,35,33,.07);padding:50px 62px;font-family:"Noto Serif SC","Songti SC",serif}
+.paper h1{font-size:19px;margin-bottom:6px}
+.paper .sub{font-size:11px;color:var(--n500);font-family:"Segoe UI",sans-serif;margin-bottom:24px}
+.paper h2{font-size:15px;margin:20px 0 10px}
+.paper p{font-size:13.5px;line-height:2.1;color:#333835;margin-bottom:12px;text-align:justify}
+.paper p.placeholder{color:var(--n300)}
+.paper.readonly{background:var(--n50)}
+.paper .pdfpage{border:1px solid var(--n300);background:#fff;min-height:560px;display:grid;place-items:center;color:var(--n500);font-size:12px;font-family:"Segoe UI",sans-serif}
+
+/* AI 面板（UPDF 式顶栏） */
+.ai{width:350px;background:var(--n0);border-left:1px solid var(--n200);display:flex;flex-direction:column;min-height:0;transition:width .18s ease}
+.ai.off{width:0;border-left:0;overflow:hidden}
+.ai-head{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--n200);flex:none}
+.ai-head b{font-size:13px}
+.ai-head .grow{flex:1}
+.hbtn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--n500);font-size:13px}
+.hbtn:hover{background:var(--n100);color:var(--n900)}
+.msgs{flex:1;overflow:auto;padding:14px 12px;min-height:0}
+.msg{margin-bottom:16px}
+.msg .who{font-size:11px;font-weight:600;margin-bottom:4px}
+.msg.user .who{color:var(--brand)}
+.msg.ai-m .who{color:var(--n500)}
+.msg.user .body{background:var(--n100);border-radius:9px;padding:9px 12px;font-size:12.5px;line-height:1.8}
+.msg.ai-m .body{font-size:12.5px;line-height:1.9;padding:2px}
+.cite{margin-top:8px;border:1px solid var(--n200);border-radius:7px;padding:9px 11px;background:var(--n50)}
+.cite small{display:block;font-size:9.5px;color:var(--n500);letter-spacing:.06em}
+.cite b{display:block;font-size:12px;margin:3px 0 2px}
+.cite .meta2{font-size:10px;color:var(--n500)}
+.cite button{margin-top:7px;font-size:11px;color:var(--info);padding:0}
+.cite button:hover{text-decoration:underline}
+/* 快捷动作 chips（UPDF 式，输入框上方） */
+.quick{display:flex;gap:6px;padding:8px 12px 0;flex:none;flex-wrap:wrap}
+.qchip{border:1px solid var(--n200);background:var(--n50);border-radius:6px;padding:4px 9px;font-size:11px;color:var(--n700);display:inline-flex;align-items:center;gap:5px;transition:border-color .12s,color .12s}
+.qchip:hover{border-color:var(--brand);color:var(--brand)}
+.composer{padding:8px 12px 8px;flex:none}
+.ctx-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-50);color:var(--brand-700);border-radius:6px;padding:4px 8px;font-size:11px}
+.chip i{font-style:normal;color:var(--danger);cursor:pointer;font-weight:600}
+.input-box{border:1px solid var(--n300);border-radius:10px;background:var(--n0);transition:border-color .12s,box-shadow .12s}
+.input-box:focus-within{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-50)}
+.input-box .area{padding:9px 12px;font-size:12.5px;color:var(--n500);min-height:38px}
+.input-bar{display:flex;align-items:center;gap:2px;padding:5px 8px;border-top:1px solid var(--n200)}
+.ib{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--n700);font-size:13px}
+.ib:hover{background:var(--n100)}
+.model{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--n700);padding:3px 8px;border-radius:6px}
+.model:hover{background:var(--n100)}
+.model .lv{color:var(--n500)}
+.input-bar .send{margin-left:auto;background:var(--brand);color:#fff;border-radius:7px;width:28px;height:28px;display:grid;place-items:center;font-size:13px}
+.input-bar .send:hover{background:var(--brand-700)}
+.budget{font-size:9.5px;color:var(--n500);margin-top:6px;display:flex;align-items:center;gap:6px}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--brand);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}
+.disclaimer{font-size:9.5px;color:var(--n500);text-align:center;padding:4px 0 6px}
+
+/* 状态栏（VS Code 式，逐项可点） */
+.statusbar{display:flex;align-items:center;background:var(--n50);border-top:1px solid var(--n200);padding:0 8px;font-size:11px;color:var(--n700)}
+.sb{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;cursor:default}
+.sb:hover{background:var(--n100)}
+.sb .dot{width:7px;height:7px;border-radius:50%}
+.sb .dot.ok{background:var(--ok)}.sb .dot.warn{background:var(--warn)}
+.sb.dim{color:var(--n500)}
+.statusbar .right{margin-left:auto;display:flex}
+.toast{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:var(--n900);color:#fff;font-size:12px;padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .18s;pointer-events:none;z-index:100}
+.toast.on{opacity:.94}
+</style>
+</head>
+<body>
+<div class="banner"><b>交互稿 v4 · 未接真实接口</b><span>Activity Bar + 真文档标签条 + VS Code 式状态栏 + UPDF 式 AI 顶栏与快捷动作</span></div>
+<div class="stage">
+<div class="ide">
+  <div class="titlebar">
+    <div class="qat"><span title="保存">💾</span><span title="撤销">↩</span><span title="重做">↪</span></div>
+    <span class="doc"><b>2026 国家社科基金项目申请</b> · LingDoc</span>
+  </div>
+  <div class="tabs"><span>文件</span><span class="on">开始</span><span>插入</span><span>布局</span><span>审阅</span><span>视图</span><span style="color:var(--brand)">LingDoc</span></div>
+  <div class="ribbon">
+    <div class="rgroup">
+      <div class="rbtn"><span class="ic">📋</span>粘贴</div><div class="rbtn"><span class="ic">✂️</span>剪切</div><div class="rbtn"><span class="ic">📄</span>复制</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtn"><span class="ic" style="font-weight:700">B</span>加粗</div><div class="rbtn"><span class="ic" style="font-style:italic">I</span>倾斜</div><div class="rbtn"><span class="ic" style="text-decoration:underline">U</span>下划线</div>
+    </div>
+  </div>
+
+  <div class="work">
+    <!-- Activity Bar -->
+    <nav class="abar">
+      <button class="on" id="ab-files" title="资料"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h5l2 2h5v12H4z"/></svg></button>
+      <button class="on" id="ab-chat" title="资料问答"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h14v9H8l-3.5 3V13H3z"/></svg><span class="badge">3</span></button>
+      <button id="ab-search" title="命令搜索（Ctrl+K）"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg></button>
+      <span class="sp"></span>
+      <button id="ab-deliver" title="准备交付"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3v10M6 9l4 4 4-4M4 17h12"/></svg></button>
+    </nav>
+
+    <!-- 资料侧栏 -->
+    <aside class="explorer" id="explorer">
+      <div class="exp-head">项目资料</div>
+      <div class="exp-body">
+        <div class="folder"><span class="arr">▾</span>申报要求与模板<span class="cnt">4</span></div>
+        <button class="file"><span class="ficon docx"><i>W</i></span>申报书模板.docx<span class="ver">v2</span></button>
+        <button class="file"><span class="ficon pdf"><i>PDF</i></span>申报指南 2026.pdf<span class="ver">v1</span></button>
+        <div class="folder"><span class="arr">▾</span>参考文献<span class="cnt">5</span></div>
+        <button class="file on" id="src-row"><span class="ficon pdf"><i>PDF</i></span>研究综述.pdf<span class="ro">只读</span></button>
+        <button class="file"><span class="ficon pdf"><i>PDF</i></span>方法论基础.pdf<span class="ver">v1</span></button>
+        <div class="folder"><span class="arr">▾</span>前期研究材料<span class="cnt">3</span></div>
+        <button class="file"><span class="ficon docx"><i>W</i></span>访谈记录.docx<span class="ver">v1</span></button>
+        <button class="file"><span class="ficon txt"><i>TXT</i></span>政策文件.txt<span class="ver">v2</span></button>
+      </div>
+      <div class="exp-foot"><button class="import-btn">＋ 导入资料（TXT / MD / PDF / DOCX）</button></div>
+    </aside>
+
+    <!-- 中心 -->
+    <div class="center">
+      <div class="doctabs">
+        <div class="dtab on" id="tab-body"><span class="ficon docx" style="width:12px;height:15px"><i style="font-size:4.5px">W</i></span>申请书.docx<span class="mod" title="有未保存修改"></span></div>
+        <div class="dtab" id="tab-src"><span class="ficon pdf" style="width:12px;height:15px"><i style="font-size:4.5px">PDF</i></span>研究综述.pdf · v3<span class="ro-lock">🔒只读</span><span class="x">×</span></div>
+        <button class="tail" title="视图与分屏">…</button>
+      </div>
+      <div class="canvas">
+        <div class="paper" id="paper-body">
+          <h1>选题依据</h1>
+          <div class="sub">主文稿 · 可编辑 · 同一整卷 DOCX</div>
+          <h2>2.1 学术史梳理</h2>
+          <p>国内外相关研究的学术史梳理及研究进展。近年来，该领域研究呈现出从单一视角向多学科交叉转变的趋势。</p>
+          <p>相对于已有研究特别是国家社科基金同类项目，本课题的独到学术价值体现在研究视角的转换与材料的系统性整合。</p>
+          <p class="placeholder">（示意文字，不代表真实文档内容。）</p>
+        </div>
+        <div class="paper readonly" id="paper-src" style="display:none">
+          <h1>研究综述.pdf</h1>
+          <div class="sub">只读页图 · v3 · 第 7 / 24 页</div>
+          <div class="pdfpage">PDF 页图渲染区（raster，不可编辑）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI 面板（UPDF 式） -->
+    <aside class="ai" id="ai">
+      <div class="ai-head">
+        <b>资料问答</b>
+        <span class="grow"></span>
+        <button class="hbtn" id="ai-history" title="历史会话">⏱</button>
+        <button class="hbtn" id="ai-new" title="新建会话">＋</button>
+      </div>
+      <div class="msgs">
+        <div class="msg user"><div class="who">你</div><div class="body">同类课题近三年的立项趋势是什么？</div></div>
+        <div class="msg ai-m"><div class="who">AI 助手</div><div class="body">根据已加入的资料，近三年立项集中在交叉学科与方法论创新两个方向……
+          <div class="cite"><small>原文出处</small><b>研究综述.pdf</b><span class="meta2">v3 · 第 7 页</span><br><button id="open-cite">查看出处 →</button></div>
+        </div></div>
+      </div>
+      <div class="quick">
+        <button class="qchip">✦ 总结这份资料</button>
+        <button class="qchip">✦ 提炼可引用观点</button>
+        <button class="qchip">✦ 核对这段出处</button>
+      </div>
+      <div class="composer">
+        <div class="ctx-chips">
+          <span class="chip">📑 研究综述.pdf<i title="移除">×</i></span>
+          <span class="chip">📑 访谈记录.docx<i>×</i></span>
+        </div>
+        <div class="input-box">
+          <div class="area">就项目资料提问，或继续追问…</div>
+          <div class="input-bar">
+            <button class="ib" title="添加资料（≤4 份）">＋</button>
+            <button class="model" title="当前模型配置（只读）">K3 <span class="lv">标准</span> ⌄</button>
+            <button class="send" title="发送">↑</button>
+          </div>
+        </div>
+        <div class="budget"><span class="pulse"></span>正在检索资料并回答…　上下文 3 / 4 份 · 约 8,200 / 12000 字符</div>
+        <div class="disclaimer">AI 生成内容，仅供参考；结论以原文出处为准</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 状态栏（VS Code 式） -->
+  <div class="statusbar">
+    <span class="sb" title="点击保存"><span class="dot warn"></span>未保存修改</span>
+    <span class="sb dim" title="保存版本">Go v14</span>
+    <span class="sb dim" title="同步状态">⇅ 已同步</span>
+    <div class="right">
+      <span class="sb dim">190 字</span>
+      <span class="sb dim">第 4 / 8 页</span>
+      <span class="sb">中文（简体）</span>
+      <span class="sb">100%</span>
+      <span class="sb" title="专注模式">专注</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="toast" id="toast">已在标签条打开：研究综述.pdf · 第 7 页</div>
+
+<script>
+const toast = document.getElementById("toast");
+function showToast(t){ toast.textContent = t; toast.classList.add("on"); setTimeout(() => toast.classList.remove("on"), 2200); }
+
+// Activity bar 开关侧栏
+const explorer = document.getElementById("explorer"), ai = document.getElementById("ai");
+document.getElementById("ab-files").onclick = () => {
+  explorer.classList.toggle("off");
+  document.getElementById("ab-files").classList.toggle("on", !explorer.classList.contains("off"));
+};
+document.getElementById("ab-chat").onclick = () => {
+  ai.classList.toggle("off");
+  document.getElementById("ab-chat").classList.toggle("on", !ai.classList.contains("off"));
+};
+document.getElementById("ab-search").onclick = () => showToast("命令面板（Ctrl+K）：命令 / 资料 / 跳转（示意）");
+document.getElementById("ab-deliver").onclick = () => showToast("打开交付流程（Backstage 导出页）");
+
+// 文档标签切换
+const tabBody = document.getElementById("tab-body"), tabSrc = document.getElementById("tab-src");
+const paperBody = document.getElementById("paper-body"), paperSrc = document.getElementById("paper-src");
+tabBody.onclick = () => { tabBody.classList.add("on"); tabSrc.classList.remove("on"); paperBody.style.display = ""; paperSrc.style.display = "none"; };
+tabSrc.onclick = () => { tabSrc.classList.add("on"); tabBody.classList.remove("on"); paperBody.style.display = "none"; paperSrc.style.display = ""; };
+document.getElementById("open-cite").onclick = () => { tabSrc.onclick(); showToast("已定位：研究综述.pdf · 第 7 页"); };
+document.getElementById("ai-history").onclick = () => showToast("历史会话列表（UPDF 式，面板顶栏弹出）");
+</script>
+</body>
+</html>

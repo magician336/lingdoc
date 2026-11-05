@@ -1,0 +1,410 @@
+{
+  "passed": true,
+  "origin": "http://localhost:7230",
+  "scope": "native start page; generated import only; extreme states are UI-only",
+  "checks": [
+    "held project-state response does not block the real ordinary new-document entry",
+    "HTTP 503 project-state response leaves standalone ready and native project page shows failure without stale cards",
+    "native root remains standalone with no forced project or outer workbench",
+    "native New/Open navigation preserves the unbound document",
+    "project list opens project details before binding any manuscript",
+    "start-page core controls fit 1600x1000",
+    "start-page core controls fit 1300x900",
+    "start-page core controls fit 900x700",
+    "back to project list clears detail hit targets and reopens the same project",
+    "actual typing filters both manuscript and sources without stale clickable results",
+    "clear search restores real manuscript and source entries",
+    "UI-only long names and resume summary retain usable 900x700 controls",
+    "UI-only empty project keeps import available and has no fake manuscript target",
+    "UI-only long import failure remains collapsed and does not hide basic controls",
+    "UI-only disconnected project clears stale actions while native sidebar remains available",
+    "UI-only stress states leave persisted project conversation and ordinary document unchanged",
+    "file chooser cancel event releases import state without adding a source",
+    "native import selects a real generated file and adds one source with no model or history mutation",
+    "project manuscript entry opens the bound native document",
+    "actual source row opens retained exact-version original after generated desktop file moved; body unchanged",
+    "continue previous work restores the real imported source and exact version",
+    "refresh retains imported source and unchanged conversation"
+  ],
+  "screenshots": [
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\00-project-held-native-new.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\00-project-503-native-start.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\01-native-home.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\02-native-new.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\03-native-open.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\04-project-details.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\05-project-1600x1000.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\05-project-1300x900.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\05-project-900x700.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\06-search-empty.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\07-long-names-ui-only.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\08-empty-project-ui-only.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\09-import-failure-ui-only.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\09-disconnected-ui-only.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\10-real-imported.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\11-retained-source-copy.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\12-continue-available.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\13-continued-reading.png",
+    "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\14-reloaded.png"
+  ],
+  "modelRequests": 0,
+  "fixture": "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+  "moved": "D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T10-54-36.092Z-75152\\开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt.moved",
+  "projectFailureInjection": {
+    "requests": 1,
+    "released": true
+  },
+  "initial": {
+    "stateRevision": 1,
+    "projectId": "960ccf16-b6b2-4e9e-95a2-cbefa09cb422",
+    "catalogWarnings": [],
+    "imports": [],
+    "importBusy": false,
+    "importError": "",
+    "projectTitle": "社区数字服务研究",
+    "documentTitle": "申请书.docx",
+    "sources": [
+      {
+        "id": "8dad422a-53b7-4da5-bdc3-b5d1cc324ca4",
+        "title": "社区联系记录-v1.txt",
+        "version": "1",
+        "folder": "前期研究材料"
+      },
+      {
+        "id": "b7c626c9-e5d5-497a-ab76-09078a21b243",
+        "title": "研究说明.pdf",
+        "version": "1",
+        "folder": "申报要求与模板"
+      }
+    ],
+    "sessions": [
+      {
+        "id": "31f8c7d9-6c8b-4c14-8edf-e4bee19ce279",
+        "title": "新会话"
+      }
+    ],
+    "currentSessionId": "31f8c7d9-6c8b-4c14-8edf-e4bee19ce279",
+    "messages": [],
+    "contextSources": [],
+    "busy": false,
+    "error": "",
+    "contextNote": "默认检索当前项目资料；不会读取正文。"
+  },
+  "initialBody": {
+    "dirty": false,
+    "documentId": 1,
+    "revision": 1
+  },
+  "imported": {
+    "id": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+    "title": "开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+    "version": "1",
+    "folder": "前期研究材料",
+    "importId": "imp-73965a0a-6778-4a2e-b0bb-49c498aedca6",
+    "searchable": true,
+    "rendering": "plain-text"
+  },
+  "projectBody": {
+    "dirty": false,
+    "documentId": 2,
+    "revision": 2
+  },
+  "final": {
+    "workspace": {
+      "activeSourceId": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+      "auxiliaryActive": false,
+      "busy": false,
+      "chatOpen": false,
+      "chatRect": null,
+      "chatToggleRect": {
+        "height": 28,
+        "width": 64,
+        "x": 87,
+        "y": 171
+      },
+      "citationOpenRects": {},
+      "composerRect": null,
+      "contextAddRects": {},
+      "contextMenuRect": null,
+      "contextNote": "默认检索当前项目资料；不会读取正文。",
+      "contextRemoveRects": {},
+      "contextSources": [],
+      "currentSessionId": "31f8c7d9-6c8b-4c14-8edf-e4bee19ce279",
+      "documentBound": true,
+      "documentTitle": "申请书.docx",
+      "draft": "",
+      "enabled": true,
+      "error": "",
+      "importBusy": false,
+      "importButtonRect": {
+        "height": 30,
+        "width": 104,
+        "x": 106,
+        "y": 328
+      },
+      "importError": "",
+      "imports": [
+        {
+          "error": "",
+          "id": "imp-73965a0a-6778-4a2e-b0bb-49c498aedca6",
+          "name": "开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+          "sourceId": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+          "status": "ready"
+        }
+      ],
+      "messageCount": 0,
+      "messages": [],
+      "pendingActions": 0,
+      "projectBackRect": null,
+      "projectCardRect": null,
+      "projectDocumentRect": null,
+      "projectId": "960ccf16-b6b2-4e9e-95a2-cbefa09cb422",
+      "projectNavRect": {
+        "height": 40,
+        "width": 184,
+        "x": 0,
+        "y": 194
+      },
+      "projectSearch": "",
+      "projectSearchClearRect": null,
+      "projectSearchRect": null,
+      "projectSelected": false,
+      "projectTitle": "社区数字服务研究",
+      "resourceRect": {
+        "height": 773,
+        "width": 224,
+        "x": 0,
+        "y": 202
+      },
+      "resourcesOpen": true,
+      "resumeAvailable": true,
+      "resumeGroupCount": 1,
+      "resumeRect": null,
+      "resumeTabCount": 2,
+      "sendRect": null,
+      "sessions": [
+        {
+          "id": "31f8c7d9-6c8b-4c14-8edf-e4bee19ce279",
+          "title": "新会话"
+        }
+      ],
+      "sourceCount": 3,
+      "sourceRowRects": {
+        "2f5a71ee-a65c-49a0-b027-0df6217fc883": {
+          "height": 32,
+          "width": 179,
+          "x": 31,
+          "y": 533
+        },
+        "8dad422a-53b7-4da5-bdc3-b5d1cc324ca4": {
+          "height": 32,
+          "width": 179,
+          "x": 31,
+          "y": 497
+        },
+        "b7c626c9-e5d5-497a-ab76-09078a21b243": {
+          "height": 32,
+          "width": 179,
+          "x": 31,
+          "y": 395
+        }
+      },
+      "sources": [
+        {
+          "folder": "前期研究材料",
+          "id": "8dad422a-53b7-4da5-bdc3-b5d1cc324ca4",
+          "readable": true,
+          "searchable": true,
+          "title": "社区联系记录-v1.txt",
+          "version": "1"
+        },
+        {
+          "folder": "申报要求与模板",
+          "id": "b7c626c9-e5d5-497a-ab76-09078a21b243",
+          "readable": true,
+          "searchable": true,
+          "title": "研究说明.pdf",
+          "version": "1"
+        },
+        {
+          "folder": "前期研究材料",
+          "id": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+          "readable": true,
+          "searchable": true,
+          "title": "开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+          "version": "1"
+        }
+      ],
+      "topRect": {
+        "height": 36,
+        "width": 1600,
+        "x": 0,
+        "y": 166
+      }
+    },
+    "source": {
+      "bodyActualSizeRect": null,
+      "bodyFitRect": null,
+      "bodyFitWidth": false,
+      "bodyPageRects": [],
+      "bodyRect": null,
+      "bodyTabRect": {
+        "height": 28,
+        "width": 87.28125,
+        "x": 330,
+        "y": 202
+      },
+      "error": "",
+      "groupMenuRects": {
+        "1": {
+          "height": 22,
+          "width": 42,
+          "x": 224,
+          "y": 202
+        }
+      },
+      "groupRects": [
+        {
+          "id": 1,
+          "rect": {
+            "height": 773,
+            "width": 1376,
+            "x": 224,
+            "y": 202
+          }
+        }
+      ],
+      "layout": {
+        "focusGroup": 1,
+        "groups": [
+          {
+            "active": "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]",
+            "id": 1,
+            "tabs": [
+              "$body",
+              "[\"b7c626c9-e5d5-497a-ab76-09078a21b243\",\"1\"]",
+              "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]"
+            ],
+            "weight": 1
+          }
+        ],
+        "maximized": 1,
+        "positions": [
+          {
+            "key": "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]",
+            "markdownRaw": false,
+            "page": null,
+            "scroll": [
+              0,
+              0
+            ],
+            "zoom": 1
+          },
+          {
+            "key": "[\"b7c626c9-e5d5-497a-ab76-09078a21b243\",\"1\"]",
+            "markdownRaw": false,
+            "page": 1,
+            "scroll": [
+              0,
+              0
+            ],
+            "zoom": 1
+          }
+        ],
+        "sources": [
+          {
+            "id": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+            "key": "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]",
+            "version": "1"
+          },
+          {
+            "id": "b7c626c9-e5d5-497a-ab76-09078a21b243",
+            "key": "[\"b7c626c9-e5d5-497a-ab76-09078a21b243\",\"1\"]",
+            "version": "1"
+          }
+        ]
+      },
+      "markdownRaw": false,
+      "markdownToggleRect": null,
+      "mode": "source",
+      "page": null,
+      "pageCount": 0,
+      "rendering": "plain-text",
+      "scroll": [
+        0,
+        0
+      ],
+      "sourceActive": true,
+      "sourceId": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+      "sourcePageRect": null,
+      "sourceRect": {
+        "height": 741,
+        "width": 1376,
+        "x": 224,
+        "y": 234
+      },
+      "tabRects": {
+        "$body": {
+          "height": 28,
+          "width": 87.28125,
+          "x": 330,
+          "y": 202
+        },
+        "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]": {
+          "height": 28,
+          "width": 231.90625,
+          "x": 603.96875,
+          "y": 202
+        },
+        "[\"b7c626c9-e5d5-497a-ab76-09078a21b243\",\"1\"]": {
+          "height": 28,
+          "width": 114.6875,
+          "x": 453.28125,
+          "y": 202
+        }
+      },
+      "tabs": [
+        {
+          "key": "$body",
+          "kind": "body",
+          "title": "正文"
+        },
+        {
+          "id": "b7c626c9-e5d5-497a-ab76-09078a21b243",
+          "key": "[\"b7c626c9-e5d5-497a-ab76-09078a21b243\",\"1\"]",
+          "kind": "source",
+          "pageCount": 2,
+          "sourceId": "b7c626c9-e5d5-497a-ab76-09078a21b243",
+          "title": "研究说明.pdf",
+          "version": "1"
+        },
+        {
+          "id": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+          "key": "[\"2f5a71ee-a65c-49a0-b027-0df6217fc883\",\"1\"]",
+          "kind": "source",
+          "pageCount": 0,
+          "sourceId": "2f5a71ee-a65c-49a0-b027-0df6217fc883",
+          "title": "开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+          "version": "1"
+        }
+      ],
+      "textSelection": true,
+      "title": "开始页导入验收-2026-11-05T10-54-36.092Z-75152.txt",
+      "version": "1",
+      "viewEpoch": 6,
+      "workspaceRect": {
+        "height": 773,
+        "width": 1376,
+        "x": 224,
+        "y": 202
+      },
+      "zoom": 1
+    },
+    "body": {
+      "dirty": false,
+      "documentId": 2,
+      "revision": 2
+    }
+  },
+  "errors": []
+}

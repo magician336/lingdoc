@@ -1,0 +1,6 @@
+PASS ordinary New has no project save binding
+PASS ordinary document accepts native editing
+PASS ordinary save does not call project DS or Go
+PASS downloaded ordinary DOCX reopens with original text
+PASS opening an ordinary DOCX does not force project membership
+{"out":"D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\standalone-2026-11-05T10-57-08.483Z","passed":true,"checks":6}

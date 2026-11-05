@@ -1,0 +1,69 @@
+{
+  "baselineId": "LD-V1-20261103-R1",
+  "date": "2026-11-03",
+  "timezone": "Asia/Shanghai",
+  "status": "joint_design_ready_implementation_pending",
+  "entry": "START-HERE.md",
+  "supersedes": [
+    "旧四页原型对新界面的约束",
+    "旧版前后端交接计划中的建议HTTP接口",
+    "旧版暂停功能作为永久设计禁令"
+  ],
+  "remoteAudit": {
+    "repository": "magician336/lingdoc",
+    "ref": "main",
+    "sha": "acb9ac744f5c6fbe68bc672ecf08eb03e7db1a22",
+    "verifiedOn": "2026-11-03",
+    "method": "GitHub connector compare main...main",
+    "deployed": false
+  },
+  "localCode": {
+    "branch": "codex/native-ui-s0-kimi",
+    "head": "5269e58f561bcb973d63a7623f2d076e8d943c8e",
+    "uncommittedChanges": true,
+    "newDesignIntegrated": false
+  },
+  "coordinationState": {
+    "commit": "6d0f602a77b63c3171ee8437cc6929f33c63dd9c",
+    "readOn": "2026-11-03",
+    "existingBackendScopesOccupied": true
+  },
+  "sync": {
+    "designDocuments": "same_baseline_hash_verified",
+    "kimiReception": "not_confirmed",
+    "backendReception": "not_confirmed",
+    "runtimeIntegration": "not_done",
+    "runtimeVersion": "not_reverified_this_turn"
+  },
+  "files": [
+    {
+      "path": "START-HERE.md",
+      "sha256": "f86d6139ec864b79d00529e96a305ce3c6405b57670f144e91c9603a8f1edea6"
+    },
+    {
+      "path": "verify-handoff.mjs",
+      "sha256": "14721d1dc8c5c33a7bff6835c6cf7ba9fec4b4955408c67651651d05d8b180c5"
+    },
+    {
+      "path": "原生界面参考.png",
+      "sha256": "4cc1d1c1c562cc2dd4a66b05a591fd4cd7b6c34ff438d830f66b01111affcb9d"
+    },
+    {
+      "path": "后端接口与联调计划.md",
+      "sha256": "b975d1eb1ca0dcdd4713972b542a12876db1beee16cc31eabfb6e8d4a3fa1f91"
+    },
+    {
+      "path": "版本与同步说明.md",
+      "sha256": "b4c64b563ed1880b2e9243c754e25a6defdfd67fd9c78e71d00935bdb4cc57b5"
+    },
+    {
+      "path": "给Kimi的最新设计稿.md",
+      "sha256": "d01e50c658098c76b0ef399839c0202a53a321c8175ede70693ae506ba8b3244"
+    },
+    {
+      "path": "统一演示场景.json",
+      "sha256": "fc82dc4ea2557c10c579c1f2e665cfee283252903e912cbb25efc9b34ef5d0ef"
+    }
+  ],
+  "createdAt": "2026-11-03T04:10:41.767843+00:00"
+}

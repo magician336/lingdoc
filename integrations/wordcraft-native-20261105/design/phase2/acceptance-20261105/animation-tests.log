@@ -1,0 +1,15 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 2.56s
+     Running unittests src\lib.rs (D:\Mon3tr\projects\lingdoc-dachuang\worktrees\native-ui-s0-kimi\candidates\lingdoc-native-workspace-20261027\build\target\debug\deps\wordcraft_ui_egui-d232553b4bd07bba.exe)
+
+running 9 tests
+test canvas::tests::reading_animation_eases_then_lands_exactly_on_column_start ... ok
+test tests::caret_animation_is_a_ui_command_and_survives_a_restart ... ok
+test tests::animation_effects_setting_follows_the_system_and_survives_a_restart ... ok
+test scroll::tests::egui_scroll_areas_take_a_wheel_notch_at_once_without_animation ... ok
+test scroll::tests::wheel_zoom_steps_at_once_without_animation ... ok
+test options::tests::animation_effects_is_an_accessibility_option ... ok
+test options::tests::advanced_animation_turns_the_caret_animation_off_and_on ... ok
+test tests::wheel_notches_land_at_once_with_animation_effects_off ... ok
+test tests::zoom_steps_land_finished_with_animation_effects_off ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 890 filtered out; finished in 0.34s

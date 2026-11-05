@@ -1,0 +1,61 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 4.18s
+     Running unittests src\lib.rs (D:\Mon3tr\projects\lingdoc-dachuang\worktrees\native-ui-s0-kimi\candidates\lingdoc-native-workspace-20261027\build\target\debug\deps\wordcraft_ui_egui-d232553b4bd07bba.exe)
+
+running 55 tests
+test project_workspace::tests::accepted_answer_does_not_erase_new_typing ... ok
+test project_workspace::tests::busy_user_ack_followed_by_failure_preserves_retry_draft ... ok
+test project_workspace::tests::active_source_is_explicit_and_survives_unrelated_refresh ... ok
+test project_workspace::tests::composer_limit_counts_unicode_characters_not_utf8_bytes ... ok
+test project_workspace::tests::invalid_snapshot_does_not_replace_valid_project ... ok
+test project_workspace::tests::old_identical_question_does_not_acknowledge_new_send ... ok
+test project_workspace::tests::project_routes_new_open_and_import_without_touching_document ... ok
+test project_workspace::tests::refresh_preserves_draft_and_independent_panel_choices ... ok
+test project_workspace::tests::send_is_single_flight_and_failed_request_preserves_question ... ok
+test project_workspace::tests::resume_metadata_only_appears_when_host_provides_it_and_search_survives_refresh ... ok
+test project_workspace::tests::source_capabilities_survive_hydration_and_default_to_compatible_true ... ok
+test project_workspace::tests::standalone_snapshot_has_no_auxiliary_focus_and_does_not_route_documents ... ok
+test keys::tests::workspace_auxiliary_shortcuts_only_allow_bound_saves ... ok
+test project_workspace::tests::session_switch_restores_separate_drafts_with_bounded_cache ... ok
+test project_workspace::tests::used_sources_are_visible_without_inventing_quotes_or_duplicates ... ok
+test source_workspace::tabs::tests::cached_closed_source_reopens_with_its_exact_version_and_position ... ok
+test source_workspace::tabs::tests::cached_reader_moves_without_recursive_state_or_losing_text ... ok
+test source_workspace::tabs::tests::citation_return_restores_prior_reader_scroll_and_body_can_be_hidden ... ok
+test source_workspace::tabs::tests::explicit_new_group_and_restored_custom_widths_are_preserved ... ok
+test source_workspace::tabs::tests::first_split_prioritizes_body_and_third_group_shares_reading_space ... ok
+test source_workspace::tabs::tests::invalid_actions_and_closed_cache_do_not_poison_persisted_layout ... ok
+test source_workspace::tabs::tests::markdown_raw_snapshot_roundtrip_defaults_and_type_validation ... ok
+test source_workspace::tabs::tests::relocating_sole_tab_keeps_weight_and_tiny_weights_stay_positive ... ok
+test source_workspace::tabs::tests::reopened_tab_is_visible_when_another_group_is_maximized ... ok
+test source_workspace::tabs::tests::splitting_maximized_reader_shows_both_groups_and_same_group_move_reorders ... ok
+test source_workspace::tabs::tests::restore_rejects_duplicate_tabs_and_invalid_positions_atomically ... ok
+test source_workspace::tabs::tests::versions_have_distinct_keys_and_group_limit_is_atomic ... ok
+test source_workspace::tests::atomic_commit_validates_page_and_payload_before_replacement ... ok
+test source_workspace::tests::invalid_source_does_not_replace_state ... ok
+test source_workspace::tests::markdown_subset_keeps_html_links_and_code_inert ... ok
+test source_workspace::tests::newer_request_and_successful_commit_invalidate_old_tickets ... ok
+test source_workspace::tests::no_source_cannot_enter_reader_or_split ... ok
+test source_workspace::tests::oversized_png_is_rejected_before_pixel_decode ... ok
+test source_workspace::tests::page_navigation_preserves_offsets_and_rejects_out_of_range ... ok
+test source_workspace::tests::click_outside_reader_viewport_does_not_activate_overflow_group ... ok
+test source_workspace::tests::reader_widths_respect_minima_total_and_saved_weights ... ok
+test source_workspace::tests::source_version_switch_restores_independent_reading_positions ... ok
+test source_workspace::tests::reading_position_cache_is_bounded ... ok
+test source_workspace::tests::valid_load_is_readonly_and_failed_reload_keeps_pages ... ok
+test source_workspace::tests::native_body_tab_cancels_an_in_flight_source_commit ... ok
+test source_workspace::tests::plain_text_is_not_a_fake_paginated_document ... ok
+test source_workspace::tests::narrow_pdf_toolbar_does_not_inflate_fit_width ... ok
+test source_workspace::tests::split_switch_preserves_body_zoom_fit_document_and_undo ... ok
+test source_workspace::tests::reading_modes_preserve_live_document_and_reject_source_edits ... ok
+test project_workspace::tests::start_page_disconnected_snapshot_drops_previous_controls ... ok
+test project_workspace::tests::start_page_read_only_source_is_single_row_and_unreadable_source_is_disabled ... ok
+test project_workspace::tests::start_page_clear_search_returns_focus_and_restores_sources ... ok
+test project_workspace::tests::start_page_failed_open_is_visible_without_hiding_controls ... ok
+test project_workspace::tests::quick_actions_require_context_and_send_preset_through_existing_action ... ok
+test project_workspace::tests::long_context_title_keeps_remove_visible_and_clickable ... ok
+test project_workspace::tests::citation_context_add_respects_four_source_limit ... ok
+test project_workspace::tests::clicking_chat_answer_does_not_lock_history_wheel_scroll ... ok
+test source_workspace::tests::split_geometry_fits_body_page_inside_its_viewport ... ok
+test source_workspace::tests::clicking_source_tab_does_not_type_into_hidden_body ... ok
+test source_workspace::tests::source_view_menu_applies_explicit_body_zoom_without_editing_document ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 844 filtered out; finished in 0.39s

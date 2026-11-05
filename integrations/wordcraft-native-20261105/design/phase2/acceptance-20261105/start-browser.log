@@ -1,0 +1,23 @@
+PASS held project-state response does not block the real ordinary new-document entry
+PASS HTTP 503 project-state response leaves standalone ready and native project page shows failure without stale cards
+PASS native root remains standalone with no forced project or outer workbench
+PASS native New/Open navigation preserves the unbound document
+PASS project list opens project details before binding any manuscript
+PASS start-page core controls fit 1600x1000
+PASS start-page core controls fit 1300x900
+PASS start-page core controls fit 900x700
+PASS back to project list clears detail hit targets and reopens the same project
+PASS actual typing filters both manuscript and sources without stale clickable results
+PASS clear search restores real manuscript and source entries
+PASS UI-only long names and resume summary retain usable 900x700 controls
+PASS UI-only empty project keeps import available and has no fake manuscript target
+PASS UI-only long import failure remains collapsed and does not hide basic controls
+PASS UI-only disconnected project clears stale actions while native sidebar remains available
+PASS UI-only stress states leave persisted project conversation and ordinary document unchanged
+PASS file chooser cancel event releases import state without adding a source
+PASS native import selects a real generated file and adds one source with no model or history mutation
+PASS project manuscript entry opens the bound native document
+PASS actual source row opens retained exact-version original after generated desktop file moved; body unchanged
+PASS continue previous work restores the real imported source and exact version
+PASS refresh retains imported source and unchanged conversation
+{"out":"D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-phase2-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\start-ten-2026-11-05T14-17-55.546Z-53220","passed":true,"checks":22}

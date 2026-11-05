@@ -1,0 +1,54 @@
+   Compiling wordcraft-geom v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\geom)
+   Compiling wordcraft-fonts v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\fonts)
+   Compiling wordcraft-metafile v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\metafile)
+   Compiling wordcraft-proof v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\proof)
+   Compiling wordcraft-ui-egui v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\ui-egui)
+   Compiling wordcraft-doc v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\doc)
+   Compiling wordcraft-layout v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\layout)
+   Compiling wordcraft-docx v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\docx)
+   Compiling wordcraft-formats v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\formats)
+   Compiling wordcraft-docbin v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\docbin)
+   Compiling wordcraft-render v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\render)
+   Compiling wordcraft-pdf v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\pdf)
+   Compiling wordcraft-engine v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\engine)
+   Compiling wordcraft-zotero v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-phase2-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\zotero)
+    Finished `test` profile [optimized + debuginfo] target(s) in 5m 46s
+     Running unittests src\lib.rs (D:\Mon3tr\projects\lingdoc-dachuang\worktrees\native-ui-s0-kimi\candidates\lingdoc-native-workspace-20261027\build\target\debug\deps\wordcraft_ui_egui-d232553b4bd07bba.exe)
+
+running 34 tests
+test backstage::tests::back_chevron_keeps_clear_of_traffic_lights_only_windowed ... ok
+test backstage::tests::every_side_menu_item_has_a_drawn_icon ... ok
+test backstage::tests::opening_a_missing_recent_file_keeps_file_open_with_the_error ... ok
+test backstage::tests::an_unusable_saved_folder_falls_back_to_the_apps_own ... ok
+test backstage::tests::info_fields_keep_typed_properties_through_a_web_save ... ok
+test backstage::tests::backstage_close_asks_then_closes ... ok
+test backstage::tests::save_as_page_shows_browse_and_no_open_list ... ok
+test backstage::tests::home_and_new_show_different_sections ... ok
+test backstage::tests::backstage_save_browse_write_failure_shows_on_the_save_as_page ... ok
+test backstage::tests::backstage_save_when_unnamed_opens_no_file_dialog ... ok
+test backstage::tests::short_start_page_navigation_keeps_footer_and_options_reachable ... ok
+test backstage::tests::backstage_save_closes_when_saved ... ok
+test backstage::tests::template_search_matches_labels_case_insensitively ... ok
+test backstage::tests::backstage_save_as_sidebar_opens_save_as_page ... ok
+test backstage::tests::backstage_save_navigates_to_save_as_when_unnamed ... ok
+test backstage::tests::backstage_close_on_a_clean_document_closes_at_once ... ok
+test backstage::tests::recovery_restore_uses_save_changes_and_resets_autosave_permission ... ok
+test backstage::tests::recovery_does_not_replace_an_explicitly_opened_file ... ok
+test backstage::tests::new_lists_personal_templates_and_opens_one ... ok
+test backstage::tests::template_scrolling_does_not_move_project_list ... ok
+test backstage::tests::backstage_save_browse_native_dialog_lands_on_the_document ... ok
+test backstage::tests::personal_templates_are_listed_once_per_visit_and_on_refresh ... ok
+test backstage::tests::clicking_beside_the_back_arrow_does_not_close_the_file_page ... ok
+test backstage::tests::mac_back_chevron_returns_to_the_page_with_accessibility_on ... ok
+test backstage::tests::back_arrow_returns_to_the_page_with_accessibility_on ... ok
+test backstage::tests::personal_section_empty_state_and_no_folder ... ok
+test backstage::tests::recovery_page_follows_the_theme ... ok
+test backstage::tests::recovery_page_keeps_dismissed_copies_and_confirms_discard ... ok
+test backstage::tests::templates_and_recent_documents_are_named_buttons ... ok
+test backstage::tests::a_personal_template_asks_about_unsaved_changes_first ... ok
+test backstage::tests::the_options_folder_replaces_the_default ... ok
+test backstage::tests::recovery_does_not_replace_an_explicit_new_document ... ok
+test backstage::tests::options_back_arrow_with_accessibility_on ... ok
+test backstage::tests::blank_document_from_the_file_page_with_accessibility_on ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 865 filtered out; finished in 1.89s
