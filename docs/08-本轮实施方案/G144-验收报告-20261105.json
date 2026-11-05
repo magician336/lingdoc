@@ -1,0 +1,54 @@
+{
+  "task": "144",
+  "ticket": "magician336/lingdoc#144",
+  "head": "3ba16478f331c910f026563febc8c530bae655aa",
+  "caliber": "口径 A（用户选定）：静态盘点+抽样实跑——25 张 Spec 逐票判定（票状态+验证报告存在性+残留登记）+ 四要素静态复核 + frontier 重算 + 关键 Spec 抽样实跑；不做全量验收矩阵实跑（口径 B 的局限见 not_run）",
+  "conclusion": "G1–G7 线的施工与验收在地图意义上已完成：25 张 Spec 里 24 张 closed（全部 state_reason=completed，验证证据链齐备），唯一 open 的 #142 验收矩阵 30/30 PASS、5 个 blocker 全部 closed、本验收在 3ba16478 抽样实跑 7 组命令全绿——判定为「验收通过，待维护者关闭」。frontier 为空。68 条原生依赖边全数复核在库，与 #413 重算一致。",
+  "passed": [
+    {
+      "id": "ACC-1 票状态全查",
+      "status": "pass",
+      "evidence": "25/25 张 Spec 票状态拉取成功：23 张 closed（#123–#143 全系+#391+#393+#146+#145，state_reason 全=completed）+ #142 open。抽样 10 张的关闭原因复核全部 completed。"
+    },
+    {
+      "id": "ACC-2 依赖边全数复核",
+      "status": "pass",
+      "evidence": "25 张 Spec 的原生 blocked_by 全量拉取：68 条边与 #413 重算（25 张/68 边）完全一致，零漂移、零新增。"
+    },
+    {
+      "id": "ACC-3 残留①核实：#142 验收状态",
+      "status": "pass",
+      "evidence": "#142（唯一 open）的判定矩阵 Spec-142-模板升级与G3稳定化交接验收矩阵.md：30/30 验收点 PASS（head 0cc506e3，C1–C4 缺口轮+PG 事务轮齐备，证据 JSON T142-验证报告.json）；5 个 blocker（#131/#132/#137/#139/#140）全部 closed；PR #248（#139 收尾）已合并（19d9df9c）。本验收在 3ba16478 抽样实跑 7 组命令全绿：TestUpgradePlan（templategovernance）、TestTemplateUpgradeApply、TestStabilization、TestActiveTemplateCopyUpgrade、TestTemplateUpgradeApplyReplays|TestTemplateUpgradeApplyAuditFailure、TestDeliveryGateFreezeAndExportRequireStabilization（workspace）。"
+    },
+    {
+      "id": "TD-469.4 既有读面语义零变化(契约①)",
+      "status": "pass",
+      "evidence": "TestG6TenantRuntimeEventsAreReadableByATenantManager 断言 ListRuntimeEvents(p.ID) 不含租户级 denial;既有 runtime_observation_test.go 全部用例零改动全绿(同上命令族)。"
+    },
+    {
+      "id": "ACC-4 上次「部分落地」四票的证据补强",
+      "status": "pass",
+      "evidence": "#128（T128-验证报告 7 PASS @ 3017840）、#130（T130 7 PASS @ 3017840）、#135（T135 13 PASS @ 8b670000）、#145（T145 13 PASS @ ba1e3db8）四票的验证报告齐备且票已 closed(completed)；#145 的后端残留由 #468/#469 两票在 2026-11-04/05 闭环（PR #784/#786）。"
+    },
+    {
+      "id": "ACC-5 上次「收尾在飞」两票的落地确认",
+      "status": "pass",
+      "evidence": "#129 随 PR#149 合入（4b716a1f）、#139 随 PR#248 合入（19d9df9c），两票均已 closed；frontier 节的 DIRTY 冲突警告已消除并更新。"
+    },
+    {
+      "id": "ACC-6 领域包回归(抽样实跑的底座)",
+      "status": "pass",
+      "evidence": "workspacecore/workspace/delivery/candidateadoption 四包全量 go test -count=1 全 ok(运行 #5/#6 各轮实测,head 3ba16478 与 f1c5b211 两点)。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "ACC-7 逐 Spec 验收矩阵全量实跑(口径 B)",
+      "status": "not_run",
+      "reason": "口径 A 的界定:25 张 Spec 不逐张实跑验收矩阵;证据取自各票的既有验证报告(docs/08 的 T*-验证报告.json)与关闭原因(completed=维护者按验收证据关闭的仓约定)。#489(第二人独立复现)需要真实模型与第二人环境,任何口径下均 NOT RUN。"
+    }
+  ],
+  "ci_green": "",
+  "environment_limits": "gh 对 api.github.com 间歇超时(全部重试 ≤4 次成功);抽样实跑在本机 go 1.25(与 CI go.mod 同源)于 origin/main 干净检出(.worktrees/verify-142)执行。",
+  "out_of_scope": "Beta 首版验收路线(#120/#482,与本图互不阻塞,#144 票面口径);段二遗留(core.Actor 字段收敛/带类型角色=#535 段二,另开票);#421/#420 的方向裁决(三候选需边界裁决,票面明示非实现可自行决定);剩余 ready-for-agent 队列(#768/#735 等重 Spec 票)不属于本验收对象。"
+}
