@@ -39,8 +39,6 @@ func (a metricsErrApp) ReadRuleSetMetrics(context.Context, Actor, string, RuleSe
 	return RuleSetMetricsSnapshot{}, a.err
 }
 
-var metricsFixtureDB *gorm.DB
-
 func metricsHTTPFixture(t *testing.T, app Application) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
