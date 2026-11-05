@@ -83,6 +83,7 @@ KNOWN_SCHEMA_COPY_FIXTURES = (
     "internal/lingdoc/candidateadoption/candidate_basis_test.go",
     "internal/lingdoc/candidateadoption/delivery_input_test.go",
     "internal/lingdoc/rulesetstore/http_test.go",
+    "internal/lingdoc/rulesetstore/store_metrics_postgres_test.go",
     "internal/lingdoc/rulesetstore/tenant_authorizer_test.go",
     "internal/lingdoc/workspace/assets_http_test.go",
     "internal/lingdoc/workspace/candidate_oneconn_test.go",
