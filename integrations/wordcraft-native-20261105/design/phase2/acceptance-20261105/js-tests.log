@@ -1,0 +1,298 @@
+TAP version 13
+# Subtest: cached exact-version source activates without HTTP and forwards citation page
+ok 1 - cached exact-version source activates without HTTP and forwards citation page
+  ---
+  duration_ms: 14.9499
+  type: 'test'
+  ...
+# Subtest: reload loads saved versions then restores with current document and epoch, never saved runtime ID
+ok 2 - reload loads saved versions then restores with current document and epoch, never saved runtime ID
+  ---
+  duration_ms: 13.2881
+  type: 'test'
+  ...
+# Subtest: unavailable old version is reported and never silently replaced
+ok 3 - unavailable old version is reported and never silently replaced
+  ---
+  duration_ms: 3.9472
+  type: 'test'
+  ...
+# Subtest: user interaction during restore cancels late commit and preserves saved layout
+ok 4 - user interaction during restore cancels late commit and preserves saved layout
+  ---
+  duration_ms: 4.0521
+  type: 'test'
+  ...
+# Subtest: new resources keep existing groups unless caller explicitly requests a view mode
+ok 5 - new resources keep existing groups unless caller explicitly requests a view mode
+  ---
+  duration_ms: 9.5617
+  type: 'test'
+  ...
+# Subtest: blocked browser storage does not prevent the workspace becoming ready
+ok 6 - blocked browser storage does not prevent the workspace becoming ready
+  ---
+  duration_ms: 13.4841
+  type: 'test'
+  ...
+# Subtest: failed layout persistence is visible once and is not falsely acknowledged as saved
+ok 7 - failed layout persistence is visible once and is not falsely acknowledged as saved
+  ---
+  duration_ms: 295.5868
+  type: 'test'
+  ...
+# Subtest: native text source card with null page reopens cached original without a page command
+ok 8 - native text source card with null page reopens cached original without a page command
+  ---
+  duration_ms: 15.2841
+  type: 'test'
+  ...
+# Subtest: invalid citation pages are rejected equally before cached or uncached navigation
+ok 9 - invalid citation pages are rejected equally before cached or uncached navigation
+  ---
+  duration_ms: 19.7933
+  type: 'test'
+  ...
+# Subtest: late source commit completion cannot re-enter editor after a newer reading action
+ok 10 - late source commit completion cannot re-enter editor after a newer reading action
+  ---
+  duration_ms: 11.6994
+  type: 'test'
+  ...
+# Subtest: import failure remains actionable when the cleanup refresh also fails
+ok 11 - import failure remains actionable when the cleanup refresh also fails
+  ---
+  duration_ms: 7.2562
+  type: 'test'
+  ...
+# Subtest: ordinary new document is ready before a delayed project connection, with no empty-project writes
+ok 12 - ordinary new document is ready before a delayed project connection, with no empty-project writes
+  ---
+  duration_ms: 208.8115
+  type: 'test'
+  ...
+# Subtest: ordinary Home and Open remain usable when project state cannot be fetched
+ok 13 - ordinary Home and Open remain usable when project state cannot be fetched
+  ---
+  duration_ms: 46.5785
+  type: 'test'
+  ...
+# Subtest: invalid saved layouts are neither advertised nor fetched or restored
+ok 14 - invalid saved layouts are neither advertised nor fetched or restored
+  ---
+  duration_ms: 185.5192
+  type: 'test'
+  ...
+# Subtest: valid body-only layout still offers continue work and restores without source requests
+ok 15 - valid body-only layout still offers continue work and restores without source requests
+  ---
+  duration_ms: 15.312
+  type: 'test'
+  ...
+# Subtest: batch size validation names the invalid file before uploading any earlier valid file
+ok 16 - batch size validation names the invalid file before uploading any earlier valid file
+  ---
+  duration_ms: 16.054
+  type: 'test'
+  ...
+# Subtest: mid-batch import failure states completed count, failed filename and remaining unprocessed files
+ok 17 - mid-batch import failure states completed count, failed filename and remaining unprocessed files
+  ---
+  duration_ms: 16.6716
+  type: 'test'
+  ...
+# Subtest: background project hydration cannot overwrite panel layout before it is restored
+ok 18 - background project hydration cannot overwrite panel layout before it is restored
+  ---
+  duration_ms: 106.7687
+  type: 'test'
+  ...
+# Subtest: manual reconnect restores panel layout before persistence and later refresh does not reapply it
+ok 19 - manual reconnect restores panel layout before persistence and later refresh does not reapply it
+  ---
+  duration_ms: 139.347
+  type: 'test'
+  ...
+# Subtest: real QA adapter sends only project sources; persists history and idempotent response
+ok 20 - real QA adapter sends only project sources; persists history and idempotent response
+  ---
+  duration_ms: 124.574
+  type: 'test'
+  ...
+# Subtest: new sessions have no old context or dialogue; returning restores own state
+ok 21 - new sessions have no old context or dialogue; returning restores own state
+  ---
+  duration_ms: 108.3465
+  type: 'test'
+  ...
+# Subtest: removing context excludes that material from future search and calls
+ok 22 - removing context excludes that material from future search and calls
+  ---
+  duration_ms: 55.671
+  type: 'test'
+  ...
+# Subtest: busy state is observable and context/session mutations reject immediately
+ok 23 - busy state is observable and context/session mutations reject immediately
+  ---
+  duration_ms: 78.7677
+  type: 'test'
+  ...
+# Subtest: unknown model outcome is persisted without automatic resubmit
+ok 24 - unknown model outcome is persisted without automatic resubmit
+  ---
+  duration_ms: 116.6294
+  type: 'test'
+  ...
+# Subtest: invented model source is not displayed as an answer
+ok 25 - invented model source is not displayed as an answer
+  ---
+  duration_ms: 84.7776
+  type: 'test'
+  ...
+# Subtest: old citation versions are rejected without changing reader or pinned context
+ok 26 - old citation versions are rejected without changing reader or pinned context
+  ---
+  duration_ms: 24.1571
+  type: 'test'
+  ...
+# Subtest: changed original text or source hash cannot silently replace an old citation
+ok 27 - changed original text or source hash cannot silently replace an old citation
+  ---
+  duration_ms: 27.1723
+  type: 'test'
+  ...
+# Subtest: pinned source fingerprint survives reopening and refuses changed material before model use
+ok 28 - pinned source fingerprint survives reopening and refuses changed material before model use
+  ---
+  duration_ms: 62.8349
+  type: 'test'
+  ...
+# Subtest: stale client session cannot send into a different active conversation
+ok 29 - stale client session cannot send into a different active conversation
+  ---
+  duration_ms: 40.3118
+  type: 'test'
+  ...
+# Subtest: imports refresh catalog atomically, preserve originals and expose project state
+ok 30 - imports refresh catalog atomically, preserve originals and expose project state
+  ---
+  duration_ms: 82.5906
+  type: 'test'
+  ...
+# Subtest: image-only PDF remains readable but cannot become model context
+ok 31 - image-only PDF remains readable but cannot become model context
+  ---
+  duration_ms: 23.6665
+  type: 'test'
+  ...
+# Subtest: failed imports retain visible errors without replacing the live source catalog
+ok 32 - failed imports retain visible errors without replacing the live source catalog
+  ---
+  duration_ms: 30.7342
+  type: 'test'
+  ...
+# Subtest: oversized retrieved material remains readable and reports context limit without model call
+ok 33 - oversized retrieved material remains readable and reports context limit without model call
+  ---
+  duration_ms: 44.9816
+  type: 'test'
+  ...
+# Subtest: catalog quarantines only locally proven imported assets, never arbitrary authorization failures
+ok 34 - catalog quarantines only locally proven imported assets, never arbitrary authorization failures
+  ---
+  duration_ms: 64.3489
+  type: 'test'
+  ...
+# Subtest: follow-up without retrieval reuses exact prior source and keeps the same Go conversation
+ok 35 - follow-up without retrieval reuses exact prior source and keeps the same Go conversation
+  ---
+  duration_ms: 151.3586
+  type: 'test'
+  ...
+# Subtest: follow-up continuity refuses changed original after service restart before model use
+ok 36 - follow-up continuity refuses changed original after service restart before model use
+  ---
+  duration_ms: 106.6138
+  type: 'test'
+  ...
+# Subtest: a pinned source that disappears can still be removed without reading the lost original
+ok 37 - a pinned source that disappears can still be removed without reading the lost original
+  ---
+  duration_ms: 65.8744
+  type: 'test'
+  ...
+# Subtest: provider failures explain manual next steps safely and do not block a new question
+ok 38 - provider failures explain manual next steps safely and do not block a new question
+  ---
+  duration_ms: 93.5468
+  type: 'test'
+  ...
+# Subtest: known indeterminate outcome remains blocked despite a failed turn record
+ok 39 - known indeterminate outcome remains blocked despite a failed turn record
+  ---
+  duration_ms: 67.323
+  type: 'test'
+  ...
+# Subtest: narrower retrieval preserves prior permitted sources; explicit removal still excludes history material
+ok 40 - narrower retrieval preserves prior permitted sources; explicit removal still excludes history material
+  ---
+  duration_ms: 176.8994
+  type: 'test'
+  ...
+# Subtest: an oversized pinned material is never silently omitted in favor of retrieved sources
+ok 41 - an oversized pinned material is never silently omitted in favor of retrieved sources
+  ---
+  duration_ms: 52.4762
+  type: 'test'
+  ...
+# Subtest: upstream HTTP and transport details never leak into UI errors or persisted operations
+ok 42 - upstream HTTP and transport details never leak into UI errors or persisted operations
+  ---
+  duration_ms: 148.4639
+  type: 'test'
+  ...
+# Subtest: same-tick sends cannot queue a second model call behind an active request
+ok 43 - same-tick sends cannot queue a second model call behind an active request
+  ---
+  duration_ms: 83.0224
+  type: 'test'
+  ...
+# Subtest: a failed retained import cannot fall back to an ordinary searchable asset
+ok 44 - a failed retained import cannot fall back to an ordinary searchable asset
+  ---
+  duration_ms: 56.8089
+  type: 'test'
+  ...
+# Subtest: a same-tick import is rejected before an already accepted send can start
+ok 45 - a same-tick import is rejected before an already accepted send can start
+  ---
+  duration_ms: 53.9549
+  type: 'test'
+  ...
+# Subtest: same-process failed reimport immediately removes the stale indexed asset from QA
+ok 46 - same-process failed reimport immediately removes the stale indexed asset from QA
+  ---
+  duration_ms: 57.4251
+  type: 'test'
+  ...
+# Subtest: initial import state persistence failure releases the busy lock
+ok 47 - initial import state persistence failure releases the busy lock
+  ---
+  duration_ms: 107.0478
+  type: 'test'
+  ...
+# Subtest: import status refresh failure cannot replace the original import error
+ok 48 - import status refresh failure cannot replace the original import error
+  ---
+  duration_ms: 30.0692
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2589.6322

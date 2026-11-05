@@ -1,0 +1,27 @@
+{
+  "renderer": "PyMuPDF 1.24.14",
+  "source": "fictional-research-guide-v1.pdf",
+  "pdfSha256": "f5618db73878779ee6b1120e2a4dc57fd9a5f44dec95ed49adde22f12c75f98e",
+  "fictional": true,
+  "originalPdfRetained": true,
+  "pageCount": 2,
+  "pages": [
+    {
+      "page": 1,
+      "width": 893,
+      "height": 1263,
+      "sha256": "d45eee3c114a9c3a338c43a2ee1124b8f0b794713dc83682c2a0eb0e757a224c",
+      "text": "L i n g D o c  ·  原生资料阅读验证\n研究内容填写说明\n虚构演示资料 ·  非正式申报规定 ·  v 1\n一、研究对象\n围绕拟研究的问题，明确研究对象及其范围。社区数字服务的可及性研究可以关注服\n务入口、使用过程与支持机制。\n二、总体框架\n研究内容应与研究目标相对应，说明各部分之间的关系，并呈现总体研究框架。不同\n部分不应只是材料的简单罗列。\n三、重点难点\n结合研究对象说明需要重点解决的问题，并区分资料获取、分析方法与实践条件带来\n的不同困难。\n1 / 2\n"
+    },
+    {
+      "page": 2,
+      "width": 893,
+      "height": 1263,
+      "sha256": "fe3524bf3f7f7426268a0eff4e8949db2f411fc690010c9926b5ca0706a73742",
+      "text": "L i n g D o c  ·  原生资料阅读验证\n研究方法与资料核对\n虚构演示资料 ·  非正式申报规定 ·  v 1\n一、方法适配\n结合研究对象说明基本思路、具体方法及研究计划。访谈与观察可以帮助理解不同群\n体使用社区服务时遇到的具体障碍。\n二、出处核对\n阅读资料时应回到原文，核对引文的前后语境、版本和页码。资料中的陈述不应直接\n视为已经验证的研究结论。\n三、工作记录\n记录资料版本及本次阅读位置。正文修改由作者决定，资料阅读不应改变正文的未保\n存内容和撤销历史。\n2 / 2\n"
+    }
+  ],
+  "limitations": [
+    "Raster page viewing; no PDF text selection or text search is claimed."
+  ]
+}

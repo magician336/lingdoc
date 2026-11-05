@@ -1,0 +1,1 @@
+ALTER TABLE lingdoc_project_template_copies DROP COLUMN ruleset_ref_json;

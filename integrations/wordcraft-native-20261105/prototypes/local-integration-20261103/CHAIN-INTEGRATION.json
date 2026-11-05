@@ -1,0 +1,332 @@
+{
+  "baselineId": "LD-V1-20261103-R1",
+  "componentVersion": "review-chain-0.2.0",
+  "packagedAt": "2026-11-03T05:52:15.999913+00:00",
+  "sourceZipSha256": "2908ce602a3e68b16376c27cab1861de41c3acc86d765678b671919939d9db8c",
+  "baseCodeCommit": "5269e58f561bcb973d63a7623f2d076e8d943c8e",
+  "codeCommitted": false,
+  "newFrontendConnectedLocally": true,
+  "localTrialOrigin": "http://127.0.0.1:7210",
+  "cloudKimiAcceptance": "pending",
+  "fullSyncComplete": false,
+  "productionDeployed": false,
+  "verification": {
+    "unitPassed": 24,
+    "gatewayPassed": 10,
+    "mainChain": {
+      "passed": false,
+      "businessChecksPassed": 14,
+      "remainingFailure": "reload harness race; retained original result"
+    },
+    "restartChecksPassed": 11,
+    "finalOpinionChecksPassed": 5,
+    "cleanTrialReadonlyChecksPassed": 3,
+    "typescriptBuild": "passed",
+    "eslint": "passed",
+    "humanTrial": "pending",
+    "fullCI": "not_run",
+    "evidence": [
+      "artifacts/final-unit-tests.txt",
+      "artifacts/final-gateway-verification.json",
+      "artifacts/chain-2026-11-03T05-34-27.166Z/verification.json",
+      "artifacts/reopen-2026-11-03T05-38-17.579Z/verification.json",
+      "artifacts/final-2026-11-03T05-44-09.465Z/verification.json",
+      "artifacts/final-2026-11-03T05-48-57.958Z/verification.json"
+    ]
+  },
+  "runtimeRequirements": "Existing LingDoc repository, Windows Node/Python, WSL LingDoc-Beta-R29-Ubuntu2404, validated /tmp/lingdoc-local-source-ai and native assets; not a standalone product installer",
+  "files": [
+    {
+      "path": "artifacts/chain-2026-11-03T05-34-27.166Z/verification.json",
+      "sha256": "5b6535aa4ca6a3a5c2f40ebb6cbcee6a9bb356c39abbcc392f7e4ab19ef49c23"
+    },
+    {
+      "path": "artifacts/final-2026-11-03T05-44-09.465Z/verification.json",
+      "sha256": "79b7210f4fcfdd8cc9051a736ba65619604f201e9a351342618438e3087750c9"
+    },
+    {
+      "path": "artifacts/final-2026-11-03T05-48-57.958Z/verification.json",
+      "sha256": "e9915c1cda2da3e5f114cfec98734dbd2bd43460938f2be3cf829255d811c00c"
+    },
+    {
+      "path": "artifacts/final-gateway-verification.json",
+      "sha256": "3946684737793e04982b22c8c100f28d4f2f50d0f15f6456ce52c7fd9927363b"
+    },
+    {
+      "path": "artifacts/final-unit-tests.txt",
+      "sha256": "1e9a64d6cf1df0dc209eb61811d4357bbdaf9294423eb5bd2fc0a3e7c4c3c32e"
+    },
+    {
+      "path": "artifacts/reopen-2026-11-03T05-38-17.579Z/verification.json",
+      "sha256": "cc88f87cb39d922fe653e0267c5883287ba05e18a2ef5a02dfc3d4c7dc22f78b"
+    },
+    {
+      "path": "browser-client.mjs",
+      "sha256": "6d757e16d3e39c08e41f224dd572ec839dee23975112e2295f6d350aa1d2ee59"
+    },
+    {
+      "path": "CHAIN-API.md",
+      "sha256": "d7147be7581e6b90e02fa3054ba93d612900dc0bad02a977418a1ecf55d674cc"
+    },
+    {
+      "path": "chain-store.mjs",
+      "sha256": "7249ea4ef881520dfae8e3996103551a57855de8be7a2ad340448709204ef186"
+    },
+    {
+      "path": "chain-store.test.mjs",
+      "sha256": "3644ed5a7e5fdcc34273340a9ce18978193d52f6559870855fc6813dab0c6c4e"
+    },
+    {
+      "path": "frontend/.gitignore",
+      "sha256": "fe718e7babb14f3cbad2d97f08889b9ce5215ed3fe0e43b2b8cfbfb3b9b844e8"
+    },
+    {
+      "path": "frontend/components.json",
+      "sha256": "22643b642f17cd817ec94d8439a272dac28119af0aebf8219a96ac1c2f4c61dd"
+    },
+    {
+      "path": "frontend/dist/assets/index-3IalqoGf.css",
+      "sha256": "7a0430de21268c4bfa5882fac9bfbf08db0dc1e61cd5a10771f7b80c926973df"
+    },
+    {
+      "path": "frontend/dist/assets/index-DVCDdwFV.js",
+      "sha256": "0776f53e0f7658f536a7faa2c5bd918d15b64edeb28e761033ca9c43f9a674ca"
+    },
+    {
+      "path": "frontend/dist/index.html",
+      "sha256": "d7dfd174cbdeb1b9cd8549b63c932470d58bc43f3855a517e5dd198ada1f6c71"
+    },
+    {
+      "path": "frontend/dist/wordcraft-native-reference.png",
+      "sha256": "e1566bf37e6bb368a3335ec4bfac33690664d5e3034f9f9040f7567635190b38"
+    },
+    {
+      "path": "frontend/eslint.config.js",
+      "sha256": "4efe97b16d1200fac0eaf07aa00930a8668b1f96a0be1891ace8c1e712ff0ccb"
+    },
+    {
+      "path": "frontend/handoff/CURRENT.json",
+      "sha256": "d932a895a143b1a43956ad67bad457e436c602b03a52cf649fb55ad7dde6ee89"
+    },
+    {
+      "path": "frontend/handoff/START-HERE.md",
+      "sha256": "f86d6139ec864b79d00529e96a305ce3c6405b57670f144e91c9603a8f1edea6"
+    },
+    {
+      "path": "frontend/handoff/verify-handoff.mjs",
+      "sha256": "14721d1dc8c5c33a7bff6835c6cf7ba9fec4b4955408c67651651d05d8b180c5"
+    },
+    {
+      "path": "frontend/handoff/原生界面参考.png",
+      "sha256": "4cc1d1c1c562cc2dd4a66b05a591fd4cd7b6c34ff438d830f66b01111affcb9d"
+    },
+    {
+      "path": "frontend/handoff/后端接口与联调计划.md",
+      "sha256": "b975d1eb1ca0dcdd4713972b542a12876db1beee16cc31eabfb6e8d4a3fa1f91"
+    },
+    {
+      "path": "frontend/handoff/版本与同步说明.md",
+      "sha256": "b4c64b563ed1880b2e9243c754e25a6defdfd67fd9c78e71d00935bdb4cc57b5"
+    },
+    {
+      "path": "frontend/handoff/给Kimi的最新设计稿.md",
+      "sha256": "d01e50c658098c76b0ef399839c0202a53a321c8175ede70693ae506ba8b3244"
+    },
+    {
+      "path": "frontend/handoff/统一演示场景.json",
+      "sha256": "fc82dc4ea2557c10c579c1f2e665cfee283252903e912cbb25efc9b34ef5d0ef"
+    },
+    {
+      "path": "frontend/index.html",
+      "sha256": "a9a9e3bf8f3750fda1409e617151a5974b8badb1ebc7e7d57b613d998964a622"
+    },
+    {
+      "path": "frontend/LD-V1前端实施与接口映射.md",
+      "sha256": "cd5151e656bc7a82eb0fc097782e4ad9fdcf03b1637367279bea4ecc3944e9d8"
+    },
+    {
+      "path": "frontend/LOCAL-INTEGRATION.md",
+      "sha256": "722542bcf00b928b8a1b064e8dfe835c498a2a1d16234826c00d572f97770db6"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "sha256": "4c5cc39261b683dd9a3d215b38ce176941f433fd205505fe1e8c0841205e2a32"
+    },
+    {
+      "path": "frontend/package.json",
+      "sha256": "54f6fd8579e08daec6845b389d8c691cf5255aba261296df33f650c0f0ab7cc8"
+    },
+    {
+      "path": "frontend/postcss.config.js",
+      "sha256": "190c877db466995bf1482f4a16abd06e04a89ede3119341e2a86ff96e1737b27"
+    },
+    {
+      "path": "frontend/public/wordcraft-native-reference.png",
+      "sha256": "e1566bf37e6bb368a3335ec4bfac33690664d5e3034f9f9040f7567635190b38"
+    },
+    {
+      "path": "frontend/README.md",
+      "sha256": "8479f08d2d68adc3744d4be36c0e3d25ec19efd467425d001de9b518dda01f1b"
+    },
+    {
+      "path": "frontend/src/App.tsx",
+      "sha256": "2d82f8392899c7294cc1d88dee57f94f4763a7f70086fb62eea31041bdc530cf"
+    },
+    {
+      "path": "frontend/src/components/ContextAssistant.tsx",
+      "sha256": "f45c71660279653d6c7494a9a626c0e1cdea6e58d808a7d91979a5b7b2d89dc3"
+    },
+    {
+      "path": "frontend/src/components/NativeHost.tsx",
+      "sha256": "e6dcf73b0a663d37ef0e19f0985d01dc5573ed7384f68392f1d9922ba5cd75a9"
+    },
+    {
+      "path": "frontend/src/components/ProjectOverview.tsx",
+      "sha256": "d7eb7a3ba15c1909aa21a7a0af2d06f10abcd495957fce05469477136af02c0a"
+    },
+    {
+      "path": "frontend/src/components/RecordCompletion.tsx",
+      "sha256": "d448c3b0942c7e192fe2e51e1c689c0214342c2bf95090a45d848bb9f7e17319"
+    },
+    {
+      "path": "frontend/src/components/ReviewDelivery.tsx",
+      "sha256": "40919578e942e8a15c1a289314fc56c1c113a4eddf92f98dc5806b0c02c1c51b"
+    },
+    {
+      "path": "frontend/src/components/ReviewPrimitives.tsx",
+      "sha256": "d710a5defee8bc50833c26c90b61749cd0c9f10061ddeb4a84871cc7608cdeb2"
+    },
+    {
+      "path": "frontend/src/components/WritingWorkspace.tsx",
+      "sha256": "01488a46709af8508a80285a2f9944e3e2ec2b91c6529dd079c02c1d84f64479"
+    },
+    {
+      "path": "frontend/src/data/scenario.ts",
+      "sha256": "18ff70333dc8f21d61e1a42a81b196659c148712a88e902e42ebd261cfa23393"
+    },
+    {
+      "path": "frontend/src/index.css",
+      "sha256": "1cc3fcf5ea0a42d2db8b8eccd5573c67e47982576fc60d9e7fb0b153f3479343"
+    },
+    {
+      "path": "frontend/src/lib/live-context.ts",
+      "sha256": "c59cf0160026e1b191a60db650cbacb396d75a5cab204b10047de85d37ac32a7"
+    },
+    {
+      "path": "frontend/src/lib/live.tsx",
+      "sha256": "ae026ea05990b133d12e581daae156d913c49d0366c3e89d9a4ac8d929dc6d86"
+    },
+    {
+      "path": "frontend/src/lib/utils.ts",
+      "sha256": "7c8c3dfc0cdd370d44932828eb067ef771c8fe7996693221d5d4b90af6d54f2d"
+    },
+    {
+      "path": "frontend/src/lib/wordcraft-adapter.ts",
+      "sha256": "56e1491d06ae439f82ccb258845953dce05dedc75c15fbf5a42679871805b70e"
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "sha256": "9861e637825001af4f96dbd8b0d3fa551b8b1b2a01bed5e31a9a2eec21454ff8"
+    },
+    {
+      "path": "frontend/tailwind.config.js",
+      "sha256": "149b62bbe6c8c83d2f3dfb3196bbdb309156a63a7a289acc12f6c9066c763752"
+    },
+    {
+      "path": "frontend/tsconfig.app.json",
+      "sha256": "6adc7ebeabae8e2f7280cacce1778b40a51743c240ffd7733b2efd4eb017c53a"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "sha256": "a389bfb0309454cd0828a3c4a7431e56c3d6f50a70e648613fd0f51ae300057c"
+    },
+    {
+      "path": "frontend/tsconfig.node.json",
+      "sha256": "c3dd0fb522feba3596713f51b95bd53d781d845d24aedbfa2ac093d8b39c5120"
+    },
+    {
+      "path": "frontend/vite.config.ts",
+      "sha256": "3bb7af4a2ab1fd4ffa566a400a1058623730f9aeea06ad9c3f74b4e7b530071a"
+    },
+    {
+      "path": "go-sources.mjs",
+      "sha256": "e3da8d4b946154d2f7c98c40f71caea143473297c61aa6a9b764a2cc4702eadd"
+    },
+    {
+      "path": "Kimi-链路接线回执.md",
+      "sha256": "ffdd8594a99b4e8eda41ce345f7c4a1ccc869811fa75e58c5fa5fda8e6efd027"
+    },
+    {
+      "path": "native-adapter.d.ts",
+      "sha256": "27f3aeaaddde49c5904a385914ec77600832359e608c7feae80d4e9e5963e872"
+    },
+    {
+      "path": "native-adapter.js",
+      "sha256": "7a40334841685df9d46463fc8a71cb89fa4666cce883243a0dce2265afbce482"
+    },
+    {
+      "path": "native-adapter.test.mjs",
+      "sha256": "8fa190f849c969328080200d9b5643f45a2ab2123dee22cb35627ea803f5f7ec"
+    },
+    {
+      "path": "package-handoff.py",
+      "sha256": "e804a2bbf50332f03c519bd8d14d895ced0ab7561924314638a0c3f93365a113"
+    },
+    {
+      "path": "package.json",
+      "sha256": "3d39bc4f0470920af820abfd13d5e999b53171843d6f68aae4807de1d42ea59e"
+    },
+    {
+      "path": "README.md",
+      "sha256": "a34ec092698cb94c5866fc753aa97aedb469a7622458ead43000900c6687e2f7"
+    },
+    {
+      "path": "seed-document.py",
+      "sha256": "bcf183de981e9f3b9315aefc046fec40f4730a5479e6db62d947913c478f0ea4"
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "9aa275fd3df545d04a71c3b3b0aaac3b2cf161bac7ba8b1c87ddfeb126262910"
+    },
+    {
+      "path": "START-HERE.md",
+      "sha256": "15a3de468a5f32b1cbfc83f0ea8fa55a57b575a32c0883af992b8b4f267cd411"
+    },
+    {
+      "path": "Start-LocalTrial.ps1",
+      "sha256": "0a350b52e5f0f0e846bc67a8543efbebbd6c5f3778574a08fce1e9140588aaa6"
+    },
+    {
+      "path": "Stop-LocalTrial.ps1",
+      "sha256": "d5f60f5fc14eafd9734e238b1a9bcf4e5c748b031537ae34e57921b551941e1b"
+    },
+    {
+      "path": "verify-chain-browser.mjs",
+      "sha256": "b1859e26bf1af0769e588b210815c5e68ee2a683e2c119d35e6a17df56bd0a6f"
+    },
+    {
+      "path": "verify-chain-handoff.mjs",
+      "sha256": "87ae893ff85d01707bcbed2d3164e20bcc035bf368a390cd775092c94389d2e5"
+    },
+    {
+      "path": "verify-final-ui.mjs",
+      "sha256": "322f9da1175559cc359b2eee5e13d9ee01ffb04074b94a3ef33e53ffb7142cb1"
+    },
+    {
+      "path": "verify-gateway.mjs",
+      "sha256": "990d1bc78ac76fcf7810e75569579d546306e6436464c14c276e22d7acbb8bbf"
+    },
+    {
+      "path": "verify-real.mjs",
+      "sha256": "b5dc914733eb7c95ab0af0a1a984c8f71bb1bc6cc67704119013434ddc05946d"
+    },
+    {
+      "path": "verify-reopen-browser.mjs",
+      "sha256": "f4a3e2609f2a62bdf5807e59ec198904e65f05abc7c079e0e1ec4cb17d533cc1"
+    },
+    {
+      "path": "试用与验收.md",
+      "sha256": "c9aff9dc84ae0525e680e74f7bba3545fdc4ee8efd6d7b6612627259bbc6c464"
+    }
+  ]
+}

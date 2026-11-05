@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+const origin=process.argv[2]||'http://127.0.0.1:7211';
+const config=await fetch(origin+'/integration/config').then(r=>r.json());
+const headers={Origin:origin,'X-Integration-Token':config.token,'Content-Type':'application/json'};
+const checks=[];
+async function expect(route,options,status,label){const r=await fetch(origin+route,options);await r.arrayBuffer();assert.equal(r.status,status,label);checks.push(label)}
+await expect('/integration/state',{},403,'private project read requires token');
+await expect('/integration/workflow',{},403,'candidate history requires token');
+await expect('/integration/workflow',{method:'POST',headers:{...headers,Origin:'https://example.invalid'},body:'{}'},403,'foreign Origin cannot create or accept candidates');
+await expect('/integration/workflow',{method:'POST',headers:{...headers,'X-Integration-Token':'bad'},body:'{}'},403,'wrong token cannot mutate candidates');
+await expect('/integration/workflow',{headers},200,'authorized candidate history is readable');
+await expect('/integration/actions',{method:'POST',headers:{...headers,Origin:'https://example.invalid'},body:'{}'},403,'foreign Origin cannot mutate project');
+await expect('/integration/actions',{method:'POST',headers:{...headers,'X-Integration-Token':'bad'},body:'{}'},403,'wrong token cannot mutate project');
+await expect('/integration/config',{headers:{'Sec-Fetch-Site':'cross-site'}},403,'cross-site config fetch rejected');
+await expect('/api/save',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'},403,'native save retains authorization boundary');
+await expect('/api/docx/projects/foreign/versions/latest',{headers},404,'proxy cannot access another project');
+await expect('/integration/source?version=v1',{headers},200,'source read reaches Go original endpoint');
+const alias=origin.replace('127.0.0.1','localhost');
+const aliasConfig=await fetch(alias+'/integration/config').then(r=>r.json());assert.equal(aliasConfig.projectId,config.projectId);checks.push('localhost and 127.0.0.1 reach same project');
+const badHost=await new Promise((resolve,reject)=>{const r=http.request(origin+'/',{headers:{Host:'example.invalid'}},res=>{res.resume();resolve(res.statusCode)});r.on('error',reject);r.end()});assert.equal(badHost,403);checks.push('foreign Host rejected');
+const native=await fetch(origin+'/native.html');assert.match(native.headers.get('content-security-policy'),/frame-ancestors 'self'/);checks.push('native iframe protected against foreign embedding');
+console.log(JSON.stringify({passed:true,checks},null,2));

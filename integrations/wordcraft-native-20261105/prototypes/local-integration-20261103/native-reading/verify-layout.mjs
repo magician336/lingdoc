@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {browserClient} from '../browser-client.mjs';
+const here=path.dirname(fileURLToPath(import.meta.url));
+const out=path.join(here,'artifacts','layout-'+Date.now());await mkdir(out,{recursive:true});
+const browser=await browserClient(path.join(out,'edge'));const result={passed:false};
+try{
+ const {evaluate:e,send,wait}=browser;
+ await send('Page.navigate',{url:'http://localhost:7212/'});
+ await wait(`window.nativeReadingReady?.phase==='ready'`,120000);
+ await e(`(async()=>{window.h=()=>wordcraftHost;window.initial=await h().engine({op:'status'});await h().engine({op:'source.mode',mode:'split'});return true})()`);
+ await e(`new Promise(r=>setTimeout(r,300))`);
+ const click=async(x,y)=>{await send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});};
+ await click(1120,450);
+ await wait(`(await h().engine({op:'source.status'})).sourceActive===true`);
+ await send('Input.insertText',{text:'MUST_NOT_EDIT_FROM_SOURCE'});
+ await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+ await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+ await e(`new Promise(r=>setTimeout(r,300))`);
+ assert(await e(`JSON.stringify(initial)===JSON.stringify(await h().engine({op:'status'}))`),'split reader must not edit body');
+ await browser.screenshot(path.join(out,'native-split.png'));
+ await click(130,177);await wait(`(await h().engine({op:'source.status'})).mode==='source'`);
+ await browser.screenshot(path.join(out,'native-source.png'));
+ await click(20,177);await wait(`(await h().engine({op:'source.status'})).mode==='body'`);
+ assert(await e(`JSON.stringify(initial)===JSON.stringify(await h().engine({op:'status'}))`),'real tab clicks preserve body');
+ await browser.screenshot(path.join(out,'native-body.png'));
+ result.passed=true;result.checks=['localhost alias boots real native editor','source click in split owns focus','real typing and CtrlZ in split do not mutate body','real source/body tab clicks preserve identity and revision'];
+}catch(error){result.error=error.stack;process.exitCode=1}finally{await browser.close();await writeFile(path.join(out,'verification.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({out,...result}));}

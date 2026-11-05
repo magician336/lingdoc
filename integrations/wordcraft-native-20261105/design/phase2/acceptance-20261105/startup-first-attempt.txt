@@ -1,0 +1,1 @@
+First startup attempted before WASM build completed. Host refused missing build/out/wordcraft.js (ENOENT); exit 1. No runtime acceptance claimed. Restart only after build completion.

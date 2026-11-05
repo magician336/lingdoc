@@ -1,0 +1,58 @@
+   Compiling wordcraft-geom v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\geom)
+   Compiling wordcraft-fonts v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\fonts)
+   Compiling wordcraft-doc v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\doc)
+   Compiling wordcraft-proof v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\proof)
+   Compiling wordcraft-metafile v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\metafile)
+   Compiling wordcraft-layout v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\layout)
+   Compiling wordcraft-docx v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\docx)
+   Compiling wordcraft-pdf v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\pdf)
+   Compiling wordcraft-render v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\render)
+   Compiling wordcraft-formats v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\formats)
+   Compiling wordcraft-docbin v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\docbin)
+   Compiling wordcraft-engine v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\engine)
+warning: function `by_author` is never used
+   --> crates\engine\src\cmd\citations.rs:532:4
+    |
+532 | fn by_author(x: &Source) -> &str {
+    |    ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_ENTRIES` is never used
+  --> crates\engine\src\cmd\user_templates.rs:26:7
+   |
+26 | const MAX_ENTRIES: usize = 10_000;
+   |       ^^^^^^^^^^^
+
+warning: function `label_of` is never used
+   --> crates\engine\src\cmd\user_templates.rs:189:4
+    |
+189 | fn label_of(name: &str) -> String {
+    |    ^^^^^^^^
+
+warning: function `primary_tag` is never used
+   --> crates\engine\src\speech.rs:252:4
+    |
+252 | fn primary_tag(tag: &str) -> Option<String> {
+    |    ^^^^^^^^^^^
+
+warning: function `voice_language` is never used
+   --> crates\engine\src\speech.rs:260:4
+    |
+260 | fn voice_language(lang: Option<&str>, default: &str) -> Option<String> {
+    |    ^^^^^^^^^^^^^^
+
+   Compiling wordcraft-ui-egui v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\ui-egui)
+   Compiling wordcraft-zotero v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\crates\zotero)
+warning: `wordcraft-engine` (lib) generated 5 warnings
+   Compiling wordcraft-web v0.10.0 (D:\Mon3tr\projects\lingdoc-dachuang\git-delivery\ui-merge-check\integrations\wordcraft-native-20261105\candidates\lingdoc-native-workspace-20261027\engine\apps\wordcraft-web)
+warning: unused import: `wasm_bindgen::JsCast`
+ --> apps\wordcraft-web\src\host_bridge.rs:9:5
+  |
+9 | use wasm_bindgen::JsCast as _;
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `wordcraft-web` (bin "wordcraft-web") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 5m 37s

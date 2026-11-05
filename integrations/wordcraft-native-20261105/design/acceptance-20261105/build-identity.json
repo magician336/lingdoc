@@ -1,0 +1,7 @@
+{
+  "sourceCommit": "6f4d7571bc3b15b8d5ec003374d840296acc6935",
+  "wasmSha256": "c90707fadc4a7ab358db1abf979eec90c85fff74bf90337b9c3b3f0a18ef8af4",
+  "servedWasmMatches": true,
+  "origin": "http://localhost:7230",
+  "runtimeCodeChangedAfterBuild": false
+}

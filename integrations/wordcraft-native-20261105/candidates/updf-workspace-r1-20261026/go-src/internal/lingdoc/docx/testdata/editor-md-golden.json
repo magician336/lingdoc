@@ -1,0 +1,7 @@
+[
+ {"name":"unicode-and-format","body":"## 研究背景\n\n中文😀 **重点**与*斜体*。\n\n### 方法层次\n\n#### 细节层次","plain":["研究背景","中文😀 重点与斜体。","方法层次","细节层次"]},
+ {"name":"escaped-literals-and-entities","body":"**粗体** 与 \\*星号\\* &amp; &#x1F600; \\&amp; &amp;amp;","plain":["粗体 与 *星号* & 😀 &amp; &amp;"]},
+ {"name":"sources-inside-emphasis","body":"**证据 [[source:s1]] 重点**与*引用 [[source:s2]]*","source_ids":["s1","s2"],"plain":["证据 [1] 重点与引用 [2]"]},
+ {"name":"numbered-start-and-nested-list","body":"3. 第三步\n4. 第四步\n   - 子项甲\n   - 子项乙\n5. 第五步","plain":["第三步","第四步","子项甲","子项乙","第五步"]},
+ {"name":"unsupported-raw-kept-until-explicit-edit","body":"> 旧有引用块\n\n| 列一 | 列二 |\n| --- | --- |\n| a | b |","legacy_preserve":true,"export_supported":false}
+]

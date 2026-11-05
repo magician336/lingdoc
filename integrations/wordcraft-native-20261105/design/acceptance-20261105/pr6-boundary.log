@@ -1,0 +1,6 @@
+PASS project is clean before boundary test
+PASS native New in a project enters independent save mode
+PASS ordinary New does not reuse project content
+PASS returning to project reads the unchanged saved main document
+PASS native Open in a project enters ordinary Open without a project binding
+{"out":"D:\\Mon3tr\\projects\\lingdoc-dachuang\\git-delivery\\ui-merge-check\\integrations\\wordcraft-native-20261105\\prototypes\\local-integration-20261103\\native-reading\\artifacts\\document-boundary-2026-11-05T10-57-20.267Z","passed":true,"checks":5}

@@ -1,0 +1,225 @@
+{
+  "componentVersion": "controlled-writing-0.3.0",
+  "designBaselineId": "LD-V1-20261103-R1",
+  "observedAt": "2026-11-03T10:45:52.565Z",
+  "sourceHead": "5269e58f561bcb973d63a7623f2d076e8d943c8e",
+  "uncommitted": true,
+  "scope": "local code and artifacts only; not proof of test pass, cloud synchronization, merge or release",
+  "files": [
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/build/out/wordcraft.js",
+      "bytes": 165503,
+      "sha256": "0709f2396ad048a5d88c875bc8992797cab48768131062dd0ef4946376245cd8"
+    },
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/build/out/wordcraft_bg.wasm",
+      "bytes": 51162669,
+      "sha256": "8225cff490e0ad64c8a6de308756ea275e66dcea6753738f31405fc5bec6871c"
+    },
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/engine/apps/wordcraft-web/src/host_bridge.rs",
+      "bytes": 43354,
+      "sha256": "a09f7367a152bbeabc59a432a6d83c930d9125f7174c1067ef6b1e9913d709b4"
+    },
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/engine/crates/engine/src/cmd/text.rs",
+      "bytes": 43101,
+      "sha256": "6c177911d1d604fcb3b35eaf02486fa6dd7ff137c2b12b842deda5fc40160516"
+    },
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/engine/crates/engine/src/session.rs",
+      "bytes": 71389,
+      "sha256": "c60ce92c2e977dec67b523dad2ef00f481ccf0b3b21b6615fd676e1d4896b716"
+    },
+    {
+      "file": "candidates/lingdoc-native-workspace-20261027/engine/crates/engine/tests/controlled_replace.rs",
+      "bytes": 8808,
+      "sha256": "8270f68b8adf63756cc662eda75211896d70699ed911af7493ddc350332f8aef"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/START-HERE.md",
+      "bytes": 3219,
+      "sha256": "4c0208e15a2edf35342b8fc4dc92ba439f2223fba42ccc8bfc8649407e9306c9"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/Start-ControlledTrial.ps1",
+      "bytes": 1194,
+      "sha256": "62451dc4dbe0207a8ee161eb1a01a30d4c020a1155e858aea34972a7ac7ae92c"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/Stop-ControlledTrial.ps1",
+      "bytes": 717,
+      "sha256": "ff63d6d34a0a755e40e655c981bed116e0f98a7ed0124c5596c3b32887211943"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/V1-IMPLEMENTATION.md",
+      "bytes": 4646,
+      "sha256": "00efed2bd8aa2c14f32ba99f569abb5c67d72d3a1b7d714f008020097ded656c"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/WORKFLOW-API.md",
+      "bytes": 5593,
+      "sha256": "eee0b82dacbf8a03579453bfc29688a59f5a6658614e8106ac7f8973f873e057"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/chain-store.mjs",
+      "bytes": 9125,
+      "sha256": "7249ea4ef881520dfae8e3996103551a57855de8be7a2ad340448709204ef186"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/dist/assets/index-BXjWJfK2.js",
+      "bytes": 293949,
+      "sha256": "101fe55a657ff6d5b9b5e508368465cd6cca3ec4739a0ab2bf2b0f8a0d77b835"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/dist/assets/index-TJmV9aTZ.css",
+      "bytes": 40818,
+      "sha256": "867702d6d0877b820a85af5a72575d1fc98d92fd8c84963d1abe9621d0b835b6"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/dist/index.html",
+      "bytes": 904,
+      "sha256": "f744aceeebd7a7d4d9950af07f8cbf4b9fca4369de0672711ac959736e3f2095"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/package.json",
+      "bytes": 2672,
+      "sha256": "54f6fd8579e08daec6845b389d8c691cf5255aba261296df33f650c0f0ab7cc8"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/App.tsx",
+      "bytes": 9252,
+      "sha256": "0a3c0a69e859a7712fddcebef3fc71265bcfee7d5366827300d84b28bf2763d7"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/ContextAssistant.tsx",
+      "bytes": 5298,
+      "sha256": "f45c71660279653d6c7494a9a626c0e1cdea6e58d808a7d91979a5b7b2d89dc3"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/ControlledAssistant.tsx",
+      "bytes": 14139,
+      "sha256": "2d54a28bd4c5602a8c3ded0d29c40ad936da435ccbb922ef53bf067d62bd5ca6"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/NativeHost.tsx",
+      "bytes": 1436,
+      "sha256": "e6dcf73b0a663d37ef0e19f0985d01dc5573ed7384f68392f1d9922ba5cd75a9"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/ProjectOverview.tsx",
+      "bytes": 6636,
+      "sha256": "a0a11eebb0c93ebb927ae6443ebd91837fe109194fcd6c9c3e36a2e264431311"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/RecordCompletion.tsx",
+      "bytes": 2182,
+      "sha256": "d448c3b0942c7e192fe2e51e1c689c0214342c2bf95090a45d848bb9f7e17319"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/ReviewDelivery.tsx",
+      "bytes": 15493,
+      "sha256": "45e1d8cdaeef4d45696302f41ab5612672a5e9bc4d3b1b300deb7fdde4d33c9a"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/ReviewPrimitives.tsx",
+      "bytes": 3632,
+      "sha256": "649a411cdedbf26c9e60277480bd77874e87baa0aee7409a3104bbf1e737d0be"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/components/WritingWorkspace.tsx",
+      "bytes": 11871,
+      "sha256": "e554cf0335475175e72bbded0dd948893423dc7497c0731a137bc63cd19805c1"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/data/scenario.ts",
+      "bytes": 5496,
+      "sha256": "18ff70333dc8f21d61e1a42a81b196659c148712a88e902e42ebd261cfa23393"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/index.css",
+      "bytes": 40365,
+      "sha256": "d965e1881b84baf496dc5da6871b916e1fc2d5ebc16c8f15a4669592d3bddf26"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/lib/live-context.ts",
+      "bytes": 2551,
+      "sha256": "406192a94036bc511641564684e7a0bb826a156706ca03b513c5a92c45a2a551"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/lib/live.tsx",
+      "bytes": 9640,
+      "sha256": "42f27f54e780b4bcd1dc221f23c38d7129d656d48860002bcf06a9e581ca5dc4"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/lib/utils.ts",
+      "bytes": 166,
+      "sha256": "7c8c3dfc0cdd370d44932828eb067ef771c8fe7996693221d5d4b90af6d54f2d"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/lib/wordcraft-adapter.ts",
+      "bytes": 977,
+      "sha256": "56e1491d06ae439f82ccb258845953dce05dedc75c15fbf5a42679871805b70e"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/frontend/src/main.tsx",
+      "bytes": 318,
+      "sha256": "9861e637825001af4f96dbd8b0d3fa551b8b1b2a01bed5e31a9a2eec21454ff8"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/go-sources.mjs",
+      "bytes": 7236,
+      "sha256": "e3da8d4b946154d2f7c98c40f71caea143473297c61aa6a9b764a2cc4702eadd"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/native-adapter.js",
+      "bytes": 5096,
+      "sha256": "7a40334841685df9d46463fc8a71cb89fa4666cce883243a0dce2265afbce482"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/package.json",
+      "bytes": 628,
+      "sha256": "ccb71cfe0e6178039ae9a08520d66d3696beb73b188899216c2ed497bdb016f2"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/server.mjs",
+      "bytes": 14178,
+      "sha256": "0cf62b5eee58ba5ab2332c27c5268d8add0954f12701a8b54dacba1b1e1b51f5"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/snapshot-controlled.mjs",
+      "bytes": 2905,
+      "sha256": "5579a556d41c24f55572fc9c705211146c2587bded4de815252de9d6fb68b9ab"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/verify-controlled.mjs",
+      "bytes": 20654,
+      "sha256": "79b07f09d7f9a5cd55590c2631a9542c798ce7e717ea0acd44eba9ac04f86b00"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/verify-gateway.mjs",
+      "bytes": 2643,
+      "sha256": "2f3955af7b668532ed16689970bb228fd2d821abdf47914afbdf65f5d70fb94c"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/workflow-model.mjs",
+      "bytes": 6317,
+      "sha256": "04d824d39394da6e45c4bb354301c8d8dd6e9003df5b6da298b6e03c5e2632f2"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/workflow-store.mjs",
+      "bytes": 9409,
+      "sha256": "a244304b21015c264c6668ff5496baf8ad3fa647c5ad856ffecff5301c5d30f4"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/受控写作-前端接续说明.md",
+      "bytes": 2260,
+      "sha256": "87b6d592bc8b960f483d48b2d432048c85dbd2030e0f7185d1ba08582956abeb"
+    },
+    {
+      "file": "prototypes/local-integration-20261103/受控写作-试用步骤.md",
+      "bytes": 2692,
+      "sha256": "1692be155e19ee5e16ca652cf01de6fcbadbfc802b8c8f00640d8497af70d42e"
+    }
+  ]
+}

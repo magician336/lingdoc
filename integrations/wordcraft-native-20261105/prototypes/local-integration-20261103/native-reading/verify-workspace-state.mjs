@@ -1,0 +1,75 @@
+// Read-only document acceptance of project resources and conversation state.
+// No model requests; only the dedicated 7213 workspace is touched.
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+import {browserClient} from '../browser-client.mjs';
+const here=path.dirname(fileURLToPath(import.meta.url));
+const out=path.join(here,'artifacts','workspace-state-'+new Date().toISOString().replaceAll(':','-')+'-'+process.pid);
+const result={passed:false,scope:'native project, conversation and reader state; no model invocation or body edit',checks:[],modelRequests:0};
+await mkdir(out,{recursive:true});let browser;
+try {
+ browser=await browserClient(path.join(out,'edge'));
+ const {send,evaluate:e,wait}=browser;
+ const check=async(expression,label)=>{assert(await e(expression),label);result.checks.push(label);console.log('PASS '+label)};
+ const click=async(x,y)=>{await send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});};
+ await send('Page.navigate',{url:'http://localhost:7213/'});
+ await wait(`window.nativeReadingReady?.phase==='ready'||window.nativeReadingReady?.phase==='failed'`,120000);
+ await check(`window.nativeReadingReady?.phase==='ready'`,'native resource workspace is ready');
+ await e(`(async()=>{window.h=()=>wordcraftHost;window.ws=()=>h().engine({op:'workspace.status'});window.initialBody=await h().engine({op:'status'});window.initialWorkspace=await nativeWorkspace.state();window.originalSession=initialWorkspace.currentSessionId;window.originalMessages=JSON.stringify(initialWorkspace.messages);return true})()`);
+ result.initial=await e(`await nativeWorkspace.state()`);
+ assert(!result.initial.busy,'refuse to interfere with an in-flight request');
+ assert(result.initial.messages.some(m=>m.role==='user'),'existing failed-question history is required');
+ const pdf=result.initial.sources.find(s=>s.title.endsWith('.pdf'));assert(pdf,'PDF source exists');
+ const text=result.initial.sources.find(s=>s.id!==pdf.id);assert(text,'a second project source exists');
+ const add={kind:'addContext',sourceId:pdf.id,version:pdf.version};
+ const remove={kind:'removeContext',sourceId:pdf.id};
+ await e(`await nativeWorkspace.act(${JSON.stringify(add)})`);
+ await check(`(await nativeWorkspace.state()).contextSources.some(s=>s.id===${JSON.stringify(pdf.id)}&&s.version===${JSON.stringify(pdf.version)})`,'adding a source records its version in the current conversation');
+ await e(`await nativeWorkspace.act(${JSON.stringify(remove)})`);
+ await check(`!(await nativeWorkspace.state()).contextSources.some(s=>s.id===${JSON.stringify(pdf.id)})`,'removing a context source is reflected in persistent state');
+ await check(`JSON.stringify((await nativeWorkspace.state()).messages)===originalMessages`,'context removal does not erase conversation history');
+ await e(`await nativeWorkspace.act(${JSON.stringify(add)})`);
+ await e(`await nativeWorkspace.act({kind:'newSession'})`);
+ await check(`(await nativeWorkspace.state()).currentSessionId!==originalSession&&(await nativeWorkspace.state()).messages.length===0&&(await nativeWorkspace.state()).contextSources.length===0`,'new conversation inherits neither messages nor pinned sources');
+ result.emptySession=await e(`(await nativeWorkspace.state()).currentSessionId`);
+ await e(`await nativeWorkspace.act({kind:'selectSession',sessionId:originalSession})`);
+ await check(`JSON.stringify((await nativeWorkspace.state()).messages)===originalMessages&&(await nativeWorkspace.state()).contextSources.some(s=>s.id===${JSON.stringify(pdf.id)})`,'returning restores the original history and pinned source');
+ await e(`await nativeWorkspace.openSource(${JSON.stringify(text.id)},undefined,${JSON.stringify(text.version)})`);
+ await check(`(await h().engine({op:'source.status'})).sourceId===${JSON.stringify(text.id)}&&(await h().engine({op:'source.status'})).mode==='source'`,'a project text source opens in the independent native reader');
+ await e(`await nativeWorkspace.openSource(${JSON.stringify(pdf.id)},2,${JSON.stringify(pdf.version)})`);
+ await check(`(await h().engine({op:'source.status'})).sourceId===${JSON.stringify(pdf.id)}&&(await h().engine({op:'source.status'})).page===2`,'PDF source version opens at the requested original page');
+ await e(`await nativeWorkspace.openSource(${JSON.stringify(text.id)},undefined,${JSON.stringify(text.version)})`);
+ await e(`await nativeWorkspace.openSource(${JSON.stringify(pdf.id)},undefined,${JSON.stringify(pdf.version)})`);
+ await check(`(await h().engine({op:'source.status'})).sourceId===${JSON.stringify(pdf.id)}&&(await h().engine({op:'source.status'})).page===2`,'returning to a PDF without an explicit page restores its previous reading page');
+ await e(`await nativeWorkspace.openSource(${JSON.stringify(pdf.id)},1,${JSON.stringify(pdf.version)})`);
+ await check(`(await h().engine({op:'source.status'})).page===1`,'an explicit citation page overrides the remembered PDF reading page');
+ await e(`await h().engine({op:'source.mode',mode:'split'})`);
+ let ui=await e(`await ws()`);
+ if(!ui.chatOpen)await click(ui.topRect.x+90,ui.topRect.y+14);
+ await wait(`(await ws()).chatOpen`);
+ await check(`(await ws()).resourcesOpen&&(await h().engine({op:'source.status'})).mode==='split'`,'opening chat preserves resources and split reading');
+ ui=await e(`await ws()`);await click(ui.topRect.x+28,ui.topRect.y+14);
+ await wait(`!(await ws()).resourcesOpen`);
+ await check(`(await ws()).chatOpen&&(await h().engine({op:'source.status'})).mode==='split'`,'closing resources preserves chat and split reading');
+ await browser.screenshot(path.join(out,'01-native-three-way.png'));
+ ui=await e(`await ws()`);await click(ui.topRect.x+90,ui.topRect.y+14);
+ await wait(`!(await ws()).chatOpen`);
+ await check(`(await h().engine({op:'source.status'})).mode==='split'`,'closing chat leaves source reading open');
+ ui=await e(`await ws()`);await click(ui.topRect.x+90,ui.topRect.y+14);
+ await wait(`(await ws()).chatOpen`);
+ await check(`JSON.stringify(initialBody)===JSON.stringify(await h().engine({op:'status'}))`,'resource, chat and context operations do not edit the body');
+ await e(`new Promise(r=>setTimeout(r,1300))`);
+ await e(`(()=>{window.nativeReadingReady={phase:'reloading'};return true})()`);
+ await send('Page.reload',{ignoreCache:true});
+ await wait(`window.nativeReadingReady?.phase==='ready'&&!!window.nativeWorkspace`,120000);
+ await check(`(await nativeWorkspace.state()).currentSessionId===${JSON.stringify(result.initial.currentSessionId)}&&JSON.stringify((await nativeWorkspace.state()).messages)===${JSON.stringify(JSON.stringify(result.initial.messages))}&&(await nativeWorkspace.state()).contextSources.some(s=>s.id===${JSON.stringify(pdf.id)})`,'refresh restores original conversation history and pinned source');
+ await check(`(await wordcraftHost.engine({op:'workspace.status'})).chatOpen&&!(await wordcraftHost.engine({op:'workspace.status'})).resourcesOpen`,'refresh restores independent panel layout choices');
+ await browser.screenshot(path.join(out,'02-restored-chat.png'));
+ // Restore the original pinned context set. The new empty test conversation is retained.
+ if(!result.initial.contextSources.some(s=>s.id===pdf.id))await e(`await nativeWorkspace.act(${JSON.stringify(remove)})`);
+ result.final=await e(`({workspace:await nativeWorkspace.state(),body:await wordcraftHost.engine({op:'status'})})`);
+ result.errors=browser.errors;assert.equal(browser.errors.length,0);result.passed=true;
+}catch(error){result.error=error.stack;process.exitCode=1;if(browser)try{result.failureState=await browser.evaluate(`({ready:window.nativeReadingReady,workspace:window.nativeWorkspace?await nativeWorkspace.state():null,ui:window.wordcraftHost?await wordcraftHost.engine({op:'workspace.status'}):null})`);await browser.screenshot(path.join(out,'failure.png'))}catch{}}
+finally{if(browser)try{await browser.close()}catch(error){result.cleanupError=error.message;result.passed=false;process.exitCode=1}await writeFile(path.join(out,'verification.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({out,passed:result.passed,checks:result.checks.length,error:result.error}));}
