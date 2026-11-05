@@ -1,0 +1,61 @@
+{
+  "repository": "magician336/lingdoc",
+  "commit": "acb9ac744f5c6fbe68bc672ecf08eb03e7db1a22",
+  "files": [
+    {
+      "path": "docreader/config.py",
+      "blob": "1b9e50727a9af9c1570e68ebda180e4b7f22c1a3",
+      "size": 6891
+    },
+    {
+      "path": "docreader/models/__init__.py",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0
+    },
+    {
+      "path": "docreader/models/document.py",
+      "blob": "1ab8c46e9e216501f731a4636b56d319168b3be9",
+      "size": 2567
+    },
+    {
+      "path": "docreader/parser/base_parser.py",
+      "blob": "b868c1e747ca03034db6dc1bfa616c61ff649b63",
+      "size": 1749
+    },
+    {
+      "path": "docreader/parser/concurrency.py",
+      "blob": "fc66ca67a2fd883a601232aab5c252ed28f2d3a9",
+      "size": 1122
+    },
+    {
+      "path": "docreader/parser/docx_parser.py",
+      "blob": "f9820069fe341b41ea5b53b9412352e808e7d5d9",
+      "size": 58214
+    },
+    {
+      "path": "docreader/parser/pdf_parser.py",
+      "blob": "4a54196521bdef3afbd6fa507fe90ade15204dd3",
+      "size": 58987
+    },
+    {
+      "path": "docreader/proto/docreader_pb2.py",
+      "blob": "8e3d16e00b52b2622faf5453cd9576d55690f1a9",
+      "size": 6197
+    },
+    {
+      "path": "docreader/proto/docreader_pb2_grpc.py",
+      "blob": "8b9323c90658c5175a62457df661a7dc76b3594e",
+      "size": 7159
+    },
+    {
+      "path": "docreader/utils/__init__.py",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "size": 0
+    },
+    {
+      "path": "docreader/utils/endecode.py",
+      "blob": "a38f3559a9a15ef32f823e1efa17d64366632b26",
+      "size": 6954
+    }
+  ]
+}

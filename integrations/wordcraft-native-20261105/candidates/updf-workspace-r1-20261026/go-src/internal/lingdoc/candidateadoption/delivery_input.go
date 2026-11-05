@@ -1,0 +1,236 @@
+package candidateadoption
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"gorm.io/gorm"
+)
+
+// WorkspaceDeliveryInput is the workspace-owned, versioned portion of the
+// input consumed by T13. Template rules and current source records are resolved
+// by their owning providers after this consistent read.
+type WorkspaceDeliveryInput struct {
+	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
+	ProjectID               string                     `json:"project_id"`
+	ProjectName             string                     `json:"project_name"`
+	ProjectVersion          int64                      `json:"project_version"`
+	SpecRevision            int                        `json:"spec_revision"`
+	ContextRevision         int64                      `json:"context_revision,omitempty"`
+	Spec                    map[string]string          `json:"spec"`
+	TemplateID              string                     `json:"template_id"`
+	TemplateVersion         string                     `json:"template_version"`
+	TemplateCopyID          string                     `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64                      `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string                     `json:"template_copy_content_hash,omitempty"`
+	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
+	TemplateDefinition      *lingdoctemplate.Template  `json:"template_definition,omitempty"`
+	Chapters                []WorkspaceDeliveryChapter `json:"chapters"`
+}
+
+// WorkspaceDeliveryChapter deliberately allows a nil chapter version and a
+// nil confirmation. Empty or unconfirmed chapters must reach T13 so it can
+// persist an actionable blocked snapshot rather than hiding incomplete work.
+type WorkspaceDeliveryChapter struct {
+	ChapterID        string          `json:"chapter_id"`
+	SectionID        string          `json:"section_id"`
+	Title            string          `json:"title"`
+	ChapterVersionID *string         `json:"chapter_version_id"`
+	BodyMarkdown     string          `json:"body_markdown"`
+	SourceIDs        []string        `json:"source_ids"`
+	CitationUsages   []CitationUsage `json:"citation_usages"`
+	ReviewItems      []ReviewItem    `json:"review_items"`
+	Confirmation     *Confirmation   `json:"confirmation,omitempty"`
+}
+
+// DeliveryInputReader is the T12 handoff to T13. Implementations must return
+// project, spec, current chapter versions, and confirmations from one
+// workspace snapshot. Callers must authorize the actor before reading and
+// revalidate workspace/source versions around later cross-provider reads.
+type DeliveryInputReader interface {
+	ReadDeliveryInput(context.Context, string) (WorkspaceDeliveryInput, error)
+}
+
+// DeliveryInputProjectAuthorizer keeps project membership checks ahead of any
+// workspace read. The application adapter should delegate this to T07 rather
+// than inventing a second membership store.
+type DeliveryInputProjectAuthorizer interface {
+	AuthorizeProject(context.Context, string, string) error
+}
+
+type DeliveryInputService struct {
+	Reader     DeliveryInputReader
+	Authorizer DeliveryInputProjectAuthorizer
+}
+
+func (s *DeliveryInputService) Read(ctx context.Context, actorID, projectID string) (WorkspaceDeliveryInput, error) {
+	if actorID == "" || projectID == "" {
+		return WorkspaceDeliveryInput{}, ErrInvalidRequest
+	}
+	if s.Reader == nil || s.Authorizer == nil {
+		return WorkspaceDeliveryInput{}, ErrInvalidState
+	}
+	if err := s.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return WorkspaceDeliveryInput{}, err
+	}
+	return s.Reader.ReadDeliveryInput(ctx, projectID)
+}
+
+// ReadDeliveryInput reads all workspace-owned delivery inputs in one
+// repeatable-read transaction. It includes empty chapters and only returns a
+// confirmation that still matches the project's current spec/template and the
+// chapter's current immutable version.
+func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, projectID string) (WorkspaceDeliveryInput, error) {
+	var result WorkspaceDeliveryInput
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var project projectRow
+		if err := tx.Where("id = ?", projectID).First(&project).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		spec, err := decodeWorkspaceSpec(project.SpecJSON)
+		if err != nil {
+			return err
+		}
+		result = WorkspaceDeliveryInput{
+			ProjectID: project.ID, ProjectName: project.Name, ProjectVersion: project.ProjectVersion,
+			SpecRevision: int(project.SpecRevision), Spec: spec, ContextRevision: project.CurrentContextRevision,
+			TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion,
+			Chapters: []WorkspaceDeliveryChapter{},
+		}
+		if project.TemplateCopyVersion > 0 {
+			var copy projectTemplateCopyRow
+			if err := tx.Where("project_id = ? AND version = ?", projectID, project.TemplateCopyVersion).First(&copy).Error; err != nil {
+				return err
+			}
+			var definition lingdoctemplate.Template
+			if err := json.Unmarshal([]byte(copy.DefinitionJSON), &definition); err != nil {
+				return err
+			}
+			result.TemplateCopyID, result.TemplateCopyVersion = copy.ID, copy.Version
+			result.TemplateCopyContentHash, result.TemplateCopyRulesetHash = copy.ContentHash, copy.RulesetHash
+			result.TemplateDefinition = &definition
+			binding, err := readDeliveryBinding(tx, projectID, copy.ID)
+			if err != nil {
+				return err
+			}
+			result.RuleSetSnapshot = binding.RuleSetSnapshot
+			result.SourceRuleSetID = binding.SourceRuleSetID
+			result.SourceRuleSetVersion = binding.SourceRuleSetVersion
+			result.SourceRuleSetHash = binding.SourceRuleSetHash
+			result.BindingPolicies = binding.BindingPolicies
+			result.SourcePolicyHash = binding.SourcePolicyHash
+			if definition.RuleSetSnapshot != nil || definition.RuleSetRef != nil {
+				// WorkspaceCore owns canonical source/effective hash validation.
+				// Reuse its exact version reader on this same snapshot transaction;
+				// the source sidecar hash is not the effective template hash.
+				reader, ok := core.NewTransactionAdapter(tx).(interface {
+					ProjectTemplateCopy(uint64, string, int64) (core.ProjectTemplateCopy, error)
+				})
+				if !ok {
+					return ErrInvalidState
+				}
+				if _, err := reader.ProjectTemplateCopy(project.TenantID, projectID, copy.Version); err != nil {
+					return err
+				}
+			} else if binding.RuleSetSnapshot != nil && binding.RuleSetSnapshot.RulesetHash != copy.RulesetHash {
+				return ErrInvalidState
+			}
+			if copy.Status != "bound" {
+				return ErrInvalidState
+			}
+		}
+		if tx.Migrator().HasTable("lingdoc_g3_records") {
+			current, err := core.NewTransactionAdapter(tx).Project(project.TenantID, projectID)
+			if err != nil {
+				return err
+			}
+			fields, err := core.RouteEvaluationFields(core.NewTransactionAdapter(tx), current)
+			if err != nil {
+				return err
+			}
+			result.Spec = fields
+		}
+		var rows []chapterRow
+		if err := tx.Where("project_id = ?", projectID).Order("section_id ASC, id ASC").Find(&rows).Error; err != nil {
+			return err
+		}
+		result.Chapters = make([]WorkspaceDeliveryChapter, 0, len(rows))
+		for _, row := range rows {
+			chapter, err := s.chapterFromRow(tx, row)
+			if err != nil {
+				return err
+			}
+			frozen := WorkspaceDeliveryChapter{
+				ChapterID: chapter.ID, SectionID: chapter.SectionID, Title: chapter.Title,
+				ChapterVersionID: cloneString(chapter.CurrentVersionID), BodyMarkdown: chapter.BodyMarkdown,
+				SourceIDs: append([]string{}, chapter.SourceIDs...), CitationUsages: append([]CitationUsage{}, chapter.CitationUsages...), ReviewItems: append([]ReviewItem{}, chapter.ReviewItems...),
+			}
+			if chapter.CurrentVersionID != nil {
+				confirmation, err := currentConfirmation(tx, chapter.ID, *chapter.CurrentVersionID, int(project.SpecRevision), project.TemplateVersion)
+				if err != nil {
+					return err
+				}
+				frozen.Confirmation = confirmation
+			}
+			result.Chapters = append(result.Chapters, frozen)
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return WorkspaceDeliveryInput{}, err
+	}
+	return result, nil
+}
+
+func currentConfirmation(tx *gorm.DB, chapterID, versionID string, specRevision int, templateVersion string) (*Confirmation, error) {
+	var rows []confirmationRow
+	if err := tx.Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", chapterID, versionID, true).
+		Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		var confirmation Confirmation
+		if err := json.Unmarshal([]byte(row.DetailsJSON), &confirmation); err != nil {
+			return nil, fmt.Errorf("decode chapter confirmation %q: %w", row.ID, err)
+		}
+		if confirmation.Valid && confirmation.ID == row.ID && confirmation.ChapterID == chapterID &&
+			confirmation.ChapterVersionID == versionID && confirmation.SpecRevision == specRevision &&
+			confirmation.TemplateVersion == templateVersion {
+			return &confirmation, nil
+		}
+	}
+	return nil, nil
+}
+
+func decodeWorkspaceSpec(raw string) (map[string]string, error) {
+	var spec map[string]string
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return nil, fmt.Errorf("decode workspace spec for delivery input: %w", err)
+	}
+	if spec == nil {
+		spec = map[string]string{}
+	}
+	return spec, nil
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}

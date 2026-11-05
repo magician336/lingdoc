@@ -1,0 +1,12 @@
+{
+  "name": "lingdoc-native-workspace",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "env:check": "node scripts/check-environment.mjs",
+    "start": "node scripts/delivery-runtime.mjs",
+    "dev": "node scripts/dev.mjs",
+    "verify:dev": "node scripts/verify-dev.mjs"
+  }
+}

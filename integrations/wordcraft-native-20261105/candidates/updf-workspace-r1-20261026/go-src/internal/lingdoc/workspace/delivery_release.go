@@ -1,0 +1,575 @@
+package workspace
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
+	"strings"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
+)
+
+// deliveryHistoryLimit 是交付历史列表的上限，快照与产物共用。契约 §3：列表面向
+// 演示规模，不引入通用分页平台；若设上限，必须显式提示截断。取 50 与
+// listProjects 同值，两处历史在界面上看起来才是同一种东西。
+const deliveryHistoryLimit = 50
+
+// DeliveryReleaseService 是 T13 在被装配起来之后的那一份：读 T12 的交付输入、
+// 补成冻结输入、再交给 T13 的检查与冻结。
+//
+// 契约把 /checks、/releases、/exports 这些 HTTP 入口标成「容量有余才启用的独立入口，
+// 核心流程不依赖本接口」，但同一句话里也写了「领域授权/检索/检查函数仍必须实现」。
+// 这一层就是那些领域函数的组装点：没有它，T13 的检查与冻结在仓里没有一个生产调用者，
+// 「T12→T13」也就只是两套类型相邻摆着。
+type DeliveryReleaseService struct {
+	inputs       *candidateadoption.DeliveryInputService
+	builder      DeliveryInputAssembler
+	store        delivery.SnapshotStore
+	freezes      delivery.TransactionalSnapshotPort
+	sources      candidateadoption.SourcePolicy
+	reviewer     sourcepolicy.Reviewer
+	policy       AccessPolicy
+	dispositions ValidationIssueDispositionApplication
+	useAuditor   lingdoctemplate.RuleSetUseAuditRecorder
+}
+
+// NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
+// 少一个，链路就有一截是空的（读不到、补不上、或者冻不下来）。
+//
+// 快照库还必须能记「哪一次动作冻了它」（delivery.FreezeRecorder）。契约把
+// Idempotency-Key 标成 /releases 的必填头，退化成「照冻不误」就等于收下了这个头
+// 却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只冻过一次。
+func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sourcePolicies ...candidateadoption.SourcePolicy) *DeliveryReleaseService {
+	var sources candidateadoption.SourcePolicy
+	if len(sourcePolicies) > 0 {
+		sources = sourcePolicies[0]
+	}
+	return buildDeliveryReleaseService(inputs, builder, store, sources, nil, nil)
+}
+
+// NewDeliveryReleaseServiceWithDispositions wires both current-source
+// authorization and persisted issue dispositions into the release service.
+func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
+	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, nil)
+}
+
+// NewDeliveryReleaseServiceWithPolicy uses the shared application policy for
+// all release reads and currentness checks.
+func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
+	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, policy)
+}
+
+// WithRuleSetUseAuditor makes governed Check/Preflight usage records a
+// fail-closed part of the application contract.
+func (s *DeliveryReleaseService) WithRuleSetUseAuditor(auditor lingdoctemplate.RuleSetUseAuditRecorder) *DeliveryReleaseService {
+	if s != nil {
+		s.useAuditor = auditor
+	}
+	return s
+}
+
+func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication, policy AccessPolicy) *DeliveryReleaseService {
+	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
+		return nil
+	}
+	freezes, err := delivery.NewTransactionalSnapshotPort(store)
+	if err != nil {
+		return nil
+	}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, reviewer: reviewer, policy: policy, dispositions: dispositions}
+}
+
+// Check 回答「此刻冻结会得到什么结论」，不落快照。
+//
+// expectedProjectVersion 是调用方在说「我以为工作区长这样」——契约里 /checks 与
+// /releases 的请求体都只有这一个字段。对不上就是别人先改了，这时要报冲突，
+// 而不是把新的内容当成他以为的那一份检查下去：检查结论会贴在一个他没有看过的工作区上。
+func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.CheckResult, error) {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.CheckResult{}, err
+	}
+	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
+	if err != nil {
+		return delivery.CheckResult{}, err
+	}
+	result := delivery.Evaluate(input)
+	if err := s.attachIssueDispositions(ctx, actorID, projectID, &result); err != nil {
+		return delivery.CheckResult{}, err
+	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "preflight", "", string(result.Status)); err != nil {
+		return delivery.CheckResult{}, err
+	}
+	return result, nil
+}
+
+// TemplateCheck returns the shared declarative evaluator's evidence for the
+// current editing input. It is advisory and never freezes or releases output.
+func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.TemplateCheckResult, error) {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
+	if err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	result, err := delivery.EvaluateTemplateScene(input, "write_check")
+	if err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "check", "", string(result.Status)); err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	return result, nil
+}
+
+// Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
+// 幂等键——契约把 Idempotency-Key 标成 /releases 的必填头。
+//
+// 处理顺序照契约 §6：先判身份，再判是不是已经做过，最后才比版本。
+// 「重放先于版本比较」不是两个可以调换的步骤：一次「其实已经冻好了、只是响应
+// 丢了」的重试，此刻读回来的工作区完全可能是被那次冻结推动过的版本；先比版本
+// 就会把它判成冲突，调用方于是再也拿不回那份已经存在的快照。
+func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID, key string, expectedProjectVersion int64) (delivery.ReleaseSnapshot, bool, error) {
+	if s == nil || s.inputs == nil || s.builder == nil || s.freezes == nil {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
+	}
+	key = strings.TrimSpace(key)
+	if len(key) < 8 || len(key) > 128 {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
+	}
+	// 1. 身份与项目能力。撤权之后不能从「这个键做过」里把旧快照交出去。
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	attempt := delivery.FreezeAttempt{ActorID: actorID, ProjectID: projectID, Key: key}
+	requestHash := freezeRequestHash(actorID, projectID, expectedProjectVersion)
+	// 2. 已经做过就换回原结果；同键不同请求是冲突，不是又一次冻结。
+	replay, found, err := s.freezes.ReplayFreeze(attempt, requestHash)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	if found {
+		// Replay is a read of this historical snapshot, including its sources.
+		// The current revision may no longer cite the historical sources.
+		visible, err := s.Get(ctx, actorID, projectID, replay.ID)
+		if err != nil {
+			return delivery.ReleaseSnapshot{}, false, err
+		}
+		return visible, true, nil
+	}
+	// 3. 只有新动作才比版本，也只有新动作才读工作区。
+	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	// 4. 冻结与「这次动作冻了什么」一起落。并发的同键请求只会有一个落笔，
+	// 输的那一方拿回赢家的那一份，而不是自己手里这份。
+	snapshot, err := s.releases(ctx, actorID).Freeze(input)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	if err := s.attachIssueDispositions(ctx, actorID, projectID, &snapshot.Check); err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	useEvent, governed, err := ruleSetUseEvent(ctx, actorID, input, "release_snapshot", snapshot.ID, string(snapshot.Check.Status))
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	var recorded delivery.ReleaseSnapshot
+	var replayed bool
+	if governed {
+		audited, ok := s.freezes.(delivery.RuleSetUseFreezeRecorder)
+		if !ok {
+			return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidState
+		}
+		recorded, replayed, err = audited.RecordFreezeWithRuleSetUse(snapshot, attempt, requestHash, useEvent)
+	} else {
+		recorded, replayed, err = s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	}
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	visible, err := s.Get(ctx, actorID, projectID, recorded.ID)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	return visible, replayed, nil
+}
+
+func (s *DeliveryReleaseService) recordRuleSetUse(ctx context.Context, actorID string, input delivery.DeliveryInput, action, resourceID, outcome string) error {
+	event, governed, err := ruleSetUseEvent(ctx, actorID, input, action, resourceID, outcome)
+	if err != nil || !governed {
+		return err
+	}
+	if s == nil || s.useAuditor == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.useAuditor.RecordRuleSetUse(ctx, event)
+}
+
+// SetIssueDisposition reevaluates the current issue at the caller's expected
+// project version, derives its immutable rule/target binding server-side, then
+// lets workspacecore recheck the write permission and append the audit event.
+func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorID, projectID, issueID, key string, request IssueDispositionRequest) (ValidationIssueDisposition, bool, error) {
+	if s == nil || s.dispositions == nil || strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(issueID) == "" {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidState
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID == 0 || caller.UserID == "" || caller.UserID != actorID {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidRequest
+	}
+	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
+	replayedResult, err := s.dispositions.ReplayValidationIssueDispositionResult(ctx, actor, projectID, issueID, key,
+		request.Action, request.Reason, request.ExpectedProjectVersion)
+	if err != nil {
+		return ValidationIssueDisposition{}, replayedResult.Replayed, err
+	}
+	if replayedResult.Found {
+		return replayedResult.Disposition, replayedResult.Replayed, nil
+	}
+	result, err := s.Check(ctx, actorID, projectID, request.ExpectedProjectVersion)
+	if err != nil {
+		return ValidationIssueDisposition{}, false, err
+	}
+	var current *delivery.CheckIssue
+	for index := range result.Issues {
+		if result.Issues[index].ID == issueID {
+			current = &result.Issues[index]
+			break
+		}
+	}
+	if current == nil {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrVersionConflict
+	}
+	projectVersion := int64(result.ProjectVersion)
+	binding := ValidationIssueBinding{IssueID: current.ID, RuleID: current.RuleID, RulesetHash: current.RulesetHash,
+		Severity: current.Severity, TargetID: current.TargetID, TargetVersion: cloneIssueVersion(current.TargetVersion), ProjectVersion: projectVersion}
+	input := ValidationIssueDispositionInput{ExpectedProjectVersion: projectVersion, ValidationIssueBinding: binding, Action: request.Action, Reason: request.Reason}
+	dispositionResult, err := s.dispositions.RecordValidationIssueDispositionResult(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ValidationIssueDisposition{}, dispositionResult.Replayed, err
+	}
+	return dispositionResult.Disposition, dispositionResult.Replayed, nil
+}
+
+func (s *DeliveryReleaseService) attachIssueDispositions(ctx context.Context, actorID, projectID string, result *delivery.CheckResult) error {
+	if s == nil || s.dispositions == nil || result == nil || len(result.Issues) == 0 {
+		return nil
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID == 0 || caller.UserID == "" || caller.UserID != actorID {
+		return candidateadoption.ErrInvalidRequest
+	}
+	bindings := make([]ValidationIssueBinding, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		bindings = append(bindings, ValidationIssueBinding{IssueID: issue.ID, RuleID: issue.RuleID, RulesetHash: issue.RulesetHash,
+			Severity: issue.Severity, TargetID: issue.TargetID, TargetVersion: cloneIssueVersion(issue.TargetVersion), ProjectVersion: int64(result.ProjectVersion)})
+	}
+	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
+	current, err := s.dispositions.ValidationIssueDispositions(ctx, actor, projectID, bindings)
+	if err != nil {
+		return err
+	}
+	for index := range result.Issues {
+		if disposition, ok := current[result.Issues[index].ID]; ok {
+			result.Issues[index].Disposition = &delivery.IssueDisposition{Action: disposition.Action, Reason: disposition.Reason, ActorID: disposition.ActorID, CreatedAt: disposition.CreatedAt}
+		}
+	}
+	return nil
+}
+
+func cloneIssueVersion(version *string) *string {
+	if version == nil {
+		return nil
+	}
+	copy := *version
+	return &copy
+}
+
+// freezeRequestHash 是这次动作请求体的规范指纹。契约 §6 要求把它与键一起记下：
+// 它是把「重试」与「换了请求却复用同一个键」分开的唯一依据。
+func freezeRequestHash(actorID, projectID string, expectedProjectVersion int64) string {
+	hasher := sha256.New()
+	for _, field := range []string{actorID, projectID, strconv.FormatInt(expectedProjectVersion, 10)} {
+		// hash.Hash.Write 从不返回错误（见 hash.Hash 文档）；长度前缀是为了让不同的
+		// 字段组合拼不出同一串字节——否则改一下字段边界就成了另一次「同一个请求」。
+		_, _ = hasher.Write([]byte(strconv.Itoa(len(field)) + ":" + field))
+	}
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// Get 取一份已冻结的快照，并按**此刻**的工作区重算 is_current。
+//
+// 重算是有意为之：冻结的内容与摘要不再变（那正是冻结的意思），但「它还对不对得上
+// 现在的工作区」是个随时间变化的判断，存下来的那个值从写下的一刻就在过期。
+func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, snapshotID string) (delivery.ReleaseSnapshot, error) {
+	if s == nil || s.inputs == nil || s.store == nil {
+		return delivery.ReleaseSnapshot{}, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(snapshotID) == "" {
+		return delivery.ReleaseSnapshot{}, candidateadoption.ErrInvalidRequest
+	}
+	// 先判成员再读快照：顺序反过来的话，非成员能从「找不到」与「没权限」的差别里
+	// 问出某个项目有没有冻结过东西。
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.ReleaseSnapshot{}, err
+	}
+	snapshot, err := s.store.Get(projectID, snapshotID)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, err
+	}
+	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshot); err != nil {
+		return delivery.ReleaseSnapshot{}, err
+	}
+	return s.releases(ctx, actorID).Get(projectID, snapshotID)
+}
+
+// authorizeSnapshotSources rechecks only the permissions for sources quoted
+// by this snapshot. Project/input currentness is deliberately not an access
+// gate here: Get recomputes IsCurrent below so historical snapshots remain
+// readable after an ordinary project edit or a pinned-template migration.
+// Source access remains revocable, so a snapshot quoting a source the caller
+// can no longer access must still be denied.
+func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
+	if s == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	if provenance, ok := s.builder.(interface {
+		AuthorizeFrozenProvenance(context.Context, string, string, delivery.DeliveryInput) error
+	}); ok {
+		if err := provenance.AuthorizeFrozenProvenance(ctx, actorID, projectID, snapshot.FrozenInput); err != nil {
+			return err
+		}
+	}
+	if s.sources == nil && s.reviewer == nil && s.policy == nil {
+		// Legacy adapters may omit a source reader; a configured production
+		// policy must still supply one rather than conflate access and currentness.
+		return nil
+	}
+	ids := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, chapter := range snapshot.FrozenInput.Chapters {
+		for _, id := range chapter.SourceIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	// Frozen excerpts remain sensitive even if a historical chapter's source
+	// list is incomplete. Authorize the union before returning either body.
+	for _, source := range snapshot.FrozenInput.Sources {
+		id := strings.TrimSpace(source.ID)
+		if id != "" {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if s.reviewer != nil {
+		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
+	}
+	if s.sources != nil {
+		// Compatibility boundary for legacy release adapters. Production wiring
+		// supplies the shared Reviewer above.
+		return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
+	}
+	return candidateadoption.ErrDependencyUnavailable
+}
+
+// List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。
+//
+// 重算的理由与 Get 逐字相同，只是这一次对整份历史做：列表里交回冻结时记下的
+// is_current，等于让翻到第三屏的旧标签冒充当前状态。契约 §7 要求界面在「页面刷新、
+// 重新打开、本地编辑成功、展示下载入口时」更新当前性，那个要求能成立的前提正是
+// 每次刷新都拿到重算过的值，而不是存下来的那个。
+//
+// 第二个返回值说的是「这份历史被截断了」——契约 §3 要求设了上限就必须显式提示，
+// 界面不能把截断后的列表当成全部历史。
+func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID string) ([]delivery.ReleaseSnapshot, bool, error) {
+	if s == nil || s.inputs == nil || s.store == nil {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return nil, false, candidateadoption.ErrInvalidRequest
+	}
+	// 与 Get 同一条顺序：先判成员再列。反过来的话，非成员能从「空列表」与
+	// 「没权限」的差别里问出某个项目有没有冻结过东西。
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return nil, false, err
+	}
+	lister, ok := s.store.(delivery.SnapshotLister)
+	if !ok {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	snapshots, err := lister.ListSnapshots(projectID)
+	if err != nil {
+		return nil, false, err
+	}
+	// 先截断再重算，而不是算完再截断：重算一条要读一次整个工作区，被截掉的那些
+	// 算出来也没人要。响应一模一样，读的次数从「历史有多长」降到「界面看得到几条」。
+	truncated := len(snapshots) > deliveryHistoryLimit
+	if truncated {
+		snapshots = snapshots[:deliveryHistoryLimit]
+	}
+	for index := range snapshots {
+		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshots[index]); err != nil {
+			// No partial list or historical body escapes on denial.
+			return nil, false, err
+		}
+		current, err := s.stillCurrent(ctx, actorID, snapshots[index].FrozenInput)
+		if err != nil {
+			return nil, false, err
+		}
+		snapshots[index].IsCurrent = current
+	}
+	return snapshots, truncated, nil
+}
+
+// assemble 是一次「读 T12 → 补 T13」：读的那一步已经在可重复读事务里取齐了
+// 项目、研究条件、章节版本与确认，补的那一步只补 T12 手里没有的东西（冻结来源）。
+func (s *DeliveryReleaseService) assemble(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.DeliveryInput, error) {
+	if s == nil || s.inputs == nil || s.builder == nil {
+		return delivery.DeliveryInput{}, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return delivery.DeliveryInput{}, candidateadoption.ErrInvalidRequest
+	}
+	var input candidateadoption.WorkspaceDeliveryInput
+	var err error
+	if s.policy != nil {
+		input, err = s.inputs.Reader.ReadDeliveryInput(ctx, projectID)
+	} else {
+		input, err = s.inputs.Read(ctx, actorID, projectID)
+	}
+	if err != nil {
+		return delivery.DeliveryInput{}, err
+	}
+	if input.ProjectVersion != expectedProjectVersion {
+		return delivery.DeliveryInput{}, candidateadoption.ErrVersionConflict
+	}
+	return s.builder.Build(ctx, actorID, input)
+}
+
+// releases 现建一台绑定本次请求上下文的 ReleaseService。
+//
+// delivery.CurrentnessChecker.IsCurrent 的签名不带 ctx，而判「此刻还对不对得上」
+// 必须带身份去读工作区（T12 的读取侧要在调用者的调用者上下文里跑）。所以上下文在
+// 构造时钉住：这一台只服务这一次调用，不跨请求复用。快照库是共享的那个，
+// 否则刚冻下的快照下一次就取不到了。
+func (s *DeliveryReleaseService) releases(ctx context.Context, actorID string) *delivery.ReleaseService {
+	return delivery.NewReleaseService(s.store, delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
+		return s.stillCurrent(ctx, actorID, frozen)
+	}))
+}
+
+// stillCurrent 直接读 Reader 而不再判一次成员：本次调用的入口（Check/Prepare/Get）
+// 已经在读之前判过同一个项目，且用的是同一个调用者上下文里的身份。
+func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
+	if s.policy != nil {
+		actor := types.CallerFromContext(ctx)
+		if actor.UserID == "" {
+			actor.UserID = actorID
+		}
+		return s.policy.Current(ctx, LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: frozen.ProjectID}, accessInputFromDelivery(frozen))
+	}
+	current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+	if err != nil || !current {
+		return current, err
+	}
+	if checker, ok := s.builder.(DeliveryCurrentness); ok {
+		return checker.Current(ctx, actorID, frozen)
+	}
+	return current, nil
+}
+
+func (s *DeliveryReleaseService) authorize(ctx context.Context, actorID, projectID string) error {
+	if s.policy != nil {
+		caller := types.CallerFromContext(ctx)
+		if caller.UserID == "" {
+			caller.UserID = actorID
+		}
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "read")
+	}
+	if s.inputs == nil || s.inputs.Authorizer == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID)
+}
+
+// deliveryCurrentness 拿冻结输入记下的项目版本、研究条件与逐章版本去对此刻的工作区。
+//
+// T13 的 is_current 与 T14 的 stale_input 判的是同一件事，所以判据只有这一份：
+// 两处各判一次的话，「T13 说这份快照仍代表工作区、T14 却把同一份快照判成过期」
+// 是迟早的事，而那时没人知道该信哪一个。
+//
+// 判据取保守的一方：项目版本、研究条件、任一章节版本对不上都算不再当前。
+// 「还当前」是会被下游当作事实用的那一侧（is_current 为真表示这份交付仍然代表
+// 工作区），所以宁可多报几次「变了」——重冻一次很便宜，按一份过期的交付发文件不便宜。
+func deliveryCurrentness(ctx context.Context, reader candidateadoption.DeliveryInputReader, frozen delivery.DeliveryInput) (bool, error) {
+	current, err := reader.ReadDeliveryInput(ctx, frozen.ProjectID)
+	if err != nil {
+		return false, err
+	}
+	return sameDeliveryState(frozen, current), nil
+}
+
+// sameDeliveryState 逐项对照冻结输入与此刻的工作区。
+func sameDeliveryState(frozen delivery.DeliveryInput, current candidateadoption.WorkspaceDeliveryInput) bool {
+	if frozen.ProjectVersion != int(current.ProjectVersion) || frozen.SpecRevision != current.SpecRevision || delivery.FrozenContextRevision(frozen) != current.ContextRevision {
+		return false
+	}
+
+	if frozen.Template.ID != current.TemplateID || frozen.Template.Version != current.TemplateVersion {
+		return false
+	}
+	if frozen.TemplateCopyID != current.TemplateCopyID || frozen.TemplateCopyVersion != current.TemplateCopyVersion || frozen.TemplateCopyContentHash != current.TemplateCopyContentHash {
+		return false
+	}
+	if frozen.TemplateCopyID != "" && delivery.FrozenRuleSetHash(frozen) != current.TemplateCopyRulesetHash {
+		return false
+	}
+	if (frozen.RuleSetSnapshot == nil) != (current.RuleSetSnapshot == nil) {
+		return false
+	}
+	if frozen.SourceRuleSetID != current.SourceRuleSetID || frozen.SourceRuleSetVersion != current.SourceRuleSetVersion || frozen.SourceRuleSetHash != current.SourceRuleSetHash || frozen.SourcePolicyHash != current.SourcePolicyHash {
+		return false
+	}
+	// 章节集合与逐章版本都要对得上：新增、删除、改动任一章节都会让冻结输入不再
+	// 描述此刻的工作区，而项目版本理论上会跟着变——两条都判，是因为版本号是
+	// 协作方给的，而这里是拿它断言事实。
+	versions := make(map[string]*string, len(current.Chapters))
+	for _, chapter := range current.Chapters {
+		versions[chapter.ChapterID] = chapter.ChapterVersionID
+	}
+	if len(versions) != len(frozen.Chapters) {
+		return false
+	}
+	for _, chapter := range frozen.Chapters {
+		if !sameString(versions[chapter.ChapterID], chapter.ChapterVersionID) {
+			return false
+		}
+	}
+	return true
+}

@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS lingdoc_chapter_confirmation_requests;

@@ -1,0 +1,44 @@
+{
+  "baselineId": "LD-V1-20261103-R1",
+  "componentVersion": "native-adapter-0.1.0",
+  "status": "module_verified_ui_integration_pending",
+  "unitTests": 13,
+  "realChecks": 9,
+  "types": "passed",
+  "codeCommitted": false,
+  "kimiIntegrated": false,
+  "files": [
+    {
+      "path": "native-adapter.js",
+      "sha256": "7a40334841685df9d46463fc8a71cb89fa4666cce883243a0dce2265afbce482"
+    },
+    {
+      "path": "native-adapter.d.ts",
+      "sha256": "27f3aeaaddde49c5904a385914ec77600832359e608c7feae80d4e9e5963e872"
+    },
+    {
+      "path": "Kimi接线说明.md",
+      "sha256": "36709955d1d1449c7fae7c53594e0e9738abb1a72e5d2b36d3607e1256146ff1"
+    },
+    {
+      "path": "README.md",
+      "sha256": "4eee150db938da91c7dba4ad1d2d514f273b4123c157530fd73dcd1075f14b3a"
+    },
+    {
+      "path": "VERIFICATION.md",
+      "sha256": "7580b8825e4d4574340c7e19f4888bb84acdd3eade5c8c933559189fd6f12054"
+    },
+    {
+      "path": "native-adapter.test.mjs",
+      "sha256": "8fa190f849c969328080200d9b5643f45a2ab2123dee22cb35627ea803f5f7ec"
+    },
+    {
+      "path": "package.json",
+      "sha256": "b6adc868cf97a3855ee331c19e2e6f857e1bed6274f39819dba7bfdf8f97b350"
+    },
+    {
+      "path": "verify-real.mjs",
+      "sha256": "b5dc914733eb7c95ab0af0a1a984c8f71bb1bc6cc67704119013434ddc05946d"
+    }
+  ]
+}

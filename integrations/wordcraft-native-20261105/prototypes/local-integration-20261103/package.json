@@ -1,0 +1,16 @@
+{
+  "name": "lingdoc-local-native-integration",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test native-adapter.test.mjs chain-store.test.mjs workflow-store.test.mjs workflow-model.test.mjs",
+    "verify:real": "node verify-real.mjs",
+    "verify:chain": "node verify-chain-browser.mjs",
+    "verify:reopen": "node verify-reopen-browser.mjs",
+    "verify:gateway": "node verify-gateway.mjs",
+    "verify:controlled": "node verify-controlled.mjs",
+    "verify:controlled-native": "node verify-controlled.mjs --native-only"
+  }
+}
