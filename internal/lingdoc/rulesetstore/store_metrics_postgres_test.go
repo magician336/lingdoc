@@ -141,7 +141,7 @@ func TestPostgresRuleSetMetricsP95P99PersistenceAndHTTPReadback(t *testing.T) {
 	group := gin.New()
 	NewHTTPHandler(store, testRequestInfo).Register(group, group)
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/projects/project-metrics-pg/rule-set-use-audit-metrics", nil).WithContext(testIdentityContextFor(actor))
+	request := httptest.NewRequest(http.MethodGet, "/projects/project-metrics-pg/rule-set-use-audit-metrics", nil).WithContext(testIdentityContext(actor.UserID, actor.Role))
 	group.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("metrics status = %d; body=%s", response.Code, response.Body.String())
