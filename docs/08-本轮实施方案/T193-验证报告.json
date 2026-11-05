@@ -1,0 +1,63 @@
+{
+  "task": "193",
+  "ticket": "magician336/lingdoc#193",
+  "head": "见 PR head(分支 feat/193-dual-db-concurrent-recovery,基线 main 4de23d28)",
+  "scope": "Spec #187 矩阵与健康度闭环的收口切片(前置 #189–#192 已 closed):AC1 双库(本地 PG17 隔离库,lingdoc_test 身份)+SQLite 双跑证据;AC2 缺口补强(Store.Recall 持久层生命周期/审计链/词表拒绝、withdraw/recall 行锁竞争恰一胜、metrics HTTP seam 失败路径 503/400/404);AC3 全链与 hash 核对由既有 container E2E 承接(既有断言零改动);AC4 矩阵以 T193-验证报告.json 关联当前 head,Spec187 证据文件加收口轮括注;AC5 文档同步(health score 维持既有评分,理由=纯测试增量);AC6 未覆盖风险如实登记。",
+  "passed": [
+    {
+      "id": "TD-193.1 AC1:SQLite/PG 迁移、重启读回、schema contract 全通过",
+      "status": "pass",
+      "evidence": "closeout lingdoc_test 身份轮(head 分支 45498314+):postgres_migration PASS、postgres_failure_recovery PASS(此前 BLOCKED)、restart_readback PASS、ruleset_metrics PASS;schema contract 由 row_shape_guard_test(SQLite 799-901 行四类守卫)+row_shape_guard_postgres_test(DSN 门控孪生)承接;环境限制(full_server_restart BLOCKED 需真服务进程,归 #196)与产品断言分开记录于报告 not_run/known_limits。"
+    },
+    {
+      "id": "TD-193.2 AC2 缺口补强:recall 持久层生命周期与审计链",
+      "status": "pass",
+      "evidence": "TestStoreRecallLifecyclePersistsAuditAndRefusesIllegalTransitions:第二次 draft 版本 recall 被拒(ErrRuleSetNotPublished)→主版本 recall 成功落库(RuleSetRecalled+历史哈希不变)→状态机只出不入(publish/withdraw/re-claim 全拒)→审计链 create×2+publish+recall 恰好各计;TestStoreRefusesRecallWithAnActorRoleOutsideTheVocabulary:词表外角色(tenant_admin)recall 被拒(ErrActorRoleInvalid)且零审计残留。命令 `go test ./internal/lingdoc/rulesetstore/ -run 'TestStoreRecall' -count=1`。"
+    },
+    {
+      "id": "TD-193.3 AC2 缺口补强:withdraw/recall 行锁竞争恰一胜",
+      "status": "pass",
+      "evidence": "TestStoreConcurrentWithdrawAndRecallLetsExactlyOneWin:两 goroutine 并发竞争同一已发布版本,8 连跑稳定——恰好 1 胜者+1 败者(败者错误形状随锁时序在 ErrRuleSetNotPublished 与 busy 包装间变化,已登记)、终态=赢者状态、历史哈希不变、审计恰 3 行(create+publish+胜者)。命令 `go test ./internal/lingdoc/rulesetstore/ -run TestStoreConcurrentWithdrawAndRecall -count=1`。"
+    },
+    {
+      "id": "TD-193.4 AC2 既有覆盖(盘点确认,零改动全绿)",
+      "status": "pass",
+      "evidence": "并发 withdraw-vs-bind 行锁(TestConcurrentRuleSetWithdrawWaitsForBindingTransaction)、bind 事务内重查(TestBindTemplateCopyRuleSetRechecksRuleSetInsideProjectTransaction)、并发 apply 恰一胜(TestConcurrentApplyLetsOnlyOneChangeSetProduceImpactTasks)、幂等重放(E2E meta.replayed 三处+同 key 冲突 4 用例)、审计写入失败(E2E 5 处触发器注入 SQLite+PG 双方言+G4 双审计回滚)、artifact 写入失败(PG DOCX 校验/渲染撤回/损坏拒读+closeout corrupted_file_recovery PASS)——盘点确认既有覆盖完整,零改动。"
+    },
+    {
+      "id": "TD-193.5 AC3 既有 E2E 全链与精确 hash(盘点确认)",
+      "status": "pass",
+      "evidence": "container E2E(TestRuleSetProductionHTTPToExportPersistsAcrossRestart SQLite/PG 双方言):绑定(幂等重放)→activation→/template-checks(RuleSetRef 精确相等)→/checks(Preflight+ValidationIssue exact ref)→/releases(FrozenInput ref)→/exports(verified DOCX)→重启读回→rule-set-use-audits 逐条断言 RuleSetID/Version/Hash/EffectiveRulesetHash/TemplateCopyID→project audits 精确 identity。零改动全绿。已知边界:container E2E 为 httptest 进程内路由,真服务窗口归 #196(既有登记)。"
+    },
+    {
+      "id": "TD-193.6 US-22 缺口补强:metrics PG 方言变体",
+      "status": "pass",
+      "evidence": "TestPostgresRuleSetMetricsP95P99PersistenceAndHTTPReadback:PG 生产迁移 schema(一次性 schema+stub 平台表)+真实 store 发布规则集(export 事件源校验)+100 样本 latency(独立真值 p95=94ms p99=98ms)+HTTP 200 读回(按发布 schema)。命令 `LINGDOC_TEST_POSTGRES_DSN=... go test ./internal/lingdoc/rulesetstore/ -run TestPostgresRuleSetMetricsP95P99 -count=1`。消除「closeout 在 PG 进程环境重跑仍落 SQLite 文件」的方言证据缺口。"
+    },
+    {
+      "id": "TD-193.7 US-22 缺口补强:metrics HTTP seam 失败路径",
+      "status": "pass",
+      "evidence": "TestG6MetricsEndpoint 三用例:未实现 MetricsApplication ⇒ 503 metrics_unavailable(fallback 钉住);查询参数白名单(cursor/action/limit)拒绝 ⇒ 400(且在注入失败 app 上测,证明参数拒绝先于读取);非项目成员 ⇒ 404 存在性隐藏(真实 Store 读路径)。"
+    },
+    {
+      "id": "TD-469 续.4 四包+三包全量回归(含本轮新增测试)",
+      "status": "pass",
+      "evidence": "closeout 内嵌 go test/go vet/go-build 门禁(本轮 PG PASS 轮);本地六包全量(workspacecore/workspace/rulesetstore/delivery/candidateadoption/templategovernance)全 ok @ 提交 45498314。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "TD-193.a 全链真服务进程窗口(full_server_restart)",
+      "status": "not_run",
+      "reason": "closeout full_server_restart BLOCKED:需要监听端口的真服务进程,归 #196 真实运行服务窗口(既有登记);container E2E(httptest 进程内)已覆盖同链路。"
+    },
+    {
+      "id": "TD-193.b 真实浏览器/外部对象存储注入",
+      "status": "not_run",
+      "reason": "与 #187 证据文件既有登记一致:真实浏览器归人工验收承接(#480 类),外部对象存储故障注入未运行。"
+    }
+  ],
+  "ci_green": "",
+  "environment_limits": "PG=本机 postgres:17 隔离库(ports 127.0.0.1:55433,身份必须 lingdoc_test/lingdoc_test——closeout 的 safe_postgres_target 强制合成身份,自定义库名/用户被拒 injected_dsn_rejected);败者错误形状随 SQLite 锁时序变化(已登记);CI 全绿见 PR checks。",
+  "out_of_scope": "AC5 health score:维持既有 H_L=75/F_R=74 评分——本轮为纯测试增量(无产品行为变化、无新端点),重评无信息增量;Spec 副本无更新(Testing Decisions 未变);大规模审计历史量化压测登记为后续(AC6 记录);bind-vs-bind goroutine 直测改由 rulesetstore 行锁竞争测试+乐观版本校验+withdraw-vs-bind 事务内重查三层覆盖承接(bind 的 HTTP/领域入口校验在 runOperation 乐观版本上,内存 fixture 无法承载真实锁语义,已登记评审)。"
+}
