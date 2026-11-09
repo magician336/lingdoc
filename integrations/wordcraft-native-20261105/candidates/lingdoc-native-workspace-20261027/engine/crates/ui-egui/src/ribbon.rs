@@ -246,6 +246,22 @@ pub fn in_table_public(app: &WordApp) -> bool {
     app.session.sel.focus.path.cell().is_some()
 }
 
+fn navigation_enabled(app: &WordApp, tab: &str) -> bool {
+    tab != "AI绘图" || (app.has_document() && !app.source_workspace.source_active() && !app.project_workspace.auxiliary_active())
+}
+
+fn activate_navigation(app: &mut WordApp, ui: &Ui, tab: &str) {
+    #[cfg(target_arch = "wasm32")]
+    if tab == "AI绘图" {
+        if navigation_enabled(app, tab) {
+            ui.ctx().open_url(egui::OpenUrl::new_tab("/native-reading/drawing"));
+        }
+        return;
+    }
+    let _ = ui;
+    let _ = app.run("ui.tab", json!({"tab": tab}));
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     if app.session.view.read_mode {
@@ -293,6 +309,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             tabs.push((ct.to_string(), false));
         }
     }
+    #[cfg(target_arch = "wasm32")]
+    tabs.push(("AI绘图".to_string(), false));
     {
         let names: Vec<&str> = tabs.iter().map(|(n, _)| n.as_str()).collect();
         let next = resolve_tab(&app.ui.tab, &names);
@@ -399,7 +417,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                             let shown = if custom { tab } else { tl!(tab) };
                             let w = plan.widths.get(i).copied().unwrap_or(0.0) - 2.0;
                             let cut = specs.get(i).is_some_and(|sp| sp.text_w + plan.pad > w + 0.5);
-                            let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
+                            let enabled = navigation_enabled(app, tab);
+                            let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), if enabled { Sense::click() } else { Sense::hover() });
                             if app.ui.keytips == crate::keytips::Phase::Tabs {
                                 crate::keytips::record_tab(r, tab, &app.ui.keytip_prefix, &mut app.keytip_rects);
                             } else if app.ui.keytips == crate::keytips::Phase::Legacy {
@@ -407,7 +426,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                                 crate::keytips::record_tab(r, tab, "", &mut app.keytip_rects);
                             }
                             let active = app.ui.tab == tab && !app.ui.backstage;
-                            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, shown));
+                            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, active, shown));
                             if resp.hovered() && !active {
                                 ui.painter().rect_filled(r.shrink2(vec2(0.0, 4.0)), 4.0, t.hover);
                             }
@@ -439,10 +458,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                                 let u = Rect::from_center_size(pos2(r.center().x, r.max.y - 2.0), vec2(w - 16.0, 3.0));
                                 ui.painter().rect_filled(u, 2.0, t.accent);
                             }
-                            if resp.clicked() {
-                                let _ = app.run("ui.tab", json!({"tab": tab}));
+                            if resp.clicked() && enabled {
+                                activate_navigation(app, ui, tab);
                             }
-                            if resp.double_clicked() && tab != "File" {
+                            if resp.double_clicked() && tab != "File" && tab != "AI绘图" {
                                 let _ = app.run("ui.collapseRibbon", json!({}));
                             }
                             resp.context_menu(|ui| crate::widgets::customize_menu_items(ui, app));
@@ -474,8 +493,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                             let resp = resp.on_hover_text(more);
                             egui::Popup::menu(&resp).show(|ui| {
                                 for (tab, shown) in left_out {
-                                    if ui.selectable_label(app.ui.tab == tab, shown).clicked() {
-                                        let _ = app.run("ui.tab", json!({"tab": tab}));
+                                    if ui.add_enabled(navigation_enabled(app, tab), egui::Button::selectable(app.ui.tab == tab, shown)).clicked() {
+                                        activate_navigation(app, ui, tab);
                                         ui.close();
                                     }
                                 }
@@ -1398,10 +1417,6 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Illustrations", None, app, |ui, app| {
         big(ui, app, "picture", "Pictures", "insert.picture", json!({}), false);
-        #[cfg(target_arch = "wasm32")]
-        if ui.add_enabled(app.has_document() && !app.source_workspace.source_active() && !app.project_workspace.auxiliary_active(), egui::Button::new("AI绘图")).clicked() {
-            ui.ctx().open_url(egui::OpenUrl::new_tab("/native-reading/drawing"));
-        }
         menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, "insert.shape", |ui, app| {
             for (l, k) in [
                 ("Rectangle", "rectangle"),
