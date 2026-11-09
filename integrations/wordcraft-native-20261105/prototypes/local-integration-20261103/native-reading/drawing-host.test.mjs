@@ -12,7 +12,8 @@ test('document channel filters requests and forwards only the addressed drawing 
     close() { this.closed = true; }
   }
   const window = { NATIVE_WORKSPACE_TOKEN: 'token', WORDCRAFT_STANDALONE: true,
-    wordcraftHost: { engine: async request => { calls.push(request); return {status:'applied'}; } },
+    wordcraftHost: { engine: async request => { calls.push(request); return {status:'applied'}; },
+      saveIntent:Object.assign(async()=>({}),{supportsExpectedIdentity:true}) },
     addEventListener: (name, callback) => { events[name] = callback; } };
   vm.runInNewContext(await readFile(new URL('./drawing-host.js', import.meta.url), 'utf8'),
     { window, document: {title:'Document'}, BroadcastChannel: Channel, crypto: {randomUUID: () => 'host-1'}, URLSearchParams, setTimeout, clearTimeout });
@@ -23,6 +24,7 @@ test('document channel filters requests and forwards only the addressed drawing 
   assert.equal(sent[0].hostId, 'host-1');
   assert.equal(sent[0].standalone, true);
   assert.equal(sent[0].picker, true);
+  assert.equal(sent[0].directInsert, true);
   assert.equal(window.LINGDOC_DRAWING_HOST_ID, 'host-1');
   for (const data of [
     {token:'wrong',hostId:'host-1',request:{op:'diagram.insert'}},
@@ -41,84 +43,224 @@ test('document channel filters requests and forwards only the addressed drawing 
   events.pagehide(); assert.equal(channel.closed, true);
 });
 
-test('picker validates the live document and issues expiring single-use tickets', async () => {
-  const sent = [], calls = [], events = {}, timers = new Map(), popups = [];
-  let channel, now = 1000, serial = 0, activeSource = false, auxiliary = false, blocked = false, noDocument = false, missingStatus = false;
-  let selection = {state:{documentId:1,revision:2},selection:{anchor:{off:0},focus:{off:1}},image:null};
-  class FakeDate extends Date { static now() { return now; } }
+
+async function pickerHarness({standalone=false,identitySupport=true}={}) {
+  const sent=[], calls=[], events=[], timers=new Map();
+  let channel,serial=0;
+  const state={documentId:1,revision:4,dirty:false,selection:{anchor:{off:3},focus:{off:3}},sourceActive:false,auxiliary:false,saveResult:standalone?{status:'saved'}:{ackPending:false},saveError:null,holdSave:null,insertLost:false,insertReceipt:null,insertOriginal:null,opens:0};
   class Element {
-    constructor(tag) { this.tag = tag; this.style = {}; this.children = []; this.listeners = {}; this.removed = false; }
-    setAttribute() {}
-    append(...children) { this.children.push(...children); }
-    addEventListener(name, fn) { this.listeners[name] = fn; }
-    remove() { this.removed = true; }
-    click() { return this.listeners.click(); }
+    constructor(){this.style={};this.children=[];this.listeners={};this.removed=false;this.disabled=false;this.textContent='';}
+    setAttribute(){} append(...children){this.children.push(...children);} addEventListener(name,fn){this.listeners[name]=fn;}
+    remove(){this.removed=true;} click(){return this.listeners.click();}
   }
-  class Channel { constructor() { channel = this; } postMessage(value) { sent.push(value); } close() {} }
-  const body = new Element('body');
-  const window = { NATIVE_WORKSPACE_TOKEN:'token',
-    wordcraftHost:{engine:async request => {
-      calls.push(request.op);
-      if (request.op === 'workspace.editor') { if (calls.length === 1) assert.equal(body.children.length, 0); return {}; }
-      if (request.op === 'source.status') return missingStatus ? {mode:'split'} : {mode:'split',sourceActive:activeSource};
-      if (request.op === 'workspace.status') return {auxiliaryActive:auxiliary};
-      if (request.op === 'diagram.selection') { if (noDocument) throw Error('Document canvas unavailable'); return selection; }
-      throw Error('unexpected operation');
-    }},
-    open:() => { if (blocked) return null; const popup={location:{href:''},closed:false,close(){this.closed=true;}};popups.push(popup);return popup; },
-    addEventListener:(name, fn) => { events[name] = fn; },
-  };
-  const setTimer=(fn, delay) => { const id=++serial; timers.set(id,{fn,at:now+delay}); return id; };
-  const advance=ms => { now+=ms; for (const [id,timer] of [...timers]) if (timer.at<=now) {timers.delete(id);timer.fn();} };
-  vm.runInNewContext(await readFile(new URL('./drawing-host.js', import.meta.url), 'utf8'), {
-    window, document:{title:'Doc',body,createElement:tag=>new Element(tag)}, BroadcastChannel:Channel,
-    crypto:{randomUUID:()=>`uuid-${++serial}`}, URLSearchParams, Date:FakeDate, setTimeout:setTimer, clearTimeout:id=>timers.delete(id),
+  class Channel {constructor(){channel=this;}postMessage(value){sent.push(value);}close(){}}
+  const body=new Element();
+  const window={NATIVE_WORKSPACE_TOKEN:'token',WORDCRAFT_STANDALONE:standalone,
+    open(){state.opens++;throw Error('unexpected window.open');},
+    addEventListener:(name,fn)=>{events[name]=fn;},
+    wordcraftHost:{
+      async engine(request){
+        calls.push({kind:'engine',...request});
+        if(request.op==='workspace.editor')return {};
+        if(request.op==='status')return {documentId:state.documentId,revision:state.revision,dirty:state.dirty};
+        if(request.op==='source.status')return {mode:'body',sourceActive:state.sourceActive};
+        if(request.op==='workspace.status')return {auxiliaryActive:state.auxiliary};
+        if(request.op==='diagram.selection')return {state:{documentId:state.documentId,revision:state.revision,dirty:state.dirty},selection:state.selection,image:null};
+        if(request.op==='diagram.insert'){
+          if(state.insertReceipt && request.operationId===state.insertOriginal.operationId)return state.insertReceipt;
+          state.revision++;state.dirty=true;
+          state.insertOriginal={...request};
+          state.insertReceipt={status:'applied',state:{documentId:state.documentId,revision:state.revision,dirty:true}};
+          if(state.insertLost){state.insertLost=false;throw Error('lost insertion response');}
+          return state.insertReceipt;
+        }
+        throw Error('unexpected operation '+request.op);
+      },
+      async saveIntent(reason,expected){
+        calls.push({kind:'save',reason,expected});
+        if(state.holdSave)await state.holdSave;
+        if(state.saveError)throw Error(state.saveError);
+        const success=state.saveResult.ackPending!==true && state.saveResult.live?.dirty!==true;
+        if(success)state.dirty=false;
+        return {...state.saveResult,live:state.saveResult.live||{documentId:state.documentId,revision:state.revision,dirty:state.dirty}};
+      },
+    }};
+  if(identitySupport)window.wordcraftHost.saveIntent.supportsExpectedIdentity=true;
+  vm.runInNewContext(await readFile(new URL('./drawing-host.js',import.meta.url),'utf8'),{
+    window,document:{title:'Doc',body,createElement:()=>new Element()},BroadcastChannel:Channel,
+    crypto:{randomUUID:()=>`uuid-${++serial}`},URLSearchParams,setTimeout:(fn,ms)=>{const id=++serial;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
   });
   const hostId=window.LINGDOC_DRAWING_HOST_ID;
-  const send=(request, token='token', target=hostId) => channel.onmessage({data:{type:'request',token,hostId:target,requestId:'request',request}});
-  await send({op:'diagram.pick',pickId:'pick-1',draftId:'draft-1'},'wrong');
-  assert.equal(body.children.length,0);
-  await send({op:'diagram.pick',pickId:'pick-1',draftId:'draft-1'});
-  assert.equal(sent.at(-1).result.picking,true);
-  assert.deepEqual(calls,['workspace.editor'],'picker must show the editor before creating the banner');
-  const banner=body.children.at(-1), [label,confirm,cancel]=banner.children;
-  assert.match(banner.style.cssText,/bottom:40px/); assert.match(banner.style.cssText,/flex-wrap:wrap/);
-  assert.match(banner.style.cssText,/max-width:calc\(100% - 32px\)/);
-  blocked=true; await confirm.click(); assert.match(label.textContent,/阻止/); assert.deepEqual(calls,['workspace.editor']);
-  blocked=false; await confirm.click();
-  assert.equal(popups.at(-1).closed,true); assert.equal(banner.removed,false);
-  assert.match(label.textContent,/单击/); assert.deepEqual(calls,['workspace.editor','source.status','workspace.status','diagram.selection']);
-  activeSource=true; selection={...selection,selection:{anchor:{off:2},focus:{off:2}}};
-  await confirm.click(); assert.equal(popups.at(-1).closed,true); assert.match(label.textContent,/正文/);
-  activeSource=false; auxiliary=true; await confirm.click(); assert.equal(popups.at(-1).closed,true);
-  auxiliary=false; noDocument=true; await confirm.click();
-  assert.equal(popups.at(-1).closed,true); assert.equal(banner.removed,false);
-  noDocument=false; missingStatus=true; await confirm.click();
-  assert.equal(popups.at(-1).closed,true); assert.match(label.textContent,/正文/);
-  missingStatus=false; await confirm.click();
-  const url=new URL(popups.at(-1).location.href,'http://localhost');
-  assert.equal(url.pathname,'/native-reading/drawing'); assert.equal(url.searchParams.get('host'),hostId);
-  assert.equal(url.searchParams.get('draft'),'draft-1'); assert.equal(banner.removed,true);
-  const ticket=url.searchParams.get('resume');
-  await send({op:'diagram.resume',ticket},'wrong');
-  await send({op:'diagram.resume',ticket},'token','other-host');
-  await send({op:'diagram.resume',ticket}); assert.equal(sent.at(-1).result.state.documentId,1);
-  await send({op:'diagram.resume',ticket}); assert.match(sent.at(-1).error,/失效/);
-  selection={...selection,selection:{anchor:{off:0},focus:{off:3}},image:{sha256:'image-digest'}};
-  await send({op:'diagram.pick',pickId:'pick-2',draftId:null});
-  const second=body.children.at(-1); await second.children[1].click();
-  assert.equal(second.removed,true,'an explicitly selected image may be the replacement target');
-  const expired=new URL(popups.at(-1).location.href,'http://localhost').searchParams.get('resume');
-  advance(300001); await send({op:'diagram.resume',ticket:expired}); assert.match(sent.at(-1).error,/失效/);
-  await send({op:'diagram.pick',pickId:'pick-3'}); const third=body.children.at(-1);
-  await send({op:'diagram.cancel-pick',pickId:'wrong'}); assert.equal(third.removed,false);
-  await send({op:'diagram.cancel-pick',pickId:'pick-3'}); assert.equal(third.removed,true);
-  await send({op:'diagram.pick',pickId:'pick-4'}); const fourth=body.children.at(-1);
-  fourth.children[2].click(); assert.equal(fourth.removed,true);
-  await send({op:'diagram.pick',pickId:'pick-5'}); const fifth=body.children.at(-1);
-  await send({op:'diagram.pick',pickId:'pick-6'}); assert.equal(fifth.removed,true);
-  const sixth=body.children.at(-1);
-  advance(300001); assert.equal(sixth.removed,true);
-  assert(!calls.some(op=>['diagram.insert','diagram.replace'].includes(op)), 'picker must never write to the manuscript');
-  events.pagehide();
+  const send=request=>channel.onmessage({data:{type:'request',token:'token',hostId,requestId:`request-${++serial}`,request}});
+  const drawing={id:'draft-1',revision:1,title:'Draft',embeddedPng:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=='};
+  const start=async(id='pick-1')=>{await send({op:'diagram.pick',pickId:id,draftId:drawing.id,drawing});return body.children.at(-1);};
+  return {state,calls,sent,body,send,start,drawing,events,timers,channel};
+}
+
+test('picker confirms latest collapsed selection, inserts snapshot and saves in the same document',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();assert.equal(h.sent.at(-1).result.picking,true);
+    h.state.selection={anchor:{off:8},focus:{off:8}};h.state.revision=8;
+    await banner.children[1].click();
+    const insert=h.calls.filter(c=>c.op==='diagram.insert');assert.equal(insert.length,1);
+    assert.equal(insert[0].expectedDocumentId,1);assert.equal(insert[0].expectedRevision,8);
+    assert.deepEqual(JSON.parse(JSON.stringify(insert[0].bookmark)),h.state.selection);
+    assert.equal(insert[0].data,h.drawing.embeddedPng);assert.equal(insert[0].alt,h.drawing.title);
+    assert.equal(h.calls.filter(c=>c.kind==='save').length,1);assert.equal(h.calls.find(c=>c.kind==='save').reason,'drawing');
+    assert.equal(h.calls.find(c=>c.kind==='save').expected.documentId,1);
+    assert.equal(h.calls.find(c=>c.kind==='save').expected.revision,9);
+    assert.equal(banner.removed,true);assert.equal(h.state.opens,0);
+  } finally {h.events.pagehide();}
+});
+
+test('failed save retries saving only, with busy guard and no duplicate insertion',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();h.state.saveError='offline';await banner.children[1].click();
+    assert.equal(banner.removed,false);assert.match(banner.children[1].textContent,/重试保存/);
+    assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,1);
+    h.state.saveError=null;h.state.revision=11;let release;h.state.holdSave=new Promise(resolve=>{release=resolve;});
+    const first=banner.children[1].click();await new Promise(resolve=>setImmediate(resolve));
+    const second=banner.children[1].click();await new Promise(resolve=>setImmediate(resolve));
+    const count=h.calls.filter(c=>c.kind==='save').length;
+    const retry=h.calls.filter(c=>c.kind==='save').at(-1);
+    assert.equal(retry.expected.documentId,1);assert.equal(retry.expected.revision,11);
+    release();await Promise.all([first,second]);
+    assert.equal(count,2);
+    assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,1);assert.equal(banner.removed,true);assert.equal(h.state.opens,0);
+  } finally {h.events.pagehide();}
+});
+
+test('retry cannot save a different document and cancellation preserves inserted work',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();h.state.saveError='offline';await banner.children[1].click();
+    h.state.documentId=2;h.state.saveError=null;await banner.children[1].click();
+    assert.equal(h.calls.filter(c=>c.kind==='save').length,1);assert.equal(banner.removed,false);
+    assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,1);assert.match(banner.children[0].textContent,/文稿|文档/);
+    await banner.children[2].click();assert.match(h.body.children.filter(node=>!node.removed).map(node=>node.children?.[0]?.textContent||node.textContent).join(' '),/未保存|保留/);
+    assert.equal(h.state.opens,0);
+  } finally {h.events.pagehide();}
+});
+
+test('picker refuses stale document, noncollapsed selection, and pending project save',async()=>{
+  for(const mode of ['changed','range','pending','dirty']){
+    const h=await pickerHarness();
+    try {
+      const banner=await h.start();
+      if(mode==='changed')h.state.documentId=2;
+      if(mode==='range')h.state.selection={anchor:{off:0},focus:{off:2}};
+      if(mode==='pending')h.state.saveResult={ackPending:true,live:{documentId:1,dirty:false}};
+      if(mode==='dirty')h.state.saveResult={ackPending:false,live:{documentId:1,dirty:true}};
+      await banner.children[1].click();
+      assert.equal(banner.removed,false);
+      assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,['pending','dirty'].includes(mode)?1:0);
+      assert.equal(h.state.opens,0);
+    } finally {h.events.pagehide();}
+  }
+});
+
+test('standalone download is described as export, not original document save',async()=>{
+  const h=await pickerHarness({standalone:true});
+  try {
+    h.state.saveResult={status:'downloaded'};const banner=await h.start();await banner.children[1].click();
+    assert.match(banner.children[0].textContent,/导出|下载/);assert.doesNotMatch(banner.children[0].textContent,/已保存到原/);assert.equal(h.state.opens,0);
+  } finally {h.events.pagehide();}
+});
+
+test('cancel before insertion and obsolete resume cannot mutate the document',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();await banner.children[2].click();
+    assert.equal(banner.removed,true);
+    assert.equal(h.calls.some(c=>c.op==='diagram.insert'||c.kind==='save'),false);
+    await h.send({op:'diagram.resume',ticket:'old-ticket'});
+    assert.match(h.sent.at(-1).error,/失效|过期|版本/);
+    assert.equal(h.state.opens,0);
+  } finally {h.events.pagehide();}
+});
+
+test('source and auxiliary views cannot accept insertion',async()=>{
+  for(const field of ['sourceActive','auxiliary']){
+    const h=await pickerHarness();
+    try {
+      const banner=await h.start();h.state[field]=true;await banner.children[1].click();
+      assert.equal(banner.removed,false);
+      assert.equal(h.calls.some(c=>c.op==='diagram.insert'||c.kind==='save'),false);
+      assert.equal(h.state.opens,0);
+    } finally {h.events.pagehide();}
+  }
+});
+
+
+test('picker expiry and a competing request do not discard an inserted unsaved drawing',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();h.state.saveError='offline';await banner.children[1].click();
+    const timers=[...h.timers.values()];for(const timer of timers)timer.fn();
+    assert.equal(banner.removed,false,'failed save remains retryable after expiry');
+    await h.send({op:'diagram.pick',pickId:'pick-2',draftId:h.drawing.id,drawing:h.drawing});
+    assert.equal(banner.removed,false,'another request cannot replace an unsaved insertion');
+    assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,1);
+    assert.equal(h.calls.filter(c=>c.kind==='save').length,1);
+  } finally {h.events.pagehide();}
+});
+
+test('duplicate confirmation while save is pending cannot insert twice or replace picker',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();let release;h.state.holdSave=new Promise(resolve=>{release=resolve;});
+    const first=banner.children[1].click();await new Promise(resolve=>setImmediate(resolve));
+    const second=banner.children[1].click();
+    await h.send({op:'diagram.pick',pickId:'pick-2',draftId:h.drawing.id,drawing:h.drawing});
+    assert.equal(banner.removed,false);
+    const inserts=h.calls.filter(c=>c.op==='diagram.insert').length;
+    const saves=h.calls.filter(c=>c.kind==='save').length;
+    release();await Promise.all([first,second]);
+    assert.equal(inserts,1);assert.equal(saves,1);
+  } finally {h.events.pagehide();}
+});
+
+test('unconfirmed picker may expire without writing',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();for(const timer of [...h.timers.values()])timer.fn();
+    assert.equal(banner.removed,true);
+    assert.equal(h.calls.some(c=>c.op==='diagram.insert'||c.kind==='save'),false);
+  } finally {h.events.pagehide();}
+});
+
+
+test('host without save identity guard advertises no direct insert and refuses writing',async()=>{
+  const h=await pickerHarness({identitySupport:false});
+  try {
+    h.channel.onmessage({data:{type:'discover',token:'token'}});
+    assert.notEqual(h.sent.at(-1).directInsert,true);
+    await h.send({op:'diagram.pick',pickId:'pick-1',draftId:h.drawing.id,drawing:h.drawing});
+    assert.ok(h.sent.at(-1).error);
+    assert.equal(h.calls.some(c=>c.op==='diagram.insert'||c.kind==='save'),false);
+    assert.equal(h.body.children.length,0);
+  } finally {h.events.pagehide();}
+});
+
+
+test('unknown insertion result retains operation through expiry and competing pick',async()=>{
+  const h=await pickerHarness();
+  try {
+    const banner=await h.start();h.state.insertLost=true;await banner.children[1].click();
+    assert.equal(h.calls.filter(c=>c.op==='diagram.insert').length,1);
+    for(const timer of [...h.timers.values()])timer.fn();
+    assert.equal(banner.removed,false,'unknown insertion outcome must remain recoverable');
+    await h.send({op:'diagram.pick',pickId:'pick-2',draftId:h.drawing.id,drawing:h.drawing});
+    assert.equal(banner.removed,false,'unknown insertion cannot be overwritten by a new request');
+    const original=h.calls.find(c=>c.op==='diagram.insert');
+    h.state.selection={anchor:{off:0},focus:{off:1}};
+    await banner.children[1].click();
+    const retries=h.calls.filter(c=>c.op==='diagram.insert');
+    assert.equal(retries.length,2);
+    assert.deepEqual(retries[1],original,'retry must reuse the exact insertion request');
+    assert.equal(h.calls.filter(c=>c.kind==='save').length,1);
+    assert.equal(banner.removed,true);
+  } finally {h.events.pagehide();}
 });

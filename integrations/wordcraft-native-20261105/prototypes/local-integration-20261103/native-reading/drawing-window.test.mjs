@@ -87,7 +87,7 @@ test('window trusts only the configured frame and sends captured text to that or
 });
 
 
-async function createWorkflowHarness({search='', picker=true, origin='http://127.0.0.1:4000'}={}) {
+async function createWorkflowHarness({search='', picker=true, directInsert=true, origin='http://127.0.0.1:4000'}={}) {
   const elements=new Map(), events={}, frameMessages=[], hostMessages=[], calls=[], order=[];
   const state={empty:false,exportError:false,saveError:false,allowClose:true,closed:false,focus:0,navigations:[]};
   const draft={id:'draft-1',revision:1,title:'Saved draft',xml:'<mxfile/>',messages:[],png:'png',embeddedPng:'encoded-png'};
@@ -132,7 +132,7 @@ async function createWorkflowHarness({search='', picker=true, origin='http://127
       return {ok:true,json:async()=>[draft]};
     },
   });
-  channel.onmessage({data:{type:'host',token:'secret',hostId:'host-1',title:'Doc',...(picker?{picker:true}:{})}});
+  channel.onmessage({data:{type:'host',token:'secret',hostId:'host-1',title:'Doc',...(picker?{picker:true}:{}),...(directInsert?{directInsert:true}:{})}});
   element('hosts').value='host-1';
   const ready=()=>events.message({origin,source:frame.contentWindow,data:{channel:'lingdoc-drawing',type:'ready'}});
   return {element,events,frameMessages,hostMessages,calls,order,state,draft,ready,channel,window};
@@ -149,6 +149,7 @@ test('capture saves then starts host picking and keeps insertion disabled',async
     const request=h.hostMessages.find(m=>m.request?.op==='diagram.pick');
     assert.equal(request.hostId,'host-1');
     assert.equal(request.request.draftId,'draft-1');
+    assert.deepEqual(JSON.parse(JSON.stringify(request.request.drawing)),{id:'draft-1',revision:1,title:'Saved draft',embeddedPng:'encoded-png'});
     assert.ok(request.request.pickId);
     assert.ok(h.order.indexOf('api:save')<h.order.indexOf('host:diagram.pick'));
     assert.equal(h.element('insert').disabled,true);
@@ -167,7 +168,7 @@ test('capture save failure and unsupported old host never start picking',async()
     assert.equal(h.element('insert').disabled,true);
     assert.equal(h.hostMessages.some(m=>m.request?.op==='diagram.pick'),false);
   } finally {h.events.pagehide();}
-  const old=await createWorkflowHarness({picker:false});
+  const old=await createWorkflowHarness({picker:true,directInsert:false});
   try {
     old.ready();await tick();await old.element('capture').onclick();
     assert.equal(old.hostMessages.some(m=>m.type==='request'),false);
@@ -175,24 +176,6 @@ test('capture save failure and unsupported old host never start picking',async()
     assert.match(old.element('status').textContent,/刷新|重新打开/);
     assert.equal(old.element('insert').disabled,true);
   } finally {old.events.pagehide();}
-});
-
-test('resume restores saved draft before consuming confirmed target and permits insertion',async()=>{
-  const h=await createWorkflowHarness({search:'?resume=ticket-1&host=host-1&draft=draft-1'});
-  try {
-    h.ready();
-    for(let i=0;i<15&&h.element('insert').disabled;i++)await tick();
-    assert.equal(h.calls.find(c=>c.action==='get')?.body.id,'draft-1');
-    assert.ok(h.order.indexOf('frame:load')<h.order.indexOf('host:diagram.resume'));
-    const resume=h.hostMessages.find(m=>m.request?.op==='diagram.resume');
-    assert.equal(resume.request.ticket,'ticket-1');
-    assert.equal(h.element('insert').disabled,false);
-    await h.element('insert').onclick();
-    const insert=h.hostMessages.find(m=>m.request?.op==='diagram.insert');
-    assert.equal(insert.request.expectedDocumentId,9);
-    assert.equal(insert.request.expectedRevision,4);
-    assert.equal(insert.request.data,'encoded-png');
-  } finally {h.events.pagehide();}
 });
 
 test('exit saves nonempty drawing before closing and preserves page on failure',async()=>{
@@ -256,5 +239,18 @@ test('exit preserves a configured canvas until its connection is ready',async()=
     assert.equal(h.state.closed,false);
     assert.deepEqual(h.state.navigations,[]);
     assert.match(h.element('notice').textContent,/尚未连接/);
+  } finally {h.events.pagehide();}
+});
+
+
+test('empty drawing cannot start document insertion',async()=>{
+  const h=await createWorkflowHarness();
+  try {
+    h.ready();await tick();h.state.empty=true;
+    await h.element('capture').onclick();
+    assert.equal(h.hostMessages.some(m=>m.request?.op==='diagram.pick'),false);
+    assert.equal(h.state.closed,false);
+    assert.equal(h.element('insert').disabled,true);
+    assert.match(h.element('status').textContent,/空|绘|图稿/);
   } finally {h.events.pagehide();}
 });

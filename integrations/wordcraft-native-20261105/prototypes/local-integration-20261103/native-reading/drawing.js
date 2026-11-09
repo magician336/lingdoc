@@ -4,8 +4,6 @@ const frame = element('editor');
 const channel = new BroadcastChannel('lingdoc-drawing');
 const pending = new Map();
 const hosts = new Map();
-const resume = new URLSearchParams(window.location?.search || '');
-let resumed = false;
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
 let activeFeature = null;
 const features = {
@@ -61,7 +59,6 @@ window.addEventListener('message', event => {
     if (event.data.type === 'ready') {
       clearTimeout(connectionTimer); ready = true; controls();
       message('可以开始绘图。图稿保存后可插入正文。');
-      if (!resumed && resume.has('resume')) { resumed = true; run(resumeDrawing); }
     }
   else settle(event.data, 'frame');
 });
@@ -72,7 +69,6 @@ channel.onmessage = ({ data }) => {
     if (![...element('hosts').options].some(option => option.value === data.hostId)) {
       element('hosts').add(new Option(`${data.standalone ? '普通文档' : '项目文稿'} · ${data.title} · ${data.hostId.slice(0, 6)}`, data.hostId));
     }
-    if (resume.get('host') === data.hostId) element('hosts').value = data.hostId;
   } else if (data.type === 'result') settle(data, data.hostId);
 };
 async function run(action) {
@@ -131,39 +127,22 @@ function closeDrawing(exit) {
   setTimeout(() => {
     if (window.closed) return;
     if (exit) window.location.assign('/');
-    else message('图稿已保存。请手动切回目标文稿标签，在正文单击位置后，点击“确认位置并返回绘图”。浏览器未允许自动关闭此页。');
+    else message('图稿已保存。请手动切回目标文稿标签，在正文单击位置后，点击“确认并插入”，即可插图并保存。浏览器未允许自动关闭此页。');
   }, 500);
 }
 async function pick() {
   target = null; controls();
   const hostId = element('hosts').value;
   if (!hostId) throw Error('请先打开并选择目标文稿，再定位插入位置。');
-  if (!hosts.get(hostId)?.picker) throw Error('文稿窗口使用旧版本：请先保存文稿，再刷新文稿窗口并点击“查找文档”，然后重新定位。');
+  if (!hosts.get(hostId)?.directInsert) throw Error('文稿窗口使用旧版本：请先保存文稿，再刷新文稿窗口并点击“查找文档”，然后重新定位。');
   message('正在保存图稿，随后返回文稿选择插入位置…');
   const saved = await saveBeforeLeaving();
-  const result = await request(hostId, { op: 'diagram.pick', pickId: crypto.randomUUID(), draftId: saved?.id || null });
+  if (!saved?.embeddedPng) throw Error('画布为空，请先绘制图形再选择插入位置。');
+  const result = await request(hostId, { op: 'diagram.pick', pickId: crypto.randomUUID(), draftId: saved.id,
+    drawing: {id:saved.id, revision:saved.revision, title:saved.title, embeddedPng:saved.embeddedPng} });
   if (!result.picking) throw Error('文稿未能开启定位，请保留画布并重试。');
-  message('请在目标文稿中单击插入位置，再点击“确认位置并返回绘图”。');
+  message('请在目标文稿中单击插入位置，再点击“确认并插入”，图片将直接插入并保存。');
   closeDrawing(false);
-}
-async function resumeDrawing() {
-  target = null;
-  const hostId = resume.get('host');
-  if (!hostId) throw Error('定位会话无效，请重新选择目标文稿。');
-  if (resume.get('draft')) {
-    const { record } = await api('get', { id: resume.get('draft') });
-    if (!record) throw Error('未找到已保存的图稿，请从“我的图稿”中重新打开。');
-    await load(record);
-  }
-  message('正在恢复已确认的正文位置…');
-  const selection = await request(hostId, { op: 'diagram.resume', ticket: resume.get('resume') });
-  target = { ...selection, hostId };
-  if (![...element('hosts').options].some(option => option.value === hostId)) element('hosts').add(new Option('已定位的文稿', hostId));
-  element('hosts').value = hostId;
-  window.history?.replaceState(null, '', '/native-reading/drawing');
-  message('已确认正文插入位置。点击“插入正文”即可写入；请保持文稿和光标位置不变。');
-  const panel = document.querySelector?.('.document-panel');
-  if (panel) panel.open = true;
 }
 async function writeImage(replace) {
   const destination = target;

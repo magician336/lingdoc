@@ -478,7 +478,16 @@ fn download(saves: &AsyncSaves, ctx: &egui::Context, path: &str, bytes: &[u8]) -
     }
 
     // Fallback for browsers without showSaveFilePicker (e.g. Firefox, Safari):
-    trigger_anchor_download(&window, &name, bytes)
+    let result = trigger_anchor_download(&window, &name, bytes);
+    if result.is_ok() {
+        // An anchor click cannot confirm an actual disk write. Give the caller a
+        // ticket so it can report the browser download without claiming a saved file.
+        let ticket = saves.start();
+        saves.mark_download(ticket);
+        saves.finish(ticket, SaveOutcome::Saved);
+        ctx.request_repaint();
+    }
+    result
 }
 
 fn trigger_save_file_picker(
@@ -548,7 +557,12 @@ fn trigger_save_file_picker(
                 // A browser can expose the picker but reject its promise (for example in
                 // a cross-origin iframe). Use the same download path as an absent API;
                 // cancelling a picker must never start an unwanted download (#1246).
-                crate::save_fallback::picker_rejected(&err_name, || trigger_anchor_download(&window, &name, &bytes_vec))
+                let outcome = crate::save_fallback::picker_rejected(&err_name, || {
+                    let result = trigger_anchor_download(&window, &name, &bytes_vec);
+                    if result.is_ok() { saves.mark_download(ticket); }
+                    result
+                });
+                outcome
             }
         };
         saves.finish(ticket, outcome);

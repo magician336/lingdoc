@@ -1,5 +1,32 @@
 # WordCraft 独立 AI 绘图窗口
 
+## 2026-11-09 确认后直接插入并保存
+
+按用户最新要求替代上一轮的往返流程：绘图端保存并冻结本次 PNG 快照，正文确认时直接读取最新光标、插图并调用文稿原有保存服务，全程留在原文稿，不再返回绘图或新开窗口。普通文档复用原生异步文件保存并暴露可等待回执，项目文稿复用现有 DS/Go 协调器。浏览器下载回退只能报告已导出，不能宣称写入原文件。
+
+| 验收项 | 证据 | 状态 |
+| --- | --- | --- |
+| 确认后直接插入，零新窗口 | 完整浏览器 19/19；确认/重试无 window.open，仅原文稿应用标签 | PASS |
+| 原生真实保存完成/取消/失败可区分 | 新 WASM 的 save.begin/status，File System Access API 夹具 3/3；实际下载及项目 DS/Go 保存读回 | PASS |
+| 保存失败仅重试保存，不重复插图 | 固定插入操作编号、失败后保存重试、丢失插入回执时复用原请求 | PASS |
+| 更换文稿、选区冲突、过期、双击受控 | 宿主身份/版本检查、保存能力版本检查、并发/过期回归及项目真实错误身份拒绝 | PASS |
+
+一个定位会话只拥有一张冻结图和一次插入操作，插入后再保存是两个明确阶段；保存失败保留已插入图片和 dirty 状态，不通过补偿删除用户修改。未保存成功不得显示保存完成，也不将发起 file.save 或瞬间 dirty=false 当作成功依据。
+
+当前实现由 `drawing-host.js` 持有插入会话并调用原保存入口；普通文档通过原生 `AsyncSaves` 的有界、独立完成回执等待文件写入结果，项目保存仍经 `WorkspaceSaveCoordinator`。项目 `saveIntent(source, expected)` 在入口和实际导出前保护文档/版本，并阻止不同文稿的待重试事务串用。图片已插入后的失败只保留保存重试；插入结果不确定时保留同一请求，不因到期或其他定位请求丢失操作编号。显式取消后的未保存提示在独立通知中显示。
+
+定向验证：`node --test integrations/wordcraft-native-20261105/prototypes/local-integration-20261103/native-reading/drawing*.test.mjs integrations/wordcraft-native-20261105/prototypes/local-integration-20261103/native-reading/standalone-save.test.mjs`，44/44 PASS；`node --test integrations/wordcraft-native-20261105/candidates/lingdoc-native-workspace-20261027/ds/r11-bridge-combination-20261025/host/site/host-save-guard.test.mjs`，3/3 PASS。`async_saves.rs` 以 `rustc --test` 定向编译运行，2/2 PASS，不等同完整 crate 测试。
+
+构建：固定 Rust 1.95 / wasm-bindgen 0.2.129 的 `--release --locked` 构建通过。新 WASM SHA-256 为 `03965259863ad60dbd1a749a3161bdb4fb4e2c155e11bed2b06cc8685953c537`，7237 HTTP 产物与磁盘一致。`cargo xtask ci` 已尝试，首个环境阻断为工具链未安装 cargo-fmt/rustfmt；后续 clippy、全仓测试、assets、layers 未运行，本轮不宣称完整 CI 通过，也未批量格式化既有代码。
+
+真实保存验证：任务脚本 `work/native-save-picker-fixture.mjs` 在独立 Edge 中驱动真实 WASM 与 web callback，注入系统文件 API 夹具覆盖成功、取消和写入失败，并验证 close 完成前状态为 pending；真实系统保存对话框未操作。`work/project-save-chain.mjs` 使用独立 7239，真实插图、DS/Go 保存、哈希读回、native ack 和重开含图文稿全部通过，错误身份零持久化；未修改用户正在编辑的文稿，未调用模型。证据汇总在任务 `outputs/drawing-save-verification.json`、`outputs/project-save-chain-evidence.json`。
+
+完整 UI 验证：任务 `node work/drawing-direct-insert-browser.mjs` 在独立 7238 / Edge 中 19/19 PASS，覆盖正常确认、取消、保存失败后重试。真实画布导出、冻结快照传输、关闭绘图、正文单击选点、确认后自动保存、下载 DOCX 解包和重开均通过；确认和重试的 window.open 调用数不增加，插图操作仅一次，失败重试实际保存两次且图片不重复。PNG 内 id/revision/title/XML/messages 与冻结快照逐字段一致。Edge 下载气泡会产生 `edge://downloads-hub/` 内部页面，测试等待 URL 确定后只排除这一浏览器界面，空白或未知新应用页仍失败。无模型请求和运行时异常，所有隔离服务已清理。证据 `outputs/drawing-direct-insert-verification.json` 及 picker/document/retry 截图；旧用户文稿与 7237 服务保持不动。
+
+已打开的旧文稿实例仍保留旧脚本/WASM；新绘图页通过能力标记拒绝旧宿主，提示先保存文稿再刷新。普通文件沿用原生保存器，浏览器可能要求选择保存位置或回退下载；下载仅报告已导出，不能验证原文件被覆盖。项目文稿保存才直接写回项目服务。当前完整 Rust CI 与真实系统对话框仍是验收边界，不能用夹具或下载成功替代。
+
+健康复评沿用 H_L 57、F_R 54、置信度 C，Δ=0。短期插入/重试状态集中在文稿宿主，但普通保存回执和项目协调器仍有两套完成语义，身份守卫需要跨 JS/Rust 同步。后续应收敛到带目标身份的统一文稿保存端口，返回明确的写回、导出、取消结果，减少调用者识别持久化类型的成本；本轮测试通过不视为结构评分提升。
+
 ## 2026-11-09 定位流程与返回文稿
 
 用户复现：原“定位插入位置”只读取当前光标，缺少选择位置的可见流程；绘图页没有退出按钮。红测 `node --test .../drawing-window.test.mjs` 新增两项分别因发出 `diagram.selection` 而非定位请求、缺少退出入口失败。隔离 Edge 实测：原生入口打开的绘图页有 opener，脚本窗口可关闭；调用 focus 不可靠，因此不以强制切换标签为成功依据。

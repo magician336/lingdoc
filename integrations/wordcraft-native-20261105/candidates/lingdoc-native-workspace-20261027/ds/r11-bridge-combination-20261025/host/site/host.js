@@ -99,10 +99,18 @@ async function latestSavedVersion() {
   }
 }
 
+let guardedSaveTarget = null;
+function matchesSaveTarget(state, expected) {
+  return state?.documentId === expected?.documentId && state?.revision === expected?.revision;
+}
 const coordinator = new WorkspaceSaveCoordinator({
   async persistSavedFile() {
+    if (guardedSaveTarget && pendingSave && !matchesSaveTarget(pendingSave.state, guardedSaveTarget)) {
+      throw new Error('待恢复的保存属于另一个文档或版本，请先处理原保存。');
+    }
     if (!pendingSave) {
       const state = await engine({ op: 'status' });
+      if (guardedSaveTarget && !matchesSaveTarget(state, guardedSaveTarget)) throw new Error('文稿已变化，请检查后重新保存。');
       const citations = researchPanel?.snapshot() ?? [];
       const exported = await engine({ op: 'export', expectedDocumentId: state.documentId, expectedRevision: state.revision, expectedDiskVersion: diskVersion });
       const sha256 = await hash(exported.bytes);
@@ -219,9 +227,22 @@ async function insert(text = '宿主合成文本 HOST-R4-20261024') {
   return report(result);
 }
 
-async function saveIntent(source = 'host-api') {
+async function saveIntent(source = 'host-api', expected = null) {
+  if (guardedSaveTarget) throw new Error('受控保存正在进行，请稍后重试。');
   if (!saveSources.includes(source)) saveSources.push(source);
   const current = await engine({ op: 'status' });
+  if (guardedSaveTarget) throw new Error('受控保存正在进行，请稍后重试。');
+  if (expected) {
+    if (!Number.isSafeInteger(expected.documentId) || !Number.isSafeInteger(expected.revision) || !matchesSaveTarget(current, expected)) {
+      throw new Error('文稿已变化，请检查后重新保存。');
+    }
+    if (coordinator.transaction || coordinator.nextTransaction) throw new Error('另一项保存正在进行，请稍后重试。');
+    if ((pendingSave && !matchesSaveTarget(pendingSave.state, expected)) ||
+        (coordinator.receipt && !matchesSaveTarget(coordinator.receipt, expected))) {
+      throw new Error('待恢复的保存属于另一个文档或版本，请先处理原保存。');
+    }
+    guardedSaveTarget = {documentId:expected.documentId, revision:expected.revision};
+  }
   try {
     const result = await coordinator.request(current.revision);
     if (lastSave?.version?.id !== result.version?.id) deliveryError = null;
@@ -239,8 +260,13 @@ async function saveIntent(source = 'host-api') {
     researchPanel?.saveFailure(error);
     notify('保存未完成：' + error.message, 'error');
     throw error;
+  } finally {
+    if (expected) guardedSaveTarget = null;
   }
 }
+
+// A guarded drawing insertion can require this capability before mutating the document.
+saveIntent.supportsExpectedIdentity = true;
 
 let pendingSaveAs = null;
 let lastSaveAs = null;

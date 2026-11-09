@@ -11,6 +11,7 @@
 //! Plain `Rc<Cell<…>>` state: no locks, no borrow that could fail.
 
 use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 /// How a save that finished later ended.
@@ -33,6 +34,9 @@ struct State {
     pending: Vec<u64>,
     /// Tickets finished and not yet read by the app.
     finished: Vec<(u64, SaveOutcome)>,
+    /// Independent, bounded receipts for host callers; UI still consumes `finished` normally.
+    receipts: BTreeMap<u64, (SaveOutcome, bool)>,
+    downloads: BTreeSet<u64>,
 }
 
 /// Saves in flight, shared between the host's `download` hook and the app (a cheap clone).
@@ -64,9 +68,22 @@ impl AsyncSaves {
         self.with(|s| {
             if let Some(i) = s.pending.iter().position(|&t| t == ticket) {
                 s.pending.swap_remove(i);
+                let download = s.downloads.remove(&ticket);
+                s.receipts.insert(ticket, (outcome.clone(), download));
+                while s.receipts.len() > 128 { s.receipts.pop_first(); }
                 s.finished.push((ticket, outcome));
             }
         });
+    }
+
+    /// The browser dispatched an anchor download; it cannot confirm that the file reached disk.
+    pub fn mark_download(&self, ticket: u64) {
+        self.with(|s| { if s.pending.contains(&ticket) { s.downloads.insert(ticket); } });
+    }
+
+    /// A finished ticket's outcome, independent of the UI's completion queue.
+    pub fn receipt(&self, ticket: u64) -> Option<(SaveOutcome, bool)> {
+        self.with(|s| s.receipts.get(&ticket).cloned())
     }
 
     /// Saves started and not finished (the browser's leave-page guard warns while there are any).
@@ -104,5 +121,22 @@ mod tests {
         assert_eq!(saves.pending(), 1);
         assert_eq!(saves.take_finished(), vec![(a, SaveOutcome::Cancelled)]);
         assert!(saves.take_finished().is_empty());
+    }
+
+    #[test]
+    fn host_receipts_survive_ui_consumption_and_identify_downloads() {
+        let saves = AsyncSaves::default();
+        let downloaded = saves.start();
+        let cancelled = saves.start();
+        let failed = saves.start();
+        assert_eq!(saves.receipt(downloaded), None);
+        saves.mark_download(downloaded);
+        saves.finish(downloaded, SaveOutcome::Saved);
+        saves.finish(cancelled, SaveOutcome::Cancelled);
+        saves.finish(failed, SaveOutcome::Failed("write failed".into()));
+        assert_eq!(saves.take_finished().len(), 3);
+        assert_eq!(saves.receipt(downloaded), Some((SaveOutcome::Saved, true)));
+        assert_eq!(saves.receipt(cancelled), Some((SaveOutcome::Cancelled, false)));
+        assert_eq!(saves.receipt(failed), Some((SaveOutcome::Failed("write failed".into()), false)));
     }
 }

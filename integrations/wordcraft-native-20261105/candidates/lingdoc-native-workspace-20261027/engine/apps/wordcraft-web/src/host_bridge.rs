@@ -17,6 +17,7 @@ struct Bridge {
     queue: Vec<Request>, ctx: Option<egui::Context>, pending: Option<(u64, u64, String, String, u64)>, serial: u64,
     operations: BTreeMap<String, (Value, Value)>,
     diagram_document: Option<u64>, diagram_operations: BTreeMap<String, (String, Value)>,
+    standalone_saves: BTreeMap<u64, (u64, u64)>,
 }
 thread_local! { static BRIDGE: RefCell<Bridge> = RefCell::new(Bridge::default()); }
 
@@ -219,6 +220,34 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
     let op = r.get("op").and_then(Value::as_str).ok_or("missing op")?;
     match op {
         "status" => Ok(identity(app)),
+        "save.begin" => {
+            if app.services.save_intent.is_some() { return Err("use the project save coordinator".into()); }
+            check(app, r)?;
+            if app.services.async_saves.is_none() { return Err("native save receipts unavailable".into()); }
+            let result = app.execute("file.save", json!({}))?;
+            let ticket = result.get("pendingSave").and_then(Value::as_u64).ok_or("native save did not provide a completion ticket")?;
+            let state = identity(app);
+            bridge.standalone_saves.insert(ticket, (app.session.document_id(), app.session.rev()));
+            while bridge.standalone_saves.len() > 128 { bridge.standalone_saves.pop_first(); }
+            Ok(json!({"ticket":ticket,"state":state}))
+        }
+        "save.status" => {
+            use wordcraft_ui_egui::async_saves::SaveOutcome;
+            let ticket = r.get("ticket").and_then(Value::as_u64).ok_or("missing save ticket")?;
+            let &(document, revision) = bridge.standalone_saves.get(&ticket).ok_or("unknown save ticket")?;
+            let current = identity(app);
+            let receipt = app.services.async_saves.as_ref().ok_or("native save receipts unavailable")?.receipt(ticket);
+            let Some((outcome, download)) = receipt else { return Ok(json!({"status":"pending","state":current})); };
+            let status = match &outcome {
+                SaveOutcome::Cancelled => "cancelled",
+                SaveOutcome::Failed(_) => "failed",
+                SaveOutcome::Saved if document != app.session.document_id() || revision != app.session.rev() || app.session.dirty => "stale",
+                SaveOutcome::Saved if download => "downloaded",
+                SaveOutcome::Saved => "saved",
+            };
+            let error = match outcome { SaveOutcome::Failed(error) => Some(error), _ => None };
+            Ok(json!({"status":status,"state":current,"documentId":document,"revision":revision,"error":error}))
+        }
         "workspace.home" => {
             let page = r.get("page").and_then(Value::as_str).unwrap_or("home");
             if !matches!(page, "home" | "projects" | "new" | "open") { return Err("invalid start page".into()); }
