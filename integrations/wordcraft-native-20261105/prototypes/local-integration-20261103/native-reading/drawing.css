@@ -44,6 +44,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; height: 39px; padding: 0 8px; color: #455b4f; background: white; font-size: 12px; text-overflow: ellipsis; }
 .library-picker select { flex: 1; width: 0; border: 0; background: transparent; padding-left: 0; }
 .helper { margin: 8px 0 0; color: #87948d; font-size: 11px; line-height: 1.8; }
+.feature-nav { padding: 0 2px 20px; }
+.feature-nav .section-heading { margin-bottom: 9px; }
+.feature-list { display: flex; flex-direction: column; gap: 3px; }
+.feature-button { justify-content: flex-start; min-height: 36px; padding: 8px 10px; font-size: 12px; text-align: left; }
+.feature-button .icon { width: 16px; height: 16px; color: #7f998c; }
+.feature-button[aria-pressed="true"] { color: #21654f; background: #e8f2eb; border-color: #d5e7db; }
+.feature-button[aria-pressed="true"] .icon { color: currentColor; }
 .document-panel { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .document-panel summary { display: flex; align-items: center; gap: 9px; padding: 16px 2px; list-style: none; cursor: pointer; font-size: 12px; font-weight: 600; color: #60766a; }
 .document-panel summary::-webkit-details-marker { display: none; }
@@ -110,6 +117,9 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
   .library { flex: 1; min-width: 170px; display: flex; gap: 4px; padding: 0; }
   .library-picker { flex: 1; min-width: 0; }
   .library-picker select { height: 34px; font-size: 11px; }
+  .feature-nav { width: 100%; min-width: 0; padding: 0; }
+  .feature-list { flex-direction: row; gap: 5px; overflow-x: auto; padding: 2px; }
+  .feature-button { flex-shrink: 0; min-height: 32px; padding: 6px 8px; font-size: 11px; white-space: nowrap; }
   .document-panel { width: 100%; border: 0; }
   .document-panel summary { padding: 5px 2px; font-size: 11px; }
   .document-panel summary .icon { width: 14px; height: 14px; }

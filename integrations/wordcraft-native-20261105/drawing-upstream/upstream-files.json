@@ -3,5 +3,7 @@
   "proxy.ts": "80920744d10cbfd8a046573e1083b1b3e1c4fe96",
   "components/chat/chat-engine.tsx": "617e730db5942b7404fcf7ef82cba5dfd35bae39",
   "app/api/chat/route.ts": "050ede20443246eb75b24db39123c14d1f6e8c03",
-  "app/[lang]/layout.tsx": "1755b08391c325f80ecc291ca704a15864ac6ac3"
+  "app/[lang]/layout.tsx": "1755b08391c325f80ecc291ca704a15864ac6ac3",
+  "stores/ui-store.ts": "0d35e112e9e8f9134b9d92c3aaad7f2bfab537d0",
+  "lib/drawio/editor-bridge.ts": "0dbc74f36718b5f5ed8176eb62450a0c476d5cb5"
 }

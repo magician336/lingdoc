@@ -33,7 +33,7 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
   const {chromium} = require('@playwright/test');
   const runtime = path.resolve(path.dirname(fileURLToPath(import.meta.url)),'runtime');
   const directory = await mkdtemp(path.join(runtime,'browser-smoke-'));
-  let server, upstream, browser, page; const diagnostics = [];
+  let server, upstream, browser, page, modelRequests = 0; const diagnostics = [];
   const oldExternal = process.env.LINGDOC_DRAWING_ORIGIN;
   delete process.env.LINGDOC_DRAWING_ORIGIN;
   try {
@@ -58,6 +58,7 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     page = browser.pages()[0] || await browser.newPage();
     page.on('console', msg => { if (msg.type() === 'error' || msg.type() === 'warning') diagnostics.push(`console ${msg.type()}: ${msg.text()}`); });
     page.on('pageerror', error => diagnostics.push(`pageerror: ${error.message}`));
+    page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/chat') modelRequests++; });
     page.on('response', response => { if (response.status() >= 400) diagnostics.push(`HTTP ${response.status()} ${response.url()}`); });
     page.on('dialog', dialog => dialog.accept());
     await page.goto(parentOrigin+'/native-reading/drawing');
@@ -65,6 +66,28 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     await page.locator('#save').waitFor({state:'visible'});
     await page.waitForFunction(() => !document.getElementById('save').disabled, null, {timeout:45000});
     console.error('smoke: drawing ready');
+    const app = page.frames().find(frame => frame.url() === upstream.origin + '/zh');
+    const drawingFrame = page.frames().find(frame => frame.url().includes('/drawio/index.html'));
+    await t.test('blank entry and new drawing show a fitted canvas without a welcome screen', async () => {
+      assert.equal(await app.getByTestId('lobby-hero').count(), 0);
+      for (const [width,height] of [[1920,1080],[1280,720],[390,844],[844,390]]) {
+        await page.setViewportSize({width,height});
+        await app.getByTestId('canvas-stage').waitFor({state:'visible'});
+        await drawingFrame.waitForFunction(() => {
+          const canvas = document.querySelector('.geDiagramContainer')?.getBoundingClientRect();
+          const sheet = document.querySelector('.geBackgroundPage')?.getBoundingClientRect();
+          return canvas && sheet && sheet.width > 30 && sheet.height > 30 &&
+            sheet.left >= canvas.left - 2 && sheet.top >= canvas.top - 2 &&
+            sheet.right <= canvas.right + 2 && sheet.bottom <= canvas.bottom + 2;
+        }, null, {timeout:5000});
+        if (width === 1920 || width === 390) await page.screenshot({path:path.join(runtime,`drawing-blank-${width}.png`),fullPage:true});
+      }
+      await page.locator('#new').click();
+      await page.waitForFunction(() => document.querySelector('#status').textContent.includes('已新建图稿'));
+      assert.equal(await app.getByTestId('lobby-hero').count(), 0);
+      await app.getByTestId('canvas-stage').waitFor({state:'visible'});
+      await page.setViewportSize({width:1280,height:720});
+    });
     // The message originates from the configured parent window, and the real
     // bridge waits for draw.io and validates the exact source/origin.
     const loadCanvas = (xml, messages) => page.evaluate(({origin, xml, messages}) => new Promise((resolve,reject) => {
@@ -176,6 +199,41 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     assert.equal(reopened.id, secondDrawing.id);
     assert.equal(reopened.xml, autosaved.xml, 'Switching back restores the autosaved canvas');
     assert.deepEqual(reopened.messages, editedMessages);
+    await t.test('feature navigation keeps user input, attachment and drawing until explicit submission', async () => {
+      await page.waitForFunction(() => !document.querySelector('#feature-paper').disabled);
+      await app.getByTestId('chat-input').fill('保留我的研究问题');
+      await app.getByTestId('attachment-input').setInputFiles({name:'paper.txt',mimeType:'text/plain',buffer:Buffer.from('Research notes for a diagram. No model request should occur.')});
+      await app.getByText('paper.txt',{exact:true}).waitFor({state:'visible'});
+      let paperPrompt;
+      for (const feature of ['paper','animated','aws','flowchart','creative','paper']) {
+        await page.locator('#feature-' + feature).click();
+        await page.waitForFunction(feature => document.querySelector('#feature-' + feature).getAttribute('aria-pressed') === 'true' && !document.querySelector('#feature-' + feature).disabled, feature);
+        const input = await app.getByTestId('chat-input').inputValue();
+        assert.ok(input.includes('保留我的研究问题'), 'Feature selection retains user text');
+        assert.equal(input.split('保留我的研究问题').length, 2, 'Feature switching does not duplicate user text');
+        if (feature === 'paper') {
+          if (paperPrompt) assert.equal(input,paperPrompt,'Returning to a feature replaces its old instructions');
+          paperPrompt = input;
+        }
+        await app.getByText('paper.txt',{exact:true}).waitFor({state:'visible'});
+      }
+      await page.setViewportSize({width:390,height:844});
+      await app.getByRole('button',{name:'画布',exact:true}).click();
+      await page.locator('#feature-creative').click();
+      await app.getByTestId('chat-input').waitFor({state:'visible'});
+      assert.equal(await app.getByRole('button',{name:'对话',exact:true}).getAttribute('aria-pressed'),'true');
+      assert.equal(modelRequests,0,'Feature navigation never submits a model request');
+      await page.setViewportSize({width:1280,height:720});
+      const unchangedResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method() === 'POST');
+      await page.locator('#save').click();
+      const unchanged = await (await unchangedResponse).json();
+      // Resizing changes draw.io's exported viewport dimensions (dx/dy).
+      // Compare every other attribute and all source cells unchanged.
+      const withoutViewport = source => source.replace(/<mxGraphModel\b[^>]*>/g, tag => tag.replace(/\s(?:dx|dy)="[^"]*"/g,''));
+      assert.equal(withoutViewport(unchanged.xml),withoutViewport(reopened.xml),'Selecting a feature does not replace the drawing');
+      assert.deepEqual(unchanged.messages,editedMessages,'Selecting a feature does not invent a conversation');
+      assert.equal(modelRequests,0);
+    });
   } catch (error) {
     if (page) {
       const screenshot = path.join(runtime,'browser-smoke-failure.png');

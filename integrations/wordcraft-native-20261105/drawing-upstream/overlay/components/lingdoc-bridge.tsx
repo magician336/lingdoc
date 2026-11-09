@@ -7,12 +7,20 @@ import { useDiagram } from "@/contexts/diagram-context"
 import { sanitizeMessages } from "@/lib/session-storage"
 import { modelOfPage, parseXml } from "@/lib/diagram-pages"
 import { hasCells } from "@/packages/mcp-server/src/pages.ts"
+import { centerEmptyPage } from "@/lib/drawio/editor-bridge"
 import { useUiStore } from "@/stores/ui-store"
 
 const CHANNEL = "lingdoc-drawing"
 const MAX_XML = 1024 * 1024
 const MAX_MESSAGES = 1024 * 1024
 const bytes = (value: string) => new TextEncoder().encode(value).byteLength
+const FEATURE_PROMPTS = {
+    paper: "请根据我上传或粘贴在聊天中的实际论文及补充说明，绘制可编辑的研究概览图，梳理研究问题、方法、实验与结论。若尚未提供论文内容，请先提醒我使用聊天区的＋上传论文或粘贴论文正文，不使用内置示例或编造论文内容。",
+    animated: "请根据我提供的内容和当前图稿，绘制可编辑的动态连接线示意图，用 draw.io 的流动连接线展示过程或数据方向。保留相关的已有元素，缺少必要信息时先向我确认。",
+    aws: "请根据我提供的系统需求和当前图稿，绘制可编辑的 AWS 架构图，标注服务、数据流、边界及必要的安全关系。不假设我尚未提供的部署需求，信息不足时先向我确认。",
+    flowchart: "请根据我描述的流程和当前图稿，绘制可编辑的流程图，清楚区分开始、结束、处理步骤和判断分支。保留我的业务含义，缺少必要步骤时先向我确认。",
+    creative: "请根据我提供的主题、用途和风格要求，使用可编辑的图形与连接线完成创意绘画。保留当前图稿中相关的已有内容，尚未给出主题时先向我询问。",
+} as const
 
 function isDefinitelyEmptyDiagram(xml: string): boolean {
     try {
@@ -48,6 +56,7 @@ export function LingDocBridge() {
     const engine = useChatEngine()
     const diagram = useDiagram()
     const current = useRef({ engine, diagram })
+    const featurePrefix = useRef("")
     current.current = { engine, diagram }
     const ready = engine.isRestored && diagram.isDrawioReady
 
@@ -80,7 +89,7 @@ export function LingDocBridge() {
                     (parentOrigin && event.origin !== parentOrigin)) return
                 const input = event.data
                 if (!input || input.channel !== CHANNEL ||
-                    !["load", "export", "prompt"].includes(input.type) ||
+                    !["load", "export", "prompt", "feature"].includes(input.type) ||
                     typeof input.requestId !== "string" ||
                     !/^[a-zA-Z0-9_-]{1,128}$/.test(input.requestId)) return
                 parentOrigin = event.origin
@@ -92,7 +101,21 @@ export function LingDocBridge() {
                 try {
                     const { engine, diagram } = current.current
                     if (engine.isBusy || engine.isLeaving) throw new Error("请等待当前绘图回答完成或停止回答。")
-                    if (input.type === "prompt") {
+                    if (input.type === "feature") {
+                        if (typeof input.feature !== "string" || !Object.hasOwn(FEATURE_PROMPTS, input.feature))
+                            throw new Error("绘图功能无效。")
+                        if (diagram.hasPendingLoad()) throw new Error("画布正在加载，请稍候再选择功能。")
+                        const prefix = FEATURE_PROMPTS[input.feature as keyof typeof FEATURE_PROMPTS] + "\n\n"
+                        const existing = engine.input
+                        const content = featurePrefix.current && existing.startsWith(featurePrefix.current)
+                            ? existing.slice(featurePrefix.current.length) : existing
+                        const next = prefix + content
+                        if (next.length > 12500) throw new Error("当前输入加上功能提示后超过限制，请先整理输入内容。")
+                        engine.setInput(next)
+                        featurePrefix.current = prefix
+                        useUiStore.getState().focusComposer()
+                        send({ type: "result", requestId: input.requestId, selected: true, feature: input.feature })
+                    } else if (input.type === "prompt") {
                         if (typeof input.prompt !== "string" || input.prompt.length > 12500)
                             throw new Error("选中文字为空或超过限制。")
                         engine.setInput(input.prompt)
@@ -130,6 +153,7 @@ export function LingDocBridge() {
                             await new Promise<void>(resolve => setTimeout(resolve, 16))
                         }
                         if (!active) throw new Error("绘图连接已变化，请重新打开图稿。")
+                        centerEmptyPage()
                         send({ type: "result", requestId: input.requestId, loaded: true })
                     } else {
                         if (diagram.hasPendingLoad()) throw new Error("画布正在加载，请稍候再保存。")
@@ -171,6 +195,7 @@ export function LingDocBridge() {
             }
             window.addEventListener("message", receive)
             dispose = () => window.removeEventListener("message", receive)
+            centerEmptyPage()
             send({ type: "ready" })
         })().catch(() => {
             // The parent times out with its own recoverable connection message.

@@ -52,11 +52,14 @@ All messages are structured objects with `channel: 'lingdoc-drawing'`.
 | Child to parent | `ready` | Sent after chat restore and draw.io readiness |
 | Parent to child | `load` | `requestId`, `xml`, optional `messages`, `title`, `prompt` |
 | Parent to child | `prompt` | `requestId`, `prompt`. Prefills the composer and preserves diagram and chat |
+| Parent to child | `feature` | `requestId`, `feature`: `paper`, `animated`, `aws`, `flowchart` or `creative` |
 | Parent to child | `export` | `requestId`, optional `skipEmpty: true` |
-| Child to parent | `result` | Matching `requestId`, `loaded: true` or `prompted: true`, or the export fields below |
+| Child to parent | `result` | Matching `requestId`, `loaded: true`, `prompted: true`, `selected: true` with `feature`, or the export fields below |
 | Child to parent | `error` | Matching `requestId`, `error` |
 
 Request IDs contain 1–128 ASCII letters, digits, underscores or hyphens. Only one bridge operation runs at once. A parent RPC timeout of at least 45 seconds covers the export sequence. User text is prefilled for explicit submission.
+
+LingDoc opens directly on the canvas, including on phones and after New Chat. The pinned UI store keeps the upstream welcome page dismissed. Empty pages fit and center within the available editor area, at no more than 100% zoom; nonempty drawings retain upstream view handling. Feature navigation adds the selected creation instructions to the composer and opens/focuses it. Switching features replaces only the prefix previously added by the bridge and keeps user text and attachments. It neither submits a model request nor loads bundled example files. Paper-to-diagram uses the user's uploaded paper or pasted text. Generation still uses the existing, explicitly submitted chat flow and configured provider.
 
 A load receipt waits for the canvas to finish loading and for the chat hook's visible messages to match the restored conversation. This prevents an immediate export from reading the prior conversation during the upstream SDK's throttled state update. Failure to observe that state within five seconds returns a recoverable error.
 
@@ -79,6 +82,8 @@ node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.
 The official-source patch contract uses `runtime/contract-fixture` or `LINGDOC_DRAWING_TEST_SOURCE`. It needs the exact pinned patch targets and `contexts/diagram-context.tsx`. Use a pristine checkout of the pinned upstream commit for that source path. Strict bridge checking also needs TypeScript and React/Node type declarations in the ignored `runtime/typecheck/node_modules` directory. The test extracts the actual hook member signatures from the official source. Its Next middleware declarations are test contracts, so this check does not replace the complete upstream build.
 
 During implementation the six official files were fetched through the GitHub file API at the pinned revision. The current test suite passed 10 tests with zero skipped tests. It covered exact patch contracts, CRLF checkout normalization, repeat application, interrupted patch and overlay-update recovery, changed-source rejection, nested-frame CSP, local-font layout integration, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. It also covered conservative empty-page detection and waiting for the SDK's throttled message snapshot before acknowledging restore. No live provider request was made.
+
+The subsequent canvas-entry/navigation update adds pinned `stores/ui-store.ts` and `lib/drawio/editor-bridge.ts` targets. Its contract suite passed 13/13 tests, including the entry policy, empty-page fit with page scale/viewport changes, preserved nonempty zoom, and feature input/attachment preservation without submission. Complete TypeScript checking and production build passed. The updated browser suite passed 4/4 tests in both Chrome and Edge: no welcome screen on entry or new drawings, fitted empty sheets at four sizes, the existing eight-size workspace checks, all five feature selections, real text attachment retention, zero model requests, and preserved drawing content/chat. Generated blank-canvas screenshots are `runtime/drawing-blank-{1920,390}.png`. Real provider generation remains outside this UI verification.
 
 The pinned dependency installation, draw.io resource download, complete TypeScript check and Next production build passed on 2026-11-09. The build reports four upstream dynamic-filesystem tracing warnings; distribution size has not been optimized. The launcher was started and stopped successfully without model credentials. Native WordCraft integration still requires its separately documented Rust/WASM and WSL toolchain. Real model calls and native insertion/undo/DOCX round trips remain unverified.
 

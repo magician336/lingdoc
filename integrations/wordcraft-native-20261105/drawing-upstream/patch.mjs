@@ -61,6 +61,62 @@ const patches = [
       ['className={`${instrumentSans.variable} ${jetbrainsMono.variable} antialiased`}', 'className="lingdoc-system-fonts antialiased"'],
     ],
   },
+  {
+    file: 'stores/ui-store.ts',
+    changes: [
+      ['    heroDismissed: false,\n    mobileView: "chat",', '    heroDismissed: true, // LingDoc opens directly on the drawing canvas.\n    mobileView: "canvas",'],
+      ['    setHeroDismissed: (dismissed) => set({ heroDismissed: dismissed }),', '    setHeroDismissed: (_dismissed) => set({ heroDismissed: true }), // LingDoc entry policy also applies to New Chat.'],
+    ],
+  },
+  {
+    file: 'lib/drawio/editor-bridge.ts',
+    changes: [
+      ['export function refitIfRecent(windowMs = 1500) {', 'export function refitIfRecent(windowMs = 1500) {\n    if (centerEmptyPage()) return true'],
+      ['    if (!graph() || isEmptyModel()) return\n    lastOpenedAt', '    if (!graph()) return\n    if (isEmptyModel()) { centerEmptyPage(); return }\n    lastOpenedAt'],
+      [`export function centerEmptyPage(): boolean {
+    if (!ui || !isEmptyModel() || typeof ui.resetScrollbars !== "function") {
+        return false
+    }
+    try {
+        ui.resetScrollbars()
+        return true
+    } catch {
+        return false
+    }
+}`, `export function centerEmptyPage(): boolean {
+    const g = graph()
+    if (!ui || !g || g.pageVisible === false || !isEmptyModel() || typeof ui.resetScrollbars !== "function") {
+        return false
+    }
+    const previousFitting = fitting
+    fitting = true
+    try {
+        // LingDoc fits an empty sheet to the available editor viewport.
+        // Shapes keep the upstream view and manual zoom behavior.
+        const pageWidth = g.pageFormat?.width * (g.pageScale ?? 1)
+        const pageHeight = g.pageFormat?.height * (g.pageScale ?? 1)
+        const width = g.container?.clientWidth - 32
+        const height = g.container?.clientHeight - 32
+        const scale = Math.min(1, width / pageWidth, height / pageHeight)
+        if (pageWidth > 0 && pageHeight > 0 && width > 0 && height > 0 &&
+            Number.isFinite(scale) && scale > 0 && typeof g.zoomTo === "function" &&
+            Math.abs(g.view.scale - scale) > 0.0001) g.zoomTo(scale, true)
+        ui.resetScrollbars()
+        const bounds = g.view.getBackgroundPageBounds?.()
+        if (bounds && bounds.width > 0 && bounds.height > 0 &&
+            [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) {
+            g.container.scrollLeft = Math.max(0, bounds.x - (g.container.clientWidth - bounds.width) / 2)
+            g.container.scrollTop = Math.max(0, bounds.y - (g.container.clientHeight - bounds.height) / 2)
+        }
+        return true
+    } catch {
+        return false
+    } finally {
+        fitting = previousFitting
+    }
+}`],
+    ],
+  },
 ];
 
 export function patchText(file, original) {

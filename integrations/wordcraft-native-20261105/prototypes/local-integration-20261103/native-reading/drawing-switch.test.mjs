@@ -12,7 +12,8 @@ async function setup() {
     id, revision: 1, title: id.toUpperCase(),
     xml: `<mxfile id="${id}"/>`, messages: [], png: 'png',
   }]));
-  const state = { empty: true, exportError: false, saveError: false, holdExport: false, held: null };
+  const state = { empty: true, exportError: false, saveError: false, holdExport: false,
+    featureError: false, holdFeature: false, held: null };
   class Option {
     constructor(text, value) {
       this.text = text;
@@ -45,7 +46,8 @@ async function setup() {
   frame.contentWindow = {
     postMessage(message) {
       frames.push(message);
-      if (message.type === 'export' && state.holdExport) {
+      if ((message.type === 'export' && state.holdExport) ||
+          (message.type === 'feature' && state.holdFeature)) {
         state.held = message;
         return;
       }
@@ -55,6 +57,8 @@ async function setup() {
             ? { empty: true }
             : { xml: '<mxfile id="edited"/>', messages: [], png: 'data:image/png;base64,png' };
           reply(message, result, state.exportError ? 'export failed' : null);
+        } else if (message.type === 'feature') {
+          reply(message, { selected: true }, state.featureError ? 'feature failed' : null);
         } else {
           reply(message, { loaded: true });
         }
@@ -232,6 +236,59 @@ test('missing destination preserves current drawing without exporting or saving'
     assert.equal(h.frames.length, 0);
     assert.equal(h.el('saved').value, 'a');
     assert.match(h.el('status').textContent, /图稿不存在/);
+  } finally {
+    h.close();
+  }
+});
+
+
+test('feature buttons select each feature without saving or loading', async () => {
+  const h = await setup();
+  const ids = ['paper', 'animated', 'aws', 'flowchart', 'creative'];
+  try {
+    h.calls.length = 0;
+    h.frames.length = 0;
+    for (const id of ids) {
+      await h.el('feature-' + id).onclick();
+      const request = h.frames.at(-1);
+      assert.equal(request.type, 'feature');
+      assert.equal(request.feature, id);
+      for (const other of ids) {
+        assert.equal(h.el('feature-' + other).ariaPressed, String(other === id));
+      }
+      assert.match(h.el('status').textContent, /已选择/);
+    }
+    assert.equal(h.frames.length, ids.length);
+    assert.deepEqual(h.calls, []);
+  } finally {
+    h.close();
+  }
+});
+
+test('feature failure preserves selection and pending request locks controls', async () => {
+  const h = await setup();
+  const ids = ['paper', 'animated', 'aws', 'flowchart', 'creative'];
+  try {
+    await h.el('feature-paper').onclick();
+    h.calls.length = 0;
+    h.frames.length = 0;
+    h.state.holdFeature = true;
+    const pending = h.el('feature-aws').onclick();
+    assert.equal(h.el('editor').inert, true);
+    for (const id of ids) assert.equal(h.el('feature-' + id).disabled, true);
+    await h.el('feature-creative').onclick();
+    assert.equal(h.frames.length, 1);
+    assert.equal(h.frames[0].feature, 'aws');
+    h.state.holdFeature = false;
+    h.reply(h.state.held, null, 'feature failed');
+    await pending;
+    assert.equal(h.el('status').textContent, 'feature failed');
+    assert.equal(h.el('feature-paper').ariaPressed, 'true');
+    for (const id of ids.slice(1)) assert.equal(h.el('feature-' + id).ariaPressed, 'false');
+    for (const id of ids) assert.equal(h.el('feature-' + id).disabled, false);
+    assert.equal(h.el('editor').inert, false);
+    assert.deepEqual(h.calls, []);
+    assert.deepEqual(h.frames.map(message => message.type), ['feature']);
   } finally {
     h.close();
   }

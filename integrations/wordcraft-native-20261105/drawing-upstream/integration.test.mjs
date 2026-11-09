@@ -168,7 +168,7 @@ test('bridge typechecks against member signatures extracted from official hooks'
   let engine, diagram;
   try { engine = await readFile(path.join(fixture, 'components/chat/chat-engine.tsx'), 'utf8'); diagram = await readFile(path.join(fixture, 'contexts/diagram-context.tsx'), 'utf8'); }
   catch { t.skip('Official hook source fixture is unavailable'); return; }
-  const engineMembers = interfaceMembers(engine, 'ChatEngine', ['messages', 'isBusy', 'isLeaving', 'setMessages', 'setInput', 'currentTitle', 'isRestored', 'renameSession', 'loadedMessageIdsRef']);
+  const engineMembers = interfaceMembers(engine, 'ChatEngine', ['messages', 'input', 'isBusy', 'isLeaving', 'setMessages', 'setInput', 'currentTitle', 'isRestored', 'renameSession', 'loadedMessageIdsRef']);
   const diagramMembers = interfaceMembers(diagram, 'DiagramContextType', ['chartXMLRef', 'loadDiagram', 'clearDiagram', 'hasPendingLoad', 'requestExport', 'isDrawioReady']);
   const directory = await temporary(t);
   const contracts = `
@@ -193,7 +193,8 @@ declare module "@/lib/diagram-pages" {
   export function modelOfPage(page:Element):Element|null;
 }
 declare module "@/packages/mcp-server/src/pages.ts" {export function hasCells(xml:string):boolean}
-declare module "@/stores/ui-store" {export const useUiStore:{getState():{setHeroDismissed(value:boolean):void}}}
+declare module "@/lib/drawio/editor-bridge" {export function centerEmptyPage():boolean}
+declare module "@/stores/ui-store" {export const useUiStore:{getState():{setHeroDismissed(value:boolean):void;focusComposer():void}}}
 declare module "next/server" {
   export interface NextRequest {headers:Headers;method:string;nextUrl:{pathname:string}}
   export class NextResponse extends Response {static next(options?:{request:{headers:Headers}}):NextResponse; static json(value:unknown, options?:ResponseInit):NextResponse}
@@ -215,11 +216,14 @@ async function mountBridge(options = {}) {
   const sent = [], handlers = new Map(), exports = [];
   const xml = options.xml ?? '<mxfile><diagram id="a"/><diagram id="b"/></mxfile>';
   const parent = { postMessage: (message, origin) => sent.push({ message, origin }) };
-  const engine = { isRestored: true, isBusy: false, isLeaving: false, messages: [], currentTitle: '图稿', loadedMessageIdsRef: { current: new Set() },
+  const engine = { isRestored: true, isBusy: false, isLeaving: false, messages: [], input: '', files: [], currentTitle: '图稿', loadedMessageIdsRef: { current: new Set() },
     setInput: value => { engine.input = value; }, setMessages: value => { engine.messages = value; }, renameSession: async () => {} };
   const diagram = { isDrawioReady: true, hasPendingLoad: () => false, clearDiagram: () => {},
     loadDiagram: value => { diagram.loaded = value; return null; },
     requestExport: async request => { exports.push(request); return request.format === 'xml' ? { xml } : { data: 'data:image/png;base64,fixture', xml: '<current-page-only/>' }; } };
+  const ui = { heroDismissed: true, panelOpen: false, mobileView: 'canvas', focused: 0,
+    setHeroDismissed: value => { ui.heroDismissed = value; },
+    focusComposer: () => { ui.panelOpen = true; ui.mobileView = 'chat'; ui.focused++; } };
   const context = {
     exports: {}, TextEncoder, URL, AbortController, setTimeout, XMLSerializer: options.helpers?.XMLSerializer,
     window: { parent, addEventListener: (name, fn) => handlers.set(name, fn), removeEventListener: name => handlers.delete(name) },
@@ -231,7 +235,8 @@ async function mountBridge(options = {}) {
       '@/lib/session-storage': { sanitizeMessages: messages => messages.filter(message => message?.id && message?.role && Array.isArray(message.parts)) },
       '@/lib/diagram-pages': options.helpers?.diagramPages ?? { parseXml: () => null, modelOfPage: () => null },
       '@/packages/mcp-server/src/pages.ts': options.helpers?.pages ?? { hasCells: () => true },
-      '@/stores/ui-store': { useUiStore: { getState: () => ({ setHeroDismissed: () => {} }) } },
+      '@/lib/drawio/editor-bridge': { centerEmptyPage: () => true },
+      '@/stores/ui-store': { useUiStore: { getState: () => ui } },
     })[name],
   };
   const source = await readFile(path.join(here, 'overlay/components/lingdoc-bridge.tsx'), 'utf8');
@@ -240,7 +245,7 @@ async function mountBridge(options = {}) {
   context.exports.LingDocBridge();
   await new Promise(resolve => setImmediate(resolve));
   const send = (data, origin = 'http://localhost:7212', source = parent) => handlers.get('message')({ data: { channel: 'lingdoc-drawing', ...data }, origin, source });
-  return { sent, exports, engine, diagram, send, xml };
+  return { sent, exports, engine, diagram, send, xml, ui };
 }
 
 test('real bridge rejects foreign windows and restores, prefills, exports full multipage XML', async t => {
@@ -303,6 +308,128 @@ test('restore acknowledgement waits for the actual exposed message snapshot afte
     await bridge.send({ type: 'export', requestId: 'export-restored-b' });
     assert.deepEqual(bridge.sent.at(-1).message.messages, desired);
   }
+});
+
+test('feature requests preserve user content and attachments without submitting or changing the drawing', async t => {
+  if (!ts) { t.skip('Install TypeScript into runtime/typecheck'); return; }
+  const bridge = await mountBridge();
+  const files = [{ name: 'my-paper.pdf' }];
+  const messages = [{ id: 'actual-content', role: 'user', parts: [{ type: 'text', text: '我的论文正文' }] }];
+  bridge.engine.input = '用户已输入的研究内容';
+  bridge.engine.files = files;
+  bridge.engine.messages = messages;
+  bridge.diagram.loaded = bridge.xml;
+  let submitted = false;
+  bridge.engine.submit = () => { submitted = true; };
+  await bridge.send({ type: 'feature', feature: 'paper', requestId: 'paper' });
+  const paperInput = bridge.engine.input;
+  assert.match(paperInput, /上传或粘贴/);
+  assert.match(paperInput, /用户已输入的研究内容$/);
+  assert.doesNotMatch(paperInput, /chain-of-thought|Summarize this paper as a diagram/);
+  await bridge.send({ type: 'feature', feature: 'paper', requestId: 'paper-again' });
+  assert.equal(bridge.engine.input, paperInput);
+  bridge.engine.input += '\n用户后续补充';
+  for (const feature of ['animated', 'aws', 'flowchart', 'creative', 'paper']) {
+    await bridge.send({ type: 'feature', feature, requestId: feature + '-selected' });
+    assert.equal(bridge.sent.at(-1).message.selected, true);
+    assert.equal(bridge.sent.at(-1).message.feature, feature);
+    assert.match(bridge.engine.input, /用户已输入的研究内容\n用户后续补充$/);
+  }
+  assert.equal(bridge.engine.files, files);
+  assert.equal(bridge.engine.messages, messages);
+  assert.equal(bridge.diagram.loaded, bridge.xml);
+  assert.equal(bridge.exports.length, 0);
+  assert.equal(submitted, false);
+  assert.equal(bridge.ui.panelOpen, true);
+  assert.equal(bridge.ui.mobileView, 'chat');
+  const unchanged = bridge.engine.input;
+  await bridge.send({ type: 'feature', feature: 'paper', requestId: 'foreign' }, 'http://foreign.invalid');
+  assert.equal(bridge.engine.input, unchanged);
+  bridge.engine.isBusy = true;
+  await bridge.send({ type: 'feature', feature: 'aws', requestId: 'busy-feature' });
+  assert.equal(bridge.sent.at(-1).message.type, 'error');
+  assert.equal(bridge.engine.input, unchanged);
+  bridge.engine.isBusy = false;
+  bridge.diagram.hasPendingLoad = () => true;
+  await bridge.send({ type: 'feature', feature: 'aws', requestId: 'loading-feature' });
+  assert.equal(bridge.engine.input, unchanged);
+  bridge.diagram.hasPendingLoad = () => false;
+  await bridge.send({ type: 'feature', feature: 'unknown', requestId: 'unknown-feature' });
+  assert.equal(bridge.sent.at(-1).message.type, 'error');
+  bridge.engine.input = 'x'.repeat(12500);
+  await bridge.send({ type: 'feature', feature: 'paper', requestId: 'too-long' });
+  assert.equal(bridge.sent.at(-1).message.type, 'error');
+  assert.equal(bridge.engine.input, 'x'.repeat(12500));
+});
+
+test('pinned UI policy always starts on the canvas and keeps the hero dismissed', async t => {
+  if (!ts) { t.skip('Install TypeScript into runtime/typecheck'); return; }
+  const original = (await readFile(path.join(fixture, 'stores/ui-store.ts'), 'utf8')).replace(/\r\n/g, '\n');
+  const source = patchText('stores/ui-store.ts', original);
+  const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const context = { exports: {}, require: () => ({ create: initializer => {
+    let state;
+    const set = updates => { state = { ...state, ...(typeof updates === 'function' ? updates(state) : updates) }; };
+    state = initializer(set);
+    return { getState: () => state };
+  } }) };
+  vm.runInNewContext(js, context);
+  const store = context.exports.useUiStore;
+  assert.equal(store.getState().heroDismissed, true);
+  assert.equal(store.getState().mobileView, 'canvas');
+  store.getState().setHeroDismissed(false);
+  assert.equal(store.getState().heroDismissed, true);
+  store.getState().focusComposer();
+  assert.equal(store.getState().panelOpen, true);
+  assert.equal(store.getState().mobileView, 'chat');
+});
+
+test('pinned empty-page fit follows viewport and page scale while preserving nonempty zoom', async t => {
+  if (!ts) { t.skip('Install TypeScript into runtime/typecheck'); return; }
+  const original = (await readFile(path.join(fixture, 'lib/drawio/editor-bridge.ts'), 'utf8')).replace(/\r\n/g, '\n');
+  const source = patchText('lib/drawio/editor-bridge.ts', original);
+  const ast = ts.createSourceFile('editor-bridge.ts', source, ts.ScriptTarget.Latest, true);
+  const names = ['graph', 'isEmptyModel', 'centerEmptyPage', 'refitIfRecent', 'fitOpenedDiagram'];
+  const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
+  assert.equal(functions.length, names.length);
+  const js = ts.transpileModule('let fitting=false;let lastOpenedAt=0;let lastAutoFitAt=0;\n' + functions.map(node => node.getText(ast)).join('\n'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const root = {}, layer = {}, zooms = [];
+  let shapeCount = 0, resets = 0;
+  const graph = {
+    pageVisible: true, pageFormat: { width: 827, height: 1169 }, pageScale: 1,
+    container: { clientWidth: 1000, clientHeight: 800, scrollLeft: 0, scrollTop: 0 },
+    model: { getRoot: () => root, getChildCount: value => value === root ? 1 : shapeCount, getChildAt: () => layer },
+    view: { scale: 1, getBackgroundPageBounds: () => ({ x: 400, y: 400,
+      width: graph.pageFormat.width * graph.pageScale * graph.view.scale,
+      height: graph.pageFormat.height * graph.pageScale * graph.view.scale }) },
+    zoomTo: scale => { zooms.push(scale); graph.view.scale = scale; },
+  };
+  const context = { exports: {}, ui: { editor: { graph }, resetScrollbars: () => { resets++; graph.container.scrollLeft = 400; graph.container.scrollTop = 400; } },
+    placeOpenedDiagram: () => assert.fail('Empty pages must not fit shapes'), fitDiagram: () => assert.fail('Empty pages must not fit shapes') };
+  vm.runInNewContext(js, context);
+  for (const [width, height, pageScale] of [[1200, 820, 1], [800, 620, 1], [390, 650, 1], [844, 220, 1], [390, 650, 2]]) {
+    graph.container.clientWidth = width; graph.container.clientHeight = height; graph.pageScale = pageScale;
+    assert.equal(context.exports.refitIfRecent(), true);
+    assert.ok(graph.view.scale > 0 && graph.view.scale <= 1);
+    const bounds = graph.view.getBackgroundPageBounds();
+    const left = bounds.x - graph.container.scrollLeft, top = bounds.y - graph.container.scrollTop;
+    assert.ok(left >= 0 && top >= 0);
+    assert.ok(left + bounds.width <= width + 0.01 && top + bounds.height <= height + 0.01);
+  }
+  shapeCount = 1; graph.view.scale = 0.42;
+  const before = zooms.length, beforeResets = resets;
+  assert.equal(context.exports.centerEmptyPage(), false);
+  assert.equal(context.exports.refitIfRecent(), false);
+  assert.equal(graph.view.scale, 0.42);
+  assert.equal(zooms.length, before);
+  assert.equal(resets, beforeResets);
+  shapeCount = 0; graph.pageVisible = false;
+  assert.equal(context.exports.centerEmptyPage(), false);
+  assert.equal(zooms.length, before);
+  graph.pageVisible = true; graph.container.clientWidth = 0;
+  assert.equal(context.exports.centerEmptyPage(), true);
+  assert.equal(zooms.length, before);
 });
 
 function officialDiagramHelpers() {

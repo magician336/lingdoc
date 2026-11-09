@@ -4,6 +4,11 @@ const frame = element('editor');
 const channel = new BroadcastChannel('lingdoc-drawing');
 const pending = new Map();
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
+let activeFeature = null;
+const features = {
+  paper: '论文转图表', animated: '动画图表', aws: 'AWS 架构',
+  flowchart: '复杂流程图', creative: '创意绘画',
+};
 const message = text => { element('status').textContent = text; };
 function controls() {
   element('version').textContent = current ? `已存 v${current.revision}` : '未保存图稿';
@@ -15,6 +20,11 @@ function controls() {
   element('title').disabled = busy;
   frame.inert = busy;
   element('refresh').disabled = busy;
+  for (const feature of Object.keys(features)) {
+    const button = element('feature-' + feature);
+    button.disabled = busy || !ready;
+    button.ariaPressed = String(activeFeature === feature);
+  }
 }
 async function api(action, body) {
   const response = await fetch('/native-reading/drawing/' + action, {
@@ -116,6 +126,15 @@ function discover() {
   channel.postMessage({ type: 'discover', token: config.token }); controls();
 }
 element('refresh').onclick = discover;
+for (const [feature, label] of Object.entries(features)) {
+  element('feature-' + feature).onclick = () => run(async () => {
+    await request('frame', { type: 'feature', feature });
+    activeFeature = feature;
+    message(feature === 'paper'
+      ? '已选择论文转图表。在对话中上传论文或粘贴内容，补充要求后发送。'
+      : `已选择${label}。在对话中补充内容和要求后发送。`);
+  });
+}
 element('hosts').onchange = () => { target = null; controls(); };
 element('save').onclick = () => run(save);
 element('capture').onclick = () => run(capture);
