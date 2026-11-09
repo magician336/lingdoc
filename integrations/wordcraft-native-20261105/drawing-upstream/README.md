@@ -10,9 +10,11 @@ Run from the LingDoc repository root with Node 22+ and Git available.
 node integrations/wordcraft-native-20261105/drawing-upstream/prepare.mjs --build
 ```
 
-Preparation fetches the exact upstream commit into `runtime/source`, checks the Git remote and commit, checks the original Git blob hashes of every patch target, applies the overlay, runs `npm ci --ignore-scripts` with the upstream lockfile, and runs the upstream build. The upstream prebuild fetches and verifies its pinned draw.io v32.0.2 release. Next's build also requires access to the upstream Google Fonts dependencies. The standalone output receives the public assets and Next static assets it needs.
+Preparation fetches the exact upstream commit into `runtime/source`, checks the Git remote and commit, checks the original Git blob hashes of every patch target, applies the overlay, runs `npm ci --ignore-scripts` with the upstream lockfile, and runs the upstream build. Fresh caches set local `core.autocrlf=false` before checkout. Existing CRLF checkouts are accepted only when CRLF-to-LF normalization reproduces the exact pinned blob hash. The upstream prebuild fetches and verifies its pinned draw.io v32.0.2 release. The standalone output receives the public assets and Next static assets it needs.
 
-`--install` prepares and installs dependencies without building. With no flags the command only fetches and applies the overlay. A failed network fetch can be retried. Existing differing source is rejected. Overlay hashes are recorded before mutation so an interrupted patch can resume from exact original or already-patched bytes. Keep a modified cache for inspection and prepare a separate fresh cache when upstream or overlays change.
+The layout overlay uses installed sans-serif and monospace fonts through the existing `--font-latin` and `--font-mono` CSS variables. The existing language-specific Chinese and Japanese fallback stacks remain in effect. The build no longer fetches Instrument Sans or JetBrains Mono from Google Fonts. Interface font metrics follow the fonts installed on the user's system.
+
+`--install` prepares and installs dependencies without building. With no flags the command only fetches and applies the overlay. A failed network fetch can be retried. Existing differing source is rejected. Overlay files can update when their current bytes exactly match their recorded owned hash. Intent markers and replacements are atomic, and an interrupted update retains the previous hash until completion. User edits and unrecorded files are rejected. Keep a modified cache for inspection and prepare a separate fresh cache when upstream changes.
 
 The bootstrap does not fetch floating revisions, rewrite the upstream lockfile, or vendor the entire source into LingDoc's tracked tree. Preserve LICENSE, NOTICE and bundled dependency notices when distributing the generated application.
 
@@ -41,7 +43,7 @@ This launch adapter reuses the local configuration directly. Provider calls use 
 
 ## Parent-window contract
 
-The parent opens its dedicated drawing page and places the returned drawing origin in an iframe. Set the iframe referrer policy to `origin`. The overlay permits the exact configured parent origin and its `localhost`/`127.0.0.1` alias on the same port. It verifies both `event.source === window.parent` and exact origin, then locks to the origin that sent the first accepted request. CSP `frame-ancestors` is restricted to those parent origins.
+The parent opens its dedicated drawing page and places the returned drawing origin in an iframe. Set the iframe referrer policy to `origin`. The overlay permits the exact configured parent origin and its `localhost`/`127.0.0.1` alias on the same port. It verifies both `event.source === window.parent` and exact origin, then locks to the origin that sent the first accepted request. CSP `frame-ancestors` permits those parent origins and `'self'` for the nested bundled draw.io frame.
 
 All messages are structured objects with `channel: 'lingdoc-drawing'`.
 
@@ -72,6 +74,14 @@ node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.
 
 The official-source patch contract uses `runtime/contract-fixture` or `LINGDOC_DRAWING_TEST_SOURCE`. It needs the exact pinned patch targets and `contexts/diagram-context.tsx`. Use a pristine checkout of the pinned upstream commit for that source path. Strict bridge checking also needs TypeScript and React/Node type declarations in the ignored `runtime/typecheck/node_modules` directory. The test extracts the actual hook member signatures from the official source. Its Next middleware declarations are test contracts, so this check does not replace the complete upstream build.
 
-During implementation the five official files were fetched through the GitHub file API at the pinned revision. The test suite passed 5 tests with zero skipped tests. It covered exact patch contracts, repeat application, interrupted patch recovery, changed-source rejection, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. No live provider request was made.
+During implementation the six official files were fetched through the GitHub file API at the pinned revision. The test suite passed 8 tests with zero skipped tests. It covered exact patch contracts, CRLF checkout normalization, repeat application, interrupted patch and overlay-update recovery, changed-source rejection, nested-frame CSP, local-font layout integration, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. No live provider request was made.
 
-The complete upstream dependency install, Next build, real draw.io iframe/browser chain and real model generation remain unverified. Native WordCraft integration also requires its separately documented Rust/WASM and WSL toolchain.
+The pinned dependency installation, draw.io resource download, complete TypeScript check and Next production build passed on 2026-11-09. The build reports four upstream dynamic-filesystem tracing warnings; distribution size has not been optimized. The launcher was started and stopped successfully without model credentials. Native WordCraft integration still requires its separately documented Rust/WASM and WSL toolchain. Real model calls and native insertion/undo/DOCX round trips remain unverified.
+
+After building, the optional Windows Chrome smoke test exercises the actual iframe and draw.io application with a temporary browser profile and drawing store. It does not call a model. Without the standalone build or Windows Chrome, it skips rather than claiming a pass.
+
+On 2026-11-09 this real-browser test passed in 34.1 seconds with zero skips. It loaded XML and chat into the actual canvas, saved, created a new drawing, reopened the saved drawing, saved revision 2, and verified editable XML and chat inside both exported PNG files. This covers the drawing application; it does not verify native WordCraft insertion or document saving.
+
+```powershell
+node --test integrations/wordcraft-native-20261105/drawing-upstream/browser.test.mjs
+```

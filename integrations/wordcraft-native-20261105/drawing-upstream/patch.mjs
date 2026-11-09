@@ -1,7 +1,7 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export const UPSTREAM_COMMIT = '04b1de949f9f2f14971bf2e26f4a7fd8cc392626';
 export const UPSTREAM_REPOSITORY = 'https://github.com/DayuanJiang/next-ai-draw-io.git';
@@ -9,6 +9,17 @@ export const here = path.dirname(fileURLToPath(import.meta.url));
 export const sourceDirectory = path.join(here, 'runtime', 'source');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const gitDigest = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+
+async function atomicWrite(filename, bytes) {
+  const temporary = filename + '.' + randomUUID() + '.tmp';
+  try {
+    await writeFile(temporary, bytes, { flag: 'wx' });
+    await rename(temporary, filename);
+  } catch (error) {
+    await unlink(temporary).catch(() => {});
+    throw error;
+  }
+}
 
 const patches = [
   {
@@ -41,6 +52,15 @@ const patches = [
       ['    const result = streamText({\n        model,', '    const result = streamText({\n        maxRetries: 0, // LingDoc preserves uncertain calls for explicit retry.\n        model,'],
     ],
   },
+  {
+    file: 'app/[lang]/layout.tsx',
+    changes: [
+      ['import { Instrument_Sans, JetBrains_Mono } from "next/font/google"\n', ''],
+      ['import "../globals.css"', 'import "../globals.css"\nimport "../lingdoc-fonts.css"'],
+      ['const instrumentSans = Instrument_Sans({\n    variable: "--font-latin",\n    subsets: ["latin"],\n    weight: ["400", "500", "600", "700"],\n    // Chinese and Japanese text falls through to system fonts, in the\n    // order globals.css picks for the page\'s language\n    fallback: [],\n})\n\nconst jetbrainsMono = JetBrains_Mono({\n    variable: "--font-mono",\n    subsets: ["latin"],\n    weight: ["400", "500"],\n})\n\n', ''],
+      ['className={`${instrumentSans.variable} ${jetbrainsMono.variable} antialiased`}', 'className="lingdoc-system-fonts antialiased"'],
+    ],
+  },
 ];
 
 export function patchText(file, original) {
@@ -55,7 +75,7 @@ export function patchText(file, original) {
 }
 
 export const patchFiles = patches.map(item => item.file);
-const overlayFiles = ['components/lingdoc-bridge.tsx', 'lib/lingdoc-boundary.ts', 'app/api/lingdoc-bridge-config/route.ts'];
+const overlayFiles = ['components/lingdoc-bridge.tsx', 'lib/lingdoc-boundary.ts', 'app/api/lingdoc-bridge-config/route.ts', 'app/lingdoc-fonts.css'];
 
 export async function applyOverlay(directory = sourceDirectory) {
   const upstreamFiles = JSON.parse(await readFile(path.join(here, 'upstream-files.json'), 'utf8'));
@@ -73,8 +93,11 @@ export async function applyOverlay(directory = sourceDirectory) {
       if (previous.originalGitSha !== upstreamFiles[file]) throw new Error(`Drawing source marker changed in ${file}`);
       if (digest(bytes) === previous.sha256) { files[file] = previous; continue; }
     }
-    if (gitDigest(bytes) !== upstreamFiles[file]) throw new Error(`Pinned drawing source differs in ${file}`);
-    const patched = Buffer.from(patchText(file, bytes.toString('utf8')));
+    // Windows checkouts may expand LF to CRLF. Accept that transformation
+    // only when reversing it reproduces the exact pinned Git blob.
+    const original = Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'));
+    if (gitDigest(original) !== upstreamFiles[file]) throw new Error(`Pinned drawing source differs in ${file}`);
+    const patched = Buffer.from(patchText(file, original.toString('utf8')));
     files[file] = { originalGitSha: upstreamFiles[file], sha256: digest(patched) };
     pending.push({ file, bytes: patched });
   }
@@ -83,18 +106,34 @@ export async function applyOverlay(directory = sourceDirectory) {
     let existing;
     try { existing = await readFile(path.join(directory, file)); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (existing && digest(existing) !== digest(bytes)) throw new Error(`Drawing overlay differs in ${file}`);
-    files[file] = { sha256: digest(bytes) };
-    if (!existing) pending.push({ file, bytes });
+    const desiredHash = digest(bytes);
+    const previous = marker?.files[file];
+    if (existing) {
+      const existingHash = digest(existing);
+      if (!previous || ![previous.sha256, previous.previousSha256].includes(existingHash))
+        throw new Error(`Drawing overlay has unrecorded changes in ${file}`);
+      if (existingHash !== desiredHash) {
+        files[file] = { sha256: desiredHash, previousSha256: existingHash };
+        pending.push({ file, bytes, replace: true });
+      } else files[file] = { sha256: desiredHash };
+    } else {
+      files[file] = { sha256: desiredHash };
+      pending.push({ file, bytes });
+    }
   }
   // All anchors and existing overlays are checked before the first write.
   // Write the intended hashes first. An interrupted patch can resume only
   // from exact pinned originals or exact already-applied bytes.
-  await writeFile(markerFile, JSON.stringify({ schema: 1, commit: UPSTREAM_COMMIT, files }, null, 2));
+  await atomicWrite(markerFile, JSON.stringify({ schema: 1, commit: UPSTREAM_COMMIT, files }, null, 2));
   for (const item of pending) {
     const destination = path.join(directory, item.file);
     await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, item.bytes, { flag: patchFiles.includes(item.file) ? 'w' : 'wx' });
+    if (item.replace || patchFiles.includes(item.file)) await atomicWrite(destination, item.bytes);
+    else await writeFile(destination, item.bytes, { flag: 'wx' });
   }
+  // Old overlay hashes are accepted only during an interrupted update.
+  // Retire them after every planned replacement has completed.
+  for (const value of Object.values(files)) delete value.previousSha256;
+  await atomicWrite(markerFile, JSON.stringify({ schema: 1, commit: UPSTREAM_COMMIT, files }, null, 2));
   return { commit: UPSTREAM_COMMIT, files: Object.keys(files) };
 }

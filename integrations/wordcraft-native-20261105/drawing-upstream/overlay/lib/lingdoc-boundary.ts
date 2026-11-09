@@ -7,7 +7,9 @@ export function lingdocContinue(headers?: Headers): NextResponse {
     const parent = new URL(process.env.LINGDOC_DRAWING_PARENT_ORIGIN || "http://127.0.0.1:1")
     const alias = new URL(parent)
     alias.hostname = alias.hostname === "localhost" ? "127.0.0.1" : "localhost"
-    response.headers.set("Content-Security-Policy", `frame-ancestors ${parent.origin} ${alias.origin}`)
+    // The bundled draw.io iframe is nested inside this app, so its ancestors
+    // include both the app itself and the trusted LingDoc parent.
+    response.headers.set("Content-Security-Policy", `frame-ancestors 'self' ${parent.origin} ${alias.origin}`)
     response.headers.set("X-Content-Type-Options", "nosniff")
     return response
 }

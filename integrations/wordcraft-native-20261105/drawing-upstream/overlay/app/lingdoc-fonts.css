@@ -1,0 +1,6 @@
+/* Modified for LingDoc. Use installed fonts during build and at runtime. */
+.lingdoc-system-fonts {
+    --font-latin: "Segoe UI", "Helvetica Neue", Arial;
+    --font-mono:
+        "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}

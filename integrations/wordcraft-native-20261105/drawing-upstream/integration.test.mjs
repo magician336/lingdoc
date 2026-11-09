@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, mkdtemp, rm, cp } from 'node:fs/promises';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { applyOverlay, here, patchFiles, patchText } from './patch.mjs';
 import { exactLoopbackOrigin, modelEnvironment, startDrawingUpstream } from './launch.mjs';
 
@@ -36,9 +37,10 @@ test('exact loopback origins and supported model schema fail closed', () => {
     assert.throws(() => modelEnvironment({ ...synthetic, ...change }));
 });
 
-test('missing upstream build provides actionable failure without a model call', async () => {
-  if (process.env.LINGDOC_DRAWING_ORIGIN) return;
-  await assert.rejects(startDrawingUpstream({ parentOrigin: 'http://127.0.0.1:7212' }), /prepare\.mjs --build/);
+test('missing upstream build provides actionable failure without a model call', async t => {
+  if (process.env.LINGDOC_DRAWING_ORIGIN) return t.skip('External drawing origin configured');
+  const directory = await temporary(t);
+  await assert.rejects(startDrawingUpstream({ parentOrigin: 'http://127.0.0.1:7212', configPath: null, applicationDirectory: directory }), /prepare\.mjs --build/);
 });
 
 test('patch applies to exact pinned official sources, resumes, and rejects edits', async t => {
@@ -62,6 +64,92 @@ test('patch applies to exact pinned official sources, resumes, and rejects edits
   await writeFile(filename, (await readFile(filename, 'utf8')) + '\n// local change\n');
   await assert.rejects(applyOverlay(directory), /differs|changes/);
   assert.throws(() => patchText(patchFiles[0], 'different source'), /anchor changed/);
+});
+
+test('CRLF checkout is accepted only when normalized bytes match every pinned blob', async t => {
+  try { await readFile(path.join(fixture, patchFiles[0])); }
+  catch { t.skip('Fetch the pinned official contract sources or set LINGDOC_DRAWING_TEST_SOURCE'); return; }
+  const directory = await temporary(t);
+  for (const file of patchFiles) {
+    const destination = path.join(directory, file);
+    await mkdir(path.dirname(destination), { recursive: true });
+    const original = (await readFile(path.join(fixture, file), 'utf8')).replace(/\r\n/g, '\n');
+    await writeFile(destination, original.replace(/\n/g, '\r\n'));
+  }
+  await applyOverlay(directory);
+  await applyOverlay(directory);
+  for (const file of patchFiles) {
+    const original = (await readFile(path.join(fixture, file), 'utf8')).replace(/\r\n/g, '\n');
+    assert.equal(await readFile(path.join(directory, file), 'utf8'), patchText(file, original));
+  }
+  const changedDirectory = await temporary(t);
+  for (const file of patchFiles) {
+    const destination = path.join(changedDirectory, file);
+    await mkdir(path.dirname(destination), { recursive: true });
+    const original = (await readFile(path.join(fixture, file), 'utf8')).replace(/\r\n/g, '\n');
+    await writeFile(destination, original.replace(/\n/g, '\r\n'));
+  }
+  const changedFile = path.join(changedDirectory, patchFiles.at(-1));
+  await writeFile(changedFile, (await readFile(changedFile, 'utf8')) + '// unrelated edit\r\n');
+  const untouched = await readFile(path.join(changedDirectory, patchFiles[0]));
+  await assert.rejects(applyOverlay(changedDirectory), /Pinned drawing source differs/);
+  assert.deepEqual(await readFile(path.join(changedDirectory, patchFiles[0])), untouched);
+  await assert.rejects(readFile(path.join(changedDirectory, '.lingdoc-overlay.json')), { code: 'ENOENT' });
+});
+
+test('layout overlay uses existing font variables without build-time remote fonts', async t => {
+  let original;
+  try { original = (await readFile(path.join(fixture, 'app/[lang]/layout.tsx'), 'utf8')).replace(/\r\n/g, '\n'); }
+  catch { t.skip('Fetch the pinned official layout contract source'); return; }
+  const layout = patchText('app/[lang]/layout.tsx', original);
+  assert.doesNotMatch(layout, /next\/font|Instrument_Sans|JetBrains_Mono|instrumentSans|jetbrainsMono/);
+  assert.match(layout, /import "\.\.\/lingdoc-fonts\.css"/);
+  assert.match(layout, /className="lingdoc-system-fonts antialiased"/);
+  const stylesheet = await readFile(path.join(here, 'overlay/app/lingdoc-fonts.css'), 'utf8');
+  assert.match(stylesheet, /--font-latin:.*Segoe UI/);
+  assert.match(stylesheet, /--font-mono:[\s\S]*Consolas/);
+  assert.doesNotMatch(stylesheet, /@import|url\(/);
+});
+
+test('recorded overlays update safely, recover interrupted intent, and reject unknown edits', async t => {
+  try { await readFile(path.join(fixture, patchFiles[0])); }
+  catch { t.skip('Fetch the pinned official contract sources or set LINGDOC_DRAWING_TEST_SOURCE'); return; }
+  const directory = await temporary(t);
+  for (const file of patchFiles) {
+    const destination = path.join(directory, file);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(fixture, file), destination);
+  }
+  await applyOverlay(directory);
+  const file = 'lib/lingdoc-boundary.ts';
+  const destination = path.join(directory, file);
+  const desired = await readFile(path.join(here, 'overlay', file));
+  assert.match(desired.toString('utf8'), /frame-ancestors 'self'/);
+  const previous = Buffer.from(desired.toString('utf8').replace("frame-ancestors 'self'", 'frame-ancestors'));
+  const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+  const markerFile = path.join(directory, '.lingdoc-overlay.json');
+  const marker = JSON.parse(await readFile(markerFile, 'utf8'));
+  marker.files[file] = { sha256: digest(previous) };
+  await writeFile(destination, previous);
+  await writeFile(markerFile, JSON.stringify(marker));
+  await applyOverlay(directory);
+  assert.deepEqual(await readFile(destination), desired);
+  assert.deepEqual(JSON.parse(await readFile(markerFile, 'utf8')).files[file], { sha256: digest(desired) });
+  // Crash after recording intent, before the old owned bytes were replaced.
+  marker.files[file] = { sha256: digest(desired), previousSha256: digest(previous) };
+  await writeFile(destination, previous);
+  await writeFile(markerFile, JSON.stringify(marker));
+  await applyOverlay(directory);
+  assert.deepEqual(await readFile(destination), desired);
+  assert.equal(JSON.parse(await readFile(markerFile, 'utf8')).files[file].previousSha256, undefined);
+  await writeFile(destination, Buffer.concat([desired, Buffer.from('\n// user edit\n')]));
+  await assert.rejects(applyOverlay(directory), /unrecorded changes/);
+  // Even matching desired bytes need an ownership record when already present.
+  await writeFile(destination, desired);
+  const unrecorded = JSON.parse(await readFile(markerFile, 'utf8'));
+  delete unrecorded.files[file];
+  await writeFile(markerFile, JSON.stringify(unrecorded));
+  await assert.rejects(applyOverlay(directory), /unrecorded changes/);
 });
 
 function interfaceMembers(source, name, wanted) {

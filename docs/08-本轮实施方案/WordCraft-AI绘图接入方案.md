@@ -2,7 +2,7 @@
 
 ## 状态与基线
 
-用户于 2026-11-09 确认采用独立绘图窗口，并授权使用子代理分工实现。目标分支为 `codex/wordcraft-v1-20261105`，检查基线为 `17ed8418896b363b18963b987ac933b8d5d25f66`。代码已实现，组件验证已执行，原生构建、完整 Next 构建、真实模型与端到端验收未完成，交付保持待验证状态。
+用户于 2026-11-09 确认采用独立绘图窗口，并授权使用子代理分工实现。目标分支为 `codex/wordcraft-v1-20261105`，检查基线为 `17ed8418896b363b18963b987ac933b8d5d25f66`。代码已实现，组件验证已执行，完整 Next 构建已通过，原生构建、真实模型与端到端验收未完成，交付保持待验证状态。
 
 产品入口是 `integrations/wordcraft-native-20261105` 中的原生 WordCraft 快照。绘图窗口复用 Next AI Draw.io 的画布、绘图对话、人工编辑和版本能力。上游检查版本为 `04b1de949f9f2f14971bf2e26f4a7fd8cc392626`，其中锁定 draw.io `v32.0.2`。
 
@@ -42,14 +42,14 @@
 
 | 验收项 | 真实入口 | 成功要求 | 失败与恢复要求 | 当前证据 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 独立窗口 | 原生文档入口 | 打开画布及绘图聊天 | 服务不可达有提示 | 入口、启动器、独立页面已实现；通信 VM 测试通过 | PARTIAL |
+| 独立窗口 | 原生文档入口 | 打开画布及绘图聊天 | 服务不可达有提示 | 真实 Chrome 中独立页面、上游服务与嵌套 draw.io 画布通过；原生菜单未运行 | PARTIAL |
 | 模型生成与修改 | 绘图聊天 | 生成可编辑 XML，保留人工修改 | 超时、取消保留输入，显式重试 | 固定上游适配和服务端模型映射已实现；未发起真实模型调用 | NOT RUN |
-| 图稿保存 | 灵档适配 HTTP | XML、图片和会话作为一个版本保存 | 幂等、并发冲突、磁盘失败无部分版本 | Node 存储、PNG、HTTP 回归通过 | COMPONENT PASS |
+| 图稿保存 | 灵档适配 HTTP | XML、图片和会话作为一个版本保存 | 幂等、并发冲突、磁盘失败无部分版本 | Node 回归及真实浏览器保存、新建、重开、再次保存与 PNG 源数据检查通过 | PASS |
 | 插入正文 | WASM 宿主桥 | 图片进入真实文档并支持撤销 | 过期身份、版本、选区及无效图片拒绝写入 | Rust 用例已写；宿主/窗口通信测试通过；Rust 未编译 | PARTIAL |
 | 编辑并更新原图 | 正文图片入口 | 恢复源图，确认后替换正确图片 | 图片删除、文档切换及延迟返回拒绝写入 | 源图元数据往返通过；真实正文替换未运行 | PARTIAL |
 | 保存与重开 | 项目保存、普通文档保存 | 图片与图稿关联均可恢复 | 中断恢复及另存为行为明确 | 图稿库跨实例重读、图片源数据测试通过；真实文档未运行 | PARTIAL |
 | DOCX 导出 | 引擎真实序列化与 Word | 图片尺寸、内容和位置符合预期 | 文件损坏、资源缺失可检测 | 已静态检查媒体字节保存路径 | NOT RUN |
-| 第三方交付 | 固定版本构建产物 | 许可证、归属及修改说明随交付 | 更新版本时重新审查依赖 | 已保留 Apache-2.0、NOTICE 和修改标记；完整产物未构建 | PARTIAL |
+| 第三方交付 | 固定版本构建产物 | 许可证、归属及修改说明随交付 | 更新版本时重新审查依赖 | 已保留 Apache-2.0、NOTICE 和修改标记；Next standalone 已构建；原生整包未构建 | PARTIAL |
 
 ## 第三方许可
 
@@ -63,22 +63,23 @@ Next AI Draw.io 本体使用 Apache-2.0。交付需保留许可证及适用版�
 - 原生桥及启动器的两个只读子代理审查已定位到实际接口。
 - 快照要求 Rust 1.95.0、Windows MSVC 和 wasm32 标准库、wasm-bindgen 0.2.129、Visual Studio C++ 工具链、已有 Cargo 缓存及外部 craft-pdf 依赖。
 - 当前检出不含 `build/out/wordcraft.js`、`wordcraft_bg.wasm` 和上述工具链。固定 Visual Studio Community 构建脚本路径也尚不可用。
-- 上游 Git 克隆及固定提交归档下载均遇到 TLS 连接错误。需要获取固定版本的完整源码后构建。
+- 初次 Git 下载遇到 TLS 错误，后续已恢复。固定提交、锁定 npm 依赖和 draw.io 资源已取得，完整 TypeScript 检查和 Next 生产构建通过。构建产生 4 条上游动态文件路径 tracing 警告，尚未优化发布包体积。
 - 用户再次明确交付到仓库目标分支。运行环境缺口由实现方记录，不要求用户另行提供本地目录。凭据内容未输出，真实模型验收尚未执行。
 
 ## 已运行验证与复现
 
-2026-11-09 最终合并运行结果为 18/18 通过，0 失败，0 跳过。其中宿主/窗口、HTTP、PNG 和存储共 13 项，上游契约共 5 项。`git -c core.whitespace=cr-at-eol diff --check` 通过。
+2026-11-09 最终证据合计 22 项通过，0 失败，0 跳过。其中宿主/窗口、HTTP、PNG 和存储共 13 项，上游契约共 8 项，真实 Chrome 测试 1 项。浏览器使用临时用户目录和图稿库，加载真实上游及 draw.io，验证 XML/会话载入、保存、新建、重开、第二版保存及 PNG 源数据往返，耗时 34.1 秒，未调用模型。`git -c core.whitespace=cr-at-eol diff --check` 通过。
 
 从仓库根运行以下命令。上游测试需要先按 `drawing-upstream/README.md` 准备固定源码契约样本和 TypeScript，缺少这些依赖会 skip，不能当作全部通过。
 
 ```powershell
 node --test integrations/wordcraft-native-20261105/prototypes/local-integration-20261103/native-reading/drawing*.test.mjs
 node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.test.mjs
+node --test integrations/wordcraft-native-20261105/drawing-upstream/browser.test.mjs
 git -c core.whitespace=cr-at-eol diff --check
 ```
 
-上游测试覆盖固定提交的精确补丁、重复执行、中断恢复、源码篡改拒绝、桥接口类型、来源限制、完整多页 XML 导出和忙碌状态拒绝。TypeScript 检查使用实际官方 hook 成员声明的契约夹具，并不等同于完整 Next 构建。绘图窗口测试使用 VM DOM/BroadcastChannel 模拟，并不等同于真实浏览器验收。
+上游测试覆盖固定提交的精确补丁、Windows CRLF、系统字体、重复执行、中断恢复、源码篡改拒绝、桥接口类型、来源限制、完整多页 XML 导出和忙碌状态拒绝。契约类型检查之外，已独立运行完整源码的 TypeScript 检查和 Next 生产构建。宿主窗口通信使用 VM DOM/BroadcastChannel 模拟；真实浏览器测试覆盖绘图侧，不覆盖尚未编译的原生 WordCraft。
 
 部署和使用见 `integrations/wordcraft-native-20261105/drawing-upstream/README.md`。完整发布前仍需通过上述矩阵中的真实构建、模型调用、插图/替换/撤销、保存/重开及 DOCX 检查。
 

@@ -7,7 +7,7 @@ import { applyOverlay, patchFiles, UPSTREAM_COMMIT, UPSTREAM_REPOSITORY, sourceD
 
 const execute = promisify(execFile);
 async function command(executable, args, cwd) {
-  const result = await execute(executable, args, { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20 * 60 * 1000 });
+  const result = await execute(executable, args, { cwd, env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', NEXT_PUBLIC_BASE_PATH: '' }, windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20 * 60 * 1000 });
   return result.stdout.trim();
 }
 
@@ -26,6 +26,7 @@ export async function prepareDrawingUpstream({ directory = sourceDirectory, inst
   if (!head) {
     const dirty = await command('git', ['status', '--porcelain', '--untracked-files=normal'], directory);
     if (dirty) throw new Error('Uninitialized drawing cache contains files; refusing to overwrite it');
+    await command('git', ['config', '--local', 'core.autocrlf', 'false'], directory);
     await command('git', ['fetch', '--depth=1', 'origin', UPSTREAM_COMMIT], directory);
     await command('git', ['checkout', '--detach', UPSTREAM_COMMIT], directory);
     head = await command('git', ['rev-parse', 'HEAD'], directory);

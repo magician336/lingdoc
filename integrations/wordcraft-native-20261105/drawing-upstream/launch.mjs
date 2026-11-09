@@ -51,12 +51,12 @@ async function freePort() {
   return port;
 }
 
-export async function startDrawingUpstream({ parentOrigin, configPath = process.env.LINGDOC_LOCAL_AI_CONFIG, directory } = {}) {
+export async function startDrawingUpstream({ parentOrigin, configPath = process.env.LINGDOC_LOCAL_AI_CONFIG, directory, applicationDirectory = sourceDirectory } = {}) {
   exactLoopbackOrigin(parentOrigin);
   if (process.env.LINGDOC_DRAWING_ORIGIN) {
     return { origin: exactLoopbackOrigin(process.env.LINGDOC_DRAWING_ORIGIN), stop: async () => {}, external: true };
   }
-  const serverFile = path.join(sourceDirectory, '.next', 'standalone', 'server.js');
+  const serverFile = path.join(applicationDirectory, '.next', 'standalone', 'server.js');
   try { await access(serverFile); }
   catch { throw new Error('AI 绘图尚未构建。请运行 node integrations/wordcraft-native-20261105/drawing-upstream/prepare.mjs --build'); }
   const configured = await loadModelEnvironment(configPath);
@@ -66,7 +66,9 @@ export async function startDrawingUpstream({ parentOrigin, configPath = process.
   const env = {
     ...process.env,
     AI_PROVIDER: '', AI_MODEL: '', AI_MODELS_CONFIG: '{"providers":[]}',
-    AI_MODELS_CONFIG_PATH: path.join(sourceDirectory, 'runtime-models-unused.json'),
+    AI_MODELS_CONFIG_PATH: path.join(applicationDirectory, 'runtime-models-unused.json'),
+    // Ignore inherited/admin settings; only the authorized LingDoc file configures this process.
+    SETTINGS_FILE: path.join(directory || applicationDirectory, `unused-settings-${runtimeId}.json`),
     LANGFUSE_SECRET_KEY: '', LANGFUSE_PUBLIC_KEY: '', LANGFUSE_ENABLED: 'false',
     DEBUG_LLM_PAYLOAD: 'false', NEXT_TELEMETRY_DISABLED: '1', NEXT_PUBLIC_BASE_PATH: '',
     ORIGIN_SECRET: '', DYNAMODB_QUOTA_TABLE: '',
@@ -77,7 +79,7 @@ export async function startDrawingUpstream({ parentOrigin, configPath = process.
   };
   // Upstream diagnostics can include diagram tool input. Keep child stdio
   // private instead of forwarding research content into launcher logs.
-  const child = spawn(process.execPath, [serverFile], { cwd: sourceDirectory, env, windowsHide: true, stdio: 'ignore' });
+  const child = spawn(process.execPath, [serverFile], { cwd: applicationDirectory, env, windowsHide: true, stdio: 'ignore' });
   let ended = false, failed = false, stopping;
   const done = new Promise(resolve => { child.once('error', () => { failed = true; }); child.once('close', () => { ended = true; resolve(); }); });
   const stop = () => stopping ??= (async () => {
