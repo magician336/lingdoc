@@ -8,6 +8,8 @@ Native Home/New/Open and normal document editing remain available without a proj
 
 ## Source map
 
+The 2026-11-09 independent AI drawing integration adds a native Insert → AI 绘图 entry, a self-hosted pinned Next AI Draw.io adapter, drawing-version storage and guarded image insertion/replacement. See [drawing setup and limitations](drawing-upstream/README.md). This addition has component-level verification; the original snapshot verification below does not cover its native build, real model calls or document round trips.
+
 - `candidates/lingdoc-native-workspace-20261027/engine`: native Rust/egui workspace, assets, licenses and locked dependencies.
 - The candidate's `scripts`, `build-s0.ps1`, and `ds`: build/runtime and document-save host.
 - `candidates/updf-workspace-r1-20261026/go-src`: matching Go service and document reader, preserved separately from repository-root Go.

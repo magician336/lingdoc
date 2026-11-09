@@ -9,6 +9,8 @@ import { startIntegration } from '../server.mjs';
 import { createGoSources } from '../go-sources.mjs';
 import { createWorkspaceService } from './workspace-service.mjs';
 import { createImportStore } from './import-store.mjs';
+import { createDrawingHTTP } from './drawing-http.mjs';
+import { startDrawingUpstream } from '../../../drawing-upstream/launch.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 async function freePort() {
@@ -27,8 +29,8 @@ export async function startNativeReading({ port = 7212, directory = path.join(he
   const workspaceToken = randomUUID();
   const server = http.createServer((_req, res) => { res.writeHead(503); res.end('Native reading trial starting'); });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  let app, closed = false;
-  const stop = async () => { if (closed) return; closed = true; await new Promise(resolve => server.close(resolve)); await app?.stop(); };
+  let app, drawing, closed = false;
+  const stop = async () => { if (closed) return; closed = true; await new Promise(resolve => server.close(resolve)); try { await drawing?.stop(); } finally { await app?.stop(); } };
   try {
     const fixture = await readFile(path.join(here, 'fixtures', 'source.json'));
     const script = Buffer.from(`window.NATIVE_WORKSPACE_TOKEN=${JSON.stringify(workspaceToken)};\n` + await readFile(path.join(here, 'load-source.js'), 'utf8'));
@@ -44,6 +46,13 @@ export async function startNativeReading({ port = 7212, directory = path.join(he
     const sources = createGoSources({goOrigin:app.runtime.goOrigin, origin:app.runtime.origin, runtimeId:app.runtime.runtimeId});
     const imports = await createImportStore({directory:path.join(directory,'imports'),sources});
     const workspace = await createWorkspaceService({directory:path.join(directory,'workspace'),goOrigin:app.runtime.goOrigin,origin:app.runtime.origin,projectId:app.projectId,sources,imports});
+    let drawingNotice = '';
+    try {
+      drawing = await startDrawingUpstream({ parentOrigin: `http://127.0.0.1:${port}`, configPath: process.env.LINGDOC_LOCAL_AI_CONFIG, directory: path.join(directory, 'drawing-service') });
+    } catch {
+      drawingNotice = '绘图服务暂不可用，请联系管理员完成绘图组件配置后重新打开。';
+    }
+    const drawingHTTP = await createDrawingHTTP({ directory: path.join(directory, 'drawings'), token: workspaceToken, drawingOrigin: drawing?.origin, notice: drawingNotice });
     server.removeAllListeners('request');
     server.on('request', async (req, res) => {
       try {
@@ -51,6 +60,7 @@ export async function startNativeReading({ port = 7212, directory = path.join(he
         const origin = `http://${req.headers.host}`;
         if (req.headers.origin && req.headers.origin !== origin) { res.writeHead(403); return res.end('Origin refused'); }
         const url = new URL(req.url, origin);
+        if (await drawingHTTP(req, res, url)) return;
         if (url.pathname.startsWith('/native-reading/workspace/')) {
           if (req.headers['x-workspace-token'] !== workspaceToken) { res.writeHead(403); return res.end('Workspace token required'); }
           let result;
@@ -99,7 +109,7 @@ export async function startNativeReading({ port = 7212, directory = path.join(he
             .replace('<script type="module" src="/host.js"></script>','<script type="module" src="/native-reading/standalone.js"></script>');
             if(/src=["']\/(?:host|save-coordinator)\.js["']/.test(html))throw Error('Standalone entry still contains a project save script');
           }
-          bytes = Buffer.from(html.replace('</body>', '<script type="module" src="/native-reading/load-source.js"></script></body>'));
+          bytes = Buffer.from(html.replace('</body>', '<script type="module" src="/native-reading/load-source.js"></script><script type="module" src="/native-reading/drawing-host.js"></script></body>'));
         }
         if (upstream.ok && url.pathname === '/host-config.js') bytes = Buffer.from(bytes.toString('utf8').replaceAll(app.origin, origin));
         res.writeHead(upstream.status, {'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Content-Security-Policy': csp});

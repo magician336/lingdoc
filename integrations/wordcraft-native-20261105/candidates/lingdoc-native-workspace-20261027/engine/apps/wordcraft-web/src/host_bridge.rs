@@ -13,7 +13,11 @@ use wordcraft_doc::{Block, CharProps, Document, ParaProps, Paragraph, Path, Pos,
 
 struct Request { json: String, resolve: Function }
 #[derive(Default)]
-struct Bridge { queue: Vec<Request>, ctx: Option<egui::Context>, pending: Option<(u64, u64, String, String, u64)>, serial: u64, operations: BTreeMap<String, (Value, Value)> }
+struct Bridge {
+    queue: Vec<Request>, ctx: Option<egui::Context>, pending: Option<(u64, u64, String, String, u64)>, serial: u64,
+    operations: BTreeMap<String, (Value, Value)>,
+    diagram_document: Option<u64>, diagram_operations: BTreeMap<String, (String, Value)>,
+}
 thread_local! { static BRIDGE: RefCell<Bridge> = RefCell::new(Bridge::default()); }
 
 /// Local-host font bytes use a typed array, not the document JSON request queue.
@@ -70,6 +74,110 @@ fn check(app: &WordApp, request: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Only an explicitly selected single image is an update target. A collapsed caret next to
+/// an image is not enough: asynchronous work must never replace an implicit neighbour.
+fn diagram_image(app: &WordApp) -> Result<Option<Value>, String> {
+    use wordcraft_doc::para::InlineObject;
+    let Some((_, InlineObject::Image { media, alt, .. })) = wordcraft_engine::cmd::objects::object_selection(&app.session) else {
+        return Ok(None);
+    };
+    let bytes = app.session.doc.media.get(media).ok_or("selected image media missing")?;
+    if bytes.len() > 4 * 1024 * 1024 { return Err("selected image exceeds diagram limit".into()); }
+    let digest = Sha256::digest(bytes.as_slice()).iter().map(|b| format!("{b:02x}")).collect::<String>();
+    Ok(Some(json!({"sha256":digest,"data":wordcraft_engine::cmd::insert::base64_encode(bytes.as_slice()),"alt":alt})))
+}
+
+fn request_digest(r: &Value) -> String {
+    Sha256::digest(r.to_string().as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod diagram_tests {
+    use super::*;
+    use wordcraft_engine::Session;
+    use wordcraft_ui_egui::Services;
+
+    const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+    #[test]
+    fn insert_is_guarded_and_retries_are_idempotent() {
+        let mut app = WordApp::new(Session::new(Document::new()), Services::default());
+        let mut bridge = Bridge::default();
+        let selected = execute(&mut app, &mut bridge, &json!({"op":"diagram.selection"})).unwrap();
+        let request = json!({"op":"diagram.insert","operationId":"diagram-1",
+            "expectedDocumentId":selected["state"]["documentId"], "expectedRevision":selected["state"]["revision"],
+            "bookmark":selected["selection"], "data":PNG, "alt":"drawing"});
+        let receipt = execute(&mut app, &mut bridge, &request).unwrap();
+        assert_eq!(receipt["status"], "applied");
+        let after = app.session.rev();
+        assert_eq!(execute(&mut app, &mut bridge, &request).unwrap()["status"], "applied");
+        assert_eq!(app.session.rev(), after);
+        let mut changed = request.clone();
+        changed["alt"] = json!("different");
+        assert!(execute(&mut app, &mut bridge, &changed).is_err());
+        changed["operationId"] = json!("diagram-2");
+        assert!(execute(&mut app, &mut bridge, &changed).is_err());
+        app.execute("edit.undo", json!({})).unwrap();
+        assert!(app.session.doc.media.is_empty());
+    }
+
+    #[test]
+    fn png_validation_rejects_bad_or_non_png_data() {
+        assert!(diagram_png(&json!({"data":PNG})).is_ok());
+        assert!(diagram_png(&json!({"data":"not base64"})).is_err());
+        assert!(diagram_png(&json!({"data":"SGVsbG8="})).is_err());
+    }
+
+    #[test]
+    fn replacement_requires_exact_picture_and_digest() {
+        let mut app = WordApp::new(Session::new(Document::new()), Services::default());
+        let mut bridge = Bridge::default();
+        app.execute("insert.picture", json!({"data":PNG})).unwrap();
+        app.session.sel = wordcraft_engine::Selection {
+            anchor: Pos::body(0, 0), focus: Pos::body(0, wordcraft_doc::para::OBJ.len_utf8())
+        };
+        let selected = execute(&mut app, &mut bridge, &json!({"op":"diagram.selection"})).unwrap();
+        let mut request = json!({"op":"diagram.replace","operationId":"replace-1",
+            "expectedDocumentId":selected["state"]["documentId"], "expectedRevision":selected["state"]["revision"],
+            "bookmark":selected["selection"], "expectedImageSha256":"wrong", "data":PNG});
+        assert!(execute(&mut app, &mut bridge, &request).is_err());
+        request["expectedImageSha256"] = selected["image"]["sha256"].clone();
+        assert_eq!(execute(&mut app, &mut bridge, &request).unwrap()["status"], "applied");
+    }
+
+    #[test]
+    fn diagram_receipts_have_separate_capacity_and_follow_the_document() {
+        let mut app = WordApp::new(Session::new(Document::new()), Services::default());
+        let mut bridge = Bridge::default();
+        for n in 0..128 {
+            bridge.operations.insert(format!("text-{n}"), (json!({"op":"replaceRange"}), json!({})));
+        }
+        let selected = execute(&mut app, &mut bridge, &json!({"op":"diagram.selection"})).unwrap();
+        let mut request = json!({"op":"diagram.insert","operationId":"drawing",
+            "expectedDocumentId":selected["state"]["documentId"], "expectedRevision":selected["state"]["revision"],
+            "bookmark":selected["selection"], "data":PNG});
+        execute(&mut app, &mut bridge, &request).unwrap();
+        assert_eq!(bridge.diagram_operations.len(), 1);
+        assert_eq!(bridge.operations.len(), 128);
+        app.session.set_document(Document::new());
+        let selected = execute(&mut app, &mut bridge, &json!({"op":"diagram.selection"})).unwrap();
+        assert!(bridge.diagram_operations.is_empty());
+        assert_eq!(bridge.operations.len(), 128);
+        request["expectedDocumentId"] = selected["state"]["documentId"].clone();
+        request["expectedRevision"] = selected["state"]["revision"].clone();
+        request["bookmark"] = selected["selection"].clone();
+        assert_eq!(execute(&mut app, &mut bridge, &request).unwrap()["status"], "applied");
+    }
+}
+
+fn diagram_png(r: &Value) -> Result<&str, String> {
+    let data = r.get("data").and_then(Value::as_str).ok_or("missing PNG data")?;
+    if data.len() > 4 * 1024 * 1024 * 4 / 3 + 4 { return Err("diagram PNG exceeds limit".into()); }
+    let bytes = wordcraft_engine::cmd::insert::base64_decode(data).ok_or("invalid PNG base64")?;
+    if bytes.len() > 4 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") { return Err("diagram must be a bounded PNG".into()); }
+    Ok(data)
+}
+
 fn save_nonce() -> Result<String, String> {
     let crypto = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("crypto")).map_err(|_| "WebCrypto unavailable")?;
     let random = js_sys::Reflect::get(&crypto, &JsValue::from_str("randomUUID"))
@@ -103,6 +211,11 @@ fn source_input(r: &Value) -> Result<wordcraft_ui_egui::source_workspace::Source
 }
 
 fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, String> {
+    let document = app.session.document_id();
+    if bridge.diagram_document != Some(document) {
+        bridge.diagram_document = Some(document);
+        bridge.diagram_operations.clear();
+    }
     let op = r.get("op").and_then(Value::as_str).ok_or("missing op")?;
     match op {
         "status" => Ok(identity(app)),
@@ -242,6 +355,45 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
             let selection = app.execute("document.selection", json!({}))?;
             Ok(json!({"state": identity(app), "selection": selection}))
         }
+        "diagram.selection" => {
+            let selection = app.execute("document.selection", json!({}))?;
+            Ok(json!({"state":identity(app), "selection":selection, "image":diagram_image(app)?}))
+        }
+        "diagram.insert" | "diagram.replace" => {
+            let id = operation_id(r)?;
+            if let Some((original, receipt)) = bridge.diagram_operations.get(id) {
+                if original != &request_digest(r) { return Err("operationId already belongs to a different request".into()); }
+                return Ok(operation_receipt(app, receipt));
+            }
+            if bridge.diagram_operations.len() >= 128 { return Err("diagram operation receipt limit reached; save and reopen before another task".into()); }
+            check(app, r)?;
+            let bookmark = r.get("bookmark").ok_or("missing selection bookmark")?;
+            let selection = app.execute("document.selection", json!({}))?;
+            if bookmark.get("anchor").is_none() || bookmark.get("focus").is_none()
+                || bookmark.get("anchor") != selection.get("anchor") || bookmark.get("focus") != selection.get("focus") {
+                return Err("selection changed".into());
+            }
+            if op == "diagram.insert" && bookmark.get("anchor") != bookmark.get("focus") {
+                return Err("select an insertion point first".into());
+            }
+            if op == "diagram.replace" {
+                let image = diagram_image(app)?.ok_or("select the original picture first")?;
+                if r.get("expectedImageSha256").and_then(Value::as_str) != image["sha256"].as_str() {
+                    return Err("selected picture changed".into());
+                }
+            }
+            let data = diagram_png(r)?;
+            let alt = r.get("alt").and_then(Value::as_str).unwrap_or("");
+            if alt.len() > 4096 { return Err("diagram alt text exceeds limit".into()); }
+            let before = app.session.rev();
+            let command = if op == "diagram.insert" { "insert.picture" } else { "picture.change" };
+            let result = app.execute(command, json!({"data":data,"alt":alt}))?;
+            bridge.pending = None;
+            let receipt = json!({"operationId":id,"status":"applied","documentId":app.session.document_id(),
+                "beforeRevision":before,"afterRevision":app.session.rev(),"state":identity(app),"result":result});
+            bridge.diagram_operations.insert(id.to_string(), (request_digest(r), receipt.clone()));
+            Ok(operation_receipt(app, &receipt))
+        }
         "inspect" => app.execute("document.inspect", json!({"text":true})),
         "layout" => app.execute("document.layout", json!({})),
         "page_png" => {
@@ -315,6 +467,8 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
             app.ui.backstage = false;
             bridge.pending = None;
             bridge.operations.clear();
+            bridge.diagram_document = Some(app.session.document_id());
+            bridge.diagram_operations.clear();
             Ok(identity(app))
         }
         "replaceRange" => {

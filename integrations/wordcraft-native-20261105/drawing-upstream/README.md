@@ -1,0 +1,77 @@
+# LingDoc drawing adapter
+
+This adapter pins Next AI Draw.io to `04b1de949f9f2f14971bf2e26f4a7fd8cc392626`. Its complete source, npm dependencies, bundled draw.io release and generated application live in the ignored `runtime/` directory. Tracked files contain the small LingDoc overlay, bootstrap, launcher and contract tests.
+
+## Prepare the application
+
+Run from the LingDoc repository root with Node 22+ and Git available.
+
+```powershell
+node integrations/wordcraft-native-20261105/drawing-upstream/prepare.mjs --build
+```
+
+Preparation fetches the exact upstream commit into `runtime/source`, checks the Git remote and commit, checks the original Git blob hashes of every patch target, applies the overlay, runs `npm ci --ignore-scripts` with the upstream lockfile, and runs the upstream build. The upstream prebuild fetches and verifies its pinned draw.io v32.0.2 release. Next's build also requires access to the upstream Google Fonts dependencies. The standalone output receives the public assets and Next static assets it needs.
+
+`--install` prepares and installs dependencies without building. With no flags the command only fetches and applies the overlay. A failed network fetch can be retried. Existing differing source is rejected. Overlay hashes are recorded before mutation so an interrupted patch can resume from exact original or already-patched bytes. Keep a modified cache for inspection and prepare a separate fresh cache when upstream or overlays change.
+
+The bootstrap does not fetch floating revisions, rewrite the upstream lockfile, or vendor the entire source into LingDoc's tracked tree. Preserve LICENSE, NOTICE and bundled dependency notices when distributing the generated application.
+
+## Launcher
+
+The native-reading gateway imports the following function.
+
+```js
+import { startDrawingUpstream } from '../../../drawing-upstream/launch.mjs';
+
+const drawing = await startDrawingUpstream({
+  parentOrigin: 'http://127.0.0.1:7212',
+  configPath: process.env.LINGDOC_LOCAL_AI_CONFIG,
+  directory: drawingRuntimeDirectory,
+});
+// drawing.origin is the iframe origin. Always await drawing.stop() on shutdown.
+```
+
+The launcher binds the standalone Next server to an allocated `127.0.0.1` port and verifies a per-run identity before reporting readiness. Missing build artifacts produce an actionable preparation error. The document application can catch that error and retain its existing functionality.
+
+`LINGDOC_DRAWING_ORIGIN` can select an already-operated exact loopback HTTP origin. That external process must run this overlay and be configured for the parent origin. Its lifecycle belongs to its operator. Credentials are never forwarded to an external origin.
+
+The local configuration schema is the existing LingDoc schema from `internal/container/lingdoc_local_ai.go` in the UPDF Go candidate. Only the supported `deepseek-flash` model is accepted. The adapter reads the authorized absolute file server-side and passes its API credential only in the drawing child process environment. Upstream's DeepSeek provider uses the fixed `https://api.deepseek.com/v1` endpoint. The system encryption key is validated and remains unused by the drawing application. Credentials are absent from URLs, command arguments, browser messages, bootstrap output and drawing metadata.
+
+This launch adapter reuses the local configuration directly. Provider calls use upstream's SDK rather than Go's registered chat service. The upstream model selector's browser overrides are removed at the server boundary so drawing chat keeps the configured service. Automatic tool-error retry, truncation continuation and provider transport retry are disabled. Explicit upstream retry controls remain available. Child diagnostics are not forwarded because upstream tool-repair logging may contain diagram contents. Debug payload logging and Langfuse credentials are disabled for this child.
+
+## Parent-window contract
+
+The parent opens its dedicated drawing page and places the returned drawing origin in an iframe. Set the iframe referrer policy to `origin`. The overlay permits the exact configured parent origin and its `localhost`/`127.0.0.1` alias on the same port. It verifies both `event.source === window.parent` and exact origin, then locks to the origin that sent the first accepted request. CSP `frame-ancestors` is restricted to those parent origins.
+
+All messages are structured objects with `channel: 'lingdoc-drawing'`.
+
+| Direction | Type | Fields |
+| --- | --- | --- |
+| Child to parent | `ready` | Sent after chat restore and draw.io readiness |
+| Parent to child | `load` | `requestId`, `xml`, optional `messages`, `title`, `prompt` |
+| Parent to child | `prompt` | `requestId`, `prompt`. Prefills the composer and preserves diagram and chat |
+| Parent to child | `export` | `requestId` |
+| Child to parent | `result` | Matching `requestId`, `loaded: true` or `prompted: true`, or the export fields below |
+| Child to parent | `error` | Matching `requestId`, `error` |
+
+Request IDs contain 1–128 ASCII letters, digits, underscores or hyphens. Only one bridge operation runs at once. A parent RPC timeout of at least 45 seconds covers the export sequence. User text is prefilled for explicit submission.
+
+An export returns full multipage `xml`, current-page PNG data URL `png`, sanitized `messages` and `title`. It requests full XML before and after PNG export and rejects the save if the XML changed. It never takes the PNG export's potentially page-scoped XML as the authoritative source. Export is refused during model generation or session switching. XML is capped at 1 MiB of UTF-8, messages at 1 MiB of UTF-8 and 1000 entries, PNG data URL at 5 MiB, and prefilled text at 12500 JavaScript characters. The parent independently validates its own byte and image limits.
+
+The parent owns explicit Save, Insert and Update controls and the atomic saved drawing revision. The child exports state and never writes the WordCraft document. Restore includes the diagram and chat messages. Upstream's transient historical version strip and per-message regeneration snapshots remain browser-local in this release.
+
+## Validation
+
+Run the dependency-free checks and contract suite from the repository root.
+
+```powershell
+node --check integrations/wordcraft-native-20261105/drawing-upstream/launch.mjs
+node --check integrations/wordcraft-native-20261105/drawing-upstream/prepare.mjs
+node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.test.mjs
+```
+
+The official-source patch contract uses `runtime/contract-fixture` or `LINGDOC_DRAWING_TEST_SOURCE`. It needs the exact pinned patch targets and `contexts/diagram-context.tsx`. Use a pristine checkout of the pinned upstream commit for that source path. Strict bridge checking also needs TypeScript and React/Node type declarations in the ignored `runtime/typecheck/node_modules` directory. The test extracts the actual hook member signatures from the official source. Its Next middleware declarations are test contracts, so this check does not replace the complete upstream build.
+
+During implementation the five official files were fetched through the GitHub file API at the pinned revision. The test suite passed 5 tests with zero skipped tests. It covered exact patch contracts, repeat application, interrupted patch recovery, changed-source rejection, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. No live provider request was made.
+
+The complete upstream dependency install, Next build, real draw.io iframe/browser chain and real model generation remain unverified. Native WordCraft integration also requires its separately documented Rust/WASM and WSL toolchain.

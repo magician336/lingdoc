@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>灵档 AI 绘图</title><link rel="stylesheet" href="/native-reading/drawing.css"></head>
+<body><header><strong>灵档 AI 绘图</strong><label>图稿名称<input id="title" maxlength="120" value="新图稿"></label><button id="save" disabled>保存图稿</button></header>
+<nav aria-label="图稿与正文"><label>已保存图稿<select id="saved"><option value="">选择图稿</option></select></label><button id="open">打开图稿</button><button id="new">新建图稿</button><label>目标文档<select id="hosts"><option value="">选择文档窗口</option></select></label><button id="refresh">查找文档</button><button id="capture">定位插入位置</button><button id="edit">编辑选中的图</button><button id="insert" disabled>插入正文</button><button id="replace" disabled>更新正文中的图</button></nav>
+<div class="context"><button id="context" disabled>带入选中文字</button><span>插入的图片会携带图稿和绘图对话，可随文档恢复编辑。</span></div><p id="status" role="status">正在准备绘图窗口…</p><main><iframe id="editor" title="AI 绘图画布与对话" referrerpolicy="origin"></iframe></main>
+<script src="/native-reading/drawing-config.js"></script><script type="module" src="/native-reading/drawing.js"></script></body></html>

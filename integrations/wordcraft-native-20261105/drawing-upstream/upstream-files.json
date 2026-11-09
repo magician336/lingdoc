@@ -1,0 +1,6 @@
+{
+  "components/workspace/workspace.tsx": "f9d1051001a745a6e3ebf64c60682e5753438ab6",
+  "proxy.ts": "80920744d10cbfd8a046573e1083b1b3e1c4fe96",
+  "components/chat/chat-engine.tsx": "617e730db5942b7404fcf7ef82cba5dfd35bae39",
+  "app/api/chat/route.ts": "050ede20443246eb75b24db39123c14d1f6e8c03"
+}

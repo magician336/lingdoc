@@ -1398,6 +1398,10 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Illustrations", None, app, |ui, app| {
         big(ui, app, "picture", "Pictures", "insert.picture", json!({}), false);
+        #[cfg(target_arch = "wasm32")]
+        if ui.add_enabled(app.has_document() && !app.source_workspace.source_active() && !app.project_workspace.auxiliary_active(), egui::Button::new("AI绘图")).clicked() {
+            ui.ctx().open_url(egui::OpenUrl::new_tab("/native-reading/drawing"));
+        }
         menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, "insert.shape", |ui, app| {
             for (l, k) in [
                 ("Rectangle", "rectangle"),

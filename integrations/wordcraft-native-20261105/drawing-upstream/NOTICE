@@ -1,0 +1,15 @@
+LingDoc integration of Next AI Draw.io
+
+Upstream project https://github.com/DayuanJiang/next-ai-draw-io
+Pinned revision 04b1de949f9f2f14971bf2e26f4a7fd8cc392626
+Upstream license Apache License, Version 2.0. See LICENSE.
+The inspected upstream revision has no root NOTICE file.
+
+LingDoc adds the parent-window bridge, loopback boundary, pinned bootstrap,
+server-only reuse of existing model configuration, and explicit retry behavior.
+The bootstrap marks modified upstream source files and retains upstream notices.
+
+Bundled draw.io v32.0.2 and its dependencies retain their own licenses and
+resource terms. Preserve the release's license and README files when distributing
+the generated application. Shape libraries, templates, fonts, icons and trademarks
+can carry additional terms described by the upstream distribution.
