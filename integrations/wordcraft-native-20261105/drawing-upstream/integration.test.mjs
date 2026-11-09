@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, mkdtemp, rm, cp } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { deflateRawSync } from 'node:zlib';
 import { applyOverlay, here, patchFiles, patchText } from './patch.mjs';
 import { exactLoopbackOrigin, modelEnvironment, startDrawingUpstream } from './launch.mjs';
 
@@ -166,13 +168,13 @@ test('bridge typechecks against member signatures extracted from official hooks'
   let engine, diagram;
   try { engine = await readFile(path.join(fixture, 'components/chat/chat-engine.tsx'), 'utf8'); diagram = await readFile(path.join(fixture, 'contexts/diagram-context.tsx'), 'utf8'); }
   catch { t.skip('Official hook source fixture is unavailable'); return; }
-  const engineMembers = interfaceMembers(engine, 'ChatEngine', ['messages', 'isBusy', 'isLeaving', 'setMessages', 'setInput', 'currentTitle', 'isRestored', 'renameSession']);
+  const engineMembers = interfaceMembers(engine, 'ChatEngine', ['messages', 'isBusy', 'isLeaving', 'setMessages', 'setInput', 'currentTitle', 'isRestored', 'renameSession', 'loadedMessageIdsRef']);
   const diagramMembers = interfaceMembers(diagram, 'DiagramContextType', ['chartXMLRef', 'loadDiagram', 'clearDiagram', 'hasPendingLoad', 'requestExport', 'isDrawioReady']);
   const directory = await temporary(t);
   const contracts = `
 declare module "@/components/chat/chat-engine" {
   type ChatUIMessage = {id:string;role:"system"|"user"|"assistant";parts:Array<{type:string;[key:string]:unknown}>};
-  interface ChatEngine { ${engineMembers} }
+  interface ChatEngine { ${engineMembers.replaceAll('React.RefObject', 'import("react").RefObject')} }
   export function useChatEngine(): ChatEngine;
 }
 declare module "@/contexts/diagram-context" {
@@ -186,6 +188,11 @@ declare module "@/contexts/diagram-context" {
 declare module "@/lib/session-storage" {
   export function sanitizeMessages(input:unknown[]): {id:string;role:"system"|"user"|"assistant";parts:Array<{type:string;[key:string]:unknown}>}[];
 }
+declare module "@/lib/diagram-pages" {
+  export function parseXml(xml:string):Document|null;
+  export function modelOfPage(page:Element):Element|null;
+}
+declare module "@/packages/mcp-server/src/pages.ts" {export function hasCells(xml:string):boolean}
 declare module "@/stores/ui-store" {export const useUiStore:{getState():{setHeroDismissed(value:boolean):void}}}
 declare module "next/server" {
   export interface NextRequest {headers:Headers;method:string;nextUrl:{pathname:string}}
@@ -204,17 +211,17 @@ declare module "next/server" {
   assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diagnostics, { getCanonicalFileName: value => value, getCurrentDirectory: () => directory, getNewLine: () => '\n' }));
 });
 
-async function mountBridge() {
+async function mountBridge(options = {}) {
   const sent = [], handlers = new Map(), exports = [];
-  const xml = '<mxfile><diagram id="a"/><diagram id="b"/></mxfile>';
+  const xml = options.xml ?? '<mxfile><diagram id="a"/><diagram id="b"/></mxfile>';
   const parent = { postMessage: (message, origin) => sent.push({ message, origin }) };
-  const engine = { isRestored: true, isBusy: false, isLeaving: false, messages: [], currentTitle: '图稿',
+  const engine = { isRestored: true, isBusy: false, isLeaving: false, messages: [], currentTitle: '图稿', loadedMessageIdsRef: { current: new Set() },
     setInput: value => { engine.input = value; }, setMessages: value => { engine.messages = value; }, renameSession: async () => {} };
   const diagram = { isDrawioReady: true, hasPendingLoad: () => false, clearDiagram: () => {},
     loadDiagram: value => { diagram.loaded = value; return null; },
     requestExport: async request => { exports.push(request); return request.format === 'xml' ? { xml } : { data: 'data:image/png;base64,fixture', xml: '<current-page-only/>' }; } };
   const context = {
-    exports: {}, TextEncoder, URL, AbortController,
+    exports: {}, TextEncoder, URL, AbortController, setTimeout, XMLSerializer: options.helpers?.XMLSerializer,
     window: { parent, addEventListener: (name, fn) => handlers.set(name, fn), removeEventListener: name => handlers.delete(name) },
     fetch: async () => ({ ok: true, json: async () => ({ parentOrigins: ['http://127.0.0.1:7212', 'http://localhost:7212'] }) }),
     require: name => ({
@@ -222,6 +229,8 @@ async function mountBridge() {
       '@/components/chat/chat-engine': { useChatEngine: () => engine },
       '@/contexts/diagram-context': { useDiagram: () => diagram },
       '@/lib/session-storage': { sanitizeMessages: messages => messages.filter(message => message?.id && message?.role && Array.isArray(message.parts)) },
+      '@/lib/diagram-pages': options.helpers?.diagramPages ?? { parseXml: () => null, modelOfPage: () => null },
+      '@/packages/mcp-server/src/pages.ts': options.helpers?.pages ?? { hasCells: () => true },
       '@/stores/ui-store': { useUiStore: { getState: () => ({ setHeroDismissed: () => {} }) } },
     })[name],
   };
@@ -257,4 +266,143 @@ test('real bridge rejects foreign windows and restores, prefills, exports full m
   bridge.engine.isBusy = false;
   await bridge.send({ type: 'load', requestId: 'bytes-1', xml: '中'.repeat(400000), messages: [] });
   assert.equal(bridge.sent.at(-1).message.type, 'error');
+  let renamed = false;
+  bridge.diagram.loadDiagram = () => 'Invalid XML';
+  bridge.engine.renameSession = async () => { renamed = true; };
+  await bridge.send({ type: 'load', requestId: 'invalid-xml', xml: '<invalid/>', messages: [], title: 'Do not rename' });
+  assert.equal(bridge.sent.at(-1).message.type, 'error');
+  assert.equal(renamed, false);
+});
+
+test('restore acknowledgement waits for the actual exposed message snapshot after rename', async t => {
+  if (!ts) { t.skip('Install TypeScript into runtime/typecheck'); return; }
+  for (const withTitle of [false, true]) {
+    const bridge = await mountBridge();
+    const previous = [{ id: 'drawing-a', role: 'user', parts: [{ type: 'text', text: 'Drawing A history' }] }];
+    const desired = [...previous, { id: 'edited-message', role: 'user', parts: [{ type: 'text', text: 'Unsaved B changes' }] }];
+    bridge.engine.messages = previous;
+    let queuedMessages, completeRename;
+    const renamed = new Promise(resolve => { completeRename = resolve; });
+    // The SDK updates its internal chat immediately but publishes the hook's
+    // exposed snapshot through a throttled useSyncExternalStore subscription.
+    bridge.engine.setMessages = value => { queuedMessages = value; };
+    bridge.engine.renameSession = async () => { await renamed; bridge.engine.messages = previous; };
+    const loading = bridge.send({ type: 'load', requestId: 'restore-b', xml: bridge.xml,
+      messages: desired, ...(withTitle ? { title: 'B edited' } : {}) });
+    completeRename();
+    await new Promise(resolve => setImmediate(resolve));
+    try {
+      assert.equal(bridge.sent.some(item => item.message.requestId === 'restore-b'), false,
+        'load must not acknowledge while the hook still exposes drawing A messages');
+    } finally {
+      bridge.engine.messages = queuedMessages ?? desired;
+      await loading;
+    }
+    assert.equal(bridge.sent.at(-1).message.loaded, true);
+    assert.deepEqual([...bridge.engine.loadedMessageIdsRef.current], desired.map(message => message.id));
+    await bridge.send({ type: 'export', requestId: 'export-restored-b' });
+    assert.deepEqual(bridge.sent.at(-1).message.messages, desired);
+  }
+});
+
+function officialDiagramHelpers() {
+  const upstream = path.join(runtime, 'source');
+  const upstreamRequire = createRequire(path.join(upstream, 'package.json'));
+  const { JSDOM } = upstreamRequire('jsdom');
+  const { DOMParser, XMLSerializer } = new JSDOM('').window;
+  const cache = new Map();
+  function load(filename) {
+    if (cache.has(filename)) return cache.get(filename).exports;
+    const module = { exports: {} };
+    cache.set(filename, module);
+    const source = readFileSync(filename, 'utf8');
+    const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    vm.runInNewContext(js, {
+      module, exports: module.exports, DOMParser, XMLSerializer, atob, Uint8Array,
+      require: specifier => {
+        if (specifier.startsWith('@/') || specifier.startsWith('.')) {
+          let target = specifier.startsWith('@/') ? path.join(upstream, specifier.slice(2)) : path.resolve(path.dirname(filename), specifier);
+          if (!target.endsWith('.ts')) target += '.ts';
+          return load(target);
+        }
+        return upstreamRequire(specifier);
+      },
+    });
+    return module.exports;
+  }
+  return {
+    diagramPages: load(path.join(upstream, 'lib/diagram-pages.ts')),
+    pages: load(path.join(upstream, 'packages/mcp-server/src/pages.ts')),
+    XMLSerializer,
+  };
+}
+
+test('skipEmpty proves every decoded page empty, preserves messages and uncertain diagrams', async t => {
+  if (!ts) { t.skip('Install TypeScript into runtime/typecheck'); return; }
+  let helpers;
+  try { helpers = officialDiagramHelpers(); }
+  catch (error) {
+    if (error.code === 'MODULE_NOT_FOUND' || error.code === 'ENOENT') {
+      t.skip('Install the pinned upstream dependencies to test official XML and compressed-page helpers'); return;
+    }
+    throw error;
+  }
+  const blank = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
+  const drawn = blank.replace('</root>', '<mxCell id="2" vertex="1" parent="1"><mxGeometry width="80" height="30"/></mxCell></root>');
+  const compressed = xml => deflateRawSync(Buffer.from(encodeURIComponent(xml))).toString('base64');
+  for (const xml of [blank, `<mxfile><diagram>${blank}</diagram></mxfile>`,
+    `<mxfile><diagram>${compressed(blank)}</diagram><diagram>${compressed(blank)}</diagram></mxfile>`]) {
+    const bridge = await mountBridge({ xml, helpers });
+    await bridge.send({ type: 'export', requestId: 'empty', skipEmpty: true });
+    assert.equal(bridge.sent.at(-1).message.empty, true);
+    assert.equal(bridge.exports.length, 1);
+    assert.equal(bridge.exports[0].format, 'xml');
+  }
+  for (const xml of [drawn, '<mxfile><diagram>undecodable</diagram></mxfile>',
+    '<mxGraphModel><root/></mxGraphModel>', '<mxfile>',
+    blank.replace('<mxGraphModel>', '<mxGraphModel backgroundImage="image-data">'),
+    `<mxfile><diagram>${blank}</diagram><diagram>${compressed(drawn)}</diagram></mxfile>`]) {
+    const bridge = await mountBridge({ xml, helpers });
+    await bridge.send({ type: 'export', requestId: 'preserve', skipEmpty: true });
+    assert.equal(bridge.sent.at(-1).message.empty, undefined);
+    assert.match(bridge.sent.at(-1).message.png, /^data:image\/png;base64,/);
+  }
+  const withMessages = await mountBridge({ xml: blank, helpers });
+  withMessages.engine.messages = [{ id: 'question', role: 'user', parts: [{ type: 'text', text: '保留会话' }] }];
+  await withMessages.send({ type: 'export', requestId: 'messages', skipEmpty: true });
+  assert.match(withMessages.sent.at(-1).message.png, /^data:image\/png;base64,/);
+  const clearedExisting = await mountBridge({ xml: blank, helpers });
+  await clearedExisting.send({ type: 'export', requestId: 'clear-existing' });
+  assert.match(clearedExisting.sent.at(-1).message.png, /^data:image\/png;base64,/);
+  const busy = await mountBridge({ xml: blank, helpers });
+  busy.engine.isBusy = true;
+  await busy.send({ type: 'export', requestId: 'busy-empty', skipEmpty: true });
+  assert.equal(busy.sent.at(-1).message.type, 'error');
+  assert.equal(busy.exports.length, 0);
+  const startedDuringExport = await mountBridge({ xml: blank, helpers });
+  const exportBeforeBusy = startedDuringExport.diagram.requestExport;
+  startedDuringExport.diagram.requestExport = async request => {
+    const result = await exportBeforeBusy(request);
+    startedDuringExport.engine.isBusy = true;
+    return result;
+  };
+  await startedDuringExport.send({ type: 'export', requestId: 'started-during-export', skipEmpty: true });
+  assert.equal(startedDuringExport.sent.at(-1).message.type, 'error');
+  assert.equal(startedDuringExport.sent.at(-1).message.empty, undefined);
+  assert.equal(startedDuringExport.exports.length, 1);
+  const messageDuringExport = await mountBridge({ xml: blank, helpers });
+  const exportBeforeMessage = messageDuringExport.diagram.requestExport;
+  messageDuringExport.diagram.requestExport = async request => {
+    const result = await exportBeforeMessage(request);
+    messageDuringExport.engine.messages = [{ id: 'new-message', role: 'user', parts: [{ type: 'text', text: '导出期间的新消息' }] }];
+    return result;
+  };
+  await messageDuringExport.send({ type: 'export', requestId: 'message-during-export', skipEmpty: true });
+  assert.match(messageDuringExport.sent.at(-1).message.png, /^data:image\/png;base64,/);
+  assert.equal(messageDuringExport.sent.at(-1).message.empty, undefined);
+  busy.engine.isBusy = false;
+  busy.diagram.hasPendingLoad = () => true;
+  await busy.send({ type: 'export', requestId: 'loading-empty', skipEmpty: true });
+  assert.equal(busy.sent.at(-1).message.type, 'error');
+  assert.equal(busy.exports.length, 0);
 });

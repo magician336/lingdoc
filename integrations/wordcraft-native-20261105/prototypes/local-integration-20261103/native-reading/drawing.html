@@ -1,6 +1,68 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>灵档 AI 绘图</title><link rel="stylesheet" href="/native-reading/drawing.css"></head>
-<body><header><strong>灵档 AI 绘图</strong><label>图稿名称<input id="title" maxlength="120" value="新图稿"></label><button id="save" disabled>保存图稿</button></header>
-<nav aria-label="图稿与正文"><label>已保存图稿<select id="saved"><option value="">选择图稿</option></select></label><button id="open">打开图稿</button><button id="new">新建图稿</button><label>目标文档<select id="hosts"><option value="">选择文档窗口</option></select></label><button id="refresh">查找文档</button><button id="capture">定位插入位置</button><button id="edit">编辑选中的图</button><button id="insert" disabled>插入正文</button><button id="replace" disabled>更新正文中的图</button></nav>
-<div class="context"><button id="context" disabled>带入选中文字</button><span>插入的图片会携带图稿和绘图对话，可随文档恢复编辑。</span></div><p id="status" role="status">正在准备绘图窗口…</p><main><iframe id="editor" title="AI 绘图画布与对话" referrerpolicy="origin"></iframe></main>
-<script src="/native-reading/drawing-config.js"></script><script type="module" src="/native-reading/drawing.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>灵档 · AI 绘图工作台</title>
+  <link rel="stylesheet" href="/native-reading/drawing.css">
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9H3Z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-document" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h10V3M7 21v-8h10v8"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="m4 3 7 18 3-7 7-3Z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  </svg>
+  <aside class="sidebar" aria-label="图稿与正文">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 8h10v7H8zM18 17h7v7h-7zM8 15v9h10M18 11h7v6"/></svg></span>
+      <span class="brand-name">灵档<span>LINGDOC</span></span>
+      <span class="workspace-tag">绘图</span>
+    </div>
+    <div class="sidebar-content">
+      <button id="new" class="button new-button" disabled><svg class="icon"><use href="#i-plus"/></svg>新建图稿</button>
+      <section class="library" aria-labelledby="library-heading">
+        <div class="section-heading"><h2 id="library-heading">我的图稿</h2><span id="drawing-count" class="count">0</span></div>
+        <label class="field-label" for="saved">已保存图稿</label>
+        <div class="library-picker"><svg class="icon"><use href="#i-folder"/></svg><select id="saved"><option value="">选择图稿</option></select></div>
+        <p class="helper">选择即打开，当前图稿会先自动保存。</p>
+      </section>
+      <details class="document-panel">
+        <summary><svg class="icon"><use href="#i-document"/></svg><span>插入到文档</span><svg class="icon chevron"><use href="#i-chevron"/></svg></summary>
+        <div class="document-content">
+          <p class="helper">在灵档中打开文稿，再选择插入位置。</p>
+          <div class="field-heading"><label class="field-label" for="hosts">目标文档</label><button id="refresh" class="icon-button" title="查找文档" aria-label="查找文档"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
+          <select id="hosts"><option value="">选择文档窗口</option></select>
+          <button id="capture" class="button secondary" disabled><svg class="icon"><use href="#i-cursor"/></svg>定位插入位置</button>
+          <button id="insert" class="button primary" disabled>插入正文<svg class="icon"><use href="#i-arrow"/></svg></button>
+          <div class="document-divider"></div>
+          <button id="context" class="button text-button" disabled>带入选中文字</button>
+          <button id="edit" class="button text-button" disabled>编辑选中的图</button>
+          <button id="replace" class="button text-button" disabled>更新正文中的图</button>
+        </div>
+      </details>
+      <div class="sidebar-note"><span class="note-icon"><svg class="icon"><use href="#i-spark"/></svg></span><h3>从想法，到一张好图</h3><p>描述需求，或直接编辑画布。完成后保存，再放入你的文稿。</p></div>
+    </div>
+    <footer class="sidebar-footer"><span class="footer-dot"></span>源图与绘图对话随图片保留</footer>
+  </aside>
+  <div class="workspace">
+    <header class="workspace-header">
+      <div class="title-area"><div class="breadcrumb">创作空间<span>/</span><strong>AI 绘图</strong></div><label class="title-label" for="title"><input id="title" aria-label="图稿名称" maxlength="120" value="新图稿" title="点击修改图稿名称"></label></div>
+      <div class="header-actions"><span id="version" class="version-badge">未保存图稿</span><button id="save" class="button primary save-button" disabled><svg class="icon"><use href="#i-save"/></svg>保存图稿</button></div>
+    </header>
+    <main class="canvas-area" aria-label="绘图工作区">
+      <div class="canvas-caption"><span><span class="canvas-dot"></span>绘图工作区</span><span class="canvas-hint">自由编辑 · AI 协作</span></div>
+      <div class="canvas-surface"><iframe id="editor" title="AI 绘图画布与对话" referrerpolicy="origin"></iframe></div>
+    </main>
+    <footer class="statusbar"><span class="status-indicator" aria-hidden="true"></span><p id="status" role="status" aria-live="polite">正在准备绘图窗口…</p><span class="status-brand">LingDoc <span>×</span> Next AI Draw.io</span></footer>
+  </div>
+  <script src="/native-reading/drawing-config.js"></script>
+  <script type="module" src="/native-reading/drawing.js"></script>
+</body>
+</html>

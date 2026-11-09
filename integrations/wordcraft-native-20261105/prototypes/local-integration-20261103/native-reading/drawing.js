@@ -6,11 +6,14 @@ const pending = new Map();
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
 const message = text => { element('status').textContent = text; };
 function controls() {
-  for (const id of ['save', 'open', 'new', 'edit', 'capture', 'context']) element(id).disabled = busy || !ready;
+  element('version').textContent = current ? `已存 v${current.revision}` : '未保存图稿';
+  for (const id of ['save', 'new', 'edit', 'capture', 'context']) element(id).disabled = busy || !ready;
   element('insert').disabled = busy || !ready || !target;
   element('replace').disabled = busy || !ready || !target?.image;
   element('hosts').disabled = busy;
-  element('saved').disabled = busy;
+  element('saved').disabled = busy || !ready;
+  element('title').disabled = busy;
+  frame.inert = busy;
   element('refresh').disabled = busy;
 }
 async function api(action, body) {
@@ -60,17 +63,20 @@ async function run(action) {
 }
 async function list() {
   const records = await api('list');
+  element('drawing-count').textContent = String(records.length);
   element('saved').replaceChildren(new Option('选择图稿', ''));
   for (const record of records) element('saved').add(new Option(`${record.title} · 第 ${record.revision} 版`, record.id));
+  if (current && records.some(record => record.id === current.id)) element('saved').value = current.id;
 }
 async function load(record, persisted = true) {
   await request('frame', { type: 'load', xml: record?.xml || '<mxfile><diagram name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>', messages: record?.messages || [], title: record?.title || '新图稿' });
   current = persisted ? record : null;
   pendingSave = null;
   element('title').value = record?.title || '新图稿';
+  element('saved').value = current?.id || '';
 }
-async function save() {
-  const exported = await request('frame', { type: 'export' });
+async function save(exported) {
+  exported ??= await request('frame', { type: 'export' });
   const payload = { id: current?.id, expectedRevision: current?.revision || 0, title: element('title').value.trim() || '新图稿', xml: exported.xml, messages: exported.messages || [], png: exported.png?.replace(/^data:image\/png;base64,/, '') };
   const fingerprint = JSON.stringify(payload);
   // A lost HTTP response must not create another version when the user retries.
@@ -128,14 +134,28 @@ element('new').onclick = () => run(async () => {
   if (!confirm('新建图稿会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
   await load(null); target = null; message('已新建图稿。');
 });
-element('open').onclick = () => run(async () => {
+element('saved').onchange = () => {
   const id = element('saved').value;
-  if (!id) throw Error('请选择已保存的图稿。');
-  if (!confirm('打开图稿会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
-  const { record } = await api('get', { id });
-  if (!record) throw Error('图稿不存在。');
-  await load(record); target = null; message('已打开保存的图稿。');
-});
+  if (busy || !ready || !id || id === current?.id) {
+    element('saved').value = current?.id || '';
+    return;
+  }
+  return run(async () => {
+    try {
+      // Capture the destination before saving refreshes the library selection.
+      const { record } = await api('get', { id });
+      if (!record) throw Error('图稿不存在，当前画布已保留。');
+      message('正在保存当前图稿，完成后自动切换…');
+      const exported = await request('frame', { type: 'export', skipEmpty: !current });
+      if (!exported.empty) await save(exported);
+      await load(record); target = null;
+      message(exported.empty ? '已打开保存的图稿。' : '原图已自动保存，已打开选中的图稿。');
+    } finally {
+      // Reflect the last tracked drawing so a failed switch can be retried.
+      element('saved').value = current?.id || '';
+    }
+  });
+};
 element('edit').onclick = () => run(async () => {
   if (!confirm('编辑原图会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
   const selection = await capture();

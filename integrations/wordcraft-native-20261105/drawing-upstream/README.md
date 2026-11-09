@@ -52,15 +52,19 @@ All messages are structured objects with `channel: 'lingdoc-drawing'`.
 | Child to parent | `ready` | Sent after chat restore and draw.io readiness |
 | Parent to child | `load` | `requestId`, `xml`, optional `messages`, `title`, `prompt` |
 | Parent to child | `prompt` | `requestId`, `prompt`. Prefills the composer and preserves diagram and chat |
-| Parent to child | `export` | `requestId` |
+| Parent to child | `export` | `requestId`, optional `skipEmpty: true` |
 | Child to parent | `result` | Matching `requestId`, `loaded: true` or `prompted: true`, or the export fields below |
 | Child to parent | `error` | Matching `requestId`, `error` |
 
 Request IDs contain 1–128 ASCII letters, digits, underscores or hyphens. Only one bridge operation runs at once. A parent RPC timeout of at least 45 seconds covers the export sequence. User text is prefilled for explicit submission.
 
+A load receipt waits for the canvas to finish loading and for the chat hook's visible messages to match the restored conversation. This prevents an immediate export from reading the prior conversation during the upstream SDK's throttled state update. Failure to observe that state within five seconds returns a recoverable error.
+
 An export returns full multipage `xml`, current-page PNG data URL `png`, sanitized `messages` and `title`. It requests full XML before and after PNG export and rejects the save if the XML changed. It never takes the PNG export's potentially page-scoped XML as the authoritative source. Export is refused during model generation or session switching. XML is capped at 1 MiB of UTF-8, messages at 1 MiB of UTF-8 and 1000 entries, PNG data URL at 5 MiB, and prefilled text at 12500 JavaScript characters. The parent independently validates its own byte and image limits.
 
-The parent owns explicit Save, Insert and Update controls and the atomic saved drawing revision. The child exports state and never writes the WordCraft document. Restore includes the diagram and chat messages. Upstream's transient historical version strip and per-message regeneration snapshots remain browser-local in this release.
+With `skipEmpty: true`, export returns `empty: true` without PNG only when every decoded page contains solely draw.io's two structural root cells and the latest chat is empty. Unknown data and decoding failures use normal export. Busy, leaving and pending-load guards run again after awaiting XML. The parent uses this option only for an unsaved canvas; clearing an existing drawing still saves that change.
+
+The parent owns explicit Save, Insert and Update controls and the atomic saved drawing revision. Selecting a library drawing automatically saves the current canvas before loading the captured destination. Save/export failure prevents loading; controls and the iframe are locked during switching. Selecting the current drawing does nothing. The child exports state and never writes the WordCraft document. Restore includes the diagram and chat messages. Upstream's transient historical version strip and per-message regeneration snapshots remain browser-local in this release.
 
 ## Validation
 
@@ -74,13 +78,13 @@ node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.
 
 The official-source patch contract uses `runtime/contract-fixture` or `LINGDOC_DRAWING_TEST_SOURCE`. It needs the exact pinned patch targets and `contexts/diagram-context.tsx`. Use a pristine checkout of the pinned upstream commit for that source path. Strict bridge checking also needs TypeScript and React/Node type declarations in the ignored `runtime/typecheck/node_modules` directory. The test extracts the actual hook member signatures from the official source. Its Next middleware declarations are test contracts, so this check does not replace the complete upstream build.
 
-During implementation the six official files were fetched through the GitHub file API at the pinned revision. The test suite passed 8 tests with zero skipped tests. It covered exact patch contracts, CRLF checkout normalization, repeat application, interrupted patch and overlay-update recovery, changed-source rejection, nested-frame CSP, local-font layout integration, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. No live provider request was made.
+During implementation the six official files were fetched through the GitHub file API at the pinned revision. The current test suite passed 10 tests with zero skipped tests. It covered exact patch contracts, CRLF checkout normalization, repeat application, interrupted patch and overlay-update recovery, changed-source rejection, nested-frame CSP, local-font layout integration, server model mapping, missing-build behavior, strict TypeScript bridge checking, and executable bridge origin/load/prompt/export/busy/UTF-8 paths. It also covered conservative empty-page detection and waiting for the SDK's throttled message snapshot before acknowledging restore. No live provider request was made.
 
 The pinned dependency installation, draw.io resource download, complete TypeScript check and Next production build passed on 2026-11-09. The build reports four upstream dynamic-filesystem tracing warnings; distribution size has not been optimized. The launcher was started and stopped successfully without model credentials. Native WordCraft integration still requires its separately documented Rust/WASM and WSL toolchain. Real model calls and native insertion/undo/DOCX round trips remain unverified.
 
 After building, the optional Windows Chrome smoke test exercises the actual iframe and draw.io application with a temporary browser profile and drawing store. It does not call a model. Without the standalone build or Windows Chrome, it skips rather than claiming a pass.
 
-On 2026-11-09 this real-browser test passed in 34.1 seconds with zero skips. It loaded XML and chat into the actual canvas, saved, created a new drawing, reopened the saved drawing, saved revision 2, and verified editable XML and chat inside both exported PNG files. This covers the drawing application; it does not verify native WordCraft insertion or document saving.
+On 2026-11-09 the updated real-browser test passed in 24.6 seconds with zero skips. It loaded XML and chat into the actual canvas, saved, created a new drawing, reopened directly from a blank canvas without an empty save, saved revision 2, and verified editable XML and chat inside both exported PNG files. It then edited a second drawing's XML, title and conversation, switched away to trigger autosave, and switched back to verify complete source and chat restoration. This covers the drawing application; it does not verify native WordCraft insertion or document saving.
 
 ```powershell
 node --test integrations/wordcraft-native-20261105/drawing-upstream/browser.test.mjs

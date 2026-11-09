@@ -67,7 +67,7 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     console.error('smoke: drawing ready');
     // The message originates from the configured parent window, and the real
     // bridge waits for draw.io and validates the exact source/origin.
-    const loaded = await page.evaluate(({origin, xml, messages}) => new Promise((resolve,reject) => {
+    const loadCanvas = (xml, messages) => page.evaluate(({origin, xml, messages}) => new Promise((resolve,reject) => {
       const timer = setTimeout(() => reject(new Error('Drawing load timed out')),30000);
       const frame = document.getElementById('editor');
       const onMessage = event => {
@@ -77,6 +77,7 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
       window.addEventListener('message',onMessage);
       frame.contentWindow.postMessage({channel:'lingdoc-drawing',type:'load',requestId:'smoke-load',xml,messages,title:'Smoke drawing'},origin);
     }), {origin:upstream.origin,xml,messages});
+    const loaded = await loadCanvas(xml, messages);
     assert.equal(loaded.loaded,true,JSON.stringify(loaded));
     console.error('smoke: XML and messages loaded');
     await page.locator('#title').fill('Smoke drawing');
@@ -89,9 +90,10 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     assert.deepEqual(readDrawing(firstRecord.embeddedPng),{id:firstRecord.id,revision:firstRecord.revision,title:firstRecord.title,xml:firstRecord.xml,messages:firstRecord.messages});
     await page.locator('#new').click();
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('已新建图稿'));
+    const beforeSwitch = await page.locator('#saved option').count();
     await page.locator('#saved').selectOption(firstRecord.id);
-    await page.locator('#open').click();
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('已打开保存的图稿'));
+    assert.equal(await page.locator('#saved option').count(), beforeSwitch, 'Opening from a blank canvas creates no empty drawing');
     const secondResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method()==='POST', {timeout:60000});
     await page.locator('#save').click();
     const second = await secondResponse; console.error('smoke: second save response',second.status()); assert.equal(second.status(),200,await second.text());
@@ -99,6 +101,36 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     assert.equal(restored.id,firstRecord.id); assert.equal(restored.revision,2);
     assert.ok(containsCell(restored.xml)); assert.deepEqual(restored.messages,messages);
     assert.deepEqual(readDrawing(restored.embeddedPng),{id:restored.id,revision:restored.revision,title:restored.title,xml:restored.xml,messages:restored.messages});
+    await page.waitForFunction(() => !document.querySelector('#new').disabled);
+    await page.locator('#new').click();
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('已新建图稿'));
+    assert.equal((await loadCanvas(xml, messages)).loaded, true);
+    await page.locator('#title').fill('Second drawing');
+    const secondDrawingResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method() === 'POST');
+    await page.locator('#save').click();
+    const secondDrawing = await (await secondDrawingResponse).json();
+    await page.waitForFunction(() => !document.querySelector('#saved').disabled);
+    const editedMessages = [...messages, {id:'edited-message',role:'user',parts:[{type:'text',text:'Unsaved changes before switching'}]}];
+    assert.equal((await loadCanvas(xml.replace('LingDoc smoke', 'Unsaved canvas edit'), editedMessages)).loaded, true);
+    await page.locator('#title').fill('Second drawing edited');
+    const autosaveResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method() === 'POST');
+    await page.locator('#saved').selectOption(firstRecord.id);
+    const autosaved = await (await autosaveResponse).json();
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('原图已自动保存'));
+    assert.equal(autosaved.id, secondDrawing.id);
+    assert.equal(autosaved.revision, 2);
+    assert.equal(autosaved.title, 'Second drawing edited');
+    assert.deepEqual(autosaved.messages, editedMessages);
+    assert.equal(await page.locator('#saved').inputValue(), firstRecord.id);
+    await page.locator('#saved').selectOption(secondDrawing.id);
+    await page.waitForFunction(() => !document.querySelector('#saved').disabled);
+    assert.equal(await page.locator('#title').inputValue(), 'Second drawing edited');
+    const reopenedResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method() === 'POST');
+    await page.locator('#save').click();
+    const reopened = await (await reopenedResponse).json();
+    assert.equal(reopened.id, secondDrawing.id);
+    assert.equal(reopened.xml, autosaved.xml, 'Switching back restores the autosaved canvas');
+    assert.deepEqual(reopened.messages, editedMessages);
   } catch (error) {
     if (page) {
       const screenshot = path.join(runtime,'browser-smoke-failure.png');

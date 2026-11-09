@@ -4,3 +4,100 @@
     --font-mono:
         "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
+
+/* LingDoc's light research workspace. Tokens follow globals.css and the
+ * selectors below match the pinned Workspace, ChatPanel and Composer. */
+html:not(.dark) .lingdoc-system-fonts {
+    --canvas: #f1f4f4;
+    --background: #f1f4f4;
+    --foreground: #243735;
+    --card: #ffffff;
+    --card-foreground: #243735;
+    --popover: #ffffff;
+    --popover-foreground: #243735;
+    --primary: #087f74;
+    --primary-foreground: #ffffff;
+    --secondary: #edf4f2;
+    --secondary-foreground: #29453f;
+    --muted: #f1f5f4;
+    --muted-foreground: #637571;
+    --faint: #70817d;
+    --accent: #e8f4f0;
+    --accent-foreground: #15675e;
+    --ring: #0e897b;
+    --border: #dde6e3;
+    --input: #d7e2de;
+    --surface-0: #ffffff;
+    --surface-1: #f8faf9;
+    --surface-2: #f0f5f3;
+    --border-subtle: #e7eeeb;
+    --border-default: #dde6e3;
+    --interactive-hover: #eef6f3;
+    --interactive-active: #dfefe9;
+    --success: #137c62;
+    --success-muted: #e6f4ec;
+    --shadow-float: 0 2px 8px rgb(30 64 55 / 0.035);
+    --shadow-pop: 0 8px 28px rgb(30 64 55 / 0.09);
+    color-scheme: light;
+    line-height: 1.6;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="workspace"] {
+    background: var(--canvas);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--card);
+    box-shadow: var(--shadow-float);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] > header {
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 14px 14px 0 0;
+    background: #ffffff;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="session-title"] {
+    border-color: var(--border-subtle);
+    color: #28483e;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="export-button"] {
+    background: var(--accent);
+    color: var(--accent-foreground);
+}
+
+html:not(.dark) .lingdoc-system-fonts #chat-form,
+html:not(.dark) .lingdoc-system-fonts #hero-chat-form {
+    border: 1px solid var(--input);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: none;
+}
+
+html:not(.dark) .lingdoc-system-fonts #chat-form:focus-within,
+html:not(.dark) .lingdoc-system-fonts #hero-chat-form:focus-within {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px rgb(14 137 123 / 0.09);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-input"] {
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="button"] {
+    box-shadow: none;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="popover-content"],
+html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-content"] {
+    border-color: var(--border);
+    box-shadow: var(--shadow-pop);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-overlay"] {
+    background: rgb(28 49 43 / 0.28);
+}
