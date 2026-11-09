@@ -84,6 +84,8 @@ The pinned dependency installation, draw.io resource download, complete TypeScri
 
 After building, the optional Windows Chrome smoke test exercises the actual iframe and draw.io application with a temporary browser profile and drawing store. It does not call a model. Without the standalone build or Windows Chrome, it skips rather than claiming a pass.
 
+The browser suite also checks eight viewport sizes, including narrow and short windows, and appends an extension-like body host to ensure it cannot create another application grid row. It checks visible save/library controls, full-height embedded workspace, chat input bounds and mobile canvas/chat switching. Desktop and mobile screenshots are written under the ignored `runtime/drawing-layout-{1920,390}.png` paths. Both Chrome and Edge passed this layout regression and the save/restore flow on 2026-11-09. To run with another installed Windows Chromium browser, set `LINGDOC_DRAWING_BROWSER` to its executable path before running the same command.
+
 On 2026-11-09 the updated real-browser test passed in 24.6 seconds with zero skips. It loaded XML and chat into the actual canvas, saved, created a new drawing, reopened directly from a blank canvas without an empty save, saved revision 2, and verified editable XML and chat inside both exported PNG files. It then edited a second drawing's XML, title and conversation, switched away to trigger autosave, and switched back to verify complete source and chat restoration. This covers the drawing application; it does not verify native WordCraft insertion or document saving.
 
 ```powershell

@@ -11,7 +11,7 @@ import {sourceDirectory} from './patch.mjs';
 import {createDrawingHTTP} from '../prototypes/local-integration-20261103/native-reading/drawing-http.mjs';
 import {readDrawing} from '../prototypes/local-integration-20261103/native-reading/drawing-png.mjs';
 
-const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const browserExecutable = process.env.LINGDOC_DRAWING_BROWSER || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const present = async file => { try { await access(file); return true; } catch { return false; } };
 const xml = '<mxfile><diagram id="test-page" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="test-cell" value="LingDoc smoke" vertex="1" parent="1"><mxGeometry x="40" y="40" width="140" height="60" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>';
 function containsCell(source) {
@@ -28,7 +28,7 @@ const messages = [{id:'smoke-message',role:'user',parts:[{type:'text',text:'Pres
 
 test('real upstream drawing can save and restore portable source', {timeout:240000}, async t => {
   if (!await present(path.join(sourceDirectory,'.next','standalone','server.js'))) return t.skip('Upstream standalone build is unavailable');
-  if (process.platform !== 'win32' || !await present(chrome)) return t.skip('Windows Chrome is unavailable');
+  if (process.platform !== 'win32' || !await present(browserExecutable)) return t.skip('Configured Windows Chromium browser is unavailable');
   const require = createRequire(path.join(sourceDirectory,'package.json'));
   const {chromium} = require('@playwright/test');
   const runtime = path.resolve(path.dirname(fileURLToPath(import.meta.url)),'runtime');
@@ -53,8 +53,8 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     console.error('smoke: upstream started');
     assert.equal(upstream.aiConfigured,false);
     handler = await createDrawingHTTP({directory:path.join(directory,'store'),token:'smoke-token',drawingOrigin:upstream.origin});
-    browser = await chromium.launchPersistentContext(path.join(directory,'chrome-profile'),{executablePath:chrome,headless:true});
-    console.error('smoke: Chrome launched');
+    browser = await chromium.launchPersistentContext(path.join(directory,'browser-profile'),{executablePath:browserExecutable,headless:true});
+    console.error('smoke: browser launched');
     page = browser.pages()[0] || await browser.newPage();
     page.on('console', msg => { if (msg.type() === 'error' || msg.type() === 'warning') diagnostics.push(`console ${msg.type()}: ${msg.text()}`); });
     page.on('pageerror', error => diagnostics.push(`pageerror: ${error.message}`));
@@ -80,6 +80,51 @@ test('real upstream drawing can save and restore portable source', {timeout:2400
     const loaded = await loadCanvas(xml, messages);
     assert.equal(loaded.loaded,true,JSON.stringify(loaded));
     console.error('smoke: XML and messages loaded');
+    await t.test('workspace fits the viewport even when extensions append body nodes', async () => {
+      await page.evaluate(() => {
+        // Extension hosts must not become rows in the application's grid.
+        const host = document.createElement('div');
+        host.id = 'extension-layout-fixture';
+        document.body.append(host);
+      });
+      const app = page.frames().find(frame => frame.url() === upstream.origin + '/zh');
+      for (const [width,height] of [[1920,1080],[2560,1440],[1280,720],[1024,768],[768,1024],[390,844],[844,390],[1280,480]]) {
+        await page.setViewportSize({width,height});
+        await page.waitForFunction(() => Math.abs(document.querySelector('.workspace').getBoundingClientRect().bottom - innerHeight) < 2, null, {timeout:3000});
+        const layout = await page.evaluate(() => {
+          const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
+          return {width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,canvas:rect('#editor'),save:rect('#save'),picker:rect('#saved')};
+        });
+        assert.ok(layout.scrollWidth <= width + 1, `No page overflow at ${width}x${height}`);
+        assert.ok(layout.canvas.height > height * .5, `Canvas gets usable height at ${width}x${height}`);
+        for (const control of [layout.save,layout.picker]) {
+          assert.ok(control.x >= 0 && control.right <= width + 1 && control.y >= 0 && control.bottom <= height, 'Primary controls remain visible');
+        }
+        await app.waitForFunction(() => {
+          const workspace = document.querySelector('[data-testid="workspace"]').getBoundingClientRect();
+          return Math.abs(workspace.width - innerWidth) < 2 && Math.abs(workspace.height - innerHeight) < 2;
+        });
+        const inner = await app.evaluate(() => ({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth}));
+        assert.ok(Math.abs(inner.height-layout.canvas.height) < 2 && Math.abs(inner.width-layout.canvas.width) < 2, 'Iframe follows its available space');
+        assert.ok(inner.scrollWidth <= inner.width + 1, 'Embedded workspace does not overflow horizontally');
+        if (inner.width < 768) await app.getByRole('button',{name:'对话',exact:true}).click();
+        await app.getByTestId('chat-input').waitFor({state:'visible'});
+        const chat = await app.evaluate(() => ({
+          panel:document.querySelector('[data-testid="chat-panel"]').getBoundingClientRect().toJSON(),
+          input:document.querySelector('[data-testid="chat-input"]').getBoundingClientRect().toJSON(),
+        }));
+        for (const rect of [chat.panel,chat.input]) {
+          assert.ok(rect.x >= 0 && rect.right <= inner.width + 1 && rect.y >= 0 && rect.bottom <= inner.height + 1, `Chat remains accessible at ${width}x${height}`);
+        }
+        if (width === 1920 || width === 390) await page.screenshot({path:path.join(runtime,`drawing-layout-${width}.png`),fullPage:true});
+        if (inner.width < 768) {
+          await app.getByRole('button',{name:'画布',exact:true}).click();
+          await app.getByTestId('canvas-stage').waitFor({state:'visible'});
+        }
+      }
+      await page.evaluate(() => document.getElementById('extension-layout-fixture').remove());
+      await page.setViewportSize({width:1280,height:720});
+    });
     await page.locator('#title').fill('Smoke drawing');
     const firstResponse = page.waitForResponse(response => response.url().endsWith('/drawing/save') && response.request().method()==='POST', {timeout:60000});
     await page.locator('#save').click();
