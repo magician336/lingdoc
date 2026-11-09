@@ -47,7 +47,7 @@
       <details class="document-panel">
         <summary><svg class="icon"><use href="#i-document"/></svg><span>插入到文档</span><svg class="icon chevron"><use href="#i-chevron"/></svg></summary>
         <div class="document-content">
-          <p class="helper">在灵档中打开文稿，再选择插入位置。</p>
+          <p class="helper">定位时先保存图稿并返回文稿；在正文单击位置，确认后回到这里插入。</p>
           <div class="field-heading"><label class="field-label" for="hosts">目标文档</label><button id="refresh" class="icon-button" title="查找文档" aria-label="查找文档"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
           <select id="hosts"><option value="">选择文档窗口</option></select>
           <button id="capture" class="button secondary" disabled><svg class="icon"><use href="#i-cursor"/></svg>定位插入位置</button>
@@ -65,8 +65,9 @@
   <div class="workspace">
     <header class="workspace-header">
       <div class="title-area"><div class="breadcrumb">创作空间<span>/</span><strong>AI 绘图</strong></div><label class="title-label" for="title"><input id="title" aria-label="图稿名称" maxlength="120" value="新图稿" title="点击修改图稿名称"></label></div>
-      <div class="header-actions"><span id="version" class="version-badge">未保存图稿</span><button id="save" class="button primary save-button" disabled><svg class="icon"><use href="#i-save"/></svg>保存图稿</button></div>
+      <div class="header-actions"><button id="exit" class="button secondary exit-button">保存并返回文稿</button><span id="version" class="version-badge">未保存图稿</span><button id="save" class="button primary save-button" disabled><svg class="icon"><use href="#i-save"/></svg>保存图稿</button></div>
     </header>
+    <p id="notice" class="workspace-notice" aria-live="polite">正在准备绘图窗口…</p>
     <main class="canvas-area" aria-label="绘图工作区">
       <div class="canvas-caption"><span><span class="canvas-dot"></span>绘图工作区</span><span class="canvas-hint">自由编辑 · AI 协作</span></div>
       <div class="canvas-surface"><iframe id="editor" title="AI 绘图画布与对话" referrerpolicy="origin"></iframe></div>

@@ -3,13 +3,16 @@ const element = id => document.getElementById(id);
 const frame = element('editor');
 const channel = new BroadcastChannel('lingdoc-drawing');
 const pending = new Map();
+const hosts = new Map();
+const resume = new URLSearchParams(window.location?.search || '');
+let resumed = false;
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
 let activeFeature = null;
 const features = {
   paper: '论文转图表', animated: '动画图表', aws: 'AWS 架构',
   flowchart: '复杂流程图', creative: '创意绘画',
 };
-const message = text => { element('status').textContent = text; };
+const message = text => { element('status').textContent = text; element('notice').textContent = text; };
 function controls() {
   element('version').textContent = current ? `已存 v${current.revision}` : '未保存图稿';
   for (const id of ['save', 'new', 'edit', 'capture', 'context']) element(id).disabled = busy || !ready;
@@ -20,6 +23,7 @@ function controls() {
   element('title').disabled = busy;
   frame.inert = busy;
   element('refresh').disabled = busy;
+  element('exit').disabled = busy;
   for (const feature of Object.keys(features)) {
     const button = element('feature-' + feature);
     button.disabled = busy || !ready;
@@ -54,15 +58,21 @@ function settle(data, destination) {
 }
 window.addEventListener('message', event => {
   if (event.origin !== config.origin || event.source !== frame.contentWindow || event.data?.channel !== 'lingdoc-drawing') return;
-    if (event.data.type === 'ready') { clearTimeout(connectionTimer); ready = true; controls(); message('可以开始绘图。图稿保存后可插入正文。'); }
+    if (event.data.type === 'ready') {
+      clearTimeout(connectionTimer); ready = true; controls();
+      message('可以开始绘图。图稿保存后可插入正文。');
+      if (!resumed && resume.has('resume')) { resumed = true; run(resumeDrawing); }
+    }
   else settle(event.data, 'frame');
 });
 channel.onmessage = ({ data }) => {
   if (data?.token !== config.token) return;
   if (data.type === 'host') {
+    hosts.set(data.hostId, data);
     if (![...element('hosts').options].some(option => option.value === data.hostId)) {
       element('hosts').add(new Option(`${data.standalone ? '普通文档' : '项目文稿'} · ${data.title} · ${data.hostId.slice(0, 6)}`, data.hostId));
     }
+    if (resume.get('host') === data.hostId) element('hosts').value = data.hostId;
   } else if (data.type === 'result') settle(data, data.hostId);
 };
 async function run(action) {
@@ -102,9 +112,58 @@ async function capture() {
   const hostId = element('hosts').value;
   if (!hostId) throw Error('请先选择目标文档窗口。');
   const selection = await request(hostId, { op: 'diagram.selection' });
+  return { ...selection, hostId };
+}
+async function saveBeforeLeaving() {
+  if (!ready) {
+    if (config.origin) throw Error('画布尚未连接，无法确认图稿已保存。请等待连接完成后再返回。');
+    return current;
+  }
+  const exported = await request('frame', { type: 'export', skipEmpty: !current });
+  return exported.empty ? current : await save(exported);
+}
+function focusOpener() {
+  try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch { /* Browser may deny tab focus. */ }
+}
+function closeDrawing(exit) {
+  focusOpener();
+  window.close();
+  setTimeout(() => {
+    if (window.closed) return;
+    if (exit) window.location.assign('/');
+    else message('图稿已保存。请手动切回目标文稿标签，在正文单击位置后，点击“确认位置并返回绘图”。浏览器未允许自动关闭此页。');
+  }, 500);
+}
+async function pick() {
+  target = null; controls();
+  const hostId = element('hosts').value;
+  if (!hostId) throw Error('请先打开并选择目标文稿，再定位插入位置。');
+  if (!hosts.get(hostId)?.picker) throw Error('文稿窗口使用旧版本：请先保存文稿，再刷新文稿窗口并点击“查找文档”，然后重新定位。');
+  message('正在保存图稿，随后返回文稿选择插入位置…');
+  const saved = await saveBeforeLeaving();
+  const result = await request(hostId, { op: 'diagram.pick', pickId: crypto.randomUUID(), draftId: saved?.id || null });
+  if (!result.picking) throw Error('文稿未能开启定位，请保留画布并重试。');
+  message('请在目标文稿中单击插入位置，再点击“确认位置并返回绘图”。');
+  closeDrawing(false);
+}
+async function resumeDrawing() {
+  target = null;
+  const hostId = resume.get('host');
+  if (!hostId) throw Error('定位会话无效，请重新选择目标文稿。');
+  if (resume.get('draft')) {
+    const { record } = await api('get', { id: resume.get('draft') });
+    if (!record) throw Error('未找到已保存的图稿，请从“我的图稿”中重新打开。');
+    await load(record);
+  }
+  message('正在恢复已确认的正文位置…');
+  const selection = await request(hostId, { op: 'diagram.resume', ticket: resume.get('resume') });
   target = { ...selection, hostId };
-  message(target.image ? '已定位选中的图片，可编辑原图或更新图片。' : '已记录正文位置。插入前请保持目标文档及光标位置。');
-  return target;
+  if (![...element('hosts').options].some(option => option.value === hostId)) element('hosts').add(new Option('已定位的文稿', hostId));
+  element('hosts').value = hostId;
+  window.history?.replaceState(null, '', '/native-reading/drawing');
+  message('已确认正文插入位置。点击“插入正文”即可写入；请保持文稿和光标位置不变。');
+  const panel = document.querySelector?.('.document-panel');
+  if (panel) panel.open = true;
 }
 async function writeImage(replace) {
   const destination = target;
@@ -122,6 +181,7 @@ async function writeImage(replace) {
 }
 function discover() {
   target = null;
+  hosts.clear();
   element('hosts').replaceChildren(new Option('选择文档窗口', ''));
   channel.postMessage({ type: 'discover', token: config.token }); controls();
 }
@@ -137,8 +197,14 @@ for (const [feature, label] of Object.entries(features)) {
 }
 element('hosts').onchange = () => { target = null; controls(); };
 element('save').onclick = () => run(save);
-element('capture').onclick = () => run(capture);
+element('capture').onclick = () => run(pick);
+element('exit').onclick = () => run(async () => {
+  message('正在保存图稿并返回文稿…');
+  await saveBeforeLeaving();
+  closeDrawing(true);
+});
 element('context').onclick = () => run(async () => {
+  target = null;
   const selection = await capture();
   const text = selection.selection.text;
   if (!text?.trim()) throw Error('请先在正文选中要用于绘图的文字。');
@@ -177,13 +243,14 @@ element('saved').onchange = () => {
 };
 element('edit').onclick = () => run(async () => {
   if (!confirm('编辑原图会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
+  target = null;
   const selection = await capture();
   if (!selection.image) throw Error('请在正文中选中一张灵档生成的图片。');
   const { record } = await api('read-image', { png: selection.image.data });
   if (!record) throw Error('这张图片没有携带可编辑图稿。');
   // The document carries its exact source version. Saving it creates a fresh drawing,
   // so editing a copied or old image cannot overwrite a newer library version.
-  await load(record, false); message('已恢复图片中的图稿与对话，修改后可更新正文图片。');
+  await load(record, false); target = selection; message('已恢复图片中的图稿与对话，修改后可更新正文图片。');
 });
 controls();
 if (config.origin) {

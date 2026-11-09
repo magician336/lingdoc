@@ -74,7 +74,7 @@ async function setup() {
     addEventListener: (name, fn) => { events[name] = fn; },
   };
   vm.runInNewContext(source, {
-    window, document: { getElementById: el }, BroadcastChannel: Channel, Option,
+    window, document: { getElementById: el }, BroadcastChannel: Channel, Option, URLSearchParams,
     crypto: { randomUUID: () => `key-${++serial}` }, setTimeout, clearTimeout,
     confirm: () => { confirmCalls++; return true; },
     fetch: async (url, options) => {

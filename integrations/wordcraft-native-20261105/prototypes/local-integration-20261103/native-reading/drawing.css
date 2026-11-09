@@ -83,6 +83,8 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
 #title:hover { border-color: #e2eae3; }
 #title:focus { background: #f9fbf8; }
 .header-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.workspace-notice { flex-shrink: 0; margin: 0; padding: 8px 24px; color: #346650; background: #eaf3ed; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.exit-button { white-space: nowrap; font-size: 12px; }
 .version-badge { font-size: 11px; color: #90a096; font-variant-numeric: tabular-nums; }
 .save-button { padding: 10px 17px; }
 .canvas-area { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; padding: 0 18px 13px; }
@@ -125,6 +127,9 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
   .document-panel summary .icon { width: 14px; height: 14px; }
   .document-content { padding-top: 10px; }
   .workspace-header { min-height: 70px; padding: 10px 16px; gap: 10px; }
+  .header-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 185px; }
+  .exit-button { min-height: 32px; padding: 6px 8px; font-size: 11px; }
+  .workspace-notice { padding: 6px 12px; font-size: 11px; }
   #title { font-size: 15px; }
   .breadcrumb { font-size: 9px; }
   .save-button { padding: 8px 10px; min-height: 36px; font-size: 11px; gap: 6px; }
