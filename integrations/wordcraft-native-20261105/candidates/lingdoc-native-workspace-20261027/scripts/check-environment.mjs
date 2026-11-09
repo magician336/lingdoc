@@ -49,6 +49,7 @@ export async function checkEnvironment({ profile = 'all', runtimeDir = runtimeDi
     jobs.push(check('go', 'WSL / Go / 缓存', '核对所列 WSL 发行版、Go 路径、gcc 和已有缓存；可在 local-environment.mjs 对应的 LINGDOC_* 变量指定另一套本地位置。', async () => {
       await access(path.join(goRoot, 'go.mod'));
       const requirements = [
+        `export PATH=${shellQuote(goEnvironment.PATH)}`,
         `test -x ${shellQuote(`${goHome}/bin/go`)} || { echo 'Go executable missing' >&2; exit 1; }`,
         ...[goEnvironment.GOMODCACHE, goEnvironment.GOCACHE].map(directory => `test -d ${shellQuote(directory)} || { echo ${shellQuote(`Cache directory missing: ${directory}`)} >&2; exit 1; }`),
         "command -v gcc >/dev/null || { echo 'gcc missing' >&2; exit 1; }",
