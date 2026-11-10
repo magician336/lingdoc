@@ -8,9 +8,12 @@ test('window trusts only the configured frame and sends captured text to that or
   let channel, serial = 0, lostResponse = false, committed, versions = 0; const retryRequests = [];
   class Option { constructor(text, value) { this.text = text; this.value = value; } }
   class Element {
-    constructor() { this.options = []; this.value = ''; this.disabled = false; this.textContent = ''; }
-    replaceChildren(...children) { this.options = children; this.value = children[0]?.value || ''; }
+    constructor() { this.options = []; this.children = []; this.dataset = {}; this.style = {}; this.value = ''; this.disabled = false; this.textContent = ''; }
+    replaceChildren(...children) { this.children = children; this.options = children; this.value = children[0]?.value || ''; }
     add(option) { this.options.push(option); }
+    append(...children) { this.children.push(...children); }
+    setAttribute() {}
+    querySelectorAll() { return this.children.flatMap(child => [...(child.type === 'button' ? [child] : []), ...(child.querySelectorAll?.() || [])]); }
   }
   const element = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const frame = element('editor'); frame.contentWindow = {postMessage: (data, origin) => frameMessages.push({data, origin})};
@@ -21,7 +24,7 @@ test('window trusts only the configured frame and sends captured text to that or
   }
   const window = {LINGDOC_DRAWING:{token:'secret',origin:'http://127.0.0.1:4000'}, location:{search:''}, addEventListener:(name, callback) => { events[name] = callback; }};
   vm.runInNewContext(await readFile(new URL('./drawing.js', import.meta.url), 'utf8'), {
-    window, document:{getElementById:element}, BroadcastChannel:Channel, Option,
+    window, document:{getElementById:element,createElement:()=>new Element()}, BroadcastChannel:Channel, Option,
     crypto:{randomUUID:() => `id-${++serial}`}, fetch:async (url, options) => {
       if (url.endsWith('/save') && lostResponse) {
         const request = JSON.parse(options.body); retryRequests.push(request);
@@ -94,9 +97,12 @@ async function createWorkflowHarness({search='', picker=true, directInsert=true,
   let channel,serial=0;
   class Option {constructor(text,value){this.text=text;this.value=value;}}
   class Element {
-    constructor(){this.options=[];this.value='';this.disabled=false;this.textContent='';}
-    replaceChildren(...children){this.options=children;this.value=children[0]?.value||'';}
+    constructor(){this.options=[];this.children=[];this.dataset={};this.style={};this.value='';this.disabled=false;this.textContent='';}
+    replaceChildren(...children){this.children=children;this.options=children;this.value=children[0]?.value||'';}
     add(option){this.options.push(option);}
+    append(...children){this.children.push(...children);}
+    setAttribute(){}
+    querySelectorAll(){return this.children.flatMap(child=>[...(child.type==='button'?[child]:[]),...(child.querySelectorAll?.()||[])]);}
   }
   const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   const frame=element('editor');
@@ -123,7 +129,7 @@ async function createWorkflowHarness({search='', picker=true, directInsert=true,
     get closed(){return state.closed;},close(){if(state.allowClose)state.closed=true;},
     addEventListener:(name,callback)=>{events[name]=callback;}};
   vm.runInNewContext(await readFile(new URL('./drawing.js',import.meta.url),'utf8'),{
-    window,location,URLSearchParams,document:{getElementById:element},BroadcastChannel:Channel,Option,
+    window,location,URLSearchParams,document:{getElementById:element,createElement:()=>new Element()},BroadcastChannel:Channel,Option,
     crypto:{randomUUID:()=>`workflow-${++serial}`},setTimeout,clearTimeout,confirm:()=>true,
     fetch:async(url,options)=>{
       const action=url.split('/').at(-1);const body=options?.body?JSON.parse(options.body):null;calls.push({action,body});order.push('api:'+action);
@@ -285,7 +291,7 @@ test('failed edit apply retains page and reuses operation identity on retry',asy
     const saves=h.calls.filter(c=>c.action==='save').length;
     assert.equal(h.element('editor').inert,true);
     assert.equal(h.element('title').disabled,true);
-    assert.equal(h.element('saved').disabled,true);
+    assert.equal(h.element('library-trigger').disabled,true);
     h.state.applyError=false;await h.element('apply-edit').onclick();
     const second=h.hostMessages.filter(m=>m.request?.op==='diagram.edit-apply').at(-1)?.request;
     assert.deepEqual(JSON.parse(JSON.stringify(second)),JSON.parse(JSON.stringify(first)));
@@ -314,7 +320,7 @@ test('exit after deletion skips unchanged canvas but saves later changes',async(
     const h=await createWorkflowHarness();
     try {
       h.ready();await tick();await h.element('save').onclick();
-      await h.element('delete-drawing').onclick();
+      await h.element('library-list').children.find(row=>row.dataset.id==='draft-1').children[1].onclick({stopPropagation(){}});
       if(changed)h.state.xml='<mxfile id="later-edit"/>';
       h.calls.length=0;await h.element('exit').onclick();
       const saves=h.calls.filter(c=>c.action==='save');
@@ -329,7 +335,7 @@ test('inserting the unchanged canvas after deletion explicitly creates a new dra
   const h=await createWorkflowHarness();
   try {
     h.ready();await tick();await h.element('save').onclick();
-    await h.element('delete-drawing').onclick();
+    await h.element('library-list').children.find(row=>row.dataset.id==='draft-1').children[1].onclick({stopPropagation(){}});
     h.calls.length=0;h.hostMessages.length=0;
     await h.element('capture').onclick();
     const save=h.calls.find(c=>c.action==='save');assert.ok(save);

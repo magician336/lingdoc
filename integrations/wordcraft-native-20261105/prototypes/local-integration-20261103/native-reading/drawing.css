@@ -18,7 +18,6 @@ button, select { cursor: pointer; }
 button { -webkit-tap-highlight-color: transparent; }
 button:disabled { cursor: not-allowed; opacity: .4; box-shadow: none; }
 [hidden] { display: none !important; }
-.delete-drawing:not(:disabled):hover { color: #a63d3d; background: #fff0ed; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #8abfac; outline-offset: 3px; }
 .icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
 .icon { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -44,7 +43,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .field-label { display: block; font-size: 11px; color: #7d8d83; margin-bottom: 8px; }
 .library-picker { display: flex; align-items: center; gap: 7px; padding-left: 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: #81998b; }
 select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; height: 39px; padding: 0 8px; color: #455b4f; background: white; font-size: 12px; text-overflow: ellipsis; }
-.library-picker select { flex: 1; width: 0; border: 0; background: transparent; padding-left: 0; }
 .helper { margin: 8px 0 0; color: #87948d; font-size: 11px; line-height: 1.8; }
 .version-history { width: 100%; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .version-history summary { cursor: pointer; color: #587363; font-size: 12px; }
@@ -132,7 +130,6 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
   .library .field-heading { order: 2; margin: 0; }
   .library .field-heading .field-label { display: none; }
   .library-picker { flex: 1; min-width: 0; }
-  .library-picker select { height: 34px; font-size: 11px; }
   .feature-nav { width: 100%; min-width: 0; padding: 0; }
   .feature-list { flex-direction: row; gap: 5px; overflow-x: auto; padding: 2px; }
   .feature-button { flex-shrink: 0; min-height: 32px; padding: 6px 8px; font-size: 11px; white-space: nowrap; }
@@ -164,3 +161,22 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
   .sidebar-footer { padding-top: 10px; padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+
+.library-picker { width: 100%; min-height: 39px; padding: 0 10px; text-align: left; cursor: pointer; }
+#library-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #455b4f; font-size: 12px; }
+.picker-chevron { width: 14px; height: 14px; transform: rotate(90deg); }
+.library-popover { position: fixed; z-index: 20; width: min(320px, calc(100vw - 16px)); max-height: min(420px, calc(100vh - 16px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 36px #1e3d2d30; }
+.library-popover-heading { display: flex; justify-content: space-between; align-items: center; color: #40584b; font-size: 14px; }
+.library-popover-heading button { border: 0; background: transparent; color: #758a7e; font-size: 22px; }
+#library-search { width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 7px; padding: 0 10px; font-size: 12px; }
+.library-list { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.library-row { display: flex; align-items: center; border-radius: 8px; }
+.library-row:hover, .library-open[aria-current="true"] { background: #edf5ef; }
+.library-open { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 7px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.library-thumbnail { width: 48px; height: 38px; flex-shrink: 0; border: 1px solid #e5ebe6; border-radius: 5px; object-fit: contain; background: #fff; }
+.library-row-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.library-row-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #40584b; font-size: 12px; font-weight: 600; }
+.library-row-text small { color: #87948d; font-size: 10px; }
+.library-delete { flex-shrink: 0; width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: #9b7169; font-size: 15px; }
+.library-delete:not(:disabled):hover { background: #fff0ed; color: #a63d3d; }
+.library-empty { margin: 10px 4px; color: #87948d; font-size: 12px; }

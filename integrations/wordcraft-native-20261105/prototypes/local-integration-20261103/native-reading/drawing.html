@@ -31,8 +31,13 @@
       <button id="new" class="button new-button" disabled><svg class="icon"><use href="#i-plus"/></svg>新建图稿</button>
       <section class="library" aria-labelledby="library-heading">
         <div class="section-heading"><h2 id="library-heading">我的图稿</h2><span id="drawing-count" class="count">0</span></div>
-        <div class="field-heading"><label class="field-label" for="saved">已保存图稿</label><button id="delete-drawing" class="icon-button delete-drawing" title="删除整个图稿及全部版本" aria-label="删除整个图稿及全部版本" disabled><svg class="icon"><use href="#i-trash"/></svg></button></div>
-        <div class="library-picker"><svg class="icon"><use href="#i-folder"/></svg><select id="saved"><option value="">选择图稿</option></select></div>
+        <div class="field-heading"><span class="field-label">已保存图稿</span></div>
+        <button id="library-trigger" class="library-picker" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="library-popover" disabled><svg class="icon"><use href="#i-folder"/></svg><span id="library-label">选择图稿</span><svg class="icon picker-chevron"><use href="#i-chevron"/></svg></button>
+        <div id="library-popover" class="library-popover" role="dialog" aria-label="我的图稿" hidden>
+          <div class="library-popover-heading"><strong>我的图稿</strong><button id="library-close" type="button" aria-label="关闭图稿列表">×</button></div>
+          <input id="library-search" type="search" placeholder="搜索图稿" aria-label="搜索图稿">
+          <div id="library-list" class="library-list"></div>
+        </div>
         <p class="helper">选择即打开，当前图稿会先自动保存。</p>
         <details id="version-history" class="version-history">
           <summary>保存版本<span id="history-count" class="count"></span></summary>

@@ -6,10 +6,10 @@ const pending = new Map();
 const hosts = new Map();
 const entry = new URLSearchParams(window.location?.search || '');
 let editEntryHandled = false, editingTicket = null, pendingWrite = null, pendingDelete = null;
-let deletedDraft = null;
+let deletedDraft = null, deleteConflictId = null;
 let historyId = null, pendingVersionDelete = null;
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
-let activeFeature = null;
+let activeFeature = null, libraryRecords = [];
 const features = {
   paper: '论文转图表', animated: '动画图表', aws: 'AWS 架构',
   flowchart: '复杂流程图', creative: '创意绘画',
@@ -21,19 +21,20 @@ function controls() {
   element('insert').disabled = busy || !ready || !target;
   element('replace').disabled = busy || !ready || !target?.image;
   element('hosts').disabled = busy;
-  element('saved').disabled = busy || !ready;
+  element('library-trigger').disabled = busy || !ready || !!pendingWrite;
+  element('library-search').disabled = busy || !!pendingWrite;
+  for (const button of element('library-list').querySelectorAll?.('button') || []) button.disabled = busy || !ready || !!pendingWrite;
   element('title').disabled = busy;
   frame.inert = busy;
   element('refresh').disabled = busy;
   element('exit').disabled = busy;
   element('exit').textContent = pendingWrite ? '返回文稿核对' : deletedDraft ? '返回文稿' : '保存图稿并返回';
-  element('delete-drawing').disabled = busy || !current;
   element('apply-edit').hidden = !target?.image;
   element('apply-edit').disabled = busy || !ready || !target?.image;
   element('apply-edit').textContent = pendingWrite ? '重试更新' : '更新并返回文稿';
   if (pendingWrite) {
     frame.inert = true;
-    for (const id of ['save', 'new', 'edit', 'capture', 'context', 'saved', 'title', 'hosts', 'refresh', 'delete-drawing']) element(id).disabled = true;
+    for (const id of ['save', 'new', 'edit', 'capture', 'context', 'library-trigger', 'title', 'hosts', 'refresh']) element(id).disabled = true;
   }
   for (const feature of Object.keys(features)) {
     const button = element('feature-' + feature);
@@ -48,8 +49,12 @@ async function api(action, body) {
     headers: { 'Content-Type': 'application/json', 'X-Workspace-Token': config.token },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const result = await response.json();
-  if (!response.ok) throw Error(result.error || '图稿操作失败。');
+  const result = await response.json().catch(error => { if (response.ok) throw error; return {}; });
+  if (!response.ok) {
+    const error = Error(result.error || '图稿操作失败。');
+    error.status = response.status;
+    throw error;
+  }
   return result;
 }
 function request(destination, data) {
@@ -94,10 +99,9 @@ async function run(action) {
 }
 async function list() {
   const records = await api('list');
+  libraryRecords = pendingDelete && !records.some(record => record.id === pendingDelete.id) ? [...records, pendingDelete.record] : records;
   element('drawing-count').textContent = String(records.length);
-  element('saved').replaceChildren(new Option('选择图稿', ''));
-  for (const record of records) element('saved').add(new Option(`${record.title} · 第 ${record.revision} 版`, record.id));
-  if (current && records.some(record => record.id === current.id)) element('saved').value = current.id;
+  renderLibrary();
   await refreshHistory();
 }
 async function refreshHistory() {
@@ -161,12 +165,11 @@ async function load(record, persisted = true) {
   await request('frame', { type: 'load', xml: record?.xml || '<mxfile><diagram name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>', messages: record?.messages || [], title: record?.title || '新图稿' });
   current = persisted ? record : null;
   pendingSave = null;
-  pendingDelete = null;
   deletedDraft = null;
   historyId = persisted ? record?.id || null : null;
   pendingVersionDelete = null;
   element('title').value = record?.title || '新图稿';
-  element('saved').value = current?.id || '';
+  renderLibrary();
   await refreshHistory();
 }
 async function save(exported) {
@@ -295,25 +298,35 @@ for (const [feature, label] of Object.entries(features)) {
 element('hosts').onchange = () => { target = null; editingTicket = null; controls(); };
 element('save').onclick = () => run(save);
 element('apply-edit').onclick = () => run(() => writeImage(true));
-element('delete-drawing').onclick = () => run(async () => {
-  if (!current) return;
-  const deleting = current;
-  if (!pendingDelete && !confirm(`删除“${deleting.title}”及其保存版本？正文中的图片和当前画布会保留。`)) return;
-  if (!pendingDelete || pendingDelete.id !== deleting.id || pendingDelete.expectedRevision !== writeRevision(deleting)) {
-    pendingDelete = {id:deleting.id, expectedRevision:writeRevision(deleting), key:crypto.randomUUID()};
+async function deleteDrawing(record) {
+  if (pendingDelete && pendingDelete.id !== record.id) throw Error('请先重试确认上一次图稿删除的结果。');
+  const conflict = deleteConflictId === record.id;
+  if (!pendingDelete && !confirm(`删除“${record.title}”及其保存版本${conflict ? `（列表最新为第 ${record.revision} 版）` : ''}？正文中的图片和当前画布会保留。`)) return;
+  if (!pendingDelete) {
+    const snapshot = current?.id === record.id ? draftFingerprint(await request('frame', {type:'export'})) : null;
+    pendingDelete = {id:record.id, expectedRevision:current?.id === record.id && !conflict ? writeRevision(current) : record.revision, key:crypto.randomUUID(), snapshot, record};
+    if (conflict) deleteConflictId = null;
   }
-  const deletedSnapshot = draftFingerprint(await request('frame', {type:'export'}));
-  await api('delete', pendingDelete);
-  // Keep canvas/embedded source, detach the deleted library identity. A later
-  // explicit save creates a new draft rather than reviving the deleted one.
-  current = null; pendingDelete = null; pendingSave = null;
-  // Leaving or switching must not silently recreate the drawing just deleted.
-  // Explicit save/insert, or subsequent edits, can create a new draft.
-  deletedDraft = deletedSnapshot;
-  element('saved').value = '';
+  const deleting = pendingDelete;
+  try {
+    await api('delete', {id:deleting.id, expectedRevision:deleting.expectedRevision, key:deleting.key});
+  } catch (error) {
+    if ([400, 403, 404, 409].includes(error.status)) {
+      pendingDelete = null;
+      if (error.status === 409) deleteConflictId = deleting.id;
+      try { await list(); } catch { renderLibrary(); }
+    }
+    throw error;
+  }
+  pendingDelete = null;
+  if (current?.id === deleting.id) {
+    current = null; pendingSave = null;
+    deletedDraft = deleting.snapshot;
+  }
+  if (historyId === deleting.id) historyId = null;
   await list();
   message('图稿已从列表删除。当前画布和正文中的图片已保留。');
-});
+}
 element('capture').onclick = () => run(pick);
 element('exit').onclick = () => run(async () => {
   if (pendingWrite) { closeDrawing(true); return; }
@@ -337,12 +350,9 @@ element('new').onclick = () => run(async () => {
   if (!confirm('新建图稿会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
   await load(null); target = null; editingTicket = null; pendingWrite = null; message('已新建图稿。');
 });
-element('saved').onchange = () => {
-  const id = element('saved').value;
-  if (busy || !ready || !id || id === current?.id) {
-    element('saved').value = current?.id || '';
-    return;
-  }
+function selectDrawing(id) {
+  if (busy || !ready || !id || id === current?.id) return;
+  if (pendingDelete?.id === id) { message('请先重试确认这个图稿的删除结果。'); return; }
   return run(async () => {
     try {
       // Capture the destination before saving refreshes the library selection.
@@ -355,11 +365,10 @@ element('saved').onchange = () => {
       await load(record); target = null; editingTicket = null;
       message(skipSave ? '已打开保存的图稿。' : '原图已自动保存，已打开选中的图稿。');
     } finally {
-      // Reflect the last tracked drawing so a failed switch can be retried.
-      element('saved').value = current?.id || '';
+      renderLibrary();
     }
   });
-};
+}
 element('edit').onclick = () => run(async () => {
   if (!confirm('编辑原图会切换当前画布，请先保存需要保留的修改。继续吗？')) return;
   target = null;
@@ -367,6 +376,60 @@ element('edit').onclick = () => run(async () => {
   if (!selection.image) throw Error('请在正文中选中一张灵档生成的图片。');
   await restoreImage(selection);
 });
+function setLibraryOpen(open) {
+  const popover = element('library-popover');
+  popover.hidden = !open;
+  element('library-trigger').setAttribute?.('aria-expanded', String(open));
+  if (open) {
+    const rect = element('library-trigger').getBoundingClientRect?.();
+    if (rect) {
+      popover.style.left = `${Math.max(8, Math.min(rect.right + 8, window.innerWidth - 328))}px`;
+      const top = Math.max(8, Math.min(rect.top, window.innerHeight - 420 - 8));
+      popover.style.top = `${top}px`;
+      popover.style.maxHeight = `${Math.max(0, Math.min(420, window.innerHeight - top - 8))}px`;
+    }
+    element('library-search').focus?.();
+  }
+}
+function renderLibrary() {
+  element('library-label').textContent = current?.title || '选择图稿';
+  element('library-trigger').dataset.currentId = current?.id || '';
+  const container = element('library-list');
+  container.replaceChildren();
+  const search = (element('library-search').value || '').trim().toLocaleLowerCase();
+  const visible = libraryRecords.filter(record => record.title.toLocaleLowerCase().includes(search));
+  if (!visible.length) {
+    const empty = document.createElement('p'); empty.className = 'library-empty';
+    empty.textContent = search ? '没有找到匹配的图稿。' : '还没有保存的图稿。'; container.append(empty);
+  }
+  for (const record of visible) {
+    const row = document.createElement('div'); row.className = 'library-row'; row.dataset.id = record.id;
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'library-open'; open.dataset.id = record.id;
+    open.setAttribute('aria-label', `打开图稿 ${record.title}`);
+    open.setAttribute('aria-current', String(current?.id === record.id));
+    const image = document.createElement('img'); image.className = 'library-thumbnail'; image.alt = ''; image.loading = 'lazy';
+    if (record.png) image.src = `data:image/png;base64,${record.png}`;
+    const text = document.createElement('span'); text.className = 'library-row-text';
+    const title = document.createElement('strong'); title.textContent = record.title;
+    const version = document.createElement('small'); version.textContent = `第 ${record.revision} 版`;
+    text.append(title, version); open.append(image, text);
+    open.onclick = () => { setLibraryOpen(false); return selectDrawing(record.id); };
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'library-delete'; remove.dataset.id = record.id;
+    const retry = pendingDelete?.id === record.id;
+    remove.setAttribute('aria-label', `${retry ? '重试删除图稿' : '删除图稿'} ${record.title}`); remove.title = retry ? '重试确认删除结果' : '删除图稿及全部版本';
+    remove.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>';
+    remove.onclick = event => { event.stopPropagation(); return run(() => deleteDrawing(record)); };
+    row.append(open, remove); container.append(row);
+  }
+  controls();
+}
+element('library-trigger').onclick = () => setLibraryOpen(element('library-popover').hidden);
+element('library-close').onclick = () => setLibraryOpen(false);
+element('library-search').oninput = renderLibrary;
+window.addEventListener('resize', () => setLibraryOpen(false));
+frame.addEventListener?.('focus', () => setLibraryOpen(false));
+document.addEventListener?.('keydown', event => { if (event.key === 'Escape' && !element('library-popover').hidden) { setLibraryOpen(false); element('library-trigger').focus?.(); } });
+document.addEventListener?.('pointerdown', event => { if (!element('library-popover').hidden && !element('library-popover').contains(event.target) && !element('library-trigger').contains(event.target)) setLibraryOpen(false); });
 controls();
 if (config.origin) {
   frame.src = config.origin + '/zh'; discover(); list().catch(error => message(error.message));

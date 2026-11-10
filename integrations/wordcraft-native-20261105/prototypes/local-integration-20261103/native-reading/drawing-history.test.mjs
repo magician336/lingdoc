@@ -11,7 +11,7 @@ async function setup(){
   const store=createDrawingStore({directory});let latest;
   for(let revision=1;revision<=3;revision++)latest=await store.save({id:latest?.id,expectedRevision:revision-1,key:'seed-'+revision,title:'版本图稿',xml:`<mxfile version="${revision}"/>`,messages:[{role:'user',content:String(revision)}],png});
   class Element {
-    constructor(){this.value='';this.textContent='';this.options=[];this.children=[];this.dataset={};this.attributes={};this.open=false;}
+    constructor(){this.value='';this.textContent='';this.options=[];this.children=[];this.dataset={};this.attributes={};this.style={};this.open=false;}
     replaceChildren(...children){this.children=children;this.options=children;this.value=children[0]?.value||'';}
     append(...children){this.children.push(...children);}
     add(option){this.options.push(option);}
@@ -45,8 +45,8 @@ async function setup(){
     },
   });
   events.message({origin,source:frame.contentWindow,data:{channel:'lingdoc-drawing',type:'ready'}});
-  for(let i=0;i<100&&!el('saved').options.some(option=>option.value===latest.id);i++)await new Promise(resolve=>setTimeout(resolve,5));
-  el('saved').value=latest.id;await el('saved').onchange();
+  for(let i=0;i<100&&!el('library-list').children.some(row=>row.dataset.id===latest.id);i++)await new Promise(resolve=>setTimeout(resolve,5));
+  await el('library-list').children.find(row=>row.dataset.id===latest.id).children[0].onclick();
   el('version-history').open=true;await el('version-history').ontoggle();
   function button(revision,action){const row=el('history-versions').children.find(item=>item.dataset.revision===String(revision));return row?.children.find(item=>item.dataset.action===action);}
   return {el,store,latest,canvas,calls,state,window,button,close:async()=>{events.pagehide();await rm(directory,{recursive:true,force:true});}};
