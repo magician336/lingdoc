@@ -18,6 +18,8 @@
 
 `node work/drawing-theme-browser.mjs` 真实独立 HTTP/store/Next/draw.io 浏览器验收 13/13 PASS，模型请求 0、非预期运行错误 0。父页 accent 与内嵌 primary 均为 #0064e6，内嵌 canvas #eceff3、边框 #dde3ea、聊天面板白色；父侧栏 #f5f7fa、保存按钮圆角4px。桌面、小窗口和窄屏均无横向溢出，聊天输入及附件工具可达；图稿列表搜索和删除按钮、保存版本展开、论文入口预填均实际操作。证据 `outputs/drawing-theme-verification.json`、`drawing-theme-desktop.png`、`drawing-theme-1280x720.png`、`drawing-theme-narrow.png`，独立实例已停止。健康复评 H_L 57、F_R 54、置信度 C，Δ=0：视觉令牌尚需在父页和覆盖层同步维护，不据视觉回归通过提高结构评分。
 
+最终补充窄屏画布切换后浏览器共 14/14 PASS。窗口从桌面连续缩到 390px 时 draw.io 保留视图中心，已有图形可能部分移出当前视图；本轮验证画布容器和工具边界，不宣称缩窗自动缩放图形。菜单收起后的桌面及窄屏截图已更新。本机 7237 已加载新版父页和内嵌主题，重启前后图稿文件哈希一致，未刷新用户页面；只读激活证据 `outputs/drawing-theme-service-updated.json`。
+
 ## 2026-11-10 图稿选择列表内逐项删除
 
 用户要求左侧图稿选择入口与右侧图纸列表一致，在各图稿行右侧直接删除，不再依靠列表外的删除按钮。范围仅父页图稿选择 UI；保留原有保存版本历史、删除鉴权和幂等接口，不修改上游或原生排版。
