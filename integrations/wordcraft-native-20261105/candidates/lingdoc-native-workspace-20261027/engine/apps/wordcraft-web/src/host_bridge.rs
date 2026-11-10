@@ -78,14 +78,47 @@ fn check(app: &WordApp, request: &Value) -> Result<(), String> {
 /// Only an explicitly selected single image is an update target. A collapsed caret next to
 /// an image is not enough: asynchronous work must never replace an implicit neighbour.
 fn diagram_image(app: &WordApp) -> Result<Option<Value>, String> {
+    let Some((pos, _)) = wordcraft_engine::cmd::objects::object_selection(&app.session) else { return Ok(None); };
+    diagram_image_at(app, &pos)
+}
+
+fn diagram_image_at(app: &WordApp, pos: &Pos) -> Result<Option<Value>, String> {
     use wordcraft_doc::para::InlineObject;
-    let Some((_, InlineObject::Image { media, alt, .. })) = wordcraft_engine::cmd::objects::object_selection(&app.session) else {
-        return Ok(None);
-    };
+    let Some(InlineObject::Image { media, alt, .. }) = app.session.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else { return Ok(None); };
     let bytes = app.session.doc.media.get(media).ok_or("selected image media missing")?;
     if bytes.len() > 4 * 1024 * 1024 { return Err("selected image exceeds diagram limit".into()); }
     let digest = Sha256::digest(bytes.as_slice()).iter().map(|b| format!("{b:02x}")).collect::<String>();
     Ok(Some(json!({"sha256":digest,"data":wordcraft_engine::cmd::insert::base64_encode(bytes.as_slice()),"alt":alt})))
+}
+
+pub fn diagram_edit_available() -> bool {
+    web_sys::window().and_then(|window| js_sys::Reflect::get(&window, &JsValue::from_str("lingdocEditDiagram")).ok())
+        .is_some_and(|value| value.is_function())
+}
+
+pub fn request_diagram_edit(app: &WordApp) -> Result<(), String> {
+    let (pos, _) = wordcraft_engine::cmd::objects::object_selection(&app.session).ok_or("select a drawing first")?;
+    if !wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &pos) { return Err("selected picture has no drawing source".into()); }
+    let image = diagram_image(app)?.ok_or("selected drawing is unavailable")?;
+    let selection = wordcraft_engine::cmd::sel_result(&app.session).map_err(|e| e.to_string())?;
+    let snapshot = json!({"state":identity(app),"selection":selection,"image":image}).to_string();
+    let window = web_sys::window().ok_or("drawing host unavailable")?;
+    let callback = js_sys::Reflect::get(&window, &JsValue::from_str("lingdocEditDiagram"))
+        .map_err(|_| "drawing host unavailable")?.dyn_into::<Function>().map_err(|_| "drawing host unavailable")?;
+    callback.call1(&window, &JsValue::from_str(&snapshot)).map_err(|_| "drawing window could not be opened")?;
+    Ok(())
+}
+
+fn diagram_bookmark(r: &Value) -> Result<wordcraft_engine::Selection, String> {
+    let bookmark = r.get("bookmark").ok_or("missing selection bookmark")?;
+    let anchor = bookmark.get("anchor").and_then(|v| serde_json::from_value::<Pos>(v.clone()).ok()).ok_or("invalid bookmark anchor")?;
+    let focus = bookmark.get("focus").and_then(|v| serde_json::from_value::<Pos>(v.clone()).ok()).ok_or("invalid bookmark focus")?;
+    let selection = wordcraft_engine::Selection { anchor, focus };
+    let (a, b) = selection.ordered();
+    if a.story != b.story || a.path != b.path || a.off.checked_add(wordcraft_doc::para::OBJ.len_utf8()) != Some(b.off) {
+        return Err("bookmark must select exactly one picture".into());
+    }
+    Ok(selection)
 }
 
 fn request_digest(r: &Value) -> String {
@@ -144,6 +177,27 @@ mod diagram_tests {
         assert!(execute(&mut app, &mut bridge, &request).is_err());
         request["expectedImageSha256"] = selected["image"]["sha256"].clone();
         assert_eq!(execute(&mut app, &mut bridge, &request).unwrap()["status"], "applied");
+    }
+
+    #[test]
+    fn guarded_replace_restores_bookmark_only_after_validation() {
+        let mut app = WordApp::new(Session::new(Document::new()), Services::default());
+        let mut bridge = Bridge::default();
+        app.execute("insert.picture", json!({"data":PNG,"width":100})).unwrap();
+        app.session.sel = wordcraft_engine::Selection {anchor:Pos::body(0,0),focus:Pos::body(0,wordcraft_doc::para::OBJ.len_utf8())};
+        let snapshot = execute(&mut app, &mut bridge, &json!({"op":"diagram.selection"})).unwrap();
+        let original_image = wordcraft_engine::cmd::objects::selected(&app.session).unwrap().1;
+        app.session.sel = wordcraft_engine::Selection::caret(Pos::body(0,0));
+        let previous = app.session.sel.clone();
+        let mut request = json!({"op":"diagram.replace","operationId":"restore-test","restoreBookmark":true,
+            "expectedDocumentId":snapshot["state"]["documentId"],"expectedRevision":snapshot["state"]["revision"],
+            "bookmark":snapshot["selection"],"expectedImageSha256":"bad","data":PNG});
+        assert!(execute(&mut app, &mut bridge, &request).is_err());
+        assert_eq!(app.session.sel, previous);
+        request["expectedImageSha256"] = snapshot["image"]["sha256"].clone();
+        assert_eq!(execute(&mut app, &mut bridge, &request).unwrap()["status"], "applied");
+        let updated = wordcraft_engine::cmd::objects::selected(&app.session).unwrap().1;
+        assert_eq!(updated.frame(), original_image.frame());
     }
 
     #[test]
@@ -398,15 +452,18 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
             check(app, r)?;
             let bookmark = r.get("bookmark").ok_or("missing selection bookmark")?;
             let selection = app.execute("document.selection", json!({}))?;
+            let restore = op == "diagram.replace" && r.get("restoreBookmark").and_then(Value::as_bool) == Some(true);
             if bookmark.get("anchor").is_none() || bookmark.get("focus").is_none()
-                || bookmark.get("anchor") != selection.get("anchor") || bookmark.get("focus") != selection.get("focus") {
+                || (!restore && (bookmark.get("anchor") != selection.get("anchor") || bookmark.get("focus") != selection.get("focus"))) {
                 return Err("selection changed".into());
             }
             if op == "diagram.insert" && bookmark.get("anchor") != bookmark.get("focus") {
                 return Err("select an insertion point first".into());
             }
+            let target = if restore { Some(diagram_bookmark(r)?) } else { None };
             if op == "diagram.replace" {
-                let image = diagram_image(app)?.ok_or("select the original picture first")?;
+                let image = if let Some(target) = &target { diagram_image_at(app, &target.ordered().0)? } else { diagram_image(app)? }
+                    .ok_or("select the original picture first")?;
                 if r.get("expectedImageSha256").and_then(Value::as_str) != image["sha256"].as_str() {
                     return Err("selected picture changed".into());
                 }
@@ -416,7 +473,12 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
             if alt.len() > 4096 { return Err("diagram alt text exceeds limit".into()); }
             let before = app.session.rev();
             let command = if op == "diagram.insert" { "insert.picture" } else { "picture.change" };
-            let result = app.execute(command, json!({"data":data,"alt":alt}))?;
+            let previous = app.session.sel.clone();
+            if let Some(target) = target { app.session.sel = target; }
+            let result = match app.execute(command, json!({"data":data,"alt":alt,"floating":op == "diagram.insert"})) {
+                Ok(value) => value,
+                Err(error) => { app.session.sel = previous; return Err(error); }
+            };
             bridge.pending = None;
             let receipt = json!({"operationId":id,"status":"applied","documentId":app.session.document_id(),
                 "beforeRevision":before,"afterRevision":app.session.rev(),"state":identity(app),"result":result});

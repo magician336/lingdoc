@@ -24,7 +24,7 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         CommandSpec::new("insert.coverPage", "Cover Page", "Insert › Pages", cover_page).params(r#"{"title"?: string, "subtitle"?: string, "author"?: string}"#),
         CommandSpec::new("insert.table", "Table", "Insert › Tables", table).params(r#"{"rows": n, "cols": n, "style"?: string}"#),
-        CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture).params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string}"#),
+        CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture).params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string, "floating"?: bool}"#),
         CommandSpec::new("insert.icon", "Icons", "Insert › Illustrations", icon)
             .params(r#"{"id"?: string (omit to list the library), "color"?: "RRGGBB", "size"?: pt, "query"?: string, "category"?: string}"#),
         CommandSpec::new("insert.shape", "Shapes", "Insert › Illustrations", shape)
@@ -224,7 +224,26 @@ pub(crate) fn picture(s: &mut Session, v: &Value) -> CmdResult {
         s.ui_requests.push(json!({"open": "insertPicture"}));
         return sel_result(s);
     };
-    place_picture(s, bytes, p::f32(v, "width"), p::str(v, "alt").unwrap_or(""))
+    place_picture(s, bytes, p::f32(v, "width"), p::str(v, "alt").unwrap_or(""), p::bool(v, "floating").unwrap_or(false))
+}
+
+/// Whether this PNG contains LingDoc's editable drawing payload. Bounds are checked without
+/// decompressing its contents; the host validates the payload when opening it.
+pub fn is_lingdoc_diagram(bytes: &[u8]) -> bool {
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") { return false; }
+    let mut offset = 8usize;
+    let mut found = false;
+    while let Some(header) = bytes.get(offset..offset.saturating_add(8)) {
+        let Some(length) = header.get(..4).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_be_bytes) else { return false };
+        let Some(end) = offset.checked_add(12).and_then(|n| n.checked_add(length as usize)) else { return false };
+        let Some(chunk) = bytes.get(offset..end) else { return false };
+        let Some(kind) = chunk.get(4..8) else { return false };
+        let Some(data) = chunk.get(8..chunk.len().saturating_sub(4)) else { return false };
+        if kind == b"tEXt" && data.starts_with(b"LingDocDrawing\0") && data.len() > b"LingDocDrawing\0".len() { found = true; }
+        if kind == b"IEND" { return data.is_empty() && end == bytes.len() && found; }
+        offset = end;
+    }
+    false
 }
 
 /// The media extension of an encoded image by its magic bytes, as `image_size` accepted it
@@ -245,7 +264,7 @@ pub(crate) fn image_ext(bytes: &[u8]) -> &'static str {
 /// its natural size at 96 ppi), never wider than the text column. The caret ends after it, so a
 /// script's next typing doesn't replace it (#965); Picture Format commands still act on it. The
 /// app selects a picture the person inserts (`WordApp::run`).
-fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str) -> CmdResult {
+fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str, floating: bool) -> CmdResult {
     if bytes.len() > 200 << 20 {
         return Err(CmdError::Failed("image is larger than 200 MB".into()));
     }
@@ -258,6 +277,11 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str)
     } else {
         return Err(CmdError::Failed("not a supported image (PNG, JPEG, GIF, WebP, BMP, WMF, EMF)".into()));
     };
+    let placement = if floating {
+        let at = s.sel.focus.clone();
+        let hint = s.page_hint;
+        Some(s.layout().caret_on(&at, hint).ok_or_else(|| CmdError::Failed("insertion point is not laid out".into()))?)
+    } else { None };
     let key = s.doc.add_media(bytes, ext);
     // Fitted to the text width.
     let max_w = s.doc.sections().first().map(|(_, sp)| sp.text_width()).unwrap_or(468.0);
@@ -271,7 +295,11 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str)
         h *= max_w / w;
         w = max_w;
     }
-    let obj = InlineObject::Image { media: key.clone(), w, h, alt: alt.to_string(), float: Float::default(), crop: [0.0; 4], ole: None };
+    let float = placement.map_or_else(Float::default, |caret| Float {
+        wrap: Wrap::InFrontOfText, h_rel: wordcraft_doc::para::Anchor::Page, v_rel: wordcraft_doc::para::Anchor::Page,
+        x: caret.x, y: caret.top, outside_cell: true, ..Float::default()
+    });
+    let obj = InlineObject::Image { media: key.clone(), w, h, alt: alt.to_string(), float, crop: [0.0; 4], ole: None };
     // A selected Drawing Canvas takes it in.
     if let Some(i) = super::canvas::add_member(s, obj.clone())? {
         return Ok(json!({"media": key, "canvasMember": i}));
@@ -310,7 +338,7 @@ fn icon(s: &mut Session, v: &Value) -> CmdResult {
     if png.is_empty() {
         return Err(CmdError::Failed("couldn't draw the icon".into()));
     }
-    let mut r = place_picture(s, png, Some(size), icon.name)?;
+    let mut r = place_picture(s, png, Some(size), icon.name, false)?;
     r["icon"] = json!(icon.id);
     Ok(r)
 }

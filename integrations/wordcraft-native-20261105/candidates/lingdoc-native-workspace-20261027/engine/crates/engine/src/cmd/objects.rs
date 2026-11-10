@@ -528,6 +528,12 @@ pub fn object_selection(s: &Session) -> Option<(Pos, &InlineObject)> {
     o.is_drawing().then_some((a, o))
 }
 
+/// A picture carrying LingDoc's editable drawing payload, including one anchored in a cell.
+pub fn is_lingdoc_diagram_at(s: &Session, pos: &Pos) -> bool {
+    let Some(InlineObject::Image { media, .. }) = s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else { return false };
+    s.doc.media.get(media).is_some_and(|bytes| super::insert::is_lingdoc_diagram(bytes.as_slice()))
+}
+
 /// The first picture/shape in the selection, or just before a collapsed caret.
 pub fn selected(s: &Session) -> Option<(Pos, InlineObject)> {
     selected_all(s, 1).into_iter().next()
@@ -808,7 +814,8 @@ fn move_object(s: &mut Session, pos: Pos, page: Option<u64>, x: f32, y: f32, (w,
 /// `page` and offset it from there.
 fn move_object_once(s: &mut Session, pos: &Pos, page: usize, x: f32, y: f32, (w, h): (f32, f32)) -> Result<Pos, CmdError> {
     use wordcraft_doc::para::Anchor;
-    if pos.path.depth() > 0 || !movable_story(s, pos.story) {
+    let diagram = is_lingdoc_diagram_at(s, pos);
+    if (pos.path.depth() > 0 && !diagram) || !movable_story(s, pos.story) {
         return Err(CmdError::Disabled("only objects in the body text, headers and footers can be moved".into()));
     }
     let story = pos.story;
@@ -820,7 +827,8 @@ fn move_object_once(s: &mut Session, pos: &Pos, page: usize, x: f32, y: f32, (w,
     // The paragraph under the middle of its top edge: in the column it mostly lands in.
     let (anchor, on_page) = match anchor_paragraph(&s.doc, &layout, page, (x + w / 2.0, y), story) {
         Some(path) => (Pos { story, path, off: 0 }, false),
-        None => (nearest_line(&layout, page, y, story).ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?, true),
+        None => (nearest_line(&layout, page, y, story).or_else(|| diagram.then(|| nearest_any_line(&layout, page, y, story)).flatten())
+            .ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?, true),
     };
     // Move its character to the anchor (unless it's already in that paragraph).
     let at = if anchor.story == pos.story && anchor.path == pos.path && !on_page {
@@ -840,7 +848,10 @@ fn move_object_once(s: &mut Session, pos: &Pos, page: usize, x: f32, y: f32, (w,
     // First on the page where it was dropped, so the text wraps around it as it will in the end.
     edit_float(s, &at, |f| {
         if f.wrap == Wrap::Inline {
-            f.wrap = Wrap::Square;
+            f.wrap = if diagram { Wrap::InFrontOfText } else { Wrap::Square };
+        }
+        if diagram {
+            f.outside_cell = true;
         }
         f.h_rel = Anchor::Page;
         f.v_rel = Anchor::Page;
@@ -849,7 +860,7 @@ fn move_object_once(s: &mut Session, pos: &Pos, page: usize, x: f32, y: f32, (w,
         f.x = x.clamp(-MAX_OFFSET, MAX_OFFSET);
         f.y = y.clamp(-MAX_OFFSET, MAX_OFFSET);
     })?;
-    if on_page {
+    if on_page || diagram {
         return Ok(at);
     }
     // Then offsets from its paragraph, as laid out with the object there.
@@ -968,6 +979,17 @@ pub(crate) fn anchor_paragraph(
 pub(crate) fn nearest_line(layout: &wordcraft_layout::DocLayout, page: usize, y: f32, story: StoryRef) -> Option<Pos> {
     let lines = wordcraft_layout::hit::page_lines(layout.pages.get(page)?, story);
     let best = lines.iter().filter(|l| l.path.depth() == 0).min_by(|a, b| {
+        let d = |l: &wordcraft_layout::hit::LineHit| if y < l.top { l.top - y } else { (y - l.bottom).max(0.0) };
+        d(a).total_cmp(&d(b))
+    })?;
+    let off = best.para.lines.get(best.li)?.start;
+    Some(Pos { story, path: best.path.clone(), off })
+}
+
+/// A drawing can remain anchored in a table cell on a page with no top-level lines.
+fn nearest_any_line(layout: &wordcraft_layout::DocLayout, page: usize, y: f32, story: StoryRef) -> Option<Pos> {
+    let lines = wordcraft_layout::hit::page_lines(layout.pages.get(page)?, story);
+    let best = lines.iter().min_by(|a, b| {
         let d = |l: &wordcraft_layout::hit::LineHit| if y < l.top { l.top - y } else { (y - l.bottom).max(0.0) };
         d(a).total_cmp(&d(b))
     })?;
@@ -1713,6 +1735,75 @@ fn objects_list(s: &mut Session, _: &Value) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wordcraft_doc::para::Anchor;
+
+    const DRAWING_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAYAAAD/Rn+7AAAAMUlEQVR4nO3OMREAMBDDMPMnnaL4cwcP2sVgP8MOFCxoBwoWtAMFC9qBggXtQMEdBx+Jezobd7ILdgAAABZ0RVh0TGluZ0RvY0RyYXdpbmcAZml4dHVyZXWgp10AAAAASUVORK5CYII=";
+
+    #[test]
+    fn drawing_floats_moves_undoes_and_roundtrips() {
+        let mut s = Session::new(wordcraft_doc::Document::from_text("A paragraph for the drawing."));
+        let before = s.undo_depth();
+        s.run("insert.picture", &json!({"data":DRAWING_PNG,"floating":true,"width":100})).unwrap();
+        assert_eq!(s.undo_depth(), before + 1);
+        let (pos, obj) = selected(&s).unwrap();
+        assert!(is_lingdoc_diagram_at(&s, &pos));
+        let (w, h, float) = obj.frame().unwrap();
+        assert_eq!((w, h, float.wrap, float.h_rel, float.v_rel), (100.0, 50.0, Wrap::InFrontOfText, Anchor::Page, Anchor::Page));
+        let initial = float.clone();
+        s.run("arrange.bounds", &json!({"x":140,"y":220,"page":0})).unwrap();
+        let moved = selected(&s).unwrap().1.frame().unwrap().2.clone();
+        assert_ne!((moved.x,moved.y), (initial.x,initial.y));
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.frame().unwrap().2, &initial);
+        s.run("edit.redo", &json!({})).unwrap();
+        let saved = wordcraft_docx::write(&s.doc).unwrap();
+        let reopened = wordcraft_docx::read(&saved).unwrap();
+        let mut reopened = Session::new(reopened);
+        let (_, picture) = all_objects(&reopened).into_iter().next().unwrap();
+        let (_, _, restored) = picture.frame().unwrap();
+        assert_eq!(restored.wrap, Wrap::InFrontOfText);
+        assert!((restored.x-moved.x).abs()<0.1 && (restored.y-moved.y).abs()<0.1);
+        let pos = all_objects(&reopened).into_iter().next().unwrap().0;
+        assert!(is_lingdoc_diagram_at(&reopened, &pos));
+        assert!(reopened.layout().object(&pos,0).is_some());
+    }
+
+    #[test]
+    fn drawing_anchored_in_table_can_move() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.table", &json!({"rows":1,"cols":1})).unwrap();
+        let pos = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| p.depth()>0).unwrap();
+        s.sel = Selection::caret(Pos {story:StoryRef::Body,path:pos,off:0});
+        s.run("insert.picture", &json!({"data":DRAWING_PNG,"floating":true})).unwrap();
+        let (pos, _) = selected(&s).unwrap();
+        assert!(pos.path.depth()>0 && is_lingdoc_diagram_at(&s,&pos));
+        s.run("arrange.bounds", &json!({"x":130,"y":180,"page":0})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.frame().unwrap().2.wrap, Wrap::InFrontOfText);
+    }
+
+    #[test]
+    fn inline_drawing_first_move_floats_on_page_and_roundtrips() {
+        let mut s = Session::new(wordcraft_doc::Document::from_text("A paragraph for the drawing."));
+        s.run("insert.picture", &json!({"data":DRAWING_PNG,"width":100})).unwrap();
+        let original = selected(&s).unwrap().1.frame().unwrap().2.clone();
+        assert_eq!(original.wrap, Wrap::Inline);
+        let before = s.undo_depth();
+        s.run("arrange.bounds", &json!({"x":140,"y":220,"page":0})).unwrap();
+        assert_eq!(s.undo_depth(), before + 1);
+        let moved = selected(&s).unwrap().1.frame().unwrap().2.clone();
+        assert_eq!((moved.wrap, moved.h_rel, moved.v_rel), (Wrap::InFrontOfText, Anchor::Page, Anchor::Page));
+        assert!(moved.outside_cell);
+        assert!((moved.x - 140.0).abs() < 0.1 && (moved.y - 220.0).abs() < 0.1);
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.frame().unwrap().2, &original);
+        s.run("edit.redo", &json!({})).unwrap();
+        let saved = wordcraft_docx::write(&s.doc).unwrap();
+        let reopened = Session::new(wordcraft_docx::read(&saved).unwrap());
+        let (_, picture) = all_objects(&reopened).into_iter().next().unwrap();
+        let (_, _, restored) = picture.frame().unwrap();
+        assert_eq!((restored.wrap, restored.h_rel, restored.v_rel), (Wrap::InFrontOfText, Anchor::Page, Anchor::Page));
+        assert!((restored.x - moved.x).abs() < 0.1 && (restored.y - moved.y).abs() < 0.1);
+    }
 
     fn png(w: u32, h: u32) -> Vec<u8> {
         let img = image::RgbaImage::from_fn(w, h, |x, y| {

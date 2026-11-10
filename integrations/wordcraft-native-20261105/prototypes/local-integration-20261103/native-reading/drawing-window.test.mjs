@@ -87,9 +87,9 @@ test('window trusts only the configured frame and sends captured text to that or
 });
 
 
-async function createWorkflowHarness({search='', picker=true, directInsert=true, origin='http://127.0.0.1:4000'}={}) {
+async function createWorkflowHarness({search='', picker=true, directInsert=true, libraryMode='same', origin='http://127.0.0.1:4000'}={}) {
   const elements=new Map(), events={}, frameMessages=[], hostMessages=[], calls=[], order=[];
-  const state={empty:false,exportError:false,saveError:false,allowClose:true,closed:false,focus:0,navigations:[]};
+  const state={empty:false,exportError:false,saveError:false,applyError:false,xml:'<mxfile/>',messages:[],allowClose:true,closed:false,focus:0,navigations:[]};
   const draft={id:'draft-1',revision:1,title:'Saved draft',xml:'<mxfile/>',messages:[],png:'png',embeddedPng:'encoded-png'};
   let channel,serial=0;
   class Option {constructor(text,value){this.text=text;this.value=value;}}
@@ -105,7 +105,7 @@ async function createWorkflowHarness({search='', picker=true, directInsert=true,
     frameMessages.push(message);order.push('frame:'+message.type);
     queueMicrotask(()=>events.message({origin,source:frame.contentWindow,data:{channel:'lingdoc-drawing',requestId:message.requestId,
       ...(message.type==='export'&&state.exportError?{error:'export failed'}:{result:message.type==='export'
-        ? state.empty?{empty:true}:{xml:'<mxfile/>',messages:[],png:'data:image/png;base64,png'}:{loaded:true}})}}));
+        ? state.empty?{empty:true}:{xml:state.xml,messages:state.messages,png:'data:image/png;base64,png'}:{loaded:true}})}}));
   }};
   class Channel {
     constructor(){channel=this;}
@@ -114,7 +114,7 @@ async function createWorkflowHarness({search='', picker=true, directInsert=true,
       if(message.type!=='request')return;
       order.push('host:'+message.request.op);
       queueMicrotask(()=>channel.onmessage({data:{type:'result',token:'secret',hostId:message.hostId,requestId:message.requestId,
-        result:message.request.op==='diagram.pick'?{picking:true}:message.request.op==='diagram.resume'?result:{status:'applied'}}}));
+        ...(message.request.op==='diagram.edit-apply'&&state.applyError?{error:'apply failed'}:{result:message.request.op==='diagram.pick'?{picking:true}:message.request.op==='diagram.resume'?result:message.request.op==='diagram.edit'?{...result,image:{data:'embedded',sha256:'a'.repeat(64),alt:'Saved draft'}}:{status:'applied'}})}}));
     }
     close(){}
   }
@@ -128,11 +128,13 @@ async function createWorkflowHarness({search='', picker=true, directInsert=true,
     fetch:async(url,options)=>{
       const action=url.split('/').at(-1);const body=options?.body?JSON.parse(options.body):null;calls.push({action,body});order.push('api:'+action);
       if(action==='save')return state.saveError?{ok:false,json:async()=>({error:'save failed'})}:{ok:true,json:async()=>draft};
-      if(action==='get')return {ok:true,json:async()=>({record:draft})};
+      if(action==='delete')return {ok:true,json:async()=>({id:body.id,revision:body.expectedRevision,deleted:true})};
+      if(action==='get')return {ok:true,json:async()=>({record:libraryMode==='missing'?null:libraryMode==='newer'?{...draft,revision:2}:libraryMode==='changed'?{...draft,xml:'<mxfile id="changed"/>'}:draft})};
+      if(action==='read-image')return {ok:true,json:async()=>({record:draft})};
       return {ok:true,json:async()=>[draft]};
     },
   });
-  channel.onmessage({data:{type:'host',token:'secret',hostId:'host-1',title:'Doc',...(picker?{picker:true}:{}),...(directInsert?{directInsert:true}:{})}});
+  channel.onmessage({data:{type:'host',token:'secret',hostId:'host-1',title:'Doc',...(picker?{picker:true}:{}),...(directInsert?{directInsert:true,insertOnly:true,editableDiagrams:true}:{})}});
   element('hosts').value='host-1';
   const ready=()=>events.message({origin,source:frame.contentWindow,data:{channel:'lingdoc-drawing',type:'ready'}});
   return {element,events,frameMessages,hostMessages,calls,order,state,draft,ready,channel,window};
@@ -252,5 +254,86 @@ test('empty drawing cannot start document insertion',async()=>{
     assert.equal(h.state.closed,false);
     assert.equal(h.element('insert').disabled,true);
     assert.match(h.element('status').textContent,/空|绘|图稿/);
+  } finally {h.events.pagehide();}
+});
+
+
+test('editing an embedded image restores its source and applies to the original without document save',async()=>{
+  const h=await createWorkflowHarness({search:'?edit=ticket-1&host=host-1'});
+  try {
+    h.ready();
+    for(let i=0;i<30&&!h.frameMessages.some(m=>m.type==='load');i++)await tick();
+    assert.ok(h.hostMessages.some(m=>m.request?.op==='diagram.edit'&&m.request.ticket==='ticket-1'));
+    assert.equal(h.calls.find(c=>c.action==='read-image')?.body.png,'embedded');
+    assert.equal(h.frameMessages.find(m=>m.type==='load')?.xml,'<mxfile/>');
+    await h.element('apply-edit').onclick();
+    const apply=h.hostMessages.find(m=>m.request?.op==='diagram.edit-apply');
+    assert.equal(apply.request.ticket,'ticket-1');assert.ok(apply.request.operationId);
+    assert.equal(apply.request.data,'encoded-png');
+    assert.equal(h.hostMessages.some(m=>m.request?.op==='save'),false);
+    assert.equal(h.state.closed,true);
+  } finally {h.events.pagehide();}
+});
+
+test('failed edit apply retains page and reuses operation identity on retry',async()=>{
+  const h=await createWorkflowHarness({search:'?edit=ticket-1&host=host-1'});
+  try {
+    h.ready();for(let i=0;i<30&&!h.frameMessages.some(m=>m.type==='load');i++)await tick();
+    h.state.applyError=true;await h.element('apply-edit').onclick();
+    assert.equal(h.state.closed,false);assert.deepEqual(h.state.navigations,[]);
+    const first=h.hostMessages.find(m=>m.request?.op==='diagram.edit-apply')?.request;
+    const saves=h.calls.filter(c=>c.action==='save').length;
+    assert.equal(h.element('editor').inert,true);
+    assert.equal(h.element('title').disabled,true);
+    assert.equal(h.element('saved').disabled,true);
+    h.state.applyError=false;await h.element('apply-edit').onclick();
+    const second=h.hostMessages.filter(m=>m.request?.op==='diagram.edit-apply').at(-1)?.request;
+    assert.deepEqual(JSON.parse(JSON.stringify(second)),JSON.parse(JSON.stringify(first)));
+    assert.equal(h.calls.filter(c=>c.action==='save').length,saves);
+    assert.equal(h.state.closed,true);
+  } finally {h.events.pagehide();}
+});
+
+
+test('editing image reuses exact library revision and forks stale or deleted originals',async()=>{
+  for(const mode of ['same','newer','changed','missing']){
+    const h=await createWorkflowHarness({search:'?edit=ticket-1&host=host-1',libraryMode:mode});
+    try {
+      h.ready();for(let i=0;i<30&&!h.frameMessages.some(m=>m.type==='load');i++)await tick();
+      await h.element('apply-edit').onclick();
+      const save=h.calls.find(c=>c.action==='save');assert.ok(save,mode);
+      if(mode==='same'){assert.equal(save.body.id,'draft-1');assert.equal(save.body.expectedRevision,1);}
+      else {assert.equal(save.body.id,undefined,mode);assert.equal(save.body.expectedRevision,0,mode);}
+    } finally {h.events.pagehide();}
+  }
+});
+
+
+test('exit after deletion skips unchanged canvas but saves later changes',async()=>{
+  for(const changed of [false,true]){
+    const h=await createWorkflowHarness();
+    try {
+      h.ready();await tick();await h.element('save').onclick();
+      await h.element('delete-drawing').onclick();
+      if(changed)h.state.xml='<mxfile id="later-edit"/>';
+      h.calls.length=0;await h.element('exit').onclick();
+      const saves=h.calls.filter(c=>c.action==='save');
+      assert.equal(saves.length,changed?1:0);
+      if(changed){assert.equal(saves[0].body.id,undefined);assert.equal(saves[0].body.expectedRevision,0);}
+      assert.equal(h.state.closed,true);
+    } finally {h.events.pagehide();}
+  }
+});
+
+test('inserting the unchanged canvas after deletion explicitly creates a new drawing',async()=>{
+  const h=await createWorkflowHarness();
+  try {
+    h.ready();await tick();await h.element('save').onclick();
+    await h.element('delete-drawing').onclick();
+    h.calls.length=0;h.hostMessages.length=0;
+    await h.element('capture').onclick();
+    const save=h.calls.find(c=>c.action==='save');assert.ok(save);
+    assert.equal(save.body.id,undefined);assert.equal(save.body.expectedRevision,0);
+    assert.ok(h.hostMessages.some(m=>m.request?.op==='diagram.pick'));
   } finally {h.events.pagehide();}
 });

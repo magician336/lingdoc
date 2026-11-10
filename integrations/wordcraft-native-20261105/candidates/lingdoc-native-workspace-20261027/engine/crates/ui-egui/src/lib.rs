@@ -184,6 +184,10 @@ pub struct Services {
     pub lingdoc_manifest: Option<Box<dyn Fn(&WordApp) -> Result<Value, String>>>,
     /// LingDoc: focus a section through the same guarded adapter as the fixed host.
     pub lingdoc_focus_section: Option<Box<dyn Fn(&mut WordApp, &Value) -> Result<Value, String>>>,
+    /// LingDoc drawing: show the picture edit affordance only while its host is ready.
+    pub lingdoc_diagram_edit_available: Option<Box<dyn Fn() -> bool>>,
+    /// Open the selected drawing in the host, with the current guarded document snapshot.
+    pub lingdoc_edit_diagram: Option<Box<dyn Fn(&WordApp) -> Result<(), String>>>,
     /// Desktop: File › Options › General › Make WordCraft the default for Word documents (#295),
     /// only from that button (never a programmatic command). Windows opens the Settings app's
     /// Default apps page (apps can't set defaults themselves); Linux and BSD set it with

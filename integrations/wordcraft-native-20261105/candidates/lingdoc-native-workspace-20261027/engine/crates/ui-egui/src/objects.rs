@@ -154,6 +154,54 @@ fn screen(pages: &[Rect], scale: f32, page: usize, r: wordcraft_geom::Rect) -> O
     pages.get(page).map(|p| frame::to_screen(*p, scale, r))
 }
 
+/// A floating button on a hovered LingDoc drawing. It never appears on ordinary pictures.
+pub(crate) fn diagram_edit_button(app: &mut WordApp, ctx: &egui::Context, layout: &DocLayout, pages: &[Rect], scale: f32, clip: Rect) {
+    let key = egui::Id::new("lingdoc_diagram_hover");
+    if app.canvas.obj_drag.is_some() || app.source_workspace.source_active() || app.project_workspace.auxiliary_active()
+        || !app.services.lingdoc_diagram_edit_available.as_ref().is_some_and(|ready| ready()) {
+        ctx.data_mut(|d| d.remove::<(u64, Pos)>(key));
+        return;
+    }
+    let Some(pointer) = ctx.pointer_hover_pos().filter(|p| clip.contains(*p)) else { return };
+    let story = active_story(app, layout);
+    let hit = crate::canvas::page_at(pages, layout, scale, pointer)
+        .and_then(|(page, x, y)| layout.object_at_in(page, x, y, 0.0, story))
+        .filter(|o| wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &o.pos()));
+    let prior = ctx.data_mut(|d| d.get_temp::<(u64, Pos)>(key));
+    let hit = hit.or_else(|| prior.filter(|(doc, _)| *doc == app.session.document_id())
+        .and_then(|(_, pos)| layout.object(&pos, app.session.page_hint)))
+        .filter(|o| o.story == story && wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &o.pos()));
+    let Some(hit) = hit else { return };
+    let Some(frame) = screen(pages, scale, hit.page, hit.spin.bounds(hit.rect)) else { return };
+    let visible = frame.intersect(clip);
+    if !visible.is_positive() { return; }
+    let at = egui::pos2((visible.max.x - 52.0).max(clip.min.x), visible.min.y.min((clip.max.y - 28.0).max(clip.min.y)));
+    let button = Rect::from_min_size(at, egui::vec2(52.0, 28.0));
+    if !frame.contains(pointer) && !button.contains(pointer) {
+        ctx.data_mut(|d| d.remove::<(u64, Pos)>(key));
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(key, (app.session.document_id(), hit.pos())));
+    egui::Area::new(egui::Id::new("lingdoc_diagram_edit_button")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+        ui.set_clip_rect(clip);
+        if ui.button("编辑").clicked() {
+            let pos = hit.pos();
+            let Some(off) = pos.off.checked_add(OBJ.len_utf8()) else { return };
+            let end = Pos { off, ..pos.clone() };
+            if let Err(error) = app.run("select.range", json!({"anchor":pos,"focus":end})) {
+                app.status(error);
+                return;
+            }
+            if let Some(reason) = app.session.why_disabled("picture.change") {
+                app.status(reason);
+                return;
+            }
+            let result = app.services.lingdoc_edit_diagram.as_ref().map(|open| open(app));
+            if let Some(Err(error)) = result { app.status(error); }
+        }
+    });
+}
+
 /// Pressing, dragging, releasing or double-clicking on an object (or a frame handle). Returns
 /// true when it was about an object, so the text doesn't also get it.
 pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect], layout: &DocLayout, scale: f32, at: Pos2) -> bool {
@@ -209,7 +257,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
                 // Alignment guides: a move snaps to the page, the margins and the other objects
                 // (Alt: freely).
                 d.guides.clear();
-                if d.drag.grab == Grab::Move && d.drag.moved && !d.object.floating() {
+                if d.drag.grab == Grab::Move && d.drag.moved && !d.object.floating()
+                    && !wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &d.object.pos()) {
                     // An inline one lands in the text: the insertion cursor follows the pointer.
                     d.drop_at = drop_point(app, layout, pages, scale, at, &d);
                 } else if d.drag.grab == Grab::Move && d.drag.moved && app.ui.alignment_guides && !ui.input(|i| i.modifiers.alt) {
@@ -460,7 +509,7 @@ fn grab_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Po
 /// Objects that can be dragged to a new place: those in the own paragraphs of the body or of a
 /// header/footer.
 fn movable(app: &WordApp, o: &ObjectHit) -> bool {
-    o.path.depth() == 0 && selectable_story(app, o.story)
+    (o.path.depth() == 0 || wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &o.pos())) && selectable_story(app, o.story)
 }
 
 /// Whether a Behind Text object of this kind is grabbed by pressing its body. Pictures, shapes and
@@ -529,7 +578,7 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
         }
         // An In Line with Text object stays in the text, at the insertion cursor; dropped on
         // itself, it doesn't move.
-        Grab::Move if !d.object.floating() => {
+        Grab::Move if !d.object.floating() && !wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &d.object.pos()) => {
             let Some((to, _)) = &d.drop_at else { return };
             let pos = d.object.pos();
             let on_itself = to.story == pos.story && to.path == pos.path && (to.off == pos.off || to.off == pos.off + OBJ.len_utf8());

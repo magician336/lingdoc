@@ -8,6 +8,12 @@ const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.t
 const ttl = 5 * 60 * 1000;
 let picker = null;
 let startingPicker = false;
+const edits = new Map();
+const editTtl = 2 * 60 * 60 * 1000;
+// These exact native rejections occur before picture.change can mutate the document.
+const editNoWriteErrors = new Set(['stale document or revision', 'selected picture changed',
+  'select the original picture first', 'selection changed']);
+const bannerStyle = 'position:fixed;z-index:2147483647;bottom:40px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;gap:10px;box-sizing:border-box;max-width:calc(100% - 32px);padding:12px 16px;background:#fff;border:1px solid #7d94bd;border-radius:8px;box-shadow:0 3px 16px #0003;color:#18243a;font:14px sans-serif';
 
 function clearPicker() {
   if (!picker) return;
@@ -32,20 +38,18 @@ async function beginPicker(request) {
       typeof drawing.embeddedPng !== 'string' || !drawing.embeddedPng || drawing.embeddedPng.length > 8 * 1024 * 1024) {
     throw Error('图稿尚未准备好，请先保存图稿再定位。');
   }
-  if (startingPicker || picker?.busy || (picker?.insertRequest && !picker.completed)) throw Error('已有插图正在处理，请先完成当前文稿的保存。');
+  if (startingPicker || picker?.busy || (picker?.insertRequest && !picker.completed)) throw Error('已有插图正在处理，请先确认当前插图结果。');
   startingPicker = true;
   let state;
   try {
-    installStandaloneSave(window.wordcraftHost);
-    if (window.wordcraftHost.saveIntent?.supportsExpectedIdentity !== true) throw Error('文稿窗口需更新，请先保存文稿并刷新后重试。');
     state = await window.wordcraftHost.engine({op:'status'});
     await window.wordcraftHost.engine({op:'workspace.editor'});
   } finally { startingPicker = false; }
   clearPicker();
   const banner = document.createElement('div');
   banner.setAttribute('role', 'status');
-  banner.style.cssText = 'position:fixed;z-index:2147483647;bottom:40px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;gap:10px;box-sizing:border-box;max-width:calc(100% - 32px);padding:12px 16px;background:#fff;border:1px solid #7d94bd;border-radius:8px;box-shadow:0 3px 16px #0003;color:#18243a;font:14px sans-serif';
-  const text = document.createElement('span'); text.textContent = '在正文单击插入位置，确认后直接插入并保存。';
+  banner.style.cssText = bannerStyle;
+  const text = document.createElement('span'); text.textContent = '在正文单击插入位置，确认后图片直接出现在文稿中。';
   text.style.cssText = 'flex:1 1 220px;line-height:1.6';
   const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = '确认并插入';
   const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消';
@@ -73,8 +77,8 @@ async function beginPicker(request) {
     current.busy = true; confirm.disabled = true; cancel.disabled = true;
     try {
       const host = window.wordcraftHost;
-      let expected = await host.engine({op:'status'});
-      if (expected.documentId !== current.documentId) throw Error('目标文稿已变化，请回到原文稿保存或重新开始插图。');
+      const expected = await host.engine({op:'status'});
+      if (expected.documentId !== current.documentId) throw Error('目标文稿已变化，请回到原文稿或重新开始插图。');
       if (!current.inserted) {
         if (!current.insertRequest) {
           if (Date.now() >= current.expires) throw Error('定位已过期，请取消后重新定位。');
@@ -99,33 +103,12 @@ async function beginPicker(request) {
         if (receipt?.status !== 'applied') throw Error('图片写入未确认，请检查正文后重试。');
         current.inserted = true;
         clearTimeout(current.timer);
-        expected = receipt.state;
       }
-      text.textContent = '图片已插入，正在保存文稿…';
-      if (expected?.documentId !== current.documentId) throw Error('目标文稿已变化，请回到原文稿保存。');
-      const saved = await host.saveIntent('drawing', expected);
-      const live = await host.engine({op:'status'});
-      const completed = saved?.status === 'saved' || saved?.status === 'downloaded' || saved?.ackPending === false;
-      if (!completed || saved.live?.documentId !== current.documentId || saved.live?.revision !== expected.revision ||
-          saved.live?.dirty !== false || live.documentId !== current.documentId || live.revision !== expected.revision || live.dirty !== false) {
-        throw Error('保存尚未完成或正文有新修改，请重试保存。');
-      }
-      text.textContent = saved.status === 'downloaded'
-        ? '图片已插入并导出文稿，请保存浏览器下载的文件。'
-        : '图片已插入，文稿修改已保存。';
       current.completed = true;
-      if (saved.status === 'downloaded') {
-        // Downloads confirm an export, not an overwrite of the original file.
-        confirm.style.display = 'none'; confirm.disabled = true;
-        cancel.textContent = '完成';
-      } else {
-        showNotice(banner, text.textContent);
-      }
+      showNotice(banner, '图片已插入，可直接拖动调整位置。');
     } catch (error) {
-      text.textContent = (current.inserted ? '图片已保留在正文，但保存未完成：' : '') +
-        (error instanceof Error ? error.message : '操作失败，请重试。');
-      confirm.textContent = current.inserted ? '重试保存' : current.insertRequest ? '重试确认插图' : '确认并插入';
-      if (current.inserted) cancel.textContent = '稍后保存';
+      text.textContent = error instanceof Error ? error.message : '操作失败，请重试。';
+      confirm.textContent = current.insertRequest ? '重试确认插图' : '确认并插入';
     } finally {
       current.busy = false;
       confirm.disabled = confirm.style.display === 'none'; cancel.disabled = false;
@@ -135,20 +118,91 @@ async function beginPicker(request) {
   return {picking:true};
 }
 
+function pruneEdits() {
+  for (const [key, edit] of edits) {
+    let closed = false;
+    if (!edit.request && !edit.applying && edit.popup) {
+      try { closed = edit.popup.closed === true; } catch { /* Keep sessions whose window state is unavailable. */ }
+    }
+    if (closed || (Date.now() >= edit.expires && !edit.applying && (!edit.request || edit.result || edit.rejected))) edits.delete(key);
+  }
+}
+function editFor(ticket) {
+  pruneEdits();
+  const edit = edits.get(ticket);
+  if (!edit) throw Error('编辑会话已过期，请在正文图片上重新点击“编辑”。');
+  return edit;
+}
+// Called synchronously by the native image button while browser activation is live.
+window.lingdocEditDiagram = raw => {
+  try {
+    const snapshot = JSON.parse(raw);
+    if (!Number.isSafeInteger(snapshot?.state?.documentId) || !Number.isSafeInteger(snapshot?.state?.revision) ||
+        !snapshot.selection?.anchor || !snapshot.selection?.focus ||
+        typeof snapshot.image?.data !== 'string' || !snapshot.image.data || snapshot.image.data.length > 8 * 1024 * 1024 ||
+        !/^[a-f0-9]{64}$/i.test(snapshot.image?.sha256 || '')) throw Error('无法读取这张图，请重新选择后再试。');
+    pruneEdits();
+    if (edits.size >= 16) throw Error('已打开的图片编辑窗口较多，请完成编辑后再打开其他图片。');
+    const ticket = crypto.randomUUID();
+    edits.set(ticket, {snapshot, expires:Date.now() + editTtl, applying:null, request:null, result:null});
+    const params = new URLSearchParams({edit:ticket, host:hostId});
+    const popup = window.open('/native-reading/drawing?' + params.toString(), '_blank');
+    if (!popup) { edits.delete(ticket); throw Error('浏览器阻止了编辑窗口，请允许打开窗口后重试。'); }
+    edits.get(ticket).popup = popup;
+  } catch (error) {
+    const notice = document.createElement('div');
+    notice.style.cssText = bannerStyle; notice.setAttribute('role', 'status');
+    notice.textContent = error instanceof Error ? error.message : '无法打开图片编辑。';
+    document.body.append(notice); setTimeout(() => notice.remove(), 6000);
+  }
+};
+async function applyEdit(request) {
+  const edit = editFor(request.ticket);
+  if (!validId(request.operationId) || typeof request.data !== 'string' || !request.data || request.data.length > 8 * 1024 * 1024 ||
+      typeof request.alt !== 'string' || request.alt.length > 120) throw Error('无效的图片更新请求。');
+  const fingerprint = JSON.stringify({operationId:request.operationId, data:request.data, alt:request.alt});
+  if (edit.request && edit.request !== fingerprint) throw Error('本次编辑已有更新请求，请先重试确认结果。');
+  if (edit.result) return edit.result;
+  if (edit.rejected) throw Error(edit.rejected);
+  if (edit.applying) return edit.applying;
+  edit.request = fingerprint;
+  const snapshot = edit.snapshot;
+  edit.applying = window.wordcraftHost.engine({
+    op:'diagram.replace', operationId:request.operationId,
+    expectedDocumentId:snapshot.state.documentId, expectedRevision:snapshot.state.revision,
+    bookmark:snapshot.selection, expectedImageSha256:snapshot.image.sha256, restoreBookmark:true,
+    data:request.data, alt:request.alt,
+  });
+  try {
+    const result = await edit.applying;
+    if (result?.status !== 'applied') throw Error('图片更新未确认，请重试。');
+    edit.result = result;
+    edit.expires = Date.now() + ttl;
+    return result;
+  } catch (error) {
+    if (typeof error?.message === 'string' && editNoWriteErrors.has(error.message)) {
+      edit.rejected = error.message;
+      edit.expires = Date.now() + ttl;
+    }
+    throw error;
+  } finally { edit.applying = null; }
+}
+
 channel.onmessage = async ({ data }) => {
   if (!data || data.token !== token) return;
   if (data.type === 'discover') {
-    installStandaloneSave(window.wordcraftHost);
     if (window.wordcraftHost?.engine) channel.postMessage({ type:'host', token, hostId, title:document.title, standalone:window.WORDCRAFT_STANDALONE === true, picker:true,
-      directInsert:window.wordcraftHost.saveIntent?.supportsExpectedIdentity === true });
+      directInsert:true, insertOnly:true, editableDiagrams:true });
     return;
   }
   if (data.type !== 'request' || data.hostId !== hostId) return;
   const request = data.request;
-  if (!allowed.has(request?.op) && !['diagram.pick', 'diagram.cancel-pick', 'diagram.resume'].includes(request?.op)) return;
+  if (!allowed.has(request?.op) && !['diagram.pick', 'diagram.cancel-pick', 'diagram.resume', 'diagram.edit', 'diagram.edit-apply'].includes(request?.op)) return;
   try {
     let result;
-    if (request.op === 'diagram.pick') result = await beginPicker(request);
+    if (request.op === 'diagram.edit') result = editFor(request.ticket).snapshot;
+    else if (request.op === 'diagram.edit-apply') result = await applyEdit(request);
+    else if (request.op === 'diagram.pick') result = await beginPicker(request);
     else if (request.op === 'diagram.cancel-pick') {
       const canceled = !!picker && picker.id === request.pickId && !picker.busy && !picker.insertRequest;
       if (canceled) clearPicker();
@@ -158,12 +212,12 @@ channel.onmessage = async ({ data }) => {
     } else result = await window.wordcraftHost.engine(request);
     channel.postMessage({type:'result', token, hostId, requestId:data.requestId, result});
   } catch (error) {
-    const message = ['diagram.pick', 'diagram.resume'].includes(request?.op) && error instanceof Error
+    const message = ['diagram.pick', 'diagram.resume', 'diagram.edit', 'diagram.edit-apply'].includes(request?.op) && error instanceof Error
       ? error.message : '文档或选区已变化，或图片写入失败。请返回正文重新选择位置后再试。';
     channel.postMessage({type:'result', token, hostId, requestId:data.requestId, error:message});
   }
 };
-window.addEventListener('pagehide', () => { clearPicker(); channel.close(); }, { once:true });
+window.addEventListener('pagehide', () => { clearPicker(); edits.clear(); channel.close(); delete window.lingdocEditDiagram; }, { once:true });
 
 function installStandaloneSave(host) {
   if (!host?.standalone || typeof host.saveIntent === 'function') return;

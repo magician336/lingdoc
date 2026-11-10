@@ -274,6 +274,8 @@ fn services(inbox: Inbox, ctx: egui::Context, dirty: Rc<Cell<bool>>, saves: Asyn
         })),
         lingdoc_manifest: Some(Box::new(host_bridge::build_manifest)),
         lingdoc_focus_section: Some(Box::new(host_bridge::focus_section)),
+        lingdoc_diagram_edit_available: Some(Box::new(host_bridge::diagram_edit_available)),
+        lingdoc_edit_diagram: Some(Box::new(host_bridge::request_diagram_edit)),
         ..Default::default()
     }
 }

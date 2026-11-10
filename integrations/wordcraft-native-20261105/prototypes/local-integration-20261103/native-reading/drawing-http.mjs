@@ -44,6 +44,8 @@ export async function createDrawingHTTP({ directory, token, drawingOrigin, notic
       if (url.pathname === base + '/save') {
         const record = await store.save(input);
         json(200, record);
+      } else if (url.pathname === base + '/delete') {
+        json(200, await store.delete(input));
       } else if (url.pathname === base + '/read-image') {
         json(200, { record: readDrawing(input.png) });
       } else if (url.pathname === base + '/get') {
@@ -51,7 +53,7 @@ export async function createDrawingHTTP({ directory, token, drawingOrigin, notic
       } else json(404, { error: '绘图操作不存在。' });
     } catch (error) {
       const status = error.code === 'CONFLICT' ? 409 : error.code === 'NOT_FOUND' ? 404 : error.code === 'VALIDATION' || error instanceof SyntaxError ? 400 : 500;
-      json(status, { error: status === 409 ? '图稿版本已变化，请重新打开图稿后保存。' : status === 400 ? '图稿数据无效或超过限制。' : '绘图操作未完成，请保留窗口后重试。' });
+      json(status, { error: status === 409 ? '图稿版本已变化，请重新打开图稿后保存。' : status === 400 ? '图稿数据无效或超过限制。' : status === 404 ? '图稿不存在，可能已被删除。' : '绘图操作未完成，请保留窗口后重试。' });
     }
     return true;
   };

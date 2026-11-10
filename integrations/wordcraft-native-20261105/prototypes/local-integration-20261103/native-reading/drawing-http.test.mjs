@@ -57,3 +57,33 @@ test('HTTP input errors and internal errors do not expose paths',async()=>{
   const failure=await server.call('/list',{method:'GET'});assert.equal(failure.status,400);assert.ok(!JSON.stringify(failure.data).includes(dir));
  } finally {if(server)await server.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('HTTP delete enforces authorization, revision, restart-safe retry and portable images',async()=>{
+  const dir=await mkdtemp(path.join(process.cwd(),'draw-http-test-'));let server;
+  try {
+    server=await launch(dir);
+    const saved=await server.call('/save',{body:request});
+    assert.equal(saved.status,200);
+    const deletion={id:saved.data.id,expectedRevision:saved.data.revision,key:'delete-key'};
+    assert.equal((await server.call('/delete',{body:deletion,token:null})).status,403);
+    assert.equal((await server.call('/delete',{body:deletion,requestOrigin:'http://evil.example'})).status,403);
+    assert.equal((await server.call('/delete',{body:deletion,requestOrigin:null})).status,403);
+    assert.equal((await server.call('/delete',{body:{...deletion,expectedRevision:2}})).status,409);
+    assert.equal((await server.call('/get',{body:{id:deletion.id}})).data.record.id,deletion.id);
+    const removed=await server.call('/delete',{body:deletion});
+    assert.equal(removed.status,200);
+    assert.deepEqual(removed.data,{id:deletion.id,revision:1,deleted:true});
+    assert.equal((await server.call('/get',{body:{id:deletion.id}})).data.record,null);
+    assert.deepEqual((await server.call('/list',{method:'GET'})).data,[]);
+    const source=await server.call('/read-image',{body:{png:saved.data.embeddedPng}});
+    assert.equal(source.status,200);
+    assert.deepEqual(source.data.record,{id:deletion.id,revision:1,title:request.title,xml:request.xml,messages:request.messages});
+    await server.close();server=await launch(dir);
+    assert.deepEqual((await server.call('/delete',{body:deletion})).data,removed.data);
+    assert.equal((await server.call('/delete',{body:{...deletion,expectedRevision:2}})).status,409);
+    assert.equal((await server.call('/delete',{body:{...deletion,key:'new-delete'}})).status,404);
+    assert.equal((await server.call('/save',{body:request})).status,409);
+    assert.equal((await server.call('/save',{body:{...request,id:deletion.id,key:'revive'}})).status,409);
+    assert.equal((await server.call('/delete',{body:{...deletion,id:'../x',key:'bad'}})).status,400);
+  } finally {if(server)await server.close();await rm(dir,{recursive:true,force:true});}
+});

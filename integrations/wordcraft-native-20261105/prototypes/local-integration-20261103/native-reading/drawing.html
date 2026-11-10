@@ -18,6 +18,7 @@
     <symbol id="i-cursor" viewBox="0 0 24 24"><path d="m4 3 7 18 3-7 7-3Z"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
   </svg>
   <div class="drawing-app">
   <aside class="sidebar" aria-label="图稿与正文">
@@ -30,7 +31,7 @@
       <button id="new" class="button new-button" disabled><svg class="icon"><use href="#i-plus"/></svg>新建图稿</button>
       <section class="library" aria-labelledby="library-heading">
         <div class="section-heading"><h2 id="library-heading">我的图稿</h2><span id="drawing-count" class="count">0</span></div>
-        <label class="field-label" for="saved">已保存图稿</label>
+        <div class="field-heading"><label class="field-label" for="saved">已保存图稿</label><button id="delete-drawing" class="icon-button delete-drawing" title="删除当前图稿" aria-label="删除当前图稿" disabled><svg class="icon"><use href="#i-trash"/></svg></button></div>
         <div class="library-picker"><svg class="icon"><use href="#i-folder"/></svg><select id="saved"><option value="">选择图稿</option></select></div>
         <p class="helper">选择即打开，当前图稿会先自动保存。</p>
       </section>
@@ -47,11 +48,11 @@
       <details class="document-panel">
         <summary><svg class="icon"><use href="#i-document"/></svg><span>插入到文档</span><svg class="icon chevron"><use href="#i-chevron"/></svg></summary>
         <div class="document-content">
-          <p class="helper">定位时先保存图稿并返回文稿；在正文单击位置，确认后直接插入并保存。</p>
+          <p class="helper">定位时先保存图稿并返回文稿；在正文单击位置，确认后图片直接出现在文稿中。</p>
           <div class="field-heading"><label class="field-label" for="hosts">目标文档</label><button id="refresh" class="icon-button" title="查找文档" aria-label="查找文档"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
           <select id="hosts"><option value="">选择文档窗口</option></select>
           <button id="capture" class="button secondary" disabled><svg class="icon"><use href="#i-cursor"/></svg>定位插入位置</button>
-          <button id="insert" class="button primary" disabled>插入正文<svg class="icon"><use href="#i-arrow"/></svg></button>
+          <button id="insert" class="button primary" hidden disabled>插入正文<svg class="icon"><use href="#i-arrow"/></svg></button>
           <div class="document-divider"></div>
           <button id="context" class="button text-button" disabled>带入选中文字</button>
           <button id="edit" class="button text-button" disabled>编辑选中的图</button>
@@ -65,7 +66,7 @@
   <div class="workspace">
     <header class="workspace-header">
       <div class="title-area"><div class="breadcrumb">创作空间<span>/</span><strong>AI 绘图</strong></div><label class="title-label" for="title"><input id="title" aria-label="图稿名称" maxlength="120" value="新图稿" title="点击修改图稿名称"></label></div>
-      <div class="header-actions"><button id="exit" class="button secondary exit-button">保存并返回文稿</button><span id="version" class="version-badge">未保存图稿</span><button id="save" class="button primary save-button" disabled><svg class="icon"><use href="#i-save"/></svg>保存图稿</button></div>
+      <div class="header-actions"><button id="exit" class="button secondary exit-button">保存图稿并返回</button><span id="version" class="version-badge">未保存图稿</span><button id="save" class="button primary save-button" disabled><svg class="icon"><use href="#i-save"/></svg>保存图稿</button><button id="apply-edit" class="button primary" hidden disabled>更新并返回文稿</button></div>
     </header>
     <p id="notice" class="workspace-notice" aria-live="polite">正在准备绘图窗口…</p>
     <main class="canvas-area" aria-label="绘图工作区">

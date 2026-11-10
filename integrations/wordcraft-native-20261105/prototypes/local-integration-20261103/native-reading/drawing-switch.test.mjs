@@ -13,7 +13,8 @@ async function setup() {
     xml: `<mxfile id="${id}"/>`, messages: [], png: 'png',
   }]));
   const state = { empty: true, exportError: false, saveError: false, holdExport: false,
-    featureError: false, holdFeature: false, held: null };
+    featureError: false, holdFeature: false, deleteError: false, confirm: true, held: null,
+    xml: '<mxfile id="edited"/>', messages: [] };
   class Option {
     constructor(text, value) {
       this.text = text;
@@ -55,7 +56,7 @@ async function setup() {
         if (message.type === 'export') {
           const result = state.empty && message.skipEmpty
             ? { empty: true }
-            : { xml: '<mxfile id="edited"/>', messages: [], png: 'data:image/png;base64,png' };
+            : { xml: state.xml, messages: state.messages, png: 'data:image/png;base64,png' };
           reply(message, result, state.exportError ? 'export failed' : null);
         } else if (message.type === 'feature') {
           reply(message, { selected: true }, state.featureError ? 'feature failed' : null);
@@ -76,7 +77,7 @@ async function setup() {
   vm.runInNewContext(source, {
     window, document: { getElementById: el }, BroadcastChannel: Channel, Option, URLSearchParams,
     crypto: { randomUUID: () => `key-${++serial}` }, setTimeout, clearTimeout,
-    confirm: () => { confirmCalls++; return true; },
+    confirm: () => { confirmCalls++; return state.confirm; },
     fetch: async (url, options) => {
       const action = url.split('/').at(-1), body = options.body ? JSON.parse(options.body) : null;
       calls.push({ action, body });
@@ -84,6 +85,10 @@ async function setup() {
         return { ok: true, json: async () => [...records.values()] };
       if (action === 'get')
         return { ok: true, json: async () => ({ record: records.get(body.id) || null }) };
+      if (action === 'delete') {
+        if (state.deleteError) return {ok:false,json:async()=>({error:'delete failed'})};
+        records.delete(body.id);return {ok:true,json:async()=>({id:body.id,revision:body.expectedRevision,deleted:true})};
+      }
       if (action === 'save') {
         if (state.saveError)
           return { ok: false, json: async () => ({ error: 'save failed' }) };
@@ -292,4 +297,100 @@ test('feature failure preserves selection and pending request locks controls', a
   } finally {
     h.close();
   }
+});
+
+
+test('delete current drawing preserves canvas and next save creates a new identity', async () => {
+  const h=await setup();
+  try {
+    await h.select('a');h.calls.length=0;h.frames.length=0;
+    await h.el('delete-drawing').onclick();
+    const request=h.calls.find(c=>c.action==='delete');
+    assert.equal(request.body.id,'a');assert.equal(request.body.expectedRevision,1);assert.ok(request.body.key);
+    assert.equal(h.records.has('a'),false);
+    assert.equal(h.frames.some(m=>m.type==='load'),false);
+    assert.equal(h.el('saved').value,'');
+    assert.match(h.el('version').textContent,/未保存/);
+    h.state.empty=false;await h.el('save').onclick();
+    const save=h.calls.find(c=>c.action==='save');assert.equal(save.body.id,undefined);assert.equal(save.body.expectedRevision,0);
+  } finally {h.close();}
+});
+
+test('delete failure preserves current drawing and retries with the same key', async () => {
+  const h=await setup();
+  try {
+    await h.select('a');h.calls.length=0;h.frames.length=0;
+    h.state.deleteError=true;await h.el('delete-drawing').onclick();
+    assert.equal(h.el('saved').value,'a');assert.equal(h.records.has('a'),true);
+    assert.equal(h.frames.some(m=>m.type==='load'),false);
+    const first=h.calls.find(c=>c.action==='delete').body;
+    h.state.deleteError=false;await h.el('delete-drawing').onclick();
+    const second=h.calls.filter(c=>c.action==='delete').at(-1).body;
+    assert.deepEqual(second,first);assert.equal(h.records.has('a'),false);
+  } finally {h.close();}
+});
+
+test('cancelled deletion performs no write', async () => {
+  const h=await setup();
+  try {
+    await h.select('a');h.calls.length=0;h.state.confirm=false;
+    await h.el('delete-drawing').onclick();
+    assert.equal(h.calls.some(c=>c.action==='delete'),false);assert.equal(h.el('saved').value,'a');
+  } finally {h.close();}
+});
+
+
+test('deleting a drawing then switching unchanged does not recreate it', async () => {
+  const h=await setup();
+  try {
+    await h.select('a');h.state.empty=false;
+    await h.el('delete-drawing').onclick();
+    h.calls.length=0;h.frames.length=0;
+    await h.select('b');
+    assert.equal(h.calls.some(c=>c.action==='save'),false);
+    assert.equal(h.records.has('a'),false);
+    assert.equal(h.records.has('new-id'),false);
+    assert.equal(h.el('saved').value,'b');
+    assert.equal(h.frames.filter(m=>m.type==='load').length,1);
+  } finally {h.close();}
+});
+
+test('edits after deletion are saved as a new drawing on switch', async () => {
+  for(const change of ['xml','messages','title']){
+    const h=await setup();
+    try {
+      await h.select('a');h.state.empty=false;
+      await h.el('delete-drawing').onclick();
+      if(change==='xml')h.state.xml='<mxfile id="new-change"/>';
+      if(change==='messages')h.state.messages=[{role:'user',content:'changed'}];
+      if(change==='title')h.el('title').value='Changed title';
+      h.calls.length=0;await h.select('b');
+      const saves=h.calls.filter(c=>c.action==='save');assert.equal(saves.length,1,change);
+      assert.equal(saves[0].body.id,undefined,change);assert.equal(saves[0].body.expectedRevision,0,change);
+      assert.equal(h.records.has('new-id'),true,change);assert.equal(h.el('saved').value,'b');
+    } finally {h.close();}
+  }
+});
+
+test('explicit save after deletion recreates the drawing even if unchanged',async()=>{
+  const h=await setup();
+  try {
+    await h.select('a');h.state.empty=false;await h.el('delete-drawing').onclick();
+    h.calls.length=0;await h.el('save').onclick();
+    const save=h.calls.find(c=>c.action==='save');assert.ok(save);
+    assert.equal(save.body.id,undefined);assert.equal(save.body.expectedRevision,0);
+    assert.equal(h.records.has('new-id'),true);
+  } finally {h.close();}
+});
+
+test('delete snapshot export failure keeps saved drawing and canvas',async()=>{
+  const h=await setup();
+  try {
+    await h.select('a');h.state.empty=false;h.state.exportError=true;
+    h.calls.length=0;h.frames.length=0;await h.el('delete-drawing').onclick();
+    assert.equal(h.calls.some(c=>c.action==='delete'),false);
+    assert.equal(h.records.has('a'),true);assert.equal(h.el('saved').value,'a');
+    assert.equal(h.frames.some(m=>m.type==='load'),false);
+    assert.match(h.el('status').textContent,/export failed/);
+  } finally {h.close();}
 });
