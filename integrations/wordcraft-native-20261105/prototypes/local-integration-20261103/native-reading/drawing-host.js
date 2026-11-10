@@ -49,7 +49,7 @@ async function beginPicker(request) {
   const banner = document.createElement('div');
   banner.setAttribute('role', 'status');
   banner.style.cssText = bannerStyle;
-  const text = document.createElement('span'); text.textContent = '在正文单击插入位置，确认后图片直接出现在文稿中。';
+  const text = document.createElement('span'); text.textContent = '在正文单击插入位置，确认后图片按光标位置排入正文，自动适应页面。';
   text.style.cssText = 'flex:1 1 220px;line-height:1.6';
   const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = '确认并插入';
   const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消';
@@ -105,7 +105,7 @@ async function beginPicker(request) {
         clearTimeout(current.timer);
       }
       current.completed = true;
-      showNotice(banner, '图片已插入，可直接拖动调整位置。');
+      showNotice(banner, '图片已按所选位置插入，正文已自动排版。');
     } catch (error) {
       text.textContent = error instanceof Error ? error.message : '操作失败，请重试。';
       confirm.textContent = current.insertRequest ? '重试确认插图' : '确认并插入';

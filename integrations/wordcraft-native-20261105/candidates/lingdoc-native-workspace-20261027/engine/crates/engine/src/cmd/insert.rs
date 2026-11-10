@@ -269,6 +269,9 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
         return Err(CmdError::Failed("image is larger than 200 MB".into()));
     }
     let diagram = is_lingdoc_diagram(&bytes);
+    // The bridge's floating flag marks AI insertion; its first placement is in the text flow.
+    // Other pictures explicitly requesting floating keep their existing page-relative behavior.
+    let flow_drawing = diagram && floating;
     // Natural size: pixels at 96 ppi, or a metafile's own frame (WMF, EMF: #802).
     let (natural_w, natural_h, ext) = if let Some((pw, ph)) = wordcraft_render::image_size(&bytes) {
         let ext = image_ext(&bytes);
@@ -284,13 +287,20 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
         let layout = s.layout();
         let caret = layout.caret_on(&at, hint).ok_or_else(|| CmdError::Failed("insertion point is not laid out".into()))?;
         let body = layout.pages.get(caret.page).ok_or_else(|| CmdError::Failed("insertion page is not laid out".into()))?.body;
-        Some((caret, body))
+        let available = layout.pages.get(caret.page).and_then(|page| page.items.iter().find_map(|item| match item {
+            wordcraft_layout::Placed::Lines { story, path, para, l0, l1, .. } if *story == at.story && *path == at.path => {
+                para.lines.get(*l0..*l1)?.iter().find(|line| line.start <= at.off && at.off <= line.stop)
+                    .map(|line| (line.right - line.left).max(1.0))
+            }
+            _ => None,
+        })).unwrap_or(body.w).min(body.w);
+        Some((caret, body, available))
     } else { None };
     let key = s.doc.add_media(bytes, ext);
     // Fitted to the text width.
     let max_w = s.doc.sections().first().map(|(_, sp)| sp.text_width()).unwrap_or(468.0);
     let (mut w, mut h) = (natural_w, natural_h);
-    if let Some(want) = width {
+    if let Some(want) = width.or_else(|| flow_drawing.then(|| placement.map_or(max_w, |(_, _, available)| available * 0.85))) {
         let k = want.max(4.0) / w.max(1.0);
         w *= k;
         h *= k;
@@ -299,12 +309,12 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
         h *= max_w / w;
         w = max_w;
     }
-    if let Some((_, body)) = placement.filter(|_| diagram) {
-        let k = (body.w / w.max(1.0)).min(body.h / h.max(1.0)).min(1.0);
+    if let Some((_, body, available)) = placement.filter(|_| flow_drawing) {
+        let k = (available / w.max(1.0)).min((body.h - 16.0).max(1.0) / h.max(1.0)).min(1.0);
         w *= k;
         h *= k;
     }
-    let float = placement.map_or_else(Float::default, |(caret, body)| Float {
+    let float = placement.filter(|_| !flow_drawing).map_or_else(Float::default, |(caret, body, _)| Float {
         wrap: if diagram { Wrap::TopAndBottom } else { Wrap::InFrontOfText }, h_rel: wordcraft_doc::para::Anchor::Page, v_rel: wordcraft_doc::para::Anchor::Page,
         x: if diagram { caret.x.clamp(body.x, (body.right() - w).max(body.x)) } else { caret.x },
         y: if diagram { caret.top.clamp(body.y, (body.bottom() - h).max(body.y)) } else { caret.top }, outside_cell: true, ..Float::default()
@@ -316,15 +326,30 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
     }
     let props = s.typing_props();
     let at = delete_selection(s)?;
+    if flow_drawing {
+        let para = s.doc.para_at(&at).ok_or_else(|| CmdError::Failed("insertion paragraph vanished".into()))?;
+        let len = para.len();
+        let target = if at.off == 0 {
+            at.path.clone()
+        } else if at.off == len {
+            at.path.with_last(at.path.last().checked_add(1).ok_or_else(|| CmdError::Failed("invalid insertion position".into()))?)
+        } else {
+            s.doc.split_paragraph(&at)?.path
+        };
+        let mut picture = Paragraph::new();
+        picture.props.keep_next = Some(false);
+        picture.props.keep_lines = Some(false);
+        picture.props.page_break_before = Some(false);
+        picture.props.space_before = Some(0.0);
+        picture.props.space_after = Some(0.0);
+        picture.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
+        picture.insert_object(0, obj, &CharProps::default())?;
+        s.doc.insert_block(at.story, &target, Block::Para(picture))?;
+        s.sel = Selection::caret(Pos { story: at.story, path: target, off: wordcraft_doc::para::OBJ.len_utf8() });
+        return Ok(json!({"media": key, "width": w, "height": h}));
+    }
     let end = s.doc.insert_object(&at, obj, &props)?;
     s.sel = Selection::caret(end);
-    if diagram && let Some((caret, body)) = placement {
-        s.touch();
-        let x = caret.x.clamp(body.x, (body.right() - w).max(body.x));
-        let y = caret.top.clamp(body.y, (body.bottom() - h).max(body.y));
-        let placed = super::objects::move_object(s, at, Some(caret.page as u64), x, y, (w, h))?;
-        s.sel = Selection::caret(Pos { off: placed.off.saturating_add(wordcraft_doc::para::OBJ.len_utf8()), ..placed });
-    }
     Ok(json!({"media": key, "width": w, "height": h}))
 }
 

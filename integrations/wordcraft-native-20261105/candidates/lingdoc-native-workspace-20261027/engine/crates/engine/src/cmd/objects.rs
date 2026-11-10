@@ -215,7 +215,7 @@ pub fn specs() -> Vec<CommandSpec> {
             // Migrate legacy AI drawings only when the user actually updates that image.
             let legacy = selected(s).and_then(|(pos, obj)| {
                 let (w, h, f) = obj.frame()?;
-                (is_lingdoc_diagram_at(s, &pos) && matches!(f.wrap, Wrap::Inline | Wrap::InFrontOfText)).then_some((pos, w, h))
+                (is_lingdoc_diagram_at(s, &pos) && f.wrap == Wrap::InFrontOfText).then_some((pos, w, h))
             });
             let placement = if let Some((pos, w, h)) = legacy {
                 let hint = s.page_hint;
@@ -706,11 +706,21 @@ fn bounds(s: &mut Session, v: &Value) -> CmdResult {
         let layout = s.layout();
         let hit = layout.object(&pos, hint).ok_or_else(|| CmdError::Failed("drawing is not laid out".into()))?;
         let page = p::u64(v, "page").map_or(hit.page, |n| usize::try_from(n).unwrap_or(usize::MAX));
-        let body = layout.pages.get(page).ok_or_else(|| CmdError::Params(format!("no page {page}")))?.body;
-        let k = (body.w / w.max(1.0)).min(body.h / h.max(1.0)).min(1.0);
+        let pg = layout.pages.get(page).ok_or_else(|| CmdError::Params(format!("no page {page}")))?;
+        let body = pg.body;
+        let inline = obj.frame().is_some_and(|(_, _, f)| f.wrap == Wrap::Inline);
+        let available = if inline { pg.items.iter().find_map(|it| match it {
+            wordcraft_layout::Placed::Lines { story, path, para, l0, l1, .. } if *story == pos.story && *path == pos.path =>
+                para.lines.get(*l0..*l1)?.iter().find(|line| line.start <= pos.off && pos.off <= line.stop).map(|line| (line.right-line.left).max(1.0)),
+            _ => None,
+        }).unwrap_or(body.w).min(body.w) } else { body.w };
+        let limit_h = if inline { (body.h-16.0).max(1.0) } else { body.h };
+        let k = (available / w.max(1.0)).min(limit_h / h.max(1.0)).min(1.0);
         w *= k;
         h *= k;
-        if to.is_none() && (w, h) != (w0, h0) { to = Some((hit.rect.x, hit.rect.y)); }
+        if to.is_none() && (w, h) != (w0, h0) && !inline {
+            to = Some((hit.rect.x, hit.rect.y));
+        }
     }
     if (w, h) != (w0, h0) {
         with_obj(s, |o| o.set_size(w, h))?;
@@ -1805,16 +1815,170 @@ mod tests {
 
     const DRAWING_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAYAAAD/Rn+7AAAAMUlEQVR4nO3OMREAMBDDMPMnnaL4cwcP2sVgP8MOFCxoBwoWtAMFC9qBggXtQMEdBx+Jezobd7ILdgAAABZ0RVh0TGluZ0RvY0RyYXdpbmcAZml4dHVyZXWgp10AAAAASUVORK5CYII=";
 
+    fn flow_insertion(s: &mut Session, at: Pos) -> Pos {
+        s.sel = Selection::caret(at);
+        s.run("insert.picture", &json!({"data":DRAWING_PNG,"floating":true,"width":180})).unwrap();
+        let (pos, obj) = selected(s).unwrap();
+        assert_eq!(obj.frame().unwrap().2.wrap, Wrap::Inline, "a new drawing must flow with its insertion point");
+        let p = s.doc.para_at(&pos).unwrap();
+        assert_eq!(p.text, wordcraft_doc::para::OBJ.to_string(), "drawing gets its own paragraph");
+        assert_eq!(p.props.keep_next, Some(false));
+        assert_eq!(p.props.numbering, None);
+        assert_eq!(p.props.line_spacing, Some(wordcraft_doc::props::LineSpacing::Multiple(1.0)));
+        pos
+    }
+
+    #[test]
+    fn drawing_flow_before_handbook_heading() {
+        let mut s = Session::new(crate::sample::sample_document());
+        let path = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| s.doc.para(StoryRef::Body,p).is_some_and(|p| p.text == "Shared equipment")).unwrap();
+        let at = Pos {story:StoryRef::Body,path,off:0};
+        let pos = flow_insertion(&mut s, at);
+        let next = s.doc.para(StoryRef::Body, &wordcraft_doc::Path::top(pos.path.last() + 1)).unwrap();
+        assert_eq!(next.text, "Shared equipment");
+        let hint = s.page_hint;
+        let l = s.layout();
+        let hit = l.object(&pos, hint).unwrap();
+        let caret = l.caret_on(&Pos::body(pos.path.last() + 1, 0), hit.page).unwrap();
+        assert!(caret.page > hit.page || caret.top >= hit.rect.bottom() - 0.1);
+    }
+
+    #[test]
+    fn drawing_flow_splits_paragraph_and_retains_text_order() {
+        let mut s = Session::new(crate::sample::sample_document());
+        let path = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| s.doc.para(StoryRef::Body,p).is_some_and(|p| p.text.starts_with("Rent is the obvious reason"))).unwrap();
+        let original = s.doc.para(StoryRef::Body,&path).unwrap().text.clone();
+        let cut = original.find("but it is").unwrap();
+        let pos = flow_insertion(&mut s, Pos {story:StoryRef::Body,path,off:cut});
+        let before = s.doc.para(StoryRef::Body,&wordcraft_doc::Path::top(pos.path.last()-1)).unwrap();
+        let after = s.doc.para(StoryRef::Body,&wordcraft_doc::Path::top(pos.path.last()+1)).unwrap();
+        assert_eq!(format!("{}{}", before.text, after.text), original);
+        assert_eq!(before.props, after.props, "surrounding paragraph formatting survives the split");
+    }
+
+    #[test]
+    fn drawing_flow_at_page_bottom_moves_to_next_page() {
+        let mut s = Session::new(crate::sample::sample_document());
+        let layout = s.layout();
+        let path = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| s.doc.para(StoryRef::Body,p)
+            .is_some_and(|p| p.text == "Switch on the main breaker by the door.")).unwrap();
+        let end = s.doc.para(StoryRef::Body,&path).unwrap().len();
+        let at = Pos {story:StoryRef::Body,path,off:end};
+        let original = layout.caret_on(&at,0).unwrap();
+        let target = (at,original.page);
+        let pos = flow_insertion(&mut s, target.0);
+        let layout = s.layout();
+        let hit = layout.object(&pos,target.1).unwrap();
+        let previous = pos.path.with_last(pos.path.last()-1);
+        let end = s.doc.para(StoryRef::Body,&previous).unwrap().len();
+        let prior = layout.caret_on(&Pos {story:StoryRef::Body,path:previous,off:end},target.1).unwrap();
+        let prior_body = layout.pages[prior.page].body;
+        assert_eq!(prior.page,target.1,"the preceding text should remain on the original page: {prior:?}");
+        assert!(prior_body.bottom()-(prior.top+prior.height) < hit.rect.h,
+            "fixture has enough space: prior {prior:?}, body {prior_body:?}, image {:?}",hit.rect);
+        assert!(hit.page > prior.page, "image should flow after preceding text on the next page: prior {prior:?}, image {hit:?}");
+        let body = layout.pages[hit.page].body;
+        assert!(hit.rect.y >= body.y-0.1 && hit.rect.bottom() <= body.bottom()+0.1);
+    }
+
+    #[test]
+    fn drawing_flow_update_undo_and_docx_preserve_position() {
+        let mut s = Session::new(crate::sample::sample_document());
+        let original = s.doc.clone();
+        let path = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| s.doc.para(StoryRef::Body,p).is_some_and(|p| p.text == "Shared equipment")).unwrap();
+        let pos = flow_insertion(&mut s, Pos {story:StoryRef::Body,path,off:0});
+        let initial = selected(&s).unwrap().1.frame().unwrap().2.clone();
+        s.run("picture.change", &json!({"data":DRAWING_PNG})).unwrap();
+        assert_eq!(selected(&s).unwrap().1.frame().unwrap().2, &initial);
+        let saved = wordcraft_docx::write(&s.doc).unwrap();
+        let mut reopened = Session::new(wordcraft_docx::read(&saved).unwrap());
+        let (restored, obj) = all_objects(&reopened).into_iter().find(|(p,_)| is_lingdoc_diagram_at(&reopened,p)).unwrap();
+        assert_eq!(obj.frame().unwrap().2.wrap, Wrap::Inline);
+        assert_eq!(reopened.doc.para_at(&restored).unwrap().text, wordcraft_doc::para::OBJ.to_string());
+        assert_eq!(reopened.doc.para(StoryRef::Body,&wordcraft_doc::Path::top(restored.path.last()+1)).unwrap().text, "Shared equipment");
+        select_object(&mut reopened, &restored);
+        reopened.run("arrange.bounds", &json!({"x":120,"y":180,"page":0})).unwrap();
+        let moved = selected(&reopened).unwrap().1.frame().unwrap().2.clone();
+        assert_eq!(moved.wrap, Wrap::TopAndBottom);
+        reopened.run("picture.change", &json!({"data":DRAWING_PNG})).unwrap();
+        assert_eq!(selected(&reopened).unwrap().1.frame().unwrap().2, &moved);
+        s.run("edit.undo", &json!({})).unwrap();
+        s.run("edit.undo", &json!({})).unwrap();
+        assert_eq!(s.doc, original, "undo restores the original document in a single insertion step");
+        let _ = pos;
+    }
+
+    #[test]
+    fn drawing_flow_preserves_list_and_fits_columns_and_cells() {
+        let mut doc = crate::sample::sample_document();
+        doc.last_section.columns = wordcraft_doc::section::Columns { count:2, space:36.0, ..Default::default() };
+        let mut s = Session::new(doc);
+        let path = s.doc.para_paths(StoryRef::Body).into_iter().find(|p| s.doc.para(StoryRef::Body,p).is_some_and(|p| p.text.starts_with("Clean as you go."))).unwrap();
+        let before = s.doc.para(StoryRef::Body,&path).unwrap().props.clone();
+        let cut = "Clean as you go. ".len();
+        let pos = flow_insertion(&mut s, Pos {story:StoryRef::Body,path,off:cut});
+        let first = s.doc.para(StoryRef::Body,&pos.path.with_last(pos.path.last()-1)).unwrap();
+        let last = s.doc.para(StoryRef::Body,&pos.path.with_last(pos.path.last()+1)).unwrap();
+        assert_eq!((&first.props,&last.props), (&before,&before));
+        let (w,_,_) = selected(&s).unwrap().1.frame().map(|(w,h,f)|(w,h,f.clone())).unwrap();
+        assert!(w <= (s.doc.last_section.text_width()-36.0)/2.0 + 0.1);
+        let mut cell_session = Session::new(wordcraft_doc::Document::new());
+        cell_session.run("insert.table", &json!({"rows":1,"cols":2})).unwrap();
+        let cell_path = cell_session.doc.para_paths(StoryRef::Body).into_iter().find(|p| p.depth()>0).unwrap();
+        cell_session.sel = Selection::caret(Pos {story:StoryRef::Body,path:cell_path,off:0});
+        cell_session.run("insert.picture", &json!({"data":DRAWING_PNG,"floating":true})).unwrap();
+        let (pos, obj) = selected(&cell_session).unwrap();
+        assert_eq!(obj.frame().unwrap().2.wrap, Wrap::Inline);
+        let layout = cell_session.layout();
+        let hit = layout.object(&pos,0).unwrap();
+        let (table,row,cell) = pos.path.cell().unwrap();
+        let rect = layout.pages[hit.page].items.iter().find_map(|it| match it {
+            wordcraft_layout::Placed::Cell {rect,table:t,row:r,cell:c,..} if *t==table && *r==row && *c==cell => Some(*rect), _=>None
+        }).unwrap();
+        assert!(hit.rect.x >= rect.x-0.1 && hit.rect.right() <= rect.right()+0.1, "drawing {:?} exceeds cell {:?}",hit.rect,rect);
+    }
+
+    #[test]
+    fn drawing_flow_tall_image_ignores_large_insertion_font() {
+        let mut bytes = png(20, 80);
+        let payload = b"LingDocDrawing\0fixture";
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        chunk.extend_from_slice(b"tEXt");
+        chunk.extend_from_slice(payload);
+        let mut crc = 0xffff_ffffu32;
+        for b in &chunk[4..] {
+            crc ^= u32::from(*b);
+            for _ in 0..8 { crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1)); }
+        }
+        chunk.extend_from_slice(&(!crc).to_be_bytes());
+        bytes.splice(bytes.len()-12..bytes.len()-12, chunk);
+        let data = super::super::insert::base64_encode(&bytes);
+        let mut s = Session::new(wordcraft_doc::Document::from_text("Before image.\nAfter image."));
+        s.sel = Selection::caret(Pos::body(1, 0));
+        s.run("format.size", &json!({"size":100})).unwrap();
+        s.run("insert.picture", &json!({"data":data,"floating":true})).unwrap();
+        let (pos, obj) = selected(&s).unwrap();
+        let (w,h,_) = obj.frame().unwrap();
+        assert!((h/w-4.0).abs()<0.01);
+        let layout = s.layout();
+        let hit = layout.object(&pos,0).unwrap();
+        let body = layout.pages[hit.page].body;
+        assert!(hit.rect.y >= body.y-0.1 && hit.rect.bottom() <= body.bottom()+0.1, "tall drawing {:?} exceeds {:?}",hit.rect,body);
+    }
+
     fn assert_drawing_clear(s: &mut Session, check_cells: bool) {
         use wordcraft_layout::Placed;
-        let (pos, _) = selected(s).unwrap();
+        let (pos, object) = selected(s).unwrap();
+        let inline = object.frame().is_some_and(|(_, _, float)| float.wrap == Wrap::Inline);
         let layout = s.layout();
         let hit = layout.object(&pos, s.page_hint).unwrap();
         let image = hit.rect;
         let page = &layout.pages[hit.page];
         for item in &page.items {
             match item {
-                Placed::Lines { story: StoryRef::Body, para, l0, l1, x, y, .. } => {
+                Placed::Lines { story: StoryRef::Body, path, para, l0, l1, x, y, .. } => {
+                    if inline && *path == pos.path { continue; }
                     let first_top = para.lines.get(*l0).map_or(0.0, |line| line.top);
                     for line in &para.lines[*l0..*l1] {
                         if line.c1 <= line.c0 { continue; }
@@ -1824,7 +1988,8 @@ mod tests {
                         assert!(!image.intersects(&rect), "drawing {image:?} covers text {rect:?}");
                     }
                 }
-                Placed::Cell { rect, story: StoryRef::Body, .. } if check_cells => {
+                Placed::Cell { rect, story: StoryRef::Body, table, row, cell, .. } if check_cells => {
+                    if inline && pos.path.cell().is_some_and(|(t, r, c)| t == *table && r == *row && c == *cell) { continue; }
                     assert!(!image.intersects(rect), "drawing {image:?} covers table cell {rect:?}");
                 }
                 _ => {}
@@ -1919,8 +2084,9 @@ mod tests {
     fn drawing_legacy_update_and_oversize_drag_are_undoable() {
         let mut s = Session::new(wordcraft_doc::Document::from_text(&"Content that must not be hidden. ".repeat(20)));
         s.run("insert.picture", &json!({"data":DRAWING_PNG,"width":100})).unwrap();
+        s.run("arrange.wrap", &json!({"wrap":"inFrontOfText"})).unwrap();
         let old = selected(&s).unwrap().1.frame().unwrap().2.clone();
-        assert_eq!(old.wrap, Wrap::Inline);
+        assert_eq!(old.wrap, Wrap::InFrontOfText);
         let depth = s.undo_depth();
         s.run("picture.change", &json!({"data":DRAWING_PNG})).unwrap();
         assert_eq!(s.undo_depth(), depth + 1);
@@ -1961,7 +2127,7 @@ mod tests {
         let (pos, obj) = selected(&s).unwrap();
         assert!(is_lingdoc_diagram_at(&s, &pos));
         let (w, h, float) = obj.frame().unwrap();
-        assert_eq!((w, h, float.wrap, float.h_rel, float.v_rel), (100.0, 50.0, Wrap::TopAndBottom, Anchor::Page, Anchor::Page));
+        assert_eq!((w, h, float.wrap), (100.0, 50.0, Wrap::Inline));
         let initial = float.clone();
         s.run("arrange.bounds", &json!({"x":140,"y":220,"page":0})).unwrap();
         let moved = selected(&s).unwrap().1.frame().unwrap().2.clone();
