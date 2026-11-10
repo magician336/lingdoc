@@ -571,6 +571,7 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
         return;
     }
     let r = d.drag.rect;
+    let diagram = wordcraft_engine::cmd::objects::is_lingdoc_diagram_at(&app.session, &d.object.pos());
     let params = match d.drag.grab {
         Grab::Rotate => {
             let _ = app.run("arrange.rotation", json!({"degrees": d.drag.deg}));
@@ -590,7 +591,9 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
             return;
         }
         Grab::Move if d.copy => {
-            let _ = app.run("arrange.copyTo", json!({"page": d.drag.to_page, "x": r.x, "y": r.y}));
+            if let Err(error) = app.run("arrange.copyTo", json!({"page": d.drag.to_page, "x": r.x, "y": r.y})) && diagram {
+                app.status(format!("无法放置绘图：{error}"));
+            }
             return;
         }
         Grab::Move => json!({"page": d.drag.to_page, "x": r.x, "y": r.y}),
@@ -600,7 +603,9 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
         }
         Grab::Resize(_) => json!({"width": r.w, "height": r.h}),
     };
-    let _ = app.run("arrange.bounds", params);
+    if let Err(error) = app.run("arrange.bounds", params) && diagram {
+        app.status(format!("无法放置绘图：{error}"));
+    }
 }
 
 /// Draw the frame of the active object, or the drag preview.

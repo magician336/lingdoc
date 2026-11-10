@@ -268,6 +268,7 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
     if bytes.len() > 200 << 20 {
         return Err(CmdError::Failed("image is larger than 200 MB".into()));
     }
+    let diagram = is_lingdoc_diagram(&bytes);
     // Natural size: pixels at 96 ppi, or a metafile's own frame (WMF, EMF: #802).
     let (natural_w, natural_h, ext) = if let Some((pw, ph)) = wordcraft_render::image_size(&bytes) {
         let ext = image_ext(&bytes);
@@ -280,7 +281,10 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
     let placement = if floating {
         let at = s.sel.focus.clone();
         let hint = s.page_hint;
-        Some(s.layout().caret_on(&at, hint).ok_or_else(|| CmdError::Failed("insertion point is not laid out".into()))?)
+        let layout = s.layout();
+        let caret = layout.caret_on(&at, hint).ok_or_else(|| CmdError::Failed("insertion point is not laid out".into()))?;
+        let body = layout.pages.get(caret.page).ok_or_else(|| CmdError::Failed("insertion page is not laid out".into()))?.body;
+        Some((caret, body))
     } else { None };
     let key = s.doc.add_media(bytes, ext);
     // Fitted to the text width.
@@ -295,9 +299,15 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
         h *= max_w / w;
         w = max_w;
     }
-    let float = placement.map_or_else(Float::default, |caret| Float {
-        wrap: Wrap::InFrontOfText, h_rel: wordcraft_doc::para::Anchor::Page, v_rel: wordcraft_doc::para::Anchor::Page,
-        x: caret.x, y: caret.top, outside_cell: true, ..Float::default()
+    if let Some((_, body)) = placement.filter(|_| diagram) {
+        let k = (body.w / w.max(1.0)).min(body.h / h.max(1.0)).min(1.0);
+        w *= k;
+        h *= k;
+    }
+    let float = placement.map_or_else(Float::default, |(caret, body)| Float {
+        wrap: if diagram { Wrap::TopAndBottom } else { Wrap::InFrontOfText }, h_rel: wordcraft_doc::para::Anchor::Page, v_rel: wordcraft_doc::para::Anchor::Page,
+        x: if diagram { caret.x.clamp(body.x, (body.right() - w).max(body.x)) } else { caret.x },
+        y: if diagram { caret.top.clamp(body.y, (body.bottom() - h).max(body.y)) } else { caret.top }, outside_cell: true, ..Float::default()
     });
     let obj = InlineObject::Image { media: key.clone(), w, h, alt: alt.to_string(), float, crop: [0.0; 4], ole: None };
     // A selected Drawing Canvas takes it in.
@@ -308,6 +318,13 @@ fn place_picture(s: &mut Session, bytes: Vec<u8>, width: Option<f32>, alt: &str,
     let at = delete_selection(s)?;
     let end = s.doc.insert_object(&at, obj, &props)?;
     s.sel = Selection::caret(end);
+    if diagram && let Some((caret, body)) = placement {
+        s.touch();
+        let x = caret.x.clamp(body.x, (body.right() - w).max(body.x));
+        let y = caret.top.clamp(body.y, (body.bottom() - h).max(body.y));
+        let placed = super::objects::move_object(s, at, Some(caret.page as u64), x, y, (w, h))?;
+        s.sel = Selection::caret(Pos { off: placed.off.saturating_add(wordcraft_doc::para::OBJ.len_utf8()), ..placed });
+    }
     Ok(json!({"media": key, "width": w, "height": h}))
 }
 

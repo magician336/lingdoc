@@ -4415,6 +4415,7 @@ fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, bl
         let splittable = !t.rows.get(first).is_some_and(|r| r.props.cant_split);
         if row.height > room + 0.01 && (short_of_min(first, room) || !(splittable && table::split_row(row, room).is_some())) {
             pb.advance(block, body_top);
+            clear_continued_table_page(ctx, pb, block, body_top, repeated_height, tl.x, tl.width);
         }
     }
     // For the move-on rule, the table's own header rows at the top of a page leave it empty.
@@ -4470,6 +4471,7 @@ fn place_table(ctx: &mut Ctx, pb: &mut PageBuilder, t: &wordcraft_doc::Table, bl
                 None => {}
             }
             pb.advance(block, body_top);
+            clear_continued_table_page(ctx, pb, block, body_top, repeated_height, tl.x, tl.width);
             // Repeat header rows, up to this table's cap.
             if !header_rows.contains(&ri) && header_repeats < MAX_HEADER_REPEATS {
                 for hr in &header_rows {
@@ -4687,6 +4689,20 @@ fn float_table_x(pb: &PageBuilder, w: f32, f: &TableFloat, legacy: f32, mirror: 
 /// starts there (a table in the text flow doesn't wrap around them).
 fn below_floats(ctx: &mut Ctx, pb: &mut PageBuilder, x0: f32, x1: f32) {
     pb.y = below(&body_wraps(ctx, pb), pb.y, x0, x1);
+}
+
+/// A continuation starts a new page before placing its repeated headers. Top-and-bottom
+/// floats seeded for that page must reserve space there too. If a float leaves no room even
+/// for the headers, advance again; the bounded loop prevents hostile documents from looping.
+fn clear_continued_table_page(ctx: &mut Ctx, pb: &mut PageBuilder, block: usize, body_top: f32, header_height: f32, table_x: f32, table_width: f32) {
+    for _ in 0..64 {
+        let areas: Vec<_> = body_wraps(ctx, pb).into_iter().filter(|(_, top_bottom, _, _)| *top_bottom).collect();
+        let before = pb.y;
+        let x = pb.col_x() + table_x;
+        pb.y = below(&areas, pb.y, x, x + table_width);
+        if pb.y <= before + 0.01 || pb.y + header_height < pb.bottom - 0.01 { break; }
+        pb.advance(block, body_top);
+    }
 }
 
 /// `y`, moved below the wrap areas in `excl` in the way of something spanning `x0..x1` that

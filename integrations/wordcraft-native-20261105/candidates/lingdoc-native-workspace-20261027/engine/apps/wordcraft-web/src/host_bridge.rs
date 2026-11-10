@@ -536,6 +536,11 @@ fn execute(app: &mut WordApp, bridge: &mut Bridge, r: &Value) -> Result<Value, S
                                 "page":page+1,"area":area,"kind":"cell","table":table.0,"row":row,"cell":cell,"covered":covered,"clip":clip,
                                 "rect":{"x":rect.x,"y":rect.y,"w":rect.w,"h":rect.h}
                             })),
+                            Placed::Image { rect, story, path, off, media, .. } => rows.push(json!({
+                                "page":page+1,"area":area,"kind":"image","story":format!("{story:?}"),"path":path.0,"off":off,"media":media,
+                                "rect":{"x":rect.x,"y":rect.y,"w":rect.w,"h":rect.h},
+                                "pageBody":{"x":p.body.x,"y":p.body.y,"w":p.body.w,"h":p.body.h}
+                            })),
                             _ => {}
                         }
                         if rows.len() > 4096 { return Err("geometry exceeds row diagnostic limit".into()); }

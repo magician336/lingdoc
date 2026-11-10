@@ -1,5 +1,46 @@
 # WordCraft 独立 AI 绘图窗口
 
+## 2026-11-10 图文自动避让与历史画布单项删除
+
+用户反馈：上一轮为了自由拖动采用文字上方浮动，造成图片遮挡正文且可拖出页面；历史操作还需要能删除某一个画布。最新要求是在保留拖动和原图编辑的同时，由真实文档布局为图留出空间，并在实际历史画布入口提供单项删除。
+
+| 验收项 | 用户入口与不变量 | 所需证据 | 状态 |
+| --- | --- | --- | --- |
+| 图片自动留位 | 插入及拖动 AI 图后正文避让；复用原生浮动/分页/撤销模型 | 原生 8 项及最终浏览器 14 项通过；真实正文/表格无碰撞，跨页移走无旧占位，撤销重做及 DOCX 重开实际页码/坐标一致 | PASS |
+| 原图编辑保留排版 | 悬停编辑与更新仍绑定原图片、文稿和版本 | 最终浏览器实际悬停编辑、更新原图后页码/位置/尺寸及完整 float 一致；目标守卫定向回归通过 | PASS |
+| 左侧图稿保存版本单项删除 | 查看保存版本、逐版本删除；整稿删除保留为独立操作 | HTTP/父页定向测试及浏览器真实删除中间版/当前版通过，其他记录逐字段不变、刷新不复活 | PASS |
+| 右侧历史画布单项删除 | VersionStrip 历史缩略图逐项删除 | 真实 UI 删除指定快照、IndexedDB 重读及刷新通过，当前画布与正文不变 | PASS |
+
+范围：原生 AI 图片布局与已有绘图历史入口；用户已明确左侧图稿库保存版本和右侧历史画布两处都要单项删除。不改普通图片默认规则，不重写编辑器，不调用模型，不删除用户真实图稿。先以隔离文稿和浏览器存储建立可失败的复现，再实现。文档位置仍由原生模型拥有，历史身份和删除仍由各自已有存储层管理，不使用视觉偏移伪造正文留位。图稿库删除单版与保存共用串行原子提交，已删除 revision 不复用；删最后一版后保留身份墓碑。基线 `c5f3b3e1`；健康初评 H_L 57、F_R 54、置信度 C，Δ=0，关注环绕/分页边界与两种图稿库入口的状态耦合。
+
+本轮删除契约：左侧增加“保存版本”列表，每项支持打开及删除；选择旧版前先保存有改动的当前画布，后续保存生成新版本，未改动的版本切换不制造重复历史。`history/version/delete-version` 沿用已有本地令牌及 Origin 检查。删除操作绑定不可变的 id/revision 和幂等键；保存回执保留 revision 高水位，删除最高版本后不会复用该编号，最后版本删除后以墓碑禁止旧身份复活。删除当前版本保留当前画布，只有修改或显式保存才再次入库。已插入正文的 PNG 仍保留可编辑源数据。
+
+右侧 VersionStrip 每个历史缩略图增加独立删除按钮，只有确认后才按版本 ID 删除；删除当前/最后一项不加载其他图，只清除指向该版本的画布、撤销和编辑标记，并经原有会话 IndexedDB 保存。剩余 ID 和编号不变，新版本编号仍沿用上游规则；它不是左侧不可复用的保存 revision。会话下拉列表已有的逐会话删除按钮改为常显。删除快照不等于清除聊天消息中的历史工具内容。
+
+已完成的定向验证：`node --test integrations/wordcraft-native-20261105/prototypes/local-integration-20261103/native-reading/drawing*.test.mjs` 76/76 PASS，另同目录 `standalone-save.test.mjs` 2/2 PASS；包含 HTTP 鉴权/Origin 拒绝、重启幂等、失败原子性、并发版本保护，以及左侧实际父页脚本与存储之间的删除/切换/重试。右侧在 `integrations/wordcraft-native-20261105/drawing-upstream/runtime/source` 运行 `node node_modules/vitest/vitest.mjs run tests/unit/lingdoc-version-delete.test.tsx tests/unit/version-card.test.tsx --maxWorkers=1` 13/13 PASS、`node node_modules/typescript/bin/tsc --noEmit` PASS；仓库根 `node --test integrations/wordcraft-native-20261105/drawing-upstream/integration.test.mjs` 13/13 PASS。
+
+存储边界沿用本地单实例部署：并发验收证明一个服务实例内的请求串行，不代表同一图稿目录能被两个服务进程同时写入。既有 JSON store 没有跨进程锁；两个实例共享目录仍可能丢失更新，因此隔离测试和本机运行必须使用各自独立目录。本轮未扩展为多进程存储服务。
+
+浏览器基线已实际复现：Open Studio 示例包含 361 字、21 段、8 个列表项和 5×4 表格；原插图重叠 4 行正文，真实鼠标拖出左边后重叠 6 行且图片越界。基线证据为任务 `outputs/drawing-wrap-baseline-verification.json` 及 `drawing-wrap-baseline-inserted.png` / `drawing-wrap-baseline-dragged.png`，不是以测试数据中存在表格代替碰撞验证。所有测试使用隔离实例，不操作用户 7237 文稿。
+
+历史功能独立浏览器验收：`node work/drawing-wrap-history-browser.mjs --history-only` 11/11 PASS；左侧实际创建三版、逐项打开及删除中间/当前版，右侧按真实会话 schema 在独立 IndexedDB 放入三个合成快照后点击逐项删除。剩余记录逐字段一致，当前画布及正文不变，左右各自刷新后均不复活。1280×720 下展开版本列表可滚动，工作区不溢出。模型请求 0、非预期运行错误 0，隔离服务已停止。报告 `outputs/drawing-wrap-history-verification.json` 和 `drawing-history-1280x720.png` 等截图；该分段验证使用旧 WASM，仅证明历史功能，不证明新排版修复。
+
+原生实现：AI 图默认使用上下环绕，并按实际页正文区域限制大小和落点；尺寸单改也执行边界适配。插入和移动共同复用落点规则，与表格区域相交时放到该表在当前页的起点。共享布局在表格续页、放置重复表头前重新避开本栏上下环绕浮图，空间不足时有界换页。普通图片的默认环绕不变。旧行内/文字上方 AI 图仅在主动拖动或更新时迁移，不在打开文稿时静默写入。
+
+拖动在同一原生命令事务内暂移图片，根据释放旧占位后的真实布局选择目标页稳定段落，再放回图片；这避免了多遍布局的防振荡机制在旧页保留空白，不改动该机制。目标页消失或没有稳定锚点时明确拒绝并回滚，AI 图拖动/复制失败通过现有状态提示展示原因。既不静默新增正文空段，也不插入分页符。撤销仍是一次操作。
+
+冻结排版源码后 `work/full-project-tools/test-drawing-engine.ps1` 执行 `cargo test -p wordcraft-engine drawing_ --lib --locked --jobs 2`，8/8 PASS、867 项未选中。真实几何断言覆盖段落/列表、5×4 表格第 3 行拖动、表内直接插入、页边及超大图、仅改尺寸、旧图更新单次撤销/重做，以及跨页重复表头、旧页标题恢复和 DOCX 重开实际页码/坐标一致。行坐标按 `Placed::Lines.y` 是分片首行顶部的原生定义计算。共享布局既有 `cargo test -p wordcraft-layout repeated_header --lib --locked --jobs 2` 4/4 PASS，`cargo test -p wordcraft-layout floating --lib --locked --jobs 2` 11/11 PASS。完整 Rust CI 本轮未运行，之前缺失的 cargo-fmt/rustfmt 未解决，不宣称全仓 CI 通过。
+
+跨页红测证据另存于 `outputs/drawing-wrap-crosspage-before-verification.json` 和 `drawing-wrap-crosspage-before.png`：中间构建 `b90a16c8` 在真实拖入第 2 页表格时与 6 个单元格相交；该失败已阻止其交付。最终验收必须同时证明屏幕布局和保存重开结果，不以单页回归替代。
+
+最终构建：固定 Rust 1.95.0 / wasm-bindgen 0.2.129，以 `cargo build --target wasm32-unknown-unknown -p wordcraft-web --release --jobs 2 --locked` 和 Web bindgen 生成产物，两者退出 0，Cargo.lock 未变。WASM SHA-256 `274989b92c11e8d791668cee588de8d82886de2fa0a16df91c548d691800181c`，JS `7e27ccaee26981494c17a79cf15bfb13bf4a93df378f1e01437418369bfe12cb`；记录在任务 `work/full-project-tools/logs/wordcraft-20261110-151533-result.json`。Next 使用隔离目录的 `next build --webpack` 构建并经现有启动器验证；该本机构建复用依赖目录联接，不视为可移植发行包。
+
+最终真实浏览器验收：`node work/drawing-wrap-history-browser.mjs --run`，指定上述 WASM 哈希及隔离 `version-delete-build` 应用目录，14/14 PASS。浏览器实际 HTTP 资源哈希与磁盘一致。真实鼠标拖入跨页表格后，图位于第 2 页 `(207.75, 72, 196.5, 106.5)`，正文行/表格单元格碰撞均为 0，且完全位于正文边界；移走后第 1 页原标题回到 `(72, 72)`，全文段落、列表及表格内容指纹不变。一次撤销回原页、重做回第 2 页；显式 Ctrl+S 下载 DOCX 后重开，以及从原生悬停入口改图并更新，均保持实际页码和上述矩形，编辑保持完整 float。插入与更新不触发自动保存、文件选择或下载，模型请求 0，非预期错误 0。
+
+证据位于任务 `outputs/drawing-wrap-final-verification.json`、`drawing-wrap-final-edited.png`、原生排版清晰预览 `drawing-wrap-readable-page.png` 和真实导出 `drawing-wrap-reserved.docx`；DOCX 内 PNG 可编辑源与原图逐字段一致。最终构建通过左右历史集成冒烟，并在报告中记录独立 11/11 历史报告的哈希，未把旧原生构建当作新排版证据。两类测试均使用独立存储；7238 验收服务已停止。
+
+健康复评 H_L 57、F_R 54、置信度 C，Δ=0。正文排版、锚点与一次撤销归原生命令事务管理；保存版本身份与删除归现有 store，画布快照归上游会话存储。保存回执兼任 revision 高水位、两套历史生命周期，以及原生/JS 元数据协议仍有维护耦合。定向回归与真实持久化证据证明本轮行为，不据此提高结构评分。完整 Rust CI 和可移植发行包仍为 NOT RUN。
+
 ## 2026-11-10 正文直接插图、自由摆放、悬停编辑与图稿删除
 
 用户最新要求取代上一轮自动保存：确认后仅在当前正文插入图片，不自动调用普通文件保存器或项目保存协调器，不弹出另存为/下载；正文保持正常的已修改状态，由用户原有保存操作处理。AI 图片可直接拖动摆放，悬停提供编辑入口，编辑后更新原图片。图稿库提供删除入口，删除库记录不移除已插入正文的图。
