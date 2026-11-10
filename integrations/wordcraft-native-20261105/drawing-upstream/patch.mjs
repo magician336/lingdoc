@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -119,9 +120,25 @@ const patches = [
   },
 ];
 
+// Keep the existing per-session delete affordance visible without hover.
+patches.push({
+  file:'components/chat/session-menu.tsx',
+  changes:[['text-faint [@media(hover:hover)]:opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/session:opacity-100 focus-visible:opacity-100',
+            'text-faint hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100']],
+});
+
+// These tracked replacement overlays are based on exactly pinned upstream blobs.
+for (const file of ['components/canvas/version-strip.tsx', 'components/canvas/versions-context.tsx',
+  'components/chat/chat-versions.tsx', 'stores/versions-store.ts']) patches.push({file, replacement:true});
+
 export function patchText(file, original) {
   const patch = patches.find(item => item.file === file);
   if (!patch) throw new Error('Unknown upstream patch target');
+  if (patch.replacement) {
+    const expected = JSON.parse(readFileSync(path.join(here, 'upstream-files.json'), 'utf8'))[file];
+    if (gitDigest(Buffer.from(original)) !== expected) throw new Error(`Pinned drawing source differs in ${file}`);
+    return '// Modified for LingDoc independent drawing integration.\n' + readFileSync(path.join(here, 'overlay', file), 'utf8');
+  }
   let result = original;
   for (const [anchor, replacement] of patch.changes) {
     if (result.split(anchor).length !== 2) throw new Error(`Pinned upstream anchor changed in ${file}`);
@@ -131,7 +148,7 @@ export function patchText(file, original) {
 }
 
 export const patchFiles = patches.map(item => item.file);
-const overlayFiles = ['components/lingdoc-bridge.tsx', 'lib/lingdoc-boundary.ts', 'app/api/lingdoc-bridge-config/route.ts', 'app/lingdoc-fonts.css'];
+const overlayFiles = ['tests/unit/lingdoc-version-delete.test.tsx', 'components/lingdoc-bridge.tsx', 'lib/lingdoc-boundary.ts', 'app/api/lingdoc-bridge-config/route.ts', 'app/lingdoc-fonts.css'];
 
 export async function applyOverlay(directory = sourceDirectory) {
   const upstreamFiles = JSON.parse(await readFile(path.join(here, 'upstream-files.json'), 'utf8'));
@@ -147,7 +164,25 @@ export async function applyOverlay(directory = sourceDirectory) {
     const previous = marker?.files[file];
     if (previous) {
       if (previous.originalGitSha !== upstreamFiles[file]) throw new Error(`Drawing source marker changed in ${file}`);
-      if (digest(bytes) === previous.sha256) { files[file] = previous; continue; }
+      if (digest(bytes) === previous.sha256) {
+        const patch = patches.find(item => item.file === file);
+        if (patch?.replacement) {
+          const desired = Buffer.from('// Modified for LingDoc independent drawing integration.\n' + await readFile(path.join(here, 'overlay', file), 'utf8'));
+          const hash = digest(desired);
+          if (hash !== previous.sha256) {
+            files[file] = {originalGitSha:upstreamFiles[file], sha256:hash, previousSha256:previous.sha256};
+            pending.push({file, bytes:desired, replace:true});
+          } else files[file] = previous;
+        } else files[file] = previous;
+        continue;
+      }
+      if (previous.previousSha256 && digest(bytes) === previous.previousSha256) {
+        const patch = patches.find(item => item.file === file);
+        if (!patch?.replacement) throw new Error(`Drawing overlay has unrecorded changes in ${file}`);
+        const desired = Buffer.from('// Modified for LingDoc independent drawing integration.\n' + await readFile(path.join(here, 'overlay', file), 'utf8'));
+        if (digest(desired) !== previous.sha256) throw new Error(`Drawing overlay changed during update in ${file}`);
+        files[file] = previous; pending.push({file, bytes:desired, replace:true}); continue;
+      }
     }
     // Windows checkouts may expand LF to CRLF. Accept that transformation
     // only when reversing it reproduces the exact pinned Git blob.

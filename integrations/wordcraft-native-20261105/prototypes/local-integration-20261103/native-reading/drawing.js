@@ -7,6 +7,7 @@ const hosts = new Map();
 const entry = new URLSearchParams(window.location?.search || '');
 let editEntryHandled = false, editingTicket = null, pendingWrite = null, pendingDelete = null;
 let deletedDraft = null;
+let historyId = null, pendingVersionDelete = null;
 let ready = false, busy = false, current = null, target = null, connectionTimer, pendingSave;
 let activeFeature = null;
 const features = {
@@ -15,7 +16,7 @@ const features = {
 };
 const message = text => { element('status').textContent = text; element('notice').textContent = text; };
 function controls() {
-  element('version').textContent = current ? `已存 v${current.revision}` : '未保存图稿';
+  element('version').textContent = current?.deleted ? `第 ${current.revision} 版已删除 · 画布暂存` : current ? `已存 v${current.revision}` : '未保存图稿';
   for (const id of ['save', 'new', 'edit', 'capture', 'context']) element(id).disabled = busy || !ready;
   element('insert').disabled = busy || !ready || !target;
   element('replace').disabled = busy || !ready || !target?.image;
@@ -39,6 +40,7 @@ function controls() {
     button.disabled = busy || !ready || !!pendingWrite;
     button.ariaPressed = String(activeFeature === feature);
   }
+  for (const button of element('history-versions').querySelectorAll?.('button') || []) button.disabled = busy || !ready || !!pendingWrite;
 }
 async function api(action, body) {
   const response = await fetch('/native-reading/drawing/' + action, {
@@ -96,24 +98,86 @@ async function list() {
   element('saved').replaceChildren(new Option('选择图稿', ''));
   for (const record of records) element('saved').add(new Option(`${record.title} · 第 ${record.revision} 版`, record.id));
   if (current && records.some(record => record.id === current.id)) element('saved').value = current.id;
+  await refreshHistory();
 }
+async function refreshHistory() {
+  if (!element('version-history').open) return;
+  const id = current?.id || historyId;
+  const container = element('history-versions');
+  const versions = id ? await api('history', {id}) : [];
+  element('history-count').textContent = String(versions.length);
+  container.replaceChildren();
+  if (!versions.length) {
+    const empty = document.createElement('p'); empty.className = 'helper';
+    empty.textContent = id ? '这个图稿已没有保存版本，当前画布仍可继续编辑。' : '选择图稿后，可查看或单独删除某个保存版本。';
+    container.append(empty);
+  }
+  for (const version of versions) {
+    const row = document.createElement('div'); row.className = 'history-row'; row.dataset.revision = String(version.revision);
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'history-open'; open.dataset.action = 'open-version';
+    open.textContent = `第 ${version.revision} 版 · ${version.title}`; open.title = open.textContent;
+    open.setAttribute('aria-label', `打开第 ${version.revision} 版`);
+    open.setAttribute('aria-current', String(current?.id === id && current?.revision === version.revision && !current?.deleted));
+    open.onclick = () => run(() => openVersion(id, version.revision));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'history-delete'; remove.dataset.action = 'delete-version';
+    remove.textContent = '删除'; remove.setAttribute('aria-label', `删除第 ${version.revision} 版`);
+    remove.onclick = () => run(() => deleteVersion(id, version.revision));
+    row.append(open, remove); container.append(row);
+  }
+  controls();
+}
+const writeRevision = record => record?.writeRevision ?? record?.revision ?? 0;
+async function openVersion(id, revision) {
+  if (current?.id === id && current.revision === revision && !current.deleted) return;
+  const selected = await api('version', {id, revision});
+  if (!selected.record) throw Error('这个保存版本已被删除，当前画布已保留。');
+  await saveBeforeLeaving();
+  // Saving the current canvas can advance this same drawing's head.
+  const latest = await api('version', {id, revision});
+  if (!latest.record) throw Error('这个保存版本已被删除，当前画布已保留。');
+  await load({...latest.record, writeRevision:latest.headRevision});
+  target = null; editingTicket = null;
+  message(`已打开第 ${revision} 版。后续保存会生成新版本，其他历史版本会保留。`);
+}
+async function deleteVersion(id, revision) {
+  if (pendingVersionDelete && (pendingVersionDelete.id !== id || pendingVersionDelete.revision !== revision)) throw Error('请先重试确认上一次版本删除的结果。');
+  if (!pendingVersionDelete && !confirm(`仅删除第 ${revision} 版？其他版本、当前画布和正文中的图片会保留。`)) return;
+  pendingVersionDelete ??= {id, revision, key:crypto.randomUUID()};
+  const snapshot = draftFingerprint(await request('frame', {type:'export'}));
+  const removed = await api('delete-version', pendingVersionDelete);
+  pendingVersionDelete = null;
+  if (current?.id === id) {
+    const displayed = current.revision === revision;
+    if (writeRevision(current) === removed.previousHeadRevision && revision === removed.previousHeadRevision) current = {...current, writeRevision:removed.headRevision};
+    if (displayed) { current = {...current, deleted:true}; deletedDraft = snapshot; pendingSave = null; }
+    if (!removed.remaining) { current = null; deletedDraft = snapshot; pendingSave = null; }
+  }
+  historyId = id;
+  await list();
+  message(`第 ${revision} 版已删除。其他版本、当前画布和正文中的图片已保留。`);
+}
+element('version-history').ontoggle = () => { if (element('version-history').open) return run(refreshHistory); };
 async function load(record, persisted = true) {
   await request('frame', { type: 'load', xml: record?.xml || '<mxfile><diagram name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>', messages: record?.messages || [], title: record?.title || '新图稿' });
   current = persisted ? record : null;
   pendingSave = null;
   pendingDelete = null;
   deletedDraft = null;
+  historyId = persisted ? record?.id || null : null;
+  pendingVersionDelete = null;
   element('title').value = record?.title || '新图稿';
   element('saved').value = current?.id || '';
+  await refreshHistory();
 }
 async function save(exported) {
   exported ??= await request('frame', { type: 'export' });
-  const payload = { id: current?.id, expectedRevision: current?.revision || 0, title: element('title').value.trim() || '新图稿', xml: exported.xml, messages: exported.messages || [], png: exported.png?.replace(/^data:image\/png;base64,/, '') };
+  const payload = { id: current?.id, expectedRevision: writeRevision(current), title: element('title').value.trim() || '新图稿', xml: exported.xml, messages: exported.messages || [], png: exported.png?.replace(/^data:image\/png;base64,/, '') };
   const fingerprint = JSON.stringify(payload);
   // A lost HTTP response must not create another version when the user retries.
   if (pendingSave?.fingerprint !== fingerprint) pendingSave = { fingerprint, key: crypto.randomUUID() };
   const saved = await api('save', { ...payload, key: pendingSave.key });
   current = saved;
+  historyId = saved.id;
   pendingSave = null;
   deletedDraft = null;
   await list();
@@ -130,7 +194,10 @@ function draftFingerprint(exported) {
   return JSON.stringify({xml:exported.xml, messages:exported.messages || [], title:element('title').value.trim() || '新图稿'});
 }
 function unchangedDeletedDraft(exported) {
-  return !current && deletedDraft !== null && deletedDraft === draftFingerprint(exported);
+  return deletedDraft !== null && deletedDraft === draftFingerprint(exported);
+}
+function unchangedSavedDraft(exported) {
+  return current && !current.deleted && exported.xml === current.xml && JSON.stringify(exported.messages || []) === JSON.stringify(current.messages || []) && (element('title').value.trim() || '新图稿') === current.title;
 }
 async function saveBeforeLeaving(explicit = false) {
   if (!ready) {
@@ -138,7 +205,7 @@ async function saveBeforeLeaving(explicit = false) {
     return current;
   }
   const exported = await request('frame', { type: 'export', skipEmpty: !current });
-  return exported.empty || (!explicit && unchangedDeletedDraft(exported)) ? current : await save(exported);
+  return exported.empty || (!explicit && (unchangedDeletedDraft(exported) || unchangedSavedDraft(exported))) ? current : await save(exported);
 }
 function focusOpener() {
   try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch { /* Browser may deny tab focus. */ }
@@ -232,8 +299,8 @@ element('delete-drawing').onclick = () => run(async () => {
   if (!current) return;
   const deleting = current;
   if (!pendingDelete && !confirm(`删除“${deleting.title}”及其保存版本？正文中的图片和当前画布会保留。`)) return;
-  if (!pendingDelete || pendingDelete.id !== deleting.id || pendingDelete.expectedRevision !== deleting.revision) {
-    pendingDelete = {id:deleting.id, expectedRevision:deleting.revision, key:crypto.randomUUID()};
+  if (!pendingDelete || pendingDelete.id !== deleting.id || pendingDelete.expectedRevision !== writeRevision(deleting)) {
+    pendingDelete = {id:deleting.id, expectedRevision:writeRevision(deleting), key:crypto.randomUUID()};
   }
   const deletedSnapshot = draftFingerprint(await request('frame', {type:'export'}));
   await api('delete', pendingDelete);
@@ -283,7 +350,7 @@ element('saved').onchange = () => {
       if (!record) throw Error('图稿不存在，当前画布已保留。');
       message('正在保存当前图稿，完成后自动切换…');
       const exported = await request('frame', { type: 'export', skipEmpty: !current });
-      const skipSave = exported.empty || unchangedDeletedDraft(exported);
+      const skipSave = exported.empty || unchangedDeletedDraft(exported) || unchangedSavedDraft(exported);
       if (!skipSave) await save(exported);
       await load(record); target = null; editingTicket = null;
       message(skipSave ? '已打开保存的图稿。' : '原图已自动保存，已打开选中的图稿。');

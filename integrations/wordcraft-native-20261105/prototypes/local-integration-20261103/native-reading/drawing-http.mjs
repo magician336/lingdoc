@@ -46,6 +46,12 @@ export async function createDrawingHTTP({ directory, token, drawingOrigin, notic
         json(200, record);
       } else if (url.pathname === base + '/delete') {
         json(200, await store.delete(input));
+      } else if (url.pathname === base + '/history') {
+        json(200, await store.history(input.id));
+      } else if (url.pathname === base + '/version') {
+        json(200, await store.version(input.id,input.revision));
+      } else if (url.pathname === base + '/delete-version') {
+        json(200, await store.deleteVersion(input));
       } else if (url.pathname === base + '/read-image') {
         json(200, { record: readDrawing(input.png) });
       } else if (url.pathname === base + '/get') {

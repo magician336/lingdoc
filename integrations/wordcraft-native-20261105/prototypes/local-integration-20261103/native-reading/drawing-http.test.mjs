@@ -87,3 +87,31 @@ test('HTTP delete enforces authorization, revision, restart-safe retry and porta
     assert.equal((await server.call('/delete',{body:{...deletion,id:'../x',key:'bad'}})).status,400);
   } finally {if(server)await server.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('HTTP saved-version deletion preserves other versions and survives restart without reusing ids',async()=>{
+  const dir=await mkdtemp(path.join(process.cwd(),'draw-http-test-'));let server;
+  try {
+    server=await launch(dir);
+    const first=(await server.call('/save',{body:request})).data;
+    const second=(await server.call('/save',{body:{...request,id:first.id,expectedRevision:1,key:'v2'}})).data;
+    await server.call('/save',{body:{...request,id:first.id,expectedRevision:2,key:'v3'}});
+    const deletion={id:first.id,revision:2,key:'delete-version-2'};
+    for(const route of ['/history','/version','/delete-version']) {
+      assert.equal((await server.call(route,{body:deletion,token:null})).status,403);
+      assert.equal((await server.call(route,{body:deletion,requestOrigin:'http://evil.example'})).status,403);
+    }
+    const history=await server.call('/history',{body:{id:first.id}});
+    assert.equal(history.status,200);assert.deepEqual(history.data.map(row=>row.revision),[3,2,1]);
+    const deleted=await server.call('/delete-version',{body:deletion});assert.equal(deleted.status,200);
+    assert.deepEqual((await server.call('/history',{body:{id:first.id}})).data.map(row=>row.revision),[3,1]);
+    assert.equal((await server.call('/version',{body:{id:first.id,revision:2}})).data.record,null);
+    assert.equal((await server.call('/version',{body:{id:first.id,revision:1}})).data.headRevision,3);
+    assert.equal((await server.call('/read-image',{body:{png:second.embeddedPng}})).data.record.revision,2);
+    assert.equal((await server.call('/delete-version',{body:{...deletion,revision:0,key:'invalid'}})).status,400);
+    await server.close();server=await launch(dir);
+    assert.deepEqual((await server.call('/delete-version',{body:deletion})).data,deleted.data);
+    await server.call('/delete-version',{body:{id:first.id,revision:3,key:'delete-v3'}});
+    const fourth=await server.call('/save',{body:{...request,id:first.id,expectedRevision:1,key:'v4'}});
+    assert.equal(fourth.status,200);assert.equal(fourth.data.revision,4);
+  } finally {if(server)await server.close();await rm(dir,{recursive:true,force:true});}
+});

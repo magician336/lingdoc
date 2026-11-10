@@ -5,5 +5,10 @@
   "app/api/chat/route.ts": "050ede20443246eb75b24db39123c14d1f6e8c03",
   "app/[lang]/layout.tsx": "1755b08391c325f80ecc291ca704a15864ac6ac3",
   "stores/ui-store.ts": "0d35e112e9e8f9134b9d92c3aaad7f2bfab537d0",
-  "lib/drawio/editor-bridge.ts": "0dbc74f36718b5f5ed8176eb62450a0c476d5cb5"
+  "lib/drawio/editor-bridge.ts": "0dbc74f36718b5f5ed8176eb62450a0c476d5cb5",
+  "components/canvas/version-strip.tsx": "faa71f566742c5c048b8823db1f0006f3fd7ec8f",
+  "components/canvas/versions-context.tsx": "262aaa46dd56155c90dced5d989de6fbfb9a2271",
+  "components/chat/chat-versions.tsx": "bf5a1795697a75427a4d6941e725b5ee292c3ceb",
+  "stores/versions-store.ts": "3995aec725477469095fb379835d0e858693838f",
+  "components/chat/session-menu.tsx": "397379acddc45b00f9c951c793594d744d2f7b8a"
 }

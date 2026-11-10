@@ -21,7 +21,7 @@ async function freePort() {
   return port;
 }
 const csp = "default-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; frame-ancestors 'self'";
-export async function startNativeReading({ port = 7212, directory = path.join(here, 'runtime', 'trial') } = {}) {
+export async function startNativeReading({ port = 7212, directory = path.join(here, 'runtime', 'trial'), drawingApplicationDirectory } = {}) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535 || [7100,7106,7210,7211].includes(port)) throw Error('Invalid or protected trial port');
   directory = path.resolve(directory);
   const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
@@ -48,7 +48,7 @@ export async function startNativeReading({ port = 7212, directory = path.join(he
     const workspace = await createWorkspaceService({directory:path.join(directory,'workspace'),goOrigin:app.runtime.goOrigin,origin:app.runtime.origin,projectId:app.projectId,sources,imports});
     let drawingNotice = '';
     try {
-      drawing = await startDrawingUpstream({ parentOrigin: `http://127.0.0.1:${port}`, configPath: process.env.LINGDOC_LOCAL_AI_CONFIG, directory: path.join(directory, 'drawing-service') });
+      drawing = await startDrawingUpstream({ parentOrigin: `http://127.0.0.1:${port}`, configPath: process.env.LINGDOC_LOCAL_AI_CONFIG, directory: path.join(directory, 'drawing-service'), applicationDirectory:drawingApplicationDirectory });
     } catch {
       drawingNotice = '绘图服务暂不可用，请联系管理员完成绘图组件配置后重新打开。';
     }

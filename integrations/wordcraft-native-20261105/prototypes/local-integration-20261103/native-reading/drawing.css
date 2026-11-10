@@ -46,6 +46,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; height: 39px; padding: 0 8px; color: #455b4f; background: white; font-size: 12px; text-overflow: ellipsis; }
 .library-picker select { flex: 1; width: 0; border: 0; background: transparent; padding-left: 0; }
 .helper { margin: 8px 0 0; color: #87948d; font-size: 11px; line-height: 1.8; }
+.version-history { width: 100%; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.version-history summary { cursor: pointer; color: #587363; font-size: 12px; }
+.version-history summary .count { margin-left: 8px; }
+.history-list { display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow: auto; margin-top: 9px; }
+.history-row { display: flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 7px; background: white; }
+.history-open { flex: 1; min-width: 0; padding: 9px 8px; border: 0; background: transparent; color: #456353; text-align: left; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-open[aria-current="true"] { color: var(--accent); font-weight: 600; background: #edf5ef; }
+.history-delete { flex-shrink: 0; border: 0; border-radius: 5px; margin-right: 4px; padding: 6px; background: transparent; color: #a1554c; font-size: 11px; }
+.history-delete:not(:disabled):hover { background: #fff0ed; color: #a63d3d; }
 .feature-nav { padding: 0 2px 20px; }
 .feature-nav .section-heading { margin-bottom: 9px; }
 .feature-list { display: flex; flex-direction: column; gap: 3px; }
@@ -118,7 +127,8 @@ select { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-
   .brand-name span, .sidebar-note, .sidebar-footer, .section-heading, .library > .field-label, .library > .helper { display: none; }
   .sidebar-content { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 0 12px 10px; max-height: 32vh; overflow: auto; }
   .new-button { width: auto; min-height: 36px; font-size: 11px; padding: 7px 10px; }
-  .library { flex: 1; min-width: 170px; display: flex; gap: 4px; padding: 0; }
+  .library { flex: 1; min-width: 170px; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; }
+  .version-history { order: 3; flex-basis: 100%; margin-top: 4px; }
   .library .field-heading { order: 2; margin: 0; }
   .library .field-heading .field-label { display: none; }
   .library-picker { flex: 1; min-width: 0; }
