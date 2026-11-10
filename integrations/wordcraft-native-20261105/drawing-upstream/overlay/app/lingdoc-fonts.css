@@ -5,41 +5,40 @@
         "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-/* LingDoc's light research workspace. Tokens follow globals.css and the
- * selectors below match the pinned Workspace, ChatPanel and Composer. */
+/* Match the WordCraft light editor. The nested draw.io document is not styled here. */
 html:not(.dark) .lingdoc-system-fonts {
-    --canvas: #f1f4f4;
-    --background: #f1f4f4;
-    --foreground: #243735;
+    --radius: 6px;
+    --canvas: #eceff3;
+    --background: #f3f5f8;
+    --foreground: #20252b;
     --card: #ffffff;
-    --card-foreground: #243735;
+    --card-foreground: #20252b;
     --popover: #ffffff;
-    --popover-foreground: #243735;
-    --primary: #087f74;
+    --popover-foreground: #20252b;
+    --primary: #0064e6;
     --primary-foreground: #ffffff;
-    --secondary: #edf4f2;
-    --secondary-foreground: #29453f;
-    --muted: #f1f5f4;
-    --muted-foreground: #637571;
-    --faint: #70817d;
-    --accent: #e8f4f0;
-    --accent-foreground: #15675e;
-    --ring: #0e897b;
-    --border: #dde6e3;
-    --input: #d7e2de;
+    --secondary: #f3f5f8;
+    --secondary-foreground: #20252b;
+    --muted: #f5f7fa;
+    --muted-foreground: #5b6572;
+    --faint: #708090;
+    --accent: #e3edfc;
+    --accent-foreground: #0756b8;
+    --ring: #0064e6;
+    --border: #dde3ea;
+    --input: #c6d0dc;
     --surface-0: #ffffff;
-    --surface-1: #f8faf9;
-    --surface-2: #f0f5f3;
-    --border-subtle: #e7eeeb;
-    --border-default: #dde6e3;
-    --interactive-hover: #eef6f3;
-    --interactive-active: #dfefe9;
-    --success: #137c62;
-    --success-muted: #e6f4ec;
-    --shadow-float: 0 2px 8px rgb(30 64 55 / 0.035);
-    --shadow-pop: 0 8px 28px rgb(30 64 55 / 0.09);
+    --surface-1: #fafbfd;
+    --surface-2: #f5f7fa;
+    --border-subtle: #e9eef4;
+    --border-default: #dde3ea;
+    --interactive-hover: #e9eef4;
+    --interactive-active: #dce5f0;
+    --shadow-float: 0 1px 4px rgb(32 37 43 / 0.06);
+    --shadow-pop: 0 6px 20px rgb(32 37 43 / 0.12);
     color-scheme: light;
-    line-height: 1.6;
+    font-size: 13px;
+    line-height: 1.45;
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="workspace"] {
@@ -48,20 +47,20 @@ html:not(.dark) .lingdoc-system-fonts [data-testid="workspace"] {
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] {
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 6px;
     background: var(--card);
     box-shadow: var(--shadow-float);
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] > header {
     border-bottom: 1px solid var(--border-subtle);
-    border-radius: 14px 14px 0 0;
-    background: #ffffff;
+    border-radius: 6px 6px 0 0;
+    background: #fafbfd;
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="session-title"] {
     border-color: var(--border-subtle);
-    color: #28483e;
+    color: #20252b;
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="export-button"] {
@@ -72,7 +71,7 @@ html:not(.dark) .lingdoc-system-fonts [data-testid="export-button"] {
 html:not(.dark) .lingdoc-system-fonts #chat-form,
 html:not(.dark) .lingdoc-system-fonts #hero-chat-form {
     border: 1px solid var(--input);
-    border-radius: 12px;
+    border-radius: 6px;
     background: #ffffff;
     box-shadow: none;
 }
@@ -80,12 +79,21 @@ html:not(.dark) .lingdoc-system-fonts #hero-chat-form {
 html:not(.dark) .lingdoc-system-fonts #chat-form:focus-within,
 html:not(.dark) .lingdoc-system-fonts #hero-chat-form:focus-within {
     border-color: var(--ring);
-    box-shadow: 0 0 0 3px rgb(14 137 123 / 0.09);
+    box-shadow: 0 0 0 2px rgb(0 100 230 / 0.12);
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-testid="chat-input"] {
-    font-size: 14px;
-    line-height: 1.65;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="session-title"] span {
+    font-size: 13px;
+}
+
+/* Constrain app panels and menus, leaving circular icons and diagram content alone. */
+html:not(.dark) .lingdoc-system-fonts :is(.rounded-xl, .rounded-2xl, .rounded-3xl) {
+    border-radius: 6px;
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-slot="button"] {
@@ -99,5 +107,5 @@ html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-content"] {
 }
 
 html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-overlay"] {
-    background: rgb(28 49 43 / 0.28);
+    background: rgb(32 37 43 / 0.28);
 }

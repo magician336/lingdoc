@@ -13,7 +13,7 @@ const editTtl = 2 * 60 * 60 * 1000;
 // These exact native rejections occur before picture.change can mutate the document.
 const editNoWriteErrors = new Set(['stale document or revision', 'selected picture changed',
   'select the original picture first', 'selection changed']);
-const bannerStyle = 'position:fixed;z-index:2147483647;bottom:40px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;gap:10px;box-sizing:border-box;max-width:calc(100% - 32px);padding:12px 16px;background:#fff;border:1px solid #7d94bd;border-radius:8px;box-shadow:0 3px 16px #0003;color:#18243a;font:14px sans-serif';
+const bannerStyle = 'position:fixed;z-index:2147483647;bottom:40px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;gap:10px;box-sizing:border-box;max-width:calc(100% - 32px);padding:10px 14px;background:#fff;border:1px solid #c6d0dc;border-radius:4px;box-shadow:0 3px 12px #20252b1a;color:#20252b;font:13px "Segoe UI",sans-serif';
 
 function clearPicker() {
   if (!picker) return;
@@ -53,9 +53,9 @@ async function beginPicker(request) {
   text.style.cssText = 'flex:1 1 220px;line-height:1.6';
   const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = '确认并插入';
   const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消';
-  const buttonStyle = 'flex:0 0 auto;width:auto;min-height:36px;margin:0;padding:8px 12px;border:1px solid #dce6df;border-radius:7px;font:13px sans-serif;line-height:1.4;cursor:pointer;';
-  confirm.style.cssText = buttonStyle + 'background:#2e7660;color:white;border-color:#2e7660';
-  cancel.style.cssText = buttonStyle + 'background:white;color:#456353';
+  const buttonStyle = 'flex:0 0 auto;width:auto;min-height:32px;margin:0;padding:6px 10px;border:1px solid #dde3ea;border-radius:4px;font:13px "Segoe UI",sans-serif;line-height:1.4;cursor:pointer;';
+  confirm.style.cssText = buttonStyle + 'background:#0064e6;color:white;border-color:#0064e6';
+  cancel.style.cssText = buttonStyle + 'background:white;color:#3d4854';
   banner.append(text, confirm, cancel);
   // Keep the exact saved image: another drawing window may edit its library entry.
   const current = { id:request.pickId, documentId:state.documentId,
