@@ -1,0 +1,17 @@
+# Re-include tracked dotfiles and Rust `web` source directories blocked by root `.gitignore` (`.*` and `web/`).
+!engine/.cargo/
+!engine/.cargo/config.toml
+!engine/.gitignore
+!engine/.coderabbit.yaml
+!engine/.shellcheckrc
+!engine/CLAUDE.md
+!engine/apps/wordcraft-web/src/web/
+!engine/apps/wordcraft-web/src/web/**
+!engine/packaging/web/
+!engine/packaging/web/**
+!engine/packaging/web/.htaccess
+!drawing-upstream/.gitignore
+
+# Never commit Rust build output or drawing runtime artifacts inside desktop/.
+engine/target/
+drawing-upstream/runtime/
