@@ -1,0 +1,111 @@
+/* Modified for LingDoc. Use installed fonts during build and at runtime. */
+.lingdoc-system-fonts {
+    --font-latin: "Segoe UI", "Helvetica Neue", Arial;
+    --font-mono:
+        "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+/* Match the WordCraft light editor. The nested draw.io document is not styled here. */
+html:not(.dark) .lingdoc-system-fonts {
+    --radius: 6px;
+    --canvas: #eceff3;
+    --background: #f3f5f8;
+    --foreground: #20252b;
+    --card: #ffffff;
+    --card-foreground: #20252b;
+    --popover: #ffffff;
+    --popover-foreground: #20252b;
+    --primary: #0064e6;
+    --primary-foreground: #ffffff;
+    --secondary: #f3f5f8;
+    --secondary-foreground: #20252b;
+    --muted: #f5f7fa;
+    --muted-foreground: #5b6572;
+    --faint: #708090;
+    --accent: #e3edfc;
+    --accent-foreground: #0756b8;
+    --ring: #0064e6;
+    --border: #dde3ea;
+    --input: #c6d0dc;
+    --surface-0: #ffffff;
+    --surface-1: #fafbfd;
+    --surface-2: #f5f7fa;
+    --border-subtle: #e9eef4;
+    --border-default: #dde3ea;
+    --interactive-hover: #e9eef4;
+    --interactive-active: #dce5f0;
+    --shadow-float: 0 1px 4px rgb(32 37 43 / 0.06);
+    --shadow-pop: 0 6px 20px rgb(32 37 43 / 0.12);
+    color-scheme: light;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="workspace"] {
+    background: var(--canvas);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    box-shadow: var(--shadow-float);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-panel"] > header {
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 6px 6px 0 0;
+    background: #fafbfd;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="session-title"] {
+    border-color: var(--border-subtle);
+    color: #20252b;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="export-button"] {
+    background: var(--accent);
+    color: var(--accent-foreground);
+}
+
+html:not(.dark) .lingdoc-system-fonts #chat-form,
+html:not(.dark) .lingdoc-system-fonts #hero-chat-form {
+    border: 1px solid var(--input);
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: none;
+}
+
+html:not(.dark) .lingdoc-system-fonts #chat-form:focus-within,
+html:not(.dark) .lingdoc-system-fonts #hero-chat-form:focus-within {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 2px rgb(0 100 230 / 0.12);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="chat-input"] {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-testid="session-title"] span {
+    font-size: 13px;
+}
+
+/* Constrain app panels and menus, leaving circular icons and diagram content alone. */
+html:not(.dark) .lingdoc-system-fonts :is(.rounded-xl, .rounded-2xl, .rounded-3xl) {
+    border-radius: 6px;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="button"] {
+    box-shadow: none;
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="popover-content"],
+html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-content"] {
+    border-color: var(--border);
+    box-shadow: var(--shadow-pop);
+}
+
+html:not(.dark) .lingdoc-system-fonts [data-slot="dialog-overlay"] {
+    background: rgb(32 37 43 / 0.28);
+}
