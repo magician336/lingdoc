@@ -428,4 +428,3 @@ y1i
 2z''
 .z2
 }                          % Pattern end
-
