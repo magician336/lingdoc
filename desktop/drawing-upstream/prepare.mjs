@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access, mkdir, readFile, cp } from 'node:fs/promises';
+import { access, mkdir, readFile, cp, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyOverlay, patchFiles, UPSTREAM_COMMIT, UPSTREAM_REPOSITORY, sourceDirectory } from './patch.mjs';
@@ -11,7 +11,48 @@ async function command(executable, args, cwd) {
   return result.stdout.trim();
 }
 
-export async function prepareDrawingUpstream({ directory = sourceDirectory, install = false, build = false } = {}) {
+async function verifyStandalone(directory) {
+  for (const file of ['server.js', 'package.json', path.join('.next', 'required-server-files.json')]) {
+    await readFile(path.join(directory, file));
+  }
+}
+
+// Development builds may freely replace source/.next. WordCraft instead uses the
+// separately promoted app/ directory, so an incomplete build cannot destroy the
+// last usable drawing runtime. The application keeps the legacy nested layout.
+export async function promoteDrawingRuntime(directory) {
+  directory = path.resolve(directory);
+  const standalone = path.join(directory, '.next', 'standalone');
+  await verifyStandalone(standalone);
+  const runtimeRoot = path.dirname(directory);
+  const application = path.join(runtimeRoot, 'app');
+  const suffix = `${process.pid}-${Date.now()}`;
+  const staged = path.join(runtimeRoot, `.app-staging-${suffix}`);
+  const previous = path.join(runtimeRoot, `.app-previous-${suffix}`);
+  await cp(standalone, path.join(staged, '.next', 'standalone'), { recursive: true });
+  try {
+    await verifyStandalone(path.join(staged, '.next', 'standalone'));
+    let hadPrevious = false;
+    try {
+      await rename(application, previous);
+      hadPrevious = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    try {
+      await rename(staged, application);
+    } catch (error) {
+      if (hadPrevious) await rename(previous, application);
+      throw error;
+    }
+    if (hadPrevious) await rm(previous, { recursive: true, force: true });
+  } finally {
+    await rm(staged, { recursive: true, force: true });
+  }
+  return application;
+}
+
+export async function prepareDrawingUpstream({ directory = sourceDirectory, install = false, build = false, promote = false } = {}) {
   directory = path.resolve(directory);
   let existing = false;
   try { await access(directory); existing = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -41,22 +82,23 @@ export async function prepareDrawingUpstream({ directory = sourceDirectory, inst
   }
   if (build) {
     const npm = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
-    const build = ['run', 'build'];
+    const buildArgs = ['run', 'build'];
     // Turbopack fails to spawn its pooled Node process on the verified Windows host.
-    if (process.platform === 'win32') build.push('--', '--webpack');
-    await command(process.execPath, [npm, ...build], directory);
+    if (process.platform === 'win32') buildArgs.push('--', '--webpack');
+    await command(process.execPath, [npm, ...buildArgs], directory);
     const standalone = path.join(directory, '.next', 'standalone');
     await cp(path.join(directory, 'public'), path.join(standalone, 'public'), { recursive: true });
     await cp(path.join(directory, '.next', 'static'), path.join(standalone, '.next', 'static'), { recursive: true });
-    await readFile(path.join(standalone, 'server.js'));
+    await verifyStandalone(standalone);
   }
-  return { directory, commit: UPSTREAM_COMMIT, installed: install || build, built: build };
+  const applicationDirectory = promote ? await promoteDrawingRuntime(directory) : null;
+  return { directory, commit: UPSTREAM_COMMIT, installed: install || build, built: build, promoted: promote, applicationDirectory };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.some(arg => !['--install', '--build'].includes(arg))) throw new Error('Usage: node prepare.mjs [--install] [--build]');
-  prepareDrawingUpstream({ install: args.includes('--install'), build: args.includes('--build') })
+  if (args.some(arg => !['--install', '--build', '--promote'].includes(arg))) throw new Error('Usage: node prepare.mjs [--install] [--build] [--promote]');
+  prepareDrawingUpstream({ install: args.includes('--install'), build: args.includes('--build'), promote: args.includes('--promote') })
     .then(result => console.log(JSON.stringify(result)))
-    .catch(() => { console.error('Drawing preparation failed. Verify access to the pinned GitHub source, npm lockfile dependencies, draw.io release and existing cache.'); process.exitCode = 1; });
+    .catch(error => { console.error(`Drawing preparation failed: ${error?.message || error}`); process.exitCode = 1; });
 }

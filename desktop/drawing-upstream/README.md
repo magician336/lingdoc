@@ -9,10 +9,12 @@ This adapter pins Next AI Draw.io to `04b1de949f9f2f14971bf2e26f4a7fd8cc392626`.
 Run from the LingDoc repository root with Node 22+ and Git available.
 
 ```powershell
-node integrations/wordcraft-native-20261105/drawing-upstream/prepare.mjs --build
+node desktop/drawing-upstream/prepare.mjs --build --promote
 ```
 
 Preparation fetches the exact upstream commit into `runtime/source`, checks the Git remote and commit, checks the original Git blob hashes of every patch target, applies the overlay, runs `npm ci --ignore-scripts` with the upstream lockfile, and runs the upstream build. Fresh caches set local `core.autocrlf=false` before checkout. Existing CRLF checkouts are accepted only when CRLF-to-LF normalization reproduces the exact pinned blob hash. The upstream prebuild fetches and verifies its pinned draw.io v32.0.2 release. The standalone output receives the public assets and Next static assets it needs.
+
+开发构建与稳定运行包已分离：只执行 `--build` 时，结果留在 `source/.next`，供独立调试；增加 `--promote` 才会把完整的 standalone 发布为相邻的 `app/.next/standalone`。发布前检查服务入口、包清单和运行配置，新包完整后才替换旧 `app`。因此开发构建失败或清理 `.next` 不会破坏 WordCraft 当前使用的绘图运行包。
 
 The layout overlay uses installed sans-serif and monospace fonts through the existing `--font-latin` and `--font-mono` CSS variables. The existing language-specific Chinese and Japanese fallback stacks remain in effect. The build no longer fetches Instrument Sans or JetBrains Mono from Google Fonts. Interface font metrics follow the fonts installed on the user's system.
 

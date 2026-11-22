@@ -38,12 +38,15 @@ D:\Mon3tr\projects\lingdoc-dachuang\.tooling\target\debug\wordcraft.exe
 
 ## AI 绘图工作台运行时
 
-AI 绘图依赖两个机器级运行时，均放在 `.tooling` 下全 worktree 共用（应用内查找链：环境变量 → `.tooling` 便携副本 → 旧相对路径，见 `drawing_runtime.rs`）：
+AI 绘图依赖三个机器级共享位置，均放在 `.tooling` 下，全 worktree 共用：
 
-- **便携 Node**：`.tooling\node\node.exe`（v22.19.0，从 nvm 安装目录复制）。应用启动绘图子进程时优先使用，不依赖系统 PATH 上的 Node。
-- **绘图工作台构建**：`.tooling\drawing-runtime\source`（git 忽略，约数百 MB）。由 `drawing-upstream/prepare.mjs` 的 `prepareDrawingUpstream({directory, build:true})` 生成；需要 Node 22+（用 nvm 的 `installs\v22.19.0\node.exe` 驱动，便携副本旁无 npm）与 Git、网络（拉取上游 next-ai-draw-io 固定提交 + npm ci + draw.io 资源）。**不要**在每个 worktree 里重建；重建会报"资源不完整"时应先检查此目录是否存在 `.next/standalone/server.js`。
+- **便携 Node**：`.tooling\node\node.exe`（v22.19.0）。应用启动绘图子进程时优先使用，不依赖系统 PATH 上的 Node。
+- **开发源码与构建缓存**：`.tooling\drawing-runtime\source`。允许独立运行 `npm run dev`、`npm run build` 或删除 `.next` 调试；这里的构建结果不再直接作为稳定演示运行时。
+- **WordCraft 实际使用的运行包**：`.tooling\drawing-runtime\app`。只有 `prepareDrawingUpstream({directory, promote:true})` 才会发布到这里；发布会先验证 `server.js`、`package.json` 和 `.next/required-server-files.json`，再替换上一版。构建或校验失败时，已有 `app` 保持不变。
 
-覆盖环境变量：`LINGDOC_DRAWING_UPSTREAM`（工作台目录）、`LINGDOC_DRAWING_NODE`（node 可执行文件）。
+完整修复命令为 `node desktop/drawing-upstream/prepare.mjs --build --promote`；日常开发只用 `--build`，不必发布。需要 Node 22+ 与 Git、网络；便携副本旁没有 npm 时，用带 npm 的 Node 发行版驱动 `prepare.mjs`。
+
+应用查找顺序为显式 `LINGDOC_DRAWING_UPSTREAM` → 共享 `app` → 共享 `source` → 仓库内 `desktop/drawing-upstream/runtime/app` → `runtime/source`。开发调试可显式指向 `source`，或用 `LINGDOC_DRAWING_ORIGIN` 连接独立调试服务。覆盖 Node 路径使用 `LINGDOC_DRAWING_NODE`。
 
 ## 打开隔离测试项目
 

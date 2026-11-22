@@ -48,8 +48,8 @@ fn node() -> std::ffi::OsString {
 }
 
 /// The pinned next.ai standalone build lives outside the source tree so one copy serves
-/// every worktree: `LINGDOC_DRAWING_UPSTREAM` wins, then the shared `.tooling` build
-/// produced by `drawing-upstream/prepare.mjs`, then the checkout-local legacy path.
+/// every worktree. A complete promoted `app` is preferred over disposable development
+/// output; `LINGDOC_DRAWING_UPSTREAM` can explicitly select either layout for debugging.
 fn application_directory() -> PathBuf {
     if let Some(explicit) = std::env::var_os("LINGDOC_DRAWING_UPSTREAM") {
         let explicit = PathBuf::from(explicit);
@@ -57,11 +57,21 @@ fn application_directory() -> PathBuf {
             return explicit;
         }
     }
-    let shared = PathBuf::from(r"D:\Mon3tr\projects\lingdoc-dachuang\.tooling\drawing-runtime\source");
-    if shared.join(".next/standalone/server.js").is_file() {
-        return shared;
+    let shared = PathBuf::from(r"D:\Mon3tr\projects\lingdoc-dachuang\.tooling\drawing-runtime");
+    let promoted = shared.join("app");
+    if promoted.join(".next/standalone/server.js").is_file() {
+        return promoted;
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../drawing-upstream/runtime/source")
+    let development = shared.join("source");
+    if development.join(".next/standalone/server.js").is_file() {
+        return development;
+    }
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../drawing-upstream/runtime");
+    let promoted = local.join("app");
+    if promoted.join(".next/standalone/server.js").is_file() {
+        return promoted;
+    }
+    local.join("source")
 }
 
 fn stop(child: &mut Child) {
@@ -74,7 +84,9 @@ impl Workbench {
         let application = application_directory();
         let server = application.join(".next/standalone/server.js");
         let workspace_server = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("native-drawing-server.mjs");
-        if !server.is_file() || !workspace_server.is_file() { return Err("旧版绘图工作台资源不完整，请先运行 drawing-upstream/prepare.mjs --build 准备既有绘图组件。".into()); }
+        if !server.is_file() || !workspace_server.is_file() {
+            return Err("绘图运行包不完整，请运行 desktop/drawing-upstream/prepare.mjs --build --promote 重新构建并发布。".into());
+        }
         let next_port = free_port()?;
         let workspace_port = free_port()?;
         let next_origin = format!("http://127.0.0.1:{next_port}");

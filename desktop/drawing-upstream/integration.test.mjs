@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { applyOverlay, here, patchFiles, patchText } from './patch.mjs';
 import { exactLoopbackOrigin, modelEnvironment, startDrawingUpstream } from './launch.mjs';
+import { promoteDrawingRuntime } from './prepare.mjs';
 
 const fixture = process.env.LINGDOC_DRAWING_TEST_SOURCE || path.join(here, 'runtime', 'contract-fixture');
 const runtime = path.join(here, 'runtime');
@@ -43,6 +44,27 @@ test('missing upstream build provides actionable failure without a model call', 
   if (process.env.LINGDOC_DRAWING_ORIGIN) return t.skip('External drawing origin configured');
   const directory = await temporary(t);
   await assert.rejects(startDrawingUpstream({ parentOrigin: 'http://127.0.0.1:7212', configPath: null, applicationDirectory: directory }), /prepare\.mjs --build/);
+});
+
+test('drawing promotion isolates development builds and preserves the last usable app', async t => {
+  const directory = await temporary(t);
+  const source = path.join(directory, 'source');
+  const standalone = path.join(source, '.next', 'standalone');
+  for (const file of ['server.js', 'package.json', path.join('.next', 'required-server-files.json')]) {
+    await mkdir(path.dirname(path.join(standalone, file)), { recursive: true });
+    await writeFile(path.join(standalone, file), file === 'server.js' ? 'initial' : '{}');
+  }
+  const application = await promoteDrawingRuntime(source);
+  const server = path.join(application, '.next', 'standalone', 'server.js');
+  assert.equal(await readFile(server, 'utf8'), 'initial');
+
+  await writeFile(path.join(standalone, 'server.js'), 'updated');
+  await promoteDrawingRuntime(source);
+  assert.equal(await readFile(server, 'utf8'), 'updated');
+
+  await rm(path.join(standalone, 'server.js'));
+  await assert.rejects(promoteDrawingRuntime(source), { code: 'ENOENT' });
+  assert.equal(await readFile(server, 'utf8'), 'updated');
 });
 
 test('patch applies to exact pinned official sources, resumes, and rejects edits', async t => {
